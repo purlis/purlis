@@ -11,6 +11,7 @@ import {
   askLink,
   askVersion,
   markPoolOwned,
+  markRemotePoolOwned,
   makeRunnerAgain,
   removedSaid,
   removePool,
@@ -38,6 +39,7 @@ import {
 } from "../ui/table/ControlTable";
 import { Switch } from "../ui/choice/Switch";
 import { PoolLimits } from "./PoolLimits";
+import { WhoCanSignIn } from "../poolsetup/WhoCanSignIn";
 import { PoolProfiles } from "./PoolProfiles";
 import { notCheckedPoolSaid } from "../notChecked";
 
@@ -528,6 +530,13 @@ function PoolEntry({
 }) {
   const remove = onAsk;
   const owed = owedSaid(version, useNow());
+  const [refused, setRefused] = useState<string>();
+  /** Who can sign in to its other machine (#6271): what lets its runner receive saved logins. */
+  const answer = (owned: boolean) =>
+    markRemotePoolOwned(pool.name, owned, pool.pin ?? "").then(setRefused);
+  // While its pin no longer holds, nothing is sent there whatever was answered (#6270): the row
+  // doesn't say only the person signs in there, and Check and trust again asks anew.
+  const pinChanged = typeof link === "object" && link.state === "pin_changed";
   const left = leftSaid(version);
   return (
     <ControlBody>
@@ -568,6 +577,26 @@ function PoolEntry({
         <ControlCell colSpan={3}>
           <div className="pools-about">
             <p className="ui-setting-help ui-text-secondary">{suspendSaid(pool, version)}</p>
+            {/* A pool on another machine is the person's only by their answer (#6271). */}
+            {typeof pool.machine === "string" && !pinChanged && (
+              <WhoCanSignIn
+                host={pool.machine}
+                owned={pool.owned === true}
+                over={pool.over === "tls" ? "tls" : "ssh"}
+                onSave={answer}
+                forgetsLoginsOf={pool.name}
+                onARow
+              />
+            )}
+            {refused !== undefined && (
+              <Notice
+                cause={`pool-answer-not-kept:${pool.name}`}
+                tone="trouble"
+                onDismiss={() => setRefused(undefined)}
+              >
+                {`purlis couldn't keep your answer for ${pool.machine ?? pool.name}: ${refused}`}
+              </Notice>
+            )}
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
             {typeof link === "object" && link.state === "removed" && (
               <RemovedNotice

@@ -18,6 +18,7 @@ fn call(chat: u32, id: &str) -> ToolCall {
         args: None,
         decision: Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -40,6 +41,7 @@ fn hearing(tool: Tooled) -> Hearing {
         refused: Box::new(|_| Ok(())),
         tool,
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     }
 }
 

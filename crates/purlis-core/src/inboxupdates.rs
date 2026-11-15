@@ -94,6 +94,11 @@ pub enum Kind {
     /// A working chat may not be getting anywhere (#6014, ADR 0121 decision 19): drawn while it
     /// reads Stuck?, a Should-know item.
     Stuck,
+    /// A chat's turn ended (T1-31, R-241): its finish row, which says the blocks still
+    /// unresolved at its end (R-178), and is never a failure (R-180).
+    TurnFinished,
+    /// A chat's own run ended failed (T1-31, R-241).
+    ChatFailed,
 }
 
 /// One update, as it is kept.
@@ -639,6 +644,20 @@ pub const AT_MOST_SEEN: usize = 1000;
 /// What the seen record's file is called beside the updates' (`<project key>.seen.json`).
 const SEEN: &str = "seen";
 
+/// What every look at a chat's blocks starts with in the seen record, `blocks:<chat>:<seq>`,
+/// the chat by its logged id (T1-30, Q258). A chat keeps one: a new look replaces its earlier.
+pub const BLOCKS: &str = "blocks:";
+
+/// The part of a look's key that names its chat, `blocks:<chat>:`; `None` for any other key.
+fn chat_of_look(key: &str) -> Option<&str> {
+    if !key.starts_with(BLOCKS) {
+        return None;
+    }
+    key.rfind(':')
+        .filter(|at| *at >= BLOCKS.len())
+        .map(|at| &key[..=at])
+}
+
 impl Store {
     /// The file the project at `root` keeps its seen record in, beside its updates.
     pub fn seen_file(&self, root: &Path) -> PathBuf {
@@ -651,7 +670,9 @@ impl Store {
     }
 
     /// Notes each of `keys` seen at `now`: one seen before keeps when it was first seen, and
-    /// nothing is written where every one was. Answers [`Self::seen`].
+    /// nothing is written where every one was. A look at a chat's blocks ([`BLOCKS`]) lets go
+    /// of that chat's earlier looks in the same write (Q258), so looks never evict the other
+    /// keys. Answers [`Self::seen`].
     pub fn see(&self, root: &Path, keys: &[String], now: u64) -> io::Result<Seen> {
         let keys: Vec<String> = keys.iter().map(|key| cut(key, MOST_KEY)).collect();
         // Read first, unlocked: the window says what it sees often, and most of it was seen.
@@ -662,10 +683,14 @@ impl Store {
         self.change_beside(root, SEEN, |kept: &mut Seen| {
             let mut changed = false;
             for key in keys {
-                if let std::collections::btree_map::Entry::Vacant(at) = kept.entry(key) {
-                    at.insert(now);
-                    changed = true;
+                if kept.contains_key(&key) {
+                    continue;
                 }
+                if let Some(chat) = chat_of_look(&key) {
+                    kept.retain(|was, _| !was.starts_with(chat));
+                }
+                kept.insert(key, now);
+                changed = true;
             }
             let over = kept.len().saturating_sub(AT_MOST_SEEN);
             if over > 0 {

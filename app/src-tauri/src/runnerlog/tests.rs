@@ -169,3 +169,24 @@ fn a_link_that_is_down_is_said_so() {
     log.link(false);
     assert!(!log.now().down);
 }
+
+/// **A run replaced at once is no chat finishing there** (ADR 0076 §2, Q247): a restart for
+/// project settings ends its run `superseded` and the chat goes on, so the runner's "While you
+/// were away" section does not count it.
+#[test]
+fn a_superseded_run_is_not_held_as_a_chat_that_finished_on_the_runner() {
+    let mut log = RunnerLog::default();
+    log.starts_at(RUNNER.into(), 0, None);
+    let mut replaced = line(RUNNER, 1);
+    replaced.body = serde_json::json!({ "state": "completed", "cause": "superseded" });
+    let mut done = line(RUNNER, 2);
+    done.body = serde_json::json!({ "state": "completed", "cause": "exited", "code": 0 });
+    for event in [replaced, done] {
+        log.heard(&event);
+    }
+
+    let now = log.now();
+    assert_eq!(seqs(&log), [format!("01JB{:022}", 2)]);
+    assert_eq!(now.lines[0].ended, RunEnded::Completed);
+    assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 2)]));
+}

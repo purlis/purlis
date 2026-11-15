@@ -21,6 +21,7 @@ import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
 import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
+import { ModeDiffersNotice } from "./ModeDiffersNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { SigningRefusalNotice } from "./SigningRefusal";
@@ -31,6 +32,7 @@ import { PoolAskNotice } from "./PoolAskNotice";
 import { SecretAskPaneNotice } from "./SecretAskPaneNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
 import { PausedNotice } from "./PausedNotice";
+import { MergeHoldNotice } from "./MergeHoldNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
 import { TaskPromptNotice } from "./TaskPromptNotice";
@@ -404,6 +406,8 @@ export function ChatNotices({
       <SecretAskPaneNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* This chat paused at its budget or as looping (#6015): held still until you answer. */}
       <PausedNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A merge this chat's hook held (T1-39): only your press merges, and it asks once more. */}
+      <MergeHoldNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A login or a tool's run this chat asks for on a pool's runner (plane #2697). */}
       <PoolAskNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}
@@ -470,6 +474,8 @@ export function ChatNotices({
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />
+      {/* A mode purlis didn't set that its Claude Code reported (R-243): a standing fault. */}
+      <ModeDiffersNotice session={session} />
       {/* An extension's offer of its view about this chat (#4769): one quiet note. */}
       <ChatOffers session={session} pane={pane} />
       {restartSaid?.trouble !== undefined && (

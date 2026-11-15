@@ -1254,6 +1254,9 @@ fn guidance_for(
             payload: &serde_json::json!({}),
             env: &env,
             now,
+            // The workspace is pinned, so the gate that alone reads it is never said; nobody is
+            // taken to be watching where nothing says so.
+            attendance: crate::dispatchunattended::Attendance::Unattended,
         },
         note,
     )

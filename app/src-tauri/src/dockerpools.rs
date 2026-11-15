@@ -44,6 +44,23 @@ pub struct PoolRow {
     /// How long its runner is left without a link from this machine before it suspends
     /// itself, as `runners.json` spells it (`24h`, `90m`; #3471).
     pub suspend_after: String,
+    /// **The machine its engine is on, where that is another machine** (#6271): its host, as the
+    /// person named it. Left out for this machine's own Docker.
+    #[specta(optional)]
+    pub machine: Option<String>,
+    /// **Whether the person said only they, and people they trust with their logins, can sign in
+    /// to that machine, as it is pinned** (#6271, ADR 0123 §5). Left out for this machine's own
+    /// Docker, which needs no mark.
+    #[specta(optional)]
+    pub owned: Option<bool>,
+    /// **How that machine is pinned** (#6271): `ssh` (its host key) or `tls` (its CA). Left out
+    /// for this machine's own Docker.
+    #[specta(optional)]
+    pub over: Option<String>,
+    /// **Its pin, as purlis keeps it** (#6271): handed back with an answer of who can sign in,
+    /// which is refused where the machine was trusted again since.
+    #[specta(optional)]
+    pub pin: Option<String>,
 }
 
 /// What the Pools group draws: the pools, and the limits a new pool gets by default.
@@ -387,6 +404,54 @@ fn row(pool: &Pool) -> PoolRow {
         image: pool.image().as_str().to_owned(),
         limits: shown(pool.limits()),
         suspend_after: after_shown(pool.suspend_after()),
+        machine: pool.remote_engine().map(|remote| remote.host().to_owned()),
+        owned: pool.on_another_machine().then(|| pool.owned()),
+        over: pool.remote_engine().map(|remote| {
+            match remote {
+                purlis_core::runners::RemoteEngine::Ssh(_) => "ssh",
+                purlis_core::runners::RemoteEngine::Tls(_) => "tls",
+            }
+            .to_owned()
+        }),
+        pin: pool
+            .remote_engine()
+            .map(|remote| remote.pin_json().to_string()),
+    }
+}
+
+/// **The person says who can sign in to the machine of pool `name`, on another machine, as it is
+/// pinned** (#6271, ADR 0123 §5): only they, and people they trust with their logins (`owned`),
+/// or others might, for `pin`, the pin the window showed. The window's alone (`ui::WINDOW_ONLY`):
+/// no chat reaches it. Taken back, every login opted in on the pool is forgotten, so a later mark
+/// asks about each again.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_remote_pool_owned(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    name: String,
+    owned: bool,
+    pin: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let held = planes.every_held();
+        crate::off_the_window("keeping your answer", move || {
+            let shown = crate::poolsetuptab::shown_pin(&pin);
+            purlis_core::runners::set_remote_owned(&config_root()?, &name, owned, &shown)
+                .map_err(|why| why.to_string())?;
+            if !owned {
+                for project in held {
+                    project.browsers().forget_pool_logins(&name);
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (planes, name, owned, pin);
+        Err(NOT_HERE.to_owned())
     }
 }
 

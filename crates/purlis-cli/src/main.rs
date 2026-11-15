@@ -2282,6 +2282,7 @@ fn tell_the_host_about_the_tool_call(
         args: data.get("tool_input").map(purlis_core::eventlog::args_hash),
         decision: answered.decision,
         rule: answered.rule.clone(),
+        arm: answered.arm.map(|arm| arm.id().to_owned()),
         hook_ms: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
         agent: hookwire::sub_agent(data["agent_id"].as_str(), &purlis_core::envvar::var),
         at_ms: std::time::SystemTime::now()
@@ -2291,13 +2292,23 @@ fn tell_the_host_about_the_tool_call(
         skill,
     };
     let token = hookwire::ChatToken::from_env();
+    // The harness's own check's reason (R-340, Q185): on a line of its own, before the tool
+    // line whose block it is the detail of, sent once and never spooled, so the app holds it in
+    // memory and no record holds it. A reason the app missed is one nobody is shown.
+    if word == purlis_core::hookreg::HARNESS_DENIED
+        && let Some(said) = hookwire::HarnessReason::of_denial(chat, &data)
+    {
+        let _ = hookwire::tell_reason(std::path::Path::new(&socket), token.as_ref(), &said);
+    }
     if let Err(why) = hookwire::deliver_tool(std::path::Path::new(&socket), token.as_ref(), &call) {
         let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
     }
     // The file a file tool touched, for the tree's live marker (FM-6): on a line of its own,
-    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard
-    // refused, which touched nothing. A marker the app missed is not worth a word on stderr.
+    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard or
+    // the harness's own check refused, which touched nothing. A marker the app missed is not
+    // worth a word on stderr.
     if call.decision != hookwire::Decision::Deny
+        && word != purlis_core::hookreg::HARNESS_DENIED
         && let Some(touching) = purlis_core::touching::of_tool(&data)
     {
         let _ = hookwire::touch(
@@ -4428,7 +4439,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 let reached = purlis_core::windowline::reach_the_pools(
                     store.config_root(),
                     &gone.name,
-                    purlis_core::windowline::ask,
+                    |asked| purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}")),
                 );
                 #[cfg(not(unix))]
                 let reached = "";
@@ -4893,8 +4904,7 @@ fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> 
             "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
              code {code}…"
         );
-        eprintln!("{}", pool::waiting_on_the_window(project.as_deref()));
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 
@@ -4956,7 +4966,7 @@ fn kept_first(
 ) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
     purlis_core::windowline::kept_first(pool, name, standing, |asked| {
         eprintln!("it does not keep '{name}': asking the purlis window to keep it there…");
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 
@@ -6008,6 +6018,12 @@ fn doctor(
         }
         for id in ids {
             let lines = match (id, identity) {
+                // Its own step: it keeps the record of the clones it moves (R-339, Q260).
+                (FixId::MoveIntoRepos, _) => {
+                    let fixed = move_into_repos_recording(doctor.root());
+                    fix_failed |= !fixed.complete();
+                    fixed.lines()
+                }
                 (FixId::GitIdentity, Some((name, email))) => {
                     match registry::identity::apply(doctor.root(), name, email) {
                         Ok(fixed) => {
@@ -6053,6 +6069,23 @@ fn doctor(
         );
     }
     ExitCode::from(purlis_core::doctor::exit_code(&rows).max(u8::from(fix_failed)))
+}
+
+/// **`purlis doctor --fix move-into-repos`** (R-339, Q260): the move keeps the record of clones
+/// where a clone's remote is unchanged, and trusts no new clone. This binary holds no host scope,
+/// so the move names the clones it left untrusted in one line that says to trust them in purlis's
+/// window, in Asks › Trust these clones.
+fn move_into_repos_recording(root: &std::path::Path) -> purlis_core::doctor::fix::Fixed {
+    use purlis_core::doctor::fix::{self as registry, move_into_repos};
+
+    let open = &move_into_repos::open_in_record;
+    let Some(config_root) = purlis_core::machine::config_root_if_there() else {
+        return registry::apply_moving_into_repos(root, open, None);
+    };
+    let records = move_into_repos::Records {
+        config_root: &config_root,
+    };
+    registry::apply_moving_into_repos_with(root, open, None, Some(&records))
 }
 
 /// `purlis harness show <name>`: the declaration on stdout under one comment line naming

@@ -131,7 +131,8 @@ function core(
     if (cmd === "opened_chats") return over.chats?.[plane] ?? [];
     // Each chat's tab, outside every workspace, as the stored layout keeps it (#4758).
     if (cmd === "reopened_layout") return aTabForEachChat(over.chats?.[plane] ?? []);
-    // Nothing asks in this window's projects, so its registry has read them (#6341).
+    // Nothing asks in this window's own projects, so its registry has read them (#6341), and the
+    // badge counts the other window's alone.
     if (cmd === "asks_waiting") return { plane, asks: [], with_asking_chat: [], snoozed: [] };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -355,6 +356,10 @@ describe("a cold launch that remembers two windows", () => {
   });
 });
 
+/** The number the Dock badge was last set to, or null where it was cleared or never set. */
+const badgeOf = (asked: { cmd: string; args: Record<string, unknown> }[]) =>
+  asked.filter((one) => one.cmd === "plugin:window|set_badge_count").at(-1)?.args.value ?? null;
+
 describe("needs you, across windows", () => {
   const go = (session: number) => ({
     id: `needs.show:${session}`,
@@ -363,11 +368,8 @@ describe("needs you, across windows", () => {
     reason: "",
     does: { verb: "showChat" as const, session },
   });
-  /** The Dock badge's number as this window last set it, null for none (#5999). */
-  const badge = (asked: { cmd: string; args: Record<string, unknown> }[]) =>
-    asked.filter((one) => one.cmd === "plugin:window|set_badge_count").at(-1)?.args.value ?? null;
 
-  it("counts a chat asking in another window on the Dock badge alone, never on the hand or in this window's Asks (ADR 0121, amended 2026-11-12; #6341)", async () => {
+  it("counts a chat asking in another window on the Dock badge, never on its hand, and lists it in no Asks of this one (ADR 0121, amended 2026-11-12)", async () => {
     const { fire, asked } = core({
       launch: ONE,
       windows: ["main", "window-1"],
@@ -387,11 +389,12 @@ describe("needs you, across windows", () => {
       }),
     );
 
-    // The Dock badge counts every open project of every window (#5999); the hand counts the
-    // project in front alone, where nothing waits (#6341), so it draws none; and Asks lists the
-    // project in front's alone (ADR 0121, amended 2026-11-12). The chat is answered in its own
-    // window's Asks, which its notification brings forward.
-    await vi.waitFor(() => expect(badge(asked)).toBe(1));
+    // The Dock badge counts every open project of every window (#5999, #6341); the hand counts
+    // the project in front alone, where nothing waits (#6341), so it draws none; and Asks lists
+    // the project in front's alone (ADR 0121, amended 2026-11-12, #6340). The chat is answered in
+    // its own window's Asks, which its notification brings forward.
+    await vi.waitFor(() => expect(badgeOf(asked)).toBe(1));
+    expect(screen.queryByTestId("needs-you-button")).toBeNull();
     expect(screen.queryByRole("button", { name: /needs? you/ })).toBeNull();
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     expect(within(inbox).queryByRole("rowgroup", { name: "two.3" })).toBeNull();
@@ -452,11 +455,12 @@ describe("needs you, across windows", () => {
         ],
       }),
     );
-    await vi.waitFor(() => expect(badge(asked)).toBe(1));
+    // What the other window said reaches this one only on the Dock badge (#6340, #6341).
+    await vi.waitFor(() => expect(badgeOf(asked)).toBe(1));
 
     fire("windows-changed", ["main"]);
 
-    await vi.waitFor(() => expect(badge(asked)).toBeNull());
+    await vi.waitFor(() => expect(badgeOf(asked)).toBeNull());
   });
 });
 

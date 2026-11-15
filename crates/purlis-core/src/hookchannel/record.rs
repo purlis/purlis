@@ -115,7 +115,7 @@ impl purlis_host::Record for EventLog {
             session::Exit::Signal(signal) => crate::session::Exit::Signal(signal.clone()),
         };
         let (state, cause) = how_its_run_ended(ended.stopped.map(stop_by), &exit);
-        its_children_end(&log, root, number, state, cause);
+        its_run_ends(&log, root, number, state, cause);
         if ended.watched || ended.stopped.is_some() {
             return;
         }
@@ -149,7 +149,7 @@ impl purlis_host::Record for EventLog {
         let Some(log) = self.recorder() else { return };
         let root = left.project_path.as_path();
         what_it_spooled_is_recorded(&log, root, left.number);
-        its_children_end(&log, root, left.number, RunState::Failed, Cause::HostCrash);
+        its_run_ends(&log, root, left.number, RunState::Failed, Cause::HostCrash);
     }
 }
 
@@ -191,11 +191,11 @@ pub fn how_its_run_ended(by: Option<StopBy>, exit: &crate::session::Exit) -> (Ru
     (state, Cause::Exited(exit))
 }
 
-/// **Every sub-agent of chat `session` still live ends with its run** (ADR 0076 §6, #1084): a
-/// `run.ended` under each child run, in `state` for `cause`, written under the event log's
-/// lock. Nothing where none is live. A write that fails is warned of, and never holds up the
-/// rest of the chat's end.
-pub fn its_children_end(
+/// **Chat `session`'s run ends** (ADR 0076 §2 and §6, #1084, R-233): a `run.ended` under each
+/// of its sub-agents still live, then one under its own run with its result, in `state` for
+/// `cause`, written under the event log's lock. A write that fails is warned of, and never
+/// holds up the rest of the chat's end.
+pub fn its_run_ends(
     events: &Mutex<Recorder>,
     plane: &Path,
     session: u32,
@@ -203,8 +203,8 @@ pub fn its_children_end(
     cause: Cause,
 ) {
     let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Err(why) = log.end_children_with(plane, session, state, cause) {
-        tracing::warn!("purlis: a sub-agent's end was not written to the event log ({why})");
+    if let Err(why) = log.end_run_with(plane, session, state, cause) {
+        tracing::warn!("purlis: a run's end was not written to the event log ({why})");
     }
 }
 

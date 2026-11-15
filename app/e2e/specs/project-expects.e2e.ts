@@ -17,24 +17,27 @@ import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { pressGrant } from "../acting.js";
 import { bandNotice } from "../reading.js";
+import { showView } from "../opening.js";
 import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../switching.js";
 
 /**
- * **The up-front Notice of what a project expects** (ADR 0093 as amended 2026-10-13, ruling R3;
- * `ProjectExpectsNotice.tsx`; #2627), in the built app against the real core and this machine's
- * real file:
+ * **The up-front question of what a project expects** (ADR 0093 as amended 2026-10-13, ruling R3;
+ * #2627), in the built app against the real core and this machine's real file. It is the sandbox
+ * consent, asked on its row in Asks (`asking::consents`, #6000) and there alone while it can be
+ * answered (R-205): no Notice carries it beside its row.
  *
- * - **Allow** keeps each item for this project on this machine: the Notice goes, does not come
+ * - **Allow** keeps each item for this project on this machine: the ask goes, does not come
  *   back when the settings are read again, and Settings › Sandbox › Network › Allowed lists them.
- * - **Not now** takes the Notice away and allows nothing; Settings still offers the Allow.
+ * - **Not now** takes the ask away and allows nothing; Settings still offers the Allow.
  * - **A newly declared item** asks again after a Not now.
  * - **An item that changed under the question**: a declared path that is a link to a real socket,
- *   moved to another socket between the drawing and the press, is not kept, and the Notice is
- *   drawn again as it stands, saying so (`EXPECTS_CHANGED`).
+ *   moved to another socket between the drawing and the press, is not kept, and the ask says so
+ *   and is drawn again as it stands (`EXPECTS_CHANGED`).
  *
- * `sandboxing/tests.rs` and `ProjectExpectsNotice.test.tsx` hold each rule against synthetic
- * values; what only the window shows is the whole path, from the committed file on disk through
- * the watcher, the Notice, the window-only commands and this machine's file, to Settings.
+ * `sandboxing/tests.rs`, `projectExpects.test.ts` and `ProjectExpectsNotice.test.tsx` hold each
+ * rule against synthetic values; what only the window shows is the whole path, from the committed
+ * file on disk through the watcher, the ask, the window-only commands and this machine's file, to
+ * Settings.
  *
  * **The sockets are real, and outside every folder a chat may write** (#2626's set-up): the core
  * refuses a socket in the temp folder, in the project and in a harness's home
@@ -64,7 +67,12 @@ const TABS = '[data-strip="Tabs"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 const GROUPS = 'nav[aria-label="Groups"]';
 const EXPECTS_ROW = '[data-setting="project.sandbox.expects-here"]';
+/** The consent's row in the Asks view. */
+const CONSENT = `[role="tabpanel"][data-view="asks"] .inbox-ask[data-source="${CAUSE}"]`;
 const ALLOWED_ROW = '[data-setting="project.sandbox.network.allowed"]';
+/** Asks' scope chips (`SCOPE_LABEL`). */
+const SCOPES =
+  '[role="tabpanel"][data-view="asks"] [role="radiogroup"][aria-label="Show what needs you in"]';
 
 /** This spec's own project: the fixture, renamed, with nothing to put back on open. */
 const mine = (() => {
@@ -100,62 +108,70 @@ const expects = async () =>
   (await ask<{ expects: Expects }>("sandbox_state", { plane: mine })).expects;
 const grants = () => ask<Grant[]>("sandbox_grants", { plane: mine });
 
-/** Waits for the Notice and answers what it says. */
-async function theNotice(why: string): Promise<string> {
-  let said = "";
-  await browser.waitUntil(
-    async () => {
-      const now = await bandNotice(CAUSE);
-      if (now.state === "shown") said = now.text;
-      return now.state === "shown";
+/**
+ * What the consent's row in Asks says now, or null where none is drawn. The consent asks about
+ * no chat, so it is listed under Project alone, and Asks opens on Chat (ADR 0121, amended
+ * 2026-11-12): the Project chip is picked first wherever the chips are drawn, so its absence is
+ * read where it would be listed. The chip is found by its role and its words, never its tag.
+ */
+const rowSaid = () =>
+  browser.execute(
+    (row: string, chips: string) => {
+      const project = document
+        .querySelector(chips)
+        ?.querySelector<HTMLInputElement>('[aria-label^="Project"]');
+      if (project !== null && project !== undefined && project.checked !== true) project.click();
+      return document.querySelector<HTMLElement>(row)?.innerText ?? null;
     },
-    { timeout: 30_000, interval: 250, timeoutMsg: `no Notice of what the project expects: ${why}` },
+    CONSENT,
+    SCOPES,
   );
-  return said;
-}
 
-/** Waits for the Notice to say `text`, each of it at once when it is a list, and answers all
- *  it says. */
-async function theNoticeSaying(text: string | readonly string[], why: string): Promise<string> {
+/** Waits for the consent's row in Asks to say `text`, each of it at once when it is a list, and
+ *  answers all it says. Asked in Asks alone (R-205): no Notice carries it beside its row. */
+async function theAskSaying(text: string | readonly string[], why: string): Promise<string> {
   const all = typeof text === "string" ? [text] : text;
   let said = "";
   await browser.waitUntil(
     async () => {
-      const now = await bandNotice(CAUSE);
-      if (now.state === "shown") said = now.text;
-      return now.state === "shown" && all.every((one) => said.includes(one));
+      said = (await rowSaid()) ?? "";
+      return said !== "" && all.every((one) => said.includes(one));
     },
-    { timeout: 30_000, interval: 250, timeoutMsg: `${why}; the Notice said: ${said}` },
+    { timeout: 30_000, interval: 250, timeoutMsg: `${why}; the row in Asks said: ${said}` },
   );
+  expect((await bandNotice(CAUSE)).state).toBe("absent");
   return said;
 }
 
-/** Waits for the Notice to go; one that stays says what it says, and what the window said of
- *  the press (a press too soon after a way out moved allows nothing, and says so). */
-async function noNotice(why: string): Promise<void> {
+/** Waits for the consent's row in Asks, and answers what it says. */
+const theAsk = (why: string) => theAskSaying([], `no ask of what the project expects: ${why}`);
+
+/** Waits for the consent's row to go; one that stays says what it says, and what the window said
+ *  of the press (a press too soon after a way out moved allows nothing, and says so). */
+async function noAsk(why: string): Promise<void> {
   await browser
-    .waitUntil(async () => (await bandNotice(CAUSE)).state === "absent", {
+    .waitUntil(async () => (await rowSaid()) === null, {
       timeout: 30_000,
       interval: 250,
     })
     .catch(async () => {
-      const seen = await browser.execute((cause: string) => {
-        const line = document.querySelector<HTMLElement>(`[data-cause="${cause}"]`);
+      const seen = await browser.execute((row: string) => {
+        const line = document.querySelector<HTMLElement>(row);
         const statuses = [...document.querySelectorAll<HTMLElement>('[role="status"]')]
           .map((one) => one.innerText.trim())
           .filter((one) => one !== "");
         const marked = document.querySelector<HTMLElement>("[data-e2e-pressed]");
-        return `the Notice says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}; the button pressed is ${marked === null ? "gone: drawn again since" : "still drawn"}`;
-      }, CAUSE);
+        return `the row says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}; the button pressed is ${marked === null ? "gone: drawn again since" : "still drawn"}`;
+      }, CONSENT);
       throw new Error(`${why}; ${seen}; kept: ${await keepTheNotices("project-expects")}`);
     });
 }
 
-/** Presses one of the Notice's own buttons. An answer that grants waits for the Notice to
+/** Presses one of the consent's buttons on its row. An answer that grants waits for the row to
  *  settle where it is drawn (`SETTLE_MS`, 1.5 s, #1695, #3142), as the person reads it before
  *  allowing it; a press before that allows nothing. */
 async function press(label: string): Promise<void> {
-  const button = await $(`[data-cause="${CAUSE}"]`).$(`button=${label}`);
+  const button = await $(CONSENT).$(`button=${label}`);
   await button.waitForClickable({ timeout: 20_000 });
   // Marked, so a press the guard holds can say whether this is still the button drawn.
   await browser.execute(
@@ -168,10 +184,9 @@ async function press(label: string): Promise<void> {
     await button.click();
     return;
   }
-  // **Pressed again where the window says so** (`NOTICE_MOVED_JUST_NOW`): in the Notices view, in
-  // the Panel's right half, a tall Notice stands scrolled, and a line above it that changes height
-  // (the doctor's, when it checks again) slides its Allow on screen. The guard holds that press
-  // and asks the person to read it and press again, which is what this does, at most twice more.
+  // **Pressed again where the window says so** (`MOVED_JUST_NOW`): a row above it that changes
+  // height slides its Allow on screen. The guard holds that press and asks the person to read it
+  // and press again, which is what this does, at most twice more.
   for (let tries = 0; tries < 3; tries += 1) {
     await pressGrant(button);
     const held = await browser
@@ -272,7 +287,7 @@ async function aSocketAt(path: string): Promise<Server> {
   return server;
 }
 
-describe("the Notice of what a project expects", function () {
+describe("the question of what a project expects, in Asks", function () {
   this.timeout(240_000);
 
   /** The project the launch opened, which this spec never touches. */
@@ -284,6 +299,7 @@ describe("the Notice of what a project expects", function () {
   before(async () => {
     first = (await ask<string[]>("open_planes"))[0];
     await openFromTheStrip(mine);
+    await showView("Asks");
   });
 
   after(async () => {
@@ -318,13 +334,13 @@ describe("the Notice of what a project expects", function () {
   });
 
   it("asks once, and Allow keeps each item for this project on this machine", async () => {
-    const said = await theNotice("the project declares two services and opened");
-    // Its own words, with each item: the label is the Notice's name, not its text.
-    expect(said).toContain("This project's settings say its chats expect what is listed here.");
+    const said = await theAsk("the project declares two services and opened");
+    // Its own words, with each item.
+    expect(said).toContain("This project expects more than this machine allows");
     for (const one of FIRST) expect(said).toContain(one);
 
     await press(ALLOW);
-    await noNotice("the Notice stayed up after Allow");
+    await noAsk("the ask stayed up after Allow");
 
     // Kept, each, for this project on this machine, and nothing waits.
     const kept = await grants();
@@ -343,22 +359,23 @@ describe("the Notice of what a project expects", function () {
       );
     await closeSettings();
 
-    // The settings read again, as the watcher reads them when the file changes: the Notice does
+    // The settings read again, as the watcher reads them when the file changes: the ask does
     // not return. The same declaration, written anew.
+    await showView("Asks");
     declare(FIRST);
     await browser.pause(3_000);
-    expect((await bandNotice(CAUSE)).state).toBe("absent");
+    expect(await rowSaid()).toBeNull();
   });
 
   it("goes on Not now, allows nothing, and Settings still offers the Allow", async () => {
     // Something new to ask about, so the question returns (the next case holds that too).
     declare([...FIRST, LATER]);
-    const said = await theNoticeSaying(LATER, "a newly declared service did not ask");
+    const said = await theAskSaying(LATER, "a newly declared service did not ask");
     // What is allowed already is not asked about again.
     for (const one of FIRST) expect(said).not.toContain(one);
 
     await press(NOT_NOW);
-    await noNotice("the Notice stayed up after Not now");
+    await noAsk("the ask stayed up after Not now");
 
     // Nothing allowed: it still waits, and is not asked about.
     expect(await grants()).not.toContainEqual(expect.objectContaining({ target: LATER }));
@@ -374,18 +391,19 @@ describe("the Notice of what a project expects", function () {
     await closeSettings();
 
     // And the Not now lasts: the settings read again do not bring it back.
+    await showView("Asks");
     declare([...FIRST, LATER]);
     await browser.pause(3_000);
-    expect((await bandNotice(CAUSE)).state).toBe("absent");
+    expect(await rowSaid()).toBeNull();
   });
 
   it("asks again, after a Not now, when the project declares something new", async () => {
     declare([...FIRST, LATER, NEWER]);
-    const said = await theNoticeSaying(NEWER, "a service declared after Not now did not ask");
+    const said = await theAskSaying(NEWER, "a service declared after Not now did not ask");
     // The question is the whole of what waits: the one answered Not now with the new one.
     expect(said).toContain(LATER);
     await press(NOT_NOW);
-    await noNotice("the Notice stayed up after the second Not now");
+    await noAsk("the ask stayed up after the second Not now");
     expect(await grants()).not.toContainEqual(expect.objectContaining({ target: NEWER }));
   });
 
@@ -401,12 +419,8 @@ describe("the Notice of what a project expects", function () {
 
     // The link alone is declared, so an Allow has nothing else it could keep.
     declare([link]);
-    const drawn = await theNoticeSaying(
-      named.a,
-      "the Notice did not name the socket A link leads to",
-    );
-    // Named as an Allow would keep it, with the path the project wrote beside it.
-    expect(drawn).toContain(`the project names it ${link}`);
+    // Named as an Allow would keep it.
+    await theAskSaying(named.a, "the ask did not name the socket A link leads to");
 
     // The link moves to B between the drawing and the press.
     const next = join(sockets, "next.sock");
@@ -414,13 +428,13 @@ describe("the Notice of what a project expects", function () {
     renameSync(next, link);
     expect(realpathSync(link)).toBe(named.b);
     // Still drawn as it was: nothing the window watches moved.
-    expect(await theNotice("the Notice went when the link moved")).toContain(named.a);
+    expect(await theAsk("the ask went when the link moved")).toContain(named.a);
 
     await press(ALLOW);
     // Not kept, said, and drawn again naming B. The window draws B late: the sentence lands with
-    // the refusal, and only then is the list read again, so the Notice drawn in between says the
+    // the refusal, and only then is the list read again, so the row drawn in between says the
     // sentence beside A's list (#4665). One wait, for both at once, never a read of either alone.
-    await theNoticeSaying(
+    await theAskSaying(
       [CHANGED, named.b],
       "the Allow was not refused as changed and drawn again naming B",
     );
@@ -428,7 +442,7 @@ describe("the Notice of what a project expects", function () {
 
     // Allowed as it stands now, it is kept: B, the socket the Notice names.
     await press(ALLOW);
-    await noNotice("the Notice stayed up after Allow for the socket as it stands");
+    await noAsk("the ask stayed up after Allow for the socket as it stands");
     const kept = await grants();
     expect(kept).toContainEqual(expect.objectContaining({ what: "socket", target: named.b }));
     expect(kept).not.toContainEqual(expect.objectContaining({ what: "socket", target: named.a }));

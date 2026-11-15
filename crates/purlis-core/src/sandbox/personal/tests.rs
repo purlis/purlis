@@ -261,3 +261,130 @@ fn in_a_project_at_the_full_sandbox_a_floor_the_file_alone_says_waits_for_confir
     set_by_you(root.path(), None, Some(Floor)).unwrap();
     assert_eq!(in_force(root.path()).level, Some(Floor));
 }
+
+/// R-010 (T1-24, Q236): **the Protection row at setup writes the person's own level**, the value
+/// Settings › Project › Sandbox › Your level reads and changes. For each choice the local file
+/// says it, a chat's start honours it (it is recorded as yours, so nothing waits for a Confirm),
+/// and the committed file is left with no `mode`.
+#[test]
+fn the_setup_choice_is_the_value_settings_reads() {
+    use crate::sandbox::policy::Locks;
+    use crate::sandbox::{Made, your_level};
+    use crate::settings::{self, Which};
+    for choice in Choice::ALL {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("charter.toml"), "schema = 1\n").unwrap();
+
+        assert_eq!(chosen_at_setup(root.path(), choice), AtSetup::Kept);
+
+        // What Settings reads: this machine's file, whose `[sandbox] level` is the row.
+        let local = settings::read(root.path(), Which::Local).unwrap();
+        assert_eq!(of_text(&local.text).level, Some(choice), "{}", local.text);
+        // What a chat's start takes, for a chat the person starts in the window.
+        assert_eq!(in_force(root.path()).level, Some(choice));
+        assert!(
+            waiting(root.path()).is_empty(),
+            "{choice:?} waits for a Confirm"
+        );
+        assert_eq!(
+            your_level(root.path(), None, &Locks::none(), &Made::Window),
+            Some(choice),
+        );
+        // Never the team's: the committed file keeps no mode.
+        let shared = std::fs::read_to_string(root.path().join("charter.toml")).unwrap();
+        assert!(!shared.contains("mode"), "{shared}");
+
+        // Changed later in Settings, the same value reads back changed.
+        let other = if choice == Choice::On {
+            Choice::Off
+        } else {
+            Choice::On
+        };
+        let edited = settings::edited(
+            &local.text,
+            &[settings::Edit {
+                path: vec![
+                    settings::Step::Key("sandbox".to_owned()),
+                    settings::Step::Key(LEVEL.to_owned()),
+                ],
+                value: Some(settings::Value::Text(other.word().to_owned())),
+            }],
+        )
+        .unwrap();
+        settings::save(root.path(), Which::Local, Some(&local.text), &edited).unwrap();
+        set_by_you(root.path(), None, Some(other)).unwrap();
+        let local = settings::read(root.path(), Which::Local).unwrap();
+        assert_eq!(of_text(&local.text).level, Some(other));
+        assert_eq!(in_force(root.path()).level, Some(other));
+    }
+}
+
+/// Q241 (T1-24's review, 2): **the policy is checked before anything is written.** A level the
+/// project's `policy = "never"` forbids is never kept as the person's: the local file is left
+/// without it, and setup is told why in a sentence, never an error that would stop it after the
+/// project was made.
+#[test]
+fn a_setup_choice_the_project_s_policy_forbids_writes_nothing_and_says_why() {
+    use crate::settings::{self, Which};
+    for choice in Choice::ALL {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("charter.toml"),
+            "schema = 1\n[sandbox]\npolicy = \"never\"\n",
+        )
+        .unwrap();
+
+        let kept = chosen_at_setup(root.path(), choice);
+
+        let local = settings::read(root.path(), Which::Local).unwrap();
+        let written = of_text(&local.text).level;
+        if choice == Choice::On {
+            assert_eq!(kept, AtSetup::Kept);
+            assert_eq!(written, Some(Choice::On));
+        } else {
+            let AtSetup::NotKept(said) = kept else {
+                panic!("{choice:?} was kept under policy = \"never\"");
+            };
+            assert!(said.contains("policy"), "{said}");
+            assert!(said.contains("Settings"), "{said}");
+            assert_eq!(written, None, "{}", local.text);
+            assert!(
+                !local.exists,
+                "a refused choice made a file: {}",
+                local.text
+            );
+        }
+    }
+}
+
+/// Q241, the same under an administrator's lock on this machine: a level below it is never
+/// written, and setup is told why.
+#[test]
+fn a_setup_choice_an_administrator_s_lock_forbids_writes_nothing_and_says_why() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    use crate::settings::{self, Which};
+    let file = Path::new("/Library/Application Support/purlis/policy.json");
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        file,
+    ));
+    for choice in Choice::ALL {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("charter.toml"), "schema = 1\n").unwrap();
+
+        let kept = chosen_at_setup(root.path(), choice);
+
+        let written = of_text(&settings::read(root.path(), Which::Local).unwrap().text).level;
+        if choice == Choice::On {
+            assert_eq!(kept, AtSetup::Kept);
+            assert_eq!(written, Some(Choice::On));
+        } else {
+            assert!(
+                matches!(&kept, AtSetup::NotKept(said) if said.contains("Platform team")),
+                "{kept:?}"
+            );
+            assert_eq!(written, None);
+        }
+    }
+    set_for_this_test(Locks::none());
+}

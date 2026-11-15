@@ -260,6 +260,7 @@ fn a_symptom_is_told_to_diagnose_rather_than_to_design() {
     assert!(context.contains("failing test"), "{context}");
 }
 
+#[cfg(unix)]
 #[test]
 fn the_gate_and_a_report_back_arrive_as_one_context() {
     use purlis_core::handback::{self, For, Handback};
@@ -275,12 +276,16 @@ fn the_gate_and_a_report_back_arrive_as_one_context() {
         stopped: None,
     };
     handback::leave(plane.path(), For::Chat(3), &report).unwrap();
+    // The app that started chat 3, which says a person is at it: the gate keys on that, and a
+    // chat whose app does not answer is told nothing (T1-22, #6413).
+    let app = crate::support::attending::AttendingApp::answering(plane.path(), 3, true);
+    let env = app.chat_env();
+    let env: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
 
-    let out = prompt_as(
-        plane.path(),
-        &asking(FORKED),
-        &[(purlis_core::hookwire::CHAT_ENV, "3")],
-    );
+    let out = prompt_as(plane.path(), &asking(FORKED), &env);
 
     assert_eq!(out.lines().count(), 1, "{out}");
     let context = context_of(&out);

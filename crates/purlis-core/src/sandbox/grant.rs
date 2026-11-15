@@ -137,7 +137,9 @@ impl fmt::Display for What {
 pub enum Level {
     /// The one chat the block was in, for its next run alone: the restart that takes it, and no
     /// later one (D-sock-3). Offered for a socket or a service only: a host is asked about live,
-    /// and a folder is written for longer than a run.
+    /// and a folder is written for longer than a run. **A host's once is its block's Allow next
+    /// time** (T1-34, R-291): the chat's next attempt at it alone, held on the chat's board of
+    /// live asks ([`super::asks::Asks::allow_next`]), never compiled into a start.
     Once,
     /// The one chat the block was in, for as long as the app holds it.
     Chat,

@@ -166,6 +166,7 @@ fn finds_and_loads_a_skill_over_mcp(host_takes: Duration) {
         touching: Box::new(|_| {}),
         blocked: Box::new(|_| {}),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
 
     // The harness: its argv names purlis's MCP server and nothing of a skill; its environment is

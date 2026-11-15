@@ -48,6 +48,7 @@ fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
             let _ = outputs.lock().unwrap().send(Ok(output));
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", "stop"])

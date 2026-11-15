@@ -237,6 +237,7 @@ pub const PURLIS_KEEPS: &[&str] = &[
     "local-project",
     "network",
     "profiles",
+    "protection",
     "reviews",
     "runners",
     "sign-ins-waiting",

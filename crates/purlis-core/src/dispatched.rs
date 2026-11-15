@@ -490,7 +490,7 @@ impl Seen {
     /// harness that has been heard from, still running its program, showing no prompt
     /// ([`Self::prompt_showing`]: an ask open in the window is one, and a prompt answered there
     /// is not, though the board keeps `asking` until the turn ends).
-    fn takes_keys(self) -> bool {
+    pub fn takes_keys(self) -> bool {
         self.measured && self.heard && !self.ended && !self.prompt_showing()
     }
 

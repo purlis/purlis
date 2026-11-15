@@ -53,7 +53,7 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
           .refuseRunnerDispatch(plane, id)
           .then((one) =>
             one.status === "ok"
-              ? { status: "ok" as const, data: "Refused: nothing was started." }
+              ? { status: "ok" as const, data: "Not started: you refused it." }
               : one,
           );
     void sent

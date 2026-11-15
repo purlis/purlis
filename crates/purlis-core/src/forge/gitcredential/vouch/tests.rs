@@ -199,3 +199,23 @@ fn a_folder_that_is_no_workspace_clone_is_refused_and_nothing_is_recorded() {
     );
     assert!(super::super::read_push_remotes(home.path()).is_empty());
 }
+
+/// **Each clone says when it was made** (T1-42, R-337): its folder's creation time, in seconds
+/// since 1970, where its disk keeps one, and `None` where it keeps none. Never the time it was
+/// read, nor its last change.
+#[test]
+fn a_clone_with_no_record_says_when_its_folder_was_made() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let clone = a_clone(plane.path(), "ws", "api", "https://github.com/acme/api.git");
+    let created = std::fs::metadata(&clone)
+        .and_then(|meta| meta.created())
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|since| since.as_secs());
+
+    let listed = unvouched_clones(plane.path(), home.path());
+
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].made, created);
+}

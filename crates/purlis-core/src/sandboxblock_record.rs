@@ -435,7 +435,8 @@ impl Entry {
             && self.target.is_some()
     }
 
-    /// Whether it is a Block of a connection to a host: what Blocked lately lists.
+    /// Whether it is a Block of a connection to a host: what a chat's Network view lists as
+    /// refused.
     pub fn is_host_block(&self) -> bool {
         self.event == Event::Block
             && self

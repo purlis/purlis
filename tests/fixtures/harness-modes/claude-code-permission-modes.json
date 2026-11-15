@@ -1,0 +1,61 @@
+{
+  "claude_code_version": "2.1.325 (Claude Code)",
+  "measured": "headless claude -p",
+  "modes": {
+    "default": {
+      "UserPromptSubmit": [
+        "default"
+      ],
+      "PreToolUse": [
+        "default"
+      ],
+      "Stop": [
+        "default"
+      ]
+    },
+    "acceptEdits": {
+      "UserPromptSubmit": [
+        "acceptEdits"
+      ],
+      "PreToolUse": [
+        "acceptEdits"
+      ],
+      "Stop": [
+        "acceptEdits"
+      ]
+    },
+    "plan": {
+      "UserPromptSubmit": [
+        "plan"
+      ],
+      "PreToolUse": [
+        "plan"
+      ],
+      "Stop": [
+        "plan"
+      ]
+    },
+    "auto": {
+      "UserPromptSubmit": [
+        "auto"
+      ],
+      "PreToolUse": [
+        "auto"
+      ],
+      "Stop": [
+        "auto"
+      ]
+    },
+    "bypassPermissions": {
+      "UserPromptSubmit": [
+        "bypassPermissions"
+      ],
+      "PreToolUse": [
+        "bypassPermissions"
+      ],
+      "Stop": [
+        "bypassPermissions"
+      ]
+    }
+  }
+}

@@ -15,7 +15,7 @@ import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
- * by host, Allowed with Remove, Blocked lately with Allow, and what one chat reaches and was
+ * by host, Allowed with Remove, the Blocked log with Allow, and what one chat reaches and was
  * refused — all as the core says them, in the four words and none of the retired ones.
  */
 
@@ -33,6 +33,7 @@ const NETWORK: SandboxNetwork = {
       looked_up: null,
       said: "a connection to an internet host this project does not allow",
       chat: "fix the build",
+      session: null,
       at: 1_790_000_000,
       times: 3,
       reached: false,
@@ -43,6 +44,7 @@ const NETWORK: SandboxNetwork = {
       looked_up: null,
       said: "a connection to an internet host this project does not allow",
       chat: "claude 2",
+      session: null,
       at: 1_789_000_000,
       times: 1,
       reached: true,
@@ -53,6 +55,7 @@ const NETWORK: SandboxNetwork = {
       looked_up: "db.prod.example.com",
       said: "a lookup of an internet host by a program that does not go through the sandbox's proxy",
       chat: "claude 2",
+      session: null,
       at: 1_788_000_000,
       times: 1,
       reached: false,
@@ -127,7 +130,7 @@ describe("the Network page of a read-only project (#1759)", () => {
       </ReadOnlySaid.Provider>,
     );
 
-    const blocked = await screen.findByRole("list", { name: "Blocked lately" });
+    const blocked = await screen.findByRole("list", { name: "Blocked log" });
     expect(
       within(blocked).getByRole("button", {
         name: "Allow for me on this machine: db.example.com:5432",
@@ -169,13 +172,13 @@ describe("the Network page of a read-only project (#1759)", () => {
 });
 
 describe("the Network page", () => {
-  it("is Open hosts, Allowed and Blocked lately, in that order, then the folders and a port", () => {
+  it("is Open hosts, Allowed and the Blocked log, in that order, then the folders and a port", () => {
     const group = networkGroup(PLANE, "charter.toml");
     expect(group.label).toBe("Network");
     expect(group.settings.map((one) => one.label)).toEqual([
       "Open hosts",
       "Allowed",
-      "Blocked lately",
+      "Blocked log",
       "Folders a block's Allow may name",
       "A service on this Mac",
       "Who may dispatch to whom",
@@ -204,10 +207,10 @@ describe("the Network page", () => {
     ).toBeVisible();
   });
 
-  it("lists what was blocked lately with its host, chat and time, and Allow for a host", async () => {
+  it("lists the Blocked log with its host, chat and time, and Allow for a host", async () => {
     const asked = core();
     render(<Row id="blocked" />);
-    const list = await screen.findByRole("list", { name: "Blocked lately" });
+    const list = await screen.findByRole("list", { name: "Blocked log" });
     const [db, reached, lookup] = within(list).getAllByRole("listitem");
     expect(db).toHaveTextContent("db.example.com:5432");
     expect(db).toHaveTextContent(
@@ -252,12 +255,12 @@ describe("the Network page", () => {
       ],
     });
     render(<Row id="blocked" />);
-    const list = await screen.findByRole("list", { name: "Blocked lately" });
+    const list = await screen.findByRole("list", { name: "Blocked log" });
     expect(list).toHaveTextContent("Looked up by a program, not offered.");
     expect(within(list).queryByRole("button")).toBeNull();
   });
 
-  it("says when nothing was blocked lately", async () => {
+  it("says when the Blocked log is empty", async () => {
     core({ ...NETWORK, blocked: [] });
     render(<Row id="blocked" />);
     expect(await screen.findByText("Nothing was blocked here in the last 30 days.")).toBeVisible();
@@ -286,7 +289,7 @@ describe("the Network page", () => {
         ))}
       </>,
     );
-    await screen.findByRole("list", { name: "Blocked lately" });
+    await screen.findByRole("list", { name: "Blocked log" });
     await screen.findByRole("list", { name: "Allowed" });
     const said = [
       container.textContent ?? "",
@@ -315,7 +318,7 @@ describe("a chat's Network view", () => {
     chatCore({ open: true, sandboxed: false, reach: [], browser_sites: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
     expect(await screen.findByText("Not sandboxed: can reach anything.")).toBeVisible();
-    expect(screen.queryByText("Refused")).toBeNull();
+    expect(screen.queryByText("Blocked")).toBeNull();
   });
 
   it("lists what it reaches by Open, Persona and Allowed hosts, and what it was refused", async () => {
@@ -340,7 +343,7 @@ describe("a chat's Network view", () => {
     expect(screen.getByRole("list", { name: "Allowed hosts" })).toHaveTextContent(
       "extra.example:443",
     );
-    const refused = screen.getByRole("list", { name: "Refused" });
+    const refused = screen.getByRole("list", { name: "Blocked" });
     expect(refused).toHaveTextContent("db.example.com:5432");
     expect(
       within(refused).getByRole("button", {
@@ -398,9 +401,9 @@ describe("a chat's Network view", () => {
     expect(within(reach).getByText("It can reach no host on the internet")).toBeVisible();
     expect(reach).toHaveTextContent(/A host you allow from a refusal below is listed here/);
     const refused = screen.getByTestId("chat-network-refused-none");
-    expect(within(refused).getByText("Nothing was refused in the last 30 days")).toBeVisible();
+    expect(within(refused).getByText("Nothing was blocked in the last 30 days")).toBeVisible();
     expect(refused).toHaveTextContent(/with Allow where it may be kept/);
-    expect(screen.getByRole("region", { name: "Refused" })).toContainElement(refused);
+    expect(screen.getByRole("region", { name: "Blocked" })).toContainElement(refused);
   });
 
   it("says where an administrator's settings let a Claude Code chat reach every local port (#1699)", async () => {

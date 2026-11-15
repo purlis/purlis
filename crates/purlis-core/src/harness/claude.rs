@@ -400,6 +400,16 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes: its `PermissionDenied` hook reports each call its own check blocks (R-094, T1-08).
+    fn reports_its_checks_blocks(&self) -> bool {
+        true
+    }
+
+    /// Yes: its mode is read from the hook purlis armed (R-095, T1-17).
+    fn reports_a_mode_purlis_can_check(&self) -> bool {
+        true
+    }
+
     /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
     /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
     /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat
@@ -420,6 +430,16 @@ impl HarnessAdapter for ClaudeCode {
         permission_mode: Option<&str>,
     ) -> Option<crate::dispatchmode::Reported> {
         crate::dispatchmode::Reported::of_claude_code(permission_mode)
+    }
+
+    /// Claude Code's own `permission_mode`, by the strings T1-16 measured
+    /// ([`crate::attendance::ClaudeCodeMode::of`]): any other string is unknown. Believed from
+    /// its armed hook alone, as [`Self::reported_mode`] is.
+    fn attendance_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::attendance::ClaudeCodeMode> {
+        permission_mode.map(crate::attendance::ClaudeCodeMode::of)
     }
 
     /// `--permission-mode auto` at the classifier's level (#3787): one of 2.1.312's choices for

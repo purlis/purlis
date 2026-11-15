@@ -238,6 +238,9 @@ export const AlwaysSendAsksOnce: Story = {
     await userEvent.keyboard("{Enter}");
     const body = within(document.body);
     const dialog = await body.findByRole("dialog", { name: "Always send report drafts?" });
+    // In the DOM is not yet on screen: the scrim fades in from nothing as it opens
+    // (`ui/dialog/dialog.css`), so the keyboard waits until the dialog is seen (#6628).
+    await waitFor(() => expect(dialog).toBeVisible());
     await expect(dialog).toHaveTextContent(/private report service/);
     await expect(dialog).toHaveTextContent(/never go to GitHub/);
     await expect(dialog).toHaveTextContent(/Settings › You › Reports/);

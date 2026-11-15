@@ -20,6 +20,7 @@ const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 mod links_read;
 mod one_notice;
 mod run_grants;
+mod waits;
 
 /// Policy says `said` for this test, and no longer once it ends.
 pub(super) struct PolicySays;
@@ -1821,6 +1822,7 @@ fn an_app_answering(
         refused: Box::new(|_| Ok(())),
         tool: Box::new(|_| Ok(())),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let env = vec![
         ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
@@ -2266,6 +2268,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         refused: Box::new(|_| Ok(())),
         tool: Box::new(|_| Ok(())),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let env = vec![
         ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
@@ -5553,6 +5556,10 @@ fn a_run_missing_its_key_waits_on_a_secret_ask_and_runs_with_the_value_filled() 
             if let Some(one) = asks.open().into_iter().next() {
                 break one;
             }
+            if run.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", run.join());
+            }
             std::thread::yield_now();
         };
         assert_eq!(
@@ -5623,6 +5630,10 @@ fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entry
             if let Some(one) = asks.open().first() {
                 break one.id;
             }
+            if run.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", run.join());
+            }
             std::thread::yield_now();
         };
         asks.answer(
@@ -5671,6 +5682,10 @@ fn a_run_whose_linked_entry_is_gone_asks_naming_the_gone_entry_and_runs_once_fil
             if let Some(one) = asks.open().into_iter().next() {
                 break one;
             }
+            if run.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", run.join());
+            }
             std::thread::yield_now();
         };
         assert_eq!(
@@ -5715,6 +5730,10 @@ fn a_run_missing_its_key_that_the_person_declines_hears_declined() {
         let id = loop {
             if let Some(one) = asks.open().first() {
                 break one.id;
+            }
+            if run.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", run.join());
             }
             std::thread::yield_now();
         };
@@ -5821,6 +5840,10 @@ fn a_browser_login_missing_its_password_waits_on_a_secret_ask_and_logs_in_with_t
             if let Some(one) = asks.open().into_iter().next() {
                 break one;
             }
+            if read.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", read.join());
+            }
             std::thread::yield_now();
         };
         assert_eq!(
@@ -5857,6 +5880,10 @@ fn a_browser_login_missing_its_password_that_the_person_declines_fills_nothing()
         let id = loop {
             if let Some(one) = asks.open().first() {
                 break one.id;
+            }
+            if read.is_finished() {
+                // Without this a run that ends before it asks leaves the test spinning for ever.
+                panic!("it ended without asking: {:?}", read.join());
             }
             std::thread::yield_now();
         };

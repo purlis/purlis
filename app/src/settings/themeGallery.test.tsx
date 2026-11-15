@@ -787,7 +787,7 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     expect(broken).toHaveFocus();
     // Why first, then where it comes from and its marks, as they are drawn under its name (#6075).
     expect(broken).toHaveAccessibleDescription(
-      "surface.base is not a colour Yours, on this machine · Refused",
+      "surface.base is not a colour Yours, on this machine · Not applied",
     );
     fireEvent.click(broken);
     fireEvent.keyDown(broken, { key: "Enter" });
@@ -823,7 +823,7 @@ describe("a card's name (WCAG 2.5.3 Label in Name, #6043)", () => {
     }
     expect(screen.getByRole("option", { name: "Many" })).toHaveTextContent("+1");
     expect(screen.getByRole("option", { name: "Broken" })).toHaveAccessibleDescription(
-      "surface.base is not a colour Yours, on this machine · Refused",
+      "surface.base is not a colour Yours, on this machine · Not applied",
     );
   });
 });

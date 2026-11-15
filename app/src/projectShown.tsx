@@ -171,12 +171,14 @@ export function drawnOverTheWindow(slot: Element): boolean {
  * The element a project draws into, made once and kept for as long as its view is.
  *
  * `display: contents` (`.project-view`), so what is drawn in it is laid out as the window's own
- * rows, as it was before there was an element here.
+ * rows, as it was before there was an element here. It carries the project's `plane`, so what
+ * looks for something in one project's view looks in no other's (`placedControls.reach`).
  */
-export function useProjectHost(): HTMLElement {
+export function useProjectHost(plane?: string): HTMLElement {
   const [host] = useState(() => {
     const made = document.createElement("div");
     made.className = "project-view";
+    if (plane !== undefined) made.dataset.plane = plane;
     return made;
   });
   return host;

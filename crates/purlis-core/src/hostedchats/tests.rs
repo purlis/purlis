@@ -31,6 +31,7 @@ fn reach_now(hosts: &[(&str, Layer)]) -> ReachNow {
                 layer: *layer,
             })
             .collect(),
+        next: Vec::new(),
     }
 }
 

@@ -115,6 +115,10 @@ pub struct Pool {
     /// **The Docker context its route was read from** (#6268, `dockerContext`), for doctor alone:
     /// never followed, and no part of what defines the pool.
     docker_context: Option<String>,
+    /// **The person's mark that its machine is their own, as pinned** (#6271, ADR 0123 §5): only
+    /// a pool on another machine has one, and only for the pin it was given for. A pin kept again
+    /// that differs takes it away ([`Pool::on_engine`]).
+    owned: bool,
 }
 
 /// **The engine of a pool on another machine** (#6266, ADR 0123 §2–§3): the SSH route to it, and
@@ -147,6 +151,36 @@ impl From<crate::tlsroute::Remote> for RemoteEngine {
 }
 
 impl RemoteEngine {
+    /// **Its pin, as a row keeps it**: the host key and engine over SSH, the CA and engine over
+    /// Docker's TLS API. What an owned mark names (#6271).
+    #[must_use]
+    pub fn pin_json(&self) -> serde_json::Value {
+        match self {
+            RemoteEngine::Ssh(remote) => remote.pin.to_json(),
+            RemoteEngine::Tls(remote) => remote.pin.to_json(),
+        }
+    }
+
+    /// **The machine and engine as pinned, in an Ask's words** (#6271): what a login's opt-in on
+    /// it is bound to, in place of a local socket.
+    #[must_use]
+    pub fn pinned_said(&self) -> String {
+        match self {
+            RemoteEngine::Ssh(remote) => format!(
+                "Docker on {}, key {}, engine {}",
+                remote.route.host(),
+                remote.pin.host_key.fingerprint(),
+                remote.pin.engine.shown()
+            ),
+            RemoteEngine::Tls(remote) => format!(
+                "Docker on {}, CA {}, engine {}",
+                remote.route.host(),
+                remote.pin.ca.shown(),
+                remote.pin.engine
+            ),
+        }
+    }
+
     /// The route, as it is kept.
     #[must_use]
     pub fn spelled(&self) -> String {
@@ -254,6 +288,7 @@ impl Pool {
             refused_limits: Vec::new(),
             remote: None,
             docker_context: None,
+            owned: false,
         })
     }
 
@@ -264,9 +299,36 @@ impl Pool {
     }
 
     /// **This pool, its engine on another machine by either route** (#6267), or this machine's.
+    ///
+    /// Its owned mark stays only where the pin is the one it was given for (#6271, ADR 0123 §3):
+    /// a pin that changed clears it, and the person marks the machine again if they still mean it.
     #[must_use]
     pub fn on_engine(self, remote: Option<RemoteEngine>) -> Pool {
-        Pool { remote, ..self }
+        let pinned = |remote: Option<&RemoteEngine>| remote.map(RemoteEngine::pin_json);
+        let owned = self.owned
+            && remote.is_some()
+            && pinned(remote.as_ref()) == pinned(self.remote.as_ref());
+        Pool {
+            remote,
+            owned,
+            ..self
+        }
+    }
+
+    /// **This pool, marked as the person's own as it is pinned now, or not** (#6271): what they
+    /// answered on Connect as it is made. A pool on this machine's own engine takes no mark.
+    #[must_use]
+    pub fn marked(self, owned: bool) -> Pool {
+        Pool {
+            owned: owned && self.remote.is_some(),
+            ..self
+        }
+    }
+
+    /// **Whether the person marked its machine as their own, as it is pinned now** (#6271, ADR
+    /// 0123 §5): never for a pool on this machine's own engine, which needs no mark.
+    pub fn owned(&self) -> bool {
+        self.owned && self.remote.is_some()
     }
 
     /// **This pool, its route read from the Docker context `name`** (#6268), or from none.
@@ -378,6 +440,9 @@ impl Pool {
             fields.remove("profiles");
             // Where its route was read from decides nothing it runs on (#6268).
             fields.remove("dockerContext");
+            // The person's mark is not how the pool is defined (#6271): taking it back forgets
+            // the pool's opt-ins on its own.
+            fields.remove("owned");
             // These apply from the next attempt, so a change makes nothing again (Q13).
             for limit in crate::poollimits::all() {
                 if limit.takes_effect == crate::poollimits::TakesEffect::NextAttempt {
@@ -397,6 +462,7 @@ impl Pool {
             refused_limits: self.refused_limits.clone(),
             remote: self.remote.clone(),
             docker_context: self.docker_context.clone(),
+            owned: self.owned,
             ..Pool::new(&self.name, self.image.clone(), set)?
         })
     }
@@ -2046,15 +2112,15 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
             row["kind"] = REMOTE_DOCKER.into();
             row["route"] = remote.route.spelled().into();
             row["tls"] = tls_to_row(&remote.files);
-            row["pin"] = serde_json::json!({
-                "ca": remote.pin.ca.spelled(),
-                "engine": remote.pin.engine,
-            });
+            row["pin"] = remote.pin.to_json();
         }
         None => {}
     }
     if let (Some(name), true) = (pool.docker_context(), pool.on_another_machine()) {
         row["dockerContext"] = name.into();
+    }
+    if pool.owned() {
+        row["owned"] = row["pin"].clone();
     }
     row["image"] = pool.image().as_str().into();
     let set = pool.set();
@@ -2182,6 +2248,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "pin",
         "tls",
         "dockerContext",
+        "owned",
     ];
     if fields
         .keys()
@@ -2196,12 +2263,22 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
                 && !fields.contains_key("pin")
                 && !fields.contains_key("identity")
                 && !fields.contains_key("tls")
-                && !fields.contains_key("dockerContext") =>
+                && !fields.contains_key("dockerContext")
+                && !fields.contains_key("owned") =>
         {
             None
         }
         REMOTE_DOCKER => Some(remote_from_row(fields)?),
         _ => return None,
+    };
+    // The mark names the pin it was given for (#6271): one naming another pin is no mark, and one
+    // of any other shape is not as purlis writes it.
+    let owned = match fields.get("owned") {
+        None => false,
+        Some(owned) => {
+            owned.as_object()?;
+            Some(owned) == fields.get("pin")
+        }
     };
     // A key that is there must be a number of its kind; one left out is the default.
     fn count<T: TryFrom<u64>>(value: Option<&serde_json::Value>) -> Option<Option<T>> {
@@ -2258,6 +2335,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
             refused_limits,
             remote,
             docker_context,
+            owned,
             ..pool
         })
 }
@@ -2884,6 +2962,46 @@ pub fn set_cluster_owned(config_root: &Path, name: &str, owned: bool) -> Result<
         return Ok(());
     }
     held.clusters[at].owned = owned;
+    write(config_root, &held)
+}
+
+/// What an answer of who can sign in to a machine is refused with when its pin is no longer the
+/// one the person was shown (#6271).
+pub const PIN_MOVED_SINCE_SHOWN: &str = "the machine was trusted again since you were shown it, \
+     so purlis kept nothing: read its row again and answer for it as it is now";
+
+/// **The person marks the pool on another machine `name` as their own, as it is pinned now, or
+/// takes the mark back** (#6271, ADR 0123 §5): called only from their press in their window
+/// (`ui::WINDOW_ONLY`), never from a chat. Refused where no pool on another machine is called
+/// `name`, and a mark given for `shown`, a pin that is no longer the one on disk. Written only
+/// where it changes anything.
+pub fn set_remote_owned(
+    config_root: &Path,
+    name: &str,
+    owned: bool,
+    shown: &serde_json::Value,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held
+        .pools
+        .iter()
+        .position(|pool| pool.name() == name && pool.on_another_machine())
+    else {
+        return Err(Refused::Other(format!(
+            "no pool on another machine named {name} is on this machine"
+        )));
+    };
+    // The answer is for the pin the person was shown: one trusted again since is another
+    // machine as far as the mark goes, and they answer for it anew.
+    let pinned = held.pools[at].remote_engine().map(RemoteEngine::pin_json);
+    if owned && pinned.as_ref() != Some(shown) {
+        return Err(Refused::Other(PIN_MOVED_SINCE_SHOWN.to_owned()));
+    }
+    if held.pools[at].owned == owned {
+        return Ok(());
+    }
+    held.pools[at].owned = owned;
     write(config_root, &held)
 }
 

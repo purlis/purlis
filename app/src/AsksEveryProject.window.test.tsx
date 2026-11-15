@@ -11,14 +11,15 @@ import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { keepInboxScope } from "./inboxScope";
 
 /**
  * **The ✋ counts the project in front; the Dock badge counts every open project** (#6341, ADR
  * 0121 amended 2026-11-12, decision 1, which reverses #5999's ✋), against the whole window with
  * the core mocked: two projects open, the first in front. An ask from the second is not on the
- * ✋ but on its own project tab and on the Dock badge's total, bringing the second forward moves
- * the ✋ to its count, Asks lists the project in front's alone (decision 2), pressing the ✋
- * brings no other project forward, and a snoozed chat's ask is never counted.
+ * ✋ but on its own project tab and on the Dock badge's total, Asks lists the project in front's
+ * alone (#6340, decision 4), bringing the second forward moves the ✋ to its count, pressing the
+ * ✋ brings no other project forward, and a snoozed chat's ask is never counted.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -222,7 +223,7 @@ describe("the ✋ counts the project in front (#6341)", () => {
     await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 2 things wait on you"));
   });
 
-  it("lists only the project in front's asks in Asks, as the ✋ counts them (ADR 0121, amended 2026-11-12)", async () => {
+  it("lists only the project in front's asks in Asks, and the ✋ counts that project's alone (ADR 0121, amended 2026-11-12)", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
@@ -266,23 +267,27 @@ describe("the ✋ counts the project in front (#6341)", () => {
     expect(badge.every((value) => value === null)).toBe(true);
   });
 
-  it("opens the Asks in front when the ✋ is pressed, and brings no other project forward", async () => {
+  it("opens the Asks in front when the title bar's hand is pressed, and brings no other project forward, whatever scope was kept", async () => {
+    // A scope kept from before Asks stopped keeping one (#6340): the press never reads it.
+    keepInboxScope(ONE, "project");
+    const quiet = { ...chat(ONE, 1), unreported: "a shell cannot say it waits" };
     open({
-      [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+      [ONE]: { chats: [quiet], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
     await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/1 waiting/));
-    const was = front();
-    expect(was).toBe("one");
+    expect(front()).toBe("one");
     // Asks put away, so the press is what opens it.
     if (screen.queryByRole("tabpanel", { name: "Asks" }) !== null) await userEvent.click(hand());
     await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull());
 
-    await userEvent.click(hand());
+    // Nothing waits in ONE, but its quiet chat draws the faint hand in the title bar.
+    await userEvent.click(await screen.findByTestId("needs-you-button"));
 
-    // Its Asks opens, and ONE stays in front. TWO's ask is answered in TWO's own Asks.
-    await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(front()).toBe(was);
+    // ONE's own Asks opens and ONE stays in front. TWO's ask is reached from TWO's tab.
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    expect(front()).toBe("one");
+    expect(within(inbox).queryByText("Run npm test")).toBeNull();
   });
 
   it("brings another project forward with its ask open when its notification is clicked", async () => {

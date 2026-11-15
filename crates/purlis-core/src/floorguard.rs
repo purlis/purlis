@@ -3,8 +3,10 @@
 
 //! Arm A4: the release floor — an unattended run may not publish (#299).
 //!
-//! A port of `charter/hooks.py`'s `_release_floor_reason`, `_unattended`, `UNATTENDED_MODE`,
-//! `_PUBLISH_FORGE` and `_TAG_HARMLESS`. Everything under it is already standing:
+//! A port of `charter/hooks.py`'s `_release_floor_reason`, `_PUBLISH_FORGE` and `_TAG_HARMLESS`.
+//! Its `_unattended` and `UNATTENDED_MODE` are the attendance fact's now
+//! ([`crate::attendance::says_prompts_off`], [`crate::attendance::PROMPTS_OFF`]; T1-22, #6413):
+//! whether the floor refuses is the caller's reading of the fact ([`crate::toolgate`]). Everything under it is already standing:
 //! [`crate::shellseg`] reads the line, [`crate::shellwrap::split_env`] names each segment's
 //! program, [`crate::credguard::git_subcommand`] names git's verb and
 //! [`crate::leakguard::is_charter`] recognises charter however it was spelled.
@@ -61,18 +63,6 @@ use crate::shellwrap::{self, base_lower};
 use std::sync::OnceLock;
 
 use regex::Regex;
-
-/// The `permission_mode` a host sets when there is nobody to answer a prompt —
-/// `UNATTENDED_MODE`.
-///
-/// The field is the HOST's own; charter reads it and never holds a copy, because an autonomy flag
-/// charter owned would be a second source of truth for a question the host already answers.
-pub const UNATTENDED_MODE: &str = "bypassPermissions";
-
-/// True when the host says there is nobody to answer a prompt — `_unattended`.
-pub fn unattended(permission_mode: Option<&str>) -> bool {
-    permission_mode == Some(UNATTENDED_MODE)
-}
 
 /// CLI `(program, noun, verb)` triples that publish or land code — `_PUBLISH_FORGE`.
 ///
@@ -170,6 +160,53 @@ fn version_tag_re() -> &'static Regex {
 /// payload and asks [`unattended`] of its `permission_mode`, and the core holds no globals.
 pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
     metered(cmd, unattended).0
+}
+
+/// **The floor's merge half alone** (R-115): the refusal [`release_floor_reason`] gives
+/// `cmd` unattended where it merges a request, sets one to merge on its own later, or cannot be
+/// read for what it does to a merge, and `None` for every other command, a tag, a release or a
+/// read of the forge token included. What the merge hold reads a line as a merge by
+/// ([`crate::mergehold`]), in any mode: every route the floor knows is the same act to it.
+pub fn merge_reason(cmd: &str) -> Option<String> {
+    let _only = OnlyMerges::on();
+    metered(cmd, true).0
+}
+
+/// **The floor reads for merges alone while this lives** ([`merge_reason`]), and as it did before
+/// once it is dropped, a panic's unwinding included.
+struct OnlyMerges {
+    outer: bool,
+}
+
+impl OnlyMerges {
+    fn on() -> Self {
+        Self {
+            outer: ONLY_MERGES.replace(true),
+        }
+    }
+}
+
+impl Drop for OnlyMerges {
+    fn drop(&mut self) {
+        ONLY_MERGES.set(self.outer);
+    }
+}
+
+/// The rows of [`PUBLISH_FORGE`] that merge a request rather than cut a release.
+const MERGE_ROWS: [(&str, &str, &str); 3] = [
+    ("gh", "pr", "merge"),
+    ("glab", "mr", "merge"),
+    ("charter", "change", "land"),
+];
+
+std::thread_local! {
+    /// Whether the floor reads only for merges on this thread ([`merge_reason`]).
+    static ONLY_MERGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the floor is reading for merges alone ([`merge_reason`]).
+fn only_merges() -> bool {
+    ONLY_MERGES.get()
 }
 
 /// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
@@ -275,7 +312,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 return Some(said);
             }
         }
-        if let Some(said) = token::keychain_read_reason(&prog, &argv) {
+        if !only_merges()
+            && let Some(said) = token::keychain_read_reason(&prog, &argv)
+        {
             return Some(said);
         }
         // `GIT tag v1` is a tag — see A2's fold.
@@ -294,7 +333,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 merge::GitAlias::Unreadable => return Some(format!("{fix}{}", merge::UNREADABLE)),
                 merge::GitAlias::None => {}
             }
-            if sub.as_deref() == Some("tag") {
+            if sub.as_deref() == Some("tag") && !only_merges() {
                 // `git tag` alone lists; a bare name is a CREATION — the choke point, since a tag
                 // that does not exist locally cannot be pushed.
                 //
@@ -309,7 +348,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                     ));
                 }
             }
-            if sub.as_deref() == Some("push") {
+            if sub.as_deref() == Some("push") && !only_merges() {
                 if args.iter().any(|a| a == "--tags" || a == "--follow-tags") {
                     return Some(format!("{fix}`--tags`/`--follow-tags` pushes tags."));
                 }
@@ -324,7 +363,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             // A push option that sets auto-merge, an alias that would publish, or a command that
             // prints the forge token (#866).
             // A token refusal is whole: it opens with its own sentence (#6314).
-            if let Some(said) = token::git_reason(&base, args, sub.as_deref()) {
+            if !only_merges()
+                && let Some(said) = token::git_reason(&base, args, sub.as_deref())
+            {
                 return Some(said);
             }
             let why = merge::git_reason(args, &env, sub.as_deref(), unattended, depth);
@@ -360,16 +401,22 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             if let [noun, verb, ..] = words[..] {
                 // A CLI's own alias of a verb is that verb (#866).
                 let held = merge::canonical_verb(&name, noun, verb);
-                if PUBLISH_FORGE.contains(&(name.as_str(), noun, held))
-                    || PUBLISH_SINCE.contains(&(name.as_str(), noun, held))
-                {
+                let row = (name.as_str(), noun, held);
+                let floored = if only_merges() {
+                    MERGE_ROWS.contains(&row)
+                } else {
+                    PUBLISH_FORGE.contains(&row) || PUBLISH_SINCE.contains(&row)
+                };
+                if floored {
                     return Some(format!(
                         "{fix}`{name} {noun} {verb}` publishes or lands code."
                     ));
                 }
             }
             if forge {
-                if let Some(said) = token::forge_reason(args) {
+                if !only_merges()
+                    && let Some(said) = token::forge_reason(args)
+                {
                     return Some(said);
                 }
                 let why = merge::forge_reason(&name, args, cmd, unattended, depth);
@@ -445,6 +492,20 @@ fn substitution_bodies(line: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// T1-11's review: the floor reads for merges alone only while a merge read lasts, and a
+    /// panic inside one leaves the thread reading the whole floor again, tags and pushes too.
+    #[test]
+    fn a_panic_in_a_merge_read_leaves_the_floor_whole() {
+        let unwound = std::panic::catch_unwind(|| {
+            let _only = OnlyMerges::on();
+            assert!(only_merges());
+            panic!("a merge read that panics");
+        });
+        assert!(unwound.is_err());
+        assert!(!only_merges());
+        assert!(release_floor_reason("git tag v1", true).is_some());
+    }
+
     /// #1068: a publishing act floored through one forge CLI is floored through the other.
     #[test]
     fn each_publish_forge_row_has_its_counterpart() {
@@ -509,14 +570,6 @@ mod tests {
         ] {
             assert_eq!(release_floor_reason(cmd, false), None, "{cmd}");
         }
-    }
-
-    /// The host's own field, and nothing charter holds a copy of.
-    #[test]
-    fn the_mode_is_the_hosts_word() {
-        assert!(unattended(Some(UNATTENDED_MODE)));
-        assert!(!unattended(Some("default")));
-        assert!(!unattended(None));
     }
 
     /// Creating a tag is the choke point; listing and deleting are not.

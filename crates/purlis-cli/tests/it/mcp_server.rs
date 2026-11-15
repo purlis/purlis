@@ -961,6 +961,7 @@ mod the_server_says_it {
             touching: Box::new(|_| {}),
             blocked: Box::new(|_| {}),
             permission: Box::new(|_| None),
+            reason: Box::new(|_| {}),
         });
         Host {
             _dir: dir,

@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn the_processs_own_path_comes_first_and_the_fixed_directories_follow_it() {
-        let home = PathBuf::from("/home/op");
+        let home = PathBuf::from("/nonexistent-home/op");
         let dirs = search_dirs_from(Some(OsStr::new("/first:/second")), Some(&home));
         assert_eq!(dirs[0], PathBuf::from("/first"));
         assert_eq!(dirs[1], PathBuf::from("/second"));
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn a_finder_launch_still_gets_the_user_directories() {
-        let home = PathBuf::from("/home/op");
+        let home = PathBuf::from("/nonexistent-home/op");
         let dirs = search_dirs_from(
             Some(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin")),
             Some(&home),
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn a_directory_named_twice_is_searched_once_and_keeps_its_first_place() {
-        let home = PathBuf::from("/home/op");
+        let home = PathBuf::from("/nonexistent-home/op");
         let dirs = search_dirs_from(Some(OsStr::new("/bin:/usr/bin:/bin")), Some(&home));
         assert_eq!(dirs.iter().filter(|d| *d == Path::new("/bin")).count(), 1);
         assert_eq!(dirs[0], PathBuf::from("/bin"));
@@ -532,7 +532,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_finder_launched_chat_searches_charters_own_directory_and_then_where_charter_searched() {
-        let home = PathBuf::from("/home/op");
+        let home = PathBuf::from("/nonexistent-home/op");
         let charter = PathBuf::from("/Applications/charter.app/Contents/MacOS/charter");
         let path =
             chat_path_from(Some(OsStr::new(FINDER)), Some(&home), Some(&charter)).expect("a PATH");
@@ -541,8 +541,8 @@ mod tests {
             [
                 "/Applications/charter.app/Contents/MacOS",
                 FINDER,
-                "/home/op/.local/bin:/home/op/bin:/home/op/.opencode/bin:/home/op/.bun/bin",
-                "/home/op/.volta/bin:/home/op/.npm-global/bin:/home/op/.cargo/bin",
+                "/nonexistent-home/op/.local/bin:/nonexistent-home/op/bin:/nonexistent-home/op/.opencode/bin:/nonexistent-home/op/.bun/bin",
+                "/nonexistent-home/op/.volta/bin:/nonexistent-home/op/.npm-global/bin:/nonexistent-home/op/.cargo/bin",
                 "/opt/homebrew/bin:/usr/local/bin",
                 "/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin",
             ]
@@ -558,12 +558,14 @@ mod tests {
         // one now. `/usr/local/bin` first here is the operator's order, and it stays first.
         let path = chat_path_from(
             Some(OsStr::new("/usr/local/bin:/nix/me/bin:/usr/bin")),
-            Some(Path::new("/home/op")),
+            Some(Path::new("/nonexistent-home/op")),
             None,
         )
         .expect("a PATH");
         assert!(
-            path.starts_with("/usr/local/bin:/nix/me/bin:/usr/bin:/home/op/.local/bin:"),
+            path.starts_with(
+                "/usr/local/bin:/nix/me/bin:/usr/bin:/nonexistent-home/op/.local/bin:"
+            ),
             "{path}"
         );
         assert_eq!(
@@ -579,11 +581,15 @@ mod tests {
         // #1345: a sandboxed chat answered `cargo: command not found` on a machine whose
         // rustup came from Homebrew. rustup's own installer puts the proxies in `~/.cargo/bin`;
         // Homebrew's rustup is keg-only and puts them in `<prefix>/opt/rustup/bin`.
-        let path = chat_path_from(Some(OsStr::new(FINDER)), Some(Path::new("/home/op")), None)
-            .expect("a PATH");
+        let path = chat_path_from(
+            Some(OsStr::new(FINDER)),
+            Some(Path::new("/nonexistent-home/op")),
+            None,
+        )
+        .expect("a PATH");
         let dirs: Vec<&str> = path.split(':').collect();
         for dir in [
-            "/home/op/.cargo/bin",
+            "/nonexistent-home/op/.cargo/bin",
             "/opt/homebrew/opt/rustup/bin",
             "/usr/local/opt/rustup/bin",
         ] {

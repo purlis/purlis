@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useState } from "react";
-import { commands } from "./bindings";
+import { commands, type ProtectionWord } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
+import {
+  ProtectionRow,
+  refusedHere,
+  useNoSandbox,
+  withTheMove,
+  useProtection,
+  useSetupProtection,
+  YourLevel,
+} from "./ProtectionRow";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -73,9 +82,16 @@ export function NewProject({
   forgeAsk?: ForgeAsk;
   onEdit?: () => void;
   making: boolean;
-  onCreate: (path: string, planeIsThisRepo: boolean, adopt: string) => void;
-  /** Opens a repo into this machine's local project (FR-4). */
-  onOpenRepo: (path: string) => void;
+  /** Makes the project, at the Protection row's level (T1-24). */
+  onCreate: (
+    path: string,
+    planeIsThisRepo: boolean,
+    adopt: string,
+    protection: ProtectionWord,
+  ) => void;
+  /** Opens a repo into this machine's local project (FR-4), at the Protection row's level: null
+   *  where that project is there already and keeps its own (Q241). */
+  onOpenRepo: (path: string, protection: ProtectionWord | null) => void;
   /** Whether that is happening right now. */
   opening: boolean;
   onCancel: () => void;
@@ -86,6 +102,10 @@ export function NewProject({
   const [path, keepPath] = useState("");
   const [adopt, keepAdopt] = useState("");
   const [planeIsThisRepo, keepPlaneIsThisRepo] = useState(false);
+  // **The Protection row** (T1-24): one for the dialog, which both of its acts send, bounded by
+  // the core (Q241).
+  const setup = useSetupProtection();
+  const [protection, setProtection] = useProtection(setup);
   const setRepo = (value: string) => {
     keepRepo(value);
     onEdit?.();
@@ -130,16 +150,31 @@ export function NewProject({
   // open, Create project. It stays in its place and keeps the room of the longer, so opening
   // Advanced moves nothing.
   const [advanced, setAdvanced] = useState(false);
+  // What No sandbox would do for the project the main act makes (T1-25): the folder Create
+  // makes it in, or this machine's local project Open repo goes into.
+  const shown = advanced || making;
+  const noSandbox = useNoSandbox(shown ? (path.trim() === "" ? undefined : path.trim()) : null);
+  const refused = refusedHere(protection, noSandbox);
+  // Open repo into the local project already there writes no level (Q241), so what No sandbox
+  // would do there is not its to say or to wait on, as First run's `forTheRepo`.
+  const forTheRepo = setup?.yours ? undefined : protection;
+  const repoRefused = forTheRepo !== undefined && refusedHere(forTheRepo, noSandbox);
+  // Both acts' words, and each with the move named, so choosing No sandbox moves nothing.
+  const reserved = ["Open repo", "Create project"].flatMap((label) => [
+    label,
+    withTheMove(label, "off", noSandbox),
+  ]);
   const openRepo = () => {
     started();
-    if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim());
+    if (repo.trim() !== "" && !opening && !repoRefused) onOpenRepo(repo.trim(), forTheRepo ?? null);
   };
   const create = () => {
     started();
     // The box and the adopt field are two answers to one question — which repository this plane
     // starts from — so a ticked box sends no repo, rather than sending both and letting the core
     // rank them.
-    if (ready) onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim());
+    if (ready && !refused)
+      onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim(), protection);
   };
   return (
     <Dialog
@@ -150,15 +185,18 @@ export function NewProject({
         // While a project of its own is made, its act says so, whatever is open.
         advanced || making
           ? {
-              children: making ? "Creating…" : "Create project",
-              reserve: ["Open repo", "Create project", "Creating…"],
-              isDisabled: !ready,
+              children: making ? "Creating…" : withTheMove("Create project", protection, noSandbox),
+              reserve: [...reserved, "Creating…"],
+              isDisabled: !ready || refused,
               onPress: create,
             }
           : {
-              children: "Open repo",
-              reserve: ["Open repo", "Create project", "Creating…"],
-              isDisabled: repo.trim() === "" || opening,
+              children:
+                forTheRepo === undefined
+                  ? "Open repo"
+                  : withTheMove("Open repo", forTheRepo, noSandbox),
+              reserve: [...reserved, "Creating…"],
+              isDisabled: repo.trim() === "" || opening || repoRefused,
               onPress: openRepo,
             }
       }
@@ -185,6 +223,20 @@ export function NewProject({
           </>
         )}
       />
+      {/* **One Protection row** for both acts (T1-24; Q115). Open repo into the local project
+          already there writes no level, so the dialog shows the one it keeps (Q241). */}
+      {setup?.yours && !advanced && !making ? (
+        <YourLevel level={setup.yours} />
+      ) : (
+        <ProtectionRow
+          value={protection}
+          onChange={setProtection}
+          setup={setup}
+          noSandbox={noSandbox}
+          disabled={making || opening}
+        />
+      )}
+
       {/* The core's refusal, all of it, for whichever form was sent last. */}
       {said && (
         <p className="trouble said-in-full" role="alert">

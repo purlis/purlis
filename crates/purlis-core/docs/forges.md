@@ -489,6 +489,18 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   remote changed since the Notice showed it (`forge::gitcredential::vouch`). A repo whose
   remote names more than one address has no *Trust this clone*: it says to give origin one
   address first. Dismiss hides it until its remote changes.
+  All of them are one ask too, *Trust these clones*, no chat's, listed in Asks however many
+  there are (R-336, `windowonly::look_at_clones`); nothing is trusted before the person answers.
+  It leaves out a clone a live chat made or can write (its git directory is inside a chat's
+  writes, so no mint counts it), a clone whose remote names several addresses, and a clone a
+  chat's own *Trust this clone* already asks for, so each clone is asked for once (Q257).
+  `purlis doctor` lists the clones in its `unrecorded clones` row, and names one whose remote
+  names several addresses with the fix: give origin one address. `purlis doctor --fix
+  move-into-repos` moves clones and trusts no new one: the purlis binary holds no host scope
+  (Q260), so it asks nothing, and one line names the clones it moved that purlis has no record
+  of and says to trust them in purlis's window, in Asks › Trust these clones. A clone purlis has
+  a record of keeps it through the move, since the record is kept by the clone's path, while its
+  remote is the one it was recorded at.
 - **A fetch is held to the same remote** (#1851). The fetches and pulls the window's git makes
   by the remote's name (auto-save's fetch, a repo sync, a restore's pull, and the fetch after
   purlis merges a save's request itself, #1864) get purlis's helper only when every address the

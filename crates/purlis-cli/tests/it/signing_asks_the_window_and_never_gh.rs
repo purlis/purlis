@@ -322,6 +322,62 @@ fn remove_takes_the_key_off_this_machine_and_says_to_remove_it_from_github() {
     gh_never_ran(config);
 }
 
+/// Q233: run in a project, `check` names it on the line to the window, whose Asks lists it there,
+/// and says it waits there; run in none (the tests below), it names none.
+#[test]
+fn check_run_in_a_project_names_it_to_the_window_and_says_it_waits_there() {
+    let machine = a_machine();
+    let config = machine.path();
+    let project = config.join("smart-ide");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("charter.toml"), "").unwrap();
+    let window = AWindow::answering(
+        config,
+        Said::Signing(Heard::Checked(Checked {
+            verified: true,
+            reason: "valid".to_owned(),
+            key: None,
+        })),
+    );
+    let out = support::purlis()
+        .args(["signing", "check", "octo/hello", "0123abc"])
+        .current_dir(&project)
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", config.join("bin").display()),
+        )
+        .env("HOME", config)
+        .env("PURLIS_CONFIG_HOME", config)
+        .env("TMPDIR", std::env::temp_dir())
+        .env("NO_COLOR", "1")
+        .env("CHARTER_NO_BACKGROUND_CHECKS", "1")
+        .envs(std::env::var_os("XDG_RUNTIME_DIR").map(|dir| ("XDG_RUNTIME_DIR", dir)))
+        .stdin(Stdio::null())
+        .output()
+        .expect("purlis runs");
+    assert!(out.status.success(), "{}", said(&out));
+    assert_eq!(
+        window.asked(),
+        [Asked::Signing(signingsetup::Asked::Check {
+            repo: "octo/hello".to_owned(),
+            commit: "0123abc".to_owned(),
+            code: shown_code(&out),
+            on: on(Kind::GitHub, "github.com"),
+            project: Some(project.canonicalize().unwrap()),
+        })]
+    );
+    assert!(
+        said(&out).contains(
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, for \
+             up to 2 minutes"
+        ),
+        "{}",
+        said(&out)
+    );
+    gh_never_ran(config);
+}
+
 #[test]
 fn check_asks_the_window_and_says_the_reason_in_plain_words() {
     let machine = a_machine();
@@ -348,6 +404,7 @@ fn check_asks_the_window_and_says_the_reason_in_plain_words() {
             commit: "0123abc".to_owned(),
             code: shown_code(&out),
             on: on(Kind::GitHub, "github.com"),
+            project: None,
         })]
     );
     assert!(said(&out).contains("Confirm checking 0123abc in octo/hello in the purlis window"));
@@ -388,6 +445,7 @@ fn check_on_a_gitlab_host_asks_gitlab_on_the_persons_yes() {
             commit: "0123abc".to_owned(),
             code: shown_code(&out),
             on: on(Kind::GitLab, "gitlab.example.org"),
+            project: None,
         })]
     );
     assert!(

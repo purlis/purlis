@@ -514,6 +514,7 @@ const RECORD: SessionRecordView = {
   persona_hosts_locked: null,
   persona_hosts_wait: false,
   dispatches: [{ persona: "devops", task: "check prod", outcome: "done" }],
+  session: null,
 };
 
 /** One dispatch that ran and reported, and one still running (#1452). */
@@ -803,7 +804,7 @@ const ORDINARY: Answers = {
             "Ended",
             "Tool calls",
             "Errors",
-            "Refused",
+            "Blocked",
             "Asks",
             "Tokens",
             "Time",
@@ -1589,6 +1590,43 @@ const STATES: State[] = [
       chat_network: { open: true, sandboxed: false, reach: [], browser_sites: [], refused: [] },
     },
     drawn: /Not sandboxed: can reach anything/,
+  },
+  {
+    name: "a chat's Chat log, its start and its end (R-224)",
+    view: { from: null, view: "chat-log", key: "3" },
+    answers: {
+      chat_log: {
+        known: true,
+        rows: [
+          {
+            kind: "started",
+            at: "2026-11-13T09:00:00Z",
+            cause: "start",
+            protection: {
+              layers: [{ layer: "sandbox", level: "floor", tier: "project" }],
+              charter_commit: "4f2a9c1",
+              charter_file: "purlis.toml",
+              charter_dirty: false,
+              answers_in_force: 0,
+            },
+          },
+          {
+            kind: "ended",
+            at: "2026-11-13T10:00:00Z",
+            state: "completed",
+            cause: "exited",
+            code: 0,
+          },
+        ],
+      },
+    },
+    drawn: /Ended · done/,
+  },
+  {
+    name: "a chat's Chat log with nothing logged on this machine",
+    view: { from: null, view: "chat-log", key: "3" },
+    answers: { chat_log: { known: true, rows: [] } },
+    drawn: /Nothing is logged for this chat on this machine/,
   },
   {
     name: "what one task changed, on its own branch (#1511)",

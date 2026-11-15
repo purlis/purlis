@@ -738,4 +738,114 @@ describe("ConnectStep", () => {
       expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
     });
   });
+
+  describe("who can sign in to the machine (#6271)", () => {
+    const PIN = '{"engine":"ABCD","hostKey":"ssh-ed25519 AAAA"}';
+    const trusted = (owned: boolean) =>
+      step({
+        state: "done",
+        next: null,
+        machine: tlsMachine({
+          route: "ssh://sam@build-box/var/run/docker.sock",
+          host: "build-box",
+          over: "ssh",
+          trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+          owned,
+          pin: PIN,
+        }),
+      });
+    const MINE = "Only me, and people I trust with my logins";
+    const saving = () => screen.getByRole("button", { name: "Save who can sign in to build-box" });
+
+    it("asks once every check passed, with not sure recommended and chosen", async () => {
+      core();
+      draw(trusted(false));
+      const asked = await screen.findByRole("radiogroup", {
+        name: "Who can sign in to build-box?",
+      });
+      expect(asked).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /Others might, or I.m not sure/ })).toBeChecked();
+      expect(screen.getByRole("radio", { name: MINE })).not.toBeChecked();
+      expect(screen.queryByText(/owned/i)).toBeNull();
+      expect(screen.getByText(/in Settings › Pools, on its row/)).toBeInTheDocument();
+    });
+
+    it("keeps the answer for the machine trusted, before the pool is made, once Save is pressed", async () => {
+      const calls = core();
+      const props = draw(trusted(false));
+      await userEvent.click(await screen.findByRole("radio", { name: MINE }));
+      expect(calls.some((call) => call.cmd === "pool_setup_choose_owned")).toBe(false);
+      await userEvent.click(saving());
+      await waitFor(() => expect(props.changed).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "pool_setup_choose_owned")?.args).toEqual({
+        owned: true,
+        pin: PIN,
+      });
+      expect(calls.some((call) => call.cmd === "set_remote_pool_owned")).toBe(false);
+    });
+
+    it("asks before taking back a made pool's mark, which forgets its logins", async () => {
+      const calls = core();
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      const one = trusted(true);
+      render(
+        <ConnectStep step={one} shown={{ ...shown(one), pool: "builds" }} plane="p" {...props} />,
+      );
+      await userEvent.click(
+        await screen.findByRole("radio", { name: /Others might, or I.m not sure/ }),
+      );
+      await userEvent.click(saving());
+      await screen.findByText(/forgets the logins you allowed on pool builds/);
+      expect(calls.some((call) => call.cmd === "set_remote_pool_owned")).toBe(false);
+      await userEvent.click(screen.getByRole("button", { name: "Forget its logins" }));
+      await waitFor(() => expect(props.changed).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "set_remote_pool_owned")?.args).toEqual({
+        name: "builds",
+        owned: false,
+        pin: PIN,
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_choose_owned")).toBe(false);
+    });
+
+    it("sends nothing while the keyboard moves through the answers", async () => {
+      const calls = core();
+      const props = draw(trusted(false));
+      const notSure = await screen.findByRole("radio", { name: /Others might, or I.m not sure/ });
+      notSure.focus();
+      await userEvent.keyboard("{ArrowDown}");
+      const mine = screen.getByRole("radio", { name: MINE });
+      await waitFor(() => expect(mine).toHaveFocus());
+      expect(mine).toBeChecked();
+      await userEvent.keyboard("{ArrowUp}");
+      await userEvent.keyboard("{ArrowDown}");
+      expect(mine).toBeEnabled();
+      expect(
+        calls.filter(
+          (call) => call.cmd === "pool_setup_choose_owned" || call.cmd === "set_remote_pool_owned",
+        ),
+      ).toEqual([]);
+      expect(props.changed).not.toHaveBeenCalled();
+    });
+
+    it("says a machine over TLS is pinned by its CA, not a key", async () => {
+      core();
+      draw(
+        step({
+          state: "done",
+          next: null,
+          machine: tlsMachine({ trusted_ca: "SHA256:ca", engine: "ABCD", owned: false, pin: "{}" }),
+        }),
+      );
+      await screen.findByRole("radiogroup", { name: "Who can sign in to lab?" });
+      expect(screen.getByText(/If lab's CA ever changes/)).toBeInTheDocument();
+      expect(screen.queryByText(/key ever changes/)).toBeNull();
+    });
+
+    it("is not asked before the machine is trusted", async () => {
+      core();
+      draw(step({}));
+      await screen.findByRole("textbox", { name: "Its address" });
+      expect(screen.queryByRole("radiogroup", { name: /Who can sign in/ })).toBeNull();
+    });
+  });
 });

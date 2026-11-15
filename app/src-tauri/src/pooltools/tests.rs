@@ -1296,3 +1296,79 @@ fn the_asker_of_a_run_is_told_where_the_person_answers_and_for_how_long() {
         "{said}"
     );
 }
+
+const HOST_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n";
+
+/// This machine's pools under a folder of their own: pool `builds` on another machine, reached
+/// over SSH and pinned, its one runner paired, and marked for its pin where `owned`.
+fn a_pool_on_another_machine(owned: bool) -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let path = purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "a".repeat(64));
+    let pin = serde_json::json!({ "hostKey": HOST_KEY, "engine": "ABCD" });
+    let mut pool = serde_json::json!({
+        "name": "builds", "kind": "remote-docker", "image": image,
+        "route": "ssh://me@build-box/var/run/docker.sock", "pin": pin,
+    });
+    if owned {
+        pool["owned"] = pin;
+    }
+    let text = serde_json::json!({
+        "version": 1,
+        "pools": [pool],
+        "runners": [{
+            "name": "builds", "pool": "docker", "container": "e".repeat(64), "image": image,
+            "user": "10001:10001", "home": "/home/purlis",
+            "device": "01JB0RUNNER0000000000000000", "key": "12".repeat(32), "paired": 1,
+        }],
+    });
+    std::fs::write(&path, text.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    config
+}
+
+/// **A tool's value for one run reaches a pool on another machine only once the person said only
+/// they sign in there** (#6271, ADR 0123 §5), by the one check a login's goes by: refused, saying
+/// how, until then, and once marked bound to the machine as pinned, whatever this machine's own
+/// Docker is.
+#[test]
+fn a_pool_on_another_machine_is_sent_a_tools_value_only_once_marked_and_bound_to_its_pin() {
+    let ask = kubectl_asked();
+    let gate_on = |config: &Path| {
+        let config = config.to_path_buf();
+        move |_: &Path, pool: &str| {
+            Bound::over_the_link_with_kinded(
+                Err("purlis finds no Docker engine on this machine".to_owned()),
+                &config,
+                pool,
+                Some("builds/builds"),
+            )
+        }
+    };
+    let unmarked = a_pool_on_another_machine(false);
+    let owned = gate_on(unmarked.path());
+    let gate = Gate {
+        owned: &owned,
+        ..a_gate(&ask)
+    };
+    let said = refused(&gate);
+    assert!(said.contains("Who can sign in to build-box?"), "{said}");
+
+    let marked = a_pool_on_another_machine(true);
+    let owned = gate_on(marked.path());
+    let gate = Gate {
+        owned: &owned,
+        ..a_gate(&ask)
+    };
+    let passed = checked(&gate).expect("a marked pool passes");
+    assert_eq!(passed.bound.runner, "01JB0RUNNER0000000000000000");
+    assert!(
+        passed.bound.engine.contains("build-box"),
+        "{:?}",
+        passed.bound
+    );
+    assert!(passed.bound.engine.contains("ABCD"), "{:?}", passed.bound);
+}

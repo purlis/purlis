@@ -101,6 +101,7 @@ fn run(word: &str, payload: &serde_json::Value, env: &[(&str, &str)], host: Host
             Ok(())
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", word])
@@ -191,6 +192,11 @@ fn a_refused_tool_call_tells_the_host_what_was_refused_and_by_which_rule() {
     assert_eq!(heard.call.as_deref(), Some("toolu_9"));
     assert_eq!(heard.decision, Decision::Deny);
     assert_eq!(heard.rule.as_deref(), Some("git-hook-skip"));
+    assert_eq!(
+        heard.arm.as_deref(),
+        Some("A8"),
+        "the gate's arm, for the block it is"
+    );
     match &heard {
         Heard::Live(call) => assert_eq!(
             call.args.as_deref(),
@@ -248,6 +254,7 @@ fn a_tool_call_the_host_is_too_slow_to_take_is_in_the_spool_when_the_hook_answer
     assert_eq!(heard.call.as_deref(), Some("toolu_8"));
     assert_eq!(heard.decision, Decision::Deny);
     assert_eq!(heard.rule.as_deref(), Some("git-hook-skip"));
+    assert_eq!(heard.arm.as_deref(), Some("A8"), "the spool keeps the arm");
 }
 
 #[test]
@@ -456,6 +463,7 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
             }
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", "pretooluse"])

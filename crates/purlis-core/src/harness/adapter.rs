@@ -83,6 +83,24 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **Whether this harness reports each call its own check blocks** (R-094, R-097, R-100;
+    /// ADR 0124's harness matrix): a block of its check reaches purlis as its own line, as
+    /// Claude Code's `PermissionDenied` hook does. `false` by default, since silence never reads
+    /// as yes: a chat on a harness that gives no denial signal says Can't tell of them in its
+    /// Chat log ([`crate::eventlog::chatlog::Summary`]), rather than showing none.
+    fn reports_its_checks_blocks(&self) -> bool {
+        false
+    }
+
+    /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-095,
+    /// R-099, Q152): read from what purlis armed, as Claude Code's mode is from its armed hook
+    /// ([`Self::attendance_mode`]). `false` by default: Codex reports bypass for every chat,
+    /// which is no mode purlis set, and opencode reports none, so their chats' mode is Can't
+    /// tell, and attendance goes by how purlis started them.
+    fn reports_a_mode_purlis_can_check(&self) -> bool {
+        false
+    }
+
     /// **What this harness's hook payload says of its permission mode** (#3787), in purlis's
     /// words ([`crate::dispatchmode::Reported`]), from the payload's `permission_mode`. `None`
     /// where it says nothing purlis reads: the default, for a harness whose word for its mode
@@ -91,6 +109,18 @@ pub trait HarnessAdapter: Sync {
         &self,
         permission_mode: Option<&str>,
     ) -> Option<crate::dispatchmode::Reported> {
+        let _ = permission_mode;
+        None
+    }
+
+    /// **The permission mode this harness's hook payload names, as attendance reads it**
+    /// (T1-17, [`crate::attendance::Fact`]), from the payload's `permission_mode`. `None` by
+    /// default: a harness whose word is not read is attended or not only by how purlis started
+    /// it, and never by Claude Code's strings. Codex's constant bypass report is so (Q152).
+    fn attendance_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::attendance::ClaudeCodeMode> {
         let _ = permission_mode;
         None
     }

@@ -8,13 +8,13 @@ import { Notice } from "./Notice";
 
 /**
  * **The one-time offer of the sandbox to a project made before it existed** (ADR 0067 §1,
- * ruling V21 1). A project charter makes now runs every chat sandboxed; one made earlier keeps
- * running as it did, and the first time it is opened after the upgrade this asks once whether
- * to turn it on. Nothing flips on by itself.
+ * ruling V21 1). Such a project keeps running as it did, and the first time it is opened after
+ * the upgrade this asks once whether to turn it on. Nothing flips on by itself.
  *
  * **A notice, never a dialog.** It sits in the project view like "Session saved" does, asks
  * nothing until the person goes to it, and costs nothing of the first run's interrupt budget
- * (DS-9, W10). A new project never shows it: it has the sandbox on already.
+ * (DS-9, W10). A project purlis made never shows it (Q231): it starts at the floor, and its
+ * protection is chosen at setup or in Settings (Q115).
  *
  * **Answered once, either way.** "Turn the sandbox on" writes `[sandbox] mode = "on"` into the
  * project's `charter.toml`; "Keep it off" changes nothing in the project. Either answer is kept
@@ -74,10 +74,10 @@ export function SandboxOffer({ plane }: { plane: PlaneId }) {
       ]}
     >
       <p>
-        This project runs its chats at the floor: a chat reaches any host and writes any folder, but
-        never reads your vaults or purlis&apos;s keys, and never writes what a program runs later.
-        Turned on, the sandbox holds every new chat to model providers, your forges and package
-        registries, and to its own project. You can still start one chat without it from the
+        This project runs its chats in the basic sandbox: a chat reaches any host and writes any
+        folder, but never reads your vaults or purlis&apos;s keys, and never writes what a program
+        runs later. Turned on, the sandbox holds every new chat to model providers, your forges and
+        package registries, and to its own project. You can still start one chat without it from the
         new-chat picker.
       </p>
       {never.length > 0 && (

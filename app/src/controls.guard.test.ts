@@ -438,6 +438,8 @@ export const PANE_LINE_CHIPS = [
   "tab-sandbox",
   "pane-state-mark",
   "pane-wrapping",
+  // Its blocks since the person last looked, "2 new blocked" (R-172, T1-30).
+  "pane-blocked",
   "pane-task-ends",
   "pane-crumbs",
   "pane-from",

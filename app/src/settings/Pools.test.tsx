@@ -88,6 +88,8 @@ let namedBy: PoolNamedBy[];
 let heldRunners: string[];
 /** What each removal was told to discard (#4860). */
 let discarded: unknown[];
+/** Every command the window sent, in order (#6271). */
+let calls: { cmd: string; args: unknown }[];
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -106,6 +108,7 @@ beforeEach(() => {
     theme: { path: "", found: false, document: null, trouble: null },
   };
   pools = [];
+  calls = [];
   clusters = [];
   clustersAdded = [];
   addRefused = undefined;
@@ -142,6 +145,7 @@ beforeEach(() => {
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
+      calls.push({ cmd, args });
       if (cmd === "runner_image_of_this_version") {
         if ("trouble" in releaseImage) throw releaseImage.trouble;
         return releaseImage;
@@ -175,6 +179,12 @@ beforeEach(() => {
         const row = a_cluster_pool((a.adding as { name: string }).name);
         clusters = [...clusters, row];
         return row;
+      }
+      if (cmd === "set_remote_pool_owned") {
+        pools = pools.map((one) =>
+          one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
+        );
+        return null;
       }
       if (cmd === "set_cluster_pool_owned") {
         clusters = clusters.map((one) =>
@@ -1356,6 +1366,127 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
+  });
+
+  const PIN = '{"engine":"ABCD","hostKey":"ssh-ed25519 AAAA"}';
+  const MINE = "Only me, and people I trust with my logins";
+  const onAnother = (owned: boolean): PoolRow => ({
+    ...a_pool("build-box"),
+    machine: "lab",
+    owned,
+    over: "ssh",
+    pin: PIN,
+  });
+  const poolsGroup = async () => {
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    return screen.findByRole("region", { name: "Pools" });
+  };
+  const marks = () => calls.filter((call) => call.cmd === "set_remote_pool_owned");
+
+  it("on another machine asks who can sign in there, not sure until the person says otherwise and saves (#6271)", async () => {
+    pools = [onAnother(false)];
+    const group = await poolsGroup();
+    await within(group).findByRole("radiogroup", { name: "Who can sign in to lab?" });
+    expect(
+      within(group).getByRole("radio", { name: /Others might, or I.m not sure/ }),
+    ).toBeChecked();
+    await userEvent.click(within(group).getByRole("radio", { name: MINE }));
+    expect(marks()).toEqual([]);
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Save who can sign in to lab" }),
+    );
+    await waitFor(() => expect(pools[0]?.owned).toBe(true));
+    expect(marks()[0]?.args).toEqual({ name: "build-box", owned: true, pin: PIN });
+    await waitFor(() => expect(within(group).getByRole("radio", { name: MINE })).toBeChecked());
+    expect(within(group).queryByRole("switch", { name: "This is my own" })).toBeNull();
+  });
+
+  it("on another machine sends nothing while the keyboard moves through the answers (#6271)", async () => {
+    pools = [onAnother(true)];
+    const group = await poolsGroup();
+    const mine = await within(group).findByRole("radio", { name: MINE });
+    mine.focus();
+    await userEvent.keyboard("{ArrowUp}");
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
+    expect(marks()).toEqual([]);
+    expect(pools[0]?.owned).toBe(true);
+  });
+
+  it("on another machine asks before taking back the mark, which forgets the pool's logins (#6271)", async () => {
+    pools = [onAnother(true)];
+    const group = await poolsGroup();
+    await userEvent.click(
+      await within(group).findByRole("radio", { name: /Others might, or I.m not sure/ }),
+    );
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Save who can sign in to lab" }),
+    );
+    const asked = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-forget-logins:build-box"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(asked).toHaveTextContent(/forgets the logins you allowed on pool build-box/);
+    expect(marks()).toEqual([]);
+    // Dismissed, nothing changes and the answer kept is shown again.
+    await userEvent.click(within(asked).getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() => expect(within(group).getByRole("radio", { name: MINE })).toBeChecked());
+    expect(marks()).toEqual([]);
+    await userEvent.click(
+      within(group).getByRole("radio", { name: /Others might, or I.m not sure/ }),
+    );
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Save who can sign in to lab" }),
+    );
+    const again = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-forget-logins:build-box"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    await userEvent.click(within(again).getByRole("button", { name: "Forget its logins" }));
+    await waitFor(() => expect(pools[0]?.owned).toBe(false));
+    expect(marks()[0]?.args).toEqual({ name: "build-box", owned: false, pin: PIN });
+  });
+
+  it("on another machine whose pin changed does not say only you sign in there (#6271)", async () => {
+    pools = [onAnother(true)];
+    link = {
+      state: "pin_changed",
+      change: {
+        pool: "build-box",
+        host: "lab",
+        what: "key",
+        pinned: "SHA256:old",
+        now: "SHA256:new",
+        title: "Pool build-box's machine changed",
+        said: "Pool build-box's machine shows another key than the one you trusted.",
+      },
+    };
+    const group = await poolsGroup();
+    await within(group).findByText(/shows another key than the one you trusted/);
+    expect(within(group).queryByRole("radio", { name: MINE })).toBeNull();
+    expect(within(group).queryByText(MINE)).toBeNull();
+  });
+
+  it("over TLS says its CA is what is pinned, not a key (#6271)", async () => {
+    pools = [{ ...onAnother(false), over: "tls" }];
+    const group = await poolsGroup();
+    await within(group).findByRole("radiogroup", { name: "Who can sign in to lab?" });
+    expect(within(group).getByText(/If lab's CA ever changes/)).toBeInTheDocument();
+    expect(within(group).queryByText(/key ever changes/)).toBeNull();
+  });
+
+  it("on this machine's own Docker asks nobody who can sign in (#6271)", async () => {
+    pools = [a_pool("here")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("here");
+    expect(within(group).queryByRole("radiogroup", { name: /Who can sign in/ })).toBeNull();
   });
 
   it("is off until the person says This is my own, which says who else can read it", async () => {

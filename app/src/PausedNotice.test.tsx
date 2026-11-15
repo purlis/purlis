@@ -12,7 +12,7 @@ import type { Shown } from "./bindings";
 /**
  * A chat paused at its budget, or as looping, is a Blocking ask on its own tab too (#6015, ADR
  * 0121 decision 20): what it was paused for, and the answers that settle it. Continue, It's fine
- * and Stop are the core's; Raise the budget opens Settings where the limit is and sends nothing.
+ * and Stop are the core's; Raise the budget opens Settings where the limit is and answers its ask.
  */
 
 afterEach(() => {
@@ -90,7 +90,7 @@ describe("a chat paused into an ask, on its tab", () => {
     expect(onWay).toHaveBeenCalledWith("Continue", budget);
   });
 
-  it("opens Settings at the dispatch limits on Raise the budget, and sends nothing", async () => {
+  it("opens Settings at the dispatch limits on Raise the budget, and answers its ask", async () => {
     const sent = core();
     const linked: SettingsLinkAsk[] = [];
     const heard = (event: Event) => linked.push((event as CustomEvent<SettingsLinkAsk>).detail);
@@ -106,7 +106,13 @@ describe("a chat paused into an ask, on its tab", () => {
           },
         ]),
       );
-      expect(sent().filter((one) => one.cmd === "answer_pause")).toEqual([]);
+      // Q261: the ask is answered, so the Chat log never leaves it Not answered; the chat stays
+      // paused until a look finds it within the new limit.
+      await vi.waitFor(() =>
+        expect(sent().filter((one) => one.cmd === "answer_pause")).toEqual([
+          { cmd: "answer_pause", args: { plane: PLANE, session: SESSION, option: "raise" } },
+        ]),
+      );
     } finally {
       window.removeEventListener(SETTINGS_LINK, heard);
     }

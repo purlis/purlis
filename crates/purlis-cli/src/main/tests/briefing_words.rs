@@ -111,6 +111,7 @@ fn briefings() -> Vec<(String, String)> {
                 payload: &payload,
                 env: &lookup,
                 now: chrono::Utc::now(),
+                attendance: purlis_core::dispatchunattended::Attendance::Attended,
             };
             (
                 format!("the briefing of {what}"),

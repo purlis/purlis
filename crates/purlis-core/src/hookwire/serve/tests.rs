@@ -30,6 +30,7 @@ fn hearing(serve: crate::hookwire::Serves) -> Hearing {
         tool: Box::new(|_| Ok(())),
         permission: Box::new(|_| None),
         serve,
+        reason: Box::new(|_| {}),
     }
 }
 

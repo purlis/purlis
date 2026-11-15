@@ -1398,3 +1398,15 @@ fn both_sources_are_on_unless_the_layout_turns_one_off_by_its_kind() {
         on
     );
 }
+
+/// **A vault ask's notification says Blocked, as the Inbox does** (R-170, Q259): the stop word
+/// is Blocked, and the notification mirrors `InboxAsks.tsx`'s words for the kind.
+#[test]
+fn a_vault_asks_notification_says_blocked_as_the_inbox_does() {
+    let a = plane("/a");
+    let vault = ask(4, "vault:4:qa", "qa", AskSource::Vault);
+    assert_eq!(
+        only_shown(&heard(&mut Rules::default(), &a, &[vault], Instant::now())).body,
+        "a: Blocked from a vault its persona isn't tagged for"
+    );
+}

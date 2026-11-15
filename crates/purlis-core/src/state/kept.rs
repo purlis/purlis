@@ -46,6 +46,8 @@ pub enum Move {
     OwnWorkLapsed { now: i64, waits: Waits },
     /// [`Board::blocked_while_waiting`].
     BlockedWhileWaiting,
+    /// [`Board::block_withdrawn`] (R-290).
+    BlockWithdrawn,
     /// [`Board::task_failed`].
     TaskFailed { failed: FailedTask },
     /// [`Board::failures_seen`].
@@ -62,6 +64,11 @@ pub enum Move {
     Answered,
     /// [`Board::answered_by`].
     AnsweredBy {
+        asker: crate::harness::hooked::Asker,
+    },
+    /// [`Board::hook_gave_up`] (R-204).
+    HookGaveUp {
+        speaker: Speaker,
         asker: crate::harness::hooked::Asker,
     },
     /// [`Board::tool_said_by`].
@@ -188,6 +195,7 @@ impl Board {
             Move::Rested => self.rested(number),
             Move::OwnWorkLapsed { now, waits } => self.own_work_lapsed(number, now, waits),
             Move::BlockedWhileWaiting => self.blocked_while_waiting(number),
+            Move::BlockWithdrawn => self.block_withdrawn(number),
             Move::TaskFailed { failed } => self.task_failed(number, failed),
             Move::FailuresSeen => self.failures_seen(number),
             Move::FailureCleared { id } => self.failure_cleared(number, &id),
@@ -196,6 +204,7 @@ impl Board {
             Move::Replied => self.replied(number),
             Move::Answered => self.answered(number),
             Move::AnsweredBy { asker } => self.answered_by(number, &asker),
+            Move::HookGaveUp { speaker, asker } => self.hook_gave_up(number, &speaker, &asker),
             Move::ToolSaidBy { speaker, said } => self.tool_said_by(number, &speaker, &said),
             Move::ChildToolSaidBy {
                 agent,

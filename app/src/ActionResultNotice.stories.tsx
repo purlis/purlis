@@ -12,6 +12,7 @@ import { expect, waitFor } from "storybook/test";
 import { ActionResultNotice } from "./ActionResultNotice";
 import { Notice } from "./Notice";
 import { workspaceMade } from "./actionResult";
+import { expectFocusInSight } from "./stories.testkit";
 
 const LINES = [
   "Workspace 'git-ci-cd' ready (LIVE — charter + manifest + memory committed + shared + auto-saved) → workspaces/git-ci-cd/",
@@ -178,5 +179,55 @@ export const ASecondaryWayOnTheCard: Story = {
       await expect(apart(rest, ground)).toBeGreaterThanOrEqual(SEEN);
       await expect(apart(pointed, ground)).toBeGreaterThan(apart(rest, ground));
     }
+  },
+};
+
+/** A chat refused on its profile's pin, whose words name Update the pin in Settings. */
+function NamesTheControl() {
+  const [followed, setFollowed] = useState("Nothing followed");
+  return (
+    <div
+      className="window-work"
+      style={{ display: "grid", gap: "var(--space-3)", inlineSize: 760 }}
+    >
+      <ActionResultNotice
+        cause="result:chat.start"
+        project="/home/dev/plane"
+        said={{
+          from: "chat.start",
+          refused: true,
+          title: "The chat was not started",
+          words:
+            "This chat resumes a conversation of the profile 'work', which is pinned to Claude Code 2.1.300, and Claude Code 3.0.0 is installed. To resume it on 3.0.0, press Update the pin in Settings › You › Profiles.",
+        }}
+        onClose={() => undefined}
+        onSettings={(link) =>
+          setFollowed(
+            `${link.setting ?? link.group}: ${link.control?.words} of ${link.control?.about}`,
+          )
+        }
+      />
+      <p style={{ margin: 0 }} data-testid="followed">
+        {followed}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **R-357**: a result whose words name a control in Settings carries Go to it, which follows the
+ * link to that setting's row with the keyboard asked onto the control of the profile it names.
+ */
+export const GoesToTheControlItNames: Story = {
+  render: () => <NamesTheControl />,
+  play: async ({ canvas, userEvent }) => {
+    const goTo = canvas.getByRole("button", { name: "Go to Update the pin" });
+    for (let tabs = 0; tabs < 6 && document.activeElement !== goTo; tabs++) await userEvent.tab();
+    await expect(goTo).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByTestId("followed")).toHaveTextContent(
+      "you.profiles.list: Update the pin of work",
+    );
   },
 };

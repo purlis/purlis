@@ -17,8 +17,11 @@
 //! - **Never on a lookup.** A question or a status check has no fork to ask about.
 //! - **Never on work with no fork.** "fix the typo on line 4" has nothing to ask.
 //! - **Never on a slash command.** The operator has already picked the method.
-//! - **Never unattended** (`permission_mode: bypassPermissions`). "Ask the operator" is advice
-//!   nobody can follow there, and following it would block the run.
+//! - **Never unattended**, as the chat's attendance fact says (R-112, T1-21,
+//!   [`crate::attendance::Fact`]), never as the payload's `permission_mode` does: the payload is
+//!   the harness's, relayed beside the chat's own commands, and no mode in it raises a chat's
+//!   attendance. "Ask the operator" is advice nobody can follow there, and following it would
+//!   block the run.
 //! - **Only on a chat's first prompt, or a later one that asks for a code change** (#1988).
 //!   A later prompt counts only when it opens with the ask itself ([`asks_for_a_code_change`]):
 //!   a short reply, an answer to a question and a design answer ("agree at all, but …") are
@@ -51,14 +54,12 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::dispatchunattended::Attendance;
 use crate::hookstate::{self, State};
 use crate::toolhooks::Hook;
 
 /// Prompts the gate stays quiet for after it fires.
 pub const COOLDOWN: u32 = 3;
-
-/// The permission mode a harness reports for a run nobody is watching.
-const UNATTENDED: &str = "bypassPermissions";
 
 /// Fewer words than this make a short reply, which is never an ask for a code change.
 const SHORT_REPLY_WORDS: usize = 5;
@@ -206,17 +207,15 @@ pub fn message(prompt: &str) -> Option<String> {
     ))
 }
 
-/// The gate as `userpromptsubmit` runs it: [`message`], in a plane, attended, out of its
-/// cooldown, and on the session's first prompt or a later one that [asks for a code
-/// change](asks_for_a_code_change).
-pub fn nudge(hook: &Hook) -> Option<String> {
-    if !hook.in_plane {
+/// The gate as `userpromptsubmit` runs it: [`message`], in a plane, for a chat whose
+/// `attendance` is attended, out of its cooldown, and on the session's first prompt or a later
+/// one that [asks for a code change](asks_for_a_code_change). `attendance` is the chat's fact
+/// (R-112); the payload's `permission_mode` is not read.
+pub fn nudge(hook: &Hook, attendance: Attendance) -> Option<String> {
+    if !hook.in_plane || attendance == Attendance::Unattended {
         return None;
     }
     let payload = hook.payload;
-    if payload.get("permission_mode").and_then(|v| v.as_str()) == Some(UNATTENDED) {
-        return None;
-    }
     let session = payload.get("session_id").and_then(|v| v.as_str());
     let record = Record::of(hook, hookstate::session(session, hook.env));
     // A session purlis cannot name has no first prompt it can know of: each of its prompts is

@@ -67,10 +67,9 @@ describe("the Inbox", () => {
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
     // **Its scope and its ranks, as drawn** (qw359), in ranges and never exact pixels: the
-    // chips open on Chat, the chat in front that asked (ADR 0121, amended 2026-11-12, decisions 2
-    // and 4) and fit the view; what needs
-    // you is the largest and heaviest text of the row, and its kind the smallest; its kind's
-    // mark is drawn.
+    // chips open on Chat, the chat in front that asked (#6340, ADR 0121, amended 2026-11-12,
+    // decisions 2 and 4), offer no All projects, and fit the view; what needs you is the largest
+    // and heaviest text of the row, and its kind the smallest; its kind's mark is drawn.
     const seen = await browser.execute(
       (inbox: string, row: string) => {
         const view = document.querySelector<HTMLElement>(inbox);
@@ -91,6 +90,9 @@ describe("the Inbox", () => {
               ?.querySelector('[role="radio"][aria-checked="true"], input[type="radio"]:checked')
               ?.getAttribute("aria-label") ?? "",
           scopes: group?.querySelectorAll('[role="radio"], input[type="radio"]').length ?? 0,
+          labels: [...(group?.querySelectorAll('[role="radio"], input[type="radio"]') ?? [])].map(
+            (one) => one.getAttribute("aria-label") ?? "",
+          ),
           // How far the switch runs past the view's right edge (≤ 0 when inside).
           past:
             group && view
@@ -110,8 +112,10 @@ describe("the Inbox", () => {
       ASK,
     );
     expect(seen.picked).toMatch(/^Chat, \d+ waiting on you$/);
-    // Chat and Project at least; Workspace too where the project has more than one.
+    // Chat and Project at least, Workspace where the project has more than one; never another
+    // project's asks.
     expect(seen.scopes).toBeGreaterThanOrEqual(2);
+    expect(seen.labels.some((one) => one.startsWith("All projects"))).toBe(false);
     expect(seen.past).toBeLessThanOrEqual(1);
     expect(seen.primary).toBeGreaterThan(seen.meta);
     expect(seen.heavy).toBeGreaterThan(seen.light);

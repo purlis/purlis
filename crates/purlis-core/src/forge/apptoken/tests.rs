@@ -776,3 +776,306 @@ fn a_token_from_the_cluster_is_kept_for_its_chat_alone_till_its_chat_ends() {
     );
     let _ = taken_at_end(root, None);
 }
+
+#[test]
+fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // A clone the person made in their own terminal: purlis has no record of it.
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    let config = tempfile::tempdir().unwrap();
+    let gh = crate::sandbox::tools::Tool {
+        mint: Some(crate::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".to_owned(),
+        }),
+        ..crate::sandbox::tools::Tool::one(
+            "gh",
+            "forge",
+            "GH_TOKEN",
+            crate::sandbox::tools::Handed::Env,
+            "app-key",
+        )
+    };
+    let ws = root.join("workspaces/ws");
+    let chat = For {
+        root,
+        chat: 7,
+        folder: Some(&ws),
+        here: None,
+        writes: &[],
+        started: None,
+        on_a_runner: false,
+        config_root: Some(config.path()),
+        ends_seen: None,
+    };
+    let mint = || {
+        token_for(&chat, &gh, &|| {
+            Err("the key is read only to mint".to_owned())
+        })
+    };
+
+    // Refused, twice: one ask, carrying Trust this clone for that clone at its remote.
+    let said = mint().unwrap_err();
+    mint().unwrap_err();
+    let trust = crate::windowonly::Control::TrustClone {
+        folder: "workspaces/ws/api".to_owned(),
+        place: "github.com/acme/api".to_owned(),
+    };
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!((raised[0].session, &raised[0].control), (7, &trust));
+    assert!(
+        raised[0]
+            .control
+            .says()
+            .starts_with("Trust this clone so chats can use GitHub"),
+        "{}",
+        raised[0].control.says()
+    );
+    // The chat is told what was asked and where, never "from the window" alone.
+    assert!(said.contains("Trust this clone"), "{said}");
+    assert!(said.contains("Asks"), "{said}");
+    assert!(!said.contains("from the window"), "{said}");
+
+    // The person's Trust this clone records it and clears the ask.
+    crate::windowonly::trust_this_clone(
+        &crate::forge::route::HostScope::for_a_test(),
+        config.path(),
+        root,
+        "workspaces/ws/api",
+        "github.com/acme/api",
+    )
+    .unwrap();
+    assert_eq!(crate::windowonly::every(root), []);
+
+    // And the next mint succeeds: the clone names the chat's repo, and the token kept for it is
+    // handed over, with no ask raised again.
+    let recorded = crate::forge::gitcredential::read_push_remotes(config.path());
+    let remotes = remotes_of_workspace(root, Some(&ws), &[], None, &recorded).unwrap();
+    assert_eq!(
+        remotes
+            .iter()
+            .map(|remote| format!("{}/{}", remote.owner, remote.name))
+            .collect::<Vec<_>>(),
+        ["acme/api"]
+    );
+    let hour = super::after(chrono::Utc::now(), Duration::from_secs(3600));
+    assert!(super::keep_one(
+        super::Asked {
+            root: root.to_path_buf(),
+            chat: 7,
+            app: "Iv23liExample".to_owned(),
+            vault: gh.vault.clone(),
+            key: gh.values[0].key.clone(),
+            remotes,
+            clone: None,
+        },
+        super::ends_so_far(),
+        zeroize::Zeroizing::new("ghs_minted".to_owned()),
+        hour,
+        hour,
+    ));
+    assert_eq!(mint().unwrap().as_str(), "ghs_minted");
+    assert_eq!(crate::windowonly::every(root), []);
+    let _ = taken_at_end(root, None);
+}
+
+#[test]
+fn a_dismissed_notice_that_later_stops_a_chat_is_raised_again_as_an_ask() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    a_clone(root, "web", "https://github.com/acme/web.git");
+    let config = tempfile::tempdir().unwrap();
+    let gh = crate::sandbox::tools::Tool {
+        mint: Some(crate::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".to_owned(),
+        }),
+        ..crate::sandbox::tools::Tool::one(
+            "gh",
+            "forge",
+            "GH_TOKEN",
+            crate::sandbox::tools::Handed::Env,
+            "app-key",
+        )
+    };
+    let ws = root.join("workspaces/ws");
+    let mint = |chat: u32| {
+        token_for(
+            &For {
+                root,
+                chat,
+                folder: Some(&ws),
+                here: None,
+                writes: &[],
+                started: None,
+                on_a_runner: false,
+                config_root: Some(config.path()),
+                ends_seen: None,
+            },
+            &gh,
+            &|| Err("the key is read only to mint".to_owned()),
+        )
+    };
+    // The clone's Notice stands (the window lists it), and whatever the person did with it,
+    // nothing is asked while no chat is stopped by it.
+    assert_eq!(
+        crate::forge::gitcredential::vouch::unvouched_clones(root, config.path()).len(),
+        1
+    );
+    assert_eq!(crate::windowonly::every(root), []);
+
+    // A chat it stops raises one ask; once that chat ends, the next chat it stops raises one
+    // again.
+    mint(3).unwrap_err();
+    crate::windowonly::forget(root, 3);
+    assert_eq!(crate::windowonly::every(root), []);
+    mint(4).unwrap_err();
+    mint(4).unwrap_err();
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].session, 4);
+    assert_eq!(raised[0].control.label(), "Trust this clone");
+}
+
+/// The `gh` tool, minted by the organisation's GitHub App.
+fn minted_gh() -> crate::sandbox::tools::Tool {
+    crate::sandbox::tools::Tool {
+        mint: Some(crate::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".to_owned(),
+        }),
+        ..crate::sandbox::tools::Tool::one(
+            "gh",
+            "forge",
+            "GH_TOKEN",
+            crate::sandbox::tools::Handed::Env,
+            "app-key",
+        )
+    }
+}
+
+#[test]
+fn a_clone_made_after_the_chat_started_raises_no_trust_this_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    // The chat started with no clone; it cloned one mid-run, which the mint never counts.
+    let started = clones_now(root);
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    let gh = minted_gh();
+    let said = token_for(
+        &For {
+            root,
+            chat: 11,
+            folder: Some(&ws),
+            here: None,
+            writes: &[],
+            started: Some(&started),
+            on_a_runner: false,
+            config_root: Some(config.path()),
+            ends_seen: None,
+        },
+        &gh,
+        &|| Err("the key is read only to mint".to_owned()),
+    )
+    .unwrap_err();
+
+    assert_eq!(said, super::NO_RECORDED_CLONE);
+    assert_eq!(crate::windowonly::every(root), []);
+}
+
+#[test]
+fn a_clone_whose_git_folder_a_chat_writes_raises_no_trust_this_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    let gh = minted_gh();
+    // The chat may write the clone's .git, so the mint would never count it.
+    let writes = [clone.clone()];
+    let said = token_for(
+        &For {
+            root,
+            chat: 12,
+            folder: Some(&ws),
+            here: None,
+            writes: &writes,
+            started: None,
+            on_a_runner: false,
+            config_root: Some(config.path()),
+            ends_seen: None,
+        },
+        &gh,
+        &|| Err("the key is read only to mint".to_owned()),
+    )
+    .unwrap_err();
+
+    assert_eq!(said, super::NO_RECORDED_CLONE);
+    assert_eq!(crate::windowonly::every(root), []);
+}
+
+#[test]
+fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    let started = clones_now(root);
+    let gh = minted_gh();
+    let chat = For {
+        root,
+        chat: 13,
+        folder: Some(&ws),
+        here: None,
+        writes: &[],
+        started: Some(&started),
+        on_a_runner: false,
+        config_root: Some(config.path()),
+        ends_seen: None,
+    };
+    let mint = || {
+        token_for(&chat, &gh, &|| {
+            Err("the key is read only to mint".to_owned())
+        })
+    };
+
+    mint().unwrap_err();
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    crate::windowonly::trust_this_clone(
+        &crate::forge::route::HostScope::for_a_test(),
+        config.path(),
+        root,
+        "workspaces/ws/api",
+        "github.com/acme/api",
+    )
+    .unwrap();
+
+    // The clone the press trusted is one the mint counts: its repo is the chat's, and the
+    // token kept for it is handed over.
+    let recorded = crate::forge::gitcredential::read_push_remotes(config.path());
+    let remotes = remotes_of_workspace(root, Some(&ws), &[], Some(&started), &recorded).unwrap();
+    assert_eq!(remotes.len(), 1, "{remotes:?}");
+    let hour = super::after(chrono::Utc::now(), Duration::from_secs(3600));
+    assert!(super::keep_one(
+        super::Asked {
+            root: root.to_path_buf(),
+            chat: 13,
+            app: "Iv23liExample".to_owned(),
+            vault: gh.vault.clone(),
+            key: gh.values[0].key.clone(),
+            remotes,
+            clone: None,
+        },
+        super::ends_so_far(),
+        zeroize::Zeroizing::new("ghs_minted".to_owned()),
+        hour,
+        hour,
+    ));
+    assert_eq!(mint().unwrap().as_str(), "ghs_minted");
+    assert_eq!(crate::windowonly::every(root), []);
+    let _ = taken_at_end(root, None);
+}

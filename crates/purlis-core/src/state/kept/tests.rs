@@ -144,6 +144,7 @@ fn a_tool_call(chat: u32, decision: crate::hookwire::Decision, rule: Option<&str
         args: None,
         decision,
         rule: rule.map(str::to_owned),
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,

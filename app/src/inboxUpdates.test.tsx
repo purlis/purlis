@@ -14,6 +14,7 @@ import type {
   UpdateNoted,
 } from "./bindings";
 import { needSays } from "./chatState";
+import { refusedWord } from "./copy";
 import {
   KEPT_FOR_MS,
   KIND_SAID,
@@ -490,8 +491,8 @@ describe("a chat that reads Stuck? (#6014, ADR 0121 decision 19)", () => {
   it("is a Should-know update From your chats, drawn while it reads so", () => {
     const said = stuckUpdates(
       {
-        3: { stuck: "no new command or output for 15 minutes", leftWork: null },
-        4: { stuck: null, leftWork: true },
+        3: { stuck: "no new command or output for 15 minutes", leftWork: null, mode: null },
+        4: { stuck: null, leftWork: true, mode: null },
       },
       nameOf,
       NOW,
@@ -514,5 +515,12 @@ describe("a chat that reads Stuck? (#6014, ADR 0121 decision 19)", () => {
   it("says nothing of a chat that is not stuck, or of none noticed", () => {
     expect(stuckUpdates({}, nameOf, NOW)).toEqual([]);
     expect(stuckUpdates(undefined, nameOf, NOW)).toEqual([]);
+  });
+});
+
+describe("what a row says of its kind (R-170, Q259)", () => {
+  it("says Blocked for a stop, never Refused, so a commit a guard stopped reads Commit blocked", () => {
+    expect(KIND_SAID["commit-refused"]).toBe("Commit blocked");
+    for (const said of Object.values(KIND_SAID)) expect(refusedWord(said, "shown")).toEqual([]);
   });
 });

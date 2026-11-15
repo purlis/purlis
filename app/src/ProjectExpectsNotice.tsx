@@ -6,7 +6,7 @@ import { commands, type ExpectedItem, type PlaneId, type ProjectExpects } from "
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
-import { sandboxCommandReturned, useSandboxCommands } from "./sandboxAsked";
+import { useSandboxCommands } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
 import { useWindowFocused } from "./windowFocused";
 import { allowable, asDrawn, asNamed } from "./projectExpects";
@@ -51,7 +51,7 @@ export function useProjectExpects(
   return [expects, setExpects];
 }
 
-/** What the Allow says, here and on Settings › Sandbox. */
+/** What the Allow says, on the consent's row in Asks and on Settings › Sandbox. */
 export const ALLOW_EXPECTS = "Allow on this machine";
 
 /** Whether this page may answer for the person: the window's alone (`WINDOW_ONLY`). */
@@ -96,14 +96,14 @@ export function ExpectedLines({ items }: { items: readonly ExpectedItem[] }) {
  * read (when the project opens, and when its settings change on disk), before any chat needs
  * it. Nobody learns of it from a tool that failed.
  *
- * - **Allow on this machine** keeps each item listed that can be allowed, for every chat of this
- *   project on this machine (`allow_project_expects`): the window's own call, audited, never a
- *   chat's. Chats already running take it when they restart, and the Sandbox changed Notice
- *   lists them.
- * - **Not now** is remembered on this machine (`decline_project_expects`), and Settings ›
- *   Sandbox still offers the Allow. The question returns only when the project declares
- *   something new.
+ * - **While it can be answered, it is in Asks alone** (R-205): the sandbox consent is one ask,
+ *   its row offering Allow on this machine and Not now (`asking::consents`), and this Notice
+ *   draws nothing beside it.
+ * - **Nothing listed can be allowed here now**: it says why, and offers Not now, which is
+ *   remembered on this machine (`decline_project_expects`). The question returns only when the
+ *   project declares something new.
  * - **Locked by policy**: it says who locked it and offers nothing but "Got it".
+ * - **A page that is not the window** answers nothing: it says to allow it from the window.
  */
 export function ProjectExpectsNotice({
   plane,
@@ -132,17 +132,19 @@ export function ProjectExpectsNotice({
 
   if (expects === undefined || expects === null || !expects.asked || expects.items.length === 0)
     return null;
+  const locked = expects.locked;
+  const some = expects.items.some(allowable);
+  // The sandbox consent, while it can be answered, is in Asks alone (R-205): its row there is the
+  // one place it is asked and answered, so no Notice carries it too.
+  if (locked === null && some && canAnswer) return null;
 
   const items = expects.items;
-  const answer = (allow: boolean) => {
+  const decline = () => {
     if (busy) return;
     setBusy(true);
     setSaid(undefined);
-    void (
-      allow
-        ? commands.allowProjectExpects(plane, asDrawn(items))
-        : commands.declineProjectExpects(plane, asNamed(items))
-    )
+    void commands
+      .declineProjectExpects(plane, asNamed(items))
       .then((done) => {
         if (done.status !== "ok") {
           setSaid(done.error);
@@ -151,17 +153,12 @@ export function ProjectExpectsNotice({
           return;
         }
         setExpects(done.data.expects ?? null);
-        // The same consent is an ask in Asks (#6000): one answer settles both.
         asksMoved(plane);
-        // The chats open now keep the sandbox they started with: their Notice asks again.
-        if (allow) sandboxCommandReturned();
       })
       .catch((err: unknown) => setSaid(`purlis could not keep your answer: ${String(err)}`))
       .finally(() => setBusy(false));
   };
-  const locked = expects.locked;
-  const some = expects.items.some(allowable);
-  const notNow = { label: "Not now", onPress: () => answer(false), busy };
+  const notNow = { label: "Not now", onPress: decline, busy };
   return (
     <Notice
       cause="sandbox-expects"
@@ -169,14 +166,12 @@ export function ProjectExpectsNotice({
       fixes={
         locked !== null
           ? [
-              { label: "Got it", onPress: () => answer(false), busy },
+              { label: "Got it", onPress: decline, busy },
               { label: "Review the sandbox", onPress: onReview },
             ]
-          : canAnswer && some
-            ? [{ label: ALLOW_EXPECTS, onPress: () => answer(true), busy, allows: true }, notNow]
-            : canAnswer
-              ? [notNow, { label: "Review the sandbox", onPress: onReview }]
-              : [{ label: "Review the sandbox", onPress: onReview }]
+          : canAnswer
+            ? [notNow, { label: "Review the sandbox", onPress: onReview }]
+            : [{ label: "Review the sandbox", onPress: onReview }]
       }
     >
       <p>

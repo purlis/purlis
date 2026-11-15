@@ -270,6 +270,15 @@ pub struct Pin {
     pub engine: String,
 }
 
+impl Pin {
+    /// **The pin as `runners.json` and `pool-setup.json` keep it**: `{"ca", "engine"}`, the one
+    /// shape of a TLS pin wherever it is written (#6271).
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({ "ca": self.ca.spelled(), "engine": self.engine })
+    }
+}
+
 /// **A pool's engine over Docker's TLS API**: where it is, the files that reach it, and its pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Remote {

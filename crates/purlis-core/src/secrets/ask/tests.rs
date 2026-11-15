@@ -148,6 +148,9 @@ fn a_quick_fill_resumes_the_waiting_command_and_is_written_through_the_vaults_pr
             if let Some(one) = asks.open().first() {
                 break one.id;
             }
+            if waiting.is_finished() {
+                panic!("it ended without asking: {:?}", waiting.join());
+            }
             std::thread::yield_now();
         };
         let answered = asks
@@ -179,6 +182,9 @@ fn a_decline_answers_the_chat_declined_with_the_vault_and_key() {
         let id = loop {
             if let Some(one) = asks.open().first() {
                 break one.id;
+            }
+            if waiting.is_finished() {
+                panic!("it ended without asking: {:?}", waiting.join());
             }
             std::thread::yield_now();
         };
@@ -353,6 +359,15 @@ fn three_chats_missing_one_key_join_one_ask_and_one_fill_resumes_them_all() {
             if open.first().is_some_and(|one| one.waiting() == 3) {
                 break open;
             }
+            if let Some(ended) = waiting
+                .iter()
+                .position(std::thread::ScopedJoinHandle::is_finished)
+            {
+                panic!(
+                    "chat {} ended before all three held: {open:?}",
+                    [7, 8, 9][ended]
+                );
+            }
             std::thread::yield_now();
         };
         assert_eq!(one.len(), 1, "one ask: {one:?}");
@@ -517,15 +532,24 @@ fn a_harness_is_held_for_three_quarters_of_its_command_timeout() {
 // ----------------------------------------------------------------------------------------
 // every brokered read asks alike: a browser login, a profile's credential (#5074)
 
-/// The first ask open, once one is.
+/// The first ask open, once one is: failing at [`SPIN_AT_MOST`], where no run asked.
 fn first_open(asks: &Asks) -> Open {
+    let deadline = std::time::Instant::now() + SPIN_AT_MOST;
     loop {
         if let Some(one) = asks.open().into_iter().next() {
             break one;
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ask was opened in {SPIN_AT_MOST:?}"
+        );
         std::thread::yield_now();
     }
 }
+
+/// How long a test spins for what another thread does where it holds no handle to that thread,
+/// before it fails: never for ever in a sandboxed chat that refused the run (R-355).
+const SPIN_AT_MOST: Duration = Duration::from_secs(60);
 
 /// `key` of vault `team`, read as a brokered read reads it.
 fn read_team(root: &Path, key: &str) -> Result<String, crate::secrets::VaultError> {
@@ -685,6 +709,9 @@ fn a_starts_ask_is_recorded_under_no_chat() {
         // The ask is listed a moment before its raise is told: answered only once it is, so
         // the record's order is the one this test is about.
         while told.lock().unwrap().is_empty() {
+            if start.is_finished() {
+                panic!("it ended before its raise was told: {:?}", start.join());
+            }
             std::thread::yield_now();
         }
         asks.answer(&ctx(project.path()), id, Answer::Decline, window())
@@ -829,12 +856,22 @@ fn a_decline_is_recorded_before_an_ask_raised_again_the_moment_it_is_answered() 
         told.lock().unwrap().clear();
         let listed = AtomicBool::new(false);
         std::thread::scope(|scope| {
-            scope.spawn(|| asks.cannot_receive(need(9, &key)));
+            let raised = scope.spawn(|| asks.cannot_receive(need(9, &key)));
             let again = scope.spawn(|| {
+                let deadline = std::time::Instant::now() + SPIN_AT_MOST;
                 while !listed.load(Ordering::SeqCst) {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the ask was never listed"
+                    );
                     std::thread::yield_now();
                 }
                 while asks.open().iter().any(|open| open.key == key) {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the ask was never answered: {:?}",
+                        asks.open()
+                    );
                     std::thread::yield_now();
                 }
                 asks.cannot_receive(need(9, &key))
@@ -842,6 +879,9 @@ fn a_decline_is_recorded_before_an_ask_raised_again_the_moment_it_is_answered() 
             let id = loop {
                 if let Some(open) = asks.open().into_iter().find(|open| open.key == key) {
                     break open.id;
+                }
+                if raised.is_finished() && again.is_finished() {
+                    panic!("round {round}: neither raise was listed: {:?}", asks.open());
                 }
                 std::thread::yield_now();
             };
@@ -2122,6 +2162,9 @@ fn a_waiting_command_hears_a_picked_entry_as_filled_and_reads_the_entrys_value()
         let id = loop {
             if let Some(one) = asks.open().first() {
                 break one.id;
+            }
+            if waiting.is_finished() {
+                panic!("it ended without asking: {:?}", waiting.join());
             }
             std::thread::yield_now();
         };

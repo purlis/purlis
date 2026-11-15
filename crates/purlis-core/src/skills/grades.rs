@@ -2315,10 +2315,10 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     match ready.sandbox.as_ref().map(crate::sandbox::Applied::level) {
         Some(crate::sandbox::Level::Full) => Ok(crate::sandbox::Level::Full),
         Some(crate::sandbox::Level::Floor) => Err(
-            "This project's chats run at the floor, not the full sandbox, and a grade runs only \
-             in the full sandbox: turn the sandbox on for the project, or set your own level to \
-             on."
-            .to_owned(),
+            "This project's chats run in the basic sandbox, not the full sandbox, and a grade \
+             runs only in the full sandbox: turn the sandbox on for the project, or set your own \
+             level to Full sandbox."
+                .to_owned(),
         ),
         None => Err(
             "Its chats would start with no sandbox, and a grade runs only in the full sandbox."

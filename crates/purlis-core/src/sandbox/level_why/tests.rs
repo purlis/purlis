@@ -306,7 +306,9 @@ fn the_answer_is_the_level_decide_starts_the_chat_at() {
     use crate::sandbox::{Decided, Level, Person, decide_granted, grant};
     let machine = crate::sandbox::Machine {
         env: crate::secrets::Env::of(&[]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: crate::sandbox::Os::MacOs,
     };
     let made_ways = [
@@ -417,8 +419,8 @@ fn a_chat_at_its_next_level_says_only_why_and_one_behind_it_says_a_restart_appli
     assert_eq!(
         answer.said(Choice::Floor),
         format!(
-            "This chat started with the floor, and its next start has no sandbox. Restart chat \
-             applies it. {}",
+            "This chat started with the basic sandbox, and its next start has no sandbox. \
+             Restart chat applies it. {}",
             Why::Chosen.said()
         )
     );

@@ -10,10 +10,11 @@ import type { ProjectExpects, SandboxState } from "./bindings";
 import { sandboxCommandReturned } from "./sandboxAsked";
 
 /**
- * The up-front question about what a project declares it expects (ADR 0093, ruling 2; qw354):
- * asked once where the declaration is read, each item with its own words, answered by the
- * window alone. One test for each state: declared and not allowed, allowed, declined, locked by
- * policy, and a declaration that changed.
+ * What a project declares it expects and this machine has not allowed (ADR 0093, ruling 2;
+ * qw354), as its Notice says it. While it can be answered in the window, the consent is in Asks
+ * alone (R-205), so the Notice draws nothing; it stands only where nothing can be allowed: policy
+ * locks it, nothing listed can be allowed here now, or the page is not the window. What an
+ * answer is sent is `projectExpects.test.ts`'s.
  */
 
 afterEach(() => {
@@ -54,6 +55,16 @@ const HELPER = {
 
 const expecting = (expects: ProjectExpects): SandboxState => ({ ...QUIET, expects });
 const ASKED = expecting({ asked: true, locked: null, items: [DOCKER, HELPER] });
+const POLICY =
+  "Policy forbids allowing a chat a local socket or a system service. Locked by policy, set by IT in /etc/purlis/policy.json.";
+const NOTHING_HERE =
+  "That is not a local socket on this machine now, so there is nothing to allow.";
+/** What waits where nothing listed can be allowed here now. */
+const UNALLOWABLE = expecting({
+  asked: true,
+  locked: null,
+  items: [{ ...DOCKER, refused: NOTHING_HERE }],
+});
 
 function core(state: SandboxState, after: SandboxState = QUIET) {
   const asked: { cmd: string; args: unknown }[] = [];
@@ -78,68 +89,48 @@ function core(state: SandboxState, after: SandboxState = QUIET) {
 const drawn = (canAnswer = true) =>
   render(<ProjectExpectsNotice plane={PLANE} onReview={vi.fn()} canAnswer={canAnswer} />);
 
-describe("what a project expects, asked up front", () => {
-  it("declared and not allowed: one Notice, a line for each item with what allowing it means", async () => {
-    core(ASKED);
+describe("what a project expects, said where it can't be answered in Asks", () => {
+  it("can be answered in the window: draws nothing, since its row in Asks asks it (R-205)", async () => {
+    const sent = core(ASKED);
+    drawn();
+
+    await waitFor(() => expect(sent("sandbox_state")).toHaveLength(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.queryByRole("status", { name: LABEL })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+  });
+
+  it("locked by policy: says who locked it and offers no Allow", async () => {
+    const sent = core(expecting({ asked: true, locked: POLICY, items: [DOCKER] }));
+    drawn();
+
+    expect(await screen.findByText(/set by IT/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Not now" })).toBeNull();
+    // Read once: Got it records it, and allows nothing.
+    await userEvent.click(screen.getByRole("button", { name: "Got it" }));
+    await waitFor(() => expect(sent("decline_project_expects")).toHaveLength(1));
+    expect(sent("allow_project_expects")).toEqual([]);
+  });
+
+  it("an item that cannot be allowed here says why, and with none allowable there is no Allow", async () => {
+    core(UNALLOWABLE);
     drawn();
 
     expect(await screen.findByRole("status", { name: LABEL })).toBeTruthy();
-    expect(screen.getByText("/Users/op/.docker/run/docker.sock")).toBeTruthy();
-    expect(screen.getByText(/about the same as no sandbox/)).toBeTruthy();
-    expect(screen.getByText("com.example.helper")).toBeTruthy();
-    expect(screen.getByText(/purlis can't tell what it does/)).toBeTruthy();
+    expect(screen.getByText(/It cannot be allowed here now/)).toBeTruthy();
     expect(screen.getByText(/Not yet allowed on this machine/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Allow on this machine" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
     expect(screen.getByRole("button", { name: "Not now" })).toBeTruthy();
-    // Allow is the grants style and Not now the plain one (ADR 0097 §6).
-    expect(screen.getByRole("button", { name: "Allow on this machine" })).toHaveAttribute(
-      "data-variant",
-      "grants",
-    );
-    expect(screen.getByRole("button", { name: "Not now" })).not.toHaveAttribute(
-      "data-variant",
-      "grants",
-    );
-  });
-
-  it("allowed: sends what was shown through the window's own call, and the Notice goes", async () => {
-    const sent = core(ASKED);
-    drawn();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Allow on this machine" }));
-
-    await waitFor(() =>
-      expect(sent("allow_project_expects")).toEqual([
-        {
-          plane: PLANE,
-          shown: [
-            {
-              target: "/Users/op/.docker/run/docker.sock",
-              named: "/Users/op/.docker/run/docker.sock",
-            },
-            { target: "com.example.helper", named: "com.example.helper" },
-          ],
-        },
-      ]),
-    );
-    await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
-    expect(sent("decline_project_expects")).toEqual([]);
-  });
-
-  // #1888: an Allow in Settings, in the same window, left this Notice asking until focus moved.
-  it("goes when an Allow elsewhere in the window returns", async () => {
-    const sent = core(ASKED);
-    drawn();
-    expect(await screen.findByRole("status", { name: LABEL })).toBeTruthy();
-
-    sent.becomes(QUIET);
-    act(() => sandboxCommandReturned());
-
-    await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
   });
 
   it("declined: Not now records the declaration as shown, allows nothing, and is not asked again", async () => {
-    const sent = core(ASKED, expecting({ asked: false, locked: null, items: [DOCKER, HELPER] }));
+    const sent = core(
+      UNALLOWABLE,
+      expecting({ asked: false, locked: null, items: [{ ...DOCKER, refused: NOTHING_HERE }] }),
+    );
     drawn();
 
     await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
@@ -153,7 +144,6 @@ describe("what a project expects, asked up front", () => {
               target: "/Users/op/.docker/run/docker.sock",
               named: "/Users/op/.docker/run/docker.sock",
             },
-            { target: "com.example.helper", named: "com.example.helper" },
           ],
         },
       ]),
@@ -168,55 +158,16 @@ describe("what a project expects, asked up front", () => {
     await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
   });
 
-  it("the declaration changed: a new item is asked about, with the ones still waiting", async () => {
-    const OTHER = { ...HELPER, target: "com.example.other", named: "com.example.other" };
-    core(expecting({ asked: true, locked: null, items: [DOCKER, OTHER] }));
+  // #1888: an answer in Settings, in the same window, left this Notice standing until focus moved.
+  it("goes when a sandbox command elsewhere in the window returns", async () => {
+    const sent = core(UNALLOWABLE);
     drawn();
-
     expect(await screen.findByRole("status", { name: LABEL })).toBeTruthy();
-    expect(screen.getByText("com.example.other")).toBeTruthy();
-    expect(screen.getByText("/Users/op/.docker/run/docker.sock")).toBeTruthy();
-  });
 
-  it("locked by policy: says who locked it and offers no Allow", async () => {
-    const sent = core(
-      expecting({
-        asked: true,
-        locked:
-          "Policy forbids allowing a chat a local socket or a system service. Locked by policy, set by IT in /etc/purlis/policy.json.",
-        items: [DOCKER],
-      }),
-    );
-    drawn();
+    sent.becomes(QUIET);
+    act(() => sandboxCommandReturned());
 
-    expect(await screen.findByText(/set by IT/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Not now" })).toBeNull();
-    // Read once: Got it records it, and allows nothing.
-    await userEvent.click(screen.getByRole("button", { name: "Got it" }));
-    await waitFor(() => expect(sent("decline_project_expects")).toHaveLength(1));
-    expect(sent("allow_project_expects")).toEqual([]);
-  });
-
-  it("an item that cannot be allowed here says why, and with none allowable there is no Allow", async () => {
-    core(
-      expecting({
-        asked: true,
-        locked: null,
-        items: [
-          {
-            ...DOCKER,
-            refused:
-              "That is not a local socket on this machine now, so there is nothing to allow.",
-          },
-        ],
-      }),
-    );
-    drawn();
-
-    expect(await screen.findByText(/It cannot be allowed here now/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Not now" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
   });
 
   it("draws a declared name as data: apart from the sentence, with nothing hidden in it", async () => {
@@ -226,7 +177,7 @@ describe("what a project expects, asked up front", () => {
     core(
       expecting({
         asked: true,
-        locked: null,
+        locked: POLICY,
         items: [
           { ...DOCKER, target: turned, named: turned },
           { ...DOCKER, target: spoken, named: spoken },
@@ -241,32 +192,11 @@ describe("what a project expects, asked up front", () => {
     expect(names).toEqual(["/run/a⟦U+202E⟧b.sock", spoken]);
   });
 
-  it("Not now answers what was drawn: each item goes with the name it was shown under (#1927)", async () => {
-    // A path the project wrote that leads to another socket: the answer is to that socket,
-    // so the app asks again when the path comes to lead somewhere else.
-    const LINKED = { ...DOCKER, target: "/opt/tools/harmless.sock" };
-    const sent = core(expecting({ asked: true, locked: null, items: [LINKED] }));
-    drawn();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
-
-    await waitFor(() =>
-      expect(sent("decline_project_expects")).toEqual([
-        {
-          plane: PLANE,
-          shown: [
-            { target: "/opt/tools/harmless.sock", named: "/Users/op/.docker/run/docker.sock" },
-          ],
-        },
-      ]),
-    );
-  });
-
   it("names the socket an Allow would keep, beside a path of the project's that leads to it", async () => {
-    const sent = core(
+    core(
       expecting({
         asked: true,
-        locked: null,
+        locked: POLICY,
         items: [{ ...DOCKER, target: "/opt/tools/harmless.sock" }],
       }),
     );
@@ -276,57 +206,20 @@ describe("what a project expects, asked up front", () => {
     const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
     expect(names).toEqual(["/Users/op/.docker/run/docker.sock", "/opt/tools/harmless.sock"]);
     expect(notice.textContent).toContain("the project names it");
-    // The answer is sent by what the file wrote, with the name it was drawn under: the app
-    // finds the declaration by the first, and keeps it only while it still leads to the second.
-    await userEvent.click(screen.getByRole("button", { name: "Allow on this machine" }));
-    await waitFor(() =>
-      expect(sent("allow_project_expects")).toEqual([
-        {
-          plane: PLANE,
-          shown: [
-            { target: "/opt/tools/harmless.sock", named: "/Users/op/.docker/run/docker.sock" },
-          ],
-        },
-      ]),
-    );
   });
 
-  it("an item drawn as one that cannot be allowed is sent with no name, so an Allow never keeps it", async () => {
-    const GONE = {
-      ...DOCKER,
-      target: "/opt/project/run/dev.sock",
-      named: "/opt/project/run/dev.sock",
-      refused: "That is not a local socket on this machine now, so there is nothing to allow.",
-    };
-    const sent = core(expecting({ asked: true, locked: null, items: [GONE, HELPER] }));
-    drawn();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Allow on this machine" }));
-    await waitFor(() =>
-      expect(sent("allow_project_expects")).toEqual([
-        {
-          plane: PLANE,
-          shown: [
-            { target: "/opt/project/run/dev.sock", named: null },
-            { target: "com.example.helper", named: "com.example.helper" },
-          ],
-        },
-      ]),
-    );
-  });
-
-  it("a refused Allow says why and reads the list again, so what is drawn is what stands", async () => {
+  it("a refused answer says why and reads the list again, so what is drawn is what stands", async () => {
     const asked: string[] = [];
     mockIPC((cmd) => {
       asked.push(cmd);
-      if (cmd === "sandbox_state") return ASKED;
-      if (cmd === "allow_project_expects")
+      if (cmd === "sandbox_state") return UNALLOWABLE;
+      if (cmd === "decline_project_expects")
         throw "What this project expects changed on this machine since it was shown.";
       return null;
     });
     drawn();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Allow on this machine" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
     expect(await screen.findByText(/changed on this machine since it was shown/)).toBeTruthy();
     await waitFor(() =>
       expect(asked.filter((cmd) => cmd === "sandbox_state").length).toBeGreaterThan(1),

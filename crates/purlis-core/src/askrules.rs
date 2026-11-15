@@ -331,7 +331,16 @@ impl Store {
     }
 
     /// Keeps `rule`, its words held to their bounds. Answers it as kept.
+    ///
+    /// **A merge ask's is refused** (R-117, Q135): there are no grants for merges, so no answer
+    /// to one is ever remembered, and nothing is kept.
     pub fn make(&self, rule: Rule) -> io::Result<Rule> {
+        if rule.source == crate::mergehold::SOURCE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a merge is never remembered: each one waits on the person's own press",
+            ));
+        }
         let rule = Rule {
             id: cut(&rule.id),
             project: cut(&rule.project),

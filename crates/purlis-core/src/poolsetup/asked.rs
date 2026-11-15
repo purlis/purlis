@@ -419,6 +419,37 @@ fn tls_remote_of(
     super::connecting::trust_tls(docker, on, files, trust, config).map_err(said)
 }
 
+/// **Whether the person said on Connect that only they, and people they trust with their logins,
+/// can sign in to the machine of `remote`** (#6271, ADR 0123 §5): their answer kept beside the
+/// pin they trusted there, and only for that same route and pin.
+pub fn marked_on_connect(
+    config: &Path,
+    remote: &crate::runners::RemoteEngine,
+) -> Result<bool, Refused> {
+    let Some(chosen) = super::read_choices(config)?.connect else {
+        return Ok(false);
+    };
+    let Some(kept) = chosen.pin_json() else {
+        return Ok(false);
+    };
+    Ok(chosen.owned && kept == remote.pin_json() && same_machine(&chosen.route, remote))
+}
+
+/// Whether the route Connect kept, `route`, reaches the machine `remote` names.
+fn same_machine(route: &str, remote: &crate::runners::RemoteEngine) -> bool {
+    match remote {
+        crate::runners::RemoteEngine::Ssh(remote) => crate::sshroute::Route::parse(route)
+            .is_ok_and(|kept| {
+                kept.host() == remote.route.host()
+                    && kept.user() == remote.route.user()
+                    && kept.port() == remote.route.port()
+            }),
+        crate::runners::RemoteEngine::Tls(remote) => {
+            crate::tlsroute::Route::parse(route).is_ok_and(|kept| kept == remote.route)
+        }
+    }
+}
+
 /// **Makes the pool `asked` asks for**: the one way to it, from the button and from `purlis pool
 /// add`. A team's image is held to the contract first, so one that breaks it makes nothing. A
 /// pool on another machine is made there, through its own forward (#6266).
@@ -438,11 +469,17 @@ pub fn create(
         }
         None => None,
     };
+    // Marked as the person answered on Connect, for the pin they answered for (#6271).
+    let owned = match &remote {
+        Some(remote) => marked_on_connect(config, remote)?,
+        None => false,
+    };
     let pool = asked
         .pool()
         .map_err(Refused::Other)?
         .on_engine(remote)
-        .from_docker_context(context);
+        .from_docker_context(context)
+        .marked(owned);
     let through = crate::sshroute::pool::docker_of(docker, &pool)
         .map_err(|finding| Refused::Other(super::connect_said(&finding)))?;
     let docker = &through;

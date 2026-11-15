@@ -2496,6 +2496,11 @@ pub fn named_host(target: &str) -> Option<String> {
         .filter(|host| !host.starts_with('*'))
 }
 
+/// **A refusal as the block event it becomes** (R-222's core step, T1-10): one Sandbox block,
+/// aimed at the host, folder or service it was of.
+#[path = "sandboxblock_stop.rs"]
+pub mod stop;
+
 #[path = "sandboxblock_denial.rs"]
 pub mod denial;
 
@@ -2514,6 +2519,10 @@ mod tests;
 #[cfg(test)]
 #[path = "sandboxblock/tests/network.rs"]
 mod network_tests;
+
+#[cfg(test)]
+#[path = "sandboxblock/tests/stop.rs"]
+mod stop_tests;
 
 #[cfg(test)]
 #[path = "sandboxblock/tests/printed.rs"]

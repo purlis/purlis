@@ -189,6 +189,7 @@ function core() {
                 looked_up: null,
                 said: "a connection to an internet host this project does not allow",
                 chat: "fix the build",
+                session: null,
                 at: 1_790_000_000,
                 times: 3,
                 reached: false,

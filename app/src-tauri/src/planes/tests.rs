@@ -435,6 +435,255 @@ fn a_sandbox_block_is_told_to_the_window_before_it_is_kept_in_the_network_record
     assert_eq!(kept(), 1, "kept once the window was told");
 }
 
+/// The `stop.block` events the log at `logs` holds, each as its body reads back.
+fn blocks_written(logs: &Path) -> Vec<purlis_core::eventlog::stops::Block> {
+    purlis_core::eventlog::read(logs)
+        .expect("the log")
+        .into_iter()
+        .filter(|event| event.kind == purlis_core::eventlog::stops::BLOCK)
+        .map(|event| serde_json::from_value(event.body).expect("a block's body"))
+        .collect()
+}
+
+/// `held`'s hooks write their stops into a real recorder's log at `logs`, as the app's do.
+fn recording_stops(held: &Held, logs: &Path) {
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    std::fs::create_dir_all(logs).expect("a folder for the log");
+    held.hooks()
+        .record_into(crate::hooks::Events::here(Recorder::new(
+            Log::open(logs, "DEVICE").expect("a log"),
+            ArgsKey::open(logs).expect("a key"),
+        )));
+}
+
+/// What chat `session`'s Notice shows of `block`, which its answer is checked against.
+fn shown_of(block: &crate::taskblocks::HeldBlock) -> crate::taskblocks::BlockShown {
+    crate::taskblocks::BlockShown {
+        operation: block.operation.clone(),
+        kind: block.kind.clone(),
+        what: block.what,
+        target: block.target.clone(),
+    }
+}
+
+/// T1-10 (review finding 2), Q254: each sandbox refusal a chat's hook reports reaches the event
+/// log by its road, through the plane's own `when_blocked` handler, its one stop writer and a
+/// real recorder. A refusal no answer names (a denial class) and one that is its chat's own to
+/// retry (#3861) are one block each, at once. A write is an ask, and no block until the person
+/// keeps it blocked, or until the chat's next turn when nobody answers it (Q254). The echo of a
+/// held connection's ask is none. Each block is `unverified`, since the chat's own hook reported
+/// it (Q254), and names the tool of the call it refused, never a later one (Q254).
+///
+/// Its mutations, each red here: either `blocked_at_once` call in `Planes`'s `when_blocked`
+/// handler deleted; `Chats::write_stops_with` no longer telling `Blocks::when_left`;
+/// `keep_block` letting the ask go without `kept_blocked`; the report handler no longer telling
+/// `taskblocks::turn_began`; an echo written as a block.
+#[cfg(unix)]
+#[test]
+fn each_sandbox_refusal_a_hook_reports_is_one_block_in_the_event_log_by_its_road() {
+    use purlis_core::eventlog::stops::{Qualifier, Source};
+    use purlis_core::hookwire::SandboxBlocked;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let dir = tempfile::tempdir().expect("a directory");
+    let base = dir.path().canonicalize().expect("a real folder");
+    let root = a_plane(&base.join("plane"));
+    // A branch folder of a clone, which the chat works in (#3861).
+    let (clone, piece) = (root.join("repo"), root.join("piece"));
+    let record = clone.join(".git/worktrees/piece");
+    std::fs::create_dir_all(&record).expect("the branch folder's record");
+    std::fs::create_dir_all(&piece).expect("the branch folder");
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", record.display()),
+    )
+    .expect("its .git");
+    std::fs::write(record.join("gitdir"), format!("{}/.git\n", piece.display()))
+        .expect("its record's gitdir");
+    // Two folders of the project's own, outside the chat's, that a write is refused in.
+    for folder in ["records", "notes"] {
+        std::fs::create_dir_all(root.join(folder)).expect("a folder of the project");
+    }
+    let planes = planes();
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let logs = base.join("logs");
+    recording_stops(&held, &logs);
+    let mut chat = an_agent_that_will_not_go_quietly();
+    chat.cwd = Some(piece.clone());
+    let session = held.chats().start(&chat, A_PANE).expect("the chat starts");
+    let _ends = stand_in::Ends::group(held.chats().sessions().process_id(session).expect("a pid"));
+    let written = || blocks_written(&logs);
+    let hook_says = |operation: Operation, kind: Kind, target: Option<String>| {
+        held.hooks().heard_from_a_hook(
+            SandboxBlocked {
+                chat: session,
+                sandbox_blocked: Block {
+                    operation,
+                    kind,
+                    ours: false,
+                },
+                harness: None,
+                target,
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        );
+    };
+    // The chat's next call, of `tool`, as its pre-tool hook line says it.
+    let calls = |tool: &str, id: &str| {
+        held.chats().called(&purlis_core::hookwire::ToolCall {
+            chat: session,
+            tool_hook: "pretooluse".to_owned(),
+            tool: Some(tool.to_owned()),
+            call: Some(id.to_owned()),
+            args: None,
+            decision: purlis_core::hookwire::Decision::Allow,
+            rule: None,
+            arm: None,
+            hook_ms: 0,
+            agent: None,
+            at_ms: 0,
+            skill: None,
+        });
+    };
+    let at = |path: &str| Some(root.join(path).display().to_string());
+
+    // A denial class: never an ask, so one block at once.
+    calls("Read", "c1");
+    hook_says(Operation::Read, Kind::ProjectState, at(".charter/vaults"));
+    assert_eq!(written().len(), 1, "a denial class is one block at once");
+
+    // A write in its own clone's git, the chat's own to retry: one block at once.
+    calls("Bash", "c2");
+    hook_says(
+        Operation::Write,
+        Kind::ProjectFiles,
+        at("repo/.git/objects/pack/tmp"),
+    );
+    assert_eq!(written().len(), 2, "its own to retry is one block at once");
+
+    // A write: an ask, and no block until the person keeps it blocked.
+    calls("Edit", "c3");
+    hook_says(Operation::Write, Kind::ProjectFiles, at("records"));
+    assert_eq!(written().len(), 2, "an ask, and no block beside it");
+    let (_, asked) = held
+        .chats()
+        .blocks()
+        .every()
+        .into_iter()
+        .find(|(chat, _)| *chat == session)
+        .expect("the write is an ask");
+    calls("Grep", "c4");
+    crate::sandboxing::keep_block(held.chats(), session, &shown_of(&asked), None, &|_, _| {
+        Ok(())
+    })
+    .expect("kept blocked");
+    assert_eq!(written().len(), 3, "kept blocked, one block");
+
+    // A write nobody answers: no block until the chat's next turn (Q254).
+    calls("Write", "c5");
+    hook_says(Operation::Write, Kind::ProjectFiles, at("notes"));
+    assert_eq!(written().len(), 3, "an ask, and no block beside it");
+    a_prompt_to(&held, session);
+    assert!(
+        becomes(|| written().len() == 4),
+        "withdrawn at the next turn: {:?}",
+        written()
+    );
+    assert!(
+        !held
+            .chats()
+            .blocks()
+            .every()
+            .iter()
+            .any(|(chat, _)| *chat == session),
+        "and no ask is left"
+    );
+
+    // The echo of a held connection's ask: a line naming no host, of the refusal the chat's
+    // proxy holds by name, is never a second ask, and never a block.
+    held.chats().blocks().heard_waiting(
+        session,
+        crate::taskblocks::HeldBlock {
+            operation: "connect".to_owned(),
+            kind: "host".to_owned(),
+            what: crate::sandboxing::GrantWhat::Host,
+            target: "api.example.com".to_owned(),
+        },
+    );
+    hook_says(Operation::Connect, Kind::Host, None);
+    assert_eq!(written().len(), 4, "an echo is no block");
+    assert!(
+        !held
+            .chats()
+            .blocks()
+            .every()
+            .iter()
+            .any(|(chat, one)| *chat == session && one.target.is_empty()),
+        "nor an ask"
+    );
+
+    // Each from the sandbox, unverified, and of the call it refused.
+    let blocks = written();
+    assert!(
+        blocks.iter().all(
+            |one| one.source == Source::Sandbox && one.qualifier == Some(Qualifier::Unverified)
+        ),
+        "{blocks:?}"
+    );
+    assert_eq!(
+        blocks
+            .iter()
+            .map(|one| one.tool.as_str())
+            .collect::<Vec<_>>(),
+        ["Read", "Bash", "Edit", "Write"]
+    );
+}
+
+/// Q254 (review finding 3): every sandbox block takes one road, the stop writer that feeds the
+/// block loop, and a block the person's Keep blocked or its chat's end wrote is written and
+/// never counted: it is the person's answer or the chat's close, not a chat looping. Three held
+/// connections to one host kept blocked, and a fourth left as its chat ended, are four blocks,
+/// purlis's proxy's own plain word each, and pause nothing; counted, the third would (R-206).
+///
+/// Its mutation: the stop writer counting every block it writes (`pausing::stopped` called
+/// whatever `BlockWritten` says).
+#[test]
+fn a_block_the_persons_keep_blocked_or_its_chats_end_wrote_pauses_nothing() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let planes = planes();
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let logs = dir.path().join("logs");
+    recording_stops(&held, &logs);
+    let host = crate::taskblocks::HeldBlock {
+        operation: "connect".to_owned(),
+        kind: "host".to_owned(),
+        what: crate::sandboxing::GrantWhat::Host,
+        target: "api.example.com".to_owned(),
+    };
+    for _ in 0..3 {
+        held.chats().blocks().heard_waiting(7, host.clone());
+        crate::sandboxing::keep_block(held.chats(), 7, &shown_of(&host), None, &|_, _| Ok(()))
+            .expect("kept blocked");
+    }
+    held.chats().blocks().heard_waiting(7, host);
+    held.chats().blocks().ended(7);
+
+    let blocks = blocks_written(&logs);
+    assert_eq!(blocks.len(), 4, "{blocks:?}");
+    assert!(
+        blocks.iter().all(|one| one.qualifier.is_none()),
+        "purlis's proxy's own word, which the loop would count: {blocks:?}"
+    );
+    assert!(
+        held.pauses().now().is_empty(),
+        "the person's answers and the chat's end paused it"
+    );
+}
+
 /// SC-7: opening a plane collects the per-session files no chat has written for
 /// `retention::KEEP_FOR` — and a plane already open, whose chats are running, is not swept.
 #[test]
@@ -1781,6 +2030,7 @@ fn a_claude_code_sub_agent_and_a_codex_child_show_under_their_chat_and_stopping_
             args: None,
             decision: purlis_core::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: Some("thread-2".to_owned()),
             at_ms: 0,
@@ -6689,6 +6939,7 @@ fn a_call_by(chat: u32, agent: &str) -> purlis_core::hookwire::ToolCall {
         args: None,
         decision: purlis_core::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: Some(agent.to_owned()),
         at_ms: 0,
@@ -6697,11 +6948,13 @@ fn a_call_by(chat: u32, agent: &str) -> purlis_core::hookwire::ToolCall {
 }
 
 /// The `run.ended` events in the log in `dir`, as (run, parent run, state, cause).
+/// The `run.ended` of each sub-agent in the log at `dir`: run, parent, state and cause. A chat's own
+/// run's end, with no parent, is [`own_runs_ended`]'s.
 fn runs_ended(dir: &Path) -> Vec<(String, Option<String>, String, String)> {
     purlis_core::eventlog::read(dir)
         .expect("the log reads")
         .into_iter()
-        .filter(|event| event.kind == "run.ended")
+        .filter(|event| event.kind == "run.ended" && event.parent_run.is_some())
         .map(|event| {
             (
                 event.run.unwrap_or_default(),
@@ -6710,6 +6963,16 @@ fn runs_ended(dir: &Path) -> Vec<(String, Option<String>, String, String)> {
                 event.body["cause"].as_str().unwrap_or_default().to_owned(),
             )
         })
+        .collect()
+}
+
+/// The runs of chats (not sub-agents) whose `run.ended` is in the log at `dir`, with its body.
+fn own_runs_ended(dir: &Path) -> Vec<(String, serde_json::Value)> {
+    purlis_core::eventlog::read(dir)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind == "run.ended" && event.parent_run.is_none())
+        .map(|event| (event.run.unwrap_or_default(), event.body))
         .collect()
 }
 
@@ -6784,7 +7047,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
     let plane = Path::new("/plane");
     let (run, children) = a_chat_with_sub_agents(&events, plane, 4, &["agent-1", "agent-2"]);
 
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         4,
@@ -6810,7 +7073,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
 
     // A stop by the host is `stopped`, for the stop's own cause.
     let (run, children) = a_chat_with_sub_agents(&events, plane, 5, &["agent-3"]);
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         5,
@@ -6828,7 +7091,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
     );
 
     // Ended once: a second end of the same run writes nothing more.
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         5,
@@ -6836,6 +7099,8 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
         Cause::Exited(Exit::Code(0)),
     );
     assert_eq!(runs_ended(dir.path()).len(), 3);
+    // Each chat's own run ended once too, after its sub-agents (R-233).
+    assert_eq!(own_runs_ended(dir.path()).len(), 2);
 }
 
 #[test]
@@ -6844,9 +7109,9 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
     let dir = tempfile::tempdir().expect("a directory");
     let events = an_event_log(dir.path());
     let plane = Path::new("/plane");
-    a_chat_with_sub_agents(&events, plane, 4, &[]);
+    let (run, _) = a_chat_with_sub_agents(&events, plane, 4, &[]);
 
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         4,
@@ -6854,7 +7119,7 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
         Cause::Exited(Exit::Code(0)),
     );
     // And a chat the log never heard of is no error.
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         9,
@@ -6863,6 +7128,14 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
     );
 
     assert!(runs_ended(dir.path()).is_empty());
+    // The chat's own run still ends; the one the log never heard of writes nothing.
+    assert_eq!(
+        own_runs_ended(dir.path()),
+        [(
+            run,
+            serde_json::json!({"state": "completed", "cause": "exited", "code": 0})
+        )]
+    );
 }
 
 #[test]
@@ -6899,9 +7172,10 @@ fn a_chat_whose_program_ends_ends_its_sub_agents_runs_in_the_event_log() {
 }
 
 #[test]
-fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log() {
-    // ADR 0076 §6: a run replaced at once (ADR 0067 as amended 2026-10-16) is no end of
-    // its chat, and its sub-agents' runs still end with it, stopped as a close stops them.
+fn a_run_ended_to_start_its_chat_again_ends_superseded_with_its_sub_agents_in_the_event_log() {
+    // ADR 0076 §2 and §6, Q247: a run replaced at once (ADR 0067 as amended 2026-10-16) is no
+    // end of its chat. It has ended superseded, never "stopped as you closed it", and its
+    // sub-agents' runs end with it the same way.
     let dir = tempfile::tempdir().expect("a directory");
     let logs = dir.path().join("events");
     let events = an_event_log(&logs);
@@ -6923,9 +7197,16 @@ fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log
         runs_ended(&logs),
         [(
             children[0].clone(),
-            Some(run),
-            "stopped".to_owned(),
-            "closed".to_owned()
+            Some(run.clone()),
+            "completed".to_owned(),
+            "superseded".to_owned()
+        )]
+    );
+    assert_eq!(
+        own_runs_ended(&logs),
+        [(
+            run,
+            serde_json::json!({"state": "completed", "cause": "superseded"})
         )]
     );
     assert!(

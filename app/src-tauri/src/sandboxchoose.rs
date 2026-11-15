@@ -251,6 +251,8 @@ pub fn choose_sandbox_block_target(
 ) -> Result<ChatBlocked, String> {
     let held = planes.held(&plane)?;
     let told = chosen(&plane, held.chats(), session, &shown, &target)?;
+    // The chooser is a road to Allow: it starts the block count again (R-211, Q253).
+    crate::pausing::allowed(&held, session);
     planes.tell_block(told.clone());
     Ok(told)
 }
@@ -268,7 +270,14 @@ pub fn take_up_sandbox_block(
     shown: BlockShown,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    taken_up(held.chats().blocks(), session, &shown)
+    taken_up(held.chats().blocks(), session, &shown)?;
+    // R-229: its quiet line is an ask now, raised in the chat's Chat log.
+    crate::chatlog::raised(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+    );
+    Ok(())
 }
 
 /// [`take_up_sandbox_block`] on `blocks`.

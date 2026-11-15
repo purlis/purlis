@@ -70,6 +70,17 @@ export function scopeHolds<A>(scope: AsksScope, { inChat, inHere }: AsksSets<A>)
 }
 
 /**
+ * **Whether `scope` lists a Notice or an update under the chips** (decision 9): one about a chat
+ * wherever {@link scopeHolds} would list that chat's ask; one about no chat of this project (a
+ * persona's tools, the doctor, a stale clone, another project's chat) only under Project.
+ */
+export function scopeHoldsAbout<A>(scope: AsksScope, sets: AsksSets<A>) {
+  const holds = scopeHolds(scope, sets);
+  return (about: A | undefined): boolean =>
+    about === undefined ? scope === "project" : holds(about);
+}
+
+/**
  * **The chips' counts** (decision 5), from the project's asks, each what {@link scopeHolds}
  * lists, Workspace left out without `inHere`. So the counts nest: Chat ≤ Workspace ≤ Project.
  */

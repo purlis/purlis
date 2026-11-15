@@ -245,7 +245,9 @@ impl Report {
                 smart_close: event == Event::UserPromptSubmit
                     && field("prompt")
                         .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
-                unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
+                unattended: crate::attendance::says_prompts_off(
+                    field("permission_mode").as_deref(),
+                ),
                 // The mode as the chat's own harness names it (#3787): read by that harness's
                 // adapter alone, so a harness whose word is not read says nothing.
                 mode: chat_harness(env)
@@ -255,6 +257,16 @@ impl Report {
                         harness
                             .adapter()
                             .reported_mode(field("permission_mode").as_deref())
+                    }),
+                // The mode attendance hears (T1-17): only Claude Code's, by its measured
+                // strings, so no other harness is read by them.
+                claude_code_mode: chat_harness(env)
+                    .as_deref()
+                    .and_then(crate::harness::Harness::of_registry_or_kind)
+                    .and_then(|harness| {
+                        harness
+                            .adapter()
+                            .attendance_mode(field("permission_mode").as_deref())
                     }),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
@@ -1603,6 +1615,68 @@ pub enum Ask {
     /// [`Answer::Pointed`]. **The prompt goes no further than that router**: never written,
     /// never in a debug dump ([`PromptAsk`]). No ticket, for a record's reason.
     Prompt(Box<PromptAsk>),
+    /// **A merge the chat's hook held** (R-114, R-115, [`crate::mergehold`]): the chat is
+    /// refused it, and the app asks the person in Asks to merge the request, which only their
+    /// press merges, by the app's own forge call. **The app merges nothing for it.** It answers
+    /// [`Answer::No`] with the sentence the chat is told. No ticket, for [`Self::Removal`]'s
+    /// reason. **It carries no answer**: nothing a chat sends on this socket answers an ask
+    /// (V16a).
+    Merge(MergeAsk),
+    /// **Whether this chat is attended, by the fact the app holds for it** (R-109, T1-18,
+    /// [`crate::attendance::Fact`]): what the hook asks of a line A4 would refuse an unattended
+    /// chat. The app answers [`Answer::Attended`] with the fact as it would stand once it heard
+    /// what the line itself says ([`crate::attendance::Fact::hearing`]), which can only lower
+    /// it, so a line nobody proved can never raise it. **It moves nothing**: the fact is fed by
+    /// the reports the board takes alone. No ticket, for a record's reason.
+    Attendance(AttendanceAsk),
+}
+
+/// **A tool line's ask for its chat's attendance** ([`Ask::Attendance`], R-109): what the line's
+/// own payload says, read as a report of the same payload is ([`Report::read`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AttendanceAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The payload's `permission_mode` is the bypass ([`crate::attendance::says_prompts_off`]): read by
+    /// the fact on Claude Code alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unattended: bool,
+    /// The Claude Code mode the payload names, as the chat's harness's adapter reads it
+    /// ([`crate::harness::HarnessAdapter::attendance_mode`]); absent on every other harness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_code_mode: Option<crate::attendance::ClaudeCodeMode>,
+}
+
+impl AttendanceAsk {
+    /// The ask of chat `chat`'s tool line, whose payload says `permission_mode`, under the
+    /// harness `env` names.
+    pub fn read(
+        chat: u32,
+        permission_mode: Option<&str>,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Self {
+        Self {
+            chat,
+            unattended: crate::attendance::says_prompts_off(permission_mode),
+            claude_code_mode: chat_harness(env)
+                .as_deref()
+                .and_then(crate::harness::Harness::of_registry_or_kind)
+                .and_then(|harness| harness.adapter().attendance_mode(permission_mode)),
+        }
+    }
+}
+
+/// **A held merge, as the hook hands it to the app** ([`Ask::Merge`]): the request the command
+/// named, and the folder the command ran in, where the app finds the clone and the repo in the
+/// project. No title, no message, no head: what the person is shown is the app's and the forge's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub request: crate::mergehold::Request,
+    /// The hook's working folder, which the app checks is a clone of the project.
+    pub cwd: String,
 }
 
 /// **A chat's prompt, for its router** ([`Ask::Prompt`], SK-15c).
@@ -2383,6 +2457,13 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kept_for: Option<String>,
     },
+    /// **A held merge's ask waits for the person** ([`Ask::Merge`], Q239): the app read the
+    /// request from the forge and holds one ask for it, and this is what the chat is told. The
+    /// only answer on which the hook records the merge as a hold; any other, or none, is a block.
+    MergeHeld { said: String },
+    /// **Whether the asking chat is attended** ([`Ask::Attendance`], R-109): its fact, as it
+    /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
+    Attended { attended: bool },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2684,6 +2765,8 @@ enum Line {
     /// After every other kind: it requires `serve`, which none of them carries. The connection
     /// is parked as a slot of the chat's door from the app's acceptance on ([`serve`], #3316).
     Serve(serve::ServeAsk),
+    /// After every other kind: it requires `harness_reason`, which none of them carries.
+    Reason(HarnessReason),
 }
 
 impl Ask {
@@ -2713,6 +2796,8 @@ impl Ask {
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,
             Self::Prompt(asked) => asked.chat,
+            Self::Merge(asked) => asked.chat,
+            Self::Attendance(asked) => asked.chat,
         }
     }
 }
@@ -2735,6 +2820,7 @@ impl Line {
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
             Self::Serve(ask) => ask.chat,
+            Self::Reason(said) => said.chat,
         }
     }
 }
@@ -2845,6 +2931,11 @@ pub struct ToolCall {
     /// The guard rule that refused, for a `deny`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// The id of the gate's arm that refused, for a `deny` the gate gave
+    /// ([`crate::toolgate::Arm`]): what the host writes as the target of the deny's block. It
+    /// comes from the chat's side of the channel, so the host writes only an id the gate has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arm: Option<String>,
     /// How long charter's hook took, in milliseconds.
     #[serde(default)]
     pub hook_ms: u64,
@@ -3004,6 +3095,61 @@ pub struct Doing {
 
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
 pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
+
+/// **The reason a harness's own check gave for refusing a call** (R-340, Q185, T1-29), as it
+/// wrote it: what the window shows, never parsed, in the detail of the block that call is.
+///
+/// **Never recorded, anywhere**, as a [`Touching`] is not: a line of its own, sent once and never
+/// spooled ([`tell_reason`]), which the app holds in memory for the app's life
+/// ([`crate::eventlog::reasons::Reasons`]) and hands the window with the block's row. It is not
+/// a [`ToolCall`], whose line the event log keeps and the spool writes to disk: the reason can
+/// quote a command, so the log keeps only the block's source and its arguments' digest.
+///
+/// It is the chat's side's word, so the window shows it as inert text, as written.
+/// A `Debug` print names the chat and the call alone, never the reason (Q259).
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessReason {
+    /// The app's number for the chat whose call was refused, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// The harness's id for the call, which its tool line and its block's tool event carry:
+    /// what the app finds the block's reason by. None where the harness gave none, and then
+    /// no block is given it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call: Option<String>,
+    /// The reason, as the harness wrote it.
+    pub harness_reason: String,
+}
+
+/// Keys only: the reason is the chat's side's words, and is never printed.
+impl std::fmt::Debug for HarnessReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HarnessReason")
+            .field("chat", &self.chat)
+            .field("call", &self.call)
+            .finish_non_exhaustive()
+    }
+}
+
+impl HarnessReason {
+    /// **The reason in the payload of a harness's own refusal** (`PermissionDenied`'s
+    /// `reason`), for chat `chat`: its text as written and the call's id (`tool_use_id`).
+    /// None where the payload has no reason in words: nothing is guessed for a harness whose
+    /// hook says none.
+    pub fn of_denial(chat: u32, data: &serde_json::Value) -> Option<Self> {
+        let harness_reason = data.get("reason")?.as_str()?.to_owned();
+        Some(Self {
+            chat,
+            call: data
+                .get("tool_use_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            harness_reason,
+        })
+    }
+}
+
+/// What hears a [`HarnessReason`]. Nothing is answered: the hook does not wait for it.
+pub type ReasonHeard = Box<dyn Fn(HarnessReason) + Send + Sync + 'static>;
 
 /// What a chat's turn ended saying (#1981): the harness's own last message of the turn, as its
 /// `Stop` hook is handed it. What a task that ended its turns without a report is reported
@@ -3344,6 +3490,8 @@ pub struct Hearing {
     pub secret_exec: SecretExecuting,
     /// Every `serve`: its connection parked as a slot of the chat's door, or refused (#3316).
     pub serve: Serves,
+    /// Every [`HarnessReason`].
+    pub reason: ReasonHeard,
 }
 
 /// Sends one report to the socket at `path`. Answers whether it was written: what the app made
@@ -3416,6 +3564,20 @@ pub fn tell_doing(
     doing: &Doing,
 ) -> io::Result<()> {
     one_line_with_a_deadline(path, token, doing)
+}
+
+/// Tells the app at `path` the reason its chat's harness gave for refusing a call (R-340).
+/// Answers whether it was written.
+///
+/// [`tell`]'s shape and deadline, and **never spooled**, as a [`Touching`] is not: a spool is a
+/// file the reason, which can quote a command, would then be in (Q185).
+#[cfg(unix)]
+pub fn tell_reason(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    said: &HarnessReason,
+) -> io::Result<()> {
+    one_line_with_a_deadline(path, token, said)
 }
 
 /// Tells the app at `path` what its chat's turn put out (#1981). Answers whether it was written.
@@ -3758,11 +3920,15 @@ impl Asking {
     ///
     /// `token` is the asking chat's own, carried on every line this writes.
     pub fn on(path: &std::path::Path, token: Option<ChatToken>) -> io::Result<Self> {
-        let stream = std::os::unix::net::UnixStream::connect(path)?;
-        Ok(Self {
+        std::os::unix::net::UnixStream::connect(path).map(|stream| Self::over(stream, token))
+    }
+
+    /// [`Asking::on`], over a connection to the app already made.
+    pub fn over(stream: std::os::unix::net::UnixStream, token: Option<ChatToken>) -> Self {
+        Self {
             stream: std::io::BufReader::new(stream),
             token,
-        })
+        }
     }
 
     /// Writes `ask` and reads the app's answer, waiting at most `within` for each half, and
@@ -3976,6 +4142,7 @@ impl Listener {
                 crate::secrets::brokered::not_answered(writer);
             }),
             serve: serve::refusing(),
+            reason: Box::new(|_| {}),
         };
         hearing.serve = serve;
         self.hear(hearing)
@@ -4065,6 +4232,7 @@ impl Listener {
                 crate::secrets::brokered::not_answered(writer);
             }),
             serve: serve::refusing(),
+            reason: Box::new(|_| {}),
         })
     }
 
@@ -4639,6 +4807,7 @@ fn serve(
             Line::Blocked(blocked) => (hearing.blocked)(blocked),
             Line::Doing(doing) => (hearing.doing)(doing),
             Line::Output(output) => (hearing.output)(output),
+            Line::Reason(said) => (hearing.reason)(said),
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -4925,7 +5094,8 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
         | Line::Touching(_)
         | Line::Blocked(_)
         | Line::Doing(_)
-        | Line::Output(_) => return,
+        | Line::Output(_)
+        | Line::Reason(_) => return,
     };
     if let Ok(mut said) = said {
         said.push(b'\n');

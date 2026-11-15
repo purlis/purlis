@@ -601,6 +601,17 @@ pub fn allowed_levels(root: &Path) -> Bound {
     allowed_levels_under(root, &policy::Locks::of(root))
 }
 
+/// **The bound for a project not made yet**, as setup's Protection row shows it (Q241): this
+/// machine's policy alone, since there is no project policy to read yet. What the project brings
+/// with it (an adopted repo's `policy = "never"`) is held where the choice is kept
+/// ([`super::personal::chosen_at_setup`]).
+pub fn allowed_levels_for_a_new_project() -> Bound {
+    match policy::Locks::of_this_machine().opt_out_refused() {
+        Some(why) => Bound::full(why),
+        None => Bound::local(false),
+    }
+}
+
 /// [`allowed_levels`] under `locks`, the locks a start already read.
 pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
     if let Some(why) = locks.opt_out_refused() {

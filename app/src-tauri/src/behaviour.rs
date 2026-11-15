@@ -401,6 +401,7 @@ mod on_a_cluster_pool;
 mod pool_journey;
 mod pool_setup;
 mod pool_setup_try;
+mod remote_logins;
 mod runs_on_order;
 mod ssh_reconnect;
 
@@ -440,6 +441,13 @@ const REMOTE_DOCKER_ROUTE: &str = "REMOTE_DOCKER_TEST_ROUTE";
 /// (with simulated latency and loss), connected and trusted as Connect does it, every run of
 /// `docker` for it through the pool's own forward. Elsewhere it runs nothing.
 pub(crate) fn in_a_remote_docker_pool() -> Option<Target> {
+    a_remote_docker_pool().map(|(target, _, _, _)| target)
+}
+
+/// [`in_a_remote_docker_pool`], with the machine its pool is kept on, the pool's name and what
+/// starts its window again (#6271): what a test of the pool's own records reads.
+pub(crate) fn a_remote_docker_pool()
+-> Option<(Target, crate::runnerlinks::Machine, String, AWindowAgain)> {
     let (Ok(image), Ok(route)) = (
         std::env::var(DOCKER_POOL_IMAGE),
         std::env::var(REMOTE_DOCKER_ROUTE),
@@ -457,7 +465,7 @@ pub(crate) fn in_a_remote_docker_pool() -> Option<Target> {
         purlis_core::poolsetup::connecting::meet(&docker, &route).expect("the machine is met");
     let remote = purlis_core::poolsetup::connecting::trust(&docker, &route, &met.key.fingerprint())
         .expect("the machine is trusted");
-    Some(a_window_again_on_a_pool_on(&image, docker, Some(remote)).0)
+    Some(a_window_again_on_a_pool_on(&image, docker, Some(remote)))
 }
 
 /// A window on a pool of `image` it adds on a machine of its own through `docker`: the target,
@@ -3988,6 +3996,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
             args: None,
             decision: purlis_core::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,

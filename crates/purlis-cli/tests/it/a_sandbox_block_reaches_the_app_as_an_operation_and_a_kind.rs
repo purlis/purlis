@@ -84,6 +84,7 @@ fn hook_with(
         touching: Box::new(|_| {}),
         blocked: Box::new(move |blocked| blocks.lock().unwrap().send(blocked).unwrap()),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut command = support::purlis();
     command.env_clear();

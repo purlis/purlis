@@ -113,9 +113,13 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     // What the app told this chat at its start: whether it was given a sandbox, and the folder
     // it was started in (#1345). A harness the app did not start has neither.
     let chat_dir = std::env::var(purlis_core::sandboxblock::CHAT_DIR_ENV).ok();
+    // Whether a person is at the chat, by the fact the app holds for it (R-109): asked only of
+    // a line A4 would refuse unattended, and only in a chat the app started, which has a fact.
+    let asked_attendance = || attendance_of_this_chat(permission_mode.as_deref());
     let launched = Launched {
         sandboxed: purlis_core::sandbox::chat_is_sandboxed(),
         chat_dir: chat_dir.as_deref(),
+        attendance: crate::session::chat_number().map(|_| toolgate::Attending(&asked_attendance)),
     };
     let plane = found.as_ref().map(|found| Plane {
         root: &found.root,
@@ -134,6 +138,13 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         },
     };
     if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
+        return crate::hooks::Answered::of(Answer::Deny(verdict));
+    }
+    // The merge hold (R-114, R-115): in a chat the app started, a merge is refused to the chat
+    // in any mode, and its request is handed to the app, which asks the person. After the
+    // refusals, and ahead of A4, which leaves a merge the hold stands for to it, attended or not
+    // (R-145).
+    if let Some(verdict) = held_merge(&command, &cwd) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
@@ -156,6 +167,85 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// How long the guard waits for the app to say whether this chat is attended (R-109): the app
+/// answers from what it holds, so this is the time a slow app may take, inside the hook's
+/// [`BUDGET`].
+const ATTENDANCE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
+/// **This chat's attendance fact, as the app holds it** (R-109, T1-18,
+/// [`purlis_core::attendance::Fact`]), as it would stand once the app heard what this line's
+/// payload says (`permission_mode`). **Unattended unless the app says attended**: no app, an
+/// app older than the ask, a refusal and a wait past [`ATTENDANCE_IS_ANSWERED_WITHIN`] all read
+/// as unattended, so A4 never takes a chat for attended where its fact may say otherwise.
+pub(crate) fn attendance_of_this_chat(
+    permission_mode: Option<&str>,
+) -> purlis_core::dispatchunattended::Attendance {
+    use purlis_core::dispatchunattended::Attendance;
+    use purlis_core::hookwire::{Answer, Ask, AttendanceAsk};
+    let answer = crate::brokered::asked(
+        |chat| {
+            Ask::Attendance(AttendanceAsk::read(
+                chat,
+                permission_mode,
+                &purlis_core::envvar::var,
+            ))
+        },
+        ATTENDANCE_IS_ANSWERED_WITHIN,
+    );
+    match answer {
+        Ok(Ok(Answer::Attended { attended: true })) => Attendance::Attended,
+        _ => Attendance::Unattended,
+    }
+}
+
+/// How long the guard waits for the app to take a held merge: the app reads the request from
+/// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
+/// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
+/// [`BUDGET`].
+const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
+
+/// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
+/// run in `cwd` by a chat the app started, where it merges a request; or `None`.
+///
+/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
+/// no hook, and a harness they start themselves is theirs. **No answer lets the merge through**:
+/// where no app takes the hand-over, the chat is refused all the same. **It is a hold only where
+/// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
+/// is refused with a block's reason, which the event log records.
+fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
+    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
+    use purlis_core::mergehold::{self, AppSaid, Held};
+    crate::session::chat_number()?;
+    let held = mergehold::held(command)?;
+    let answer = match &held {
+        Held::Request(request) => crate::brokered::asked(
+            |chat| {
+                Ask::Merge(MergeAsk {
+                    chat,
+                    request: request.clone(),
+                    cwd: cwd.to_owned(),
+                })
+            },
+            A_MERGE_IS_TAKEN_WITHIN,
+        )
+        .ok()
+        .and_then(Result::ok),
+        Held::Unreadable | Held::Land => None,
+    };
+    let app = match &answer {
+        Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
+        Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
+        _ => AppSaid::Unheard,
+    };
+    Some(toolgate::Verdict {
+        // No arm of the gate: the hold is its own rule, after the gate's.
+        arm: None,
+        reason: mergehold::reason(&held, &app).to_owned(),
+        shape: None,
+        denial: mergehold::refusal(&held, &app),
+    })
 }
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims
@@ -189,6 +279,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
         && purlis_core::branchgit::any_branch_folder(root)
     {
         return Some(toolgate::Verdict {
+            arm: None,
             reason: purlis_core::piececlaim::REASON.to_owned(),
             denial: purlis_core::branchgit::unplaced_said(&sub),
             shape: Some(sub),
@@ -232,6 +323,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
                 })
                 .collect();
             return Some(toolgate::Verdict {
+                arm: None,
                 reason: purlis_core::piececlaim::REASON.to_owned(),
                 shape: Some(write.sub),
                 denial: why.join(" "),

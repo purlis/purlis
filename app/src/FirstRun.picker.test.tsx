@@ -75,7 +75,7 @@ describe("the first run's Open a repo…", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open a repo…" }));
 
     await vi.waitFor(() =>
-      expect(onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", expect.anything()),
+      expect(onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", expect.anything(), "floor"),
     );
   });
 

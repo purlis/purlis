@@ -17,7 +17,8 @@
  * - a dispatch refused while nobody was there (#1507): the away list ({@link awayUpdates});
  * - a Smart close that stopped without its record (SI-8f) ({@link smartCloseUpdates});
  * - an Ask about a chat's browser that ended with the browser (#2015) ({@link browserAskUpdates});
- * - a report a chat drafted, filed by the person (#5694) ({@link reportSentUpdates}).
+ * - a report a chat drafted, filed by the person (#5694) ({@link reportSentUpdates});
+ * - a chat's turn that ended, or its run that failed: its finish row (T1-31, `finishRows.ts`).
  *
  * **Kept a day on this machine, never in a project** (`note_inbox_updates`, I-8): the window
  * notes what it derived, by a key of its source's own, and the core keeps it in purlis's data
@@ -80,10 +81,10 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   doctor: "Doctor",
   resumed: "Came back",
   sandbox: "Sandbox",
-  "refused-away": "Refused while you were away",
+  "refused-away": "Blocked while you were away",
   "smart-close": "Smart close stopped",
   "report-undelivered": "Report not delivered",
-  "commit-refused": "Commit refused",
+  "commit-refused": "Commit blocked",
   "root-update-refused": "Asks you to update the project",
   "browser-ask-ended": "Browser ended",
   "question-closed": "Question closed",
@@ -91,6 +92,8 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   arrived: "Arrived",
   "report-sent": "Report sent",
   stuck: "Stuck?",
+  "turn-finished": "Turn finished",
+  "chat-failed": "Chat failed",
 };
 
 /**
@@ -123,6 +126,8 @@ const FROM: Record<UpdateKind, UpdateFrom> = {
   arrived: "mine",
   "report-sent": "mine",
   stuck: "mine",
+  "turn-finished": "mine",
+  "chat-failed": "mine",
 };
 
 /** The list an update of `kind` is listed in. */

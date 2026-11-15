@@ -1366,6 +1366,7 @@ fn a_permission_ask_the_host_hears_is_held_in_the_window_and_answered_there() {
         payload: serde_json::json!({"tool_name": "Bash",
             "tool_input": {"command": "npm test"}}),
         ran_for_ms: None,
+        speaker: Default::default(),
     })
     .expect("the window holds it");
     let held = heard.hooks.asks().pending(Instant::now());

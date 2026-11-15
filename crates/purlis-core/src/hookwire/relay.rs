@@ -53,8 +53,8 @@ use std::time::{Duration, Instant};
 
 use super::permission::{Left, PermissionAsked, Waiting};
 use super::{
-    Answer, Ask, BrowseAsk, Browsing, ChatTokens, CommitRefused, Doing, Hearing, Report,
-    SandboxBlocked, SessionSaved, StartedByHand, ToolCall, Touching, TurnOutput,
+    Answer, Ask, BrowseAsk, Browsing, ChatTokens, CommitRefused, Doing, HarnessReason, Hearing,
+    Report, SandboxBlocked, SessionSaved, StartedByHand, ToolCall, Touching, TurnOutput,
 };
 use crate::eventlog::Entry;
 use crate::harness::model::Choice;
@@ -92,6 +92,8 @@ pub enum Heard {
     Doing(Doing),
     /// A [`TurnOutput`]. Nothing is replied.
     Output(TurnOutput),
+    /// A [`HarnessReason`]. Nothing is replied.
+    Reason(HarnessReason),
     /// A [`PermissionAsked`]: replied [`Replied::Held`] or [`Replied::NotHeld`], and once
     /// held, [`Replied::Chosen`] or [`Replied::Ended`].
     Permission(PermissionAsked),
@@ -124,6 +126,7 @@ impl Heard {
             Heard::Blocked(blocked) => Some(blocked.chat),
             Heard::Doing(doing) => Some(doing.chat),
             Heard::Output(output) => Some(output.chat),
+            Heard::Reason(said) => Some(said.chat),
             Heard::Permission(asked) => Some(asked.chat),
             Heard::SecretExec(ask) => Some(ask.chat),
             Heard::Left { .. }
@@ -1051,6 +1054,10 @@ impl Relaying {
                 let relaying = to(self);
                 Box::new(move |output| relaying.tell(&Heard::Output(output)))
             },
+            reason: {
+                let relaying = to(self);
+                Box::new(move |said| relaying.tell(&Heard::Reason(said)))
+            },
             secret_exec: {
                 let relaying = to(self);
                 Box::new(move |ask, reader, writer| relaying.secret_exec(ask, reader, writer))
@@ -1522,6 +1529,7 @@ impl Heeding {
             Heard::Blocked(blocked) => (self.hearing.blocked)(blocked),
             Heard::Doing(doing) => (self.hearing.doing)(doing),
             Heard::Output(output) => (self.hearing.output)(output),
+            Heard::Reason(said) => (self.hearing.reason)(said),
             Heard::Permission(asked) => self.hold(id, asked, &reply),
             Heard::Left { of, closed } => {
                 let left = lock(&self.held).remove(&of);
@@ -1817,6 +1825,7 @@ pub(crate) fn to_a_window_answering(tokens: Arc<ChatTokens>, answer: super::Answ
         touching: Box::new(|_| {}),
         secret_exec: Box::new(|_, _, writer| brokered::not_answered(writer)),
         serve: super::serve::refusing(),
+        reason: Box::new(|_| {}),
     }));
     heeding.linked(1);
     let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();

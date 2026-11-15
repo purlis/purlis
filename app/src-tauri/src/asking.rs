@@ -96,6 +96,12 @@ pub struct Asking {
     /// again then.
     #[serde(default)]
     pub cooling_until: Option<u32>,
+    /// **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+    /// has ended, drawn on that chat's finish row with its control. Listed apart from
+    /// [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+    /// is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+    #[serde(default)]
+    pub on_finish_rows: Vec<Shown>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -241,6 +247,120 @@ pub struct RiskShown {
     pub confirm: String,
 }
 
+/// **What a merge row shows of its request** (T1-40; R-120, R-147, Q248), every one of them read
+/// from the forge with the app's own login, never from the chat
+/// (`purlis_core::mergehold::Facts`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct MergeShown {
+    /// The request's title, written out inertly: its author may be the chat, so the row draws it
+    /// as text the chat may have written (Q248).
+    pub title: String,
+    /// Who opened it, by the forge's login, written out inertly.
+    pub author: String,
+    /// The branch it merges into: the ask's key's.
+    pub base: String,
+    /// The checks at its head, as one of the five words: `PASSED`, `FAILED`, `RUNNING`, `NOT
+    /// RUN` or `UNKNOWN`.
+    pub checks: String,
+    /// When the forge was read for these, in seconds since 1970: "Checks PASSED as of 14:02".
+    pub read_at: u32,
+    /// Whether a ruleset protects the base, as purlis read it.
+    pub ruleset: RulesetShown,
+    /// What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+    /// forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+    pub look: LookShown,
+    /// Where it is approved: the login of the person who approved this head (Q277), said
+    /// inertly, as text after purlis's own words and never as a control.
+    pub approved_by: Option<String>,
+    /// Where it was not viewed: how many commits its head is ahead of the one the person
+    /// viewed, where purlis knows it (R-123): "2 commits since you looked".
+    pub since_viewed: Option<u32>,
+    /// Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+    /// flagged.
+    pub pushed_here: bool,
+    /// The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+    /// hands it back, and merges only while the ask shows the same.
+    pub digest: String,
+}
+
+/// **What the person has seen of a merge's head** (T1-41, R-122), as its row says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LookShown {
+    /// Viewed in purlis, at this head.
+    Viewed,
+    /// Approved at this head on the forge, by a person who is neither its author nor an app or
+    /// a bot.
+    Approved,
+    /// Neither.
+    NotViewed,
+}
+
+/// **Whether a ruleset protects a merge's base** (R-147), as its row shows it and its Merge hands
+/// back (R-150).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RulesetShown {
+    /// A ruleset protects it.
+    Protects,
+    /// None does.
+    None,
+    /// The forge did not say.
+    Unknown,
+}
+
+impl From<purlis_core::mergehold::Seen> for RulesetShown {
+    fn from(seen: purlis_core::mergehold::Seen) -> Self {
+        use purlis_core::mergehold::Seen;
+        match seen {
+            Seen::Protects => Self::Protects,
+            Seen::None => Self::None,
+            Seen::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<RulesetShown> for purlis_core::mergehold::Seen {
+    fn from(shown: RulesetShown) -> Self {
+        match shown {
+            RulesetShown::Protects => Self::Protects,
+            RulesetShown::None => Self::None,
+            RulesetShown::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl MergeShown {
+    /// What a merge row shows of `facts`, read for a request into `base`, with what the person
+    /// has seen of its head (`look`) and whether its chat pushed it.
+    pub fn of(
+        facts: &purlis_core::mergehold::Facts,
+        base: &str,
+        look: purlis_core::mergehold::Look,
+        pushed_here: bool,
+    ) -> Self {
+        use purlis_core::mergehold::Look;
+        let (look, approved_by, since_viewed) = match look {
+            Look::Viewed => (LookShown::Viewed, None, None),
+            Look::Approved { by } => (LookShown::Approved, Some(said_inertly(&by)), None),
+            Look::NotViewed { since } => (LookShown::NotViewed, None, since),
+        };
+        Self {
+            title: said_inertly(&facts.title),
+            author: said_inertly(&facts.author),
+            base: base.to_owned(),
+            checks: facts.checks.ci.word().to_owned(),
+            read_at: u32::try_from(facts.read_at).unwrap_or(u32::MAX),
+            ruleset: facts.ruleset.seen().into(),
+            look,
+            approved_by,
+            since_viewed,
+            pushed_here,
+            digest: facts.digest(),
+        }
+    }
+}
+
 /// Which risk an ask carries ([`RiskShown`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -252,6 +372,8 @@ pub enum RiskClass {
     Delete,
     /// A credential handed from a purlis vault to a chat's program, a page or a runner (#6178).
     VaultUse,
+    /// A merge a chat's hook held, which the app performs on the person's press (Q239).
+    Merge,
 }
 
 impl From<purlis_core::askrisk::Risk> for RiskShown {
@@ -264,6 +386,7 @@ impl From<purlis_core::askrisk::Risk> for RiskShown {
                 Class::OutsideProject => RiskClass::OutsideProject,
                 Class::Delete => RiskClass::Delete,
                 Class::VaultUse => RiskClass::VaultUse,
+                Class::Merge => RiskClass::Merge,
             },
             why: risk.why,
             confirm: risk.confirm,
@@ -622,6 +745,16 @@ pub enum AskSource {
     /// **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
     /// again and again, or its asks refused again and again. It's fine, continue, or Stop.
     Looping,
+    /// **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+    /// app's own forge call, on the person's press, and Don't merge merges nothing.
+    MergeHold,
+    /// **A refusal whose only way out is Trust this clone** (R-328, R-330): a GitHub App token
+    /// that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
+    /// as the clone's own Notice does, and the chat's next mint goes through.
+    TrustClone,
+    /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
+    /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
+    TrustClones,
     /// **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
     /// the install couldn't, and Pool setup goes on. Said once, about no chat.
     PoolSetup,
@@ -738,6 +871,27 @@ pub enum AnswerPath {
     /// `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
     /// the window's own, opening Settings where the limit is.
     Paused,
+    /// `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+    /// request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
+    /// what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
+    /// ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+    /// `reread_held_merge` reads them again before Merge asks once more (Q248).
+    /// `view_held_merge` shows its changes and marks its head viewed (R-302).
+    MergeHold {
+        repo: String,
+        number: u32,
+        head: String,
+        facts: MergeShown,
+    },
+    /// `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
+    /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
+    /// Notice's own command, which clears the ask.
+    TrustClone { folder: String, place: String },
+    /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
+    /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
+    TrustClones {
+        clones: Vec<crate::clonevouch::CloneToVouch>,
+    },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -848,6 +1002,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     }
 }
 
@@ -948,11 +1103,34 @@ pub fn tell(plane: &PlaneId, hooks: &HookAsks, telling: &Telling) {
 
 /// What hears a permission hook's ask on `plane`'s channel: held in `hooks` until it is
 /// answered, its hook goes away, or its deadline passes, and the window told each change.
-pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Permitting {
+/// `raised` is told of each ask held before the window is. The app hears give-ups too
+/// ([`permitting_told_or_given_up`]); this is the tests' way in.
+#[cfg(test)]
+pub fn permitting(
+    plane: PlaneId,
+    hooks: Arc<HookAsks>,
+    telling: Telling,
+    raised: purlis_core::hookwire::permission::Raising,
+) -> Permitting {
+    permitting_told_or_given_up(plane, hooks, telling, raised, Arc::new(|_| {}))
+}
+
+/// What hears a permission hook's ask: `raised` told of each ask held before the window is
+/// (R-229), and each ask `hooks` will not hold told to `gave_up` (R-204): its chat then waits
+/// in its terminal ([`Waiting::in_its_terminal`]).
+pub fn permitting_told_or_given_up(
+    plane: PlaneId,
+    hooks: Arc<HookAsks>,
+    telling: Telling,
+    raised: purlis_core::hookwire::permission::Raising,
+    gave_up: purlis_core::hookwire::permission::GivingUp,
+) -> Permitting {
     let told = Arc::clone(&hooks);
-    purlis_core::hookwire::permission::held_in(
+    purlis_core::hookwire::permission::held_told_or_given_up(
         hooks,
         Arc::new(move || tell(&plane, &told, &telling)),
+        raised,
+        gave_up,
     )
 }
 
@@ -1952,6 +2130,258 @@ pub fn workspace_removal(
         secret: None,
         run: None,
     }
+}
+
+/// The option id of a held merge's Merge.
+pub const MERGE: &str = "merge";
+/// The option id of a held merge's Don't merge.
+pub const DONT_MERGE: &str = "dont-merge";
+
+/// The key of chat `session`'s merge ask for `key`'s request at its head (Q242): a moved head
+/// is another ask, so nothing the window held for the row at the old head carries over.
+fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
+    format!(
+        "merge:{session}:{}#{}@{}",
+        key.repo.as_str(),
+        key.number,
+        key.head.as_str()
+    )
+}
+
+/// **The merge hold adapter** (R-114): a merge chat `waits.session`'s hook held, as one ask.
+/// It offers Merge, which the app performs itself, and Don't merge (R-303's word). Every word is
+/// purlis's; the repo, the number and the head are the key the app raised it at. Never offered
+/// a rule: a merge is never remembered (R-117).
+///
+/// **High-risk** (Q239): never grouped, passed by keyboard triage, and its Merge asks once more
+/// before it acts ([`purlis_core::askrisk::merge_of`]).
+pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
+    let key = &waits.key;
+    Shown {
+        session: waits.session,
+        ask: merge_key(waits.session, key),
+        says: said_inertly(&format!(
+            "Merge request {} of {} at {}? There is no undo.",
+            key.number,
+            key.repo.as_str(),
+            &key.head.as_str()[..12]
+        )),
+        options: vec![
+            Offered {
+                id: MERGE.to_owned(),
+                label: "Merge".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+            refuses(DONT_MERGE, "Don't merge"),
+        ],
+        source: AskSource::MergeHold,
+        chain: Vec::new(),
+        answer: AnswerPath::MergeHold {
+            repo: key.repo.as_str().to_owned(),
+            number: u32::try_from(key.number).unwrap_or(u32::MAX),
+            head: key.head.as_str().to_owned(),
+            facts: MergeShown::of(
+                &waits.facts,
+                key.base.as_str(),
+                waits.look.clone(),
+                waits.pushed_here,
+            ),
+        },
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: Some(
+            purlis_core::askrisk::merge_of(
+                key.repo.as_str(),
+                key.number,
+                key.head.as_str(),
+                key.base.as_str(),
+            )
+            .into(),
+        ),
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// The option id of a window-only refusal's one control: the press that clears it.
+pub const PRESS: &str = "press";
+
+/// The key of chat `session`'s ask for a window-only refusal whose way out is `control`.
+fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> String {
+    match control {
+        purlis_core::windowonly::Control::TrustClone { folder, place } => {
+            format!("trust-clone:{session}:{folder}|{place}")
+        }
+    }
+}
+
+/// **The window-only refusal adapter** (R-328): a refusal whose only way out is a press in the
+/// window, as one ask with that control on its row. Every word is purlis's; the folder and the
+/// address are the ones the refusal was raised at (R-330).
+pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
+    let control = &refused.control;
+    let answer = match control {
+        purlis_core::windowonly::Control::TrustClone { folder, place } => AnswerPath::TrustClone {
+            folder: folder.clone(),
+            place: place.clone(),
+        },
+    };
+    Shown {
+        session: refused.session,
+        ask: window_only_key(refused.session, control),
+        says: said_inertly(&control.says()),
+        options: vec![Offered {
+            id: PRESS.to_owned(),
+            label: control.label().to_owned(),
+            allows: true,
+            preselected: None,
+            scope: None,
+        }],
+        source: AskSource::TrustClone,
+        chain: Vec::new(),
+        answer,
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// The option id of Trust these clones' Trust all.
+pub const TRUST_ALL: &str = "trust-all";
+
+/// The option id of Trust these clones' Choose… (R-337): the window draws a box for each clone
+/// under the row, and trusts only those the person ticks, each with the clone Notice's own press.
+pub const CHOOSE: &str = "choose";
+
+/// The key of the project's Trust these clones: one per project, however many clones it lists.
+const TRUST_CLONES_KEY: &str = "trust-clones";
+
+/// **The adapter for the clones purlis has no record of** (R-336, R-337, Q184): the project's one
+/// ask for all of them, no chat's, with Trust all and Choose…, each clone with its remote and when
+/// it was made. Every word is purlis's; each folder and address is one the core read from the
+/// clone, said inertly.
+pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Shown {
+    let named: Vec<String> = ask
+        .clones
+        .iter()
+        .map(|clone| format!("{} ({})", clone.folder, clone.remote_said()))
+        .collect();
+    let them = if ask.clones.len() == 1 { "it" } else { "them" };
+    Shown {
+        session: 0,
+        ask: TRUST_CLONES_KEY.to_owned(),
+        says: said_inertly(&format!(
+            "{}: purlis did not clone {}. Trust {them} only if you made {them} yourself.",
+            purlis_core::windowonly::TRUST_THESE_CLONES,
+            named.join(", ")
+        )),
+        options: vec![
+            Offered {
+                id: TRUST_ALL.to_owned(),
+                label: "Trust all".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+            // It leads to a trust, so it waits for its row to settle as Trust all does.
+            Offered {
+                id: CHOOSE.to_owned(),
+                label: "Choose…".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+        ],
+        source: AskSource::TrustClones,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::TrustClones {
+            clones: ask
+                .clones
+                .iter()
+                .cloned()
+                .map(crate::clonevouch::CloneToVouch::of)
+                .collect(),
+        },
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// **Whether a chat waits on its window-only ask, as the board has it** (T1-42, R-329): in its
+/// turn, or stopped on a prompt it asked mid-turn, it does; once its turn has ended on the person
+/// it does not, and its ask sits on its finish row. A chat the board has no state for is taken to
+/// wait, so its ask is never kept from Asks for want of a hook.
+pub fn waits_on_its_ask(glance: &crate::host::Glance) -> bool {
+    glance.state != purlis_core::state::State::Waiting
+        || glance.in_its_turn()
+        || glance.waits_on_its_prompt()
+}
+
+/// **`asks` split into the Blocking and those for a finish row** (T1-42, R-329, Q181): a
+/// window-only ask (Trust this clone) whose chat does not wait on it, by `waits`, moves to the
+/// second list; every other ask stays, in its order.
+pub fn finish_rows_apart(
+    asks: Vec<Shown>,
+    waits: &dyn Fn(u32) -> bool,
+) -> (Vec<Shown>, Vec<Shown>) {
+    asks.into_iter()
+        .partition(|ask| ask.source != AskSource::TrustClone || waits(ask.session))
+}
+
+/// **The project's Trust these clones, less every clone a chat's own Trust this clone asks for**
+/// (Q257): one ask per clone. `None` where no clone is left to ask for.
+fn not_asked_by_a_chat(
+    unrecorded: Option<&purlis_core::windowonly::TrustTheseClones>,
+    window_only: &[purlis_core::windowonly::Refusal],
+) -> Option<purlis_core::windowonly::TrustTheseClones> {
+    let mut ask = unrecorded?.clone();
+    ask.clones.retain(|clone| {
+        !window_only.iter().any(|one| {
+            let purlis_core::windowonly::Control::TrustClone { folder, .. } = &one.control;
+            *folder == clone.folder
+        })
+    });
+    (!ask.clones.is_empty()).then_some(ask)
 }
 
 /// The key of chat `session`'s browser Ask (#2013): one per chat.
@@ -3933,12 +4363,22 @@ pub struct Waiting<'a> {
     /// The prompt a chat is stopped on in its terminal, asked mid-turn, where it is
     /// (`Glance::prompt`, #1691).
     pub at_its_prompt: &'a dyn Fn(u32) -> Option<purlis_core::harness::model::Prompt>,
+    /// Whether a chat waits in its terminal on a prompt its permission hook gave up on (R-204,
+    /// `purlis_core::state::Board::waits_in_its_terminal`): listed as its own ask, even beside
+    /// the asks its hook still holds, since none of those answers that prompt.
+    pub in_its_terminal: &'a dyn Fn(u32) -> bool,
     /// The dispatches held for the person, as their Notices are told them.
     pub dispatches: Vec<crate::dispatchgrants::DispatchPending>,
     /// The blocks each chat is held on now.
     pub blocks: Vec<(u32, crate::taskblocks::HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
+    /// The merges its chats' hooks held, each waiting on the person's press (R-114).
+    pub merges: Vec<purlis_core::mergehold::Waits>,
+    /// The refusals whose only way out is a press in the window, each an ask (R-328).
+    pub window_only: Vec<purlis_core::windowonly::Refusal>,
+    /// The project's one ask for its clones purlis has no record of, where it has one (R-336).
+    pub unrecorded: Option<purlis_core::windowonly::TrustTheseClones>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
@@ -4049,6 +4489,17 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|(waits, holds)| workspace_removal(waits, *holds)),
     );
+    // A chat whose merge was held waits on the person's press, never its own (R-114).
+    asks.extend(waiting.merges.iter().map(merge_hold));
+    // A refusal whose only way out is the window's press is an ask with that control (R-328).
+    asks.extend(waiting.window_only.iter().map(window_only));
+    // The clones purlis has no record of are one ask, no chat's (R-336), and a clone a chat's
+    // own Trust this clone asks for is not asked for twice (Q257).
+    asks.extend(
+        not_asked_by_a_chat(waiting.unrecorded.as_ref(), &waiting.window_only)
+            .iter()
+            .map(trust_these_clones),
+    );
     // A chat that proposed a change waits on the person's answer, as one that asked them to
     // remove a workspace does (#1975).
     asks.extend(
@@ -4113,8 +4564,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A permission ask that timed out says nothing of the chat's wait (#6007): its harness's own
     // prompt still waits in the pane, and only the pane answers it, so it is listed too.
+    // A window-only refusal is a refusal, not the chat's wait (R-328, R-329): like a block, it
+    // stands beside whatever the chat asks of its own, which stays an ask when it moves to the
+    // chat's finish row.
     let said: std::collections::HashSet<u32> = asks
         .iter()
+        .filter(|ask| ask.source != AskSource::TrustClone)
         .filter(|ask| {
             ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
         })
@@ -4129,7 +4584,10 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         waiting
             .queue
             .iter()
-            .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
+            .filter(|session| {
+                (!said.contains(session) || (waiting.in_its_terminal)(**session))
+                    && !(waiting.only_updates)(**session)
+            })
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt, (waiting.asking)(session)),
                 None => question(
@@ -4310,8 +4768,9 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let now_secs = crate::sandboxing::now_secs();
     let mut permissions = held.hooks().asks().pending_since(now);
     // **When each ask's wait ended unanswered, by its key** (ADR 0121 decision 15, #6007),
-    // where an answer still reaches the chat: a hook ask that lapsed, a held connection that
-    // gave up, a run grant and a Secret ask past their command's hold.
+    // where an answer still reaches the chat: a hook ask that lapsed, a run grant and a Secret
+    // ask past their command's hold. A held connection that timed out is a block, not an ask
+    // (R-290, Q154).
     let mut timed_out: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     let ago = |at: Instant| now_secs.saturating_sub(now.saturating_duration_since(at).as_secs());
     for lapsed in held.hooks().asks().lapsed(now) {
@@ -4346,9 +4805,6 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         if let Some(first) = first {
             since.insert(block_key(*session, block), *first);
         }
-        if let Some(gave_up) = chats.blocks().gave_up_at(*session, block) {
-            timed_out.insert(block_key(*session, block), gave_up);
-        }
     }
     let removals: Vec<_> = crate::removalasks::waiting(held)
         .into_iter()
@@ -4358,6 +4814,22 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             (waits, holds)
         })
         .collect();
+    let merges = held.merge_holds().every();
+    for one in &merges {
+        since.insert(merge_key(one.session, &one.key), one.since);
+    }
+    let window_only = purlis_core::windowonly::every(root);
+    for one in &window_only {
+        since.insert(window_only_key(one.session, &one.control), one.since);
+    }
+    // A clone a chat's own Trust this clone asks for is not asked for again (Q257).
+    let unrecorded = not_asked_by_a_chat(
+        purlis_core::windowonly::clones_ask(root).as_ref(),
+        &window_only,
+    );
+    if let Some(ask) = &unrecorded {
+        since.insert(TRUST_CLONES_KEY.to_owned(), ask.since);
+    }
     let proposals: Vec<_> = crate::proposals::waiting(held)
         .into_iter()
         .inspect(|(one, _)| {
@@ -4491,12 +4963,16 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         sign_ins,
         pool_sign_ins,
         removals,
+        merges,
+        window_only,
+        unrecorded,
         proposals,
         runner_writes,
         runner_dispatches,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,
+        in_its_terminal: &|session| held.hooks().board().waits_in_its_terminal(session),
         dispatches: waiting_dispatches
             .iter()
             .map(|one| store.told(plane, root, &locks, one))
@@ -4578,13 +5054,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             since: u32::try_from(one.since).unwrap_or(u32::MAX),
         })
         .collect();
-    Asking {
+    let asking = Asking {
         plane: plane.clone(),
         with_asking_chat,
         snoozed: Vec::new(),
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
@@ -4641,6 +5118,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                     }),
             )
             .collect(),
+    };
+    // A window-only ask no chat waits on sits on its chat's finish row, not in Asks (R-329).
+    let (asks, on_finish_rows) = finish_rows_apart(asking.asks, &|session| {
+        waits_on_its_ask(&board.glance(session))
+    });
+    Asking {
+        asks,
+        on_finish_rows,
+        ..asking
     }
 }
 
@@ -4658,25 +5144,32 @@ pub fn forget_sandbox_block(
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
     let blocks = held.chats().blocks();
-    Ok(
-        match crate::taskblocks::shown_one(blocks, session, &shown) {
-            Ok(block) => {
-                blocks.answered(session, &block);
-                // The person's no, kept where the Inbox's look back reads it (#1700).
-                if block.what == crate::sandboxing::GrantWhat::Host {
-                    crate::network::record_kept_blocked(
-                        planes.network(),
-                        held.root(),
-                        held.chats(),
-                        session,
-                        &block.target,
-                    );
-                }
-                true
-            }
-            Err(_) => false,
-        },
-    )
+    let Ok(block) = crate::taskblocks::shown_one(blocks, session, &shown) else {
+        return Ok(false);
+    };
+    // An Allow racing this that let the block go first is the one answer (Q262 amended):
+    // this writes nothing.
+    if !blocks.answered(session, &block) {
+        return Ok(false);
+    }
+    // R-229: the person's Keep blocked, in the chat's Chat log.
+    crate::chatlog::answered_in_the_window(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+        false,
+    );
+    // The person's no, kept where the Inbox's look back reads it (#1700).
+    if block.what == crate::sandboxing::GrantWhat::Host {
+        crate::network::record_kept_blocked(
+            planes.network(),
+            held.root(),
+            held.chats(),
+            session,
+            &block.target,
+        );
+    }
+    Ok(true)
 }
 
 mod consents;

@@ -103,6 +103,7 @@ import {
 } from "./taskQuestions";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Tree, TreeRow, TreeSection, useRowDescription, type Key } from "./ui/tree/Tree";
+import { BlockedMarker } from "./BlockedMarker";
 import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { useWindowLeft } from "./ui/windowLeft";
 import { useHeldStill } from "./heldStill";
@@ -1772,6 +1773,10 @@ function ChatRowDrawn({
                 </span>
               </Tooltip>
             )}
+            {/* **"2 new blocked"** (R-172, T1-30): its blocks since the person last looked; a
+                press opens its Chat log, filtered to blocks. A control of the row's, as the
+                hand below is, reached by → from it. */}
+            <BlockedMarker session={session} />
             {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
                 and the tab said before; Cancel smart close is first in its list. */}
             <WrappingUp held={wrapping} />

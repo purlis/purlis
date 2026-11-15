@@ -393,17 +393,26 @@ impl CertificateChecks {
 }
 
 /// The `[sandbox]` block that turns the sandbox on with the default egress, as charter writes it
-/// into a new project's `charter.toml` and into an existing one whose operator took the offer
-/// (ADR 0067 §1, ruling V21 1 and 5). It ends with a newline.
+/// into a project's `charter.toml` whose operator took the offer (ADR 0067 §1, ruling V21 1 and 5).
+/// A new project is scaffolded with [`scaffold_block`] instead. It ends with a newline.
 pub fn on_block() -> String {
+    format!("[{TABLE}]\nmode = \"on\"\n{}", default_egress_line())
+}
+
+/// The `[sandbox]` block a new project's `charter.toml` is scaffolded with: the default egress
+/// and no `mode`, so its chats start at the person's own default, Basic sandbox (the floor),
+/// rather than at a level nobody chose (Q114, Q201). It ends with a newline.
+pub fn scaffold_block() -> String {
+    format!("[{TABLE}]\n{}", default_egress_line())
+}
+
+/// `egress = [...]` with the default presets, and a newline.
+fn default_egress_line() -> String {
     let egress: Vec<String> = Preset::DEFAULT
         .iter()
         .map(|preset| format!("\"{}\"", preset.word()))
         .collect();
-    format!(
-        "[{TABLE}]\nmode = \"on\"\negress = [{}]\n",
-        egress.join(", ")
-    )
+    format!("egress = [{}]\n", egress.join(", "))
 }
 
 /// A plane's `charter.toml`, read and parsed once for everything the sandbox asks of it: the
@@ -452,6 +461,16 @@ impl Plane {
     /// Whether there is no file at all.
     pub fn missing(&self) -> bool {
         self.missing
+    }
+
+    /// Whether it has a `[sandbox]` table that names no `mode`: the shape [`scaffold_block`]
+    /// writes, and that no project made before the sandbox existed has (Q231).
+    pub fn leaves_the_level_to_each_person(&self) -> bool {
+        self.top
+            .as_ref()
+            .and_then(|top| top.get(TABLE))
+            .and_then(toml::Value::as_table)
+            .is_some_and(|table| !table.contains_key("mode"))
     }
 
     /// What it says about the sandbox.
@@ -3658,7 +3677,7 @@ impl Level {
     pub fn title(self) -> &'static str {
         match self {
             Self::Full => "full sandbox",
-            Self::Floor => "floor",
+            Self::Floor => "basic sandbox",
         }
     }
 }
@@ -5481,6 +5500,18 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// Whether a connection held past its hold waits on, while the person is Quiet
     /// ([`asks::Asks::hold_open`], #6007).
     fn hold_open(&self, open: bool);
+    /// The chat moved on from what is held on `target`, a host and port ([`asks::Asks::give_up`],
+    /// R-290): whether one was held there, so it ends now as a timeout does.
+    fn give_up(&self, target: &str) -> bool;
+    /// **The person allowed `host` for the chat's next attempt at it alone**, from its block's
+    /// Allow next time · once, with no ask open ([`asks::Asks::allow_next`], T1-34, R-291): or
+    /// why the board could not take it, so nothing is said to be allowed.
+    fn allow_next(&self, host: &hosts::Host) -> Result<(), String>;
+    /// The targets allowed for the chat's next attempt and not used yet
+    /// ([`asks::Asks::next_attempts`]).
+    fn next_attempts(&self) -> Vec<String>;
+    /// An Allow next time of `host` was removed before it was used ([`asks::Asks::forget_next`]).
+    fn forget_next(&self, host: &hosts::Host);
 }
 
 impl Board for asks::Asks {
@@ -5514,6 +5545,23 @@ impl Board for asks::Asks {
 
     fn hold_open(&self, open: bool) {
         asks::Asks::hold_open(self, open);
+    }
+
+    fn give_up(&self, target: &str) -> bool {
+        asks::Asks::give_up(self, target)
+    }
+
+    fn allow_next(&self, host: &hosts::Host) -> Result<(), String> {
+        asks::Asks::allow_next(self, host);
+        Ok(())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        asks::Asks::next_attempts(self)
+    }
+
+    fn forget_next(&self, host: &hosts::Host) {
+        asks::Asks::forget_next(self, host);
     }
 }
 
@@ -7861,7 +7909,8 @@ pub fn floorless_said(why: &NotStarted) -> String {
         .map_or(reason, |(reason, _)| reason)
         .trim_end_matches('.');
     format!(
-        "This chat runs with no sandbox: purlis could not apply the floor here, because {reason}."
+        "This chat runs with no sandbox: purlis could not apply the basic sandbox here, \
+         because {reason}."
     )
 }
 
@@ -8130,8 +8179,8 @@ pub fn decide_granted(
         }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
-                "This chat runs with no sandbox: purlis could not apply the floor here, because \
-                 purlis has no sandbox backend on this system."
+                "This chat runs with no sandbox: purlis could not apply the basic sandbox here, \
+                 because purlis has no sandbox backend on this system."
                     .to_owned(),
             )));
         }
@@ -8141,8 +8190,9 @@ pub fn decide_granted(
                 // The floor is always compiled where no policy is in force, so this is not met;
                 // said all the same rather than started with nothing said.
                 Ok(None) => Decided::Floorless(
-                    "This chat runs with no sandbox: purlis did not compile the floor for it."
-                        .to_owned(),
+                    "This chat runs with no sandbox: purlis did not compile the basic sandbox for \
+                     it."
+                    .to_owned(),
                 ),
                 Err(not) => Decided::Floorless(floorless_said(&not)),
             },
@@ -8316,6 +8366,7 @@ pub mod plan;
 pub mod planted;
 pub mod policy;
 pub mod program;
+pub mod protection;
 pub mod ran;
 pub mod reach;
 pub mod seatbelt;
@@ -8337,6 +8388,8 @@ mod claude_tests;
 mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
+#[cfg(test)]
+mod enforced_tests;
 #[cfg(test)]
 mod floor_tests;
 #[cfg(test)]

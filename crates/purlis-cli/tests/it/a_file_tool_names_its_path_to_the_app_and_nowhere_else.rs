@@ -57,6 +57,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         output: Box::new(|_| {}),
         touching: Box::new(move |touching| touches.lock().unwrap().send(touching).unwrap()),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", word])
@@ -191,6 +192,25 @@ fn a_file_tool_the_guard_refuses_names_no_file() {
     let call = the_call(&heard).clone();
     assert_eq!(call.decision, purlis_core::hookwire::Decision::Deny);
     holds_no_path(&call);
+}
+
+#[test]
+fn a_file_tool_the_harness_refused_names_no_file() {
+    // Claude Code's own check refused the write (`PermissionDenied`, R-094): the tool never
+    // ran, so no marker goes up for it, though its pre hook named the file before.
+    let heard = hook(
+        purlis_core::hookreg::HARNESS_DENIED,
+        &serde_json::json!({
+            "hook_event_name": "PermissionDenied",
+            "tool_name": "Write",
+            "tool_use_id": "toolu_2",
+            "tool_input": {"file_path": format!("/w/branch/{CANARY}.rs"), "content": "x"},
+            "cwd": "/w/branch",
+            "reason": "Writes outside the task",
+        }),
+    );
+    assert_eq!(named(&heard), Vec::<&str>::new());
+    the_call(&heard);
 }
 
 #[test]

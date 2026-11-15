@@ -14,6 +14,10 @@
 use std::ffi::OsStr;
 use std::process::Command;
 
+/// An app that answers a chat's attendance ask (T1-22, #6413).
+#[cfg(unix)]
+pub mod attending;
+
 /// The `purlis` binary cargo built for this run. Its path, for a test that writes it into a
 /// hook or hands it to a shell: such a file starts every process through [`command`].
 pub const PURLIS: &str = env!("CARGO_BIN_EXE_purlis");

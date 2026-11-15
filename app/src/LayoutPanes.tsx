@@ -117,6 +117,7 @@ import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
 import { stemOf } from "./menuModel";
 import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState } from "./ChatPersonaState";
+import { BlockedMarker } from "./BlockedMarker";
 import { SandboxMark } from "./SandboxMark";
 import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { WrappingUp } from "./NeedsYou";
@@ -554,6 +555,13 @@ export function PaneFrame({
                   markWord={line.has("markWord")}
                   chat={head.chat}
                 />
+              )}
+              {/* **"2 new blocked"** (R-172, T1-30): on the pane's band too, opening its Chat log
+              filtered to blocks. */}
+              {head && (
+                <span className="pane-blocked">
+                  <BlockedMarker session={session} />
+                </span>
               )}
               {/* **Wrapping up** (ADR 0064, #4760): the breathing mark, where the strip's chip
               was. */}

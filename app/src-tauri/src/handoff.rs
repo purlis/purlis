@@ -347,6 +347,20 @@ pub fn answer(
         // reason. The line names a workspace; the app removes nothing for it, and holds the
         // question for the person on the tab of the chat whose token the line carries.
         Ask::Removal(removal) => crate::removalasks::asked(held, &removal),
+        // A merge the chat's hook held (R-114): no ticket, for the removal's reason. The app
+        // merges nothing for it; it answers before it reads the forge, and holds the ask for
+        // the person once it has.
+        Ask::Merge(merge) => crate::mergeholds::asked(&held.weak(), &merge),
+        // Whether the asking chat is attended, by the fact this app holds for it (T1-18,
+        // R-109): what A4 reads. No ticket, for the record's reason: the line names only the
+        // chat whose token it carries, and what it says can only lower the answer, never the
+        // fact, which only the reports the board takes move.
+        Ask::Attendance(asked) => Answer::Attended {
+            attended: held.chats().attendance_of(asked.chat).is_some_and(|fact| {
+                fact.hearing(asked.unattended, asked.claude_code_mode)
+                    == purlis_core::dispatchunattended::Attendance::Attended
+            }),
+        },
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -2474,41 +2488,27 @@ impl HeldDispatches {
     }
 }
 
-/// **What each chat's own harness said of how it runs**: whether its permission prompts are
-/// off (#1446) and the permission level it reported (#3787), per chat, as [`HeardOfAChat`].
-/// Fed by the hook reports the board takes from the chat, never by a line the chat sends. Its
-/// name is the first of the two it held.
+/// **What each chat's own harness said of how it runs**: the permission level it reported
+/// (#3787), per chat, as [`HeardOfAChat`]: the mode a task it dispatches starts from, and
+/// nothing else. Fed by the hook reports the board takes from the chat, never by a line the
+/// chat sends. Whether a chat is attended is its attendance fact's, never this
+/// ([`crate::chats::Chats::attendance_of`], T1-22, #6413).
 #[derive(Default)]
-pub struct Unattended(std::sync::Mutex<std::collections::HashMap<u32, HeardOfAChat>>);
+pub struct TaskModes(std::sync::Mutex<std::collections::HashMap<u32, HeardOfAChat>>);
 
 /// What the app heard of one chat's harness.
 #[derive(Debug, Clone, Copy, Default)]
 struct HeardOfAChat {
-    /// Whether it ever ran with its prompts off: one way, for the chat's life
-    /// ([`purlis_core::dispatchunattended::Mark`]).
-    mark: purlis_core::dispatchunattended::Mark,
     /// The permission mode it last said it runs in ([`purlis_core::dispatchmode::Heard`]),
     /// which a task it dispatches starts from.
     mode: purlis_core::dispatchmode::Heard,
 }
 
-impl Unattended {
+impl TaskModes {
     fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, HeardOfAChat>> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// A hook of chat `session` reported, saying whether its harness runs with its prompts
-    /// off.
-    pub fn heard(&self, session: u32, unattended: bool) {
-        if unattended {
-            self.lock()
-                .entry(session)
-                .or_default()
-                .mark
-                .heard(Some(purlis_core::floorguard::UNATTENDED_MODE));
-        }
     }
 
     /// A hook of chat `session` reported, saying which mode its own harness runs in, where it
@@ -2517,13 +2517,6 @@ impl Unattended {
         if mode.is_some() {
             self.lock().entry(session).or_default().mode.heard(mode);
         }
-    }
-
-    fn mark(&self, session: u32) -> purlis_core::dispatchunattended::Mark {
-        self.lock()
-            .get(&session)
-            .map(|heard| heard.mark)
-            .unwrap_or_default()
     }
 
     /// **The level a task chat `session` dispatches starts at** (#3787): what its harness
@@ -2549,54 +2542,31 @@ impl Unattended {
 /// refused, leaves the record as it was.
 pub fn heard_mode(held: &Held, report: &purlis_core::hookwire::Report) {
     let now = held.board().conversation(report.chat);
-    held.unattended().heard_mode(
+    held.task_modes().heard_mode(
         report.chat,
         purlis_core::dispatchmode::of_its_own_harness(report, now.as_deref()),
     );
 }
 
-/// **How chat `session`, recorded as `asking`, is taken to run**: unattended where its harness
-/// ever reported its prompts off, or where the command it was started with switches them off
-/// (its own words on its record, or its profile's as this machine declares it, which is what
-/// "set at start" comes to). Never a word of the request.
-fn attendance(
-    held: &Held,
-    session: u32,
-    asking: &Chat,
-    profiles: &purlis_core::profiles::ProfileSet,
-) -> purlis_core::dispatchunattended::Attendance {
-    use purlis_core::dispatchunattended::bypass_in;
-    let mut mark = held.unattended().mark(session);
-    let own: Vec<String> = std::iter::once(asking.program.clone())
-        .chain(asking.args.iter().cloned())
-        .collect();
-    let declared = asking
-        .profile
-        .as_deref()
-        .and_then(|name| profiles.get(name))
-        .is_some_and(|profile| bypass_in(&profile.command).is_some());
-    if declared || bypass_in(&own).is_some() {
-        mark.heard(Some(purlis_core::floorguard::UNATTENDED_MODE));
-    }
-    mark.attendance()
+/// **How chat `session` is taken to run** (R-110, #6410; T1-22, #6413): the attendance fact
+/// this app holds for it ([`crate::chats::Chats::attendance_of`]), the one A4 reads, and
+/// unattended where it holds none ([`purlis_core::attendance::of_held`]). Never a word of the
+/// request, and never a hook payload's mode. Every dispatch reader takes it from here: the
+/// handoff path, the dispatch grants, the dispatch-away path and [`attended`].
+fn attendance(held: &Held, session: u32) -> purlis_core::dispatchunattended::Attendance {
+    purlis_core::attendance::of_held(held.chats().attendance_of(session))
 }
 
 /// **Whether a person is at chat `session`** (#1501): judged as a dispatch from it is, by
-/// [`attendance`] on the profiles a launch offers ([`launch_profiles`], which [`profile_for`]
-/// reads too), so the window says nothing on the tab of a chat that runs with its prompts off
-/// and the two can never disagree. A chat this app does not have open is nobody's.
+/// [`attendance`], so the window says nothing on the tab of a chat that runs with its prompts
+/// off and the two can never disagree. A chat this app does not have open is nobody's.
 pub fn attended(held: &Held, session: u32) -> bool {
-    let Some(asking) = held.chats().recorded_chat(session) else {
-        return false;
-    };
-    let root = held.root();
-    let launch = launch_profiles(root, &purlis_core::harness_declaration::read(root));
-    attendance(held, session, &asking, &launch.0)
-        == purlis_core::dispatchunattended::Attendance::Attended
+    held.chats().recorded_chat(session).is_some()
+        && attendance(held, session) == purlis_core::dispatchunattended::Attendance::Attended
 }
 
 /// The profiles a launch in `root` offers, with `declared` already read: what a dispatch
-/// chooses its profile from and judges its asker's attendance by, and what [`attended`] asks.
+/// chooses its profile from.
 fn launch_profiles(
     root: &std::path::Path,
     declared: &purlis_core::harness_declaration::Declarations,
@@ -2843,7 +2813,7 @@ fn dispatch_noting(
     if wanted.by == By::Chat && wanted.moved.is_none() {
         crate::restored::refuse_twice(held, from, &asking, pair.to.as_deref(), &wanted.brief)?;
     }
-    let attended = attendance(held, from, &asking, &on.launch.0);
+    let attended = attendance(held, from);
     // **A chat nobody is at makes no workspace** (D-1444-13): its handoff goes into one that
     // exists. Said before anything is decided, and nothing is created.
     if matches!(attended, Attendance::Unattended)
@@ -3347,7 +3317,7 @@ fn dispatch_noting(
             // app heard it from that chat's own harness, never as the dispatch says. A
             // handoff's chat is the person's to read, and starts in its harness's default.
             task_level: match wanted.mode() {
-                Mode::Task => held.unattended().task_level(from),
+                Mode::Task => held.task_modes().task_level(from),
                 Mode::Handoff => purlis_core::dispatchmode::Level::Asks,
             },
             short_task: wanted.mode() == Mode::Task && !wanted.long_task(),

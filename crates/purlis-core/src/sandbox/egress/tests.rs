@@ -1838,3 +1838,16 @@ fn a_service_left_out_is_refused_where_the_proxy_asks_nobody() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(listener.accept().is_err(), "the proxy reached this machine");
 }
+
+/// R-290 (Q154, Q240): a held connection nobody answered is a block from then on, so the chat
+/// is told it is one and that running the command again asks again, never that an ask stays
+/// with the person. The host is named whole, then `: `, as the post-tool detector reads it.
+#[test]
+fn a_timed_out_hold_tells_the_chat_it_is_a_block_and_a_retry_asks_again() {
+    let said = super::held_said("api.example.com", 443, super::GaveUp::TimedOut);
+    assert_eq!(
+        said,
+        "purlis's sandbox does not allow api.example.com:443: nobody answered in time; this \
+         is now a block. Run the command again to ask again."
+    );
+}

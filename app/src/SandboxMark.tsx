@@ -13,7 +13,7 @@ export type SandboxSaid = { level: string; why?: string | null; sites?: number |
 
 export const SANDBOX_SAID: Readonly<Record<SandboxLevel, string>> = {
   full: "full sandbox",
-  floor: "floor",
+  floor: "basic sandbox",
   none: "no sandbox",
 };
 

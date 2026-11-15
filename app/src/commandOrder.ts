@@ -71,6 +71,8 @@ export const LANES = {
       "listGrantableFolder",
       "unlistGrantableFolder",
       "allowBlockedHost",
+      // Allow next time on a sandbox block (T1-34): audited into the network record and kept.
+      "allowNextTime",
       // A service on this Mac added by its port on Settings' Network page (#1970).
       "allowSandboxPort",
       "allowSandboxBlock",

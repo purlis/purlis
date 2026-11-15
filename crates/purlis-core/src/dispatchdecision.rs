@@ -2971,7 +2971,9 @@ mod tests {
         let root = tempfile::tempdir().expect("a project");
         let machine = Machine {
             env: crate::secrets::Env::of(&[]),
-            home: Some(std::path::PathBuf::from("/home/op")),
+            // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+            // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+            home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
             os: Os::MacOs,
         };
         // The persona a start compiles its grants for, exactly as `start::ready` picks it.

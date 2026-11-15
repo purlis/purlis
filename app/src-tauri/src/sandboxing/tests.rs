@@ -3546,3 +3546,61 @@ fn a_projects_run_grants_moved_by_the_core_reach_the_window_named_for_that_proje
 
     assert_eq!(*told.lock().unwrap(), vec![RunGrantsMoved { plane }]);
 }
+
+/// **A waiting Allow next time, listed and removed by its real id** (T1-34, R-291; Q278): the
+/// Allowed list names it `next␟<chat>␟<host>`, of a host for once, with the chat it waits for;
+/// Remove by that id audits its end, then takes it off the chat's board, so the next attempt is
+/// held and asked about again; removed twice, it is no longer there, and nothing more is
+/// audited.
+///
+/// Mutations it kills: the `next` arm of `revoke` deleted (the id is refused as unknown), the
+/// audit in `revoke_next` deleted, and `forget_next` deleted (still waiting after Remove).
+#[test]
+fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_board_audited() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let board = std::sync::Arc::new(purlis_core::sandbox::asks::Asks::new(std::sync::Arc::new(
+        |_: purlis_core::sandbox::asks::Heard| {},
+    )));
+    let chats =
+        crate::chats::tests::restartable_chats_of(root, crate::host::pretend::Pretend::default());
+    crate::chats::tests::a_chat_asking_live_on(
+        &chats,
+        root,
+        1,
+        Some(std::sync::Arc::clone(&board) as _),
+    );
+    board.allow_next(&sandbox::hosts::Host::parse("api.example.com:443").expect("a host"));
+    let waiting = || {
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+            .into_iter()
+            .filter(|one| one.level == GrantLevel::Once)
+            .collect::<Vec<_>>()
+    };
+    let listed = waiting();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].id, "next\u{1f}1\u{1f}api.example.com:443");
+    assert_eq!(listed[0].what, GrantWhat::Host);
+    assert_eq!(listed[0].target, "api.example.com:443");
+    assert_eq!(listed[0].chat, chats.shown_name(1));
+
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push((
+            chat,
+            audited.granted,
+            audited.target.to_owned(),
+            audited.level.word(),
+        ));
+        Ok(())
+    };
+    revoke(root, &chats, &listed[0].id, &audit).expect("removed");
+    assert!(board.next_attempts().is_empty(), "off the chat's board");
+    assert!(waiting().is_empty(), "and off the Allowed list");
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![(Some(1), false, "api.example.com:443".to_owned(), "once")]
+    );
+    assert!(revoke(root, &chats, &listed[0].id, &audit).is_err());
+    assert_eq!(seen.lock().unwrap().len(), 1, "nothing more audited");
+}

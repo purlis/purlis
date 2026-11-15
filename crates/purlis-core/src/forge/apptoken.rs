@@ -53,10 +53,67 @@ pub const SEVERAL_INSTALLATIONS: &str = "this chat's repos are on several instal
 /// comes later.
 pub const HOST: &str = "github.com";
 
-/// What a chat whose workspace has no clone a token may cover is told.
+/// What a chat whose workspace has no clone a token may cover, and none to trust, is told.
 pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purlis cloned, or \
-    that you saved from the window, has a github.com remote, so no GitHub App token was minted: \
-    save a clone you made yourself once from the window, and start the chat again";
+    that the person trusted, has a github.com remote, so no GitHub App token was minted";
+
+/// **A mint refused for a clone purlis has no record of raises Trust this clone** (R-330,
+/// R-328): each github.com clone of the chat's workspace with no record, at the one address its
+/// remote names, is one ask for the chat ([`crate::windowonly`]). Only a clone the mint would
+/// count once trusted is asked for: one there as the chat started ([`there_at_start`]) whose
+/// git directory no chat writes ([`held_from_chats`]), as [`remotes_of_workspace`] filters
+/// them (Q249). Answers what the chat is told, naming the ask, or `None` where there is no such
+/// clone, and so nothing to ask.
+fn trust_asked(chat: &For<'_>) -> Option<String> {
+    let config_root = chat.config_root?;
+    let plane = crate::workspaces::Plane::open(chat.root.to_path_buf());
+    let workspace = chat.folder.and_then(|folder| plane.workspace_of(folder))?;
+    let clones = crate::repos::clones(chat.root, &workspace).ok()?.repos;
+    let clones = match chat.started {
+        Some(started) => there_at_start(clones, started),
+        None => clones,
+    };
+    let counted: Vec<String> = held_from_chats(clones, &grantable_beside(chat.root, chat.writes))
+        .iter()
+        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+        .collect();
+    let folders: Vec<String> =
+        super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
+            .into_iter()
+            .filter(|clone| clone.workspace == workspace)
+            .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
+            .filter_map(|clone| {
+                let place = clone.place?;
+                place
+                    .starts_with(&format!("{HOST}/"))
+                    .then_some((clone.folder, place))
+            })
+            .map(|(folder, place)| {
+                crate::windowonly::raise(
+                    chat.root,
+                    chat.chat,
+                    crate::windowonly::Control::TrustClone {
+                        folder: folder.clone(),
+                        place,
+                    },
+                );
+                folder
+            })
+            .collect();
+    if folders.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "no GitHub App token was minted: purlis has no record of {}, so it did not clone {} and \
+         the person has not trusted {}. purlis asked the person in Asks: \"{}\", with {}. Run \
+         the command again once they have",
+        folders.join(", "),
+        if folders.len() == 1 { "it" } else { "them" },
+        if folders.len() == 1 { "it" } else { "them" },
+        crate::windowonly::TRUST_SO_CHATS_CAN_USE_GITHUB,
+        crate::windowonly::TRUST_THIS_CLONE,
+    ))
+}
 
 /// What a run is refused with whose chat ended while its token was minted: the token was
 /// revoked.
@@ -171,7 +228,7 @@ pub fn held_from_chats(
 
 /// The folders a chat of the project at `root` may be granted, beside `writes`: Settings' list of
 /// grantable folders. A chat's temporary folder is its own and holds no clone of a workspace.
-pub(super) fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = writes.to_vec();
     out.extend(crate::sandbox::local::grantable_folders(root));
     out
@@ -889,7 +946,7 @@ pub fn token_for(
     if remotes.is_empty() {
         return Err(match all.first() {
             Some(other) => not_minted_on(&other.host),
-            None => NO_RECORDED_CLONE.to_owned(),
+            None => trust_asked(chat).unwrap_or_else(|| NO_RECORDED_CLONE.to_owned()),
         });
     }
     let clone = clone_of(&remotes, chat.here);

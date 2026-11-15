@@ -14,6 +14,9 @@ export function agoSaid(seconds: number, now: Date): string {
   if (seconds < 86_400) return `${counted(Math.floor(seconds / 3600), "hour", "hours")} ago`;
   const days = Math.floor(seconds / 86_400);
   if (days < 30) return `${counted(days, "day", "days")} ago`;
-  const at = new Date(now.getTime() - seconds * 1000);
-  return at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return daySaid(new Date(now.getTime() - seconds * 1000));
 }
+
+/** **A day a person reads**, as every age past a month is said: "28 Oct 2026". */
+export const daySaid = (at: Date): string =>
+  at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });

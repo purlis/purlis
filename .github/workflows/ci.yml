@@ -901,12 +901,12 @@ jobs:
         run: |
           npm test -- \
             e2e/dialogs.test.ts e2e/fakeGitLab.test.ts e2e/fence.test.ts e2e/gitAnswer.test.ts e2e/recordedForge.test.ts \
-            e2e/standInForge.test.ts e2e/upgrade.test.ts src/PersonaMark.test.tsx src/StripMarks.test.tsx \
-            src/allowLabels.test.ts src/artifactPage.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
+            e2e/standInForge.test.ts e2e/upgrade.test.ts src/LoopPauseAsk.window.test.tsx src/PersonaMark.test.tsx src/StripMarks.test.tsx \
+            src/allowLabels.test.ts src/artifactPage.test.ts src/askLabels.guard.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
             src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
             src/theme/forced-colors.test.ts src/theme/grounds.test.ts src/theme/railIcons.vendor.test.ts src/theme/registry.test.ts \
             src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingDoc.test.ts src/ui/field/fieldHelp.guard.test.ts \
-            src/ui/field/refusingFields.guard.test.ts src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/windowprefs.test.ts
+            src/ui/field/refusingFields.guard.test.ts src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/waitingInItsTerminal.guard.test.ts src/windowControls.test.ts src/windowprefs.test.ts
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -1734,6 +1734,7 @@ jobs:
           every_first_party_source_file_carries_its_licence_header::
           no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
           a_no_seed_mark_is_made_only_in_the_window::
+          only_attendance_compares_permission_mode_with_bypass::
           no_old_name_is_spelled_in_the_window_or_its_assets::
           every_deferral_names_its_ticket::
           every_repo_path_comes_from_the_resolver::

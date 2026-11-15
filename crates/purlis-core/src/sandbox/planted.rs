@@ -3747,7 +3747,7 @@ mod tests {
     }
 
     /// What a hook running `command` in `/plane/ws/repo` names, for an operator whose home is
-    /// `/home/op`.
+    /// `/nonexistent-home/op`.
     fn named_at_home(command: &str) -> Vec<PathBuf> {
         named_writing(command, &[])
     }
@@ -3762,7 +3762,7 @@ mod tests {
             Path::new("/plane/ws/repo"),
             ".claude/settings.json",
             &settings.to_string(),
-            Some(Path::new("/home/op")),
+            Some(Path::new("/nonexistent-home/op")),
             writable,
         )
         .expect("read")
@@ -3815,7 +3815,10 @@ mod tests {
             ("sed -nf/plane/ws/repo/fix.sed x", "/plane/ws/repo/fix.sed"),
             ("jq -rf/plane/filters/x.jq ./in.json", "/plane/filters/x.jq"),
             ("cc -xI/plane/inc/x.h a.c", "/plane/inc/x.h"),
-            ("cc -xI/home/op/inc/x.h a.c", "/home/op/inc/x.h"),
+            (
+                "cc -xI/nonexistent-home/op/inc/x.h a.c",
+                "/nonexistent-home/op/inc/x.h",
+            ),
         ] {
             let found = named_at_home(command);
             assert!(found.contains(&PathBuf::from(want)), "{command}: {found:?}");
@@ -3843,7 +3846,7 @@ mod tests {
             let found = named_at_home(command);
             for want in [
                 PathBuf::from("/plane/ws/repo/~").join(tail),
-                PathBuf::from("/home/op").join(tail),
+                PathBuf::from("/nonexistent-home/op").join(tail),
             ] {
                 assert!(
                     found.contains(&want),
@@ -4028,8 +4031,9 @@ mod tests {
         for not in ["/usr/local", "/opt/h.sh"] {
             assert!(!found.contains(&PathBuf::from(not)), "{found:?}");
         }
-        let found = named_at_home("git -c core.hooksPath=/plane/h x && X=/home/op/y.sh z");
-        for want in ["/plane/h", "/home/op/y.sh"] {
+        let found =
+            named_at_home("git -c core.hooksPath=/plane/h x && X=/nonexistent-home/op/y.sh z");
+        for want in ["/plane/h", "/nonexistent-home/op/y.sh"] {
             assert!(found.contains(&PathBuf::from(want)), "{found:?}");
         }
     }
@@ -4081,9 +4085,12 @@ mod tests {
             assert!(!found.contains(&dir.join(not)), "{found:?}");
         }
         // An absolute part is held to where a chat could write, as a whole value is.
-        let found = named_at_home("X=/opt/a.sh:/home/op/b.sh y");
+        let found = named_at_home("X=/opt/a.sh:/nonexistent-home/op/b.sh y");
         assert!(!found.contains(&PathBuf::from("/opt/a.sh")), "{found:?}");
-        assert!(found.contains(&PathBuf::from("/home/op/b.sh")), "{found:?}");
+        assert!(
+            found.contains(&PathBuf::from("/nonexistent-home/op/b.sh")),
+            "{found:?}"
+        );
     }
 
     #[test]

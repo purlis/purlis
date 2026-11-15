@@ -12,7 +12,7 @@ afterEach(cleanup);
 describe("the sandbox mark", () => {
   it.each([
     ["full", "full sandbox"],
-    ["floor", "floor"],
+    ["floor", "basic sandbox"],
     ["none", "no sandbox"],
   ])("says the %s level by name", (level, said) => {
     const { container } = render(<SandboxMark level={level} />);
@@ -24,7 +24,7 @@ describe("the sandbox mark", () => {
     expect(mark).toHaveTextContent("");
   });
 
-  it("says why a chat runs with no sandbox where the floor could not be applied (Q2)", () => {
+  it("says why a chat runs with no sandbox where the basic sandbox could not be applied (Q2)", () => {
     const why = "purlis runs Codex inside a sandbox of its own, which it can apply on macOS only";
     const { container } = render(<SandboxMark level="none" why={why} />);
     const mark = container.querySelector('[data-sandbox="none"]');

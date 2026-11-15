@@ -1315,10 +1315,10 @@ enum GaveUp {
 /// to do next.
 fn held_said(host: &str, port: u16, held: GaveUp) -> String {
     match held {
+        // A block from now on (R-290, Q154, Q240): a retry is a new ask.
         GaveUp::TimedOut => format!(
-            "purlis's sandbox does not allow {host}:{port} yet: the person was asked while \
-             this connection waited, and nobody answered in time. The ask stays with them; once \
-             they allow it, run the command again"
+            "purlis's sandbox does not allow {host}:{port}: nobody answered in time; this is now \
+             a block. Run the command again to ask again."
         ),
         GaveUp::KeptBlocked => format!(
             "purlis's sandbox does not allow {host}:{port}: the person kept it blocked. Do not \

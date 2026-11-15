@@ -125,6 +125,7 @@ describe("create a project on a forge (#1819)", () => {
       private: true,
       template: "rust",
       folder: FOLDER,
+      protection: null,
     });
 
     creation.finish(FOLDER);

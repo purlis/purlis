@@ -85,6 +85,7 @@ fn a_root_update_left_for_the_person_raises_its_item_on_the_chat() {
         purlis_core::gitbroker::Answered {
             answer: said(),
             needs: Some(purlis_core::state::Need::RootUpdateRefused),
+            pushed: None,
         },
     );
     assert_eq!(answer, said());
@@ -197,4 +198,52 @@ fn a_git_ask_or_commit_heard_from_a_pool_is_refused_saying_it_runs_on_the_runner
         "a chat of this machine"
     );
     assert!(!on_the_runner(commit(&held, &commit_ask)));
+}
+
+/// T1-41, R-124, Q277: the push recorded as the chat's own is the one the core's push says went,
+/// by the commit it sent. A push that did not go, one that names no commit sent, and any other
+/// work record nothing, and nothing is read from the folder for it. Kills: recording on any
+/// answer, and recording a head the push did not name.
+#[test]
+fn only_a_push_that_went_is_recorded_by_the_commit_it_sent() {
+    purlis_core::unsteered!();
+    const SENT: &str = "0123456789abcdef0123456789abcdef01234567";
+    let push = GitWork::WorktreePush {
+        repo: "purlis".to_owned(),
+        piece: "p1".to_owned(),
+        lease: false,
+    };
+    let answered = |code: u8, pushed: Option<&str>| purlis_core::gitbroker::Answered {
+        answer: Answer::Said {
+            lines: Vec::new(),
+            code,
+        },
+        needs: None,
+        pushed: pushed.map(str::to_owned),
+    };
+
+    assert_eq!(
+        pushed_head(&push, &answered(0, Some(SENT))),
+        Some(("purlis", "p1", SENT.to_owned()))
+    );
+    assert_eq!(
+        pushed_head(&push, &answered(1, Some(SENT))),
+        None,
+        "a push that did not go"
+    );
+    assert_eq!(
+        pushed_head(&push, &answered(0, None)),
+        None,
+        "a push that names no commit sent"
+    );
+    let update = GitWork::WorktreeUpdate {
+        repo: "purlis".to_owned(),
+        piece: "p1".to_owned(),
+        step: purlis_core::hookwire::UpdateStep::Start { base: None },
+    };
+    assert_eq!(
+        pushed_head(&update, &answered(0, Some(SENT))),
+        None,
+        "an update pushes nothing"
+    );
 }

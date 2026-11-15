@@ -44,6 +44,8 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
     else {
         return ExitCode::SUCCESS;
     };
+    // The run this hook ran under, which the app judges a give-up by (Q266).
+    let speaker = hookwire::Speaker::read(payload, &purlis_core::envvar::var);
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(payload) else {
         return ExitCode::SUCCESS;
     };
@@ -62,6 +64,7 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
         permission_request: source,
         payload,
         ran_for_ms: Some(ran_for_ms(began)),
+        speaker,
     };
     match hookwire::ask_permission(
         std::path::Path::new(&socket),

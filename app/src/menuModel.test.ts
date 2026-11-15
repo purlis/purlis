@@ -475,7 +475,7 @@ describe("a chat's list (#4753)", () => {
         "Go to qa 12",
         "Move…",
         // Its pane's links (#6332), under Open ▸: the list stays ten rows at most.
-        "Open ▸ [Focus workspace beta, Links in this pane…, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Links in this pane…, Activity, Network, Chat log]",
         "Ignore until it asks again",
       ],
       ["Restart"],
@@ -696,7 +696,7 @@ describe("the other tabs' menus", () => {
         "Open beside console-developer 16",
         "Move…",
         "Brief",
-        "Open ▸ [Focus workspace beta, Go to console-developer 16, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Go to console-developer 16, Activity, Network, Chat log]",
       ],
       ["Restart"],
       ["Start fresh", "Stop and get its report", "Close now"],

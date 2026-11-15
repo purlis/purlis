@@ -86,13 +86,23 @@ pub fn waiting_said_in_the_window(within: Duration) -> String {
 }
 
 fn waiting_for(place: &str, within: Duration) -> String {
-    let secs = within.as_secs();
-    let how_long = if secs >= 120 && secs.is_multiple_of(60) {
+    format!(
+        "waiting for the person: {place}, for up to {}",
+        how_long(within)
+    )
+}
+
+/// **A wait in words**, as every waiting command says it: "90 seconds", "2 minutes", and to a
+/// tenth of a second where it is not whole ("7.5 seconds").
+pub(crate) fn how_long(wait: Duration) -> String {
+    let secs = wait.as_secs();
+    if wait.subsec_millis() != 0 {
+        format!("{:.1} seconds", wait.as_secs_f64())
+    } else if secs >= 120 && secs.is_multiple_of(60) {
         format!("{} minutes", secs / 60)
     } else {
         format!("{secs} seconds")
-    };
-    format!("waiting for the person: {place}, for up to {how_long}")
+    }
 }
 
 /// **What a command that stopped waiting says of an ask that stays open** (#6008, ADR 0121
@@ -127,6 +137,18 @@ mod tests {
             "the ask is still answerable in Asks (\u{270b}) in the purlis window, project \
              smart-ide"
         );
+    }
+
+    #[test]
+    fn a_wait_is_said_in_seconds_and_in_minutes_from_two_minutes_on() {
+        let said = |ms: u64| how_long(Duration::from_millis(ms));
+        assert_eq!(said(60_000), "60 seconds");
+        assert_eq!(said(90_000), "90 seconds");
+        assert_eq!(said(120_000), "2 minutes");
+        assert_eq!(said(180_000), "3 minutes");
+        assert_eq!(said(150_000), "150 seconds");
+        assert_eq!(said(7_500), "7.5 seconds");
+        assert_eq!(said(900), "0.9 seconds");
     }
 
     #[test]

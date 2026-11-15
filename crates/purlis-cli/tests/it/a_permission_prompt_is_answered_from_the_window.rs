@@ -74,6 +74,7 @@ fn host() -> Host {
         output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         permission: held_in(Arc::clone(&hooks), Arc::new(|| {})),
+        reason: Box::new(|_| {}),
     });
     Host {
         _reading: reading,

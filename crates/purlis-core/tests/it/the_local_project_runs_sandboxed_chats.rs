@@ -16,7 +16,9 @@ use purlis_core::sandbox::{self, Access, Class, Machine, Os};
 /// A machine whose config home and data home are under `base`. Its home directory is a path of
 /// its own outside the temp tree, which a chat may write.
 fn machine(base: &Path) -> Machine {
-    let home = Path::new("/home/op");
+    // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+    // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+    let home = Path::new("/nonexistent-home/op");
     let config = base.join(".config");
     let data = base.join(".local/share/purlis");
     Machine {

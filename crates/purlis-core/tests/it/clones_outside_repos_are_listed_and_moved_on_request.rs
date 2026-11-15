@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use purlis_core::doctor::fix::{self, FixId, Fixed, move_into_repos};
 use purlis_core::doctor::{Doctor, Row, Status};
 use purlis_core::files::{self, Branch, Mark};
+use purlis_core::forge::gitcredential::vouch;
+use purlis_core::forge::route::HostScope;
 use purlis_core::worktree;
 
 const OUTSIDE: &str = "repos outside repos/";
@@ -908,4 +910,157 @@ fn a_rollback_killed_before_its_pointers_were_written_back_is_mended_by_the_next
     fix::apply(&root, FixId::MoveIntoRepos);
 
     works(&piece);
+}
+
+/// A clone at workspace `alpha`'s root, as [`clone_at`] makes it, its `origin` on github.com.
+fn on_github_at(root: &Path, name: &str) -> PathBuf {
+    let clone = clone_at(root, name);
+    support::git(
+        &clone,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("https://github.com/acme/{name}.git"),
+        ],
+    );
+    clone
+}
+
+/// **Move into repos/ trusts no new clone, and names the window** (Q260): a clone it moves that
+/// purlis has no record of is moved and left untrusted, and one line tells the person to trust
+/// it in purlis's window, in Asks › Trust these clones. The purlis binary holds no host scope,
+/// so trust stays a press in the window (Q181, Q249).
+#[test]
+fn doctor_move_into_repos_trusts_no_new_clone_and_names_the_window() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+    on_github_at(&root, "web");
+
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+        }),
+    );
+
+    let said = said(&applied);
+    let moved = ws(&root).join("repos/api");
+    assert!(!api.exists(), "api is still at the root: {said:?}");
+    assert!(moved.join(".git").is_dir(), "{said:?}");
+    for name in ["api", "web"] {
+        assert!(
+            !vouch::trusted(home.path(), &ws(&root).join("repos").join(name)),
+            "the move trusts no new clone, {name} included: {said:?}"
+        );
+    }
+    let naming: Vec<&String> = said
+        .iter()
+        .filter(|line| line.contains("Asks › Trust these clones"))
+        .collect();
+    assert_eq!(
+        naming.len(),
+        1,
+        "one line names the window's Asks › Trust these clones: {said:?}"
+    );
+    assert!(
+        naming[0].contains("purlis's window")
+            && naming[0].contains("workspaces/alpha/repos/api")
+            && naming[0].contains("workspaces/alpha/repos/web"),
+        "the line names the window and each clone left untrusted: {said:?}"
+    );
+}
+
+/// The move trusts nothing new, and a clone purlis has a record of keeps it where it moved to,
+/// while its remote is unchanged (R-336, Q260: nothing is adopted automatically, and nothing
+/// trusted is lost).
+#[test]
+fn the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+    on_github_at(&root, "web");
+    vouch::vouch_clone(
+        &HostScope::for_a_test(),
+        home.path(),
+        &root,
+        &api,
+        "github.com/acme/api",
+    )
+    .expect("api is trusted before the move");
+
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+        }),
+    );
+
+    let said = said(&applied);
+    assert!(
+        vouch::trusted(home.path(), &ws(&root).join("repos/api")),
+        "api keeps its record through the move: {said:?}"
+    );
+    assert!(
+        !vouch::trusted(home.path(), &ws(&root).join("repos/web")),
+        "web, which purlis has no record of, is not trusted: {said:?}"
+    );
+}
+
+/// **The move re-records a trusted clone only while its remote is the one it was trusted at**
+/// (Q257): a clone whose origin changed after the person trusted it is not trusted again where
+/// it moved to, and the move says so.
+#[test]
+fn a_trusted_clone_whose_remote_changed_is_not_trusted_again_where_it_moved_to() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+    vouch::vouch_clone(
+        &HostScope::for_a_test(),
+        home.path(),
+        &root,
+        &api,
+        "github.com/acme/api",
+    )
+    .expect("api is trusted before the move");
+    support::git(
+        &api,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/other/api.git",
+        ],
+    );
+
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+        }),
+    );
+
+    let said = said(&applied);
+    let moved = ws(&root).join("repos/api");
+    assert!(moved.join(".git").is_dir(), "{said:?}");
+    assert!(
+        !vouch::trusted(home.path(), &moved),
+        "a remote changed since the trust is not trusted again: {said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains("workspaces/alpha/repos/api")
+                && line.contains("github.com/acme/api")),
+        "it says which clone it did not trust again, and at what: {said:?}"
+    );
 }

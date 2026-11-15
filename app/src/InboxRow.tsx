@@ -50,6 +50,7 @@ export const kindOfAsk = (source: Shown["source"]): RowKind =>
 /** The updates that say something went wrong, marked as trouble. */
 const TROUBLE: ReadonlySet<UpdateKind> = new Set<UpdateKind>([
   "task-failed",
+  "chat-failed",
   "refused-away",
   "smart-close",
   "report-undelivered",

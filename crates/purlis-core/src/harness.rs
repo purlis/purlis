@@ -179,6 +179,39 @@ impl Harness {
         &self.declared().name
     }
 
+    /// **Whether a guard's report from this harness comes from outside the chat's reach**
+    /// (R-101, Q96, Q235; ADR 0124's harness matrix): a harness whose sandbox does not hold what
+    /// it starts ([`adapter::HarnessAdapter::sandbox_holds_what_it_starts`]), Claude Code, runs
+    /// its hooks outside the sandbox its chat's commands run in, so under that sandbox the chat
+    /// cannot stop or change what its guard reports. Codex and opencode run theirs inside the
+    /// process purlis wraps whole, so what they report is the chat's side of the channel, and is
+    /// tagged unverified. Which backends leave the hooks outside is the event log's to say.
+    ///
+    /// **A known limit** (Q235): the chat's own commands hold its hook token and reach the
+    /// host's socket, so a sandboxed chat can still send a deny line of its own and have a block
+    /// recorded about itself as verified. That is noise or a pause it gives itself; it cannot
+    /// suppress a block its guard reports or write one for another chat. T1-12 (the block loop)
+    /// and T1-30 count blocks with that in mind.
+    pub fn guard_reports_from_outside_the_chats_reach(self) -> bool {
+        !self.adapter().sandbox_holds_what_it_starts()
+    }
+
+    /// **Whether this harness reports each call its own check blocks** (R-097, R-100; ADR
+    /// 0124's harness matrix, "The harness's own check's block reported"): where it does not, a
+    /// chat's Chat log says Can't tell of them
+    /// ([`adapter::HarnessAdapter::reports_its_checks_blocks`]).
+    pub fn reports_its_checks_blocks(self) -> bool {
+        self.adapter().reports_its_checks_blocks()
+    }
+
+    /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-099,
+    /// Q152; the matrix's "The mode the chat runs in"): where it does not, a chat's Chat log
+    /// says Can't tell of its mode
+    /// ([`adapter::HarnessAdapter::reports_a_mode_purlis_can_check`]).
+    pub fn reports_a_mode_purlis_can_check(self) -> bool {
+        self.adapter().reports_a_mode_purlis_can_check()
+    }
+
     /// Whether this harness tells a hook which process it is running under.
     ///
     /// Claude Code sets `$CLAUDE_PID` in every hook's environment, and that is the whole of

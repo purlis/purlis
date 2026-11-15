@@ -313,6 +313,7 @@ fn reading(now: &LiveNow) -> crate::hostedchats::Live {
     Arc::new(move || purlis_session_protocol::session::ReachNow {
         asked: Vec::new(),
         allowed_live: now.lock().unwrap().clone(),
+        next: Vec::new(),
     })
 }
 

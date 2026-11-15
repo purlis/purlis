@@ -62,6 +62,11 @@ pub enum Asked {
         code: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         on: Option<OnForge>,
+        /// The project the command runs in, where it runs in one: the window lists the
+        /// confirmation in that project's Asks, as the command's line says (Q233), and under the
+        /// project in front where it names none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<std::path::PathBuf>,
     },
 }
 

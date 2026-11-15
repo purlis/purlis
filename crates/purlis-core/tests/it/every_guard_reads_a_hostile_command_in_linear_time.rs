@@ -485,6 +485,7 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
         launched: Launched {
             sandboxed: true,
             chat_dir: Some(&chat_dir),
+            attendance: None,
         },
     };
     // Just under the size cap, so every shape is read rather than refused for its size.

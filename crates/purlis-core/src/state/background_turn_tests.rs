@@ -335,3 +335,23 @@ fn a_late_wake_heard_with_nothing_said_of_it_is_an_unknown_turn_and_clears_the_w
 
     assert!(!board.needs_you().contains(&7));
 }
+
+/// R-290 (Q240): a held connection's ask that ended a wait on the chat's own work, and is then
+/// withdrawn as the chat stops waiting on it, takes back the needs-you mark it set: the chat
+/// waits on its own work again. A withdrawal that set nothing changes nothing.
+#[test]
+fn a_withdrawn_block_takes_back_the_needs_you_mark_its_ask_set() {
+    let mut blocked = waiting_on_its_own_shell();
+    let work = blocked.own_work();
+    assert!(blocked.blocked_while_waiting());
+    assert!(blocked.needs_you());
+
+    assert!(blocked.block_withdrawn(), "a reader sees it");
+    assert!(!blocked.needs_you(), "the mark is taken back");
+    assert_eq!(blocked.own_work(), work, "it waits on its own work again");
+    assert!(!blocked.block_withdrawn(), "once");
+
+    let mut quiet = waiting_on_its_own_shell();
+    assert!(!quiet.block_withdrawn(), "nothing set, nothing taken back");
+    assert_eq!(quiet.own_work(), work);
+}

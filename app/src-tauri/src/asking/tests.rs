@@ -87,10 +87,17 @@ struct World {
     at_prompt: Vec<u32>,
     /// Chats stopped on a prompt whose kind their nudge named (#1691).
     prompts: Vec<(u32, Prompt)>,
+    /// Chats whose permission hook gave up, waiting in their terminal (R-204).
+    in_its_terminal: Vec<u32>,
     dispatches: Vec<DispatchPending>,
     blocks: Vec<(u32, HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
+    merges: Vec<purlis_core::mergehold::Waits>,
+    /// The refusals whose only way out is a press in the window (R-328).
+    window_only: Vec<purlis_core::windowonly::Refusal>,
+    /// The project's one ask for its clones purlis has no record of (R-336).
+    unrecorded: Option<purlis_core::windowonly::TrustTheseClones>,
     locks: Locks,
     /// Whether the project's sandbox is in force, so a browser site for everyone counts (#2443).
     everyone: bool,
@@ -146,9 +153,13 @@ impl World {
             queue: Vec::new(),
             at_prompt: Vec::new(),
             prompts: Vec::new(),
+            in_its_terminal: Vec::new(),
             dispatches: Vec::new(),
             blocks: Vec::new(),
             removals: Vec::new(),
+            merges: Vec::new(),
+            window_only: Vec::new(),
+            unrecorded: None,
             locks: Locks::none(),
             everyone: true,
             names: Vec::new(),
@@ -226,9 +237,13 @@ impl World {
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
+            in_its_terminal: &|session| self.in_its_terminal.contains(&session),
             dispatches: self.dispatches.clone(),
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
+            merges: self.merges.clone(),
+            window_only: self.window_only.clone(),
+            unrecorded: self.unrecorded.clone(),
             locks: &self.locks,
             everyone: self.everyone,
             declared: &self.declared,
@@ -674,13 +689,19 @@ fn an_edit_raised_on_the_hook_channel_is_drawn_in_its_row_and_its_allow_goes_bac
         move |asking| told.lock().unwrap().push(asking)
     });
     let telling: Telling = Arc::new(Mutex::new(Some(teller)));
-    let hear = permitting(plane.clone(), Arc::clone(&hooks), telling);
+    let hear = permitting(
+        plane.clone(),
+        Arc::clone(&hooks),
+        telling,
+        Arc::new(|_: &purlis_core::harness::asks::Raised| {}),
+    );
 
     let waiting = hear(PermissionAsked {
         chat: 5,
         permission_request: Source::ClaudeCode,
         payload: payload.clone(),
         ran_for_ms: None,
+        speaker: Default::default(),
     })
     .expect("the ask is held");
 
@@ -1216,6 +1237,67 @@ fn a_chat_waiting_on_a_structured_ask_is_one_ask_not_two() {
 }
 
 #[test]
+fn a_chat_whose_hook_gave_up_is_in_its_terminal_beside_the_asks_its_hook_holds() {
+    // R-204 (T1-35): at the 32-open cap the chat's hook gave up on one more ask, whose prompt
+    // waits in its pane, where no ask held here answers it. It is listed as one Terminal ask
+    // beside the asks its hook still holds; a chat that only waits on what is held is not.
+    let asks_held = Asks::new();
+    let mut world = World::new();
+    world.permissions = vec![
+        asks_held
+            .raise("2", a_hook_ask("Run ls"), Instant::now())
+            .raised,
+        asks_held
+            .raise("3", a_hook_ask("Run pwd"), Instant::now())
+            .raised,
+    ];
+    world.queue = vec![2, 3];
+    world.prompts = vec![(2, Prompt::Permission), (3, Prompt::Permission)];
+    world.in_its_terminal = vec![2];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .map(|ask| (ask.session, ask.source))
+            .collect::<Vec<_>>(),
+        [
+            (2, AskSource::Permission),
+            (3, AskSource::Permission),
+            (2, AskSource::Terminal),
+        ]
+    );
+    let terminal = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::Terminal)
+        .expect("its ask");
+    assert_eq!(
+        terminal.says,
+        "Waiting in its terminal: a permission prompt"
+    );
+    assert!(terminal.options.is_empty());
+    assert_eq!(terminal.answer, AnswerPath::InItsPane);
+}
+
+#[test]
+fn a_chat_whose_hook_gave_up_is_one_terminal_ask_whatever_else_it_was_in_the_queue_for() {
+    // R-204: the queue lists a chat once, so a give-up is one ask, never one per hook.
+    let mut world = World::new();
+    world.queue = vec![2];
+    world.prompts = vec![(2, Prompt::Permission)];
+    world.in_its_terminal = vec![2];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .map(|ask| (ask.session, ask.source))
+            .collect::<Vec<_>>(),
+        [(2, AskSource::Terminal)]
+    );
+}
+
+#[test]
 fn a_sandbox_host_ask_counts_beside_whatever_else_its_chat_waits_on() {
     // A refused host does not stop the chat's turn, so it is an ask of its own.
     let mut world = World::new();
@@ -1517,6 +1599,183 @@ fn a_chat_waiting_on_a_removal_s_answer_is_that_ask_and_no_question_beside_it() 
     assert_eq!(asks[0].since, Some(40));
 }
 
+/// A merge chat 3's hook held, for request 12 of `o/r` at a fixed head.
+fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
+    purlis_core::mergehold::Waits {
+        session,
+        key: purlis_core::mergehold::MergeKey {
+            repo: "o/r".try_into().expect("a repo"),
+            number: 12,
+            head: "0123456789abcdef0123456789abcdef01234567"
+                .try_into()
+                .expect("a head"),
+            base: "main".try_into().expect("a base"),
+        },
+        facts: purlis_core::mergehold::Facts {
+            title: "Add the parser".to_owned(),
+            author: "octo".to_owned(),
+            checks: purlis_core::forge::checks::Checks {
+                total: Some(1),
+                ci: purlis_core::forge::checks::Ci::Passed,
+                why: None,
+                failed: Vec::new(),
+            },
+            ruleset: purlis_core::mergehold::Ruleset::Protects,
+            approved_by: None,
+            read_at: 40,
+        },
+        since: 40,
+        asked: false,
+        look: purlis_core::mergehold::Look::NotViewed { since: None },
+        pushed_here: false,
+    }
+}
+
+#[test]
+fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
+    // R-114: the merge a chat's hook held is listed once, as the person's to answer, keyed on
+    // the repo, the request and the head it was raised at; never offered a rule (R-117).
+    let mut world = World::new();
+    world.merges = vec![a_held_merge(3)];
+    world.since = vec![(
+        "merge:3:o/r#12@0123456789abcdef0123456789abcdef01234567",
+        40,
+    )];
+
+    let asks = world.asks();
+
+    let held: Vec<&Shown> = asks
+        .iter()
+        .filter(|ask| ask.source == AskSource::MergeHold)
+        .collect();
+    assert_eq!(held.len(), 1, "{asks:?}");
+    let ask = held[0];
+    assert_eq!(
+        ask.ask, "merge:3:o/r#12@0123456789abcdef0123456789abcdef01234567",
+        "Q242: the ask is keyed on its head"
+    );
+    assert_eq!(ask.session, 3);
+    assert_eq!(ids(ask), [MERGE, DONT_MERGE]);
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| one.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Merge", "Don't merge"]
+    );
+    assert!(ask.options.iter().all(|one| one.scope.is_none()));
+    assert!(ask.rule.is_none());
+    assert_eq!(
+        ask.answer,
+        AnswerPath::MergeHold {
+            repo: "o/r".to_owned(),
+            number: 12,
+            head: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            facts: MergeShown {
+                title: "Add the parser".to_owned(),
+                author: "octo".to_owned(),
+                base: "main".to_owned(),
+                checks: "PASSED".to_owned(),
+                read_at: 40,
+                ruleset: RulesetShown::Protects,
+                look: LookShown::NotViewed,
+                approved_by: None,
+                since_viewed: None,
+                pushed_here: false,
+                digest: a_held_merge(3).facts.digest(),
+            },
+        }
+    );
+    assert!(ask.says.contains("There is no undo"), "{}", ask.says);
+    assert_eq!(ask.since, Some(40));
+}
+
+#[test]
+fn a_held_merge_is_a_high_risk_ask() {
+    // Q239 (S4): never grouped, passed by triage, and its Merge asks once more before it acts.
+    let mut world = World::new();
+    world.merges = vec![a_held_merge(3)];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::MergeHold)
+        .expect("the merge ask");
+    assert!(high_risk(ask));
+    let risk = ask.risk.as_ref().expect("its risk");
+    assert_eq!(risk.class, RiskClass::Merge);
+    assert_eq!(
+        risk.why,
+        "Merges request 12 of o/r at 0123456 into main, with no undo"
+    );
+    assert_eq!(
+        risk.confirm,
+        "Merge request 12 of o/r at 0123456 into main?"
+    );
+}
+
+#[test]
+fn a_held_merge_shows_the_forges_facts_with_their_read_time_and_the_title_inert() {
+    // T1-40 (R-120, R-147, Q248): the row shows the base, the checks as of the read, the
+    // ruleset state purlis saw, and the title and author the forge gave, which a chat may have
+    // written, so they reach the window inert.
+    let mut merge = a_held_merge(3);
+    merge.facts.title = "Add the parser\u{202E}gnisaeler".to_owned();
+    let mut world = World::new();
+    world.merges = vec![merge];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::MergeHold)
+        .expect("the merge ask");
+    let AnswerPath::MergeHold { facts, .. } = &ask.answer else {
+        panic!("a merge hold's path: {:?}", ask.answer);
+    };
+    assert_eq!(facts.base, "main");
+    assert_eq!(facts.author, "octo");
+    assert_eq!(facts.checks, "PASSED");
+    assert_eq!(facts.read_at, 40);
+    assert_eq!(facts.ruleset, RulesetShown::Protects);
+    assert!(!facts.title.contains('\u{202E}'), "{}", facts.title);
+    assert!(facts.title.contains("⟦U+202E⟧"), "{}", facts.title);
+}
+
+#[test]
+fn a_held_merge_at_a_moved_head_is_another_ask() {
+    // Q242: the row at the new head is another ask, so the window carries nothing over from
+    // the one at the old head, and its sentence names the head it merges.
+    let moved = {
+        let mut one = a_held_merge(3);
+        one.key.head = "89abcdef0123456789abcdef0123456789abcdef"
+            .try_into()
+            .expect("a head");
+        one
+    };
+    let shown = |merge| {
+        let mut world = World::new();
+        world.merges = vec![merge];
+        world
+            .asks()
+            .into_iter()
+            .find(|ask| ask.source == AskSource::MergeHold)
+            .expect("the merge ask")
+    };
+    let (was, now) = (shown(a_held_merge(3)), shown(moved));
+    assert_ne!(was.ask, now.ask);
+    assert_eq!(
+        now.risk.expect("its risk").confirm,
+        "Merge request 12 of o/r at 89abcde into main?"
+    );
+}
+
+#[test]
+fn a_merge_asks_source_is_the_one_a_rule_may_never_name() {
+    // R-117: the store of rules refuses `mergehold::SOURCE`; it is the merge ask's own source.
+    assert_eq!(
+        serde_json::to_value(AskSource::MergeHold).expect("a source"),
+        purlis_core::mergehold::SOURCE
+    );
+}
+
 // Who may answer (V16).
 
 #[test]
@@ -1532,6 +1791,8 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
         "keep_sandbox_block",
         "forget_sandbox_block",
         "keep_asked_workspace",
+        "merge_held_request",
+        "dont_merge_held_request",
         "asks_waiting",
     ] {
         assert!(
@@ -3047,6 +3308,7 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(
@@ -3098,6 +3360,7 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);
@@ -3539,6 +3802,226 @@ fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
                 "Hands devops's values from vault team to kubectl on pool builds".to_owned()
             ),
         ]
+    );
+}
+
+/// A clone of workspace `alpha` purlis has no record of, at the one address its remote names.
+fn unvouched(name: &str) -> purlis_core::forge::gitcredential::vouch::Unvouched {
+    let folder = format!("workspaces/alpha/repos/{name}");
+    purlis_core::forge::gitcredential::vouch::Unvouched {
+        workspace: "alpha".into(),
+        path: Path::new("/work/plane").join(&folder),
+        folder,
+        place: Some(format!("github.com/acme/{name}")),
+        places: vec![format!("github.com/acme/{name}")],
+        made: Some(1_690_000_000),
+    }
+}
+
+/// The project's Trust these clones, for `clones`.
+fn trust_these(
+    clones: Vec<purlis_core::forge::gitcredential::vouch::Unvouched>,
+) -> purlis_core::windowonly::TrustTheseClones {
+    purlis_core::windowonly::TrustTheseClones {
+        root: "/work/plane".into(),
+        clones,
+        since: 1_700_000_000,
+    }
+}
+
+/// Chat `session`'s refused mint, whose way out is Trust this clone on `name`.
+fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
+    purlis_core::windowonly::Refusal {
+        root: "/work/plane".into(),
+        session,
+        control: purlis_core::windowonly::Control::TrustClone {
+            folder: format!("workspaces/alpha/repos/{name}"),
+            place: format!("github.com/acme/{name}"),
+        },
+        since: 1_700_000_000,
+    }
+}
+
+/// The folders each Trust these clones lists, ask by ask.
+fn trust_clones_folders(asks: &[Shown]) -> Vec<Vec<String>> {
+    asks.iter()
+        .filter_map(|ask| match &ask.answer {
+            AnswerPath::TrustClones { clones } => {
+                Some(clones.iter().map(|clone| clone.folder.clone()).collect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// **The clones purlis has no record of are exactly one ask** (R-336), with Trust all, whatever
+/// their number.
+#[test]
+fn unrecorded_clones_are_exactly_one_trust_these_clones_ask() {
+    let mut world = World::new();
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), unvouched("web")]));
+
+    let asks = world.asks();
+
+    let clones: Vec<&Shown> = asks
+        .iter()
+        .filter(|ask| ask.source == AskSource::TrustClones)
+        .collect();
+    assert_eq!(clones.len(), 1, "{asks:?}");
+    assert_eq!(
+        clones[0]
+            .options
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        [TRUST_ALL, CHOOSE]
+    );
+    assert_eq!(
+        trust_clones_folders(&asks),
+        [["workspaces/alpha/repos/api", "workspaces/alpha/repos/web"]]
+    );
+}
+
+/// **Trust these clones offers Trust all and Choose…, and says when each clone was made**
+/// (T1-42, R-337): each clone with its remote and its folder's creation time, where its disk
+/// keeps one.
+#[test]
+fn the_clones_ask_offers_trust_all_and_choose_and_says_when_each_clone_was_made() {
+    let mut world = World::new();
+    let mut web = unvouched("web");
+    web.made = None;
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), web]));
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::TrustClones)
+        .expect("the clones' one ask");
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [(TRUST_ALL, "Trust all", true), (CHOOSE, "Choose…", true)]
+    );
+    let AnswerPath::TrustClones { clones } = &ask.answer else {
+        panic!("answered as the clones' ask: {ask:?}");
+    };
+    assert_eq!(
+        clones
+            .iter()
+            .map(|clone| (clone.folder.as_str(), clone.place.as_deref(), clone.made))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "workspaces/alpha/repos/api",
+                Some("github.com/acme/api"),
+                Some(1_690_000_000)
+            ),
+            (
+                "workspaces/alpha/repos/web",
+                Some("github.com/acme/web"),
+                None
+            ),
+        ]
+    );
+}
+
+/// **A window-only ask is Blocking while a chat waits on it, and otherwise on its chat's finish
+/// row** (T1-42, R-329, Q181): a chat in its turn waits on its Trust this clone, so its ask
+/// stays in [`Asking::asks`]; one whose turn has ended does not, so its ask is listed apart, in
+/// [`Asking::on_finish_rows`], and neither the ✋ nor a notification counts it. Every other ask
+/// stays where it is, whatever its chat's state.
+#[test]
+fn a_window_only_ask_is_blocking_while_its_chat_is_in_its_turn_and_otherwise_on_its_finish_row() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api"), trust_this(3, "web")];
+    world.queue = vec![3];
+    world.at_prompt = vec![3];
+
+    let (blocking, on_finish_rows) = finish_rows_apart(world.asks(), &|session| session == 2);
+
+    let trust = |asks: &[Shown]| -> Vec<u32> {
+        asks.iter()
+            .filter(|ask| ask.source == AskSource::TrustClone)
+            .map(|ask| ask.session)
+            .collect()
+    };
+    assert_eq!(trust(&blocking), [2], "chat 2 is in its turn: {blocking:?}");
+    assert_eq!(trust(&on_finish_rows), [3], "chat 3's turn ended");
+    assert!(
+        on_finish_rows
+            .iter()
+            .all(|ask| ask.source == AskSource::TrustClone),
+        "only a window-only ask moves to a finish row: {on_finish_rows:?}"
+    );
+    assert!(
+        blocking
+            .iter()
+            .any(|ask| ask.session == 3 && ask.source != AskSource::TrustClone),
+        "chat 3's own question stays an ask: {blocking:?}"
+    );
+}
+
+/// **What a chat waits on, as the board has it** (R-329): in its turn, or stopped on a prompt it
+/// asked mid-turn, it waits; a turn ended on the person does not; a chat the board has no state
+/// for is taken to wait, so its ask is never hidden from Asks.
+#[test]
+fn a_chat_waits_on_its_window_only_ask_unless_its_turn_has_ended() {
+    let glance = |state, asking, own_work| crate::host::Glance {
+        state,
+        asking,
+        turns: 1,
+        prompt: None,
+        own_work,
+        wakes_on_its_own_work: false,
+    };
+    use purlis_core::state::State;
+
+    assert!(waits_on_its_ask(&glance(State::Running, false, false)));
+    assert!(waits_on_its_ask(&glance(State::Waiting, true, false)));
+    assert!(waits_on_its_ask(&glance(State::Waiting, false, true)));
+    assert!(waits_on_its_ask(&glance(State::Unknown, false, false)));
+    assert!(!waits_on_its_ask(&glance(State::Waiting, false, false)));
+}
+
+/// **One ask per clone** (Q257): a clone with a chat's own Trust this clone is left out of the
+/// project's Trust these clones, which lists the rest.
+#[test]
+fn a_clone_with_a_chats_trust_this_clone_is_left_out_of_trust_these_clones() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api")];
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), unvouched("web")]));
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .filter(|ask| ask.source == AskSource::TrustClone)
+            .count(),
+        1,
+        "{asks:?}"
+    );
+    assert_eq!(
+        trust_clones_folders(&asks),
+        [["workspaces/alpha/repos/web"]],
+        "api is asked for once, by the chat's ask"
+    );
+}
+
+/// Where every clone has a chat's own ask, there is no Trust these clones at all (Q257).
+#[test]
+fn trust_these_clones_is_not_raised_when_each_of_its_clones_has_a_chats_ask() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api"), trust_this(3, "api")];
+    world.unrecorded = Some(trust_these(vec![unvouched("api")]));
+
+    let asks = world.asks();
+
+    assert!(
+        !asks.iter().any(|ask| ask.source == AskSource::TrustClones),
+        "{asks:?}"
     );
 }
 

@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), branches.md: Get a single repository branch, for release/2.0, protected by the wildcard rule release/* (protected_branches.md: wildcard protected branches)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/repository/branches/release%2F2.0"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"name\":\"release/2.0\",\"merged\":false,\"protected\":true,\"default\":false,\"developers_can_push\":false,\"developers_can_merge\":false,\"can_push\":true,\"web_url\":\"https://gitlab.com/acme/api/-/tree/release/2.0\"}",
+        "err": ""
+      }
+    }
+  ]
+}

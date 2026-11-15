@@ -1059,7 +1059,7 @@ One timeline of what a chat and its tasks said to each other through purlis, and
 its tasks: each brief, follow-up, progress note, question, answer and report, oldest first. It
 holds what the chats sent each other, never either chat's conversation. It is read-only but
 for one thing: the person may answer there a question a task is waiting on (see **The person's
-answer**).
+answer**). Not a chat's **Journal** (ADR 0124).
 _Avoid_: log, history, transcript (it is none), feed
 
 **The person's answer** (to a task's question):
@@ -1818,6 +1818,7 @@ _Avoid_: scope (that word is kept off settings), layer, tier (tiers are where st
 How much a chat's sandbox holds, shown on its pane head and its row: **full sandbox** (a project's
 `mode = "on"`: the hosts it lists, the folders a chat writes, the asks), **floor** (the default,
 #2071), or **no sandbox** (a person's choice for a chat, or where the floor cannot be applied).
+ADR 0124 (proposed) shows them as Full sandbox, Basic sandbox and No sandbox.
 _Avoid_: mode (that is the file's key), strict, relaxed
 
 **Floor**:
@@ -1893,11 +1894,58 @@ file is purlis's state.
 _Avoid_: patch, suggestion, edit ask (that is the harness's own)
 
 **Block**:
-One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on
-this Mac, a lookup or a file. purlis records the chat, what was refused, the time and why in this machine's network
-record, kept 30 days and never committed, shows a **Notice** about it (an ask in the Inbox, and in
-its pane's band when one shows it, where it can be allowed), and lists it under Blocked lately.
-_Avoid_: denial, violation (that is the sandbox's own report), egress refusal
+A refusal of one of a chat's actions that doesn't stop the chat on its own, from one of five
+sources: a guard, the harness's own check, the sandbox, a policy or a project setting. A sandbox
+refusal is an ask while the chat waits on it, and a block once it has stopped waiting. A block
+is never in Asks: it shows as a marker on its chat ("2 new blocked"), on its turn's finish row
+while it is still unresolved, in the **Blocked log** and on its row in the chat's **Journal**,
+with its source and its ways out. It is kept as a kind of event in the host's event log: the
+tool, the source, a short target summary and the argument digest, never a command or the
+harness's reason. Three on the same target pause the chat with an ask (ADR 0124, proposed).
+Today a sandbox block is recorded in this machine's network record, kept 30 days and never
+committed, raises an ask in the Inbox, and is listed in the Blocked log.
+_Avoid_: refused, refusal (in UI text), denial, violation (that is the sandbox's own report),
+**Blocked** (that is a save's)
+
+**Hold**:
+An action purlis blocks and turns into an ask, because the person should decide it: a merge, a
+push to a protected branch or a bare force push, a destructive MCP tool, a held built-in tool.
+purlis performs a held merge or push itself, as the row shows it, on the person's press; an MCP
+or built-in tool's hold is answered with a one-use grant. A hold is never grouped, never becomes
+a rule and is skipped by keyboard triage. Each is switched in **Always ask before** (ADR 0124,
+proposed).
+_Avoid_: gate, lock (that is a policy's), approval
+
+**Blocked log**:
+The list of a project's **Block**s of the last 30 days, a view of the event log with each
+block's source and target summary. It replaces Blocked lately, and moves into the right bar's
+Sandbox view (ADR 0124, proposed). Not a store of its own.
+_Avoid_: refusal log, audit (that is ADR 0075's), Blocked lately (the shipped list it replaces)
+
+**Allowed list**:
+The one list of what the person allowed and purlis remembers: each **Allowed host**, each
+remembered Allow, and each one-use grant until it is used or expires, each with **Remove**. In
+the right bar's Sandbox view (ADR 0124, proposed).
+_Avoid_: allowlist (that is the commit scan's), grants (in UI text), exceptions, whitelist
+
+**Journal** (of a chat):
+The one home of a chat's protection story, a tab of its own: its start, with the protection in
+force and which tier set it; its protection changes and who made them; its asks with their
+answers; its **Block**s with their source and ways out; its **Hold**s and grants; its loop
+pauses; and its end. A view of the host's event log, pull-only (no count, no New marker, no
+notification), opened from the chat's blocked marker, its row, the Blocked log and its session
+record (ADR 0124, proposed).
+_Avoid_: record, session record (that is the chat's own summary, **Session record**), Activity
+(that is what chats said to each other, **Activity**), event (an **Event** is a question purlis
+asks an extension), log, audit
+
+**Attendance** (of a chat):
+Whether someone is watching a chat: it is **unattended** if purlis started it unattended (a
+task, a loop or a runner), or if it reports a mode purlis didn't set, and attended otherwise.
+Fixed by how purlis started it, it moves only one way: an unattended chat never becomes
+attended. Guard A4, dispatch, the briefing and the commit gate read it, never the harness's
+mode (ADR 0124, proposed).
+_Avoid_: bypass, yolo, mode (that is the harness's), supervised
 
 **Policy**:
 An admin's locks on settings, kept on this machine or for the organisation. A locked value

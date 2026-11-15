@@ -159,7 +159,7 @@ describe("a folder in no project (#1822)", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("Open this project?");
     expect(calls("open_repo").map((one) => one.args)).toEqual([
-      { path: FOLDER, template: { kind: "named", id: "go" }, forge: null },
+      { path: FOLDER, template: { kind: "named", id: "go" }, forge: null, protection: null },
     ]);
     expect(calls("open_plane")).toEqual([]);
   });

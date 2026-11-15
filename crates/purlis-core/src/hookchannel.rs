@@ -31,7 +31,7 @@ use crate::files::Reader;
 use crate::hookwire::relay::{Keeping, Relaying};
 
 mod record;
-pub use record::{how_its_run_ended, its_children_end};
+pub use record::{how_its_run_ended, its_run_ends};
 mod turns;
 pub use turns::HostedTurns;
 

@@ -210,6 +210,24 @@ describe("a control in a row that takes the keyboard (#3123)", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(row("Last")).toHaveFocus();
   });
+
+  it("keeps the keyboard a script moved in from outside the list, in a row not the first (T1-39)", async () => {
+    // As ⌘⇧I moves it from a chat's terminal past a high-risk first row (`asksTriage`): the
+    // list has never had the keyboard, so it must not take it back to its first row.
+    render(
+      <>
+        <textarea aria-label="Terminal" />
+        <Asks />
+      </>,
+    );
+    act(() => screen.getByRole("textbox", { name: "Terminal" }).focus());
+    act(() => within(row("Held")).getByRole("button", { name: "Send" }).focus());
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    expect(within(row("Held")).getByRole("button", { name: "Send" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("Last")).toHaveFocus();
+  });
 });
 
 describe("a radio group in a row (#3123)", () => {

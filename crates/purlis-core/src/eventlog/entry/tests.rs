@@ -35,6 +35,7 @@ fn tool_call(chat: u32) -> crate::hookwire::ToolCall {
         args: None,
         decision: crate::hookwire::Decision::Deny,
         rule: Some("no-force-push".to_owned()),
+        arm: None,
         hook_ms: 3,
         agent: None,
         at_ms: 0,

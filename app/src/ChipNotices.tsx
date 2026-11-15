@@ -153,6 +153,9 @@ export type ChipNotices = {
   dismiss: (id: number) => void;
   /** A refusal's way to the setting that puts it right. */
   onSettings: (link: SettingsLink) => void;
+  /** **The project in front** (R-333): a control a result's words name is gone to in its
+   *  Notices view, from the card the result is first seen on. */
+  plane?: string;
 };
 
 /** No asks: one list, so the chips' needs are worked out again only when the asks move. */
@@ -288,8 +291,8 @@ export function useChipNotices({
   );
   // One object while nothing in it changes, so a project's view handed it is not drawn again.
   return useMemo(
-    () => ({ on, open: cardUp, needs, bring, show, hide, dismiss, onSettings }),
-    [on, cardUp, needs, bring, show, hide, dismiss, onSettings],
+    () => ({ on, open: cardUp, needs, bring, show, hide, dismiss, onSettings, plane }),
+    [on, cardUp, needs, bring, show, hide, dismiss, onSettings, plane],
   );
 }
 
@@ -488,6 +491,8 @@ export function ChipCard({
               said={one.said}
               onClose={() => dismissOne(one, does)}
               onSettings={does.onSettings}
+              // Its Go to, where it is first seen (R-333): in the project in front's Notices view.
+              project={does.plane}
               escape={false}
               // Said once as it was said, by the window's own line (`SaidAloud`, #6004).
               quiet

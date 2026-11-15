@@ -740,6 +740,7 @@ body {
     .tab-sandbox,
     .pane-state-mark,
     .pane-wrapping,
+    .pane-blocked,
     .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
@@ -2741,6 +2742,18 @@ body {
 .inbox-hidden {
   margin: 0;
 }
+/* The clones Trust these clones would trust, each with its remote and when it was made (T1-42,
+   R-337): secondary lines of the row, one a clone, and Choose…'s boxes under it, one a line. */
+.inbox-clones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inbox-clones-chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
 .inbox-none {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
@@ -3224,6 +3237,21 @@ body {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* **The Notices, findable** (Q182, Q183): the search box over the filters by kind, a group's head
+   before its Notices, and the Dismissed list, each a row apart. */
+.notices-find {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.notices-dismissed {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* **A section's title, on either side of the window** — the side panels' sections and the
@@ -7269,6 +7297,31 @@ nav.piece-files-head {
   margin: var(--space-1) 0 0;
 }
 
+/* Setup's read-only line of the level a local project there already keeps (`ProtectionRow.tsx`,
+   Q241): said in the settings family's own help tokens, a step up so it reads as the answer. */
+.your-level {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* No sandbox's own lines under setup's Protection row (`ProtectionRow.tsx`, T1-25): the
+   warning and the vault move, or a team's vault's refusal with Use Basic sandbox. In the row's
+   help tokens, a step up as the read-only level is, so they read as what the press does. */
+.no-sandbox-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.no-sandbox-lines p {
+  margin: 0;
+}
+
 /* A row's refusal line in a form, there from the start so its words are heard as they land
    (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
    stays in the accessibility tree. */
@@ -9380,4 +9433,104 @@ nav.piece-files-head {
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
+}
+
+/* **A chat's Chat log** (R-224, R-310, T1-27): its own simple timeline, one line a row, apart
+   from the transcript; drawn like the Activity's lines, with nothing to press in phase 1. */
+.chat-log {
+  max-width: 70rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+/* What heads a chat's Chat log (R-234, R-235, T1-28): its honesty lines, then its allowed calls
+   in one line, above its rows. */
+.chat-log-honesty,
+.chat-log-allowed {
+  max-width: 70rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+/* The Chat log's head: its blocks filter and their count (R-299, R-301; T1-30). */
+.chat-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding-block-end: var(--space-2);
+}
+
+.chat-log-row {
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-5);
+  align-items: baseline;
+  padding-block: var(--space-2);
+  padding-inline-end: var(--space-3);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+/* A block row (T1-29): its tags beside its sentence, and its detail under it. The reason is the
+   harness's text as written: its spaces and lines kept, a long word broken, never parsed. */
+.chat-log-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-inline-start: var(--space-2);
+}
+
+.chat-log-row [data-scope="badge"] svg {
+  margin-inline-end: var(--space-1);
+  vertical-align: middle;
+}
+
+.chat-log-source,
+.chat-log-reason-of {
+  margin: var(--space-1) 0 0;
+}
+
+.chat-log-reason {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* **A block's ways out** (T1-33, R-300): under its Chat log row's sentence, in the row's second
+   column, and in a finish row's form; a way's read-only detail under them. */
+.chat-log-row .block-ways {
+  grid-column: 2;
+}
+
+.block-ways {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.block-ways-decides,
+.block-ways-detail p,
+.block-ways-detail ul {
+  margin: 0;
+}
+
+.block-ways-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-3);
+}
+
+.block-ways-detail ul {
+  padding-inline-start: var(--space-4);
+}
+
+/* A chat's unverified blocks, collapsed into one line (R-105, T1-38): its detail lists the
+   latest of them, one fixed-words line each. */
+.chat-log-qualified {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
 }

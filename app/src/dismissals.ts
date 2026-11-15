@@ -3,6 +3,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { commands } from "./bindings";
+import { KEPT } from "./keptCauses";
 import { familyOf } from "./Notice";
 import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
 
@@ -32,34 +33,14 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
  * is being read again, or could not be read settles nothing, so a panel re-reading never clears
  * a dismissal (no flicker clear).
  *
- * **Only a cause the core answers for is kept** ({@link KEPT}). A Notice about an event this run
- * saw — a session saved, a chat that did not start — is put away by its own Dismiss, which ends
- * that occurrence; the next one is a new occurrence and shows. Keeping such a cause would hide
- * every later one for good, because nothing would ever answer that it had gone.
+ * **Only a cause the core answers for is kept** (`KEPT`, in `keptCauses.ts`). A Notice about an
+ * event this run saw — a session saved, a chat that did not start — is put away by its own
+ * Dismiss, which ends that occurrence; the next one is a new occurrence and shows. Keeping such
+ * a cause would hide every later one for good, because nothing would ever answer that it had
+ * gone.
  */
 
-/**
- * **The families of cause a dismissal is kept for**, each read from the core by a source that
- * settles it: a dormant pin (`plane_pins`' `missing`), what a relaunch did to a chat
- * (`opened_chats`, a reattach whose state the session host could not hand over among it, #2006), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
- * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428), a remembered
- * project that is gone (`recent_planes`' `gone`, #1291: {@link GONE}), and a workspace's repo
- * left off its default branch or on a moved remote (`stale_clones`, #1985), and a workspace's
- * clone made outside purlis that the person has not trusted (`clones_to_vouch`). A family is the
- * cause up to its first `:`.
- */
-export const KEPT: ReadonlySet<string> = new Set([
-  "pin-dormant",
-  "chat-resumed",
-  "chat-guessed",
-  "chat-fresh",
-  "chat-untaken",
-  "doctor-finding",
-  "sandbox-changed",
-  "project-gone",
-  "stale-clone",
-  "clone-vouch",
-]);
+export { KEPT };
 
 /**
  * **The family of a gone project's line** (`GoneProjectNotice.tsx`, #1291). No window holds a

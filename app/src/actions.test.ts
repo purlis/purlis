@@ -2080,6 +2080,9 @@ describe("carrying out a row", () => {
         "openView:charter/browsers/,Browsers",
         "openView:charter/chat-network/7,Network · one",
         "openView:charter/chat-network/8,Network · two",
+        // A chat's Chat log, one row per chat tab (R-224).
+        "openView:charter/chat-log/7,Chat log · one",
+        "openView:charter/chat-log/8,Chat log · two",
         "openView:charter/todo/alpha/20260302-091400-review,Review the plan",
         "pickVault",
         "createVault",
@@ -2478,6 +2481,16 @@ describe("Close other tabs (#4762)", () => {
   });
 });
 
+describe("a chat's Chat log row in the palette", () => {
+  it("promises only what phase 1's Chat log shows: its start and its end", () => {
+    const tabs = openTab(noTabs(), 7, "one");
+
+    expect(by(catalogue(now({ tabs })), "chat.log:7")?.note).toBe(
+      "one's story: its start and its end, in a tab of its own.",
+    );
+  });
+});
+
 describe("the catalogue as the tabs change", () => {
   it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();
@@ -2526,6 +2539,7 @@ describe("the catalogue as the tabs change", () => {
       "chat.moveto:7",
       "chat.activity:7",
       "chat.network:7",
+      "chat.log:7",
       "chat.end:7",
     ]);
   });
@@ -2906,9 +2920,9 @@ describe("the palette at fifty chats", () => {
     // You's and the project's (104), whatever the number of chats. 1432 since #6332: Links in
     // this pane…, each of the fifty panes' own row. 1433 since #6306: Keep task screens. 1435
     // since #6031: Skill sources and Recorded skill acts, the project's two groups of an org's
-    // skill controls. 1436 since #6344: Your settings: Attention › Remind me, a setting's row,
-    // listed once typed.
-    expect(offers).toHaveLength(1436);
+    // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
+    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed.
+    expect(offers).toHaveLength(1486);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

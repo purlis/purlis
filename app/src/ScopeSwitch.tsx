@@ -14,7 +14,8 @@ export type ScopeOffer<S extends string> = {
   name?: string;
   /** Its tooltip, where it says more than its name: whose it is, or why it is out of reach. */
   tip?: string;
-  /** Out of reach: greyed, never picked, its `tip` saying why. */
+  /** Out of reach: greyed, never picked, its `tip` saying why, to a pointer and, as its
+   *  description, to the keyboard and a screen reader. */
   disabled?: boolean;
 };
 
@@ -64,6 +65,7 @@ export function ScopeSwitch<S extends string>({
           count={one.count}
           countAs={countAs}
           isDisabled={one.disabled}
+          description={one.disabled === true ? one.tip : undefined}
         >
           {one.says}
         </Segment>

@@ -1162,9 +1162,10 @@ has it; nothing reads the key after that.
     was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go
     first, the ones kept longest ago first. A chat that has no id has its fold kept for the
     window's run only.
-  - **`inbox`**: **`scope`**, whose asks the Asks view lists (#5644 kept the Inbox's key): `all` (All projects) or `workspace`
-    (This workspace). Leave it out for the project's, the default. A value that is neither is
-    read as the default.
+  - **`inbox`**: **`scope`**, whose updates the Updates view lists (#5644 kept the Inbox's key,
+    #5646): `all` (All projects) or `workspace` (This workspace). Leave it out for the project's,
+    the default. A value that is neither is read as the default. Asks keeps no scope here: it
+    opens on Chat each time it opens (#6340, ADR 0121 amended 2026-11-12), and the ✋ reads none.
   - **`browsers`**: **`scope`**, which browsers the Browsers grid shows (#2027), in the Inbox's
     words: `all` (All projects) or `workspace` (This workspace). Leave it out for the project's,
     the default. A value that is neither is read as the default.

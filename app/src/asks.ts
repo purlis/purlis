@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   commands,
   type Asking,
+  type CloneToVouch,
   type EntriesOf,
   type GrantLevel,
   type PlaneChanged,
@@ -124,6 +125,33 @@ export function notSnoozed<Row extends { plane: string; session: number }>(
 /** The earlier of two times, either of which may be missing. */
 const firstOf = (one: number | null, two: number | null): number | null =>
   one === null ? two : two === null ? one : Math.min(one, two);
+
+/**
+ * **Trusts each of `clones`** (R-336, R-337): the clone Notice's own press on each, at the one
+ * address its remote names, for Trust all and for the clones Choose… ticked. Each clone it trusts
+ * leaves the ask; one it can't is said, and the rest are still trusted. Answers what was refused,
+ * or nothing.
+ */
+export async function trustEach(
+  plane: string,
+  clones: readonly CloneToVouch[],
+): Promise<string | undefined> {
+  const refused: string[] = [];
+  for (const clone of clones) {
+    // The core leaves such a clone out of every trust ask (Q257); this holds if one ever came.
+    if (clone.place === null) {
+      refused.push(
+        `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+      );
+      continue;
+    }
+    const trusted = await commands
+      .vouchClone(plane, clone.folder, clone.place)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+    if (trusted.status === "error") refused.push(trusted.error);
+  }
+  return refused.length === 0 ? undefined : refused.join(" ");
+}
 
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
@@ -241,6 +269,8 @@ function listReader(
           // And none a cool-off holds (#6010).
           cooling: listed?.cooling ?? [],
           cooling_until: listed?.cooling_until ?? null,
+          // And none on a chat's finish row (T1-42, R-329).
+          on_finish_rows: listed?.on_finish_rows ?? [],
         };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
@@ -347,8 +377,9 @@ const isLevel = (option: string): option is GrantLevel =>
  */
 export const OPENS_DELETE_WORKSPACE = "remove";
 
-/** **Raise the budget** on a chat paused at its budget (#6015): the window's own answer, which
- *  opens Settings › Project › Dispatch at its limits and sends nothing. */
+/** **Raise the budget** on a chat paused at its budget (#6015): opens Settings › Project ›
+ *  Dispatch at its limits, and answers the ask, which leaves the chat paused until a look finds
+ *  it within the new limit (Q261). */
 export const RAISE_THE_BUDGET = "raise";
 
 /** What is said when an ask names no path the window can send. */
@@ -821,9 +852,9 @@ export async function answerTaken(
           );
         break;
       case "sandbox-expects": {
-        // What the project expects of this machine (#6000): its Notice's own two commands, sent
-        // the items as the row drew them. Either way its Notice reads again: one answer settles
-        // both.
+        // What the project expects of this machine (#6000), answered here alone while it can be
+        // (R-205): the window's two commands, sent the items as the row drew them. Either way
+        // Settings › Sandbox reads again.
         const answered =
           option === "allow"
             ? commands.allowProjectExpects(plane, asDrawn(path.items))
@@ -853,12 +884,11 @@ export async function answerTaken(
       }
       case "paused":
         // A chat paused at its budget or as looping (#6015): Raise the budget opens Settings where
-        // the limit is, and the chat goes on once a look finds it within the new limit. Every
-        // other answer is the core's: Continue and It's fine let it go on, Stop stops it.
+        // the limit is and answers the ask, and the chat goes on once a look finds it within the
+        // new limit (Q261). Continue and It's fine let it go on, Stop stops it.
         if (option === RAISE_THE_BUDGET) {
           askSettingsLink(plane, { group: "project.dispatch", setting: "project.dispatch.limits" });
           opened = true;
-          return { status: "ok" };
         }
         return commands.answerPause(plane, ask.session, option);
       case "confirmation":
@@ -867,6 +897,46 @@ export async function answerTaken(
         if (option !== "yes" && option !== "no") break;
         await commands.answerPoolSignIn(path.id, option === "yes");
         return { status: "ok" };
+      case "merge-hold":
+        // A merge a chat's hook held (R-115): Merge is the app's own forge call, at the head the
+        // ask was raised at; Don't merge merges nothing. The chat never merges.
+        if (option === "merge")
+          // It hands back the ruleset state its row showed, and the digest of every fact it
+          // showed, which the press is bound to (R-150, T1-41).
+          return commands.mergeHeldRequest(
+            plane,
+            ask.session,
+            path.repo,
+            path.number,
+            path.head,
+            path.facts.ruleset,
+            path.facts.digest,
+          );
+        if (option === "dont-merge")
+          return commands.dontMergeHeldRequest(
+            plane,
+            ask.session,
+            path.repo,
+            path.number,
+            path.head,
+          );
+        break;
+      case "trust-clone": {
+        // A refusal whose only way out is Trust this clone (R-328, R-330): the clone Notice's own
+        // press, at the address the refusal was raised at. It clears the ask, and the chat's next
+        // GitHub App token is minted.
+        if (option !== "press") break;
+        const trusted = await commands.vouchClone(plane, path.folder, path.place);
+        return trusted.status === "error" ? trusted : { status: "ok" };
+      }
+      case "trust-clones": {
+        // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
+        // clone Notice's own press on each, at the one address its remote names. Each clone it
+        // trusts leaves the ask; one it can't is said, and the rest are still trusted.
+        if (option !== "trust-all") break;
+        const refused = await trustEach(plane, path.clones);
+        return refused === undefined ? { status: "ok" } : { status: "error", error: refused };
+      }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

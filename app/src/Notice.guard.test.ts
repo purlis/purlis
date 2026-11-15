@@ -175,6 +175,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "BlockWaysOut.tsx": {
+    count: 2,
+    why:
+      "what Tell the chat…'s Type it in the chat typed, and into which chats (T1-33, Q272), " +
+      "and what an Allow next time label allowed, in the core's sentence (T1-34, R-291), each " +
+      "said under the button just pressed and replaced by its next press: an answer to the " +
+      "press, not a standing line. Why nothing was typed or allowed is `NothingDone`'s",
+  },
   "inboxRowParts.tsx": {
     count: 1,
     why:
@@ -1051,6 +1059,16 @@ describe("the window's standing lines", () => {
       copyOnly(text).map((cause) => `${name}: ${cause}`),
     );
     expect(debt).toEqual(COPY_ONLY);
+  });
+
+  it("include the mode-differs Notice, with its way out", () => {
+    // R-243 (T1-44): a mode purlis didn't set is a standing fault, drawn as a Notice with its
+    // cause key and a way out, never as a line by hand.
+    const drawn = sources()
+      .flatMap(({ text }) => tags(text, (tag) => tag === "Notice"))
+      .filter(({ attrs }) => /cause=\{`mode-differs:/.test(attrs));
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
   });
 
   it("would be caught if one came back", () => {

@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, commits/commits: Compare two commits (files lists at most 300; a file too large has no patch; a binary file has no patch and 0 changes); a file too large to show",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/compare/main...0123456789abcdef0123456789abcdef01234567"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"status\": \"ahead\", \"ahead_by\": 1, \"files\": [{\"filename\": \"src/parser.rs\", \"status\": \"modified\", \"additions\": 1, \"deletions\": 0, \"changes\": 1, \"patch\": \"@@ -1 +1,2 @@\\n fn a() {}\\n+fn parse() {}\"}, {\"filename\": \"vendor/huge.js\", \"status\": \"modified\", \"additions\": 90000, \"deletions\": 0, \"changes\": 90000}]}",
+        "err": ""
+      }
+    }
+  ]
+}

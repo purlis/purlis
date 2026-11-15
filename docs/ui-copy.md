@@ -112,6 +112,11 @@ empty state and error copy follow it.
   *Its 2 secrets are destroyed in your system keychain and cannot be recovered.*
 - **Uncertainty is stated, not hidden:** *{name} reports no state, so purlis cannot tell
   whether it is mid-turn.*
+- **A stop is Blocked, not Refused** (R-170): a call a guard, the sandbox, a policy or a
+  harness's own check stopped is *blocked*, in a label and a sentence alike: *Commit blocked*,
+  *Blocked by the sandbox*, *purlis blocked a force push*. *Refused* names nothing the reader
+  can tell from blocked, so the window has one word for it. A sentence may still use *refused*
+  as English where it is no stop: *The pool refused the move: it is full.*
 
 ## Words
 
@@ -150,6 +155,11 @@ TypeScript's parser) and fails on:
   out first. A name the check does not know fails on its first label, and adding it to
   `NAMES` is the fix;
 - **a capital "purlis"** in text the window shows, anywhere but the About dialog's title.
+
+A rule of its own, `refusedWord` in `copy.ts`, refuses **Refused for a stop** in text the window
+shows and in copy that reads as a sentence: *Refused* with its capital anywhere, and a label
+that ends on the word in any case (*Commit refused*). Lowercase *refused* inside a sentence is
+English and passes.
 
 A rule of its own, `retiredTerms` in `copy.ts`, refuses **the retired terms** in text the window
 shows (FR-3, ADR 0072): *plane* (say project), *worktree* and *piece* (say branch, or its

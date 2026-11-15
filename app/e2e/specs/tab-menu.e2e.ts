@@ -252,8 +252,13 @@ describe("a chat's list, and a tab's menu", () => {
     const sub = await measured();
     if (sub === null) throw new Error("the submenu closed");
 
-    // What the pane foot presses (#5204), then what it reads, whatever else the chat has.
-    expect(sub.rows.map((row) => row.name).slice(-2)).toEqual([ROW.activity, ROW.network]);
+    // What the pane foot presses (#5204), then what it reads, then its Chat log (T1-27),
+    // whatever else the chat has.
+    expect(sub.rows.map((row) => row.name).slice(-3)).toEqual([
+      ROW.activity,
+      ROW.network,
+      ROW.chatLog,
+    ]);
     expect(sub.rows.map((row) => row.name)).toContain(ROW.skills);
     expect(sub.top).toBeGreaterThanOrEqual(0);
     expect(sub.bottom).toBeLessThanOrEqual(sub.window);

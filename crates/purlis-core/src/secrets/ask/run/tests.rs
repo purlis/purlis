@@ -175,6 +175,14 @@ fn allow_once_reaches_one_of_two_runs_holding_on_it_and_the_other_hears_so() {
             if waiting == 2 {
                 break open[0].id;
             }
+            if one.is_finished() || two.is_finished() {
+                let ended = if one.is_finished() {
+                    one.join()
+                } else {
+                    two.join()
+                };
+                panic!("a run ended before both were holding: {ended:?}");
+            }
             std::thread::yield_now();
         };
         let answered = asks.answer_run(id, RunAnswer::Once, window()).unwrap();

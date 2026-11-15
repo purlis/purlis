@@ -296,13 +296,13 @@ export const Refused: Story = {
     await expect(line).toHaveAttribute("aria-live", "polite");
     const box = select.getBoundingClientRect();
     await userEvent.tab();
-    await untilFocused(() => select, "Refused: Tab onto the select");
+    await untilFocused(() => select, "Invalid: Tab onto the select");
     // Still a select: Enter opens its list and Escape closes it, the value as it was.
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("listbox");
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
-    await untilFocused(() => select, "Refused: Escape leaves the keyboard on the select");
+    await untilFocused(() => select, "Invalid: Escape leaves the keyboard on the select");
     await expect(select).toHaveAttribute("aria-invalid", "true");
     // A colour only: the box is the size it was. The baseline: refused, with the ring.
     const after = select.getBoundingClientRect();
@@ -474,7 +474,7 @@ export const RefusedSuggestions: Story = {
     await expect(root).toHaveAttribute("data-invalid");
     const before = root.getBoundingClientRect();
     await userEvent.tab();
-    await untilFocused(() => box, "Refused suggestions: Tab into the box");
+    await untilFocused(() => box, "Invalid suggestions: Tab into the box");
     await userEvent.keyboard("{ArrowDown}");
     await screen.findByRole("listbox");
     await userEvent.keyboard("{Escape}");

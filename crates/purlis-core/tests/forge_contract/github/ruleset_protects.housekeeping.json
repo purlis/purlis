@@ -1,0 +1,38 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, repos/rules: Get rules for a branch (rules that gate no merge: deletion, non_fast_forward), and branches: Get branch protection (404 Branch not protected)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/rules/branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"type\":\"deletion\",\"ruleset_source_type\":\"Repository\",\"ruleset_source\":\"acme/api\",\"ruleset_id\":42},{\"type\":\"non_fast_forward\",\"ruleset_source_type\":\"Repository\",\"ruleset_source\":\"acme/api\",\"ruleset_id\":42}]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/branches/main/protection"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\":\"Branch not protected\",\"documentation_url\":\"https://docs.github.com/rest/branches/branch-protection#get-branch-protection\",\"status\":\"404\"}",
+        "err": "gh: Branch not protected (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

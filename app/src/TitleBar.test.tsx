@@ -117,7 +117,9 @@ describe("the bar itself", () => {
 describe("the level of the chat in front", () => {
   it("is shown by name, with why where the chat runs with no sandbox", () => {
     render(<TitleBar sandbox={{ level: "floor" }} />);
-    expect(screen.getByRole("img", { name: "The chat in front: floor" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "The chat in front: basic sandbox" }),
+    ).toBeInTheDocument();
     cleanup();
     render(<TitleBar sandbox={{ level: "none", why: "your setting" }} />);
     expect(

@@ -306,7 +306,9 @@ fn a_new_code() -> String {
 
 #[cfg(unix)]
 fn ask_the_window(asked: Asked) -> Reached {
-    signingsetup::reach(asked, purlis_core::windowline::ask)
+    signingsetup::reach(asked, |asked| {
+        purlis_core::windowline::ask(asked, &mut |line| voice::info(line.to_owned()))
+    })
 }
 
 /// The window line is a Unix socket: elsewhere this command reaches no window.
@@ -551,6 +553,8 @@ fn check(forge: &Forge, repo: &str, commit: &str) -> Result<u8, String> {
         commit: commit.to_owned(),
         code,
         on: Some(OnForge::of(forge)),
+        // The project it runs in, whose Asks lists it, as its line says (Q233).
+        project: crate::pool::project_here(),
     });
     let Reached::Heard(Heard::Checked(checked)) = reached else {
         return Err(not_asked(&reached, forge));

@@ -32,11 +32,19 @@ import {
   pickAsksScope,
   scopeCounts,
   scopeHolds,
+  scopeHoldsAbout,
+  type AsksSets,
   useAsksScope,
 } from "./asksScope";
 import type { AskedBy } from "./tabs";
 import { quietSaid } from "./NeedsYou";
-import { Notice, NoticeList, type NoticesClear, type NoticesDot } from "./Notice";
+import {
+  Notice,
+  NoticeList,
+  type NoticesClear,
+  type NoticesDot,
+  type NoticesFindable,
+} from "./Notice";
 import {
   DISMISS_ALL,
   DISMISS_ALL_TIP,
@@ -205,9 +213,10 @@ export const NOTICES = "Notices";
  * strip, not drawn where the project has one; Project, all of this project's. Each says its
  * count above 0, and Asks opens on Chat every time: a pick holds until Asks closes. Another
  * project's asks are answered in its own Asks, never listed here. A scope with nothing in it
- * offers the nearest wider one with something waiting, one press to widen. The Notices and updates
- * under the chips follow them (decision 9): a chat's in every scope that holds the chat, one of no
- * chat's under Project alone. The Notices view and Updates, which draw no chips, are not narrowed.
+ * offers the nearest wider one with something waiting, one press to widen. Notices and updates
+ * under the chips follow them (decision 9): one about a chat in every scope that holds its chat,
+ * one about no chat only under Project. The Panel's Notices view and Updates, which draw no
+ * chips, are not narrowed.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
@@ -251,6 +260,7 @@ export function Inbox({
   onNotices,
   onDot,
   onNoticeCauses,
+  findable,
   seen,
   onNoticeAnswer,
   elsewhere,
@@ -322,6 +332,9 @@ export function Inbox({
   onDot?: (dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists (#6002): what of them is New. */
   onNoticeCauses?: (causes: readonly string[]) => void;
+  /** **The Notices made findable** (Q182, Q183): a search box, filters by kind, groups with
+   *  counts and Dismissed (N), over the project's dismissals. In the Notices view alone. */
+  findable?: NoticesFindable;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
   seen?: SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
@@ -402,17 +415,23 @@ export function Inbox({
    */
   const ignoring = useDismissHold();
   const unheld = asks?.filter((ask) => !ignoring.held.has(askKey(ask)));
-  const inHere = (ask: Shown) => workspaceOf?.(ask.session) === here;
   /**
    * **Whose asks Asks lists** (ADR 0121, amended 2026-11-12): Chat, Workspace where the window
    * says which is in front and the project has more than one, and Project, each counted. The
    * pick holds until Asks closes (`asksScope.ts`).
    */
   const asksPicked = useAsksScope(plane);
-  const inChatSet = inChatOf(chat?.session, askedBy ?? (() => undefined));
-  const sets = {
-    inChat: (ask: Shown) => inChatSet(ask.session),
-    ...(here !== undefined && workspaceOf !== undefined && oneWorkspace !== true ? { inHere } : {}),
+  /** Which chats each scope holds, by session: Chat's set, and the workspace in front's. */
+  const chatSets: AsksSets<number> = {
+    inChat: inChatOf(chat?.session, askedBy ?? (() => undefined)),
+    ...(here !== undefined && workspaceOf !== undefined && oneWorkspace !== true
+      ? { inHere: (session: number) => workspaceOf(session) === here }
+      : {}),
+  };
+  const { inHere } = chatSets;
+  const sets: AsksSets<Shown> = {
+    inChat: (ask) => chatSets.inChat(ask.session),
+    ...(inHere === undefined ? {} : { inHere: (ask: Shown) => inHere(ask.session) }),
   };
   const counts = scopeCounts(unheld ?? [], sets);
   /** Chat is offered where the window says who dispatched whom; listed where a chat has focus. */
@@ -426,20 +445,16 @@ export function Inbox({
    * **Notices and updates under the chips follow them** (ADR 0121, amended 2026-11-12, decision
    * 9): one about a chat of this project is listed in every scope that holds its chat, as its asks
    * are; one about no chat (a persona's tools, the doctor, a stale clone, purlis's own) or about
-   * another project's chat, only under Project. With no chips drawn, nothing is narrowed.
+   * another project's chat, only under Project. With no chips drawn nothing narrows, and the
+   * Panel's Notices view draws none.
    */
   const chipsDrawn = drawsAsks && chips.length > 1 && counts.project > 0;
-  const underChips = chipsDrawn ? scope : "project";
-  const chatHeld = scopeHolds<number | undefined>(underChips, {
-    inChat: (session) => session !== undefined && inChatSet(session),
-    ...(sets.inHere === undefined
-      ? {}
-      : { inHere: (session) => session !== undefined && workspaceOf?.(session) === here }),
-  });
+  const aboutListed = scopeHoldsAbout(chipsDrawn ? scope : "project", chatSets);
   /** Whether a line about chat `session` of this project (0 or none: no chat) is listed. */
   const listedUnderChips = (session: number | null | undefined): boolean =>
-    chatHeld(session === null || session === 0 ? undefined : session);
-  /** The chats that cannot say they wait, of those listed: another project's under Project. */
+    aboutListed(session === null || session === 0 ? undefined : session);
+  /** The chats that cannot say they wait listed here: another project's is about no chat of
+   *  this one. */
   const quietListed = quiet.filter((one) =>
     listedUnderChips(one.plane === plane ? one.session : undefined),
   );
@@ -480,9 +495,11 @@ export function Inbox({
           ? ofList.filter(updateInHere)
           : ofList;
   const updatesShown: Updates | undefined =
-    updates === undefined || part !== "updates"
-      ? updates && { ...updates, rows: shownRows }
-      : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
+    updates === undefined
+      ? undefined
+      : part !== "updates"
+        ? { ...updates, rows: shownRows }
+        : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
   const listed = (unheld ?? []).filter(scopeHolds(scope, sets));
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
@@ -516,9 +533,11 @@ export function Inbox({
   // longest wait, one chat's asks together (`asksOrder.ts`).
   const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
-  /** Whether what an answer said is listed under the chips: by the chat that asked. */
-  const saidHere = (one: (typeof recent)[number]) =>
-    one.said !== undefined && listedUnderChips(one.session);
+  /** What answers said that the person must read, each under the scopes that hold the chat that
+   *  asked. */
+  const saidListed = recent.filter(
+    (one) => one.said !== undefined && listedUnderChips(one.session),
+  );
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
@@ -759,7 +778,7 @@ export function Inbox({
           as the Chats view's switch is: nothing to narrow otherwise, and an empty Asks is its one
           sentence. Each says its count above 0 only; Chat is greyed, with why, with no chat
           focused. */}
-      {drawsAsks && chips.length > 1 && counts.project > 0 && (
+      {chipsDrawn && (
         <div className="inbox-scope">
           <ScopeSwitch
             label={SCOPE_LABEL}
@@ -870,12 +889,14 @@ export function Inbox({
       >
         {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
             the chat's persona already holds does not stop its runs, and says where to. Above
-            whatever waits, until dismissed, since the row it was pressed on has gone. Under the
-            chips, as its chat's asks are (decision 9): Project lists every one, so none is lost. */}
-        {drawsAsks && recent.some(saidHere) && (
+            whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
+            asks and narrowed by the chips (ADR 0121, amended 2026-11-12, decision 9): one about a
+            chat is listed in every scope that holds its chat, one about no chat only under
+            Project, which lists every one, so none is lost. */}
+        {drawsAsks && saidListed.length > 0 && (
           <NoticeList>
-            {recent.map((one) =>
-              !saidHere(one) || one.said === undefined ? null : (
+            {saidListed.map((one) =>
+              one.said === undefined ? null : (
                 <Notice
                   key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
                   cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
@@ -996,6 +1017,7 @@ export function Inbox({
                 noticed === 0 &&
                 windowLinesCount === 0 &&
                 resultsCount === 0 &&
+                (findable === undefined || part !== "notices" || findable.dismissed.size === 0) &&
                 (reading === undefined || reading.length === 0)
               }
               ref={noticesAt}
@@ -1041,10 +1063,9 @@ export function Inbox({
                   onAnswer={onNoticeAnswer}
                   hold={part === "notices" ? hold : undefined}
                   onClear={setNoticesClear}
+                  findable={part === "notices" ? findable : undefined}
                 >
-                  {/* The project's own, no chat's: under the chips, Project alone lists them
-                      (decision 9). The Notices view draws no chips, so it lists every one. */}
-                  {underChips === "project" && notices}
+                  {aboutListed(undefined) ? notices : null}
                   {elsewhere !== undefined && part === undefined && (
                     <QuietNotices plane={plane} quiet={quietListed} onPress={elsewhere.onPress} />
                   )}

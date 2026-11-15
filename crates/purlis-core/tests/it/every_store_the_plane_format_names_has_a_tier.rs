@@ -614,6 +614,7 @@ fn a_chat_touches_a_file(run: &Path) {
         args: Some(args_hash(&input)),
         decision: Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -680,6 +681,7 @@ fn a_chat_touches_a_file(run: &Path) {
         output: Box::new(|_| {}),
         touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     deliver_tool(&socket, Some(&token), &call).expect("recorded");
     touch(&socket, Some(&token), &touching).expect("told");

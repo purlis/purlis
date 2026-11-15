@@ -162,6 +162,47 @@ export function retiredTerms(text: string, seen: Seen = "source"): string[] {
   return RETIRED.filter(({ term }) => term.test(said)).map(({ fault }) => fault);
 }
 
+/**
+ * The names a sandbox level is never given in the window (R-011, Q101, Q122): the middle level's
+ * old name, and the presets' that Q101 dropped. The file's keys (`on`, `floor`, `off`) stay, so
+ * a key on its own, in a code span or in an id is not one.
+ */
+const OLD_LEVEL_NAMES: readonly { name: RegExp; fault: string }[] = [
+  { name: /\bfloor\b/i, fault: "a level's old name: say Basic sandbox" },
+  { name: /\b(on|off) for you\b/i, fault: "a level said as on or off: name it" },
+  {
+    name: /\b(Relaxed|Balanced|Strict)\b/,
+    fault: "a preset's name: say Full sandbox, Basic sandbox or No sandbox",
+  },
+];
+
+/**
+ * **The old names `text` gives a sandbox level** (R-011): the level is Full sandbox, Basic
+ * sandbox or No sandbox. Read in every string a person may read: one the window shows, and copy
+ * built in TypeScript, which `uiStrings` calls source — a sentence, or a word with a capital. A
+ * lowercase word alone is a key the file writes, and is left alone.
+ */
+export function levelNameFaults(text: string, seen: Seen = "source"): string[] {
+  const said = text.trim();
+  if (seen !== "shown" && !/\s/.test(said) && !/^[A-Z]/.test(said)) return [];
+  const words = said.replace(CODE_SPAN, " ").replace(ID_NOT_HYPHENATED, " ");
+  return OLD_LEVEL_NAMES.filter(({ name }) => name.test(words)).map(({ fault }) => fault);
+}
+
+/**
+ * **Whether `text` says Refused where it means a stop** (R-170): the word is Blocked. Read in what
+ * the window shows and in copy built in TypeScript that reads as a sentence; a lone `Refused` in
+ * the source is a type or a key, and lowercase "refused" is English a sentence may use. A label
+ * that ends on the word ("Commit refused") is caught in any case (Q259): it names a stop.
+ */
+export function refusedWord(text: string, seen: Seen = "source"): string[] {
+  const said = text.trim();
+  if (seen !== "shown" && !/\s/.test(said)) return [];
+  const words = said.replace(CODE_SPAN, " ").trim();
+  const label = /^\p{Lu}/u.test(words) && /\brefused$/i.test(words);
+  return label || /\bRefused\b/.test(words) ? ["the word is Blocked, not `Refused`"] : [];
+}
+
 /** What is wrong with `text` by the guide's mechanical rules; empty when nothing is. */
 export function copyFaults(text: string, seen: Seen = "source"): string[] {
   const faults: string[] = [];

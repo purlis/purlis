@@ -427,6 +427,7 @@ fn a_permission_prompt_is_told_to_the_window_and_the_window_s_answer_goes_back_o
                     payload: serde_json::json!({"tool_name": "Bash",
                             "tool_input": {"command": "npm test"}}),
                     ran_for_ms: None,
+                    speaker: Default::default(),
                 },
                 std::time::Duration::from_secs(30),
             )
@@ -458,6 +459,88 @@ fn a_permission_prompt_is_told_to_the_window_and_the_window_s_answer_goes_back_o
         Some("allow".to_owned())
     );
     assert!(hooks.answer(3, &shown.ask, "allow").is_err(), "once");
+}
+
+/// R-229, Q261: **a harness's permission prompt is written raised, and answered with who
+/// answered**, into the host's log, by the group its ask is and the answer the registry applied
+/// (`AskAnswered::applied`): raised as the hook holds it, then Deny from the window, refused.
+#[cfg(unix)]
+#[test]
+fn a_harness_prompt_is_written_raised_and_answered_with_the_answer_the_registry_applied() {
+    use purlis_core::eventlog::{self, ArgsKey, Log, Recorder};
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks =
+        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let logs = dir.path().join("events");
+    hooks.record_into(Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    )));
+    let (tx, told) = std::sync::mpsc::channel();
+    let tx = Mutex::new(tx);
+    hooks.tell_asks_to(Arc::new(move |asking| {
+        tx.lock().unwrap().send(asking).unwrap()
+    }));
+    let hook = {
+        let socket = hooks.socket().expect("a socket").to_path_buf();
+        let token = hooks.token_for(3);
+        std::thread::spawn(move || {
+            purlis_core::hookwire::permission::ask_permission_of_an_admitted_host(
+                std::os::unix::net::UnixStream::connect(&socket).expect("connects"),
+                Some(&token),
+                &purlis_core::hookwire::PermissionAsked {
+                    chat: 3,
+                    permission_request: purlis_core::harness::hooked::Source::ClaudeCode,
+                    payload: serde_json::json!({"tool_name": "Bash",
+                            "tool_input": {"command": "npm test"}}),
+                    ran_for_ms: None,
+                    speaker: Default::default(),
+                },
+                std::time::Duration::from_secs(30),
+            )
+        })
+    };
+    let asking = told
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the window is told");
+    let [shown] = asking.asks.as_slice() else {
+        panic!("one ask: {asking:?}");
+    };
+    let deny = shown
+        .options
+        .iter()
+        .find(|option| !option.allows)
+        .expect("a Deny");
+    hooks
+        .answer(3, &shown.ask, &deny.id)
+        .expect("the window's answer applies");
+    hook.join().expect("the hook").expect("a reply");
+
+    let asked: Vec<(String, serde_json::Value)> = eventlog::read(&logs)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind.starts_with("ask."))
+        .map(|event| (event.kind, event.body))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (
+                "ask.raised".to_owned(),
+                serde_json::json!({"ask": "harness_prompt"})
+            ),
+            (
+                "ask.answered".to_owned(),
+                serde_json::json!({"ask": "harness_prompt", "answer": "refused", "by": "window"})
+            ),
+        ],
+        "raised as it was held, and answered as the registry applied it"
+    );
 }
 
 #[test]
@@ -520,6 +603,7 @@ fn every_hook_call_the_channel_hears_is_one_event_in_the_hosts_log() {
             args: Some(eventlog::args_hash(&serde_json::json!({"command": "ls"}))),
             decision: purlis_core::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: None,
             at_ms: 0,
@@ -1796,6 +1880,7 @@ fn a_touched_path_reaches_the_window_and_no_file_the_host_writes() {
             args: Some(eventlog::args_hash(&input)),
             decision: purlis_core::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: None,
             at_ms: 0,
@@ -2048,6 +2133,7 @@ fn a_chat_refused_an_update_of_the_root_raises_nothing_for_the_person() {
         args: None,
         decision: purlis_core::hookwire::Decision::Deny,
         rule: Some(rule.to_owned()),
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -2217,6 +2303,7 @@ fn a_line_spooled_while_no_host_listened_is_recorded_when_the_project_is_opened_
         args: None,
         decision: purlis_core::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -2270,6 +2357,7 @@ fn a_closed_chats_spool_is_drained_into_the_log_and_its_key_does_not_outlive_it(
         args: None,
         decision: purlis_core::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -2350,6 +2438,7 @@ fn an_open_with_no_event_log_drops_an_ended_chats_key_unless_its_line_waits() {
         args: None,
         decision: purlis_core::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
@@ -2387,6 +2476,7 @@ fn a_running_chats_spooled_line_is_recorded_once_the_chat_is_heard_from_again() 
         args: None,
         decision: purlis_core::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,

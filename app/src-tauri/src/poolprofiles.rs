@@ -570,7 +570,11 @@ pub fn listen_for_the_command_line() {
                 // A pushed commit is asked about only on the person's yes here, as the line's
                 // other asks are.
                 if let purlis_core::signingsetup::Asked::Check {
-                    repo, commit, code, ..
+                    repo,
+                    commit,
+                    code,
+                    project,
+                    ..
                 } = asked
                 {
                     let on = purlis_core::signingsetup::forge_said(&asked.forge());
@@ -583,7 +587,7 @@ pub fn listen_for_the_command_line() {
                         app,
                         crate::poolsignin_confirm::Asks::SigningCheck,
                         Some(&on),
-                        None,
+                        project.as_deref(),
                         repo,
                         commit,
                         code,

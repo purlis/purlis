@@ -99,6 +99,7 @@ import { ProposedPin } from "../ProposedPin";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { MergeChangesDialog } from "../MergeChanges";
 import { ResumeQuestion } from "../GradeResume";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { NewSkillDialog } from "../NewSkillDialog";
@@ -1898,6 +1899,21 @@ const DIALOGS: Opened[] = [
           busy={false}
           onClose={nothing}
           onSave={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a held merge's changes",
+    file: "MergeChanges.tsx",
+    open: async () =>
+      render(
+        <MergeChangesDialog
+          number={12}
+          repo="o/r"
+          head="0123456789abcdef0123456789abcdef01234567"
+          base="main"
+          changes={"+fn parse() {}\n"}
+          onClose={nothing}
         />,
       ),
   },

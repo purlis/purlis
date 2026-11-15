@@ -212,6 +212,45 @@ describe("identical requests from several chats", () => {
     const rows = withSame(inOrder(asks, age, NOW));
     expect(rows.map((row) => row.kind)).toEqual(["chat", "chat"]);
   });
+
+  it("never groups two chats' merges of one request, each high-risk (Q239)", () => {
+    const merge = (session: number): Shown => ({
+      session,
+      ask: `merge:${session}:o/r#12`,
+      says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
+      options: [allow("merge", "Merge"), { id: "dont-merge", label: "Don't merge", allows: false }],
+      source: "merge-hold",
+      chain: [`chat ${session}`],
+      answer: {
+        via: "merge-hold",
+        repo: "o/r",
+        number: 12,
+        head: "0123456789abcdef0123456789abcdef01234567",
+        facts: {
+          title: "Add the parser",
+          author: "octo",
+          base: "main",
+          checks: "PASSED",
+          read_at: 1_763_000_000,
+          ruleset: "none",
+          look: "not-viewed",
+          approved_by: null,
+          since_viewed: null,
+          pushed_here: true,
+          digest: "d-passed",
+        },
+      },
+      risk: {
+        class: "merge",
+        why: "Merges request 12 of o/r into main, with no undo",
+        confirm: "Merge request 12 of o/r into main?",
+      },
+    });
+    const asks = [merge(1), merge(2)];
+    expect(asks.every(highRisk)).toBe(true);
+    const rows = withSame(inOrder(asks, age, NOW));
+    expect(rows.map((row) => row.kind)).toEqual(["chat", "chat"]);
+  });
 });
 
 describe("what a group's row says", () => {
