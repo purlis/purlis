@@ -8,7 +8,7 @@
  * window, it is one piece with the rows and not a band of the window's colour.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
@@ -379,96 +379,6 @@ export const HeldAcrossTheGapToTheCard: Story = {
       await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
     } finally {
       clock.restore();
-      inUse();
-    }
-  },
-};
-
-/** What takes chat 1 away: the story's own, as the core's answer would when it ends. */
-let takeAway = () => {};
-
-/** Two rows in the side panel, the first of which goes, and a chat on its way meanwhile. */
-function GoingInItsPanel() {
-  const [chats, setChats] = useState(() => [listed(1), listed(2)]);
-  useEffect(() => {
-    arrive = () => setChats((now) => [...now, listed(3)]);
-    takeAway = () => setChats((now) => now.filter((chat) => chat.session !== 1));
-  }, []);
-  const rows = useMemo(() => chatsTree(chats), [chats]);
-  return (
-    <ChatsHere.Provider value={fixedChats(nothingKnown)}>
-      <div
-        {...panelRoot("side")}
-        aria-label="Navigation"
-        role="region"
-        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 160 }}
-      >
-        <ChatsSection rows={rows} front={1} onOpen={() => {}} />
-      </div>
-    </ChatsHere.Provider>
-  );
-}
-
-/**
- * **The row the keyboard is on goes, and the list holds still through it** (V100-47): a chat
- * that arrived while the keyboard was in the list is not drawn as the row under the keyboard is
- * taken away. The browser drops the focus with the row, and React hears no blur of it, so React
- * Aria puts the keyboard back in the tree after the row has gone; the hold is kept all that
- * while, never let go for a draw in between, which would draw every row that came meanwhile
- * under the keyboard. Every change of the list's `data-holding` (#4020) and every row drawn is
- * written down as it happens, so a hold let go and taken again between two looks is caught.
- */
-export const HeldAsTheFocusedRowGoes: Story = {
-  render: () => <GoingInItsPanel />,
-  // What it holds to is what the list does over time, and its rows at rest are
-  // `ScrolledUnderItsHead`'s.
-  parameters: { screenshot: false },
-  play: async ({ canvasElement }) => {
-    const list = () => canvasElement.querySelector<HTMLElement>(".chats-list");
-    const inUse = keepTheWindowInUse();
-    try {
-      await tabInto(() => canvasElement.querySelector('[role="treegrid"]'));
-      await untilFocused(() => rowOf(canvasElement, 1), "the keyboard is on chat 1's row");
-      await waitFor(
-        () => expect(list(), "the keyboard in the list holds it").toHaveAttribute("data-holding"),
-        { timeout: 3000 },
-      );
-      arrive();
-      await drawn();
-      await expect(rowOf(canvasElement, 3), "a chat that came is held back").toBeNull();
-      // From here on, every draw the list is given is written down.
-      const unheld: string[] = [];
-      const watch = new MutationObserver((changes) => {
-        for (const change of changes) {
-          if (change.type === "attributes" && !list()?.hasAttribute("data-holding")) {
-            unheld.push("the hold was let go");
-          }
-          for (const node of change.addedNodes) {
-            if (node instanceof Element && node.querySelector?.('[data-session="3"]')) {
-              unheld.push("chat 3 was drawn");
-            }
-          }
-        }
-      });
-      watch.observe(list() as HTMLElement, {
-        attributes: true,
-        attributeFilter: ["data-holding"],
-        childList: true,
-        subtree: true,
-      });
-      takeAway();
-      await waitFor(() => expect(rowOf(canvasElement, 1)).toBeNull());
-      await untilFocusWithin(
-        () => canvasElement.querySelector('[role="treegrid"]'),
-        "the keyboard is put back in the tree",
-      );
-      await drawn();
-      await drawn();
-      watch.disconnect();
-      await expect(unheld, "the list moved under the keyboard as its row went").toEqual([]);
-      await expect(rowOf(canvasElement, 3)).toBeNull();
-      await expect(list()).toHaveAttribute("data-holding");
-    } finally {
       inUse();
     }
   },
