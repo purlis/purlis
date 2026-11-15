@@ -3735,10 +3735,17 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
 /// When this binary was started by the service manager as the session host's login item
 /// (FD-17, `loginitems.rs`), serve until a window or the tray's Stop tells it to quit, and give
 /// the code to exit with; otherwise `None`, before anything is read or opened. Its standard
-/// error is where launchd writes the host's log, or systemd's journal.
+/// error is where launchd writes the host's log, or systemd's journal. launchd never rotates
+/// that log, so the host keeps it capped itself while it runs (#6687, `purlis_core::hostlog`),
+/// once it serves: a second host, about to exit as another serves, leaves the log to that one.
 #[cfg(unix)]
 pub fn serve_as_a_login_item_if_asked() -> Option<i32> {
-    purlis_host::serve_as_a_login_item_if_asked(sessionhost::place, hosting_here)
+    purlis_host::serve_as_a_login_item_if_asked(sessionhost::place, hosting_here, || {
+        #[cfg(target_os = "macos")]
+        if let Some(log) = sessionhost::managed::log_here() {
+            purlis_core::hostlog::keep_capped(log);
+        }
+    })
 }
 
 /// What the session host holds its programs and projects in, on this machine, whoever started

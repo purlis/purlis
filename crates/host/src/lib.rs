@@ -179,6 +179,7 @@ pub fn serve_for_the_window_if_asked(
                 hosting,
                 None,
                 Serves::ForTheWindow,
+                || {},
                 async move {
                     lives
                         .while_a_window_may_come_back(GRACE, until_the_window_closes_its_end())
@@ -202,10 +203,15 @@ pub fn serve_for_the_window_if_asked(
 /// No window started it, so no window is its parent and its programs run below it alone, as
 /// `purlis serve`'s do. **Another host serving is a success** ([`exit_code`]): a window started
 /// one before the manager did, and the manager is not to start this one again.
+///
+/// `serving` is called once this host serves, after it has found no other host serving and
+/// taken the lock: what only the host that serves may do (#6687, keeping its log capped), and
+/// never a second host about to exit.
 #[cfg(unix)]
 pub fn serve_as_a_login_item_if_asked(
     place: impl FnOnce() -> Option<Place>,
     hosting: impl FnOnce(&Place) -> Hosting,
+    serving: impl FnOnce(),
 ) -> Option<i32> {
     if std::env::args_os().nth(1)? != SERVE_AS_A_LOGIN_ITEM {
         return None;
@@ -220,6 +226,7 @@ pub fn serve_as_a_login_item_if_asked(
                 hosting,
                 None,
                 Serves::AsALoginItem,
+                serving,
                 async move {
                     lives.while_it_is_a_login_item().await;
                 },
@@ -243,6 +250,7 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
         hosting(place),
         None,
         Serves::Alone,
+        || {},
         std::future::pending(),
     )
 }
@@ -303,6 +311,7 @@ pub fn serve_alone_answering(
         hosting,
         Some(pairing),
         Serves::Alone,
+        || {},
         suspended,
     )
 }
@@ -339,6 +348,7 @@ fn run(
     hosting: Hosting,
     pairing: Option<Pairing>,
     serves: Serves,
+    serving: impl FnOnce(),
     until: impl Future<Output = ()>,
 ) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -362,6 +372,7 @@ fn run(
         use std::io::Write;
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
+        serving();
     };
     let served = runtime.block_on(serve_answering(
         place, window, hosting, pairing, ready, until,
@@ -411,6 +422,38 @@ mod tests {
     fn the_windows_host_finding_another_serving_says_so_for_the_window_to_reattach() {
         assert_eq!(exit_code(Err(&another_serves()), Serves::ForTheWindow), 3);
         assert_eq!(exit_code(Err(&another_serves()), Serves::Alone), 3);
+    }
+
+    /// #6687: what only the host that serves may do (keep its log trimmed) is never done by a
+    /// login item that finds another host serving and is about to exit. The other host is its
+    /// lock held, which a second host finds before it touches the socket.
+    #[test]
+    fn a_login_item_finding_another_host_serving_never_starts_what_only_the_serving_host_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let place = Place::at(
+            dir.path().join("purlis-test").join("purlisd.sock"),
+            dir.path().join("config").join("purlisd"),
+        );
+        std::fs::create_dir_all(place.socket.parent().unwrap()).unwrap();
+        let held = std::fs::File::create(&place.lock).unwrap();
+        held.try_lock().unwrap();
+        let started = std::cell::Cell::new(false);
+
+        let code = run(
+            &place,
+            None,
+            Hosting::new(ComposesNothing),
+            None,
+            Serves::AsALoginItem,
+            || started.set(true),
+            std::future::pending(),
+        );
+
+        assert_eq!(code, 0, "another serving is a success for a login item");
+        assert!(
+            !started.get(),
+            "the second host started what the serving one does"
+        );
     }
 
     #[test]
