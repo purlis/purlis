@@ -7602,7 +7602,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   starts** (#6485): the chat as it closed, spelt as a `chats[]` entry of
   [`app/reopen.json`](#appreopenjson) is, without what was its run's or its place's alone (no
   `pid`, `run`, tab or pane, work left running, or `from`, so a handoff or a task reopens as an
-  ordinary chat that owes nobody a report). Reopen starts it again on its `resume`
+  ordinary chat that owes nobody a report). A chat a dispatch started keeps `reopened` in its
+  `from`'s place, so its Reopen and every later start of it ask its profile again, as a
+  finished task's Reopen does. Reopen starts it again on its `resume`
   conversation, as the same `id` under a new number; one with no `resume`, or an entry with no
   `chat`, does not reopen, and its card says why. A `chat` that does not read as one reads as
   absent. A chat closed again replaces its entry, by its ULID

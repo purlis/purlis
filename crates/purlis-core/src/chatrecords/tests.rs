@@ -416,6 +416,25 @@ fn a_closed_handoff_reopens_as_an_ordinary_chat_that_owes_nobody_anything() {
     let again = every(&root).remove(0).reopened().expect("it reopens");
 
     assert_eq!(again.from, None);
+    assert_eq!(
+        again.reopened,
+        Some(crate::reopen::ReopenedTask { by_person: false }),
+        "its profile is asked again as it starts, as its dispatch's was"
+    );
+}
+
+#[test]
+fn a_closed_chat_the_person_started_reopens_as_theirs_and_a_reopened_task_stays_one() {
+    let mine = closed_with(as_it_ran(Some(CONVERSATION)));
+    assert_eq!(mine.reopened().unwrap().reopened, None);
+    let task = closed_with(crate::reopen::Chat {
+        reopened: Some(crate::reopen::ReopenedTask { by_person: true }),
+        ..as_it_ran(Some(CONVERSATION))
+    });
+    assert_eq!(
+        task.reopened().unwrap().reopened,
+        Some(crate::reopen::ReopenedTask { by_person: true })
+    );
 }
 
 #[test]

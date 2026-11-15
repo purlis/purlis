@@ -5194,6 +5194,48 @@ fn a_dispatched_chat_is_not_put_back_on_a_profile_the_project_stopped_listing() 
     assert!(!waiting[0].why.contains("dispatched"), "{}", waiting[0].why);
 }
 
+/// **A closed task's Reopen is held to what its dispatch was held to** (#6485): its profile is
+/// asked again, as every later start of a chat a dispatch started is (#1509), and a profile
+/// the project no longer lists for its persona is refused. Nothing starts.
+#[test]
+fn a_closed_task_is_not_reopened_on_a_profile_the_project_stopped_listing() {
+    const CHAT: &str = "01K6CHATS0000000000000000C";
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_work(dir.path(), "");
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[dispatch.profiles]\ndevops = [\"other\"]\n",
+    )
+    .expect("the manifest");
+    let (chats, _) = recorded();
+    let chats = chats.in_project(&root);
+    let ran = Chat {
+        resume: Some(purlis_core::harness::SessionId::new(ID).expect("a session id")),
+        number: Some(7),
+        identity: purlis_core::reopen::Identity {
+            id: Some(CHAT.to_owned()),
+            ..Default::default()
+        },
+        ..one_dispatched_on_work(&root).chats.remove(0)
+    };
+    let record = purlis_core::chatrecords::ChatRecord {
+        number: 7,
+        id: CHAT.to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T09:40:00Z".to_owned(),
+        started_by: purlis_core::chatrecords::StartedBy::Person,
+        place: "ide".to_owned(),
+        earlier: Vec::new(),
+        chat: Some(ran),
+    };
+
+    let refused = chats.reopen_closed(&record, SIZE).unwrap_err();
+
+    assert!(refused.contains("now lists only 'other'"), "{refused}");
+    assert!(chats.record().chats.is_empty(), "nothing started");
+}
+
 #[test]
 fn a_retry_refused_for_approval_after_another_refusal_says_so_now() {
     // The approval is read again at every refused start, so a chat that first failed for

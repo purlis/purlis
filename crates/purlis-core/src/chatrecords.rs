@@ -138,13 +138,24 @@ impl ChatRecord {
 /// **What a closed chat keeps for its Reopen** (#6485): `chat` as it closed, without what was
 /// its run's or its place's alone. No process, run, tab or pane; no work left running; and no
 /// dispatch it came from, so a handoff or a task reopens as an ordinary chat that owes nobody a
-/// report, as a finished task's Reopen does. Its program, words, folder, conversation, persona,
-/// profile, name and sandbox choices stay.
+/// report. Its program, words, folder, conversation, persona, profile, name and sandbox choices
+/// stay.
+///
+/// **A chat a dispatch started is still held to what its dispatch was held to**: it keeps
+/// `reopened` ([`crate::reopen::Chat::reopened`]), from the dispatch it came from or as it was
+/// already kept, so its Reopen and every later start of it ask its profile again
+/// ([`crate::dispatchprofiles::may_start_again`]), as a finished task's Reopen does.
 pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
     crate::reopen::Chat {
         active: false,
         from: None,
-        reopened: None,
+        reopened: chat
+            .from
+            .as_ref()
+            .map(|from| crate::reopen::ReopenedTask {
+                by_person: from.by_person,
+            })
+            .or(chat.reopened),
         held: None,
         tab_opened: false,
         unseen: false,
