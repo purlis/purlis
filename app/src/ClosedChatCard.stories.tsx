@@ -226,8 +226,8 @@ export const Outcomes: Story = {
 
 /**
  * **A chat no dispatch started** (#6304): the app kept its number, title and times as it
- * closed, and no screen. Its badge says Closed, it has no report line, and both answers are off
- * and say why.
+ * closed, and no screen; and what its Reopen starts (#6485). Its badge says Closed, it has no
+ * report line, *Read it* is off and says why, and *Reopen* starts it again on its conversation.
  */
 export const ChatNoDispatchStarted: Story = {
   args: { card: ORDINARY },
@@ -239,11 +239,15 @@ export const ChatNoDispatchStarted: Story = {
     await waitFor(() => expect(within(card).getByText("Closed")).toBeVisible());
     await expect(within(card).getByText("you")).toBeVisible();
     await expect(within(card).queryByText("Report")).toBeNull();
-    for (const name of ["Read it", "Reopen"])
-      await expect(within(card).getByRole("button", { name })).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
+    await expect(within(card).getByRole("button", { name: "Read it" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    // Its record kept its conversation, so Reopen starts it again (#6485).
+    await expect(within(card).getByRole("button", { name: "Reopen" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await expect(
       within(card).getByText("Its screen was not kept.", { selector: "p" }),
     ).toBeVisible();
