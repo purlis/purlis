@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createPortal } from "react-dom";
-import { useHeldStill } from "./heldStill";
+import { userEvent } from "@testing-library/user-event";
+import { useLayoutEffect } from "react";
+import { useHeldStill, useHeldWhile } from "./heldStill";
+import { Tree, TreeRow } from "./ui/tree/Tree";
+import { RowLabel } from "./ui/list/Row";
 
 /**
  * **The hold a list keeps still by** (V100-47), drawn small: one row, the row's menu drawn in a
@@ -215,5 +219,49 @@ describe("a list held still (useHeldStill)", () => {
     act(() => void window.dispatchEvent(new Event("blur")));
 
     expect(holding()).toBe(false);
+  });
+});
+
+/**
+ * **A list of rows in a tree, held as the Chats list is** (#3566): a row the plane added while
+ * it holds is drawn once it lets go, and a row the plane took away goes at once. Every draw
+ * the window commits writes down whether it was held, which is what the person saw.
+ */
+function HeldTree({ rows, frames }: { rows: readonly string[]; frames: boolean[] }) {
+  const { holding, held } = useHeldStill<HTMLDivElement>(rows);
+  const order = useHeldWhile(holding, rows);
+  const drawn = order.filter((row) => rows.includes(row));
+  useLayoutEffect(() => {
+    frames.push(holding);
+  });
+  return (
+    <div {...held}>
+      <Tree aria-label="Chats" items={drawn.map((id) => ({ id }))}>
+        {(row) => <TreeRow id={row.id} textValue={row.id} content={<RowLabel>{row.id}</RowLabel>} />}
+      </Tree>
+    </div>
+  );
+}
+
+describe("a tree held still while the keyboard is in it (useHeldStill)", () => {
+  it("is held through every draw as the row the keyboard is on is taken away, and draws no row that came meanwhile", async () => {
+    const frames: boolean[] = [];
+    const { rerender } = render(<HeldTree rows={["a", "b"]} frames={frames} />);
+    const user = userEvent.setup();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("row", { name: "a" }));
+    await waitFor(() => expect(frames.at(-1)).toBe(true));
+    // A chat arrives while the keyboard is in the list: held, so not drawn.
+    rerender(<HeldTree rows={["a", "b", "c"]} frames={frames} />);
+    expect(screen.queryByRole("row", { name: "c" })).toBeNull();
+    const from = frames.length;
+    // And the row the keyboard is on is taken away, which sends no blur.
+    rerender(<HeldTree rows={["b", "c"]} frames={frames} />);
+    await waitFor(() =>
+      expect(screen.getByRole("treegrid").contains(document.activeElement)).toBe(true),
+    );
+    await act(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done))));
+    expect(frames.slice(from)).not.toContain(false);
+    expect(screen.queryByRole("row", { name: "c" })).toBeNull();
   });
 });
