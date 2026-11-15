@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794738648886,
+  "lastUpdate": 1794741834172,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49812,6 +49812,48 @@ window.BENCHMARK_DATA = {
             "value": 101.76165900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.081, 101.251, 101.762, 102.057, 103.324 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ce2d8ed4b3d1fdf460bcf63480431f37c5a165e3",
+          "message": "Artifact isolation case 6: steadier on macOS (#6683)\n\n* Artifact isolation case 6: steadier on macOS\n\nCase 6 changes A's template under its open tab and approves it only once\nthe window has heard the change, so the folder's watch cannot open the new\napproval's page a second time after the press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F3Q44H1KA9BJPYRN6B7E4C\nPurlis-Persona: steward\n\n* Temporary: loop case 6 on macOS (removed before merge)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F3Q44H1KA9BJPYRN6B7E4C\nPurlis-Persona: steward\n\n* Drop the temporary case 6 loop\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F3Q44H1KA9BJPYRN6B7E4C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T10:30:23Z",
+          "tree_id": "9001125c0484b7548c2a628dac013600c91a2f5c",
+          "url": "https://github.com/purlis/purlis/commit/ce2d8ed4b3d1fdf460bcf63480431f37c5a165e3"
+        },
+        "date": 1794741828181,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.571591,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.561, 0.571, 0.572, 0.579, 0.600 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2986455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.087, 16.295, 16.299, 16.329, 16.383 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.6999165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.336, 99.797, 100.700, 100.960, 102.945 ms"
           }
         ]
       }
