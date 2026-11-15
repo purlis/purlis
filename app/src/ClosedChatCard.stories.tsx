@@ -253,3 +253,49 @@ export const ChatNoDispatchStarted: Story = {
     ).toBeVisible();
   },
 };
+
+/**
+ * **A chat that closed before purlis kept what a reopen needs** (#6485): *Reopen* is off, kept
+ * focusable so its reason is heard as its description: why, and what to do instead.
+ */
+export const ChatClosedBeforeItsReopenWasKept: Story = {
+  args: { card: { ...ORDINARY, chat_reopen: "not_kept" } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #702/ }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAccessibleDescription(
+      /closed before purlis kept what a reopen needs\. Start a new chat/,
+    );
+  },
+};
+
+/**
+ * **A chat whose harness named no conversation** (#6485): there is nothing to start it again
+ * on, so *Reopen* is off and says why and what to do instead.
+ */
+export const ChatWithNoConversation: Story = {
+  args: { card: { ...ORDINARY, chat_reopen: "no_conversation" } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #702/ }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAccessibleDescription(
+      /named no conversation to resume\. Start a new chat/,
+    );
+  },
+};
