@@ -102,12 +102,13 @@ fn a_systemd_user_manager_is_found_by_its_private_socket() {
 #[test]
 fn the_hosts_launchd_agent_restarts_it_only_after_an_exit_that_was_not_a_success() {
     let plist = dict(&host_plist(
+        &Names::RELEASE,
         &host_job(),
         Path::new("/Users/me/log/host.log"),
     ));
     assert_eq!(
         plist.get("Label").and_then(plist::Value::as_string),
-        Some(HOST_LABEL)
+        Some("dev.purlis.host")
     );
     let args: Vec<&str> = plist
         .get("ProgramArguments")
@@ -154,10 +155,10 @@ fn the_hosts_launchd_agent_restarts_it_only_after_an_exit_that_was_not_a_success
 
 #[test]
 fn the_apps_launchd_agent_starts_it_once_at_login_in_the_background() {
-    let plist = dict(&app_plist(&app_job()));
+    let plist = dict(&app_plist(&Names::RELEASE, &app_job()));
     assert_eq!(
         plist.get("Label").and_then(plist::Value::as_string),
-        Some(APP_LABEL)
+        Some("dev.purlis.app.background")
     );
     assert_eq!(
         plist.get("RunAtLoad").and_then(plist::Value::as_boolean),
@@ -208,8 +209,16 @@ fn the_hosts_systemd_unit_restarts_it_on_failure_with_the_breakers_limits() {
         ),
         "{unit}"
     );
+    // Started with the person's graphical session, and after it, so the host and the browsers
+    // it runs have the session's display; stopped with it.
+    for line in [
+        "After=graphical-session.target",
+        "PartOf=graphical-session.target",
+    ] {
+        assert!(unit_section.contains(&line.to_owned()), "{line} in\n{unit}");
+    }
     assert!(
-        section("Install").contains(&"WantedBy=default.target".to_owned()),
+        section("Install").contains(&"WantedBy=graphical-session.target".to_owned()),
         "{unit}"
     );
 }
@@ -242,7 +251,7 @@ fn the_apps_autostart_entry_starts_it_in_the_background_quoted_for_the_desktop()
 #[test]
 fn the_login_items_go_where_each_manager_reads_them() {
     let home = Path::new("/home/me");
-    let places = places(home, None);
+    let places = places(home, None, Names::RELEASE);
     assert_eq!(
         places.host_plist,
         home.join("Library/LaunchAgents/dev.purlis.host.plist")
@@ -259,13 +268,13 @@ fn the_login_items_go_where_each_manager_reads_them() {
         places.app_autostart,
         home.join(".config/autostart/purlis.desktop")
     );
-    let elsewhere = super::places(home, Some(Path::new("/xdg")));
+    let elsewhere = super::places(home, Some(Path::new("/xdg")), Names::RELEASE);
     assert_eq!(
         elsewhere.host_unit,
         Path::new("/xdg/systemd/user/purlis-host.service")
     );
     // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says.
-    assert_eq!(super::places(home, Some(Path::new("rel"))), places);
+    assert_eq!(super::places(home, Some(Path::new("rel")), Names::RELEASE), places);
 }
 
 /// The commands a manager ran, each as one line, and what each answers.
@@ -276,6 +285,8 @@ struct Ran {
     failing: Mutex<Vec<String>>,
     /// What a line prints.
     prints: Mutex<Vec<(String, String)>>,
+    /// Lines that fail so many more times.
+    failing_first: Mutex<Vec<(String, usize)>>,
 }
 
 impl Ran {
@@ -287,7 +298,15 @@ impl Ran {
                 .collect::<Vec<_>>()
                 .join(" ");
             ran.lines.lock().unwrap().push(line.clone());
-            let fails = ran.failing.lock().unwrap().contains(&line);
+            let fails_now = ran
+                .failing_first
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|(of, left)| *of == line && *left > 0)
+                .map(|(_, left)| *left -= 1)
+                .is_some();
+            let fails = fails_now || ran.failing.lock().unwrap().contains(&line);
             let stdout = ran
                 .prints
                 .lock()
@@ -312,6 +331,14 @@ impl Ran {
         self.failing.lock().unwrap().push(line.to_owned());
     }
 
+    /// `line` fails its first `times` runs, then succeeds.
+    fn fails_first(&self, line: &str, times: usize) {
+        self.failing_first
+            .lock()
+            .unwrap()
+            .push((line.to_owned(), times));
+    }
+
     fn prints(&self, line: &str, out: &str) {
         self.prints
             .lock()
@@ -322,7 +349,7 @@ impl Ran {
 
 fn launchd(home: &Path, ran: &Arc<Ran>) -> Launchd {
     Launchd {
-        places: places(home, None),
+        places: places(home, None, Names::RELEASE),
         host: host_job(),
         app: app_job(),
         log: home.join("host.log"),
@@ -333,7 +360,7 @@ fn launchd(home: &Path, ran: &Arc<Ran>) -> Launchd {
 
 fn systemd(home: &Path, ran: &Arc<Ran>) -> SystemdUser {
     SystemdUser {
-        places: places(home, None),
+        places: places(home, None, Names::RELEASE),
         host: host_job(),
         app: app_job(),
         runs: ran.runs(),
@@ -351,11 +378,11 @@ fn installing_on_macos_writes_both_agents_and_loads_only_the_hosts() {
     let places = &manager.places;
     assert_eq!(
         std::fs::read_to_string(&places.host_plist).unwrap(),
-        host_plist(&host_job(), &home.path().join("host.log"))
+        host_plist(&Names::RELEASE, &host_job(), &home.path().join("host.log"))
     );
     assert_eq!(
         std::fs::read_to_string(&places.app_plist).unwrap(),
-        app_plist(&app_job())
+        app_plist(&Names::RELEASE, &app_job())
     );
     assert_eq!(
         ran.take(),
@@ -382,9 +409,30 @@ fn installing_again_unchanged_leaves_a_running_host_alone() {
 }
 
 #[test]
-fn installing_a_changed_agent_loads_it_again() {
+fn a_changed_agent_never_ends_the_host_launchd_runs_and_is_read_at_its_next_start() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
+    let manager = launchd(home.path(), &ran);
+    std::fs::create_dir_all(manager.places.host_plist.parent().unwrap()).unwrap();
+    std::fs::write(&manager.places.host_plist, "an older build's").unwrap();
+    manager.install().unwrap();
+    assert_eq!(
+        ran.take(),
+        ["launchctl print gui/501/dev.purlis.host"],
+        "a host that runs keeps running, with every chat in it"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&manager.places.host_plist).unwrap(),
+        host_plist(&Names::RELEASE, &host_job(), &home.path().join("host.log")),
+        "written for launchd to read when it next loads the agent"
+    );
+}
+
+#[test]
+fn a_changed_agent_that_is_not_loaded_is_loaded() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    ran.fails("launchctl print gui/501/dev.purlis.host");
     let manager = launchd(home.path(), &ran);
     std::fs::create_dir_all(manager.places.host_plist.parent().unwrap()).unwrap();
     std::fs::write(&manager.places.host_plist, "an older build's").unwrap();
@@ -394,10 +442,79 @@ fn installing_a_changed_agent_loads_it_again() {
         ran.take(),
         [
             "launchctl print gui/501/dev.purlis.host".to_owned(),
-            "launchctl bootout gui/501/dev.purlis.host".to_owned(),
             format!("launchctl bootstrap gui/501 {plist}"),
         ]
     );
+}
+
+#[test]
+fn a_bootstrap_refused_because_the_agent_got_loaded_meanwhile_is_no_failure() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    // Not loaded when asked, then loaded by the time bootstrap runs: launchd's error 5.
+    ran.fails_first("launchctl print gui/501/dev.purlis.host", 1);
+    let manager = launchd(home.path(), &ran);
+    let plist = manager.places.host_plist.display().to_string();
+    ran.fails(&format!("launchctl bootstrap gui/501 {plist}"));
+    manager.install().unwrap();
+    assert_eq!(
+        ran.take(),
+        [
+            "launchctl print gui/501/dev.purlis.host".to_owned(),
+            format!("launchctl bootstrap gui/501 {plist}"),
+            "launchctl print gui/501/dev.purlis.host".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn a_bootstrap_that_fails_with_the_agent_still_not_loaded_says_so() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    ran.fails("launchctl print gui/501/dev.purlis.host");
+    let manager = launchd(home.path(), &ran);
+    let plist = manager.places.host_plist.display().to_string();
+    ran.fails(&format!("launchctl bootstrap gui/501 {plist}"));
+    let why = manager.install().unwrap_err();
+    assert!(why.contains("launchctl bootstrap"), "{why}");
+}
+
+#[test]
+fn two_installs_at_once_run_one_after_the_other() {
+    let home = tempfile::tempdir().unwrap();
+    let inside = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let most = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let runs: Runs = {
+        let (inside, most) = (Arc::clone(&inside), Arc::clone(&most));
+        Arc::new(move |_program, args| {
+            use std::sync::atomic::Ordering::SeqCst;
+            let now = inside.fetch_add(1, SeqCst) + 1;
+            most.fetch_max(now, SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            inside.fetch_sub(1, SeqCst);
+            // Not loaded, so each goes on to bootstrap.
+            let loaded = args.first().map(String::as_str) != Some("print");
+            Ok(Output {
+                status: ExitStatus::from_raw(if loaded { 0 } else { 1 << 8 }),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        })
+    };
+    let manager = Arc::new(Launchd {
+        runs,
+        ..launchd(home.path(), &Arc::new(Ran::default()))
+    });
+    let both: Vec<_> = (0..2)
+        .map(|_| {
+            let manager = Arc::clone(&manager);
+            std::thread::spawn(move || manager.install())
+        })
+        .collect();
+    for one in both {
+        one.join().unwrap().unwrap();
+    }
+    assert_eq!(most.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -447,9 +564,22 @@ fn removing_on_macos_unloads_the_host_and_deletes_both_agents() {
     assert_eq!(ran.take(), ["launchctl bootout gui/501/dev.purlis.host"]);
     assert!(!manager.places.host_plist.exists());
     assert!(!manager.places.app_plist.exists());
-    // Removing what is not there is no failure.
-    ran.fails("launchctl bootout gui/501/dev.purlis.host");
+    // Removing what is not there is no failure, and asks launchd nothing.
     manager.remove().unwrap();
+    assert_eq!(ran.take(), Vec::<String>::new());
+}
+
+#[test]
+fn removing_login_items_never_installed_asks_no_manager_anything() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    launchd(home.path(), &ran).remove().unwrap();
+    systemd(home.path(), &ran).remove().unwrap();
+    assert_eq!(
+        ran.take(),
+        Vec::<String>::new(),
+        "a quit with nothing keeping the host changes nothing for anyone"
+    );
 }
 
 #[test]
@@ -541,7 +671,7 @@ fn each_platform_has_the_manager_its_login_items_need_and_none_where_there_is_no
         manager_on(
             os,
             systemd_user,
-            places(home, None),
+            places(home, None, Names::RELEASE),
             host_job(),
             app_job(),
             home.join("host.log"),
@@ -553,4 +683,46 @@ fn each_platform_has_the_manager_its_login_items_need_and_none_where_there_is_no
     assert_eq!(on(Os::Linux, true), Some(Supervisor::SystemdUser));
     assert_eq!(on(Os::Linux, false), None);
     assert_eq!(on(Os::Other, true), None);
+}
+
+#[test]
+fn a_development_build_has_login_items_of_its_own_beside_a_release_builds() {
+    let home = Path::new("/home/me");
+    let release = places(home, None, Names::RELEASE);
+    let development = places(home, None, Names::DEVELOPMENT);
+    assert_ne!(release.host_plist, development.host_plist);
+    assert_ne!(release.app_plist, development.app_plist);
+    assert_ne!(release.host_unit, development.host_unit);
+    assert_ne!(release.app_autostart, development.app_autostart);
+    assert_eq!(
+        development.host_plist,
+        home.join("Library/LaunchAgents/dev.purlis.host.development.plist")
+    );
+    let plist = dict(&host_plist(
+        &Names::DEVELOPMENT,
+        &host_job(),
+        Path::new("/log"),
+    ));
+    assert_eq!(
+        plist.get("Label").and_then(plist::Value::as_string),
+        Some("dev.purlis.host.development")
+    );
+    assert_eq!(
+        Names::here(),
+        if cfg!(debug_assertions) {
+            Names::DEVELOPMENT
+        } else {
+            Names::RELEASE
+        }
+    );
+    let ran = Arc::new(Ran::default());
+    let manager = SystemdUser {
+        places: development,
+        ..systemd(home, &ran)
+    };
+    manager.start().unwrap();
+    assert_eq!(
+        ran.take(),
+        ["systemctl --user start purlis-host-development.service"]
+    );
 }

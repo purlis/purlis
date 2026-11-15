@@ -131,14 +131,46 @@ pub fn systemd_user_here(runtime_dir: Option<&Path>) -> bool {
     runtime_dir.is_some_and(|dir| dir.join("systemd").join("private").exists())
 }
 
-/// The launchd label of the host's agent.
-pub const HOST_LABEL: &str = "dev.purlis.host";
+/// **What this build's login items are called**: a development build's are its own, so one
+/// never loads, rewrites or removes a release build's on the same machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Names {
+    /// The launchd label of the host's agent, and its plist's name.
+    pub host_label: &'static str,
+    /// The launchd label of the agent that starts the app in the background at login.
+    pub app_label: &'static str,
+    /// The systemd user unit that runs the host.
+    pub host_unit: &'static str,
+    /// The XDG autostart entry's file name.
+    pub app_autostart: &'static str,
+}
 
-/// The launchd label of the agent that starts the app in the background at login.
-pub const APP_LABEL: &str = "dev.purlis.app.background";
+impl Names {
+    /// A release build's.
+    pub const RELEASE: Names = Names {
+        host_label: "dev.purlis.host",
+        app_label: "dev.purlis.app.background",
+        host_unit: "purlis-host.service",
+        app_autostart: "purlis.desktop",
+    };
 
-/// The systemd user unit that runs the host.
-pub const HOST_UNIT: &str = "purlis-host.service";
+    /// A development build's.
+    pub const DEVELOPMENT: Names = Names {
+        host_label: "dev.purlis.host.development",
+        app_label: "dev.purlis.app.background.development",
+        host_unit: "purlis-host-development.service",
+        app_autostart: "purlis-development.desktop",
+    };
+
+    /// This build's.
+    pub fn here() -> Names {
+        if cfg!(debug_assertions) {
+            Names::DEVELOPMENT
+        } else {
+            Names::RELEASE
+        }
+    }
+}
 
 /// How many unexpected exits within [`WITHIN_SECONDS`] stop a manager restarting the host: the
 /// window's own breaker's limits (D-2007-2).
@@ -158,11 +190,11 @@ pub struct Job {
 /// Keychain answers without a prompt), and again after an exit that was not a success, which
 /// launchd throttles on its own. A host that ends because it was told to quit exits 0 and is
 /// left stopped. `log` is where what it says on standard error goes.
-pub fn host_plist(job: &Job, log: &Path) -> String {
+pub fn host_plist(names: &Names, job: &Job, log: &Path) -> String {
     let mut keep_alive = plist::Dictionary::new();
     keep_alive.insert("SuccessfulExit".into(), false.into());
     let mut agent = plist::Dictionary::new();
-    agent.insert("Label".into(), HOST_LABEL.into());
+    agent.insert("Label".into(), names.host_label.into());
     agent.insert("ProgramArguments".into(), arguments(job));
     agent.insert("RunAtLoad".into(), true.into());
     agent.insert("KeepAlive".into(), keep_alive.into());
@@ -195,17 +227,18 @@ fn written(dictionary: plist::Dictionary) -> String {
 
 /// **The agent that starts the app in the background at login**: once, at load, with no
 /// restart, so the tray is there to say why the host runs and to stop it.
-pub fn app_plist(job: &Job) -> String {
+pub fn app_plist(names: &Names, job: &Job) -> String {
     let mut agent = plist::Dictionary::new();
-    agent.insert("Label".into(), APP_LABEL.into());
+    agent.insert("Label".into(), names.app_label.into());
     agent.insert("ProgramArguments".into(), arguments(job));
     agent.insert("RunAtLoad".into(), true.into());
     agent.insert("LimitLoadToSessionType".into(), "Aqua".into());
     written(agent)
 }
 
-/// **The host's systemd user unit**: enabled into `default.target`, so it starts at login,
-/// restarted on failure, and held stopped after [`EXITS`] failures within [`WITHIN_SECONDS`],
+/// **The host's systemd user unit**: enabled into `graphical-session.target`, so it starts with
+/// the person's desktop, after it (so the host, and the browsers it runs, have the session's
+/// `DISPLAY` or `WAYLAND_DISPLAY`) and stops with it; restarted on failure, and held stopped after [`EXITS`] failures within [`WITHIN_SECONDS`],
 /// systemd's own breaker.
 pub fn host_unit(job: &Job) -> String {
     let command: Vec<String> = std::iter::once(job.program.to_string_lossy().into_owned())
@@ -215,6 +248,8 @@ pub fn host_unit(job: &Job) -> String {
     format!(
         "[Unit]\n\
          Description=purlis session host\n\
+         PartOf=graphical-session.target\n\
+         After=graphical-session.target\n\
          StartLimitIntervalSec={WITHIN_SECONDS}\n\
          StartLimitBurst={EXITS}\n\
          \n\
@@ -224,7 +259,7 @@ pub fn host_unit(job: &Job) -> String {
          Restart=on-failure\n\
          \n\
          [Install]\n\
-         WantedBy=default.target\n",
+         WantedBy=graphical-session.target\n",
         command.join(" ")
     )
 }
@@ -285,7 +320,7 @@ fn desktop_quoted(word: &str) -> String {
     quoted.replace('\\', "\\\\")
 }
 
-/// Where each manager's files go.
+/// Where each manager's files go, and what this build calls them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Places {
     /// `~/Library/LaunchAgents/dev.purlis.host.plist`
@@ -296,28 +331,32 @@ pub struct Places {
     pub host_unit: PathBuf,
     /// `$XDG_CONFIG_HOME/autostart/purlis.desktop`
     pub app_autostart: PathBuf,
+    /// The labels and the unit's name the files are written with.
+    pub names: Names,
 }
 
-/// The files' places under `home`, with `xdg_config` where `XDG_CONFIG_HOME` names one.
-pub fn places(home: &Path, xdg_config: Option<&Path>) -> Places {
+/// The files' places under `home`, with `xdg_config` where `XDG_CONFIG_HOME` names one, for a
+/// build that calls them `names`.
+pub fn places(home: &Path, xdg_config: Option<&Path>, names: Names) -> Places {
     let agents = home.join("Library").join("LaunchAgents");
     let config = xdg_config
         .filter(|dir| dir.is_absolute())
         .map_or_else(|| home.join(".config"), Path::to_path_buf);
     Places {
-        host_plist: agents.join(format!("{HOST_LABEL}.plist")),
-        app_plist: agents.join(format!("{APP_LABEL}.plist")),
-        host_unit: config.join("systemd").join("user").join(HOST_UNIT),
-        app_autostart: config.join("autostart").join("purlis.desktop"),
+        host_plist: agents.join(format!("{}.plist", names.host_label)),
+        app_plist: agents.join(format!("{}.plist", names.app_label)),
+        host_unit: config.join("systemd").join("user").join(names.host_unit),
+        app_autostart: config.join("autostart").join(names.app_autostart),
+        names,
     }
 }
 
-/// The files' places for this user: under the home folder, with `XDG_CONFIG_HOME` where it
-/// names one.
+/// This build's files' places for this user: under the home folder, with `XDG_CONFIG_HOME`
+/// where it names one.
 pub fn places_here() -> Option<Places> {
     let home = dirs::home_dir()?;
     let xdg = crate::envvar::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
-    Some(places(&home, xdg.as_deref()))
+    Some(places(&home, xdg.as_deref(), Names::here()))
 }
 
 /// Runs a manager's command (`launchctl`, `systemctl`) and gives what it printed and how it
@@ -440,6 +479,15 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// One install at a time in this process: two at once (the window's supervisor and a quit to
+/// the background) would each find the agent not loaded and each load it.
+fn installing() -> std::sync::MutexGuard<'static, ()> {
+    static INSTALLING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    INSTALLING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Removes `path`, which may not be there.
 fn removed(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
@@ -456,32 +504,48 @@ impl Launchd {
     }
 
     fn target(&self) -> String {
-        format!("gui/{}/{HOST_LABEL}", self.uid)
+        format!("gui/{}/{}", self.uid, self.places.names.host_label)
+    }
+
+    /// Whether launchd has the host's agent loaded.
+    fn loaded(&self) -> bool {
+        (self.runs)("launchctl", &["print".to_owned(), self.target()])
+            .is_ok_and(|output| output.status.success())
+    }
+
+    /// Whether either agent is written, so there is something to remove.
+    fn installed(&self) -> bool {
+        self.places.host_plist.exists() || self.places.app_plist.exists()
     }
 }
 
 impl Manager for Launchd {
     fn install(&self) -> Result<(), String> {
-        let changed =
-            write_if_changed(&self.places.host_plist, &host_plist(&self.host, &self.log))?;
+        let _one_at_a_time = installing();
+        write_if_changed(
+            &self.places.host_plist,
+            &host_plist(&self.places.names, &self.host, &self.log),
+        )?;
         // Loaded at the next login, never now: loading it would start a second app.
-        write_if_changed(&self.places.app_plist, &app_plist(&self.app))?;
-        let target = self.target();
-        let loaded = (self.runs)("launchctl", &["print".to_owned(), target.clone()])
-            .is_ok_and(|output| output.status.success());
-        if loaded && !changed {
+        write_if_changed(&self.places.app_plist, &app_plist(&self.places.names, &self.app))?;
+        // A host launchd runs is never booted out for a changed agent: that would end every
+        // chat in it. launchd reads the agent written here the next time it loads it, at the
+        // next login or after a hold.
+        if self.loaded() {
             return Ok(());
         }
-        if loaded {
-            ran(&self.runs, "launchctl", &["bootout", &target])?;
-        }
         let plist = self.places.host_plist.to_string_lossy();
-        ran(
+        match ran(
             &self.runs,
             "launchctl",
             &["bootstrap", &self.domain(), &plist],
-        )
-        .map(drop)
+        ) {
+            Ok(_) => Ok(()),
+            // launchd refuses to load an agent it already has (its error 5): another install,
+            // or launchd itself, loaded it since it was asked. Loaded is what was wanted.
+            Err(_) if self.loaded() => Ok(()),
+            Err(why) => Err(why),
+        }
     }
 
     fn start(&self) -> Result<(), String> {
@@ -504,6 +568,11 @@ impl Manager for Launchd {
     }
 
     fn remove(&self) -> Result<(), String> {
+        // Never installed, nothing to ask launchd: a quit changes nothing for anyone who never
+        // had something keep the host running.
+        if !self.installed() {
+            return Ok(());
+        }
         // Not loaded is not a failure: it is what removing wants.
         let _ = ran(&self.runs, "launchctl", &["bootout", &self.target()]);
         removed(&self.places.host_plist)?;
@@ -511,22 +580,29 @@ impl Manager for Launchd {
     }
 }
 
+impl SystemdUser {
+    fn unit(&self) -> &'static str {
+        self.places.names.host_unit
+    }
+}
+
 impl Manager for SystemdUser {
     fn install(&self) -> Result<(), String> {
+        let _one_at_a_time = installing();
         let changed = write_if_changed(&self.places.host_unit, &host_unit(&self.host))?;
         write_if_changed(&self.places.app_autostart, &app_autostart(&self.app))?;
         if changed {
             ran(&self.runs, "systemctl", &["--user", "daemon-reload"])?;
         }
-        ran(&self.runs, "systemctl", &["--user", "enable", HOST_UNIT]).map(drop)
+        ran(&self.runs, "systemctl", &["--user", "enable", self.unit()]).map(drop)
     }
 
     fn start(&self) -> Result<(), String> {
-        ran(&self.runs, "systemctl", &["--user", "start", HOST_UNIT]).map(drop)
+        ran(&self.runs, "systemctl", &["--user", "start", self.unit()]).map(drop)
     }
 
     fn hold(&self) -> Result<(), String> {
-        ran(&self.runs, "systemctl", &["--user", "stop", HOST_UNIT]).map(drop)
+        ran(&self.runs, "systemctl", &["--user", "stop", self.unit()]).map(drop)
     }
 
     /// The unit's `Result` property, which systemd sets to `start-limit-hit` once
@@ -535,7 +611,7 @@ impl Manager for SystemdUser {
         ran(
             &self.runs,
             "systemctl",
-            &["--user", "show", "--property=Result", "--value", HOST_UNIT],
+            &["--user", "show", "--property=Result", "--value", self.unit()],
         )
         .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).trim() == "start-limit-hit")
     }
@@ -545,16 +621,20 @@ impl Manager for SystemdUser {
         let _ = ran(
             &self.runs,
             "systemctl",
-            &["--user", "reset-failed", HOST_UNIT],
+            &["--user", "reset-failed", self.unit()],
         );
         self.start()
     }
 
     fn remove(&self) -> Result<(), String> {
+        // Never installed, nothing to ask systemd.
+        if !self.places.host_unit.exists() && !self.places.app_autostart.exists() {
+            return Ok(());
+        }
         let _ = ran(
             &self.runs,
             "systemctl",
-            &["--user", "disable", "--now", HOST_UNIT],
+            &["--user", "disable", "--now", self.unit()],
         );
         removed(&self.places.host_unit)?;
         removed(&self.places.app_autostart)?;
