@@ -27,13 +27,14 @@ done
 docker exec ssh-runner-systemd systemctl is-system-running --wait || {
   docker exec ssh-runner-systemd systemctl --failed --no-pager || true
 }
-# What the image lacks of what purlis links would fail the test far from the reason.
-docker cp "$dir/purlis" ssh-runner-systemd:/tmp/purlis-check
-if docker exec ssh-runner-systemd ldd /tmp/purlis-check | grep 'not found'; then
+# What the image lacks of what purlis links would fail the test far from the reason. In /root,
+# since systemd mounts a tmpfs over /tmp, which hides what `docker cp` puts under it.
+docker cp "$dir/purlis" ssh-runner-systemd:/root/purlis-check
+if docker exec ssh-runner-systemd ldd /root/purlis-check | grep 'not found'; then
   echo "the systemd runner's image lacks a library purlis links" >&2
   exit 1
 fi
-docker exec ssh-runner-systemd rm /tmp/purlis-check
+docker exec ssh-runner-systemd rm /root/purlis-check
 {
   echo "SSH_RUNNER_SYSTEMD_TEST_ROUTE=ssh://keeper@127.0.0.1:2225"
   echo "SSH_RUNNER_SYSTEMD_TEST_MACHINE=ssh-runner-systemd"
