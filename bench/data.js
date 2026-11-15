@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794762975166,
+  "lastUpdate": 1794765587933,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50064,6 +50064,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2007805,
             "unit": "ms",
             "extra": "median of 5 runs: 101.074, 102.135, 102.201, 102.268, 103.067 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8624d2039118ea882790ab5c470ac83bccef4cd7",
+          "message": "A crash keeps a finished task's screen before its session closes (#6504) (#6680)\n\n* Test: a crash keeps a finished task's screen before its session closes (#6504)\n\nRed: the launch's sweep closes the task left running unread.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* A crash keeps a finished task's screen before its session closes (#6504)\n\nAfter a crash the session host still runs a task that had finished. The\nlaunch leaves it out of its put back, and its sweep closed it unread. Now\nthe launch reads its screen through a view of what the host left\n(SessionHost::watch_left, routed to the pool that holds it), while the\nchats put back start, and waits for it until the quit's deadline before\nthe sweep closes it. The keep is the close's own: the same switch, the\nsame dispatch-record check, the same caps.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Name the task screens' deadline for both its uses: SCREENS_KEPT_WITHIN (#6504)\n\nA quit and a launch after a crash both wait for task screens until it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* SF1: close a finished task where it is held, its pool's record with it (#6504 review)\n\nAsking whether a finished task still runs keeps it as its pool's, so the\nsettling of records skipped it, and the sweep closes only what routed\npools hold: on a pool the settings no longer route it ran on with no tab\nand its record lingered. Chats::close_finished_left now waits for the\nscreens and closes exactly the chats it asked about, and\nRoutedSessions::close_left closes each on the host that holds it and\ndrops its routing and record.\n\nTests: a finished task found on an unrouted pool is read and closed there\nand its record goes; one left on this machine is read and closed here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* SF3: take the launch's screens deadline before asking which tasks still run (#6504 review)\n\nAsking a pool which finished tasks it still runs now counts against the\n3 s deadline, so a slow pool link cannot stretch the wait past it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Test: a launch that starts fresh after a crash keeps a finished task's screen (#6504 review, SF2)\n\nRed: starting fresh drops the record before the finished tasks are taken\nfrom it, so the sweep closes the task unread.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* SF2: a launch that starts fresh keeps a finished task's screen too (#6504 review)\n\nStart fresh put nothing back and dropped the record before its finished\ntasks were taken from it, so the sweep closed one the host still ran\nunread. finished::finished_in takes them from the record first.\n\nA refused record is left: with no record there is no chat id for what\nthe host left, and matching by number could keep a person's own chat's\nscreen as a task's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Read what the host left out of its hold before telling the host; share attach and detach (#6504 review)\n\nunwatch_left held the left lock across link.send. watch_paced,\nwatch_left, unwatch and unwatch_left now share attach_terminal and\ndetach_terminal.\n\nTest: a chat left in the host is read without a reattach, and its view\ncloses after the sweep took the chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Time the launch's put back alone, with the quit test's 1.5 s slack (#6504 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Say in the log whether a task screen missed a quit's deadline or a launch's (#6504 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Changelog: name the Settings switch, and a crash or a kill (#6504 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n* Pass task chats as dispatchrecord::ChatRef, not (u32, String) (#6504 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EX2T9M0JGSZ86KKXM2SYZC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T16:58:08Z",
+          "tree_id": "c14ef6de785c686edb76945cc9cd7d7c0db35522",
+          "url": "https://github.com/purlis/purlis/commit/8624d2039118ea882790ab5c470ac83bccef4cd7"
+        },
+        "date": 1794765582282,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6858245000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.665, 0.679, 0.686, 0.698, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.651863,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.590, 16.608, 16.652, 16.682, 16.809 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.47395700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.179, 102.341, 102.474, 102.492, 103.964 ms"
           }
         ]
       }
