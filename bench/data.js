@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794778040487,
+  "lastUpdate": 1794781965750,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50232,6 +50232,48 @@ window.BENCHMARK_DATA = {
             "value": 101.618854,
             "unit": "ms",
             "extra": "median of 5 runs: 101.479, 101.515, 101.619, 101.742, 102.232 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bc79d7c573a3afab7c98f93d66577520c7509887",
+          "message": "The outcome e2e survives a window not in front: overlays drawn at once in the e2e build, and the workspace popover's close asked again (refs #4351) (#6910)\n\nWebKit suspends CSS animations while its window is hidden or behind another, as a\nscenario run on a person's Mac often is. The dialog family's and the popover family's\narrival fade then stayed at opacity 0, which WebDriver reads as not displayed: the\npalette, the picker and the Skills view were up and unseen. The e2e build now marks the\nroot data-arrivals=\"at-once\" (theme/motion.ts), and both families draw at once under\nit; the shipped build is unchanged. src/theme/arrivals.test.ts holds every entering\nanimation to having that override.\n\nThe after-all's \"workspace popover did not close\" was the same unseen palette: it takes\nevery Escape on the window while it is up, and is not modal, so the chevron opened the\npopover beside it and closed()'s one Escape went to the palette. closed() now asks again\neach step (closedOrAskedAgain).\n\ntheOpenings and fromThePalette open the palette through openThePalette: F2, then the\nsame key on the window where the driver's lands on a tab, which renames on F2. The\ndriver's keys are in-page KeyboardEvents, so a Mac's media F-keys play no part.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GF4XPSS6K18W3NDMF4AZ1X\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T21:56:37Z",
+          "tree_id": "6a84e80e1515f445ccbeb8948fdd63a01f1a61dc",
+          "url": "https://github.com/purlis/purlis/commit/bc79d7c573a3afab7c98f93d66577520c7509887"
+        },
+        "date": 1794781957488,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6790905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.674, 0.679, 0.686, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6507565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.558, 16.599, 16.651, 16.863, 16.880 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5984375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.227, 102.484, 102.598, 102.892, 104.426 ms"
           }
         ]
       }
