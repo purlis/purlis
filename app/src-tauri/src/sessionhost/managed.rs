@@ -178,5 +178,5 @@ fn last_lines(log: &Path) -> Vec<String> {
 /// Where launchd writes what a host that is a login item says (`StandardErrorPath`): beside the
 /// app's own log. systemd keeps it in the journal.
 pub fn log_here() -> Option<PathBuf> {
-    purlis_core::applog::app_log_dir().map(|dir| dir.join("session-host.log"))
+    purlis_core::hostlog::path()
 }
