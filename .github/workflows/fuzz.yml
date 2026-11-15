@@ -3,8 +3,8 @@
 
 # **The parsers' fuzz targets, on every pull request that can change what they reach** (T1.1-47):
 # built, and the committed corpus replayed once, with this runner's curl's and Node's recorded
-# heads. Fuzzing for longer is the nightly entry `fuzz-parsers` (`docs/fuzzing.md`), or a
-# dispatch of this workflow with `seconds`.
+# heads. It never fuzzes for a time box: that is the nightly entry `fuzz-parsers` alone
+# (`docs/fuzzing.md`).
 name: fuzz
 
 on:
@@ -18,11 +18,6 @@ on:
       - ".github/workflows/fuzz.yml"
       - ".github/actions/fuzz-parsers/**"
   workflow_dispatch:
-    inputs:
-      seconds:
-        description: How long to fuzz each target, in seconds; 0 replays the corpus once.
-        required: false
-        default: "0"
 
 permissions:
   contents: read
@@ -41,5 +36,3 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-parsers
-        with:
-          seconds: ${{ inputs.seconds || '0' }}

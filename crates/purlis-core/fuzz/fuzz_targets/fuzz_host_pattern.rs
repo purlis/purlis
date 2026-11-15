@@ -47,8 +47,14 @@ fuzz_target!(|asked: Asked| {
         });
         assert!(why, "{host:?} under {listed:?}");
     }
-    // An entry with no port, on a default port, is `allows`.
-    let portless: Vec<String> = listed.iter().filter(|it| !it.contains(':')).cloned().collect();
+    // An entry with no port, on a default port, is `allows`. A bracketed entry is an IPv6
+    // address to `allows_on` alone, which refuses one that is not (`[]31`): no listed entry is
+    // either, since `hosts::Host` refuses both, and refusing is the safe side.
+    let portless: Vec<String> = listed
+        .iter()
+        .filter(|it| !it.contains([':', '[']))
+        .cloned()
+        .collect();
     assert_eq!(
         allows_on(&portless, &host, port, &[port]),
         allows(&portless, &host),

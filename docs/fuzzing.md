@@ -37,6 +37,9 @@ What it found, and what became of each:
   `egress::Request::parse` and the SOCKS port now refuse both. None reached another host: the name
   dialled was the one judged, macOS's resolver and glibc's read none of them as an address, and an
   unlisted one was already refused by the policy's reading (`hosts::Host::parse`).
+- **Not a fault:** `allows` and `allows_on` read a malformed bracketed entry (`[]31`) two ways;
+  `allows_on`, which the proxy's decision asks, refuses it, and no listed entry is one, since
+  `hosts::Host::parse` refuses it (found by `fuzz_host_pattern`).
 - **Not a disagreement:** a URL the proxy refuses (a host with a character WHATWG allows but no
   DNS name has, such as `a!b.example`). Refusing is not reading another host.
 
