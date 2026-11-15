@@ -191,10 +191,14 @@ fn the_workflow_default_stays_read_only() {
     assert_eq!(workflow_permissions(&text), pairs(&[("contents", "read")]));
 }
 
-/// What each build job uploads, by the exact name `build` and `sbom` give it.
-const BUILD_ARTIFACTS: [&str; 3] = [
+/// What each build job uploads, by the exact name `build`, `runner-binaries` (each runner
+/// platform's purlis and its signature, #723) and `sbom` give it.
+const BUILD_ARTIFACTS: [&str; 6] = [
     "purlis-linux-x86_64-${{ needs.plan.outputs.version }}",
     "purlis-macos-arm64-${{ needs.plan.outputs.version }}",
+    "purlis-runner-linux-aarch64-${{ needs.plan.outputs.version }}",
+    "purlis-runner-linux-x86_64-${{ needs.plan.outputs.version }}",
+    "purlis-runner-macos-arm64-${{ needs.plan.outputs.version }}",
     "purlis-sbom-${{ needs.plan.outputs.version }}",
 ];
 

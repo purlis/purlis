@@ -310,6 +310,8 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
             "build",
             "runner-image",
             "runner-image-signature",
+            // Signs each runner platform's purlis when the run publishes (#723).
+            "runner-binaries",
             "provenance",
             "publish",
             // Holds the Report intake's upload token (#5692).
