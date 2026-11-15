@@ -754,6 +754,14 @@ fn an_install_has_the_installed_version_prune_the_runner_and_says_what_it_remove
             why: "1.5.0; rm -rf / isn't a version purlis installs".to_owned(),
         }
     );
+    // A `Probed` made by hand with a folder that is no plain path is refused, never run, and
+    // never panics on the login shell's check.
+    let mut unplain = probed.clone();
+    unplain.config = "/home/r/it's".to_owned();
+    assert!(matches!(
+        prune(&stub.reach, &unplain, "1.5.0").unwrap_err(),
+        Refused::Unusable { why, .. } if why.contains("can't prune")
+    ));
 }
 
 #[test]

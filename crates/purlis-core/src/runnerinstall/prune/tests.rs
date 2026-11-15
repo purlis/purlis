@@ -149,7 +149,7 @@ fn a_version_whose_host_answers_on_its_socket_is_never_removed() {
 fn a_version_whose_host_left_chats_in_its_record_is_never_removed() {
     let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
     let record = runner.host_folder("1.0.0").join(HOST_RECORD);
-    std::fs::write(&record, b"{\"started\":{\"program\":\"p1\"}}\n").unwrap();
+    std::fs::write(&record, started("p1")).unwrap();
     let pruned = runner.prune("3.0.0");
     assert!(pruned.removed.is_empty());
     assert_eq!(pruned.kept, [("1.0.0".to_owned(), Live::Chats)]);
@@ -159,11 +159,44 @@ fn a_version_whose_host_left_chats_in_its_record_is_never_removed() {
     assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
 }
 
-/// Lines as `purlis_host`'s host record writes them: `started` with the whole program, `ended`.
+/// A `started` line as `purlis_host`'s host record writes it, of the program `program` whose
+/// process is `process`, noted as started at `process_started` in the boot `boot`.
+fn started_as(
+    program: &str,
+    process: u32,
+    process_started: Option<&str>,
+    boot: Option<&str>,
+) -> String {
+    let mut line = serde_json::json!({"started": {
+        "program": program,
+        "project": "01J9PRJCT00000000000000000",
+        "project_path": "/w/p",
+        "number": 1,
+        "process": process,
+    }});
+    if let Some(process_started) = process_started {
+        line["started"]["process_started"] = process_started.into();
+    }
+    if let Some(boot) = boot {
+        line["started"]["boot"] = boot.into();
+    }
+    format!("{line}\n")
+}
+
+/// When this test's own process started, as the kernel says it.
+fn this_process_started() -> String {
+    purlis_same_user::Parents::started(std::process::id())
+        .expect("the kernel says when this test's own process started")
+}
+
+/// A `started` line of a program that still runs: this test's own process, as noted in this
+/// boot.
 fn started(program: &str) -> String {
-    format!(
-        "{{\"started\":{{\"program\":\"{program}\",\"project\":\"01J9PRJCT00000000000000000\",\
-         \"project_path\":\"/w/p\",\"number\":1,\"process\":4242}}}}\n"
+    started_as(
+        program,
+        std::process::id(),
+        Some(&this_process_started()),
+        purlis_host::this_boot().as_deref(),
     )
 }
 
@@ -217,6 +250,181 @@ fn a_chat_started_and_never_ended_keeps_its_version_and_a_torn_line_is_passed_ov
         runner.prune("3.0.0").kept,
         [("1.0.0".to_owned(), Live::Chats)]
     );
+}
+
+#[test]
+fn a_chat_noted_in_another_boot_keeps_nothing_after_the_reboot() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    // Started and never ended: its host went down with the machine. Its process number and
+    // start are this process's own, as a later boot may well give them again.
+    let other_boot = format!("{}-before", purlis_host::this_boot().unwrap_or_default());
+    std::fs::write(
+        &record,
+        started_as(
+            "p1",
+            std::process::id(),
+            Some(&this_process_started()),
+            Some(&other_boot),
+        ),
+    )
+    .unwrap();
+    assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
+}
+
+#[test]
+fn a_chat_whose_process_number_went_to_another_process_keeps_nothing() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    // Its host was killed outright (SIGKILL, #6700), and its chat ended with it: the number it
+    // ran as is now this process's, which started at another time.
+    std::fs::write(
+        &record,
+        started_as(
+            "p1",
+            std::process::id(),
+            Some("not when this process started"),
+            purlis_host::this_boot().as_deref(),
+        ),
+    )
+    .unwrap();
+    assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
+}
+
+#[test]
+fn a_chat_noted_with_nothing_to_tell_its_process_by_keeps_nothing() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    std::fs::write(
+        &record,
+        format!(
+            "{}{}",
+            started_as("p1", 4242, None, purlis_host::this_boot().as_deref()),
+            // A process the kernel says nothing of: no number left that is this user's.
+            started_as(
+                "p2",
+                u32::try_from(i32::MAX).unwrap(),
+                Some(&this_process_started()),
+                purlis_host::this_boot().as_deref()
+            ),
+        ),
+    )
+    .unwrap();
+    assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
+}
+
+#[test]
+fn the_versions_lock_is_held_while_each_of_its_folders_and_files_is_removed() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let lock = runner.socket_of("1.0.0").with_extension("lock");
+    std::fs::File::create(&lock).unwrap();
+    // A second name for the lock file: `flock` holds the file, not its name, so this still
+    // tells whether the lock is held once the prune has unlinked the first.
+    let peek = runner.socket_of("1.0.0").with_extension("peek");
+    std::fs::hard_link(&lock, &peek).unwrap();
+    let mut held = Vec::new();
+    let pruned = prune_with(&runner.config_root, "3.0.0", &runner.socket, &mut |path| {
+        let looked = std::fs::File::open(&peek).unwrap();
+        let free = looked.try_lock_shared().is_ok();
+        held.push((path.to_owned(), !free));
+        drop(looked);
+        remove(path)
+    });
+    assert_eq!(pruned.removed, ["1.0.0"]);
+    assert_eq!(
+        held.len(),
+        5,
+        "binary, link socket, socket, lock, host: {held:?}"
+    );
+    for (path, held) in &held {
+        assert!(held, "the lock was free as {} was removed", path.display());
+    }
+    assert!(gone(&runner, "1.0.0") && !lock.exists());
+}
+
+#[test]
+fn a_removal_cut_short_at_any_step_is_finished_by_the_next_prune() {
+    for failing in 0..5 {
+        let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+        let mut step = 0;
+        let pruned = prune_with(&runner.config_root, "3.0.0", &runner.socket, &mut |path| {
+            step += 1;
+            if step - 1 == failing {
+                return Err(std::io::Error::other("the disk said no"));
+            }
+            remove(path)
+        });
+        assert!(pruned.removed.is_empty(), "step {failing}: {pruned:?}");
+        assert_eq!(
+            pruned.failed,
+            [("1.0.0".to_owned(), "the disk said no".to_owned())],
+            "step {failing}"
+        );
+        assert!(
+            runner.host_folder("1.0.0").exists(),
+            "step {failing}: the host's folder, its credentials in it, is left for the next"
+        );
+        assert!(pruned.said().contains("1.0.0 could not be removed"));
+        let again = runner.prune("3.0.0");
+        assert_eq!(again.removed, ["1.0.0"], "step {failing}: {again:?}");
+        assert!(gone(&runner, "1.0.0"), "step {failing}");
+        for left in ["lock", "link.sock", "sock"] {
+            assert!(
+                !runner.socket_of("1.0.0").with_extension(left).exists(),
+                "step {failing}: {left}"
+            );
+        }
+        assert!(runner.binary("2.0.0").exists() && runner.host_folder("2.0.0").exists());
+    }
+}
+
+#[test]
+fn a_host_folder_left_with_no_binary_is_removed_but_a_newer_one_stays() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0", "4.0.0"]);
+    std::fs::remove_dir_all(runner.binary("1.0.0").parent().unwrap()).unwrap();
+    std::fs::remove_dir_all(runner.binary("4.0.0").parent().unwrap()).unwrap();
+    assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
+    assert!(
+        runner.host_folder("4.0.0").exists(),
+        "not this desktop's to remove"
+    );
+    assert!(runner.host_folder("2.0.0").exists());
+}
+
+#[test]
+fn a_lock_that_can_not_be_opened_keeps_its_version() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let elsewhere = runner.config_root.join("elsewhere");
+    std::fs::write(&elsewhere, b"x").unwrap();
+    // A lock that is a link is never opened through it.
+    std::os::unix::fs::symlink(&elsewhere, runner.socket_of("1.0.0").with_extension("lock"))
+        .unwrap();
+    let pruned = runner.prune("3.0.0");
+    assert!(pruned.removed.is_empty());
+    assert_eq!(pruned.kept, [("1.0.0".to_owned(), Live::Serving)]);
+    assert!(runner.binary("1.0.0").exists() && runner.host_folder("1.0.0").exists());
+    assert_eq!(std::fs::read(&elsewhere).unwrap(), b"x");
+}
+
+#[test]
+fn a_host_record_that_is_not_a_regular_file_keeps_its_version() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    std::fs::create_dir(&record).unwrap();
+    assert_eq!(
+        runner.prune("3.0.0").kept,
+        [("1.0.0".to_owned(), Live::Chats)]
+    );
+    // Nor is one that is a link, whatever it names.
+    std::fs::remove_dir(&record).unwrap();
+    let empty = runner.config_root.join("empty");
+    std::fs::write(&empty, b"").unwrap();
+    std::os::unix::fs::symlink(&empty, &record).unwrap();
+    assert_eq!(
+        runner.prune("3.0.0").kept,
+        [("1.0.0".to_owned(), Live::Chats)]
+    );
+    assert!(runner.binary("1.0.0").exists());
 }
 
 #[test]

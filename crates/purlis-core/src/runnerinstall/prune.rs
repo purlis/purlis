@@ -21,13 +21,17 @@
 //! - its lock is held by a host: it serves, and stays ([`Live::Serving`]);
 //! - something answers on its socket (a host whose lock file the system cleaned away): it
 //!   stays ([`Live::Serving`]);
-//! - its host record ([`HOST_RECORD`]) names a program started and not ended: a host killed
-//!   outright left a chat that may still run, and it stays ([`Live::Chats`]). A host that ends as
-//!   it should empties its record; one stopped by a signal leaves each start beside its end.
+//! - its host record ([`HOST_RECORD`]) names a program started and not ended whose process still
+//!   runs, by the host's own check ([`purlis_host::Started::still_running`]): noted in this boot,
+//!   and its process number's start the one noted. It stays ([`Live::Chats`]). A host that ends
+//!   as it should empties its record; one stopped by a signal leaves each start beside its end;
+//!   one killed outright (`SIGKILL`, a reboot, #6700) leaves starts with no end, whose processes
+//!   died with it or have since ended, and keep nothing.
 //!
-//! Otherwise its binary's folder goes first, so nothing can start it again, then its host's
-//! folder, then the socket, link socket and lock file its host left behind. A folder that is a
-//! link is removed as a link; what it names stays.
+//! Otherwise its binary's folder goes first, so nothing can start it again, then the socket, link
+//! socket and lock file its host left behind, then its host's folder. A folder that is a link is
+//! removed as a link; what it names stays. A version with a host's folder and no binary's folder
+//! is pruned too, so a removal cut short is taken up again by the next prune.
 
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
@@ -36,10 +40,10 @@ use super::{SERVER_DIR, a_version, binary_at, for_login_shell, host_folder_of};
 
 /// The host record's file in a host's own folder (`purlis_host::HOST_RECORD`, #2007): what
 /// names the programs a host started and has not ended.
-pub const HOST_RECORD: &str = "hosts.jsonl";
+pub use purlis_host::HOST_RECORD;
 
-/// The most of a host record that is read (`purlis_host::READ_AT_MOST`).
-pub const READ_AT_MOST: u64 = 4 * 1024 * 1024;
+/// The most of a host record that is read: one larger is not one a host wrote.
+pub use purlis_host::READ_AT_MOST;
 
 /// Why a version that may go stays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,39 +125,67 @@ pub fn may_go(running: &str, installed: &[String]) -> Vec<String> {
 /// for that config home, before a version names its own ([`crate::hostsocket::of_version`]).
 #[must_use]
 pub fn prune_in(config_root: &Path, running: &str, socket: &Path) -> Pruned {
+    prune_with(config_root, running, socket, &mut remove)
+}
+
+/// [`prune_in`], each folder and file removed by `remove`: a test's, to watch the lock held as
+/// each goes, or to fail one.
+fn prune_with(
+    config_root: &Path,
+    running: &str,
+    socket: &Path,
+    remove: &mut dyn FnMut(&Path) -> std::io::Result<()>,
+) -> Pruned {
     let server = crate::machine::dir(config_root).join(SERVER_DIR);
-    let installed: Vec<String> = std::fs::read_dir(&server)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-        .filter(|name| a_version(name))
-        .collect();
     let daemon = crate::machine::charterd(config_root);
+    let installed = versions_in(&server);
+    let mut candidates = may_go(running, &installed);
+    // A host's folder left by a removal cut short, its binary's folder gone: nothing to start it
+    // again, and nothing to keep it for.
+    if let Ok(running) = semver::Version::parse(running) {
+        for version in versions_in(&daemon.join(SERVER_DIR)) {
+            let older = semver::Version::parse(&version).is_ok_and(|version| version < running);
+            if older && !installed.contains(&version) && !candidates.contains(&version) {
+                candidates.push(version);
+            }
+        }
+    }
     let mut pruned = Pruned::default();
-    for version in may_go(running, &installed) {
+    for version in candidates {
         let socket = crate::hostsocket::of_version(socket, &version);
         let host = host_folder_of(&daemon, &version);
         match drained(&socket, &host) {
             Err(live) => pruned.kept.push((version, live)),
             Ok(_held) => {
-                let removed = remove(&server.join(&version)).and_then(|()| remove(&host));
+                // The lock stays held, by `_held`, until each is removed; the host's folder goes
+                // last, so a removal cut short leaves it for the next prune to find.
+                let removed = [
+                    server.join(&version),
+                    socket.with_extension("link.sock"),
+                    socket.clone(),
+                    socket.with_extension("lock"),
+                    host,
+                ]
+                .iter()
+                .try_for_each(|path| remove(path));
                 match removed {
-                    Ok(()) => {
-                        for left in [
-                            socket.with_extension("link.sock"),
-                            socket.with_extension("lock"),
-                            socket.clone(),
-                        ] {
-                            let _ = std::fs::remove_file(left);
-                        }
-                        pruned.removed.push(version);
-                    }
+                    Ok(()) => pruned.removed.push(version),
                     Err(why) => pruned.failed.push((version, why.to_string())),
                 }
             }
         }
     }
     pruned
+}
+
+/// The names in `folder` read as versions.
+fn versions_in(folder: &Path) -> Vec<String> {
+    std::fs::read_dir(folder)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|name| a_version(name))
+        .collect()
 }
 
 /// **Whether the host of the version whose socket is `socket` and whose folder is `host` has
@@ -188,16 +220,19 @@ fn drained(socket: &Path, host: &Path) -> Result<Option<std::fs::File>, Live> {
     }
 }
 
-/// **Whether the host record at `record` names a program started and not ended**: `Some(false)`
-/// where there is no record, or each program it names started has ended (a host that ended as it
-/// should empties it; one stopped by a signal leaves each start beside its end). `None` where it
-/// can't be read: not a regular file, or larger than any host writes ([`READ_AT_MOST`]). A line
-/// that can't be read, a torn last one among them, is passed over, as the host passes it over.
+/// **Whether the host record at `record` names a program started and not ended whose process
+/// still runs** ([`purlis_host::Started::still_running`]): `Some(false)` where there is no
+/// record, or none it names started and not ended is still the process it started (a host that
+/// ended as it should empties it; one stopped by a signal leaves each start beside its end; one
+/// killed outright leaves starts whose processes died with it, or ran on and have since ended).
+/// `None` where it can't be read: not a regular file, or larger than any host writes
+/// ([`READ_AT_MOST`]). A line that can't be read, a torn last one among them, is passed over, as
+/// the host passes it over.
 fn left_running(record: &Path) -> Option<bool> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     enum Line {
-        Started { program: String },
+        Started(purlis_host::Started),
         Ended { program: String },
     }
     match std::fs::symlink_metadata(record) {
@@ -206,11 +241,11 @@ fn left_running(record: &Path) -> Option<bool> {
         _ => return None,
     }
     let text = std::fs::read(record).ok()?;
-    let mut running = std::collections::HashSet::new();
+    let mut running = std::collections::HashMap::new();
     for line in text.split(|byte| *byte == b'\n') {
         match serde_json::from_slice::<Line>(line) {
-            Ok(Line::Started { program }) => {
-                running.insert(program);
+            Ok(Line::Started(started)) => {
+                running.insert(started.program.clone(), started);
             }
             Ok(Line::Ended { program }) => {
                 running.remove(&program);
@@ -218,7 +253,11 @@ fn left_running(record: &Path) -> Option<bool> {
             Err(_) => {}
         }
     }
-    Some(!running.is_empty())
+    Some(
+        running
+            .values()
+            .any(|started| started.still_running().is_some()),
+    )
 }
 
 /// `path` removed, a link as a link; one that is not there is removed already.

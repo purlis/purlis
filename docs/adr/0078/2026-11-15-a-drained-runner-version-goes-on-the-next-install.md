@@ -18,20 +18,32 @@ decided in implementation and is marked *decided in implementation, to be confir
    host lock (the `flock` a host holds while it serves) and keeps it while it looks and removes,
    so no host of it starts in between. The version stays when the lock is held, when something
    answers on its socket (a host whose lock file the system cleaned away), or when its
-   `hosts.jsonl` names a program started and not ended (a host killed outright left a chat that
-   may still run). A host that ends as it should empties its record, and one stopped by a signal
-   leaves each start beside its end, so its version goes once each chat has ended. Doubt keeps it: a lock it cannot open, or a record it
-   cannot read, counts as live. What the runner prints (`removed=<ver>`) is what the desktop
-   says it removed, never what it decides by. *Decided in implementation, to be confirmed*
-   (D-6688-2).
-3. **The binary's folder goes first, then the host's, then what the host left in the runtime
-   folder**: `<config>/server/<ver>/`, so nothing can start it again, then
-   `<config>/purlisd/server/<ver>/`, then its socket, link socket and lock file. A folder that is
-   a link is removed as a link. *Decided in implementation, to be confirmed* (D-6688-3).
-4. **It runs on every install, a version already there included, and never fails one.** Each
-   desktop connection that checks its version is in place prunes, which is *the next install or
-   probe* of #6688. A prune that fails leaves the old versions for the next. An SSH runner's host
-   does not stop by itself when its last chat ends (only a cluster runner's suspends when idle),
-   so an old version goes once its host is stopped: by the person, by a restart of the machine,
-   or by RR-15's supervisor. A desktop's link can't stop it: only the window's link may quit a
-   host, and a runner's host has no window. *Decided in implementation, to be confirmed* (D-6688-4).
+   `hosts.jsonl` names a program started and not ended whose process still runs: one noted in
+   this boot of the machine whose process, by its number, started when the record says, the same
+   check by which a host ends what the one before it left (`purlis_host::Started::still_running`).
+   A start with no end whose process is gone, has another's number now, or was noted in another
+   boot keeps nothing: a host killed outright (`SIGKILL`, a reboot, a signal it has no handler
+   for, #6700) ends nothing on its way out, and its chats died with it or ran on alone and have
+   since ended. Doubt keeps it: a lock it cannot open, or a record it cannot read (not a regular
+   file, or larger than any host writes), counts as live. What the runner prints
+   (`removed=<ver>`) is what the desktop says it removed, never what it decides by.
+   *Decided in implementation, to be confirmed* (D-6688-2).
+3. **The binary's folder goes first, then what the host left in the runtime folder, then the
+   host's folder**: `<config>/server/<ver>/`, so nothing can start it again, then its socket,
+   link socket and lock file, then `<config>/purlisd/server/<ver>/`, its credentials with it. A
+   folder that is a link is removed as a link. A version whose binary's folder has gone but whose
+   host's folder is still there is one to prune too, so a removal cut short anywhere (the binary's
+   folder gone, and the socket, the lock or the host's folder not) is taken up again by the next
+   prune, which removes what is left; the version is said removed only once all of it has gone.
+   *Decided in implementation, to be confirmed* (D-6688-3).
+4. **It runs on every install, a version already there included, and never fails one.** Each desktop
+   connection that checks its version is in place prunes, which is *the next install or probe* of
+   #6688. A prune that fails leaves the old versions for the next. **What frees a version is its
+   host's end, however it comes, once no chat it started still runs**: stopped by the person, by a
+   signal, killed outright, or gone down with the machine, its version goes at the next install
+   after the last of its chats' processes has ended, a reboot ending them all. Nothing on the runner
+   ends an old version's host by itself while it runs: an SSH runner's host does not stop when its
+   last chat ends (only a cluster runner's suspends when idle), and a desktop's link can't stop it,
+   since only the window's link may quit a host and a runner's host has no window. So an old version
+   whose host still runs stays, chats or none, until that host ends.
+   *Decided in implementation, to be confirmed* (D-6688-4).

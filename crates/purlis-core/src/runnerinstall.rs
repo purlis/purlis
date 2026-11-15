@@ -855,17 +855,27 @@ pub fn install(
 /// **The drained versions removed from the runner `probed` describes, through `reach`**, by
 /// the binary of `version` there, the running one ([`prune::prune_command`]): every version
 /// older than the one before it whose host has drained (`prune`'s docs). The versions it
-/// said it removed; a version with a live chat is never one of them.
+/// said it removed; a version with a live chat is never one of them. `probed.config` and
+/// `version` are held to the plain checks again ([`a_plain_path`], [`a_version`]), since a
+/// `Probed` may be made by hand: one that fails them is refused, and nothing is run.
 #[cfg(unix)]
 pub fn prune(reach: &Reach, probed: &Probed, version: &str) -> Result<Vec<String>, Refused> {
+    let unusable = |why: String| Refused::Unusable {
+        host: reach.route.host().to_owned(),
+        why,
+    };
+    if !a_plain_path(&probed.config) {
+        return Err(unusable(format!(
+            "purlis's folder on that computer would be {}, which purlis can't prune: it must be \
+             a full path with no spaces or quotes",
+            crate::shown::short(&probed.config)
+        )));
+    }
     if !a_version(version) {
-        return Err(Refused::Unusable {
-            host: reach.route.host().to_owned(),
-            why: format!(
-                "{} isn't a version purlis installs",
-                crate::shown::short(version)
-            ),
-        });
+        return Err(unusable(format!(
+            "{} isn't a version purlis installs",
+            crate::shown::short(version)
+        )));
     }
     let ran = run_there(
         reach,
