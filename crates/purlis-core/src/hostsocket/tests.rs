@@ -204,14 +204,14 @@ fn an_installed_versions_socket_lock_and_link_are_its_own() {
     let versioned = of_version(socket, "1.4.0");
     assert_eq!(
         versioned,
-        Path::new("/run/user/1000/purlis/purlisd-v1.4.0.sock")
+        Path::new("/run/user/1000/purlis/purlisd-v74b860b3.sock")
     );
     assert_ne!(of_version(socket, "1.5.0"), versioned);
     // A config home of its own keeps its key, and gains the version.
     let keyed = Path::new("/tmp/purlis-1000/purlisd-0123456789abcdef.sock");
     assert_eq!(
         of_version(keyed, "1.4.0"),
-        Path::new("/tmp/purlis-1000/purlisd-0123456789abcdef-v1.4.0.sock")
+        Path::new("/tmp/purlis-1000/purlisd-0123456789abcdef-v74b860b3.sock")
     );
     let place = |socket: &Path| {
         (
@@ -220,10 +220,38 @@ fn an_installed_versions_socket_lock_and_link_are_its_own() {
         )
     };
     let (lock, link) = place(&versioned);
-    assert_eq!(lock, Path::new("/run/user/1000/purlis/purlisd-v1.4.0.lock"));
+    assert_eq!(lock, Path::new("/run/user/1000/purlis/purlisd-v74b860b3.lock"));
     assert_eq!(
         link,
-        Path::new("/run/user/1000/purlis/purlisd-v1.4.0.link.sock")
+        Path::new("/run/user/1000/purlis/purlisd-v74b860b3.link.sock")
     );
     assert_ne!(place(&versioned), place(socket));
+}
+
+#[test]
+fn an_installed_versions_sockets_fit_in_a_unix_socket_address_for_the_longest_version() {
+    // macOS's `sun_path` holds 104 bytes with its closing NUL, the smallest of the systems
+    // purlis runs on, and the user's own temporary directory there is about 49 of them.
+    const SUN_PATH: usize = 104;
+    let longest = &format!("1.4.0-dev.{}", "9".repeat(54));
+    assert_eq!(longest.len(), 64);
+    assert!(crate::runnerinstall::a_version(longest));
+    let folder = Path::new("/var/folders/wl/hs3pdt2j0t9gyc_l73py38l80000gp/T/purlis");
+    for socket in [
+        folder.join(SOCKET),
+        folder.join("purlisd-0123456789abcdef.sock"),
+    ] {
+        let versioned = of_version(&socket, longest);
+        for path in [
+            versioned.clone(),
+            versioned.with_extension("lock"),
+            versioned.with_extension("link.sock"),
+        ] {
+            let bytes = path.as_os_str().len();
+            assert!(bytes < SUN_PATH, "{} is {bytes} bytes", path.display());
+        }
+    }
+    // Two versions still name two sockets.
+    let socket = folder.join(SOCKET);
+    assert_ne!(of_version(&socket, longest), of_version(&socket, "1.4.0"));
 }

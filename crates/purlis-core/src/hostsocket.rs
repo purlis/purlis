@@ -85,17 +85,23 @@ pub fn here() -> PathBuf {
     }
 }
 
-/// **`socket`, named for the installed version `version`**: `purlisd-v1.4.0.sock` for
-/// `purlisd.sock`, in the same folder. Its lock and link socket are named from it as any
-/// socket's are, so they are the version's own too.
+/// **`socket`, named for the installed version `version`**: `purlisd-v<8 hex>.sock` for
+/// `purlisd.sock`, in the same folder, the hex the start of the SHA-256 of the version. Its lock
+/// and link socket are named from it as any socket's are, so they are the version's own too.
+/// Not the version itself, which may be 64 characters ([`crate::runnerinstall::a_version`]):
+/// a socket's whole path must fit in 104 bytes on macOS, and the user's own temporary directory
+/// there takes half of them.
 #[must_use]
 pub fn of_version(socket: &Path, version: &str) -> PathBuf {
+    use sha2::{Digest as _, Sha256};
     let stem = socket
         .file_name()
         .and_then(OsStr::to_str)
         .and_then(|name| name.strip_suffix(".sock"))
         .unwrap_or("purlisd");
-    socket.with_file_name(format!("{stem}-v{version}.sock"))
+    let digest = Sha256::digest(version.as_bytes());
+    let short: String = digest[..4].iter().map(|byte| format!("{byte:02x}")).collect();
+    socket.with_file_name(format!("{stem}-v{short}.sock"))
 }
 
 /// Where the session host of the config home `config` listens for this user, with `runtime`
