@@ -12,6 +12,7 @@ fn versioned() -> Service {
     Service {
         binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0-rc.1/purlis"),
         version: Some("0.9.0-rc.1".into()),
+        config_home: Some(PathBuf::from("/home/runner/.config")),
     }
 }
 
@@ -19,7 +20,13 @@ fn by_hand() -> Service {
     Service {
         binary: PathBuf::from("/opt/pur lis/$purlis%"),
         version: None,
+        config_home: None,
     }
+}
+
+/// No host answers on the version's socket.
+fn nobody() -> bool {
+    false
 }
 
 /// The commands a test's manager was asked to run, each answering as the test says.
@@ -73,9 +80,18 @@ fn here(keeper: Keeper, home: &Path, ran: &Arc<Ran>) -> Here {
         launch_agents: home.join("Library/LaunchAgents"),
         user_units: home.join(".config/systemd/user"),
         linger_dir: home.join("linger"),
+        linger_marker: home.join("purlisd/linger-turned-on-by-purlis"),
+        runtime: Some(home.join("run")),
+        settle: std::time::Duration::ZERO,
         log: home.join("serve.log"),
         runs: ran.runs(),
     }
+}
+
+/// `here`'s linger file, as logind would write it.
+fn lingering(here: &Here) {
+    std::fs::create_dir_all(&here.linger_dir).unwrap();
+    std::fs::write(here.linger_dir.join(&here.user), "").unwrap();
 }
 
 #[test]
@@ -115,6 +131,26 @@ fn the_unit_starts_with_the_user_manager_whether_or_not_anyone_has_a_desktop() {
         "{unit}"
     );
     assert!(unit.contains("version 0.9.0-rc.1"), "{unit}");
+}
+
+#[test]
+fn the_unit_and_the_agent_pin_the_config_home_install_resolved() {
+    let unit = unit(&versioned());
+    assert!(
+        unit.contains("\nEnvironment=\"PURLIS_CONFIG_HOME=/home/runner/.config\"\n"),
+        "{unit}"
+    );
+    assert!(!super::unit(&by_hand()).contains("Environment="));
+    let agent = plist::Value::from_reader_xml(
+        plist(&versioned(), Path::new("/Users/runner/serve.log")).as_bytes(),
+    )
+    .unwrap()
+    .into_dictionary()
+    .unwrap();
+    assert_eq!(
+        agent["EnvironmentVariables"].as_dictionary().unwrap()["PURLIS_CONFIG_HOME"].as_string(),
+        Some("/home/runner/.config")
+    );
 }
 
 #[test]
@@ -204,26 +240,33 @@ fn a_container_is_known_by_the_marks_its_engine_leaves() {
 }
 
 #[test]
-fn installing_with_systemd_turns_linger_on_writes_the_unit_and_starts_it_now() {
+fn installing_with_systemd_starts_the_unit_then_turns_linger_on_and_sees_the_host_running() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    let installed = install(&here, &versioned()).expect("installed");
+    let installed = install(&here, &versioned(), &nobody).expect("installed");
     assert_eq!(
         installed,
         Installed {
             keeper: Keeper::SystemdUser,
-            linger: Linger::TurnedOn
+            linger: Linger::TurnedOn,
+            running: Running::Kept,
         }
     );
     let name = versioned().unit_name();
     assert_eq!(
         ran.take(),
         [
-            "loginctl enable-linger".to_owned(),
             "systemctl --user daemon-reload".to_owned(),
             format!("systemctl --user enable --now {name}"),
-        ]
+            "loginctl enable-linger".to_owned(),
+            format!("systemctl --user is-active --quiet {name}"),
+        ],
+        "linger only once the unit is enabled"
+    );
+    assert!(
+        here.linger_marker.exists(),
+        "purlis notes that it turned linger on"
     );
     let written = std::fs::read_to_string(home.path().join(".config/systemd/user").join(&name))
         .expect("the unit is written");
@@ -235,19 +278,19 @@ fn installing_again_leaves_linger_and_an_unchanged_unit_alone_and_its_host_runni
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
-    std::fs::create_dir_all(&here.linger_dir).unwrap();
-    std::fs::write(here.linger_dir.join("runner"), "").unwrap();
+    install(&here, &versioned(), &nobody).unwrap();
+    lingering(&here);
     ran.take();
-    let again = install(&here, &versioned()).unwrap();
+    let again = install(&here, &versioned(), &nobody).unwrap();
     assert_eq!(again.linger, Linger::On);
+    let name = versioned().unit_name();
     // `enable --now` starts a unit that is not running and leaves one that is.
     assert_eq!(
         ran.take(),
-        [format!(
-            "systemctl --user enable --now {}",
-            versioned().unit_name()
-        )]
+        [
+            format!("systemctl --user enable --now {name}"),
+            format!("systemctl --user is-active --quiet {name}"),
+        ]
     );
 }
 
@@ -256,14 +299,15 @@ fn a_new_versions_service_never_touches_the_old_ones() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
+    install(&here, &versioned(), &nobody).unwrap();
     let old = std::fs::read_to_string(here.unit_path(&versioned())).unwrap();
     ran.take();
     let new = Service {
         binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0/purlis"),
         version: Some("0.9.0".into()),
+        config_home: None,
     };
-    install(&here, &new).unwrap();
+    install(&here, &new, &nobody).unwrap();
     assert_eq!(
         std::fs::read_to_string(here.unit_path(&versioned())).unwrap(),
         old
@@ -282,7 +326,7 @@ fn where_only_an_administrator_may_turn_linger_on_the_host_is_still_installed_an
         "Could not enable linger: Access denied",
     );
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    let installed = install(&here, &versioned()).expect("installed all the same");
+    let installed = install(&here, &versioned(), &nobody).expect("installed all the same");
     assert!(
         matches!(&installed.linger, Linger::NeedsAnAdministrator { said } if said.contains("Access denied")),
         "{installed:?}"
@@ -313,7 +357,7 @@ fn a_manager_that_refuses_the_unit_is_said_with_what_it_said() {
         "Failed to connect to bus",
     );
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    let refused = install(&here, &versioned()).unwrap_err();
+    let refused = install(&here, &versioned(), &nobody).unwrap_err();
     assert!(
         matches!(&refused, Refused::Manager(why) if why.contains("Failed to connect to bus")),
         "{refused:?}"
@@ -326,7 +370,7 @@ fn in_a_container_nothing_is_installed_and_it_says_to_run_the_host_in_front() {
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::Foreground(Why::Container), home.path(), &ran);
     assert_eq!(
-        install(&here, &versioned()),
+        install(&here, &versioned(), &nobody),
         Err(Refused::Foreground(Why::Container))
     );
     assert!(ran.take().is_empty());
@@ -347,7 +391,7 @@ fn installing_with_launchd_loads_the_agent_in_the_user_domain_when_nobody_is_at_
         "Could not find service",
     );
     let here = here(Keeper::Launchd, home.path(), &ran);
-    let installed = install(&here, &versioned()).unwrap();
+    let installed = install(&here, &versioned(), &nobody).unwrap();
     assert_eq!(installed.linger, Linger::NotHere);
     let plist_path = here.plist_path(&versioned());
     assert_eq!(
@@ -359,17 +403,25 @@ fn installing_with_launchd_loads_the_agent_in_the_user_domain_when_nobody_is_at_
         ]
     );
     let said = said(&installed, &versioned(), "runner").join("\n");
-    assert!(said.contains("when this account signs in"), "{said}");
+    assert!(
+        said.contains("only when this account signs in at the Mac's screen"),
+        "{said}"
+    );
+    assert!(!said.contains("automatic login"), "{said}");
 }
 
 #[test]
-fn removing_stops_and_disables_the_service_and_leaves_linger_be() {
+fn removing_stops_and_disables_the_service_and_leaves_linger_purlis_did_not_turn_on() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
+    lingering(&here);
+    install(&here, &versioned(), &nobody).unwrap();
     ran.take();
-    remove(&here, &versioned()).unwrap();
+    assert_eq!(
+        remove(&here, &versioned()).unwrap().linger,
+        LingerAfter::Left
+    );
     assert!(!here.unit_path(&versioned()).exists());
     let name = versioned().unit_name();
     assert_eq!(
@@ -478,9 +530,18 @@ fn doctor_on_a_mac_or_in_a_container_has_no_linger_row() {
     });
     assert_eq!(
         statuses(&container),
-        [(SERVICE_ROW, Status::Ok), (REACHABLE_ROW, Status::Ok)]
+        [(SERVICE_ROW, Status::Warn), (REACHABLE_ROW, Status::Ok)],
+        "purlis cannot see a container's restart policy from inside it"
     );
+    assert!(container[0].detail.contains("unknown"), "{container:?}");
     assert!(container[0].hint.contains("--foreground"));
+    let mac = rows(&a_look(Keeper::Launchd));
+    assert!(
+        mac[0]
+            .detail
+            .contains("only when you sign in at the Mac's screen"),
+        "{mac:?}"
+    );
 }
 
 #[test]
@@ -503,11 +564,141 @@ fn what_install_says_is_plain() {
     let installed = Installed {
         keeper: Keeper::SystemdUser,
         linger: Linger::TurnedOn,
+        running: Running::Kept,
     };
     let said = said(&installed, &versioned(), "runner");
     assert_eq!(said.len(), 2, "{said:?}");
     assert!(said[0].contains("starts it again if it stops or the machine restarts"));
-    assert_eq!(said[1], "✓ Your chats keep running after you sign out.");
+    assert_eq!(
+        said[1],
+        "✓ purlis turned on linger for runner, so your chats keep running after you sign out \
+         (undo: loginctl disable-linger runner)."
+    );
+    let already = super::said(
+        &Installed {
+            linger: Linger::On,
+            ..installed
+        },
+        &versioned(),
+        "runner",
+    );
+    assert_eq!(
+        already[1],
+        "✓ Linger was already on for runner, so your chats keep running after you sign out."
+    );
+}
+
+#[test]
+fn a_manager_that_refuses_the_unit_turns_no_linger_on() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    ran.fails(
+        &format!("systemctl --user enable --now {}", versioned().unit_name()),
+        "Failed to connect to bus",
+    );
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    assert!(install(&here, &versioned(), &nobody).is_err());
+    assert!(
+        !ran.take().iter().any(|line| line.starts_with("loginctl")),
+        "linger is turned on only once the unit is enabled"
+    );
+    assert!(!here.linger_marker.exists());
+}
+
+#[test]
+fn a_host_started_by_hand_holding_the_place_is_said_and_systemd_is_not_claimed_to_keep_it() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let name = versioned().unit_name();
+    ran.fails(&format!("systemctl --user is-active --quiet {name}"), "");
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    let installed = install(&here, &versioned(), &|| true).expect("installed");
+    assert_eq!(installed.running, Running::HandStarted);
+    let said = said(&installed, &versioned(), "runner").join("\n");
+    assert!(
+        said.contains("A session host you started yourself is already serving"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("systemd starts it again if it stops"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_unit_that_did_not_stay_running_with_nothing_serving_is_a_failure_said_with_where_to_look() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let name = versioned().unit_name();
+    ran.fails(&format!("systemctl --user is-active --quiet {name}"), "");
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    let refused = install(&here, &versioned(), &nobody).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::Manager(why) if why.contains(&format!("systemctl --user status {name}"))),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn the_last_remove_turns_linger_off_only_where_purlis_turned_it_on() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    let other = Service {
+        binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0/purlis"),
+        version: Some("0.9.0".into()),
+        config_home: None,
+    };
+    install(&here, &versioned(), &nobody).unwrap();
+    lingering(&here);
+    install(&here, &other, &nobody).unwrap();
+    ran.take();
+    assert_eq!(
+        remove(&here, &versioned()).unwrap().linger,
+        LingerAfter::Left,
+        "another version's host still needs it"
+    );
+    assert!(!ran.take().iter().any(|line| line.starts_with("loginctl")));
+    assert_eq!(
+        remove(&here, &other).unwrap().linger,
+        LingerAfter::TurnedOff
+    );
+    assert!(ran.take().contains(&"loginctl disable-linger".to_owned()));
+    assert!(!here.linger_marker.exists());
+}
+
+#[test]
+fn without_a_runtime_folder_named_the_one_the_user_manager_keeps_is_used() {
+    let run_user = tempfile::tempdir().unwrap();
+    let named = std::ffi::OsString::from("/run/user/1000");
+    assert_eq!(
+        runtime_dir(Some(&named), run_user.path()),
+        Some(PathBuf::from("/run/user/1000"))
+    );
+    assert_eq!(
+        runtime_dir(None, run_user.path()),
+        Some(run_user.path().to_path_buf()),
+        "run where the variable is unset (`sudo -u`), it looks where a supervised host listens"
+    );
+    assert_eq!(runtime_dir(None, &run_user.path().join("absent")), None);
+}
+
+#[test]
+fn with_no_manager_reachable_a_service_file_that_is_there_is_not_taken_for_removed() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let systemd = here(Keeper::SystemdUser, home.path(), &ran);
+    install(&systemd, &versioned(), &nobody).unwrap();
+    let blind = Here {
+        keeper: Keeper::Foreground(Why::NoServiceManager),
+        ..here(Keeper::SystemdUser, home.path(), &ran)
+    };
+    let refused = remove(&blind, &versioned()).unwrap_err();
+    assert!(refused.contains("no service manager"), "{refused}");
+    assert!(remove_version(&blind, "0.9.0-rc.1").is_err());
+    assert!(systemd.unit_path(&versioned()).exists());
+    // Nothing there, nothing to refuse.
+    assert!(remove_version(&blind, "0.1.0").is_ok());
 }
 
 #[test]
@@ -515,7 +706,8 @@ fn a_pruned_versions_service_is_removed_by_its_name_alone_without_its_binary() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
+    lingering(&here);
+    install(&here, &versioned(), &nobody).unwrap();
     ran.take();
     remove_version(&here, "0.9.0-rc.1").expect("removed");
     assert!(!here.unit_path(&versioned()).exists());
@@ -535,7 +727,7 @@ fn a_pruned_versions_agent_is_removed_by_its_label_alone() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::Launchd, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
+    install(&here, &versioned(), &nobody).unwrap();
     ran.take();
     remove_version(&here, "0.9.0-rc.1").expect("removed");
     assert!(!here.plist_path(&versioned()).exists());
@@ -556,7 +748,7 @@ fn a_service_that_cannot_be_removed_says_so_so_its_version_is_kept() {
     let home = tempfile::tempdir().unwrap();
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
-    install(&here, &versioned()).unwrap();
+    install(&here, &versioned(), &nobody).unwrap();
     ran.fails("systemctl --user daemon-reload", "Failed to connect to bus");
     assert!(remove_version(&here, "0.9.0-rc.1").is_err());
 }

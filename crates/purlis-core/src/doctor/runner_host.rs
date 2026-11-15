@@ -41,8 +41,17 @@ pub(super) fn look_here() -> Option<runnerhost::Look> {
     let service = runnerhost::Service {
         version: crate::runnerinstall::version_of_binary(&config, &binary),
         binary,
+        config_home: Some(config.clone()),
     };
-    let here = runnerhost::Here::this(crate::machine::host_folder(&config).join("serve.log"))?;
-    let look = runnerhost::look(&here, &service, &crate::hostsocket::here());
+    let here = runnerhost::Here::this(
+        crate::machine::host_folder(&config).join("serve.log"),
+        &config,
+    )?;
+    let socket = crate::hostsocket::of_version_here(
+        here.runtime.as_deref(),
+        &config,
+        service.version.as_deref(),
+    );
+    let look = runnerhost::look(&here, &service, &socket);
     (service.version.is_some() || look.installed).then_some(look)
 }

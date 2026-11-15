@@ -18,15 +18,27 @@ docker build --file "$here/systemd.Dockerfile" --tag ssh-runner-systemd "$here"
 docker run --detach --name ssh-runner-systemd --privileged --cgroupns=private \
   --tmpfs /run --tmpfs /run/lock --publish 127.0.0.1:2225:22 \
   --volume "$dir/authorized-systemd:/etc/ssh/authorized-src:ro" ssh-runner-systemd
+answered=
 for _ in $(seq 90); do
   if ssh-keyscan -p 2225 127.0.0.1 >/dev/null 2>&1; then
+    answered=yes
     break
   fi
   sleep 1
 done
-docker exec ssh-runner-systemd systemctl is-system-running --wait || {
-  docker exec ssh-runner-systemd systemctl --failed --no-pager || true
-}
+if [ -z "$answered" ]; then
+  echo "the systemd runner's sshd never answered on 127.0.0.1:2225" >&2
+  docker logs --tail 100 ssh-runner-systemd >&2 || true
+  exit 1
+fi
+# `running` and nothing less: a unit that failed at boot (logind, polkit, sshd) would fail the
+# test far from the reason.
+state=$(docker exec ssh-runner-systemd systemctl is-system-running --wait || true)
+if [ "$state" != "running" ]; then
+  echo "the systemd runner booted to '$state', not 'running'" >&2
+  docker exec ssh-runner-systemd systemctl --failed --no-pager >&2 || true
+  exit 1
+fi
 # What the image lacks of what purlis links would fail the test far from the reason. In /root,
 # since systemd mounts a tmpfs over /tmp, which hides what `docker cp` puts under it.
 docker cp "$dir/purlis" ssh-runner-systemd:/root/purlis-check

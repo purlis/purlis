@@ -1000,16 +1000,29 @@ fn serve_kept(install: bool) -> ExitCode {
     let service = runnerhost::Service {
         version: purlis_core::runnerinstall::version_of_binary(&config, &binary),
         binary,
+        config_home: Some(config.clone()),
     };
     let log = purlis_core::machine::host_folder(&config).join("serve.log");
-    let Some(here) = runnerhost::Here::this(log) else {
+    let Some(here) = runnerhost::Here::this(log, &config) else {
         voice::err("this account has no home folder to install the session host in");
         return ExitCode::FAILURE;
     };
     if !install {
         return match runnerhost::remove(&here, &service) {
-            Ok(()) => {
+            Ok(removed) => {
                 println!("✓ The session host is no longer kept running by this machine.");
+                match removed.linger {
+                    runnerhost::LingerAfter::Left => {}
+                    runnerhost::LingerAfter::TurnedOff => println!(
+                        "✓ purlis turned linger off again for {}, as it was before purlis.",
+                        here.user
+                    ),
+                    runnerhost::LingerAfter::StillOn(why) => println!(
+                        "! purlis could not turn linger off again for {} ({why}). Turn it off \
+                         with `loginctl disable-linger {}`.",
+                        here.user, here.user
+                    ),
+                }
                 ExitCode::SUCCESS
             }
             Err(why) => {
@@ -1018,7 +1031,15 @@ fn serve_kept(install: bool) -> ExitCode {
             }
         };
     }
-    match runnerhost::install(&here, &service) {
+    // Where this version's host listens, the same for the host the manager starts: its config
+    // home is pinned in the service's environment, and its runtime folder is the user manager's.
+    let socket = purlis_core::hostsocket::of_version_here(
+        here.runtime.as_deref(),
+        &config,
+        service.version.as_deref(),
+    );
+    let answers = move || std::os::unix::net::UnixStream::connect(&socket).is_ok();
+    match runnerhost::install(&here, &service, &answers) {
         Ok(installed) => {
             for line in runnerhost::said(&installed, &service, &here.user) {
                 println!("{line}");

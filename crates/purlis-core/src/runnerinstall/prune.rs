@@ -36,6 +36,8 @@
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::runnerhost::runtime_dir;
+
 use super::{SERVER_DIR, a_version, binary_at, for_login_shell, host_folder_of};
 
 /// The host record's file in a host's own folder (`purlis_host::HOST_RECORD`, #2007): what
@@ -132,7 +134,7 @@ pub fn may_go(running: &str, installed: &[String]) -> Vec<String> {
 /// older one may not know `serve --remove`. Where the service could not be taken back, nothing of
 /// the version is removed.
 pub fn prune_in(config_root: &Path, running: &str, socket: &Path) -> Pruned {
-    let here = crate::runnerhost::Here::this(PathBuf::new());
+    let here = crate::runnerhost::Here::this(PathBuf::new(), config_root);
     prune_with(
         config_root,
         running,
@@ -306,23 +308,11 @@ pub fn prune_here() -> Option<Pruned> {
     let config = crate::machine::config_root_unheld()?;
     let running = super::version_of_binary(&config, &std::env::current_exe().ok()?)?;
     let run_user = Path::new("/run/user").join(rustix::process::getuid().as_raw().to_string());
+    // The runtime folder a supervised host uses, where the variable is unset (RR-15, D-724-12).
     let runtime = runtime_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref(), &run_user);
     let socket =
         crate::hostsocket::here_for(runtime.as_deref().map(Path::as_os_str), Some(&config));
     Some(prune_in(&config, &running, &socket))
-}
-
-/// **The runtime folder whose sockets and locks prune judges by**: the one the environment names
-/// where it names one, as every host and bridge reads it; else `run_user` (`/run/user/<uid>`)
-/// where it is there, which systemd's user manager gives every unit, a host `purlis serve
-/// --install` handed it among them (RR-15, #724). So a prune run without the variable (from cron,
-/// or `sudo -u`) still finds a supervised host's lock, and never takes a serving version for a
-/// drained one.
-fn runtime_dir(named: Option<&std::ffi::OsStr>, run_user: &Path) -> Option<PathBuf> {
-    match named {
-        Some(named) => Some(PathBuf::from(named)),
-        None => run_user.is_dir().then(|| run_user.to_path_buf()),
-    }
 }
 
 /// **The versions the runner said it removed**, from what [`Pruned::printed`] printed: for the

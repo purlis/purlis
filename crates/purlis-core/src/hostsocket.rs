@@ -85,6 +85,20 @@ pub fn here() -> PathBuf {
     }
 }
 
+/// **Where the host of the config home `config`, installed as `version` where it is one,
+/// listens for this user, with `runtime` as its runtime folder**: what `purlis serve --install`
+/// and doctor ask of the host a service manager runs, whose runtime folder is the user manager's
+/// (`crate::runnerhost::runtime_dir`) and whose config home is pinned, whatever the caller's own
+/// environment says.
+#[cfg(unix)]
+pub fn of_version_here(runtime: Option<&Path>, config: &Path, version: Option<&str>) -> PathBuf {
+    let socket = here_for(runtime.map(Path::as_os_str), Some(config));
+    match version {
+        Some(version) => of_version(&socket, version),
+        None => socket,
+    }
+}
+
 /// **`socket`, named for the installed version `version`**: `purlisd-v<8 hex>.sock` for
 /// `purlisd.sock`, in the same folder, the hex the start of the SHA-256 of the version. Its lock
 /// and link socket are named from it as any socket's are, so they are the version's own too.

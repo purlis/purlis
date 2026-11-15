@@ -296,13 +296,14 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
     assert!(
         installed
             .printed
-            .contains("Your chats keep running after you sign out."),
+            .contains("purlis turned on linger for keeper, so your chats keep running after you sign out (undo: loginctl disable-linger keeper)."),
         "linger turned on by the account itself: {}",
         installed.printed
     );
     let unit = purlis_core::runnerhost::Service {
         binary: binary.clone().into(),
         version: Some(VERSION.to_owned()),
+        config_home: None,
     }
     .unit_name();
     let (lingers, said) = as_root(machine, "ls /var/lib/systemd/linger");
@@ -456,4 +457,26 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
         &format!("systemctl --user --machine=keeper@ is-active --quiet {unit}"),
     );
     assert!(!still, "the host stopped with its unit");
+    assert!(
+        removed
+            .printed
+            .contains("purlis turned linger off again for keeper"),
+        "{}",
+        removed.printed
+    );
+    let (file_there, _) = as_root(
+        machine,
+        &format!("test -e /home/keeper/.config/systemd/user/{unit}"),
+    );
+    assert!(!file_there, "the unit's file is gone");
+    let (enabled, said) = as_root(
+        machine,
+        &format!("systemctl --user --machine=keeper@ is-enabled {unit}"),
+    );
+    assert!(!enabled, "the unit is not enabled: {said}");
+    let (lingers, _) = as_root(machine, "test -e /var/lib/systemd/linger/keeper");
+    assert!(
+        !lingers,
+        "linger purlis turned on is off again with the last service"
+    );
 }

@@ -54,6 +54,11 @@ pub const LINGER_DIR: &str = "/var/lib/systemd/linger";
 pub struct Service {
     pub binary: PathBuf,
     pub version: Option<String>,
+    /// The config home `--install` resolved (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`,
+    /// else `~/.config`), pinned in the service's environment, so the host the manager starts
+    /// reads the same store, finds itself installed as the same version, and listens at the
+    /// same socket, whatever the manager's own environment says.
+    pub config_home: Option<PathBuf>,
 }
 
 impl Service {
@@ -99,12 +104,27 @@ impl Service {
 /// or not anyone has a desktop; restarted after a failure, and held stopped after
 /// [`loginitem::EXITS`] failures within [`loginitem::WITHIN_SECONDS`]. A stop or the machine's
 /// shutdown ends the host and every chat in its control group; the next host of this version
-/// settles each as ended by that (`purlis_host::HostRecord`).
+/// settles each as ended by that (`purlis_host::HostRecord`). The config home install resolved
+/// is pinned in `Environment=`.
 pub fn unit(service: &Service) -> String {
     let command: Vec<String> = std::iter::once(service.binary.to_string_lossy().into_owned())
         .chain(service.job().args)
         .map(|word| loginitem::systemd_quoted(&word))
         .collect();
+    let environment = service
+        .config_home
+        .as_ref()
+        .map(|home| {
+            format!(
+                "Environment={}\n",
+                loginitem::systemd_quoted(&format!(
+                    "{}={}",
+                    crate::machine::HOME_VAR,
+                    home.to_string_lossy()
+                ))
+            )
+        })
+        .unwrap_or_default();
     format!(
         "[Unit]\n\
          Description={}\n\
@@ -113,6 +133,7 @@ pub fn unit(service: &Service) -> String {
          \n\
          [Service]\n\
          Type=simple\n\
+         {environment}\
          ExecStart={}\n\
          Restart=on-failure\n\
          RestartSec=5\n\
@@ -126,9 +147,10 @@ pub fn unit(service: &Service) -> String {
     )
 }
 
-/// **The LaunchAgent**: loaded now and at each sign-in, in a GUI session or a background one
-/// (an SSH sign-in's), and started again after an exit that was not a success. What the host
-/// says on standard error goes to `log`.
+/// **The LaunchAgent**: loaded now, into the account's GUI domain or, signed in over SSH alone,
+/// its user domain; started again after an exit that was not a success. After a restart launchd
+/// loads it only at a sign-in at the Mac's screen. The config home install resolved is pinned
+/// in `EnvironmentVariables`. What the host says on standard error goes to `log`.
 pub fn plist(service: &Service, log: &Path) -> String {
     let mut keep_alive = plist::Dictionary::new();
     keep_alive.insert("SuccessfulExit".into(), false.into());
@@ -140,6 +162,14 @@ pub fn plist(service: &Service, log: &Path) -> String {
     );
     agent.insert("RunAtLoad".into(), true.into());
     agent.insert("KeepAlive".into(), keep_alive.into());
+    if let Some(home) = &service.config_home {
+        let mut environment = plist::Dictionary::new();
+        environment.insert(
+            crate::machine::HOME_VAR.into(),
+            home.to_string_lossy().into_owned().into(),
+        );
+        agent.insert("EnvironmentVariables".into(), environment.into());
+    }
     agent.insert(
         "LimitLoadToSessionType".into(),
         plist::Value::Array(vec!["Aqua".into(), "Background".into()]),
@@ -212,6 +242,15 @@ pub struct Here {
     pub user_units: PathBuf,
     /// [`LINGER_DIR`].
     pub linger_dir: PathBuf,
+    /// The note that purlis turned linger on for this account, so the last `--remove` turns it
+    /// off again, and never a linger the account had before.
+    pub linger_marker: PathBuf,
+    /// The runtime folder the user manager and its units use ([`runtime_dir`]), given to every
+    /// `systemctl --user` as `XDG_RUNTIME_DIR`.
+    pub runtime: Option<PathBuf>,
+    /// How long `--install` waits after `enable --now` before it asks whether the unit stayed
+    /// running.
+    pub settle: std::time::Duration,
     /// Where a LaunchAgent's host writes its standard error.
     pub log: PathBuf,
     /// Runs `systemctl`, `loginctl` and `launchctl`.
@@ -219,14 +258,19 @@ pub struct Here {
 }
 
 impl Here {
-    /// This machine, for this account, with `log` where a LaunchAgent's host writes.
-    pub fn this(log: PathBuf) -> Option<Here> {
+    /// This machine, for this account and the config home `config_root`, with `log` where a
+    /// LaunchAgent's host writes.
+    pub fn this(log: PathBuf, config_root: &Path) -> Option<Here> {
         let home = purlis_same_user::account_home().or_else(dirs::home_dir)?;
         let xdg = crate::envvar::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
         let config = xdg
             .filter(|dir| dir.is_absolute())
             .unwrap_or_else(|| home.join(".config"));
-        let runtime = crate::envvar::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+        let uid = rustix::process::getuid().as_raw();
+        let runtime = runtime_dir(
+            crate::envvar::var_os("XDG_RUNTIME_DIR").as_deref(),
+            &Path::new("/run/user").join(uid.to_string()),
+        );
         let container = in_a_container(
             Path::new("/"),
             crate::envvar::var_os("container").as_deref(),
@@ -238,12 +282,15 @@ impl Here {
                 container,
             ),
             user: purlis_same_user::account_name().unwrap_or_default(),
-            uid: rustix::process::getuid().as_raw(),
+            uid,
             launch_agents: home.join("Library").join("LaunchAgents"),
             user_units: config.join("systemd").join("user"),
             linger_dir: PathBuf::from(LINGER_DIR),
+            linger_marker: crate::machine::charterd(config_root).join(LINGER_MARKER),
+            runs: runs_with_runtime(runtime.clone()),
+            runtime,
+            settle: std::time::Duration::from_secs(2),
             log,
-            runs: loginitem::runs_for_real(),
         })
     }
 
@@ -255,6 +302,35 @@ impl Here {
         self.launch_agents
             .join(format!("{}.plist", service.label()))
     }
+}
+
+/// The file, in the session host's folder, that says purlis turned linger on.
+pub const LINGER_MARKER: &str = "linger-turned-on-by-purlis";
+
+/// **The runtime folder whose sockets, locks and user manager a runner's purlis talks to**: the
+/// one the environment names where it names one, as every host and bridge reads it; else
+/// `run_user` (`/run/user/<uid>`) where it is there, which systemd's user manager gives every
+/// unit, a host `purlis serve --install` handed it among them. So a purlis run where the
+/// variable is unset (a `sudo -u` shell, a job started with an emptied environment) still
+/// reaches the user manager and finds a supervised host's lock.
+pub fn runtime_dir(named: Option<&std::ffi::OsStr>, run_user: &Path) -> Option<PathBuf> {
+    match named.filter(|named| !named.is_empty()) {
+        Some(named) => Some(PathBuf::from(named)),
+        None => run_user.is_dir().then(|| run_user.to_path_buf()),
+    }
+}
+
+/// The manager's commands run for real, through the fork lock, with `runtime` as their
+/// `XDG_RUNTIME_DIR` where there is one, so `systemctl --user` finds the user manager.
+fn runs_with_runtime(runtime: Option<PathBuf>) -> Runs {
+    std::sync::Arc::new(move |program, args| {
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        if let Some(runtime) = &runtime {
+            command.env("XDG_RUNTIME_DIR", runtime);
+        }
+        crate::forklock::output(&mut command)
+    })
 }
 
 /// Whether the host keeps running once this account signs out, as installing found it.
@@ -275,6 +351,17 @@ pub enum Linger {
 pub struct Installed {
     pub keeper: Keeper,
     pub linger: Linger,
+    pub running: Running,
+}
+
+/// Which host serves once the manager has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Running {
+    /// The manager's: it keeps it running.
+    Kept,
+    /// One started by hand already holds the version's place, so the manager's host stopped as
+    /// it found it serving; the manager runs the next one, once that host stops.
+    HandStarted,
 }
 
 /// Why `purlis serve --install` handed nothing to a manager.
@@ -287,15 +374,19 @@ pub enum Refused {
 }
 
 /// **Hands `service` to this machine's manager, and starts it**: the unit written and enabled
-/// with `--now`, linger turned on where it is off; or the LaunchAgent written and loaded. A host
-/// the manager already runs is left running, even where its unit or agent changed: the manager
-/// reads the new one at its next start.
-pub fn install(here: &Here, service: &Service) -> Result<Installed, Refused> {
+/// with `--now`, then linger turned on where it is off, then whether the unit stayed running
+/// asked; or the LaunchAgent written and loaded. A host the manager already runs is left
+/// running, even where its unit or agent changed: the manager reads the new one at its next
+/// start. `answers` says whether a host answers at the version's socket.
+pub fn install(
+    here: &Here,
+    service: &Service,
+    answers: &dyn Fn() -> bool,
+) -> Result<Installed, Refused> {
     let _one_at_a_time = loginitem::installing();
     match here.keeper {
         Keeper::Foreground(why) => Err(Refused::Foreground(why)),
         Keeper::SystemdUser => {
-            let linger = linger_on(here);
             let changed = loginitem::write_if_changed(&here.unit_path(service), &unit(service))
                 .map_err(Refused::Manager)?;
             if changed {
@@ -308,9 +399,31 @@ pub fn install(here: &Here, service: &Service) -> Result<Installed, Refused> {
                 &["--user", "enable", "--now", &service.unit_name()],
             )
             .map_err(Refused::Manager)?;
+            // Only once the unit is enabled: a failed install leaves no linger behind.
+            let linger = linger_on(here);
+            std::thread::sleep(here.settle);
+            let unit_name = service.unit_name();
+            let active = loginitem::ran(
+                &here.runs,
+                "systemctl",
+                &["--user", "is-active", "--quiet", &unit_name],
+            )
+            .is_ok();
+            let running = if active {
+                Running::Kept
+            } else if answers() {
+                Running::HandStarted
+            } else {
+                return Err(Refused::Manager(format!(
+                    "systemd started the session host, but it did not stay running. See why \
+                     with `systemctl --user status {unit_name}` and `journalctl --user -u \
+                     {unit_name}`"
+                )));
+            };
             Ok(Installed {
                 keeper: here.keeper,
                 linger,
+                running,
             })
         }
         Keeper::Launchd => {
@@ -330,6 +443,7 @@ pub fn install(here: &Here, service: &Service) -> Result<Installed, Refused> {
             Ok(Installed {
                 keeper: here.keeper,
                 linger: Linger::NotHere,
+                running: Running::Kept,
             })
         }
     }
@@ -342,7 +456,12 @@ fn linger_on(here: &Here) -> Linger {
         return Linger::On;
     }
     match loginitem::ran(&here.runs, "loginctl", &["enable-linger"]) {
-        Ok(_) => Linger::TurnedOn,
+        Ok(_) => {
+            // Without the note the last `--remove` leaves linger on, which errs towards the
+            // chats of whatever else the account runs.
+            let _ = loginitem::write_if_changed(&here.linger_marker, "");
+            Linger::TurnedOn
+        }
         Err(said) => Linger::NeedsAnAdministrator { said },
     }
 }
@@ -363,15 +482,50 @@ fn launchd_has(here: &Here, target: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-/// **Takes `service` back from the manager**: stopped, disabled and its file removed. Its
-/// chats end with it. Linger is left as it is: other services of this account may need it.
-pub fn remove(here: &Here, service: &Service) -> Result<(), String> {
+/// What `--remove` did with linger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LingerAfter {
+    /// Left as it was: the account had it before purlis, another version's service needs it,
+    /// or this is not Linux.
+    Left,
+    /// purlis had turned it on, and turned it off with the last service.
+    TurnedOff,
+    /// purlis had turned it on, and turning it off failed: what `loginctl` said.
+    StillOn(String),
+}
+
+/// What `--remove` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removed {
+    pub linger: LingerAfter,
+}
+
+/// **Takes `service` back from the manager**: stopped, disabled and its file removed; its chats
+/// end with it. With the last runner service of the account goes the linger purlis turned on,
+/// and never one the account had before. Where no manager is reachable but the service's file is
+/// there, nothing is taken for removed: the manager would still start it.
+pub fn remove(here: &Here, service: &Service) -> Result<Removed, String> {
+    let left = Removed {
+        linger: LingerAfter::Left,
+    };
     match here.keeper {
-        Keeper::Foreground(_) => Ok(()),
+        Keeper::Foreground(_) => {
+            let there = [here.unit_path(service), here.plist_path(service)]
+                .into_iter()
+                .find(|path| path.exists());
+            match there {
+                Some(path) => Err(format!(
+                    "{} is there, but no service manager purlis can reach is running for this \
+                     account, so it was not removed",
+                    path.display()
+                )),
+                None => Ok(left),
+            }
+        }
         Keeper::SystemdUser => {
             let path = here.unit_path(service);
             if !path.exists() {
-                return Ok(());
+                return Ok(left);
             }
             // Not enabled or not running is what removing wants.
             let _ = loginitem::ran(
@@ -380,12 +534,15 @@ pub fn remove(here: &Here, service: &Service) -> Result<(), String> {
                 &["--user", "disable", "--now", &service.unit_name()],
             );
             loginitem::removed(&path)?;
-            loginitem::ran(&here.runs, "systemctl", &["--user", "daemon-reload"]).map(drop)
+            loginitem::ran(&here.runs, "systemctl", &["--user", "daemon-reload"])?;
+            Ok(Removed {
+                linger: linger_off_after_the_last(here),
+            })
         }
         Keeper::Launchd => {
             let path = here.plist_path(service);
             if !path.exists() {
-                return Ok(());
+                return Ok(left);
             }
             for domain in [format!("gui/{}", here.uid), format!("user/{}", here.uid)] {
                 let target = format!("{domain}/{}", service.label());
@@ -393,8 +550,28 @@ pub fn remove(here: &Here, service: &Service) -> Result<(), String> {
                     let _ = loginitem::ran(&here.runs, "launchctl", &["bootout", &target]);
                 }
             }
-            loginitem::removed(&path)
+            loginitem::removed(&path)?;
+            Ok(left)
         }
+    }
+}
+
+/// Linger turned off where purlis turned it on and no runner service of the account is left.
+fn linger_off_after_the_last(here: &Here) -> LingerAfter {
+    let others = std::fs::read_dir(&here.user_units)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .any(|name| name.starts_with("purlis-runner") && name.ends_with(".service"));
+    if others || !here.linger_marker.exists() {
+        return LingerAfter::Left;
+    }
+    match loginitem::ran(&here.runs, "loginctl", &["disable-linger"]) {
+        Ok(_) => {
+            let _ = loginitem::removed(&here.linger_marker);
+            LingerAfter::TurnedOff
+        }
+        Err(said) => LingerAfter::StillOn(said),
     }
 }
 
@@ -409,8 +586,10 @@ pub fn remove_version(here: &Here, version: &str) -> Result<(), String> {
         &Service {
             binary: PathBuf::new(),
             version: Some(version.to_owned()),
+            config_home: None,
         },
     )
+    .map(drop)
 }
 
 /// **What doctor finds of a runner's host** (read by [`look`], judged by [`rows`]).
@@ -514,8 +693,10 @@ pub fn rows(look: &Look) -> Vec<Finding> {
     let service = match look.keeper {
         Keeper::Foreground(Why::Container) => Finding {
             name: SERVICE_ROW,
-            status: Status::Ok,
-            detail: "this machine is a container, so the container keeps the host running"
+            status: Status::Warn,
+            detail: "this machine is a container: whether the host is started again if it stops \
+                     depends on the container's restart policy, which purlis cannot see from \
+                     inside it (unknown)"
                 .to_owned(),
             hint: "Run `purlis serve --foreground` as the container's command, with a restart \
                    policy such as `--restart unless-stopped`."
@@ -539,8 +720,8 @@ pub fn rows(look: &Look) -> Vec<Finding> {
                     look.service.unit_name()
                 ),
                 _ => format!(
-                    "launchd keeps it running as {}, and starts it again when you next sign \
-                     in after a restart",
+                    "launchd keeps it running as {}; after a restart it starts again only when \
+                     you sign in at the Mac's screen",
                     look.service.label()
                 ),
             },
@@ -619,8 +800,15 @@ pub fn linger_hint(user: &str) -> String {
 /// **What `purlis serve --install` says it did**, in plain words, one line each, for the
 /// account `user`.
 pub fn said(installed: &Installed, service: &Service, user: &str) -> Vec<String> {
-    let mut lines = vec![match installed.keeper {
-        Keeper::SystemdUser => format!(
+    let user = if user.is_empty() { "<you>" } else { user };
+    let mut lines = vec![match (installed.keeper, installed.running) {
+        (Keeper::SystemdUser, Running::HandStarted) => format!(
+            "! A session host you started yourself is already serving, so systemd is not running \
+             one yet. Once that host stops, systemd starts the host as {} and keeps it running, \
+             after a restart too.",
+            service.unit_name()
+        ),
+        (Keeper::SystemdUser, Running::Kept) => format!(
             "✓ The session host runs as {}, and systemd starts it again if it stops or the \
              machine restarts.",
             service.unit_name()
@@ -631,9 +819,13 @@ pub fn said(installed: &Installed, service: &Service, user: &str) -> Vec<String>
         ),
     }];
     match &installed.linger {
-        Linger::On | Linger::TurnedOn => {
-            lines.push("✓ Your chats keep running after you sign out.".to_owned());
-        }
+        Linger::On => lines.push(format!(
+            "✓ Linger was already on for {user}, so your chats keep running after you sign out."
+        )),
+        Linger::TurnedOn => lines.push(format!(
+            "✓ purlis turned on linger for {user}, so your chats keep running after you sign out \
+             (undo: loginctl disable-linger {user})."
+        )),
         Linger::NeedsAnAdministrator { .. } => {
             lines.push(
                 "! Your chats will stop when you sign out of this machine, and start again \
@@ -642,13 +834,12 @@ pub fn said(installed: &Installed, service: &Service, user: &str) -> Vec<String>
             );
         }
         Linger::NotHere => lines.push(
-            "! After this Mac restarts, the host starts again when this account signs in. To \
-             have it start without anyone signing in, turn on automatic login for this account."
+            "! After this Mac restarts, the host starts again only when this account signs in at \
+             the Mac's screen."
                 .to_owned(),
         ),
     }
     if let Linger::NeedsAnAdministrator { said } = &installed.linger {
-        let user = if user.is_empty() { "<you>" } else { user };
         lines.push(format!(
             "  Ask an administrator to run `sudo loginctl enable-linger {user}`."
         ));

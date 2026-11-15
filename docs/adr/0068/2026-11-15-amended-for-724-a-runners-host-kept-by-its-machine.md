@@ -6,7 +6,7 @@ on one already lived until it was ended (`purlis_host::lifetime`), but nothing k
 over SSH it went with the sign-in that started it, and with every restart of the machine. RR-15
 hands it to the machine's own service manager. §3 and the amendments above stay as accepted, and
 this note adds to them. Each item was **decided in implementation, to be confirmed** (D-724-1 to
-D-724-12).
+D-724-14).
 
 1. **The machine's service manager keeps a runner's host, never purlis.** On Linux with a
    systemd user manager, a user unit, with **linger**, without which the user manager and every
@@ -42,26 +42,32 @@ D-724-12).
    breaker, `StartLimitBurst=3` within `StartLimitIntervalSec=300`. `ExecStart` is the version's
    `purlis` with `serve --as-a-service`, each word quoted as FD-17 quotes them. Installing again
    writes it only where it differs, and `enable --now` leaves a running host running. *D-724-4.*
-5. **Linger is turned on by the account itself** (`loginctl enable-linger`), which logind allows
-   an account signed in over SSH where its policy does (polkit's `set-self-linger`, which Ubuntu
-   and Fedora allow an active session). Where the machine refuses, the host is installed all the
-   same (it runs while the account is signed in, and starts at its next sign-in), and purlis says
-   so in plain words and names the one command to ask an administrator for, `sudo loginctl
+5. **Linger is turned on by the account itself, only once its unit is enabled, and turned off
+   again only where purlis turned it on** (amended by the review of #6699). `loginctl
+   enable-linger` runs after `enable --now` succeeds, so a failed install leaves no linger
+   behind. logind allows it to an account signed in over SSH where its policy does (polkit's
+   `set-self-linger`, which Ubuntu and Fedora allow an active session). `--install` says plainly
+   which it was: *purlis turned on linger for <user> … (undo: loginctl disable-linger <user>)*,
+   or *Linger was already on for <user>*. Where purlis turned it on, it notes so in
+   `<config>/purlisd/linger-turned-on-by-purlis`, and the `--remove` that takes back the
+   account's last runner service runs `loginctl disable-linger` and deletes the note; a linger
+   the account had before purlis is never turned off. Where the machine refuses, the host is
+   installed all the same (it runs while the account is signed in, and starts at its next
+   sign-in), and purlis names the one command to ask an administrator for, `sudo loginctl
    enable-linger <user>`. Linger is read from the file logind keeps for it,
-   `/var/lib/systemd/linger/<user>`. `--remove` leaves it on: other services of the account may
-   need it. *D-724-5.*
+   `/var/lib/systemd/linger/<user>`. *D-724-5.*
 6. **A host the manager starts takes another of its version already serving as a success**
    (`--as-a-service`, `Serves::AsALoginItem`, FD-17's rule for its login item). So a host started
    by hand, or by RR-14's test, never trips the unit's breaker by exiting 3 three times.
    *D-724-6.*
-7. **On macOS the agent loads in a GUI session or a background one**
-   (`LimitLoadToSessionType` `[Aqua, Background]`), bootstrapped into `gui/<uid>` where the
-   account is signed in at the screen and `user/<uid>` otherwise, and is restarted after an exit
-   that was not a success. After a restart launchd starts it once the account signs in again;
-   starting it before anyone signs in needs a LaunchDaemon, which only an administrator may
-   install, so `--install` says so and suggests automatic login. What the host says goes to
-   `serve.log` in its own folder. This is the part CI cannot run: it is left for an operator's
-   check on a real Mac. *D-724-7.*
+7. **On macOS the agent is loaded now, and after a restart only at a sign-in at the Mac's
+   screen** (amended by the review of #6699). It is bootstrapped into `gui/<uid>` where the
+   account is signed in at the screen and `user/<uid>` otherwise, and restarted after an exit
+   that was not a success. After a restart launchd loads an agent in `~/Library/LaunchAgents`
+   only for a GUI sign-in, so `--install` and doctor say exactly that, and give no advice about
+   automatic login. Starting before anyone signs in needs a LaunchDaemon, which only an
+   administrator may install. What the host says goes to `serve.log` in its own folder. CI
+   cannot run this: it is left for an operator's check on a real Mac (#6701). *D-724-7.*
 8. **A stop or a shutdown ends the host and its chats, and the next host keeps them as
    records.** systemd ends the unit's whole control group (its default `KillMode`), so a restart
    of the machine ends every chat with it; the host noted each in its host record (#2007), and
@@ -71,10 +77,12 @@ D-724-12).
    *Left:* hearing `SIGTERM` as a quit, so a shutdown's end is kept as a stop rather than a
    crash. *D-724-8.*
 9. **Doctor checks it on a runner only**: three rows, `runner host service` (installed and
-   enabled, or a container's command), `runner host after sign-out` (linger, on Linux) and
-   `runner host` (something answers at the version's socket). A runner is a `purlis` installed as
-   a version, or one whose service is installed. A desktop's doctor, and the preflight at every
-   chat's start, have none of them, so no recorded answer moves. *D-724-9.*
+   enabled; in a container *unknown*, a warning, since purlis cannot see the container's restart
+   policy from inside it), `runner host after sign-out` (linger, on Linux) and `runner host`
+   (something answers at the version's socket, found in the user manager's runtime folder with
+   the config home install pinned). A runner is a `purlis` installed as a version, or one whose
+   service is installed. A desktop's doctor, and the preflight at every chat's start, have none
+   of them, so no recorded answer moves. *D-724-9.*
 10. **CI proves it on a machine that boots systemd** (`tests/ssh-runner/systemd.Dockerfile`):
     privileged, with a cgroup namespace of its own and `/run` on tmpfs, sshd with `UsePAM` so a
     sign-in is a logind session, and polkitd so the account may turn its own linger on. Every
@@ -93,9 +101,27 @@ D-724-12).
     version is kept whole and said as one that could not be removed. Under a supervisor an old
     version's host comes back at every boot and holds its lock, so it is never found drained;
     who stops an idle old host is #6704. *D-724-11.*
-12. **Prune reads the runtime folder a supervised host uses.** Over SSH, pam_systemd gives
-    `XDG_RUNTIME_DIR=/run/user/<uid>`, the same as the user manager gives a unit. Run without
-    the variable (from cron, or `sudo -u`), prune would have looked in `/tmp/purlis-<uid>`, found
-    no lock and no socket there, and taken a serving version for a drained one. It now reads
-    `/run/user/<uid>` where that is there, and the environment's folder where it names one.
-    *D-724-12.*
+12. **Every runner purlis that talks to a supervised host reads the runtime folder it uses**
+    (amended by the review of #6699). Over SSH, pam_systemd gives
+    `XDG_RUNTIME_DIR=/run/user/<uid>`, the same as the user manager gives a unit. Where the
+    variable is unset (a `sudo -u` shell, a job started with an emptied environment), `--install`,
+    `--remove`, doctor and prune would have looked in `/tmp/purlis-<uid>` and found no user
+    manager: the keeper read as none, `--remove` and prune's removal by name returned as done
+    with the unit still enabled, and prune could take a serving version for a drained one. Each
+    now reads `/run/user/<uid>` where that is there (`runnerhost::runtime_dir`), and gives it to
+    `systemctl --user` as `XDG_RUNTIME_DIR`. And where no manager is reachable but the unit or
+    agent file is there, removal fails rather than passing for done, so prune keeps that
+    version. *D-724-12.*
+13. **The config home install resolved is pinned in the service** (review of #6699): the unit's
+    `Environment="PURLIS_CONFIG_HOME=<config home>"` and the agent's `EnvironmentVariables`. The
+    user manager and launchd start a unit with their own environment, not the SSH session's, so
+    a runner whose config home is set by `$PURLIS_CONFIG_HOME` or `$XDG_CONFIG_HOME` would
+    otherwise get a host reading another store, not finding itself installed as its version, and
+    listening at another socket. *D-724-13.*
+14. **`--install` checks that the unit stayed running** (review of #6699). After `enable --now`
+    and linger it waits two seconds and asks `systemctl --user is-active`. Active: systemd keeps
+    the host. Not active, but a host answers at the version's socket: one started by hand holds
+    the place, so the manager's host found it serving and stopped (D-724-6). `--install` says so
+    and does not claim systemd keeps it: systemd starts the next host once that one stops. Not
+    active and nothing answering: a failure, with the two commands that say why
+    (`systemctl --user status`, `journalctl --user -u`). *D-724-14.*
