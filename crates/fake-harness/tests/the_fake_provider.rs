@@ -452,7 +452,10 @@ fn the_401_fixture_carries_the_recorded_real_headers() {
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    assert_eq!(carried, recorded, "the 401 fixture is not the recorded header set");
+    assert_eq!(
+        carried, recorded,
+        "the 401 fixture is not the recorded header set"
+    );
     assert!(
         !source.contains("waits"),
         "the 401 fixture still says its headers wait for a record: {source}"
