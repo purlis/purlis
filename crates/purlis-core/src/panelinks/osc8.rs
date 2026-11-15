@@ -259,8 +259,9 @@ const DOTS: &str =
 /// case; a character whose UTS #39 skeleton is ASCII punctuation as that punctuation (a
 /// look-alike of `.`, `:` or `/`), and one more look-alike of a dot ([`DOTS`]) as `.`; a dash as
 /// the end of a name; any other letter or digit as written without its marks, so a host in
-/// another script keeps its suffix (`.рф`); any other punctuation as `.`; and marks, symbols,
-/// emoji and private-use characters, which build no address, dropped.
+/// another script keeps its suffix (`.рф`); any other punctuation as `.`; and marks, Hangul
+/// vowels and finals on their own (U+1160..U+11FF), symbols, emoji and private-use characters,
+/// which build no address, dropped.
 fn shape(word: &str) -> String {
     let mut shape = String::with_capacity(word.len());
     for c in word.chars() {
@@ -271,6 +272,9 @@ fn shape(word: &str) -> String {
             shape.push('.');
         } else if !skeleton.is_empty() && skeleton.chars().all(|c| c.is_ascii_punctuation()) {
             shape.push_str(&skeleton);
+        } else if ('\u{1160}'..='\u{11FF}').contains(&c) {
+            // A Hangul vowel or final standing on its own is drawn as no width, and in many
+            // fonts as nothing: read as a mark is, it builds no address.
         } else if c.general_category() == GeneralCategory::DashPunctuation {
             // A dash looks like no part of an address: it ends a name, as a space does.
             shape.push(',');
