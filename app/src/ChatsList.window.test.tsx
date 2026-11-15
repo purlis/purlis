@@ -27,6 +27,7 @@ import { CHAT_EVENTS } from "./chatEvents";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { measuring } from "./stripRoom.testkit";
 import { findTree, keysOn, queryTree, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
+import { focusIsNotTheKeyboards } from "./focusVisible.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -506,6 +507,7 @@ describe("the order of the Chats list (V100-47)", () => {
     const { move } = await settled();
 
     // Focused, and not by the keyboard: what a click does on the WebViews that focus a button.
+    focusIsNotTheKeyboards();
     act(() => row("steward 2").focus());
     move(1, "waiting", [3, 1]);
 

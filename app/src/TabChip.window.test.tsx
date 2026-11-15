@@ -466,8 +466,14 @@ beforeEach(() => {
 });
 afterEach(() => {
   withAskingChat = [];
-  vi.useRealTimers();
   cleanup();
+  // A focused element taken out of the page starts jsdom's frame loop (31's focus fixup) on
+  // whatever `setInterval` is the global then. Under the fake clocks that is a fake one, which
+  // giving the real clocks back would drop with the loop still marked as running, and no frame
+  // would come again in this file (jsdom/jsdom#4455, not to be fixed there). So the fake clocks
+  // run one frame first, and the loop ends itself.
+  if (vi.isFakeTimers()) vi.advanceTimersByTime(20);
+  vi.useRealTimers();
   clearMocks();
 });
 

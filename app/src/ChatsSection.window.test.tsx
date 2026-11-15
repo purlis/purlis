@@ -34,6 +34,7 @@ import { CHANGE, FIRST_LINE } from "./QuizBand";
 import { CLOSE_QUIZ } from "./TaskQuiz";
 import { findTree, heard as heardOf, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 import { CHAT_STATE_SAID } from "./shownState";
+import { focusIsNotTheKeyboards } from "./focusVisible.testkit";
 
 /** Updates, opened from the right bar (#5644): the updates the Inbox listed after its asks. */
 async function showUpdates() {
@@ -2704,6 +2705,8 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    // The click leaves the focus on the list, which is not the keyboard's and holds nothing.
+    focusIsNotTheKeyboards();
     await userEvent.click(twistOf(tree, "steward 1"));
     expect(shape(tree)).toEqual(["1 steward 1"]);
     // The pointer leaves the list, which holds no arrival back then (V100-47).

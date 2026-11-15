@@ -260,7 +260,8 @@ const settle = () => act(() => vi.advanceTimersByTime(70));
 function drawn(session: number) {
   const one = frame(session);
   const box = boxOf(one);
-  const moved = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(one.style.transform);
+  // CSS serialises `translate(x, 0)` as `translate(x)`, and jsdom does since 31.
+  const moved = /translate\((-?[\d.]+)px(?:, (-?[\d.]+)px)?\)/.exec(one.style.transform);
   return {
     left: box.left + Number(moved?.[1] ?? 0),
     top: box.top + Number(moved?.[2] ?? 0),
