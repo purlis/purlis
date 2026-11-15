@@ -654,6 +654,9 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// What starts and stops a run's key proxy (T1a-04): the binary's, or nothing, and every
+    /// start is refused.
+    key_proxies: OnceLock<Box<dyn crate::confining::ProxiesKeys>>,
     /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
     runs_again: OnceLock<crate::routing::RunsAgain>,
     /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
@@ -1263,6 +1266,7 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                key_proxies: OnceLock::new(),
                 runs_again: OnceLock::new(),
                 waking: Mutex::default(),
                 runners,
@@ -1348,6 +1352,14 @@ impl Hosting {
     /// once, as the binary builds its host; a second is let go of.
     pub fn recording_with(self, record: impl Record) -> Hosting {
         let _ = self.inner.record.set(Box::new(record));
+        self
+    }
+
+    /// **This host starts and stops a run's key proxy with `proxies`** (T1a-04, R-055): the
+    /// binary's, which owns the key proxy's runtime. Set once, as the binary builds its host; a
+    /// second is let go of. A host given none refuses every start.
+    pub fn proxying_keys_with(self, proxies: impl crate::confining::ProxiesKeys) -> Hosting {
+        let _ = self.inner.key_proxies.set(Box::new(proxies));
         self
     }
 
@@ -1871,6 +1883,23 @@ impl Hosting {
                 })
             }
         }
+    }
+
+    /// **Starts a key proxy for `run`** (1.90, T1a-04, R-055), through the binary's
+    /// [`crate::confining::ProxiesKeys`]. Skeleton: refused until it is built.
+    fn start_key_proxy(&self, _run: &str) -> Result<Answer, Refusal> {
+        Err(Refusal {
+            code: session::NOT_STARTED.into(),
+            why: "not built yet".into(),
+        })
+    }
+
+    /// **Stops `run`'s key proxy** (1.90). Skeleton: refused until it is built.
+    fn stop_key_proxy(&self, _run: &str) -> Result<Answer, Refusal> {
+        Err(Refusal {
+            code: session::NOT_STARTED.into(),
+            why: "not built yet".into(),
+        })
     }
 
     /// **Audits a skill change a terminal made** (1.82, SK-11a, #6030): the binary writes it in
@@ -4190,6 +4219,9 @@ impl session::Host for Hosting {
             } => self.ask_grade(project, project_path, ask, peer).await,
             Command::AnswerGrade { question, answer } => self.answer_grade(question, answer, peer),
             Command::GradeStep { question, step } => self.grade_step(question, step, peer),
+            // Only the window's link reaches these: the grants refuse every other.
+            Command::StartKeyProxy { run } => self.start_key_proxy(&run),
+            Command::StopKeyProxy { run } => self.stop_key_proxy(&run),
             // Only a terminal's link reaches this: the grants refuse every other.
             Command::AuditSkillChange {
                 project_path,

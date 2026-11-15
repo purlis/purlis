@@ -42,6 +42,7 @@ mod a_window_gone_past_the_grace_period_ends_its_chats_as_a_quit;
 mod a_window_takes_back_its_own_runner_chats_sandboxes;
 mod a_window_that_comes_back_takes_its_browsers_back;
 mod a_window_that_comes_back_takes_its_programs_back;
+mod key_proxy_commands_are_served_only_to_the_window;
 mod purlis_logs_a_browser_in_and_hands_it_back_to_the_agent;
 mod the_event_log_and_a_programs_end_are_kept_in_the_host;
 mod the_host_admits_the_windows_scope_and_refuses_the_rest;
@@ -52,6 +53,8 @@ mod the_kill_switch_is_held_by_the_host;
 mod the_kill_switch_reaches_every_runner_this_machine_keeps;
 mod the_person_inspects_a_browser_they_drive;
 mod the_person_takes_a_browser_over_and_hands_it_back;
+mod the_start_command_brings_up_a_listener_through_the_trait;
+mod the_token_never_leaves_the_host_but_in_the_start_reply;
 
 /// A `.rs` file straight under `tests/` is a test binary of its own, which links the whole
 /// graph again: the cost this layout exists to remove. A new test file goes in this folder,

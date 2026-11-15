@@ -1,0 +1,38 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-key-proxy"
+description = "purlis's key proxy: a listener per run on 127.0.0.1 that a harness sends its model calls to, on a two-thread runtime of its own (V36's shared passthrough crate)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Linked by the desktop's binary (`purlis-app`, whose session host starts it) and the runner's
+# (`purlis`), never by the session host's crate: `purlis-host` starts it through a trait the
+# binary supplies (`purlis_host::ProxiesKeys`), so the host links no HTTP code.
+[dependencies]
+# Its own runtime: two worker threads, named, never the host's current-thread runtime (R-054).
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
+# hyper's own HTTP/1 server connection is the parser (D6640-C2 §1): no framing parser of its own.
+hyper = { version = "1.12", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+# The run's 256-bit token, from the operating system's generator: the version
+# purlis-session-protocol already links.
+getrandom = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }
+serde_json.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints]
+workspace = true

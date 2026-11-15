@@ -250,3 +250,14 @@ fn only_a_terminal_asks_for_its_skill_change_to_be_audited() {
         );
     }
 }
+
+#[test]
+fn only_the_window_starts_or_stops_a_runs_key_proxy() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::KeyProxy),
+            scope == Scope::LocalUi,
+            "{scope}"
+        );
+    }
+}
