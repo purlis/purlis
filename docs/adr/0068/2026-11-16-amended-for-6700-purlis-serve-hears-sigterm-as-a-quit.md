@@ -45,5 +45,5 @@ confirmed** (D-6700-1 to D-6700-4).
    processes died with it, or with the boot, and they keep nothing, as before. FD-17's login item
    is unchanged: a `SIGTERM` still leaves its record for the next host, which settles it as a
    crash. CI's `an_ssh_runner_host_outlives_the_sign_out_and_a_restart` now reads the boot that
-   the restart ended (`journalctl -b -1`, so the fixture keeps its journal on disk). It checks
+   the restart ended (every journal on its disk merged, `journalctl -m`, so the fixture keeps its journal there). It checks
    that boot for the quit, and checks that the next boot settles nothing as a crash. *D-6700-4.*

@@ -419,15 +419,21 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
         )
         .0
     });
-    // The boot that ended: the shutdown's stop was heard as a quit (#6700).
+    // The boot that ended: the shutdown's stop was heard as a quit (#6700). Every journal on
+    // the disk, merged (`-m`): a container's machine id may be made new at each boot, which
+    // files the boot that ended under another machine's folder, where `-b -1` does not look.
+    // The host was stopped only once before now, by the restart.
     let (_, stopped) = as_root(
         machine,
-        &format!("journalctl -b -1 --no-pager _SYSTEMD_USER_UNIT={unit}"),
+        &format!("journalctl -m --no-pager _SYSTEMD_USER_UNIT={unit}"),
     );
-    assert!(
-        stopped.contains(purlis_host::TOLD_TO_STOP),
-        "the shutdown's SIGTERM was heard as a quit: {stopped}"
-    );
+    if !stopped.contains(purlis_host::TOLD_TO_STOP) {
+        let (_, kept) = as_root(
+            machine,
+            "cat /etc/machine-id; ls -R /var/log/journal; journalctl -m --list-boots --no-pager",
+        );
+        panic!("the shutdown's SIGTERM was heard as a quit: {stopped}\n{kept}");
+    }
     // This boot: the host serves again, and finds nothing left to settle as a crash.
     let (_, journal) = as_root(
         machine,
