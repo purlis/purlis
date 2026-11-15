@@ -91,7 +91,11 @@ const placeholders = (count?: number) =>
   });
 
 /** The rows whose line is counted: their function takes `count`, read at 2, 1 and 0. */
-const COUNTED = new Set(rowsOf(TABLE).filter((row) => row.string.startsWith("through `counted`")).map((row) => row.w));
+const COUNTED = new Set(
+  rowsOf(TABLE)
+    .filter((row) => row.string.startsWith("through `counted`"))
+    .map((row) => row.w),
+);
 
 /** A module line's forms as `[key, text]`, its slots as placeholders: `W16.later`. */
 function rendered(key: string, value: unknown): [string, string][] {
@@ -224,9 +228,7 @@ describe("the table-wide rules, each a function of the module", () => {
     expect(windowCopy.W26a({ lock: onPool("The model lock", null) })).toBe(
       "The model lock now blocks this chat's requests.",
     );
-    expect(
-      windowCopy.W64({ file: onPool("policy.toml", "gpu"), error: "it isn't TOML" }),
-    ).toBe(
+    expect(windowCopy.W64({ file: onPool("policy.toml", "gpu"), error: "it isn't TOML" })).toBe(
       "policy.toml on gpu can't be read: it isn't TOML. Chats on a key can't start until it's fixed.",
     );
   });

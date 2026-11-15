@@ -20,7 +20,10 @@ fn your_keychain_reads_your_system_keychain_off_macos() {
         on_this_os(line::W10, Os::Linux),
         "Your system keychain is locked. Unlock it to start this chat."
     );
-    assert_eq!(on_this_os(line::W10, Os::Windows), on_this_os(line::W10, Os::Linux));
+    assert_eq!(
+        on_this_os(line::W10, Os::Windows),
+        on_this_os(line::W10, Os::Linux)
+    );
     assert_eq!(on_this_os(line::W10, Os::MacOs), line::W10);
 }
 
@@ -29,7 +32,10 @@ fn a_runner_line_names_its_pool_after_the_thing_it_names() {
     assert_eq!(
         fill(
             line::W109,
-            &[("file", &on_pool("policy.toml", Some("gpu"))), ("version", "0.6.0")]
+            &[
+                ("file", &on_pool("policy.toml", Some("gpu"))),
+                ("version", "0.6.0")
+            ]
         ),
         "purlis: policy.toml on gpu requires purlis 0.6.0 or later, so this request was blocked."
     );
