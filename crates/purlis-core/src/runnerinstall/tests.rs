@@ -687,7 +687,10 @@ fn an_install_through_a_login_shell_that_is_not_bash_places_checks_again_and_rep
     assert_eq!(
         installed,
         Installed::Placed {
-            binary: binary.clone()
+            binary: binary.clone(),
+            // What is placed here is no purlis that could prune: a prune that fails leaves
+            // the old versions, and never fails the install.
+            pruned: Vec::new(),
         }
     );
     assert_eq!(std::fs::read(&binary).unwrap(), BYTES);
@@ -700,7 +703,8 @@ fn an_install_through_a_login_shell_that_is_not_bash_places_checks_again_and_rep
     assert_eq!(
         install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap(),
         Installed::AlreadyThere {
-            binary: binary.clone()
+            binary: binary.clone(),
+            pruned: Vec::new(),
         }
     );
 
@@ -709,10 +713,47 @@ fn an_install_through_a_login_shell_that_is_not_bash_places_checks_again_and_rep
     assert_eq!(
         install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap(),
         Installed::Placed {
-            binary: binary.clone()
+            binary: binary.clone(),
+            pruned: Vec::new(),
         }
     );
     assert_eq!(std::fs::read(&binary).unwrap(), BYTES);
+}
+
+#[test]
+fn an_install_has_the_installed_version_prune_the_runner_and_says_what_it_removed() {
+    let home = tempfile::tempdir().unwrap();
+    let home = std::fs::canonicalize(home.path()).unwrap();
+    let stub = stub_reach(&home, not_bash(), PATH, "");
+    // A "purlis" that answers `bridge --prune` as the runner's does, and says it was run so.
+    let script: &[u8] = b"#!/bin/sh\n[ \"$*\" = \"bridge --prune\" ] || exit 9\n\
+        echo removed=1.2.0; echo \"kept=1.3.0 serving\"; echo removed=nonsense/\n";
+    let key = Key::new();
+    let target = Target::here().unwrap();
+    let verified = verify(
+        &key.public(),
+        script,
+        &key.sign(script, "1.5.0", &asset_name("1.5.0", target)),
+        "1.5.0",
+        target,
+    )
+    .unwrap();
+    let probed = probe(&stub.reach).unwrap();
+    let installed = install(&stub.reach, &probed, &verified, Delivery::Upload(script)).unwrap();
+    assert!(matches!(installed, Installed::Placed { .. }));
+    assert_eq!(installed.pruned(), ["1.2.0"]);
+    // Checked again on the next install, it prunes again.
+    let probed = probe(&stub.reach).unwrap();
+    let installed = install(&stub.reach, &probed, &verified, Delivery::Upload(script)).unwrap();
+    assert!(matches!(installed, Installed::AlreadyThere { .. }));
+    assert_eq!(installed.pruned(), ["1.2.0"]);
+    assert_eq!(
+        prune(&stub.reach, &probed, "1.5.0; rm -rf /").unwrap_err(),
+        Refused::Unusable {
+            host: "127.0.0.1".to_owned(),
+            why: "1.5.0; rm -rf / isn't a version purlis installs".to_owned(),
+        }
+    );
 }
 
 #[test]
