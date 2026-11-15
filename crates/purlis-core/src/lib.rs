@@ -164,6 +164,8 @@ pub mod linkkey;
 pub mod livesub;
 pub mod localproject;
 pub mod loginask;
+#[cfg(unix)]
+pub mod loginitem;
 pub mod loginstart;
 pub mod looping;
 pub mod machine;
