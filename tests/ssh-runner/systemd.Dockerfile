@@ -8,6 +8,8 @@
 # lets an account turn its own linger on (logind asks it). `docker restart` is the machine's
 # restart: systemd shuts down on SIGRTMIN+3 and boots again, with `/run` empty and the disk kept.
 # `UsePAM yes` is what makes each SSH sign-in a logind session (pam_systemd).
+# `/var/log/journal` keeps the journal on disk, so the boot a restart ended can still be read
+# after it (`journalctl -b -1`, #6700).
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 ENV container=docker
 RUN apt-get --option Acquire::Retries=5 update \
@@ -16,6 +18,7 @@ RUN apt-get --option Acquire::Retries=5 update \
       openssh-server procps ca-certificates libdbus-1-3 \
  && rm -rf /var/lib/apt/lists/* \
  && userdel --remove ubuntu \
+ && mkdir -p /var/log/journal \
  && useradd --create-home --shell /bin/bash keeper \
  && sed -i -e 's/^keeper:!/keeper:*/' /etc/shadow \
  && rm -f /etc/ssh/ssh_host_* \

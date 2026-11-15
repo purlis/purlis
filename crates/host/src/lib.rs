@@ -86,6 +86,8 @@ mod signingin;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 #[cfg(unix)]
+mod stopping;
+#[cfg(unix)]
 mod unattended;
 
 pub use browsers::NotStarted as BrowserNotStarted;
@@ -133,6 +135,8 @@ pub use serving::{
     Answering, DeletingOwnFolders, Delivering, Forgetting, Holding, HostError, Keeping, LOCK,
     Listing, Pairing, Place, SigningIn, Unpairing, Window, answers, serve, serve_answering,
 };
+#[cfg(unix)]
+pub use stopping::{TOLD_TO_STOP, told_to_stop};
 #[cfg(unix)]
 pub use unattended::{Idles, UNLINKED_FOR};
 
@@ -261,7 +265,8 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 /// desktop** (#2051, [`UNLINKED_FOR`] by default), where it is given one: it stops serving, and
 /// every program it runs ends as at a quit. **Paired, it also stops once it has been idle**
 /// ([`Idles`], #3980), where it is told to. `serves` says who started it: a service manager
-/// ([`Serves::AsALoginItem`], RR-15) takes another host already serving as a success.
+/// ([`Serves::AsARunnersService`], RR-15) takes another host already serving as a success, and
+/// any `purlis serve` hears `SIGTERM` as a quit (#6700).
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
@@ -324,10 +329,26 @@ pub fn serve_alone_answering(
 pub enum Serves {
     /// The window started it, and reattaches to the one serving (exit code 3).
     ForTheWindow,
-    /// The service manager started it as a login item: another serving is a success.
+    /// The service manager started it as the desktop's login item (FD-17): another serving is
+    /// a success.
     AsALoginItem,
+    /// The service manager started it as a runner's host, `purlis serve --as-a-service`
+    /// (RR-15): another serving is a success, as for a login item, and `SIGTERM` is a quit.
+    AsARunnersService,
     /// `purlis serve`, on a runner or at a terminal.
     Alone,
+}
+
+#[cfg(unix)]
+impl Serves {
+    /// **Whether `SIGTERM` is heard as a quit** (#6700, ADR 0068 §3 as amended for #6700):
+    /// `purlis serve`, which systemd or launchd stops by it at a shutdown, a stop or a removal,
+    /// ends every program as a quit ([`told_to_stop`]) and empties its host record. The window's
+    /// own host and the desktop's login item keep the signal's default, an end as sudden as a
+    /// crash's, whose programs the next host settles (#2007).
+    pub fn hears_sigterm_as_a_quit(self) -> bool {
+        matches!(self, Serves::AsARunnersService | Serves::Alone)
+    }
 }
 
 #[cfg(unix)]
@@ -337,7 +358,11 @@ pub enum Serves {
 /// manager restarts it only after a failure, and a host already serving is none.
 pub fn exit_code(served: Result<(), &HostError>, serves: Serves) -> i32 {
     match (served, serves) {
-        (Ok(()), _) | (Err(HostError::AlreadyServing { .. }), Serves::AsALoginItem) => 0,
+        (Ok(()), _)
+        | (
+            Err(HostError::AlreadyServing { .. }),
+            Serves::AsALoginItem | Serves::AsARunnersService,
+        ) => 0,
         (Err(HostError::AlreadyServing { .. }), _) => 3,
         (Err(_), _) => 1,
     }
@@ -376,9 +401,33 @@ fn run(
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
         serving();
     };
-    let served = runtime.block_on(serve_answering(
-        place, window, hosting, pairing, ready, until,
-    ));
+    let served = runtime.block_on(async {
+        // In before the host says it is ready, so a stop sent the moment it serves is heard.
+        let told = if serves.hears_sigterm_as_a_quit() {
+            match told_to_stop() {
+                Ok(told) => Some(told),
+                Err(why) => {
+                    say(&format!(
+                        "SIGTERM could not be handled, so a stop ends this host as a crash \
+                         would: {why}"
+                    ));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let until = async move {
+            match told {
+                Some(told) => tokio::select! {
+                    () = until => {}
+                    () = told => {}
+                },
+                None => until.await,
+            }
+        };
+        serve_answering(place, window, hosting, pairing, ready, until).await
+    });
     if let Err(why) = &served {
         say(&why.to_string());
     }
@@ -424,6 +473,21 @@ mod tests {
     fn the_windows_host_finding_another_serving_says_so_for_the_window_to_reattach() {
         assert_eq!(exit_code(Err(&another_serves()), Serves::ForTheWindow), 3);
         assert_eq!(exit_code(Err(&another_serves()), Serves::Alone), 3);
+        assert_eq!(
+            exit_code(Err(&another_serves()), Serves::AsARunnersService),
+            0,
+            "a runner's service finding its version's host serving is a success too"
+        );
+    }
+
+    /// #6700: systemd and launchd stop `purlis serve` by `SIGTERM`, which it hears as a quit.
+    /// The window's own host and the desktop's login item are unchanged.
+    #[test]
+    fn only_purlis_serve_hears_sigterm_as_a_quit() {
+        assert!(Serves::Alone.hears_sigterm_as_a_quit());
+        assert!(Serves::AsARunnersService.hears_sigterm_as_a_quit());
+        assert!(!Serves::ForTheWindow.hears_sigterm_as_a_quit());
+        assert!(!Serves::AsALoginItem.hears_sigterm_as_a_quit());
     }
 
     /// #6687: what only the host that serves may do (keep its log trimmed) is never done by a
@@ -460,7 +524,12 @@ mod tests {
 
     #[test]
     fn a_host_that_stopped_as_asked_exits_0_whoever_it_serves_for() {
-        for serves in [Serves::ForTheWindow, Serves::AsALoginItem, Serves::Alone] {
+        for serves in [
+            Serves::ForTheWindow,
+            Serves::AsALoginItem,
+            Serves::AsARunnersService,
+            Serves::Alone,
+        ] {
             assert_eq!(exit_code(Ok(()), serves), 0, "{serves:?}");
         }
     }

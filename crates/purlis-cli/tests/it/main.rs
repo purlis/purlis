@@ -111,6 +111,7 @@ mod profile_sign_in;
 mod purlis_queries_lists_the_catalogue;
 mod purlis_serve_confines_a_chat_with_its_own_proxy;
 mod purlis_serve_hears_a_held_projects_hooks;
+mod purlis_serve_hears_sigterm_as_a_quit;
 mod purlis_serve_is_this_users_one_session_host;
 mod purlis_serve_keeps_the_event_log_as_the_windows_host_does;
 mod purlis_serve_writes_the_run_of_a_chat_it_composes;
