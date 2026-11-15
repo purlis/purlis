@@ -211,6 +211,7 @@ fn every_command() -> Vec<Command> {
                 reporting: None,
                 confinement: None,
                 prompt_key: None,
+                pools_held: None,
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
@@ -240,7 +241,6 @@ fn every_command() -> Vec<Command> {
                 any_port: false,
                 beside: session::Beside::Wrapped,
                 given: Vec::new(),
-                held: None,
             },
             asks: true,
         })),

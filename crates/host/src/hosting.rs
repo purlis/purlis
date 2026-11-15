@@ -1033,6 +1033,10 @@ struct Hosted {
     /// and some are missing (1.83, #6078): kept in memory alone, for its start's answer and a
     /// window that takes it back, as [`Self::armed_skills`] are.
     skills_not_there: Option<session::SkillsNotThere>,
+    /// What of every pool's programs and files its sandbox held as it started, as its window's
+    /// launch said (1.89): kept in memory alone, for a window that takes it back, as
+    /// [`Self::prompt_key`] is.
+    pools_held: Option<Vec<String>>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -2567,6 +2571,10 @@ impl Hosting {
                     prompt_key: prompt_key.clone(),
                     armed_skills: armed.clone(),
                     skills_not_there: not_there.clone(),
+                    pools_held: start
+                        .launch
+                        .as_ref()
+                        .and_then(|launch| launch.pools_held.clone()),
                 },
             );
             windowless
@@ -2799,10 +2807,11 @@ impl Hosting {
                 harness: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
-                // A browser has no prompts of a chat's to digest, nor skills.
+                // A browser has no prompts of a chat's to digest, nor skills, nor sandbox.
                 prompt_key: None,
                 armed_skills: None,
                 skills_not_there: None,
+                pools_held: None,
             },
         );
         drop(state);
@@ -3085,6 +3094,7 @@ impl Hosting {
                 prompt_key: hosted.prompt_key.clone(),
                 armed_skills: hosted.armed_skills.clone(),
                 skills_not_there: hosted.skills_not_there.clone(),
+                pools_held: hosted.pools_held.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));

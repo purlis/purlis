@@ -97,7 +97,6 @@ fn planned(id: &str) -> Confine {
             any_port: false,
             beside: Beside::Wrapped,
             given: vec![5432],
-            held: None,
         },
         asks: true,
     }
@@ -126,6 +125,7 @@ fn running_in(id: &str) -> StartProgram {
             reporting: None,
             confinement: Some(id.into()),
             prompt_key: None,
+            pools_held: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

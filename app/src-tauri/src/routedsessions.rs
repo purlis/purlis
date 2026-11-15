@@ -1195,12 +1195,11 @@ impl SessionHost for RoutedSessions {
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
-        pools_held: &[PathBuf],
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
         match &self.every_start_on {
-            Some(pool) => self.pool(pool)?.confine(plan, pools_held, hearing),
-            None => self.here.confine(plan, pools_held, hearing),
+            Some(pool) => self.pool(pool)?.confine(plan, hearing),
+            None => self.here.confine(plan, hearing),
         }
     }
 

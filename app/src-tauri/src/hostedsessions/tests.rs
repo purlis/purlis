@@ -2101,7 +2101,7 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
     let heard_first = Arc::new(Mutex::new(Vec::new()));
     let confined = first
         .sessions
-        .confine(&plan, &[], refused_by(&heard_first))
+        .confine(&plan, refused_by(&heard_first))
         .expect("confined");
     let id = confined.held_as().expect("held in the host").to_owned();
     first
@@ -2147,8 +2147,9 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
 }
 
 /// **What of the pools a chat's sandbox held as it started comes back with it**: the window that
-/// confined it hands it with the plan, the host keeps it, and a window that comes back reads it
-/// for that chat, and for no other.
+/// started it says it in its launch, the host keeps it with the program, and a window that comes
+/// back reads it for that chat. A chat with a proxy beside it and one with none alike; a start
+/// with no sandbox says none.
 #[test]
 fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_came_back() {
     use purlis_core::sandbox::egress::{PLAIN_PORTS, TUNNEL_PORTS};
@@ -2170,23 +2171,38 @@ fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_ca
     let first = host.window();
     let confined = first
         .sessions
-        .confine(&plan, &held, Hearing::default())
+        .confine(&plan, Hearing::default())
         .expect("confined");
     let id = confined.held_as().expect("held in the host").to_owned();
+    // Behind a proxy, as Codex runs.
     first
         .sessions
         .open(
             Some(4),
             &Opening {
                 confinement: Some(id),
+                pools_held: Some(held.clone()),
                 ..a_shell("true")
             },
             &|_| {},
         )
         .unwrap();
+    // With no proxy beside it, as Claude Code on its own sandbox runs; holding nothing yet.
     first
         .sessions
-        .open(Some(5), &a_shell("true"), &|_| {})
+        .open(
+            Some(5),
+            &Opening {
+                pools_held: Some(Vec::new()),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .unwrap();
+    // With no sandbox.
+    first
+        .sessions
+        .open(Some(6), &a_shell("true"), &|_| {})
         .unwrap();
     std::mem::forget(confined);
     first.crashes();
@@ -2194,11 +2210,8 @@ fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_ca
     let back = host.window();
     assert!(back.sessions.left_running(4));
     assert_eq!(back.sessions.pools_held_left(4), Some(held));
-    assert_eq!(
-        back.sessions.pools_held_left(5),
-        None,
-        "it runs in no confinement"
-    );
+    assert_eq!(back.sessions.pools_held_left(5), Some(Vec::new()));
+    assert_eq!(back.sessions.pools_held_left(6), None, "it said none");
 }
 
 /// A window that comes back puts its record back as a launch does (#2006): each chat the host
@@ -2267,7 +2280,6 @@ impl purlis_host::Compose for ComposesConfined {
             any_port: false,
             beside: session::Beside::Wrapped,
             given: vec![5432],
-            held: None,
         })?;
         Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
     }

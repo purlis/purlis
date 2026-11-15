@@ -574,11 +574,11 @@ use crate::view::{Limits, Views};
 /// (Q278). A host before 1.88 is not sent them, and the window says it can't allow a next
 /// attempt there.
 ///
-/// 1.89 keeps with a confinement's plan what of every pool's programs and files the chat's
-/// sandbox held as it started ([`ConfinePlan::held`]), and `programs` answers it with the plan,
-/// so a window that takes the chat back asks it to restart by the sandbox it started with, not
-/// by one compiled now. A host before 1.89 keeps none, and the window takes such a chat as
-/// holding none of them.
+/// 1.89 has a host keep with a chat's program what of every pool's programs and files its
+/// sandbox held as it started ([`Launch::pools_held`]), and `programs` answers it
+/// ([`HeldProgram::pools_held`]), so a window that takes the chat back asks it to restart by the
+/// sandbox it started with, not by one compiled now. A host before 1.89 keeps none, and the
+/// window cannot say which pools such a chat holds.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 89,
@@ -1622,12 +1622,6 @@ pub struct ConfinePlan {
     /// The services on the machine the chat was given, each by its port.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub given: Vec<u16>,
-    /// **What of every pool's programs and files the chat's sandbox held as its start compiled
-    /// it** (1.89), each path whole: nothing the proxy reads. Kept with the plan, so a window that
-    /// comes back compares what a start would hold now with what this one held. Absent from a
-    /// window before 1.89, and from a host before it, which keeps none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub held: Option<Vec<String>>,
 }
 
 /// A host a confinement's proxy carries, and the layer that lists it (1.4).
@@ -2268,6 +2262,12 @@ pub struct Launch {
     /// it back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_key: Option<PromptKey>,
+    /// **What of every pool's programs and files the chat's sandbox held as it started** (1.89),
+    /// each path whole, where it started sandboxed: nothing the host does anything with but keep
+    /// it with the program, for a window that takes the chat back
+    /// ([`HeldProgram::pools_held`]). Absent from a window before 1.89.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pools_held: Option<Vec<String>>,
 }
 
 /// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
@@ -2754,6 +2754,12 @@ pub struct HeldProgram {
     /// tab. Absent from a host before 1.83.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills_not_there: Option<SkillsNotThere>,
+    /// What of every pool's programs and files its sandbox held as it started, as its launch
+    /// said ([`Launch::pools_held`], 1.89): what a window that takes the chat back compares with
+    /// what a start would hold now. Absent from a host before 1.89, and for a launch that said
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pools_held: Option<Vec<String>>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).

@@ -1393,6 +1393,7 @@ fn the_browsers_left_on_this_machines_host_reach_the_put_back_through_the_routin
             prompt_key: None,
             armed_skills: None,
             skills_not_there: None,
+            pools_held: None,
         });
 
     let left = world.sessions.browsers_left();

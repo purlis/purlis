@@ -2940,7 +2940,6 @@ fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &T
         .sessions
         .confine(
             &a_plan(vec![(format!("127.0.0.1:{port}"), By::You)], vec![port]),
-            &[],
             hearing(&heard, false),
         )
         .expect("confined");
@@ -2971,7 +2970,6 @@ fn a_port_withdrawn_while_a_chat_runs_is_carried_no_longer(target: &Target) {
         .sessions
         .confine(
             &a_plan(vec![(format!("127.0.0.1:{port}"), By::You)], vec![port]),
-            &[],
             Hearing::default(),
         )
         .expect("confined");
@@ -2997,7 +2995,7 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
     let heard = Arc::new(HeardOfIt::default());
     let confinement = target
         .sessions
-        .confine(&a_plan(Vec::new(), Vec::new()), &[], hearing(&heard, true))
+        .confine(&a_plan(Vec::new(), Vec::new()), hearing(&heard, true))
         .expect("confined");
     let (id, pane) = in_it(
         target,

@@ -1143,6 +1143,7 @@ pub fn compose_ready(
             .map(str::to_owned),
         // Given with its token, by the host that starts it ([`spec`]).
         prompt_key: None,
+        pools_held: None,
     })
 }
 

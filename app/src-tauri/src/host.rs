@@ -89,6 +89,11 @@ pub struct Opening {
     /// environment for its hooks, and handed to the session host in its launch, which keeps it
     /// for a window that takes the chat back. Its `Debug` shows nothing of it. None for a shell.
     pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
+    /// **What of every pool's programs and files its sandbox holds**
+    /// ([`purlis_core::sandbox::Confines::pools_held`]), where it starts sandboxed: handed to the
+    /// session host in its launch, which keeps it for a window that takes the chat back
+    /// ([`SessionHost::pools_held_left`]). None for a start with no sandbox.
+    pub pools_held: Option<Vec<std::path::PathBuf>>,
 }
 
 /// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
@@ -116,6 +121,7 @@ impl Default for Opening {
             run: None,
             ends_with_its_window: false,
             prompt_key: None,
+            pools_held: None,
         }
     }
 }
@@ -699,17 +705,12 @@ pub trait SessionHost: Send + Sync {
     /// where this host runs its chats (#1999), with `hearing` told what the proxy does. In the
     /// window's own process it starts here; the session host starts it there, from the same
     /// plan with the same code, and holds it for as long as the chat runs. A start that runs in
-    /// it names it ([`Opening::confinement`]). `pools_held` is what of every pool's programs and
-    /// files the chat's sandbox holds ([`purlis_core::sandbox::Confines::pools_held`]): the
-    /// session host keeps it with the plan, for a window that takes the chat back
-    /// ([`Self::pools_held_left`]).
+    /// it names it ([`Opening::confinement`]).
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
-        pools_held: &[std::path::PathBuf],
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
-        let _ = pools_held;
         plan.start(hearing.here()).map_err(|why| why.to_string())
     }
 
@@ -820,9 +821,9 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// **What of every pool's programs and files chat `number`'s sandbox held as it started**,
-    /// as the window that confined it said ([`Self::confine`]), where it is left running in a
-    /// confinement: what the window compares with what a start would hold now. `None` where the
-    /// host keeps no such record.
+    /// as the window that started it said ([`Opening::pools_held`]), where it is left running:
+    /// what the window compares with what a start would hold now. `None` where the host keeps no
+    /// such record: one before it kept them, or a chat started with no sandbox.
     fn pools_held_left(&self, number: u32) -> Option<Vec<std::path::PathBuf>> {
         let _ = number;
         None
@@ -1080,9 +1081,9 @@ pub(crate) mod pretend {
         left: Mutex<Vec<(u32, Option<purlis_core::sandbox::plan::Plan>)>>,
         /// The plans chats were confined from, in order ([`Pretend::plans_confined`]).
         confined: Mutex<Vec<purlis_core::sandbox::plan::Plan>>,
-        /// What of the pools each of those chats' sandboxes held, in the same order
-        /// ([`Pretend::pools_held_confined`]).
-        pools_held: Mutex<Vec<Vec<std::path::PathBuf>>>,
+        /// What of the pools each chat it opened said its sandbox held, in order
+        /// ([`Pretend::pools_held_opened`]).
+        pools_held: Mutex<Vec<Option<Vec<std::path::PathBuf>>>>,
         /// What of the pools each chat left running held as it started, as its host kept it
         /// ([`Pretend::left_holding`]).
         pools_held_left: Mutex<Vec<(u32, Vec<std::path::PathBuf>)>>,
@@ -1298,8 +1299,8 @@ pub(crate) mod pretend {
             lock(&self.seen.confined).clone()
         }
 
-        /// What of the pools the sandbox of each chat it confined held, in order.
-        pub fn pools_held_confined(&self) -> Vec<Vec<std::path::PathBuf>> {
+        /// What of the pools each chat it opened said its sandbox held, in order.
+        pub fn pools_held_opened(&self) -> Vec<Option<Vec<std::path::PathBuf>>> {
             lock(&self.seen.pools_held).clone()
         }
 
@@ -1544,11 +1545,9 @@ pub(crate) mod pretend {
         fn confine(
             &self,
             plan: &purlis_core::sandbox::plan::Plan,
-            pools_held: &[std::path::PathBuf],
             hearing: purlis_core::sandbox::plan::Hearing,
         ) -> Result<purlis_core::sandbox::Confinement, String> {
             lock(&self.seen.confined).push(plan.clone());
-            lock(&self.seen.pools_held).push(pools_held.to_vec());
             plan.start(hearing.here()).map_err(|why| why.to_string())
         }
         fn open(
@@ -1560,6 +1559,7 @@ pub(crate) mod pretend {
             if let Some(why) = lock(&self.seen.refusing).clone() {
                 return Err(why);
             }
+            lock(&self.seen.pools_held).push(opening.pools_held.clone());
             if let Some((_, why)) = lock(&self.seen.refusing_numbers)
                 .iter()
                 .find(|(number, _)| wanted == Some(*number))

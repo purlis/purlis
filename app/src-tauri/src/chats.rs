@@ -485,6 +485,11 @@ struct Running {
     /// tools and line the runner compiled there, so this window holds no record of what its
     /// sandbox compiled to, and a restart would not give it one (#2692).
     composed_by_its_host: bool,
+    /// **Whether what its sandbox held of the pools as it started is not known**: a chat
+    /// reattached from a host that kept no record of it ([`SessionHost::pools_held_left`]), whose
+    /// [`Self::confines`] hold what a start holds now in its place. Such a chat is asked to
+    /// restart wherever any pool is held now, with no pool named as why.
+    pools_unknown: bool,
     /// **Whose persona grants it runs with, as its start read them** (#2691): on a profile, the
     /// grants a handoff left it holding, else its own persona's, else the project's default
     /// persona at its start; on no profile, none ([`grants_persona_of`]). The persona its
@@ -4461,6 +4466,7 @@ impl Chats {
                         .as_ref()
                         .map(|confines| Settled::of(confines, &pools)),
                     one.started_with.clone(),
+                    one.pools_unknown,
                 ))
             })
             .collect();
@@ -4470,7 +4476,7 @@ impl Chats {
         // compile per chat made the asks grow with the square of the chats open.
         let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
         let mut pools_moved: Vec<Option<PoolMoved>> = Vec::new();
-        for (session, chat, harness, started, with) in running {
+        for (session, chat, harness, started, with, pools_unknown) in running {
             let persona = grants_persona_of(
                 &Chat {
                     held: with.held.clone(),
@@ -4531,14 +4537,21 @@ impl Chats {
                 // A chat whose sandbox could not be compiled now is not counted.
                 CompiledNow::Refused => continue,
             };
-            if now != started {
+            // What it held of the pools is not known, and a start now holds some: it may be
+            // behind, and no pool can be named as why.
+            let pools_unknown = pools_unknown
+                && now
+                    .as_ref()
+                    .is_some_and(|now| !now.cluster.is_empty() || !now.tls.is_empty());
+            if now != started || pools_unknown {
                 // Policy is the cause where the chat runs unconfined and policy requires the
                 // sandbox: no setting of the project's could leave it without one now.
                 let policy = (required && started.is_none() && now.is_some())
                     .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
                 // A pool added since it started is the cause where nothing else moved.
+                // Not where what it held of the pools is not known: no pool is named as why.
                 let moved = match (&started, &now) {
-                    (Some(started), Some(now)) => started.pool_added(now),
+                    (Some(started), Some(now)) if !pools_unknown => started.pool_added(now),
                     _ => None,
                 };
                 pools_moved.push(moved);
@@ -5683,14 +5696,17 @@ impl Chats {
                 // The plan is its network's alone, and says nothing of the files its start
                 // denied: whether that start held the project's git is not on record, so the
                 // chat saves and updates the project with its own git, as one this window did
-                // not compile does. What it held of the pools is on record beside the plan, as
-                // the window that started it said: a host that kept none is taken as holding
-                // none, so a pool there now asks it to restart.
+                // not compile does. What it held of the pools is on record with its program, as
+                // the window that started it said; where the host kept none, what a start holds
+                // now stands in, and the chat is marked as not known ([`Running::pools_unknown`]).
                 (now == then)
                     .then(|| {
                         sandbox.map(|applied| purlis_core::sandbox::Confines {
                             roots_git: None,
-                            pools_held: self.sessions.pools_held_left(number).unwrap_or_default(),
+                            pools_held: self
+                                .sessions
+                                .pools_held_left(number)
+                                .unwrap_or_else(|| applied.confines().pools_held.clone()),
                             ..applied.confines().clone()
                         })
                     })
@@ -5699,6 +5715,11 @@ impl Chats {
             (true, _, _) => None,
             _ => sandbox.map(|applied| applied.confines().clone()),
         };
+        let pools_unknown = reattaching
+            && confines.is_some()
+            && chat
+                .number
+                .is_some_and(|number| self.sessions.pools_held_left(number).is_none());
         let hearing = purlis_core::sandbox::plan::Hearing {
             refusals,
             more: Some(more_refused_by_the_proxy(
@@ -5723,24 +5744,16 @@ impl Chats {
                 .number
                 .and_then(|number| self.sessions.confined_again(number, hearing))
                 .transpose()?,
-            Some(plan) => Some(
-                self.sessions
-                    .confine(
-                        &plan,
-                        sandbox.map_or(&[][..], |applied| &applied.confines().pools_held),
-                        hearing,
-                    )
-                    .map_err(|err| {
-                        purlis_core::sandbox::under_policy(
-                            &purlis_core::sandbox::policy::Locks::of(&self.project),
-                            format!(
-                                "{}, and purlis could not start what the sandbox needs beside \
+            Some(plan) => Some(self.sessions.confine(&plan, hearing).map_err(|err| {
+                purlis_core::sandbox::under_policy(
+                    &purlis_core::sandbox::policy::Locks::of(&self.project),
+                    format!(
+                        "{}, and purlis could not start what the sandbox needs beside \
                                  this chat ({err}), so nothing was started.",
-                                purlis_core::sandbox::LEAD
-                            ),
-                        )
-                    })?,
-            ),
+                        purlis_core::sandbox::LEAD
+                    ),
+                )
+            })?),
             None => None,
         };
         crate::starttiming::mark(crate::starttiming::Phase::Proxy);
@@ -6172,6 +6185,9 @@ impl Chats {
                     // A grade's chat ends with this window (#3274): only it watches the chat.
                     ends_with_its_window: chat.graded,
                     prompt_key: prompt_key.clone(),
+                    // What its sandbox holds of the pools, kept by its host for a window that
+                    // takes it back, with a proxy beside it or none.
+                    pools_held: sandbox.map(|applied| applied.confines().pools_held.clone()),
                 },
                 &announce,
             ),
@@ -6314,6 +6330,7 @@ impl Chats {
                 },
                 ran,
                 composed_by_its_host: on_the_runner,
+                pools_unknown,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read,
