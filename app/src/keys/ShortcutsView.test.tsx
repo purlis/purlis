@@ -84,16 +84,45 @@ describe("the cheat sheet (N25)", () => {
         keys,
         where: "In a pane",
       });
-      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toEqual([
-        "pane.back",
-        "pane.focus",
-        "pane.move",
+      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toContain(
         "pane.links",
-      ]);
+      );
     }
     render(<ShortcutsView mac />);
     const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
     const row = within(list).getByRole("row", { name: /^The links on the pane.s screen/ });
     expect(row.querySelector('[data-part="shortcut"]')).toHaveTextContent("⇧⌘L");
+  });
+
+  it("lists every key a terminal answers in any pane with the pane's acts, and only a chat's own under In a chat (#6483)", () => {
+    for (const mac of [true, false]) {
+      const rows = sheetRows(mac);
+      // Find, the menu key and Ctrl+Tab out are the terminal's, a shell's pane's as much as a chat's.
+      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toEqual([
+        "pane.back",
+        "pane.focus",
+        "pane.move",
+        "chat.find",
+        "pane.links",
+        "chat.menu",
+        "chat.leave",
+      ]);
+      for (const id of ["chat.find", "pane.links", "chat.menu", "chat.leave"]) {
+        expect(rows.find((row) => row.id === id)).toMatchObject({ where: "In a pane" });
+      }
+      // Shift+Enter is a new line only for a chat's harness: a shell keeps its own Enter.
+      const inAChat = rows.filter((row) => row.where === "In a chat");
+      expect(inAChat.map((row) => [row.id, row.group])).toEqual([
+        ["chat.newline", "Tabs and chats"],
+      ]);
+    }
+    render(<ShortcutsView mac />);
+    const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
+    expect(within(list).getByRole("row", { name: /^Find in the pane/ })).toHaveTextContent(
+      "In a pane",
+    );
+    expect(
+      within(list).getByRole("row", { name: /^The pane.s menu, under its cursor/ }),
+    ).toHaveTextContent("In a pane");
   });
 });

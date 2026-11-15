@@ -32,7 +32,9 @@ const placeSaid = (mac: boolean): Readonly<Record<Scope, string>> => ({
   menu: "In a menu",
   tab: "On a focused tab",
   row: "On a focused row",
-  terminal: "In a chat",
+  // A terminal's keys work in any pane that has one, a shell's too (#6483); a key only a
+  // chat answers says so with its own `place`.
+  terminal: "In a pane",
   editor: "In an editor",
   form: "In a form",
   view: "In a view tab",
