@@ -26,7 +26,10 @@ fn a_log_past_its_cap_is_moved_aside_whole_and_the_log_starts_again_empty() {
     assert_eq!(hostlog::cap_at(&log, 1_000, 3).unwrap(), Capped::Rotated);
 
     assert_eq!(len(&log), 0, "the log starts again");
-    assert_eq!(std::fs::read(hostlog::older(&log, 1)).unwrap(), vec![b'a'; 2_000]);
+    assert_eq!(
+        std::fs::read(hostlog::older(&log, 1)).unwrap(),
+        vec![b'a'; 2_000]
+    );
 }
 
 #[test]
@@ -54,7 +57,7 @@ fn no_log_yet_is_nothing_to_cap() {
 fn each_rotation_shifts_the_older_files_and_only_the_newest_few_are_kept() {
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
-    for fill in [b'a', b'b', b'c', b'd', b'e'] {
+    for fill in *b"abcde" {
         write(&log, 2_000, fill);
         assert_eq!(hostlog::cap_at(&log, 1_000, 3).unwrap(), Capped::Rotated);
     }
@@ -118,14 +121,9 @@ fn a_running_host_rotates_its_log_once_it_passes_the_cap_and_keeps_older_files()
         .append(true)
         .open(&log)
         .unwrap();
-    hostlog::keep_capped_at(
-        log.clone(),
-        1_000,
-        3,
-        std::time::Duration::from_millis(10),
-    );
+    hostlog::keep_capped_at(log.clone(), 1_000, 3, std::time::Duration::from_millis(10));
 
-    for fill in [b'a', b'b', b'c', b'd'] {
+    for fill in *b"abcd" {
         held.write_all(&[fill; 2_000]).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while len(&log) != 0 {

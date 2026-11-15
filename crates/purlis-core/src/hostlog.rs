@@ -119,7 +119,6 @@ fn empty(log: &Path) -> io::Result<()> {
     options.open(log)?.set_len(0)
 }
 
-
 /// **Keeps `log` capped while this process runs**: [`cap`] now, and every [`LOOK_EVERY`] after,
 /// on a thread of its own. What the session host that is a login item starts, before it serves.
 pub fn keep_capped(log: PathBuf) {
