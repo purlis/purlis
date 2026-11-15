@@ -9,7 +9,7 @@ program = "claude"
 # `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_*`.
 env = ["CLAUDE_*"]
 login = "set CLAUDE_CONFIG_DIR and run /login inside Claude Code"
-tested = "2.1.283"
+tested = "2.1.300"
 
 [session]
 # `--session-id` is reported at SessionStart as given (Claude Code 2.1.272, C1).
