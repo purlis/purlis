@@ -96,11 +96,47 @@ test("a_labelled_pr_into_phase_1_proven_runs_the_macos_scenarios", () => {
   assert.match(text, /types: \[[^\]]*\blabeled\b[^\]]*\]/);
   assert.doesNotMatch(text, /draft/);
   const macos = job("sandbox-scenarios-macos");
-  assert.match(macos.if, /needs\.plan\.outputs\.macos != 'false'/);
+  assert.match(macos.text, /if: needs\.plan\.outputs\.macos != 'false'/);
   // Pinned macOS versions, never `macos-latest`.
   const versions = /os: \[([^\]]+)\]/.exec(macos.text)?.[1].split(",").map((s) => s.trim());
   assert.ok(versions?.length >= 1, "a matrix of macOS versions");
   for (const os of versions) assert.match(os, /^macos-\d+$/);
+});
+
+// The checks main's merge queue requires (the workflow's header names them for the gate).
+const REQUIRED = {
+  "sandbox-scenarios-linux": ["sandbox-scenarios-linux"],
+  "sandbox-scenarios-macos": ["sandbox-scenarios-macos (macos-15)", "sandbox-scenarios-macos (macos-26)"],
+};
+const LEG = { "sandbox-scenarios-linux": "linux", "sandbox-scenarios-macos": "macos" };
+
+test("every_required_check_name_reports_on_an_unlabelled_pr_into_phase_1_proven_and_main", () => {
+  const text = code(read(WORKFLOW));
+  assert.match(text, /pull_request:\n\s+branches: \[phase-1-proven, main\]/);
+  // An unlabelled pull request, into either branch, plans no macOS leg ...
+  for (const base of ["phase-1-proven", "main"]) {
+    assert.equal(pr(["crates/purlis-core/src/sandbox.rs"], [], { base }).macos, false, base);
+  }
+  // ... and still every required check reports: no required job is skipped by its plan, its
+  // matrix is written out, so it always expands, and each step past the reason is what skips.
+  for (const [id, names] of Object.entries(REQUIRED)) {
+    const j = job(id);
+    assert.equal(j.if, "${{ !cancelled() }}", `${id} runs whatever the plan says`);
+    const os = /\n {6}matrix:\n {8}os: \[([^\]]+)\]/.exec(j.text)?.[1].split(",").map((v) => v.trim());
+    const reported = os ? os.map((v) => j.name.replace("${{ matrix.os }}", v)) : [j.name];
+    assert.deepEqual(reported, names, id);
+    const [why, ...rest] = j.text.split(/\n(?= {6}- )/).slice(1);
+    assert.match(why, /needs\.plan\.outputs\.why/, id);
+    assert.doesNotMatch(why, /\bif:/, `${id} always says why`);
+    for (const step of rest) {
+      assert.match(step, new RegExp(`if: (failure\\(\\) && )?needs\\.plan\\.outputs\\.${LEG[id]} != 'false'\\n`), step);
+    }
+  }
+  // The names the gate is told to require are the ones the jobs report.
+  for (const name of Object.values(REQUIRED).flat()) {
+    const generic = name.replace(/\(macos-\d+\)/, "(<os>)");
+    assert.ok(read(WORKFLOW).includes(`\`${generic}\``), `the header names ${generic}`);
+  }
 });
 
 test("a_production_timings_labelled_pr_runs_the_production_timing_entries", () => {
@@ -172,20 +208,47 @@ test("every scenario run has no retries", () => {
   assert.match(runScript("production-timings").calls[0], /--retries 0\b/);
 });
 
-test("a red scenario run fails, and a quiet one prints nothing of it", () => {
-  const loud = runScript("suite", { FAKE_CARGO_FAILS: "1" });
-  assert.notEqual(loud.status, 0);
-  assert.match(loud.output, /what an escape would say/);
-  const quiet = runScript("suite", { FAKE_CARGO_FAILS: "1", QUIET: "true", ENTRY: "an-entry" });
-  assert.notEqual(quiet.status, 0);
-  assert.doesNotMatch(quiet.output, /what an escape would say/);
-  assert.match(quiet.output, /an-entry/);
-  // Red under load stays red, quiet or not, at its first red run.
-  for (const QUIET of ["true", "false"]) {
-    const stressed = runScript("suite", { FAKE_CARGO_FAILS: "1", STRESS: "true", QUIET });
-    assert.notEqual(stressed.status, 0, `quiet ${QUIET}`);
-    assert.equal(stressed.calls.filter((c) => c.startsWith("cargo ")).length, 1, `quiet ${QUIET}`);
+test("a red scenario run fails and prints what it said: nothing runs quiet (Q301)", () => {
+  const red = runScript("suite", { FAKE_CARGO_FAILS: "1", QUIET: "true" });
+  assert.notEqual(red.status, 0);
+  assert.match(red.output, /what an escape would say/);
+  // Red under load stays red, at its first red run.
+  const stressed = runScript("suite", { FAKE_CARGO_FAILS: "1", STRESS: "true" });
+  assert.notEqual(stressed.status, 0);
+  assert.equal(stressed.calls.filter((c) => c.startsWith("cargo ")).length, 1);
+  for (const path of [
+    "tools/sandbox-scenarios.sh",
+    ".github/actions/sandbox-scenarios/action.yml",
+    ".github/actions/nightly/action.yml",
+    WORKFLOW,
+  ]) {
+    // The quiet run's switch, its input and its matrix field; `stress-ng --quiet` is no quiet run.
+    assert.doesNotMatch(read(path), /QUIET|quiet:|\.quiet\b|Q287|Q298/, path);
+    assert.doesNotMatch(read(path), /mirror/i, path);
   }
+});
+
+test("the scenarios are purlis-app's one-word scenarios module, and the script's filters name it", () => {
+  assert.match(read("app/src-tauri/src/lib.rs"), /#\[cfg\(test\)\]\nmod scenarios;\n/);
+  assert.ok(existsSync(join(root, "app/src-tauri/src/scenarios.rs")));
+  assert.match(runScript("suite").calls[0], /test\(\/\^scenarios::\/\) & not test\(\/\^scenarios::production_timings::\/\)/);
+  assert.match(runScript("production-timings").calls[0], /test\(\/\^scenarios::production_timings::\/\)/);
+});
+
+test("the Linux scenario build is the rust job's test build, so it restores the rust job's cache", () => {
+  const rust = jobsOf(read(".github/workflows/ci.yml")).find((j) => j.id === "rust");
+  const built = /run: cargo nextest run (.*) --no-run\n/.exec(rust.text)[1];
+  const action = code(read(".github/actions/sandbox-scenarios/action.yml"));
+  // The rust job keys its cache by its id, `rust`; the action restores that key on Linux.
+  assert.doesNotMatch(rust.text, /shared-key/);
+  assert.match(action, /shared-key: \$\{\{ runner\.os == 'macOS' && 'app' \|\| 'rust' \}\}/);
+  // The same packages build and run, so the run reuses the build.
+  assert.match(action, /CARGO_PACKAGES: \$\{\{ runner\.os == 'Linux' && '--workspace' \|\| '-p purlis-app' \}\}/);
+  assert.equal(built, "--workspace --locked");
+  assert.match(action, /cargo nextest run \$CARGO_PACKAGES --locked --no-run/);
+  const linux = runScript("suite", { CARGO_PACKAGES: "--workspace" });
+  assert.match(linux.calls[0], /^cargo nextest run --workspace --locked /);
+  assert.match(runScript("suite").calls[0], /^cargo nextest run -p purlis-app --locked /);
 });
 
 test("an unknown scenario set is refused", () => {

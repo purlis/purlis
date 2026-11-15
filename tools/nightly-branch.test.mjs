@@ -41,20 +41,25 @@ test("the_main_scheduler_runs_a_listed_branch_entry", () => {
   assert.match(entry.text, /runs-on: \$\{\{ matrix\.runs-on \}\}/);
   assert.match(entry.text, /timeout-minutes: \$\{\{ matrix\.timeout \}\}/);
   assert.match(entry.text, /ref: \$\{\{ env\.BRANCH \}\}/);
-  assert.match(entry.text, /uses: \.\/\.github\/actions\/nightly\n\s+with:\n\s+entry: \$\{\{ matrix\.entry \}\}\n\s+quiet: \$\{\{ matrix\.quiet \}\}/);
+  assert.match(entry.text, /uses: \.\/\.github\/actions\/nightly\n\s+with:\n\s+entry: \$\{\{ matrix\.entry \}\}\n/);
   // Issues are opened by this workflow's token.
   assert.match(code, /^permissions:\n {2}contents: read\n {2}issues: write$/m);
 });
 
-test("a_red_escape_entry_on_the_public_repo_opens_no_issue_and_uploads_no_artifacts", () => {
+test("a_red_escape_entry_opens_a_p0_security_issue_and_uploads_artifacts", () => {
+  // Everything runs in public, and nothing runs quiet (Q301).
+  assert.doesNotMatch(text, /quiet|mirror|Q287|Q298/i);
   const entry = job("entry");
-  const reporting = steps(entry).filter((s) => /upload-artifact|gh issue/.test(s));
-  assert.ok(reporting.some((s) => /upload-artifact/.test(s)), "a loud red night uploads its artifacts");
-  assert.ok(reporting.some((s) => /gh issue create/.test(s)), "a loud red night opens an issue");
-  for (const step of reporting) assert.match(step, /if: failure\(\) && !matrix\.quiet\n/, step);
-  // A quiet entry's red says its id and nothing more.
-  const quiet = steps(entry).filter((s) => /if: failure\(\) && matrix\.quiet\n/.test(s));
-  assert.equal(quiet.length, 1);
-  assert.doesNotMatch(quiet[0], /upload-artifact|gh issue|cat |\.log/);
-  assert.match(quiet[0], /matrix\.entry/);
+  const upload = steps(entry).filter((s) => /upload-artifact/.test(s));
+  const issue = steps(entry).filter((s) => /gh issue create/.test(s));
+  assert.equal(upload.length, 1, "a red entry uploads what it left");
+  assert.equal(issue.length, 1, "a red entry opens an issue");
+  // Any red entry, escape or not, uploads and files.
+  for (const step of [...upload, ...issue]) assert.match(step, /if: failure\(\)\n/, step);
+  // Every red entry's issue is the bot's; an escape entry's is also a p0 security issue.
+  assert.match(issue[0], /bot-maintained/);
+  assert.match(issue[0], /ESCAPE: \$\{\{ matrix\.escape \}\}/);
+  assert.match(issue[0], /if \[ "\$ESCAPE" = true \]; then[\s\S]*area:security,priority:p0/);
+  // A red escape night already filed is commented on, not filed twice.
+  assert.match(issue[0], /gh issue comment/);
 });

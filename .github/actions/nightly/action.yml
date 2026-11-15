@@ -7,17 +7,13 @@
 # its nightly without touching main. A composite action cannot read `secrets`: an entry that needs
 # one takes it as an input, which main's workflow passes.
 #
-# A name this action does not know fails, so a typo in the list is a red night, not a quiet one.
+# A name this action does not know fails, so a typo in the list is a red night, not a silent one.
 name: Nightly entry
 description: Runs one entry of the nightly list on this runner.
 inputs:
   entry:
     description: The entry's name, as the list writes it.
     required: true
-  quiet:
-    description: "true for a kind: escape entry on the public repository: its log prints only its id."
-    required: false
-    default: "false"
 runs:
   using: composite
   steps:
@@ -32,9 +28,6 @@ runs:
     # The sandbox scenarios, on Linux or macOS (ticket 54 fills the nightly's ×3 and shuffle).
     - if: inputs.entry == 'sandbox-scenarios'
       uses: ./.github/actions/sandbox-scenarios
-      with:
-        quiet: ${{ inputs.quiet }}
-        entry: ${{ inputs.entry }}
     # The existing macOS sandbox test targets against the branch, failing on red.
     - if: inputs.entry == 'existing-macos-sandbox-tests'
       uses: ./.github/actions/macos-sandbox-tests

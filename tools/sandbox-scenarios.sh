@@ -14,22 +14,25 @@
 # second try is red. Retry-to-green is forbidden.
 #
 # `STRESS=true` runs the set 20 times under `stress-ng` on every CPU (the `stress-x20` label).
-# `QUIET=true` keeps the run's output in `$RUNNER_TEMP` and prints only `ENTRY`'s id and its verdict:
-# a red escape entry on the public repository says nothing of how (Q287, Q298).
+# `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app` unset): the run
+# names the same ones, so it reuses that build. Every run prints all it says: nothing runs out of
+# sight (Q301).
 #
-# The scenarios are a `#[cfg(test)]` module of purlis-app, `sandbox_scenarios` (ticket 06). Each run
-# writes what a red run's reader needs (event logs, transcripts, the scenario report) under
-# `target/sandbox-scenarios/`, which the workflow uploads when a loud run fails.
+# The scenarios are a `#[cfg(test)]` module of purlis-app, `scenarios` (ticket 06). Each run writes
+# what a red run's reader needs (event logs, transcripts, the scenario report) under
+# `target/sandbox-scenarios/`, which the workflow uploads when a run fails.
 set -euo pipefail
 
 case "${1-}" in
-  suite) filter='package(purlis-app) & test(/^sandbox_scenarios::/) & not test(/^sandbox_scenarios::production_timings::/)' ;;
-  production-timings) filter='package(purlis-app) & test(/^sandbox_scenarios::production_timings::/)' ;;
+  suite) filter='package(purlis-app) & test(/^scenarios::/) & not test(/^scenarios::production_timings::/)' ;;
+  production-timings) filter='package(purlis-app) & test(/^scenarios::production_timings::/)' ;;
   *) echo "usage: $0 suite|production-timings" >&2; exit 2 ;;
 esac
 
 mkdir -p target/sandbox-scenarios
-once() { cargo nextest run --locked -p purlis-app --profile ci --retries 0 -E "$filter"; }
+# Unquoted on purpose: `--workspace`, or `-p` and a package.
+# shellcheck disable=SC2086
+once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app} --locked --profile ci --retries 0 -E "$filter"; }
 
 # Each status is returned by hand: `if runs` below turns `set -e` off inside the function.
 runs() {
@@ -46,14 +49,4 @@ runs() {
   return "$status"
 }
 
-if [ "${QUIET-}" = true ]; then
-  log="${RUNNER_TEMP:?}/sandbox-scenarios-$1.log"
-  if runs >"$log" 2>&1; then
-    echo "${ENTRY:-$1}: passed"
-  else
-    echo "::error::${ENTRY:-$1} failed; its output is kept off the public log"
-    exit 1
-  fi
-else
-  runs
-fi
+runs

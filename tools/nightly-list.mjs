@@ -10,29 +10,26 @@
 //
 // One entry a line; `#` starts a comment, and a blank line is nothing:
 //
-//     <entry>  <runs-on>  <timeout-minutes>  [repo: mirror]  [kind: escape]
+//     <entry>  <runs-on>  <timeout-minutes>  [kind: escape]
 //
 // - `entry`: a name `.github/actions/nightly` knows, lowercase words and dashes.
 // - `runs-on`: the runner label. An entry may be listed once per runner.
 // - `timeout-minutes`: the job's limit, 1 to 360.
-// - `repo: mirror`: runs only when the workflow's repository is the private mirror (ticket 57),
-//   which the scheduler names in its `NIGHTLY_MIRROR` repository variable. Unset, no repository is
-//   the mirror, and these entries never run.
 // - `kind: escape`: an entry whose red may say how the sandbox was escaped (an escape cell, a
-//   refused-call recording that changed). On any repository but the mirror it runs quiet: its log
-//   prints only its id, and it opens no issue and uploads no artifacts (Q287, Q298).
+//   refused-call recording that changed). It runs in public like every entry, and its red files a
+//   public issue labelled `area:security` and `priority:p0` beside `bot-maintained` (Q301).
 //
-// `node tools/nightly-list.mjs <list> [repository] [mirror]` writes `matrix` (JSON, for
-// `strategy.matrix: fromJSON(...)`) and `count` to `$GITHUB_OUTPUT` (or stdout). A malformed list
-// fails, naming its line: a scheduler that quietly runs less is worse than a red night.
+// `node tools/nightly-list.mjs <list>` writes `matrix` (JSON, for `strategy.matrix: fromJSON(...)`)
+// and `count` to `$GITHUB_OUTPUT` (or stdout). A malformed list fails, naming its line: a scheduler
+// that silently runs less is worse than a red night.
 
 import { appendFileSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const OPTIONAL = { repo: ["mirror"], kind: ["escape"] };
+const OPTIONAL = { kind: ["escape"] };
 
-/** The list's entries: `{ entry, runsOn, timeout, repo, kind }`, in order. */
+/** The list's entries: `{ entry, runsOn, timeout, kind }`, in order. */
 export function parseList(text) {
   const entries = [];
   const seen = new Set();
@@ -47,11 +44,11 @@ export function parseList(text) {
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 360) {
       throw new Error(`${where}: the timeout "${timeoutText}" is not a whole number of minutes from 1 to 360`);
     }
-    const fields = { repo: undefined, kind: undefined };
+    const fields = { kind: undefined };
     const words = rest.join(" ").split(/\s*:\s*|\s+/).filter(Boolean);
     for (let i = 0; i < words.length; i += 2) {
       const [key, value] = [words[i], words[i + 1]];
-      if (!(key in OPTIONAL)) throw new Error(`${where}: "${key}" is not a field (repo, kind)`);
+      if (!(key in OPTIONAL)) throw new Error(`${where}: "${key}" is not a field (kind)`);
       if (!OPTIONAL[key].includes(value)) {
         throw new Error(`${where}: ${key} is ${OPTIONAL[key].join(" or ")}, not "${value}"`);
       }
@@ -65,30 +62,17 @@ export function parseList(text) {
   return entries;
 }
 
-/**
- * The scheduler's matrix for a repository: `{ matrix: { include }, skipped }`. A `repo: mirror`
- * entry is skipped unless `repository` is the named `mirror`; a `kind: escape` entry runs quiet
- * anywhere but the mirror.
- */
-export function matrixOf(entries, { repository, mirror }) {
-  const onMirror = Boolean(mirror) && repository === mirror;
-  const include = [];
-  const skipped = [];
-  for (const e of entries) {
-    if (e.repo === "mirror" && !onMirror) {
-      skipped.push(e.entry);
-      continue;
-    }
-    include.push({ entry: e.entry, "runs-on": e.runsOn, timeout: e.timeout, quiet: e.kind === "escape" && !onMirror });
-  }
-  return { matrix: { include }, skipped };
+/** The scheduler's matrix: one row a listed entry, an escape entry marked `escape: true`. */
+export function matrixOf(entries) {
+  return {
+    include: entries.map((e) => ({ entry: e.entry, "runs-on": e.runsOn, timeout: e.timeout, escape: e.kind === "escape" })),
+  };
 }
 
-function main([list, repository = "", mirror = ""]) {
+function main([list]) {
   const out = process.env.GITHUB_OUTPUT;
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
-  const { matrix, skipped } = matrixOf(parseList(readFileSync(list, "utf8")), { repository, mirror });
-  for (const entry of skipped) console.log(`::notice::${entry} runs on the mirror only; skipped here`);
+  const matrix = matrixOf(parseList(readFileSync(list, "utf8")));
   say(`matrix=${JSON.stringify(matrix)}`);
   say(`count=${matrix.include.length}`);
 }

@@ -5,7 +5,7 @@
 # need, the test build, then each set asked for through `tools/sandbox-scenarios.sh`, with no
 # retries. `sandbox-scenarios.yml`'s jobs and `.github/actions/nightly` run it; the job's checkout
 # comes first, and a red run's artifacts are the caller's to upload (`target/sandbox-scenarios/`,
-# `target/nextest/ci/junit.xml`), never a quiet run's.
+# `target/nextest/ci/junit.xml`).
 name: Sandbox scenarios
 description: Builds purlis-app's tests and runs the sandbox scenario sets asked for, with no retries.
 inputs:
@@ -21,14 +21,6 @@ inputs:
     description: "true to run each set 20 times under a CPU stress (the stress-x20 label)."
     required: false
     default: "false"
-  quiet:
-    description: "true to keep the run's output off the log (a kind: escape entry on the public repository)."
-    required: false
-    default: "false"
-  entry:
-    description: The id a quiet run prints in place of its output.
-    required: false
-    default: sandbox-scenarios
 runs:
   using: composite
   steps:
@@ -46,6 +38,7 @@ runs:
       run: brew install stress-ng
     - uses: ./.github/actions/rust-toolchain
     # Only `main` saves a Rust cache: restore what its `rust` job (Linux) or `app` job (macOS) saved.
+    # The `rust` job keys its cache by its id, so `rust` here is that key.
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: ${{ runner.os == 'macOS' && 'app' || 'rust' }}
@@ -56,24 +49,28 @@ runs:
         tool: cargo-nextest@0.9.146
     # tauri::generate_context! reads the built frontend, so it has to exist before a build. Built
     # in a step of its own, so the step timings say how much of the job is the build.
+    #
+    # On Linux the build is the `rust` job's own (`--workspace`), so the features Cargo resolves,
+    # and so the objects its cache holds, are the same. The scenarios run with the same packages
+    # (`CARGO_PACKAGES`, `tools/sandbox-scenarios.sh`), so the run builds nothing more.
     - name: Build the scenarios
       shell: bash
+      env:
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
       run: |
         mkdir -p app/dist
-        cargo nextest run --locked -p purlis-app --no-run
+        cargo nextest run $CARGO_PACKAGES --locked --no-run
     - name: The sandbox scenarios
       if: inputs.suite == 'true'
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        QUIET: ${{ inputs.quiet }}
-        ENTRY: ${{ inputs.entry }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
       if: inputs.production-timings == 'true'
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        QUIET: ${{ inputs.quiet }}
-        ENTRY: ${{ inputs.entry }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
       run: tools/sandbox-scenarios.sh production-timings
