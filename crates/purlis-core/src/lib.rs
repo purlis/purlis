@@ -145,6 +145,7 @@ pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;
 pub mod hostedchats;
+pub mod hostlog;
 pub mod hostsocket;
 pub mod hoststart;
 pub mod humanedit;
