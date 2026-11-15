@@ -1090,6 +1090,16 @@ fn no_link_on_the_way(plane_root: &Path, file: &Path) -> std::io::Result<()> {
 /// file charter keeps under the state directory and reads back — and meets the same two
 /// hazards. A FIFO there blocks `charter save`, which an operator runs all day.
 pub(crate) fn refuse_unusable(file: &Path, found: &std::fs::Metadata) -> std::io::Result<()> {
+    refuse_unusable_over(file, found, MAX_BYTES)
+}
+
+/// [`refuse_unusable`] for a record of the app's own that may be as large as `most` bytes: the
+/// closed chats' records (`chatrecords`), which keep a chat for each Reopen.
+pub(crate) fn refuse_unusable_over(
+    file: &Path,
+    found: &std::fs::Metadata,
+    most: u64,
+) -> std::io::Result<()> {
     // A record that is not a plain file: a FIFO would block the read for ever, a device
     // never ends. Directories above it are fine, the record itself is not.
     if !found.file_type().is_file() {
@@ -1102,11 +1112,11 @@ pub(crate) fn refuse_unusable(file: &Path, found: &std::fs::Metadata) -> std::io
         ));
     }
     // Read whole at launch, so a planted giant is a hang with nothing to click on.
-    if found.len() > MAX_BYTES {
+    if found.len() > most {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
-                "{} is {} bytes, and purlis's record is never larger than {MAX_BYTES}",
+                "{} is {} bytes, and purlis's record is never larger than {most}",
                 file.display(),
                 found.len()
             ),

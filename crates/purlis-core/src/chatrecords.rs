@@ -32,10 +32,11 @@
 //!   [`crate::retention::KEEP_FOR`] (30 days) or more ago goes. Held to [`MOST_KEPT`] besides, the
 //!   oldest close going first. A write killed before its rename leaves a temp file holding
 //!   titles, and the sweep removes it.
-//! - **Read as the app wrote it**: one file of at most [`MOST_FILE_BYTES`], opened following no
-//!   link, written whole through a temp file at 0600 under the folder's lock. An entry that does
-//!   not hold together (an id that is not a ULID, a time that is not one) is left out, and a
-//!   file that is not one purlis wrote reads as empty. Losing it only costs those chats their
+//! - **Read as the app wrote it**: one file of at most [`MOST_FILE_BYTES`], opened from the
+//!   project's root following no link on the way or at the file, as [`crate::reopen`] opens the
+//!   record of open chats, and written whole through a temp file at 0600 under the folder's
+//!   lock. An entry that does not hold together (an id that is not a ULID, a time that is not
+//!   one) is left out, and a file that is not one purlis wrote reads as empty. Losing it only costs those chats their
 //!   card: nothing starts, ends or allows anything by it.
 //!
 //! **Tier:** Clone state (ADR 0069), never committed; not rebuildable.
@@ -269,22 +270,24 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
     holds_together(&chat).then_some(chat)
 }
 
-/// The file's entries as they read, newest close first: none where it is absent, not a file of
-/// its own, too large, or not what purlis writes.
-fn read_values(path: &Path) -> Vec<serde_json::Value> {
-    let Ok(meta) = std::fs::symlink_metadata(path) else {
+/// The file's entries in the project at `root` as they read, newest close first: none where it
+/// is absent, reached through a link, not a plain file, too large, or not what purlis writes.
+/// Opened as the record of open chats is ([`crate::reopen`]): from the project's root, following
+/// no link on the way or at the file, and what it is asked of the descriptor the read uses.
+fn read_values(root: &Path) -> Vec<serde_json::Value> {
+    crate::fence::hold(crate::fence::Act::Read, root);
+    let file = path(root);
+    let Ok(open) = crate::contain::open_no_link(root, &file) else {
         return Vec::new();
     };
-    if !meta.is_file() || meta.len() > MOST_FILE_BYTES {
+    let usable = open.metadata().and_then(|found| {
+        crate::reopen::refuse_unusable_over(&file, &found, MOST_FILE_BYTES)
+    });
+    if usable.is_err() {
         return Vec::new();
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    let Ok(file) = crate::contain::nofollow(&mut options).open(path) else {
-        return Vec::new();
-    };
     let mut text = String::new();
-    if file
+    if open
         .take(MOST_FILE_BYTES)
         .read_to_string(&mut text)
         .is_err()
@@ -299,7 +302,7 @@ fn read_values(path: &Path) -> Vec<serde_json::Value> {
 
 /// **Every chat closed in the project at `root`** that this store keeps, newest close first.
 pub fn every(root: &Path) -> Vec<ChatRecord> {
-    read_values(&path(root))
+    read_values(root)
         .into_iter()
         .filter_map(sound)
         .take(MOST_KEPT)
@@ -384,7 +387,7 @@ pub fn keep_all(root: &Path, chats: &[ChatRecord]) -> std::io::Result<()> {
         .map(|chat| serde_json::to_value(OnDisk::of(chat)).map_err(std::io::Error::other))
         .collect::<std::io::Result<Vec<_>>>()?;
     let _held = locked(root)?;
-    let others = read_values(&path(root)).into_iter().filter(|one| {
+    let others = read_values(root).into_iter().filter(|one| {
         let id = one.get("id").and_then(serde_json::Value::as_str);
         let number = one.get("number").and_then(serde_json::Value::as_u64);
         !chats
@@ -408,11 +411,10 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
     };
     // Under the lock no write is under way, so an old temp file here is a killed write's.
     remove_left_behind(root);
-    let file = path(root);
-    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
+    if !std::fs::symlink_metadata(path(root)).is_ok_and(|meta| meta.is_file()) {
         return 0;
     }
-    let values = read_values(&file);
+    let values = read_values(root);
     let before = values.len();
     let kept: Vec<serde_json::Value> = values
         .into_iter()

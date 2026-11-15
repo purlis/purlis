@@ -142,6 +142,38 @@ fn a_link_in_its_place_is_never_read_through() {
     assert!(every(&root).is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn a_link_on_the_way_from_the_project_is_never_read_through() {
+    let (_dir, root) = project();
+    let elsewhere = root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(
+        elsewhere.join(FILE_NAME),
+        format!(
+            r#"{{"v":1,"chats":[{}]}}"#,
+            serde_json::to_string(&OnDisk::of(&chat(702, ID, "2026-11-12T09:40:00Z"))).unwrap()
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir(&root).parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dir(&root)).unwrap();
+    assert!(every(&root).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_its_place_reads_as_none_without_blocking() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(path(&root))
+        .status()
+        .unwrap();
+    assert!(made.success());
+    assert!(every(&root).is_empty());
+}
+
 #[test]
 fn a_file_that_is_not_one_purlis_wrote_reads_as_none() {
     let (_dir, root) = project();
