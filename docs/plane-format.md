@@ -7615,14 +7615,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   closed in the window, dropped at a launch's Start fresh, or left out of a launch's put back
   (a task that had finished, or one that cannot carry on; #6487). Not at a restart, not at a
   quit, never from anything a chat sent. Read by a closed chat's
-  card (`chat_by_number`, a pane's chat links). Denied a sandboxed chat's reading and writing
+  card (`chat_by_number`, a pane's chat links), by the Chats list's filter (`closed_chats`), and
+  by the card's *Reopen* (`reopen_closed_chat`, #6485), which **starts the program its entry
+  keeps**, on the person's press in the window alone: both commands are the window's, which no
+  chat may ask for. So it is opened as [`app/reopen.json`](#appreopenjson) is, from the
+  project's root following no link, and asked what it is of the descriptor the read uses. Denied a sandboxed chat's reading and writing
   under every harness, as the dispatch records are. **Collected at the project's open**
   (`chatrecords::sweep`, from `retention::on_open`): an entry whose chat ended 30 days or more
   before goes, and so does one whose end stands in the future: the app keeps an end no later
   than its own clock's now, so such an end was written by a clock ahead of this one. A write killed before its rename leaves its temp file
   (`.purlis-generated.closed.json.<pid>.<tag>.tmp`) beside the file, and the sweep removes it.
-- **Tier:** Clone state — the card of a closed chat no dispatch started; lost, those chats
-  answer "no chat" when looked up, and nothing starts, ends or allows anything by it.
+- **Tier:** Clone state — the card of a closed chat no dispatch started, and what its Reopen
+  starts; lost, those chats answer "no chat" when looked up and cannot be reopened. Nothing
+  ends or allows anything by it.
 - **Git:** gitignored (under `/.charter/`).
 - **Written by:** `crates/purlis-core/src/chatrecords.rs`.
 

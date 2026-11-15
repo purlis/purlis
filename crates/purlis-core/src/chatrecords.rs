@@ -37,8 +37,13 @@
 //!   record of open chats, and written whole through a temp file at 0600 under the folder's
 //!   lock. An entry that does not hold together (an id that is not a ULID, a time that is not
 //!   one) is left out, and a file that is not one purlis wrote reads as empty and is never
-//!   written over: the oldest closes go first, so purlis never writes one too large to read. Losing it only costs those chats their
-//!   card: nothing starts, ends or allows anything by it.
+//!   written over: the oldest closes go first, so purlis never writes one too large to read.
+//! - **What starts from it**: a closed chat's *Reopen* starts the program its entry keeps
+//!   ([`ChatRecord::reopened`]), on the person's press in the window alone (the app's
+//!   `reopen_closed_chat`, which no chat may ask for), as the record of open chats starts what
+//!   it keeps at a launch. That is why it is opened as that record is, and denied to every
+//!   sandboxed chat. Nothing ends or allows anything by it. Lost, those chats lose their card
+//!   and their Reopen.
 //!
 //! **Tier:** Clone state (ADR 0069), never committed; not rebuildable.
 
