@@ -263,6 +263,7 @@ mod the_plane_root_guards_answer_what_the_python_answers;
 mod the_plane_root_lists_the_project_but_what_purlis_keeps;
 mod the_profiles_a_wrapped_chat_starts_under_are_written_out;
 mod the_record_brings_a_profile_back;
+mod the_model_key_mark_is_one_sealed_record;
 mod the_recording_seam_counts_kp4s_operations;
 mod the_refresher_writes_the_key_the_panel_reads;
 mod the_repo_list_puts_projects_first;
