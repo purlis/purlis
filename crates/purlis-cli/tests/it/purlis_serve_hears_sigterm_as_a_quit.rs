@@ -132,14 +132,6 @@ fn a_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn until(what: &str, done: impl Fn() -> bool) {
-    let by = Instant::now() + PATIENCE;
-    while !done() {
-        assert!(Instant::now() < by, "{what}, within {PATIENCE:?}");
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
-
 /// Holds the project at `root` on the host serving with its homes in `dir`, and starts the chat
 /// in it, its run begun in the host's log as the window begins it.
 fn a_chat_running_on(dir: &Path, root: &Path) {
@@ -239,11 +231,23 @@ fn a_host_killed_outright_leaves_its_chats_for_the_next_to_settle_as_a_crash() {
     a_chat_running_on(dir.path(), project.path());
 
     drop(host);
-    let _next = serving(dir.path());
-
-    let data = dir.path().join("data");
-    until(
-        "the next host settles the chat as ended by its crash",
-        || how_the_run_ended(&data) == Some(("failed".to_owned(), "host-crash".to_owned())),
+    let left = std::fs::read_to_string(the_host_record(dir.path())).unwrap_or_default();
+    assert!(
+        left.contains("\"started\""),
+        "a host killed outright leaves its chat's start in its record: {left}"
     );
+    // The next host settles what was left before it says it is ready.
+    let mut next = serving(dir.path());
+    let _ = next.0.kill();
+    let _ = next.0.wait();
+    let mut said = String::new();
+    let _ = next.0.stderr.take().unwrap().read_to_string(&mut said);
+    assert!(
+        said.contains(
+            "ended without ending 1 of its programs; each is settled as ended by its crash"
+        ),
+        "{said}"
+    );
+    let record = std::fs::read(the_host_record(dir.path())).unwrap_or_default();
+    assert!(record.is_empty(), "the record was taken over");
 }
