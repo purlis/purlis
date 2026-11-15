@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794711408146,
+  "lastUpdate": 1794713607403,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49602,6 +49602,48 @@ window.BENCHMARK_DATA = {
             "value": 101.735552,
             "unit": "ms",
             "extra": "median of 5 runs: 101.042, 101.057, 101.736, 102.242, 102.312 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38782cd761db5de3f1cf68abc52b8525827d1e3d",
+          "message": "Dependency updates to green: rust group, Rust 1.100, web, Playwright 1.65, site (#6665)\n\n* Bump the rust group: 11 of the 13 updates in #6660\n\nagent-client-protocol 5.3.0, zip 9.5.1, minidump and minidump-unwind 0.27,\nrusqlite 0.42, flate2 1.1.11, psl 2.1.254, uuid 1.29.2, rpassword 7.5.5,\nsigstore-verify 0.16.0 and notify 8.2.2, the same bumps as #6660 (cargo took\nthe newest patch of each).\n\nLeft out: html5ever 0.40 and x509-cert 0.3. purlis-core's Cargo.toml chose\neach because it was already in the lockfile, html5ever 0.39 through wry and\ntauri-utils (dom_query) and x509-cert 0.2 through sigstore-verify, so it added\nno crate. Both upstreams are still on the old versions, so each bump would\nbuild a second copy: html5ever, markup5ever, string_cache, phf and web_atoms\ntwice in every app build, and two x509-cert. #6660's CI failed on their API\nchanges (an ambiguous AsRef on LocalName, a private tbs_certificate field);\nthat is not the reason they are left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Move the toolchain to Rust 1.100.0, replacing #6447\n\nWhat 1.100 finds, fixed rather than allowed:\n\n- clippy's needless_bool now sees a cfg(test) guard: https_only says\n  !self.plain under test and true otherwise, each under its own cfg.\n- unused_must_use now covers ExitCode: the two callers that said a refusal\n  and then failed with a code of their own threw refused()'s and refuse()'s\n  FAILURE away. Each helper is split into one that says the refusal\n  (say_refused) and one that says it and fails, so nothing is thrown away.\n- cargo's new unused_dependencies lint: purlis-core's blocking has been\n  unused since the per-chat stdout reader replaced Unblock (1bbc70aa01), and\n  purlis-skills' shell-words is called nowhere in the crate. Both go, and\n  the ACP comment no longer names blocking.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Bump the web group: 14 of the 15 updates in #6448\n\nlucide-react 1.73, react-resizable-panels 4.23, Storybook 10.6.6,\nTailwind 4.3.5, @vitejs/plugin-react 6.3, WebdriverIO 9.33.1,\ntypescript-eslint 8.72.2 and vite 8.3.8 (#6448's bumps, at the newest\npatch).\n\nLucide 1.70 renamed triangle-alert to triangle-exclamation-point and left\nthe old name as a re-export without its __iconData, so the theme's icon\nset names the new one (railIcons.vendor.test.ts read undefined). The glyph\nis the same, so icons.json does not change. The e2e's Chats list fixture\nmoves only by the svg's class names (lucide-triangle-exclamation-point\nfirst); nothing selects on them.\n\nLeft out: jsdom 31. Its :focus-visible is just :focus\n(css/match/selector.js), so in it every focus is the keyboard's. The Chats\nlist's hold tells a pointer's focus from the keyboard's by :focus-visible\n(heldStill.byKeyboard), and its tests failed on that. Its rendering-update\ninterval, which focus fixup now also starts, takes whatever setInterval is\nglobal then: a fakeClocks() test leaves a fake one behind, and no animation\nframe runs again in that file, so a menu's focusSafely never lands\n(TabChip). It also writes translate(Xpx, 0px) as translate(Xpx), which the\npane-drag test reads. The first two are test-environment problems to settle\nbefore jsdom 31 can come in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Bump Playwright to 1.65.0, replacing #6065\n\nThe npm package and the stories image's tag and digest, together, as\ntools/story-image.mjs requires. WebKit 1.65 draws the Field stories a few\npixels differently (58 to 84 pixels in #6065's run); their baselines come\nfrom this pull request's own stories run, pulled with\ntools/story-baselines-pull.mjs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Bump the site group's two updates left from #6063\n\n@astrojs/starlight 0.42.11 and @astrojs/markdown-remark 7.3.9. #6063's third\nbump, astro, is already on main past it (7.4.12, #6547), which is why #6063\nconflicts. The lockfile shrinks because the copies of astro's own markdown\npackages now dedupe.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Read the profile from Cargo 1.100's build directory layout\n\nCargo 1.100 files a build script's OUT_DIR as\n<profile>/build/<crate>/<hash>/out, one level deeper than\n<profile>/build/<crate>-<hash>/out. purlis-core's build.rs looked for\nbuild two levels above out, found the crate's name there, and fell back\nto PROFILE: a dev-release build stamped itself release, which is what\nthe version line exists to tell apart (ADR 0092) and what the release\nworkflow refuses. Checked with cargo check --profile dev-release on 1.100:\nrelease before, dev-release now. build.rs takes build at either depth.\n\nTest binaries moved the same way, to build/<crate>/<hash>/out/. About's\ntest and the sandboxing tests' app program found the profile directory at\nthe test binary's parent's parent, now the hash. One helper,\nprofile_dir_of, finds it above deps/ or build/ for both (CI's\nabout::tests::every_kind_of_build_names_the_profile_it_was_built_with).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Lock app and site with the npm CI runs, keeping other platforms' entries\n\nnpm 11.6.2 on macOS left the hoisted optional peers @emnapi/core and\n@emnapi/runtime (1.11.3, and 2.0.0-beta.2 under rolldown's wasm32\nbinding) out of both lockfiles, because nothing installed on this machine\nneeded them. CI's npm ci on Linux then refused the lockfiles as out of\nsync. Regenerated with npm 11.21.2: the entries are back, and\nnpm ci --dry-run accepts both. No version changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Find the workspace's built binaries from Cargo 1.100's test layout\n\nCargo 1.100 always uses its new build directory layout (no opt-out: \"the\nbuild.build-dir-new-layout is now always enabled\"), and a test binary is\nnow in target/<profile>/build/<crate>/<hash>/out/, not target/<profile>/deps/.\nTests that found purlis, fake-harness, sandbox-probe or the app at their own\nbinary's parent's parent looked in the hash folder.\n\nbuilt_beside then rebuilt the binary every run with a plain cargo build,\nwhich overwrote target/debug/purlis, the binary purlis-cli's tests reach as\nCARGO_BIN_EXE_purlis, with one built without their purlis-core/fenced\nfeature. That is why CI's fence, keyring-stub and signing tests failed beside\nthe fake-harness ones: \"the fenced binary answered instead of dying\".\n\npurlis_core::testrun::profile_dir finds the profile folder above deps/ or\nbuild/, and every such lookup uses it: built_beside, the sandboxing tests'\napp program, About's test, and the two sandbox-probe lookups, which skipped\ntheir test silently when the probe was not found.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* Story baselines as #6665's stories run drew them\n\nPulled with tools/story-baselines-pull.mjs from run 43648196052 and\nreviewed. Only pictures failed there: no keyboard or axe test did.\n\n- Chromium (AsksScopes, InboxDecision, SameAskRow, Message): Lucide 1.73\n  redrew shield-question's question mark by a few pixels.\n- WebKit 1.65 (Field, Select, Tabs, ThemeParts, and the dialogs and tabs\n  with a field in them): a text field's selection highlight is drawn\n  about 2px taller.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n* ConnectStep's story baselines as the Playwright 1.65 run drew them\n\n#6663 landed 96 ConnectStep pictures drawn under Playwright 1.64. Pulled\nwith tools/story-baselines-pull.mjs from run 43657275647 and reviewed: in\nChromium only the command block's text differs, now in the narrow mono face\nthe CodeBlock stories already have, where 1.64 drew these in a wide fallback\nface. The picture is 2px shorter for it. WebKit's pictures of these\nstories did not change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DVHYB91VJDRP2APRXDPT2W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T02:24:05Z",
+          "tree_id": "6f68481788435074c36ca1c9bb92ae209709337d",
+          "url": "https://github.com/purlis/purlis/commit/38782cd761db5de3f1cf68abc52b8525827d1e3d"
+        },
+        "date": 1794713600661,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.331152,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.287, 0.329, 0.331, 0.351, 0.353 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.666494999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.149, 16.652, 16.666, 16.752, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7114175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.372, 101.658, 101.711, 101.801, 101.895 ms"
           }
         ]
       }
