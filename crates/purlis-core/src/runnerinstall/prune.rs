@@ -34,7 +34,9 @@
 //! is pruned too, so a removal cut short is taken up again by the next prune.
 
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::runnerhost::runtime_dir;
 
 use super::{SERVER_DIR, a_version, binary_at, for_login_shell, host_folder_of};
 
@@ -124,16 +126,34 @@ pub fn may_go(running: &str, installed: &[String]) -> Vec<String> {
 /// being the version that runs, and `socket` the host socket `crate::hostsocket::here_for` names
 /// for that config home, before a version names its own ([`crate::hostsocket::of_version`]).
 #[must_use]
+///
+/// **A version's service goes first** (RR-15, #724): the systemd user unit or LaunchAgent
+/// `purlis serve --install` gave its host, taken back by its name alone
+/// ([`crate::runnerhost::remove_version`]) while the version's lock is held, so the manager can
+/// never start a host of it again once its folders are gone. Its own binary is never run: an
+/// older one may not know `serve --remove`. Where the service could not be taken back, nothing of
+/// the version is removed.
 pub fn prune_in(config_root: &Path, running: &str, socket: &Path) -> Pruned {
-    prune_with(config_root, running, socket, &mut remove)
+    let here = crate::runnerhost::Here::this(PathBuf::new(), config_root);
+    prune_with(
+        config_root,
+        running,
+        socket,
+        &mut |version| match &here {
+            Some(here) => crate::runnerhost::remove_version(here, version),
+            None => Ok(()),
+        },
+        &mut remove,
+    )
 }
 
-/// [`prune_in`], each folder and file removed by `remove`: a test's, to watch the lock held as
-/// each goes, or to fail one.
+/// [`prune_in`], each version's service taken back by `unservice`, and each folder and file
+/// removed by `remove`: a test's, to watch the lock held as each goes, or to fail one.
 fn prune_with(
     config_root: &Path,
     running: &str,
     socket: &Path,
+    unservice: &mut dyn FnMut(&str) -> Result<(), String>,
     remove: &mut dyn FnMut(&Path) -> std::io::Result<()>,
 ) -> Pruned {
     let server = crate::machine::dir(config_root).join(SERVER_DIR);
@@ -157,6 +177,13 @@ fn prune_with(
         match drained(&socket, &host) {
             Err(live) => pruned.kept.push((version, live)),
             Ok(_held) => {
+                // Its service first, under the lock: kept whole where it would not go.
+                if let Err(why) = unservice(&version) {
+                    pruned
+                        .failed
+                        .push((version, format!("its service could not be removed: {why}")));
+                    continue;
+                }
                 // The lock stays held, by `_held`, until each is removed; the host's folder goes
                 // last, so a removal cut short leaves it for the next prune to find.
                 let removed = [
@@ -280,10 +307,11 @@ fn remove(path: &Path) -> std::io::Result<()> {
 pub fn prune_here() -> Option<Pruned> {
     let config = crate::machine::config_root_unheld()?;
     let running = super::version_of_binary(&config, &std::env::current_exe().ok()?)?;
-    let socket = crate::hostsocket::here_for(
-        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
-        Some(&config),
-    );
+    let run_user = Path::new("/run/user").join(rustix::process::getuid().as_raw().to_string());
+    // The runtime folder a supervised host uses, where the variable is unset (RR-15, D-724-12).
+    let runtime = runtime_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref(), &run_user);
+    let socket =
+        crate::hostsocket::here_for(runtime.as_deref().map(Path::as_os_str), Some(&config));
     Some(prune_in(&config, &running, &socket))
 }
 

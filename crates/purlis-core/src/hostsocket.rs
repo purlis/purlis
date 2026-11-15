@@ -85,6 +85,20 @@ pub fn here() -> PathBuf {
     }
 }
 
+/// **Where the host of the config home `config`, installed as `version` where it is one,
+/// listens for this user, with `runtime` as its runtime folder**: what `purlis serve --install`
+/// and doctor ask of the host a service manager runs, whose runtime folder is the user manager's
+/// (`crate::runnerhost::runtime_dir`) and whose config home is pinned, whatever the caller's own
+/// environment says.
+#[cfg(unix)]
+pub fn of_version_here(runtime: Option<&Path>, config: &Path, version: Option<&str>) -> PathBuf {
+    let socket = here_for(runtime.map(Path::as_os_str), Some(config));
+    match version {
+        Some(version) => of_version(&socket, version),
+        None => socket,
+    }
+}
+
 /// **`socket`, named for the installed version `version`**: `purlisd-v<8 hex>.sock` for
 /// `purlisd.sock`, in the same folder, the hex the start of the SHA-256 of the version. Its lock
 /// and link socket are named from it as any socket's are, so they are the version's own too.
@@ -93,18 +107,26 @@ pub fn here() -> PathBuf {
 /// there takes half of them.
 #[must_use]
 pub fn of_version(socket: &Path, version: &str) -> PathBuf {
-    use sha2::{Digest as _, Sha256};
     let stem = socket
         .file_name()
         .and_then(OsStr::to_str)
         .and_then(|name| name.strip_suffix(".sock"))
         .unwrap_or("purlisd");
+    socket.with_file_name(format!("{stem}-{}.sock", version_key(version)))
+}
+
+/// **What names the installed version `version` where its whole name may not fit**: `v` and the
+/// first 8 hex digits of its SHA-256. Its socket ([`of_version`]) and the service that keeps its
+/// host running on a runner (`crate::runnerhost`) are named by it.
+#[must_use]
+pub fn version_key(version: &str) -> String {
+    use sha2::{Digest as _, Sha256};
     let digest = Sha256::digest(version.as_bytes());
     let short: String = digest[..4]
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    socket.with_file_name(format!("{stem}-v{short}.sock"))
+    format!("v{short}")
 }
 
 /// Where the session host of the config home `config` listens for this user, with `runtime`

@@ -207,7 +207,7 @@ pub fn host_plist(names: &Names, job: &Job, log: &Path) -> String {
 }
 
 /// A job's program and arguments, as `ProgramArguments`.
-fn arguments(job: &Job) -> plist::Value {
+pub(crate) fn arguments(job: &Job) -> plist::Value {
     plist::Value::Array(
         std::iter::once(job.program.to_string_lossy().into_owned())
             .chain(job.args.iter().cloned())
@@ -217,7 +217,7 @@ fn arguments(job: &Job) -> plist::Value {
 }
 
 /// A property list written as XML, the form launchd reads and a person can.
-fn written(dictionary: plist::Dictionary) -> String {
+pub(crate) fn written(dictionary: plist::Dictionary) -> String {
     let mut xml = Vec::new();
     // Into memory, which cannot fail.
     let _ = plist::Value::Dictionary(dictionary).to_writer_xml(&mut xml);
@@ -267,7 +267,7 @@ pub fn host_unit(job: &Job) -> String {
 /// One word of a unit's command line, double-quoted, with what systemd would expand escaped:
 /// a backslash and a quote by a backslash, `$` and `%` by doubling (`systemd.service(5)`,
 /// "Command lines"; `systemd.unit(5)`, "Specifiers").
-fn systemd_quoted(word: &str) -> String {
+pub(crate) fn systemd_quoted(word: &str) -> String {
     let mut quoted = String::from("\"");
     for c in word.chars() {
         match c {
@@ -443,7 +443,7 @@ pub fn manager_on(
 }
 
 /// Runs a manager's command, failing with which command and what it said.
-fn ran(runs: &Runs, program: &str, args: &[&str]) -> Result<Output, String> {
+pub(crate) fn ran(runs: &Runs, program: &str, args: &[&str]) -> Result<Output, String> {
     let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
     let line = || format!("{program} {}", args.join(" "));
     let output = runs(program, &args).map_err(|why| format!("`{}` did not run: {why}", line()))?;
@@ -459,7 +459,7 @@ fn ran(runs: &Runs, program: &str, args: &[&str]) -> Result<Output, String> {
 }
 
 /// Writes `contents` at `path`, whole, `0600`, unless it already holds them: whether it wrote.
-fn write_if_changed(path: &Path, contents: &str) -> Result<bool, String> {
+pub(crate) fn write_if_changed(path: &Path, contents: &str) -> Result<bool, String> {
     if std::fs::read(path).is_ok_and(|held| held == contents.as_bytes()) {
         return Ok(false);
     }
@@ -481,7 +481,7 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<bool, String> {
 
 /// One install at a time in this process: two at once (the window's supervisor and a quit to
 /// the background) would each find the agent not loaded and each load it.
-fn installing() -> std::sync::MutexGuard<'static, ()> {
+pub(crate) fn installing() -> std::sync::MutexGuard<'static, ()> {
     static INSTALLING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     INSTALLING
         .lock()
@@ -489,7 +489,7 @@ fn installing() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// Removes `path`, which may not be there.
-fn removed(path: &Path) -> Result<(), String> {
+pub(crate) fn removed(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
             Err(format!("{} could not be removed: {why}", path.display()))

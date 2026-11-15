@@ -251,6 +251,8 @@ pub mod roster;
 pub mod rulespelling;
 pub mod runnercursors;
 #[cfg(unix)]
+pub mod runnerhost;
+#[cfg(unix)]
 pub mod runnerhours;
 #[cfg(unix)]
 pub mod runnerimage;
