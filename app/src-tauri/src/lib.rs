@@ -4180,6 +4180,13 @@ pub fn run() {
                         let _ = window.emit(hostfailing::FAILING, now);
                     })
                 });
+                // And when the system will not run it in the background (FD-17).
+                failing.telling_not_in_the_background({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |why: hostfailing::NotInTheBackground| {
+                        let _ = window.emit(hostfailing::NOT_IN_THE_BACKGROUND, why);
+                    })
+                });
                 app.manage(failing);
                 // With chats in the window's own process, a host a crashed window left is ended,
                 // with the chats it kept, before this window puts any back (#2004).
@@ -5056,17 +5063,25 @@ pub fn run() {
             // And what its pools name: a pool added from a terminal is told as one added here.
             sandboxing::watch_pools(app.handle().clone());
 
-            if let Err(why) = lifecycle::tray(app.handle()) {
-                tracing::warn!("purlis: no tray icon ({why}); the window is reached from the dock");
+            match lifecycle::tray(app.handle()) {
+                // Whether it shows: on Linux, only where the desktop watches for one (FD-17).
+                Ok(()) => app
+                    .state::<lifecycle::Lifetime>()
+                    .tray_shown(lifecycle::a_tray_shows_here()),
+                Err(why) => tracing::warn!(
+                    "purlis: no tray icon ({why}); the window is reached from the dock"
+                ),
             }
             if in_the_background {
                 match app.state::<lifecycle::Lifetime>().quit_does() {
                     lifecycle::QuitDoes::ToTheBackground { kept_for } => {
                         lifecycle::to_the_background(app.handle(), kept_for);
                     }
-                    // Its login item outlived what kept the host running: the window is shown,
-                    // and the next quit removes it.
-                    lifecycle::QuitDoes::Exit => lifecycle::show(app.handle()),
+                    // Its login item outlived what kept the host running, or no tray shows to
+                    // stop it from: the window is shown, and the next quit says what it does.
+                    lifecycle::QuitDoes::Exit | lifecycle::QuitDoes::StaysOpen { .. } => {
+                        lifecycle::show(app.handle());
+                    }
                 }
             }
             Ok(())
@@ -5095,15 +5110,12 @@ pub fn run() {
             }
             // Before any window goes: a tab window closed by the quit is not closed by the
             // person, so its tabs stay where they were for the next launch (#4768).
-            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
-                // A quit from the Dock or the system while something keeps the session host
-                // running goes to the background, as the menu's does (FD-17).
-                if let Some(lifecycle::QuitDoes::ToTheBackground { kept_for }) = app
-                    .try_state::<lifecycle::Lifetime>()
-                    .map(|lifetime| lifetime.quit_does())
-                {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                // Every window gone while something keeps the session host running goes to the
+                // background, as the menu's Quit does; an exit with a code (Stop, a restart to
+                // update or onto the session bus) always goes ahead (FD-17).
+                if lifecycle::on_exit_requested(app, *code) {
                     api.prevent_exit();
-                    lifecycle::to_the_background(app, kept_for);
                     return;
                 }
                 tabwindows::quitting(app);

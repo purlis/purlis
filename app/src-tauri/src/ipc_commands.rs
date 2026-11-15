@@ -208,6 +208,7 @@ macro_rules! app_commands {
                 freshkept::discard_fresh_runner,
                 awayrunners::runners_away,
                 hostfailing::session_host_failing,
+                hostfailing::session_host_not_in_the_background,
                 hostfailing::start_the_session_host_again,
                 silence::task_quiet,
                 silence::put_away_task_quiet,

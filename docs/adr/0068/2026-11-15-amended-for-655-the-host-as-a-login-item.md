@@ -5,7 +5,7 @@ a paired remote device, shows in the tray with a one-click stop, and otherwise e
 §3 gives its supervision: a launchd agent or a systemd user unit once it is a login item, and the
 window only where no manager may be used. #2007 (D-2007-1) left the units to this ticket. FD-17
 builds both. §2, §3 and the amendments above stay as accepted, and this note adds to them. Each
-item was **decided in implementation, to be confirmed** (D-655-1 to D-655-8).
+item was **decided in implementation, to be confirmed** (D-655-1 to D-655-9).
 
 1. **One place answers "a trigger or a device"** (`purlis_core::loginitem::reasons_here`). It is
    read at each decision and never cached: as the window starts (who supervises the host), at
@@ -23,7 +23,15 @@ item was **decided in implementation, to be confirmed** (D-655-1 to D-655-8).
    end every chat**. Stop is a quit as it always was: the window's own quit path ends every
    chat and tells the host `quit`, so the host stops. Its login items stay while the trigger
    does, so it starts again at the next login. Quit asks nothing on the way, since it ends
-   nothing. The same holds for a quit from the Dock or the system (`ExitRequested`).
+   nothing. The same holds when every window goes (`ExitRequested` with no code). An exit with
+   a code always goes ahead: Stop, restart to update (Tauri's `RESTART_EXIT_CODE`) and the
+   restart onto the session bus. A macOS logout or shutdown ends the event loop without an
+   `ExitRequested` (`applicationWillTerminate`), so nothing holds one up.
+   Where no tray shows (on Linux, nothing on the session bus owns
+   `org.kde.StatusNotifierWatcher`, as on GNOME without an extension), Quit hides nothing: there
+   would be no way back and no way to stop. The window stays and says why, with **Stop
+   purlis**. Opening purlis from the Dock, the Finder or a notification brings it out of the
+   background as **Open purlis** does (`windows::raise`).
    *Rejected:* the host drawing a tray of its own. That puts an AppKit application inside a
    process launchd starts from the app's bundle, which LaunchServices takes for the app, so
    opening purlis would bring forward a process with no window. *Rejected:* letting the app
@@ -37,11 +45,17 @@ item was **decided in implementation, to be confirmed** (D-655-1 to D-655-8).
    - On macOS it is a launchd agent, `~/Library/LaunchAgents/dev.purlis.host.plist`, in the
      GUI session (`LimitLoadToSessionType` `Aqua`, so the Keychain answers the app's binary
      without a prompt). It has `RunAtLoad`, and `KeepAlive` on an exit that was not a success.
-     It is loaded with `launchctl bootstrap gui/<uid>`, started with `kickstart`, held with
-     `bootout`, and written again and reloaded only when this build's agent differs.
+     It is loaded with `launchctl bootstrap gui/<uid>`, started with `kickstart` and held with
+     `bootout`. When this build's agent differs it is written again, but a host launchd runs is
+     never booted out for it, since that would end every chat: launchd reads the new agent when
+     it next loads it. A bootstrap refused because the agent got loaded meanwhile (launchd's
+     error 5) is no failure. Installs run one at a time.
    - On Linux with a user manager it is a systemd user unit, `purlis-host.service`, enabled
-     into `default.target`. It has `Restart=on-failure`, `StartLimitBurst=3` and
-     `StartLimitIntervalSec=300`.
+     into `graphical-session.target`, with `PartOf=` and `After=` it, so the host and the
+     browsers it runs have the session's `DISPLAY` or `WAYLAND_DISPLAY`. It has
+     `Restart=on-failure`, `StartLimitBurst=3` and `StartLimitIntervalSec=300`.
+   - A development build's labels, unit and autostart entry carry `development`, so it never
+     loads, rewrites or removes a release build's.
    - Both run the app's own binary as `purlis-serve-as-a-login-item`.
    - Where no manager may be used (Linux without a systemd user manager, Windows) the window
      supervises as before. The app's background still keeps a host the window runs, but nothing
@@ -69,16 +83,27 @@ item was **decided in implementation, to be confirmed** (D-655-1 to D-655-8).
      and tells launchd to stop (`bootout`).
    - Either way the window raises `session-host-failing`. On macOS it shows the last lines of
      `<app log>/session-host.log`, where launchd writes what the host says. Try again lets go of
-     the hold (`reset-failed`, or loading the agent again) and starts the host.
+     the hold (`reset-failed`, or loading the agent again) and starts the host. systemd's limit
+     reads as *your system* stopped starting it, and the window's as purlis.
+   - **A manager that cannot run the host hands it back to the window.** When it will not
+     install or start it (purlis's background item switched off in System Settings, a failed
+     `systemctl`), the window supervises the host as before, at once and never through the
+     breaker, and a Notice says, in plain words, that purlis will not start at login and what
+     to check.
+   - A quit the host never answered (no link, or no answer in time) has the manager hold it,
+     so no chat outlives the quit.
 
    A host the window runs when a trigger first appears goes on as it is until the next launch:
    handing live chats from one host to another is FD-28 (#665). *D-655-6.*
 7. **The login items go once nothing keeps the host.** A quit (or Stop) that finds no trigger
-   or device tells the host to quit, then removes both login items. A Stop while one remains
-   leaves them. *D-655-7.*
+   or device tells the host to quit, then removes both login items, and only when they are
+   there, so nobody without a trigger or a device has launchd or systemd asked anything. A
+   Stop while one remains leaves them. *D-655-7.*
 8. **What needs a real login to prove waits on the operator**: that launchd and systemd start
    the host at login and the app in the tray, that `KeepAlive` and `StartLimitBurst` behave as
    written, and that opening purlis from the Finder while it is in the background brings its
    window back. The seams are tested: the files each manager is given, the commands it is sent,
    the choice of supervisor, the window's handoff and its breakers, the quit's decision and the
    tray's words. A host that is a login item is tested over the session protocol. *D-655-8.*
+9. **`session-host.log` is not rotated yet.** It holds the host's warnings only; its rotation is
+   #6687. *D-655-9.*

@@ -64,15 +64,44 @@ pub enum QuitDoes {
     /// Something keeps the session host running, which `kept_for` says in the window's words:
     /// purlis goes to the background and ends nothing.
     ToTheBackground { kept_for: String },
+    /// Something keeps the host running, but no tray shows here (a desktop with no status
+    /// area, such as GNOME without an extension for one): hiding every window would leave no
+    /// way back and no way to stop. The window stays, and says why, with Stop.
+    StaysOpen { kept_for: String },
 }
 
 /// **What a quit does**: to the background while something keeps the host running
-/// (`kept_for`, `purlis_core::loginitem::kept_for`), unless the person chose Stop, which is a
-/// quit whatever keeps it.
-pub fn what_quit_does(kept_for: Option<String>, stopping: bool) -> QuitDoes {
+/// (`kept_for`, `purlis_core::loginitem::kept_for`) and a tray shows to say so and to stop it;
+/// the window stays where no tray shows; and a quit whenever the person chose Stop, whatever
+/// keeps the host.
+pub fn what_quit_does(kept_for: Option<String>, stopping: bool, tray: bool) -> QuitDoes {
     match kept_for {
-        Some(kept_for) if !stopping => QuitDoes::ToTheBackground { kept_for },
+        Some(kept_for) if !stopping && tray => QuitDoes::ToTheBackground { kept_for },
+        Some(kept_for) if !stopping => QuitDoes::StaysOpen { kept_for },
         _ => QuitDoes::Exit,
+    }
+}
+
+/// **What an exit asked of the app's event loop does** (FD-17): only an exit nobody named a
+/// code for (every window gone) goes to the background. An exit with a code is the app's own
+/// and always goes ahead: Stop, restart to update (`updates.rs`, Tauri's `RESTART_EXIT_CODE`),
+/// the restart onto the session bus (`portal.rs`). A logout or a shutdown on macOS ends the
+/// event loop without asking (`applicationWillTerminate`), so nothing here can hold one up.
+/// Whether the exit is held off: purlis went to the background instead.
+pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>, code: Option<i32>) -> bool {
+    if code.is_some() {
+        return false;
+    }
+    match app
+        .try_state::<Lifetime>()
+        .map(|lifetime| lifetime.quit_does())
+    {
+        Some(QuitDoes::ToTheBackground { kept_for }) => {
+            to_the_background(app, kept_for);
+            true
+        }
+        // With no tray, nothing may be left hidden, so the exit goes ahead.
+        Some(QuitDoes::StaysOpen { .. } | QuitDoes::Exit) | None => false,
     }
 }
 
@@ -125,6 +154,9 @@ fn tray_items(background: Option<&str>) -> Vec<TrayItem> {
 pub struct Lifetime {
     /// The person chose Stop: the next exit is a quit, whatever keeps the host running.
     stopping: std::sync::atomic::AtomicBool,
+    /// Whether a tray shows here, to say purlis runs in the background and to stop it. None
+    /// until the tray is made and found shown.
+    tray: std::sync::atomic::AtomicBool,
     /// Why purlis runs in the background, while it does.
     background: Mutex<Option<String>>,
     /// What keeps the host running now, in the window's words.
@@ -135,6 +167,7 @@ impl Lifetime {
     pub fn new(kept_for: impl Fn() -> Option<String> + Send + Sync + 'static) -> Lifetime {
         Lifetime {
             stopping: std::sync::atomic::AtomicBool::new(false),
+            tray: std::sync::atomic::AtomicBool::new(false),
             background: Mutex::new(None),
             kept_for: Box::new(kept_for),
         }
@@ -145,7 +178,13 @@ impl Lifetime {
         what_quit_does(
             (self.kept_for)(),
             self.stopping.load(std::sync::atomic::Ordering::SeqCst),
+            self.tray.load(std::sync::atomic::Ordering::SeqCst),
         )
+    }
+
+    /// Whether a tray shows here: said once the tray is made.
+    pub fn tray_shown(&self, shown: bool) {
+        self.tray.store(shown, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn stop(&self) {
@@ -153,7 +192,7 @@ impl Lifetime {
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn background(&self) -> Option<String> {
+    pub(crate) fn background(&self) -> Option<String> {
         self.background
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -239,6 +278,78 @@ fn tray_menu<R: Runtime>(app: &AppHandle<R>, background: Option<&str>) -> tauri:
 /// The tray icon's id.
 const TRAY: &str = "charter";
 
+/// **Stop**: a quit, whatever keeps the host running. Every chat ends, and the host with them.
+/// The window is not asked: what offers Stop says what it ends.
+fn stop<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(lifetime) = app.try_state::<Lifetime>() {
+        lifetime.stop();
+    }
+    app.exit(0);
+}
+
+/// What the window says when a quit cannot go to the background for want of a tray: its title,
+/// what happened and what to do, Stop's label and the label that keeps purlis open.
+fn stays_open_words(kept_for: &str) -> [String; 4] {
+    [
+        "purlis can't run in the background here".into(),
+        format!(
+            "purlis keeps running for {kept_for}, but this desktop has no tray to show it in, \
+             so its window stays open. To end every chat and stop purlis, choose Stop purlis."
+        ),
+        "Stop purlis".into(),
+        "Keep purlis open".into(),
+    ]
+}
+
+/// **A quit with no tray to go to** (FD-17): nothing is hidden, since there would be no way
+/// back and no way to stop. The window is shown and says why, offering Stop.
+fn stays_open<R: Runtime>(app: &AppHandle<R>, kept_for: &str) {
+    use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
+    tracing::info!("purlis: no tray shows here, so a quit keeps the window open for {kept_for}");
+    show(app);
+    let [title, said, stop_label, keep_label] = stays_open_words(kept_for);
+    let parent = app.get_webview_window(WINDOW);
+    let mut dialog = app
+        .dialog()
+        .message(said)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(stop_label, keep_label));
+    if let Some(parent) = parent.as_ref() {
+        dialog = dialog.parent(parent);
+    }
+    let app = app.clone();
+    dialog.show(move |stopping| {
+        if stopping {
+            stop(&app);
+        }
+    });
+}
+
+/// **Whether a tray shows on this desktop**, once the tray is made. macOS always draws one in
+/// the menu bar. On Linux the tray is a status notifier item, which only shows where something
+/// on the session bus watches for them (`org.kde.StatusNotifierWatcher`): KDE, most other
+/// desktops, and GNOME only with an extension.
+pub fn a_tray_shows_here() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(bus) = zbus::blocking::Connection::session() else {
+            return false;
+        };
+        let Ok(dbus) = zbus::blocking::fdo::DBusProxy::new(&bus) else {
+            return false;
+        };
+        let Ok(name) = zbus::names::BusName::try_from("org.kde.StatusNotifierWatcher") else {
+            return false;
+        };
+        dbus.name_has_owner(name).unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
 /// How long an unanswered ask keeps the next one armed to quit outright.
 ///
 /// It expires, and that is the point. Without a deadline one `quit-asked` the window never
@@ -307,12 +418,19 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
 /// Asks the window to quit, or quits.
 pub fn ask_to_quit<R: Runtime>(app: &AppHandle<R>) {
     // Nothing ends while something keeps the host running, so nothing is asked.
-    if let Some(QuitDoes::ToTheBackground { kept_for }) = app
+    match app
         .try_state::<Lifetime>()
         .map(|lifetime| lifetime.quit_does())
     {
-        to_the_background(app, kept_for);
-        return;
+        Some(QuitDoes::ToTheBackground { kept_for }) => {
+            to_the_background(app, kept_for);
+            return;
+        }
+        Some(QuitDoes::StaysOpen { kept_for }) => {
+            stays_open(app, &kept_for);
+            return;
+        }
+        Some(QuitDoes::Exit) | None => {}
     }
     match app.state::<Quitting>().ask() {
         Ask::AskTheWindow => {
@@ -555,12 +673,7 @@ pub fn clicked<R: Runtime>(app: &AppHandle<R>, id: &str) {
         SHOW => show(app),
         // Stop is a quit, whatever keeps the host running: every chat ends, and the host with
         // them. The window is not asked: the menu item says what it ends.
-        STOP => {
-            if let Some(lifetime) = app.try_state::<Lifetime>() {
-                lifetime.stop();
-            }
-            app.exit(0);
-        }
+        STOP => stop(app),
         // Shown first, for Quit's reason: the tab opens in the window, and a hidden window
         // would put it where nobody is looking.
         //
@@ -594,14 +707,25 @@ mod tests {
 
     #[test]
     fn with_nothing_keeping_the_host_quit_ends_every_chat_as_it_always_has() {
-        assert_eq!(what_quit_does(None, false), QuitDoes::Exit);
+        assert_eq!(what_quit_does(None, false, true), QuitDoes::Exit);
+        assert_eq!(what_quit_does(None, false, false), QuitDoes::Exit);
     }
 
     #[test]
     fn with_a_trigger_or_a_device_quit_goes_to_the_background() {
         assert_eq!(
-            what_quit_does(Some("your trigger “nightly”".into()), false),
+            what_quit_does(Some("your trigger “nightly”".into()), false, true),
             QuitDoes::ToTheBackground {
+                kept_for: "your trigger “nightly”".into()
+            }
+        );
+    }
+
+    #[test]
+    fn with_no_tray_to_show_it_quit_never_hides_every_window() {
+        assert_eq!(
+            what_quit_does(Some("your trigger “nightly”".into()), false, false),
+            QuitDoes::StaysOpen {
                 kept_for: "your trigger “nightly”".into()
             }
         );
@@ -610,9 +734,82 @@ mod tests {
     #[test]
     fn stop_is_a_quit_whatever_keeps_the_host_running() {
         assert_eq!(
-            what_quit_does(Some("your trigger “nightly”".into()), true),
+            what_quit_does(Some("your trigger “nightly”".into()), true, true),
             QuitDoes::Exit
         );
+        assert_eq!(
+            what_quit_does(Some("your trigger “nightly”".into()), true, false),
+            QuitDoes::Exit
+        );
+    }
+
+    #[test]
+    fn with_no_tray_the_window_says_why_it_stays_and_offers_stop() {
+        let [title, said, stop, keep] = stays_open_words("your trigger “nightly”");
+        assert_eq!(title, "purlis can't run in the background here");
+        assert_eq!(
+            said,
+            "purlis keeps running for your trigger “nightly”, but this desktop has no tray to \
+             show it in, so its window stays open. To end every chat and stop purlis, choose \
+             Stop purlis."
+        );
+        assert_eq!(
+            (stop.as_str(), keep.as_str()),
+            ("Stop purlis", "Keep purlis open")
+        );
+    }
+
+    /// An app with a [`Lifetime`] whose host something keeps running, and a tray shown.
+    fn an_app_kept_running() -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_builder()
+            .build(tauri_context!(test = true))
+            .expect("the app builds");
+        let lifetime = Lifetime::new(|| Some("your trigger “nightly”".into()));
+        lifetime.tray_shown(true);
+        app.manage(lifetime);
+        app
+    }
+
+    #[test]
+    fn an_exit_with_a_code_is_never_held_off_to_go_to_the_background() {
+        let app = an_app_kept_running();
+        for code in [tauri::RESTART_EXIT_CODE, 0] {
+            assert!(
+                !on_exit_requested(app.handle(), Some(code)),
+                "an exit with code {code} (restart to update, the restart onto the session \
+                 bus, Stop) goes ahead"
+            );
+            assert_eq!(app.state::<Lifetime>().background(), None, "{code}");
+        }
+    }
+
+    #[test]
+    fn an_exit_nobody_named_a_code_for_goes_to_the_background_while_the_host_is_kept() {
+        let app = an_app_kept_running();
+        assert!(on_exit_requested(app.handle(), None));
+        assert_eq!(
+            app.state::<Lifetime>().background().as_deref(),
+            Some("your trigger “nightly”")
+        );
+    }
+
+    #[test]
+    fn an_exit_with_no_tray_to_go_to_goes_ahead() {
+        let app = an_app_kept_running();
+        app.state::<Lifetime>().tray_shown(false);
+        assert!(!on_exit_requested(app.handle(), None));
+        assert_eq!(app.state::<Lifetime>().background(), None);
+    }
+
+    #[test]
+    fn a_window_raised_from_the_dock_finder_or_a_notification_brings_purlis_out_of_the_background()
+    {
+        let app = an_app_kept_running();
+        assert!(on_exit_requested(app.handle(), None));
+
+        crate::windows::raise(app.handle(), WINDOW);
+
+        assert_eq!(app.state::<Lifetime>().background(), None);
     }
 
     #[test]

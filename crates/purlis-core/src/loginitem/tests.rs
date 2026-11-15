@@ -274,7 +274,10 @@ fn the_login_items_go_where_each_manager_reads_them() {
         Path::new("/xdg/systemd/user/purlis-host.service")
     );
     // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says.
-    assert_eq!(super::places(home, Some(Path::new("rel")), Names::RELEASE), places);
+    assert_eq!(
+        super::places(home, Some(Path::new("rel")), Names::RELEASE),
+        places
+    );
 }
 
 /// The commands a manager ran, each as one line, and what each answers.

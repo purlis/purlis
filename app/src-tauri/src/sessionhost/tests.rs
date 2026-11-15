@@ -445,9 +445,20 @@ fn a_window_running_its_chats_puts_them_back_once_its_own_host_serves_after_a_fa
 struct AManager {
     asked: Mutex<Vec<&'static str>>,
     tripped: std::sync::atomic::AtomicBool,
+    /// Install fails.
+    refuses: bool,
 }
 
 impl AManager {
+    /// A manager whose install fails, as launchd's does with purlis's background item
+    /// switched off in System Settings.
+    fn refusing() -> AManager {
+        AManager {
+            refuses: true,
+            ..AManager::default()
+        }
+    }
+
     fn asked(&self) -> Vec<&'static str> {
         self.asked.lock().unwrap().clone()
     }
@@ -460,7 +471,11 @@ impl AManager {
 
 impl purlis_core::loginitem::Manager for AManager {
     fn install(&self) -> Result<(), String> {
-        self.ask("install")
+        self.ask("install")?;
+        if self.refuses {
+            return Err("`launchctl bootstrap gui/501 …` failed: Input/output error".into());
+        }
+        Ok(())
     }
     fn start(&self) -> Result<(), String> {
         self.ask("start")
@@ -479,6 +494,12 @@ impl purlis_core::loginitem::Manager for AManager {
     }
 }
 
+/// The window's own start of a host, which a test of the manager's host never reaches.
+fn a_host_the_window_must_not_start() -> impl Fn() -> Result<Command, String> + Send + Sync + use<>
+{
+    || Err("the window started a host of its own".into())
+}
+
 /// How long the window waits for a manager's host to answer, here: none ever does.
 const NEVER_ANSWERS_WITHIN: Duration = Duration::from_millis(50);
 
@@ -494,9 +515,14 @@ fn a_host_the_service_manager_runs_is_started_by_the_manager_and_never_by_the_wi
         Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
         None,
         NEVER_ANSWERS_WITHIN,
+        a_host_the_window_must_not_start(),
     );
 
     until("the window's breaker trips", || failing.now().is_some());
+    assert_eq!(
+        failing.now().unwrap().stopped_by,
+        crate::hostfailing::StoppedBy::Purlis
+    );
     assert!(host.is_managed());
     assert!(
         host.held.lock().unwrap().is_none(),
@@ -527,12 +553,18 @@ fn a_service_managers_own_tripped_limit_raises_the_failing_notice_at_once() {
         Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
         None,
         NEVER_ANSWERS_WITHIN,
+        a_host_the_window_must_not_start(),
     );
 
     until("the notice is raised", || failing.now().is_some());
     assert_eq!(manager.asked(), ["install", "start", "hold"]);
     let said = failing.now().unwrap();
     assert_eq!((said.exits, said.within_minutes), (3, 5));
+    assert_eq!(
+        said.stopped_by,
+        crate::hostfailing::StoppedBy::System,
+        "the Notice says the system stopped starting it, not purlis"
+    );
     host.end();
 }
 
@@ -550,6 +582,7 @@ fn try_again_lets_the_manager_go_of_its_hold_and_starts_the_host_once_more() {
         Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
         None,
         NEVER_ANSWERS_WITHIN,
+        a_host_the_window_must_not_start(),
     );
     until("the notice is raised", || failing.now().is_some());
 
@@ -585,6 +618,7 @@ fn the_failing_notice_shows_the_last_lines_the_managers_host_wrote_to_its_log() 
         manager as Arc<dyn purlis_core::loginitem::Manager>,
         Some(log),
         NEVER_ANSWERS_WITHIN,
+        a_host_the_window_must_not_start(),
     );
 
     until("the notice is raised", || failing.now().is_some());
@@ -604,6 +638,7 @@ fn a_host_the_window_ends_is_never_asked_of_its_manager_again() {
         Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
         None,
         NEVER_ANSWERS_WITHIN,
+        a_host_the_window_must_not_start(),
     );
     std::thread::sleep(Duration::from_millis(300));
 
@@ -624,4 +659,62 @@ fn the_login_items_are_kept_while_something_keeps_the_host_and_forgotten_once_no
     host.forget_login_items();
 
     assert_eq!(manager.asked(), ["install", "remove"]);
+}
+
+#[test]
+fn a_manager_that_cannot_run_the_host_hands_it_back_to_the_window_and_the_window_says_why() {
+    let home = tempfile::tempdir().unwrap();
+    let started = home.path().join("started");
+    let manager = Arc::new(AManager::refusing());
+    let host = SessionHost::default();
+    let failing = host.failing();
+
+    host.start_managed_at(
+        a_place(home.path()),
+        Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
+        None,
+        NEVER_ANSWERS_WITHIN,
+        a_host_that_crashes_as_it_starts(&started),
+    );
+
+    until("the window starts a host of its own", || {
+        starts_in(&started) > 0
+    });
+    assert!(!host.is_managed(), "the window supervises its host now");
+    let why = failing
+        .not_in_the_background()
+        .expect("the window says why the host is not run in the background");
+    assert!(why.why.contains("Input/output error"), "{why:?}");
+    until("the window's own breaker trips", || failing.now().is_some());
+    assert_eq!(
+        manager.asked(),
+        ["install"],
+        "asked once, never in a loop into the breaker"
+    );
+    host.end();
+}
+
+#[test]
+fn a_managed_host_the_quit_never_reached_is_held_by_its_manager() {
+    let home = tempfile::tempdir().unwrap();
+    let manager = Arc::new(AManager::default());
+    let host = SessionHost::default();
+    host.start_managed_at(
+        a_place(home.path()),
+        Arc::clone(&manager) as Arc<dyn purlis_core::loginitem::Manager>,
+        None,
+        Duration::from_secs(60),
+        a_host_the_window_must_not_start(),
+    );
+    until("the manager is asked to start it", || {
+        manager.asked().contains(&"start")
+    });
+
+    host.end();
+
+    assert_eq!(
+        manager.asked(),
+        ["install", "start", "hold"],
+        "with no link to tell it to quit, its manager stops it, so no chat outlives the quit"
+    );
 }

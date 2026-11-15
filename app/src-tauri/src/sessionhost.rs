@@ -240,7 +240,7 @@ pub struct SessionHost {
     /// something keeps it running, and what removes its login items once nothing does.
     manager: Mutex<Option<Arc<dyn purlis_core::loginitem::Manager>>>,
     /// Whether the manager runs the host this launch, rather than the window.
-    managed: std::sync::atomic::AtomicBool,
+    managed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 struct Held {
@@ -351,14 +351,16 @@ impl SessionHost {
         if self.managed.load(std::sync::atomic::Ordering::SeqCst)
             && let Some(manager) = self.manager()
         {
-            self.start_managed_at(place, manager, managed::log_here(), READY_WITHIN);
+            self.start_managed_at(
+                place,
+                manager,
+                managed::log_here(),
+                READY_WITHIN,
+                own_binary,
+            );
             return;
         }
-        self.start_at(place, || {
-            std::env::current_exe()
-                .map(|binary| command(&binary))
-                .map_err(|why| format!("this program's path is unknown: {why}"))
-        });
+        self.start_at(place, own_binary);
     }
 
     /// **The service manager this platform has**, for the host's login items (FD-17); and, with
@@ -406,14 +408,18 @@ impl SessionHost {
     }
 
     /// [`SessionHost::start`], the host run by `manager` and serving at `place`, with what it
-    /// says written to `log` where the manager writes it (FD-17, [`managed`]).
+    /// says written to `log` where the manager writes it (FD-17, [`managed`]). Where the manager
+    /// cannot run it, the window does, started by `starts` as [`Self::start_at`] starts it, and
+    /// says why.
     pub(crate) fn start_managed_at(
         &self,
         place: purlis_host::Place,
         manager: Arc<dyn purlis_core::loginitem::Manager>,
         log: Option<PathBuf>,
         answers_within: Duration,
+        starts: impl Fn() -> Result<Command, String> + Send + Sync + 'static,
     ) {
+        *self.manager.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&manager));
         *self
             .supervision
             .place
@@ -436,12 +442,14 @@ impl SessionHost {
         }));
         let connection = Arc::clone(&self.connection);
         let supervision = Arc::clone(&self.supervision);
+        let held = Arc::clone(&self.held);
+        let managed = Arc::clone(&self.managed);
         let spawned = std::thread::Builder::new()
             .name("session host".into())
             .spawn({
                 let connection = Arc::clone(&connection);
                 move || {
-                    managed::supervise(
+                    let supervised = managed::supervise(
                         &place,
                         &manager,
                         log.as_deref(),
@@ -449,6 +457,13 @@ impl SessionHost {
                         &connection,
                         &supervision,
                     );
+                    if let managed::Supervised::NotByTheManager(why) = supervised {
+                        // The window runs it as before, and says why it is not in the
+                        // background; the host does not start at the next login.
+                        managed.store(false, std::sync::atomic::Ordering::SeqCst);
+                        supervision.failing.not_run_in_the_background(why);
+                        supervise(&held, &place, &starts, &connection, &supervision);
+                    }
                 }
             });
         if let Err(why) = spawned {
@@ -587,10 +602,20 @@ impl SessionHost {
     /// 0068 §2).
     pub fn end(&self) {
         self.supervision.end_now();
-        if let Ok(link) = self.connection.wait(Duration::ZERO)
-            && let Err(why) = link.quit_within(QUITS_WITHIN)
-        {
+        let quit = self
+            .connection
+            .wait(Duration::ZERO)
+            .and_then(|link| link.quit_within(QUITS_WITHIN));
+        if let Err(why) = quit {
             tracing::warn!("purlis: the session host did not answer the quit: {why}");
+            // A host its service manager runs is stopped by the manager instead, so no chat
+            // outlives the quit (FD-17).
+            if self.managed.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(manager) = self.manager()
+                && let Err(why) = manager.hold()
+            {
+                tracing::warn!("purlis: the service manager was not told to stop the host: {why}");
+            }
         }
         end_held(&self.held);
     }
@@ -726,7 +751,12 @@ fn supervise(
             .iter()
             .cloned()
             .collect();
-        say_it_is_failing(connection, supervision, said);
+        say_it_is_failing(
+            connection,
+            supervision,
+            said,
+            crate::hostfailing::StoppedBy::Purlis,
+        );
         if !wait_to_try_again(supervision) {
             return;
         }
@@ -734,12 +764,20 @@ fn supervise(
     }
 }
 
-/// A breaker tripped, the window's or the service manager's: no chat starts, and the window
+/// A breaker tripped, purlis's or the system's (`stopped_by`): no chat starts, and the window
 /// says the host is failing, with `said`, the last lines it wrote to its log.
-fn say_it_is_failing(connection: &Connection, supervision: &Supervision, said: Vec<String>) {
+fn say_it_is_failing(
+    connection: &Connection,
+    supervision: &Supervision,
+    said: Vec<String>,
+    stopped_by: crate::hostfailing::StoppedBy,
+) {
+    let who = match stopped_by {
+        crate::hostfailing::StoppedBy::Purlis => "purlis",
+        crate::hostfailing::StoppedBy::System => "your system",
+    };
     let why = format!(
-        "it ended unexpectedly {} times within {} minutes, so purlis stopped starting it \
-         again",
+        "it ended unexpectedly {} times within {} minutes, so {who} stopped starting it again",
         breaker::EXITS,
         breaker::WITHIN.as_secs() / 60
     );
@@ -749,7 +787,15 @@ fn say_it_is_failing(connection: &Connection, supervision: &Supervision, said: V
         exits: u32::try_from(breaker::EXITS).unwrap_or(u32::MAX),
         within_minutes: u32::try_from(breaker::WITHIN.as_secs() / 60).unwrap_or(u32::MAX),
         said,
+        stopped_by,
     });
+}
+
+/// The window's own binary, started as its session host ([`command`]).
+fn own_binary() -> Result<Command, String> {
+    std::env::current_exe()
+        .map(|binary| command(&binary))
+        .map_err(|why| format!("this program's path is unknown: {why}"))
 }
 
 /// Waits for the person's Try again: whether they pressed it, or the window is ending.

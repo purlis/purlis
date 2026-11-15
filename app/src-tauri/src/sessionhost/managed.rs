@@ -27,10 +27,21 @@ use purlis_core::loginitem::Manager;
 use super::{LINES_KEPT, LOOK_EVERY, Supervision, breaker, connect};
 use crate::hostedsessions::Connection;
 
+/// How the manager's supervision ended.
+pub(super) enum Supervised {
+    /// The window is ending.
+    Ended,
+    /// The manager cannot run the host (it would not install or start it, as with purlis's
+    /// background item switched off in System Settings, or `systemctl` failing), for the
+    /// reason given: the window supervises it as before.
+    NotByTheManager(String),
+}
+
 /// **The supervisor while the service manager runs the host**, on the host's own thread: the
 /// login item installed and its host started, the window connected once it answers, and again
 /// after each link that ends, until a breaker trips; then the Notice, and the person's Try
-/// again. Nothing more once the window is ending.
+/// again. Nothing more once the window is ending. A manager that will not install or start the
+/// host hands it back to the window at once, never in a loop into the breaker.
 pub(super) fn supervise(
     place: &purlis_host::Place,
     manager: &Arc<dyn Manager>,
@@ -38,15 +49,18 @@ pub(super) fn supervise(
     answers_within: Duration,
     connection: &Arc<Connection>,
     supervision: &Arc<Supervision>,
-) {
+) -> Supervised {
     loop {
         if supervision.ending() {
-            return;
+            return Supervised::Ended;
         }
         match manager.install().and_then(|()| manager.start()) {
             Err(why) => {
-                tracing::warn!("purlis: the service manager did not start the session host: {why}");
-                connection.gone(format!("the service manager did not start it: {why}"));
+                tracing::warn!(
+                    "purlis: the service manager cannot run the session host, so the window \
+                     does: {why}"
+                );
+                return Supervised::NotByTheManager(why);
             }
             Ok(()) if answers_in_time(place, supervision, answers_within) => {
                 tracing::info!(
@@ -60,22 +74,23 @@ pub(super) fn supervise(
                     Arc::clone(supervision),
                 );
                 if !super::wait_for_its_link_to_end(supervision) {
-                    return;
+                    return Supervised::Ended;
                 }
             }
             Ok(()) => {
                 if supervision.ending() {
-                    return;
+                    return Supervised::Ended;
                 }
                 tracing::warn!("purlis: the session host the service manager runs did not answer");
                 connection.gone("the session host the service manager runs did not answer");
             }
         }
         if supervision.ending() {
-            return;
+            return Supervised::Ended;
         }
         connection.restarting();
-        let after = if manager.tripped() {
+        let tripped = manager.tripped();
+        let after = if tripped {
             breaker::After::Tripped
         } else {
             supervision
@@ -94,9 +109,14 @@ pub(super) fn supervise(
             tracing::warn!("purlis: the service manager was not told to stop the host: {why}");
         }
         let said = log.map(last_lines).unwrap_or_default();
-        super::say_it_is_failing(connection, supervision, said);
+        let stopped_by = if tripped {
+            crate::hostfailing::StoppedBy::System
+        } else {
+            crate::hostfailing::StoppedBy::Purlis
+        };
+        super::say_it_is_failing(connection, supervision, said, stopped_by);
         if !super::wait_to_try_again(supervision) {
-            return;
+            return Supervised::Ended;
         }
         if let Err(why) = manager.try_again() {
             tracing::warn!("purlis: the service manager did not start the host again: {why}");

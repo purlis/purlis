@@ -13,6 +13,20 @@ use std::sync::{Arc, Mutex, PoisonError};
 /// is tried again.
 pub const FAILING: &str = "session-host-failing";
 
+/// The event the window is sent when the session host cannot be run in the background, and
+/// so the window runs it as before (FD-17).
+pub const NOT_IN_THE_BACKGROUND: &str = "session-host-not-in-the-background";
+
+/// Who stopped starting the session host again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum StoppedBy {
+    /// purlis's own breaker: the window's, or the one it keeps for launchd.
+    Purlis,
+    /// The system's own limit on restarts (systemd's), which purlis read.
+    System,
+}
+
 /// The session host is failing: the window's supervisor stopped starting it again.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct Failing {
@@ -22,20 +36,56 @@ pub struct Failing {
     pub within_minutes: u32,
     /// The last lines the host wrote to its log, oldest first.
     pub said: Vec<String>,
+    /// Whose limit it was.
+    pub stopped_by: StoppedBy,
+}
+
+/// **The session host is not run in the background** (FD-17): something keeps it running, but
+/// the system would not run it (purlis's background item switched off, or its service manager
+/// failed), so the window runs it as before and it does not start at the next login.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NotInTheBackground {
+    /// What the system said, for the Notice's details.
+    pub why: String,
 }
 
 type TryAgain = Arc<dyn Fn() + Send + Sync>;
 type Tell = Arc<dyn Fn(Option<Failing>) + Send + Sync>;
+type TellNotInTheBackground = Arc<dyn Fn(NotInTheBackground) + Send + Sync>;
 
-/// Whether the session host is failing now, what tries it again, and who is told.
+/// Whether the session host is failing now, what tries it again, and who is told; and whether
+/// it could not be run in the background.
 #[derive(Default)]
 pub struct HostFailing {
     now: Mutex<Option<Failing>>,
     try_again: Mutex<Option<TryAgain>>,
     tell: Mutex<Option<Tell>>,
+    not_in_the_background: Mutex<Option<NotInTheBackground>>,
+    tell_not_in_the_background: Mutex<Option<TellNotInTheBackground>>,
 }
 
 impl HostFailing {
+    /// The system would not run the host in the background, so the window runs it: the window
+    /// is told why.
+    pub fn not_run_in_the_background(&self, why: String) {
+        let said = NotInTheBackground { why };
+        *lock(&self.not_in_the_background) = Some(said.clone());
+        let tell = lock(&self.tell_not_in_the_background).clone();
+        if let Some(tell) = tell {
+            tell(said);
+        }
+    }
+
+    /// Why the host is not run in the background, if it could not be.
+    pub fn not_in_the_background(&self) -> Option<NotInTheBackground> {
+        lock(&self.not_in_the_background).clone()
+    }
+
+    /// Who is told the host could not be run in the background: the window.
+    pub fn telling_not_in_the_background(&self, tell: TellNotInTheBackground) {
+        *lock(&self.tell_not_in_the_background) = Some(tell);
+    }
+
     /// The supervisor's breaker tripped: the window is told.
     pub fn failing(&self, failing: Failing) {
         *lock(&self.now) = Some(failing.clone());
@@ -96,6 +146,15 @@ pub fn session_host_failing(failing: tauri::State<'_, Arc<HostFailing>>) -> Opti
     failing.now()
 }
 
+/// Why the session host could not be run in the background, if it could not (FD-17).
+#[tauri::command]
+#[specta::specta]
+pub fn session_host_not_in_the_background(
+    failing: tauri::State<'_, Arc<HostFailing>>,
+) -> Option<NotInTheBackground> {
+    failing.not_in_the_background()
+}
+
 /// **Try again**: the supervisor starts the session host once more, its breaker's count
 /// started over.
 #[tauri::command]
@@ -119,6 +178,7 @@ mod tests {
             exits: 3,
             within_minutes: 5,
             said: vec!["purlisd: the last line".into()],
+            stopped_by: StoppedBy::Purlis,
         }
     }
 

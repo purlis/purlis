@@ -1269,7 +1269,14 @@ export const commands = {
 	within_minutes: number,
 	/**  The last lines the host wrote to its log, oldest first. */
 	said: string[],
+	/**  Whose limit it was. */
+	stopped_by: StoppedBy,
 } | null>("session_host_failing"),
+	/**  Why the session host could not be run in the background, if it could not (FD-17). */
+	sessionHostNotInTheBackground: () => __TAURI_INVOKE<{
+	/**  What the system said, for the Notice's details. */
+	why: string,
+} | null>("session_host_not_in_the_background"),
 	/**
 	 *  **Try again**: the supervisor starts the session host once more, its breaker's count
 	 *  started over.
@@ -9919,6 +9926,8 @@ export type Failing = {
 	within_minutes: number,
 	/**  The last lines the host wrote to its log, oldest first. */
 	said: string[],
+	/**  Whose limit it was. */
+	stopped_by: StoppedBy,
 };
 
 /**  One path a branch changed. */
@@ -12612,6 +12621,16 @@ export type NotChecked =
  *  can check.
  */
 "home_only";
+
+/**
+ *  **The session host is not run in the background** (FD-17): something keeps it running, but
+ *  the system would not run it (purlis's background item switched off, or its service manager
+ *  failed), so the window runs it as before and it does not start at the next login.
+ */
+export type NotInTheBackground = {
+	/**  What the system said, for the Notice's details. */
+	why: string,
+};
 
 /**
  *  What a runner holds, set against what the window has open: the chats and browsers of its own
@@ -19705,6 +19724,13 @@ export type StopPhase =
 "stopping" | 
 /**  It has ended, and its tab goes. */
 "stopped";
+
+/**  Who stopped starting the session host again. */
+export type StoppedBy = 
+/**  purlis's own breaker: the window's, or the one it keeps for launchd. */
+"purlis" | 
+/**  The system's own limit on restarts (systemd's), which purlis read. */
+"system";
 
 /**  What the studio shows: whether it is on, whose chat it shows, and its skills by name. */
 export type Studio = {

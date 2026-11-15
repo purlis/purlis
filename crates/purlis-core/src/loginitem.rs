@@ -527,7 +527,10 @@ impl Manager for Launchd {
             &host_plist(&self.places.names, &self.host, &self.log),
         )?;
         // Loaded at the next login, never now: loading it would start a second app.
-        write_if_changed(&self.places.app_plist, &app_plist(&self.places.names, &self.app))?;
+        write_if_changed(
+            &self.places.app_plist,
+            &app_plist(&self.places.names, &self.app),
+        )?;
         // A host launchd runs is never booted out for a changed agent: that would end every
         // chat in it. launchd reads the agent written here the next time it loads it, at the
         // next login or after a hold.
@@ -611,7 +614,13 @@ impl Manager for SystemdUser {
         ran(
             &self.runs,
             "systemctl",
-            &["--user", "show", "--property=Result", "--value", self.unit()],
+            &[
+                "--user",
+                "show",
+                "--property=Result",
+                "--value",
+                self.unit(),
+            ],
         )
         .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).trim() == "start-limit-hit")
     }
