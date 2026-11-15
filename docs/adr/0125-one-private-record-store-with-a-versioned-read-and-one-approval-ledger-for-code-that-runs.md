@@ -11,9 +11,11 @@ this record does not reopen them.
 The choices the rulings left open were put to the operator one question at a time on
 2026-11-15, as Q1 to Q16. Review round 1 (five reviewers, one axis each) then found what the
 draft got wrong, and the operator ruled on the findings that needed a ruling, as **R6 to R11**.
-Each is marked (Qn) or (Rn) where it applies and listed under
-[Decisions](#decisions-on-q1-to-q16-and-r6-to-r11). The design note's appendix says where every
-finding of round 1 went.
+Review round 2 read the spec and the tickets built from this record, and the operator ruled on
+thirteen more points, as **R12 to R24**. Each is marked (Qn) or (Rn) where it applies and listed
+under [Decisions](#decisions-on-q1-to-q16-r6-to-r11-and-r12-to-r24). The design note's §6 and
+§7 say where every finding of rounds 1 and 2 went. A finding id such as B-F6 or E28 is a review
+round 2 reviewer's (A to E) own number.
 
 The background is [`docs/surfaces.md`](../surfaces.md): gaps 1, 2, 7, 10, 11, 12, 14, 16 and 17,
 and seams 1 and 2 (its name for a place where one shared piece would remove the most
@@ -134,7 +136,20 @@ build's to choose). This is A. It serves those two tiers and no others. A Plane 
 - whether it **keeps unknown keys**, and at which levels (about 45 of the 56 stores do not
   today);
 - whether it **must not be tracked** by git (B5, §5);
-- its **fail-closed answer** (§2) and its **busy sentence** (below).
+- its **fail-closed answer** (§2) and its **busy sentence** (below);
+- whether **starting fresh grants more** (R13, §2): a store whose fresh, empty record would let
+  through what the person refused;
+- what **starting fresh costs**, in one sentence the person reads before Set it aside (E21);
+- for each version it knows, the release that introduced it (below).
+
+Every declaration is in one registry, with how a path that has a key in it (per chat, clone or
+account) is enumerated, so the window and the doctor can list every store (C19).
+
+**One record is left out, by name** (R23). `runners-stopped.json`, the host's record of which
+runners its stop reached (`crates/host/src/reach.rs:53`, `RUNNERS_STOPPED`), stays out of the
+record store, because the host crate does not link `purlis-core` (`crates/host/Cargo.toml:14`).
+Its versioned read is fixed in place in the host: it refuses a newer version and never
+overwrites.
 
 **The read places the version as `compat::Schema` does, with two answers more.** The store
 reads the document, or each row, and places its version key:
@@ -163,7 +178,9 @@ Today's bounded reads keep their bounds; they move into the declaration.
   `Unreadable` and `Damaged`, each with its sentence (§2).
 - **`update`** is a locked read-modify-write. It holds the store's declared lock across the read
   and the write. It writes only over `Understood` or `Absent`, and over `Damaged` after the copy
-  aside (§2). It never writes over any other answer. `update` never nests: a caller that must
+  aside (§2), unless starting fresh grants more. It never writes over any other answer. A write
+  over the store's bound refuses with the store's sentence, because the next read would be
+  Unreadable (D-F8). `update` never nests: a caller that must
   change two files under one lock takes the lock once and calls **`update_held`** for each, as
   `rewrite::update_held` does today.
 - **Unknown keys are kept** where the store declares it. A value keeps every key this build does
@@ -180,17 +197,39 @@ Today's bounded reads keep their bounds; they move into the declaration.
   and a newer purlis still exclude each other;
 - a store in a folder a chat can open (the plane's `.charter/`) takes a bounded lock, or a named
   lock in the session host's folder, as `rewrite::update_held`'s callers do;
+- **every approval record**, wherever it lives, takes a named lock in the session host's folder,
+  which no chat opens (`machine.rs:2626`), and waits on it with a bound. A chat can then never
+  hold it, and a stopped process can never freeze every approval (B-F6, D-F7). The page subject's
+  two records share one lock from the first ticket that locks them, so builds on either side of
+  the lifecycle work exclude each other (D-F6). A lock file's name is a contract between builds:
+  it is recorded in `docs/plane-format.md` and pinned by a test;
 - a store with a lock of its own today keeps it: the event log's lock, and the compare-and-swap
   of `skills.local.lock`;
 - a store with no lock today gets one. An older purlis's write of it still takes none, so while
-  an older and a newer purlis both run, a lost update stays possible. For an approval record
-  that loss fails closed: a lost approval asks again;
+  an older and a newer purlis both run, a lost update stays possible. For an approval record a
+  lost approval fails closed and asks again, but a lost forget does not: the older build's
+  whole-file write puts the forgotten entry back, for the bytes once approved (D-F19);
 - where a lock cannot be taken (a filesystem with no `flock`), the update goes ahead unlocked,
   as `machine::Lock` does today and for its reason: refusing would lose every write, not one.
 - A bounded lock that is still held after its wait refuses with the store's **busy sentence**.
   `rewrite`'s own sentence ("a chat in this project may be holding it … close that chat") is
   right only for a folder a chat can open. An approval says "purlis is still recording another
   approval. Nothing was approved. Try again."
+
+**The copies are made so a chat cannot aim them** (R14). The copy aside and the set-aside
+rename are each an exclusive, no-follow `0600` create through the gated walk from the store's
+root, with a counter suffix when the name is taken, so a planted link or file is never written
+through or replaced. If the copy cannot be made complete, the update refuses and the damaged
+bytes stay (D-F8). Beside a record the sandbox holds (the harness and MCP approval records), the
+sandbox denies every sibling whose name starts with the record's name, under every spelling of
+the state folder and under `$PURLIS_HOME`, so a chat cannot plant, edit or remove a copy or a
+lock (ADR 0067, amended).
+
+**Set it aside is asked for by the store, never by a path** (B-F13). The window's press and the
+person's terminal (D-F10) name a declared store. Under the store's lock it reads again, and
+refuses unless the answer is still one Set it aside is for. The rename is a no-replace rename.
+The terminal route refuses when run from a chat, as `purlis persona approve-mcp` does, and no
+purlis MCP tool sets a record aside.
 
 **What the refusal says.** No new key is added (Q1). An older purlis cannot know which release
 wrote a newer version, so a sentence never names "purlis X.Y or later". The declaration records,
@@ -216,19 +255,29 @@ sentence. `{what}` is the store's own name for itself, such as "your extension a
 - **TooOld: migrated.** A record older than the oldest its store reads was written by an older
   purlis, so R2 does not hold it. Its store declares its migration. The default migration is the
   damage rule below: copy it aside, then start fresh. Its sentence: "purlis no longer reads {what}
-  in the form an older purlis wrote them, so it set them aside and started fresh. Nothing was
+  in the form an older purlis wrote them, so it copied them aside and started fresh. Nothing was
   deleted." No store has a TooOld version on the day this ships (D3).
 - **Unplaceable: refused, kept, and never written over.** "purlis cannot read {what}: their
-  version is not one any purlis writes. Nothing was changed." Its one remedy is Set it aside and
-  start fresh, on the person's press. Update purlis is not offered, because nothing says a newer
-  purlis would read it. See [New questions](#new-questions-for-the-operator-decided), N1.
+  version is not one any purlis writes. Nothing was changed. Set them aside to start fresh." Its
+  one remedy is Set it aside and start fresh, on the person's press (E31). Update purlis is not
+  offered, because nothing says a newer purlis would read it. See [New
+  questions](#new-questions-for-the-operator-decided), N1.
 - **Damaged, whole file: copied aside automatically, then the store starts fresh** (R6). This is
   the machine store's rule of 2026-11-08, made every store's. The read answers `Damaged` and the
   feature reads nothing. The next `update` first copies the bytes to `<file>.unread`, or to
   `<file>.unread-<UTC time>` when one is already there, never replacing it, and then writes. Its
-  sentence: "{what} were damaged, so purlis set them aside as {file name} and started fresh.
-  Nothing was deleted." The machine store's `.unread` stops being one copy, the latest: R6 deletes
-  nothing.
+  sentence: "purlis found {what} damaged, so it copied them aside as {file name} and started
+  fresh. Nothing was deleted." The machine store's `.unread` stops being one copy, the latest: R6
+  deletes nothing, and since every older build replaces the bare name, this build writes the
+  machine store's copies only under the timed name (D-F18). "Copied aside" is the automatic
+  rule's word, "set aside" the press's, and the two kinds of file are the store's **kept copies**
+  (E28).
+- **Damaged, where starting fresh grants more: refused, like Unplaceable** (R13). For a store whose
+  fresh record would let through what the person refused, the fail-closed answer holds and writes
+  refuse. Set it aside and start fresh is offered on the person's press, and its sentence names
+  what is forgotten. This holds for `.charter/app/dispatch-never.json`, the one deny among
+  dispatch's records, and for `runners-unsandboxed.json`, whose fail-closed answer is that every
+  runner counts as tainted. Each store's ticket checks its own record for the same property.
 - **Unreadable: refused, and never touched.** "purlis cannot read {what}: {cause}. Nothing was
   changed. Make it a plain file purlis can read, or move it aside." These are the words the
   machine store already says for this case (`docs/plane-format.md`, ruled 2026-11-08).
@@ -243,7 +292,12 @@ and `secret-asks.json`. For those, Set it aside and start fresh is the remedy th
 **One Notice for every store that refuses** (R10). After a downgrade, many stores may refuse at
 once, so they share one Notice, cause key `records-unread`, which lists each store with its
 sentence and its own remedies, plus a doctor line per store. The Notice settles when the last
-store reads again.
+store reads again. Its cause key is keyed by the set of refused stores, so a dismissal never
+hides a store that refuses later (R20). A Damaged store has a line of its own from the read, so a
+store read often and written rarely is never silently empty, and the line names the copy once it
+is made; a TooOld store's line follows its migration (E14, D-F9). The window learns the standing
+of every registered store from the core, on start, on focus and after a press (C19), and the
+window's doctor line leaves refused stores to this Notice, so nothing is listed twice (E23).
 
 **A row store skips a row it cannot place, and keeps it on disk** (R2):
 
@@ -254,23 +308,53 @@ store reads again.
 - **Pruning and the byte bound never drop a skipped row** (D6). A build that cannot read a row
   cannot know its age, so it keeps it. Skipped rows count toward the bound, and the build prunes
   its own rows first. If the skipped rows alone fill the bound, appending refuses with the
-  store's sentence, and the doctor says why.
+  store's sentence, and the doctor says why. A store that also caps its lines (the save journal
+  keeps 500) counts only this build's rows against the cap, and a save-journal append the bound
+  refuses stays silent, as today, because the save has still been made (D-F20).
 - The doctor counts each store's skipped rows.
+
+**The kill switch fails closed by halting** (R18). Its journal is a row store
+(`<config>/kill-switch.jsonl`), and a line this build cannot read may be a newer build's stop
+(`halt.rs:139`, `stopped_by_journal_in`, skips such a line today):
+
+- a last line this build cannot read counts as halted, and the window says why;
+- this build's own re-arm, written after that line, ends the halt;
+- a stop or a re-arm is never refused for the bound or for the 1000-line cap (`halt.rs:38`,
+  `JOURNAL_LINES`), so the kill switch is exempt from the refusing append, and it keeps skipped
+  rows past its cap;
+- an Unreadable journal with the marker present counts as halted;
+- with two builds running at once, one build's re-arm is never read as tampering by the other.
+
+**A forge budget this build cannot read counts as spent** (R19), for background requests, never
+for a request a person is waiting on, as today's rule for a spent hour (`forge/budget.rs:316`,
+`admit`). That makes it a lockout store, listed in `records-unread`, and its lock name is kept
+(`forge/budget.rs:445`, `lock_name`).
 
 **The dispatch queue stops deleting** (R2):
 
 - A message of another `v` (`dispatchqueue.rs:625`) is left in place, and
-  `purlis dispatch list` shows it as waiting for a newer purlis.
+  `purlis dispatch list` shows it as waiting for a newer purlis. So is a message file that does
+  not parse, which is a skipped row; one over the bound is Unreadable and never touched. Every
+  path that removes a queued message keeps it: the host's retire pass (`dispatchqueue.rs:724`,
+  `drop_unchecked`), an ended chat's `forget` (`hookwire/spool.rs:1594`) and the report of an
+  ended chat's queue (`dispatchqueue/undelivered.rs:153`, `set_aside`) (D-F2).
 - **The delivered floor never passes a skipped message** (D5). Today a delivery raises the
   chat's floor (`dispatchqueue.rs:630`, against `delivered_floor`), and a message at or below it
-  is then dropped as delivered (`hookwire/relay/carrying.rs:402`). Raising the floor stops below
-  the lowest message this build skipped, so a newer purlis still finds it waiting.
+  is then dropped as delivered (`hookwire/relay/carrying.rs:402`). **A chat's drain stops at the
+  lowest skipped message** (R16), as it already stops at the lowest `.part`
+  (`dispatchqueue.rs:583`). Later messages wait and are listed, and the floor never rises past a
+  skipped message, so the floor keeps its second job: no copy of a delivered message is
+  delivered twice. The person can remove a skipped message, whose path is listed, to unblock the
+  queue. There is no format change.
 - **A message whose MAC does not match is an integrity failure, not a version.** It is still
   never delivered, and it stops being silent: `purlis dispatch list` and the doctor say so, where
   today only a log line does. It is moved aside, not removed (Q15), into a `refused/` folder
   beside the chats' folders. `refused/` is hardened (B6, D11):
-  - it is made `0700`, and it is denied to every chat's sandbox;
-  - a message is moved into it with no link followed and no file replaced;
+  - it is made `0700`, and it is denied to every chat's sandbox. Before any move it is checked
+    without following a link: a real folder, owned by this user, mode `0700`. Otherwise nothing
+    is moved and the doctor says so (B-F15);
+  - a message is moved into it as `<chat>-<seq>.json`, with no link followed and no file
+    replaced;
   - it holds at most 64 messages. Past that, a failing message stays where it is, undelivered,
     and is listed;
   - it is listed only as a count, each message's seq and its path, never its body;
@@ -281,6 +365,11 @@ store reads again.
 - **A key that is unavailable is not a MAC failure** (D4). When the spool's `keys.json` is
   refused, unreadable or damaged, no MAC can be checked, so the messages wait where they are. A
   message moves to `refused/` only when its key was read and its MAC still does not match.
+- **Keys that read but hold no key for a message are not tampering either** (R17). That is what
+  follows when a chat ends and its key is dropped, and every time `keys.json` is started fresh.
+  Such a message is never moved to `refused/`: it is reported as undelivered, as an ended chat's
+  queue is today, and kept on disk. The key read therefore has three answers, not a yes or no
+  (`hookwire/spool.rs:1046`, `checks_as`, answers one boolean today).
 
 **`forge-accounts.json` stops downgrading on write.** It becomes a whole-file store at version
 1, so a version-2 file is refused and kept.
@@ -302,7 +391,8 @@ replay floors, follow R2 in full. This is the one narrow exception to R2.
   wrapper of the second, are removed once their last caller moves.
 - **The one writer that bypasses all three moves onto it too:** the forge's
   tempfile-and-persist (`forge/etag.rs:104`, `write_private`, which the forge budget also calls,
-  `forge/budget.rs:396`). The design note lists every store and its writer.
+  `forge/budget.rs:396`). It moves with the forge's stores, so the store is never bypassed
+  meanwhile. The design note lists every store and its writer.
 - The doctor's copy of the spool `keys.json` check goes: the doctor asks the store's `read`.
 
 ### 4. One approval ledger for code that runs
@@ -342,7 +432,13 @@ Regenerate does not run (§8, Q4).
   all, and answers how many.
 
 **Only the window's press, or the person's own terminal where one exists today, calls
-`approve`.** A chat never does. That is unchanged.
+`approve`.** A chat never does. That is unchanged, and a guard test now lists every caller of
+`approve` and fails on a new one (B-F7, C23).
+
+**Four adapters keep six records** (A-F14, C22). The adapters, and the word each puts in the
+Notice's cause key, are `extension`, `page` (one subject of two parts, the script and the
+Regenerate code), `harness` (the declaration with its local profile) and `mcp`. Q16 calls MCP
+the fifth because it counts the page and its Regenerate apart.
 
 **Each adapter wraps its record; it does not take it over.** The extension record is a registry
 as well as an approval: its source, whether it is on, whether it reads prompts, and its
@@ -355,7 +451,7 @@ lifecycle through the registry's own calls, and the registry keeps owning its wr
 | --- | --- | --- | --- | --- | --- | --- |
 | **Extension** | its id, and its folder in the entry | every path and byte of the folder, plus the manifest's protocol when it has a program | `<config>/extensions.json`, Machine, device-bound | the Extensions view's press (`app/src-tauri/src/extensions.rs:1530`, `approve_extension`, which calls `extension::approve` at `:1537`) | Remove (`app/src-tauri/src/extensions.rs:1551`, `forget_extension`) | carried when its fingerprint is unchanged, no link in the folder resolves outside it, and its state folder at the new place is absent or empty; otherwise it is a new subject and asks (Q13, B2) |
 | **Page and Regenerate**, one subject | `artifact::approval::key`: the workspace's real path and the folder | two parts: the template (every path and byte but its data) with its reach (§6); and the Regenerate code folder with its command words, its path framed relative to its workspace (R8), stamped with the template's fingerprint (B1) | both files as they are, `<config>/artifact-approvals.json` and `<config>/artifact-regenerate-approvals.json`, Machine, device-bound | the page bar's press (`app/src-tauri/src/artifacts.rs:1400`, `artifact_approve`) and Regenerate's (`app/src-tauri/src/regenerate.rs:168`, `artifact_regenerate_approve`), one press for both under Q5 | an unpin here (`artifact/mod.rs:428`, `unpin_here`), which forgets **both** parts; and a workspace's removal (Q11) | a workspace rename (`wscmd/rename.rs:1292`, `follow_in_approvals`), which carries **both** parts |
-| **Harness declaration** | the declaration's name | its whole digest | `.charter/harness-declarations-approved.json`, **Clone state**, as ADR 0069 has it | the start's press (`app/src-tauri/src/lib.rs:1865`, `approve_profile`) | removing it through purlis, or Forget on its harness card. A pull that removes it leaves the record, and the same bytes added back stand approved (Q9) | nothing to move: the record lives in the clone, and a renamed declaration is a new name |
+| **Harness declaration** | the declaration's name | its whole digest | `.charter/harness-declarations-approved.json`, **Clone state**, as ADR 0069 has it | the start's press (`app/src-tauri/src/lib.rs:1865`, `approve_profile`) | Forget on its harness card (R22). Removing it through purlis waits until a command that removes a declaration exists. A pull that removes it leaves the record, and the same bytes added back stand approved (Q9) | nothing to move: the record lives in the clone, and a renamed declaration is a new name |
 | *(part of the harness-declaration adapter, Q10)* local profile | the profile's name | its kind, command and environment as declared | `.charter/harness-profiles-launched.json`, Clone state | the same press | as the declaration | as the declaration |
 | **A persona's MCP servers** (Q16, R11) | the persona's name | the set of its approved servers' fingerprints | `.charter/mcp-approved.json`, Clone state | the person's own terminal (`purlis persona approve-mcp`, `personaverbs/approve.rs:110`), which replaces the persona's set | not raised: a decision, below | nothing to move: the record lives in the clone |
 
@@ -364,12 +460,19 @@ and gap 12 is closed by naming the difference, not by removing it. A harness dec
 persona's MCP servers are committed to the project and approved per clone. An extension and a
 page are about this machine's person, wherever the plane is.
 
-**A Clone-state approval record that git tracks, or does not ignore, approves nothing** (B5).
-`.charter/harness-declarations-approved.json`, `.charter/harness-profiles-launched.json` and
-`.charter/mcp-approved.json` are declared "must not be tracked". A record committed to the
+**A Clone-state approval record that git tracks, or does not ignore, approves nothing** (B5,
+R15). `.charter/harness-declarations-approved.json`, `.charter/harness-profiles-launched.json`
+and `.charter/mcp-approved.json` are declared "must not be tracked". A record committed to the
 project would approve code for everyone who clones it. The read refuses such a record: it reads
-as nothing approved, with the sentence "purlis ignores the approvals in {file}, because git
-tracks it. Approve again here."
+as nothing approved. Approve refuses while the record is tracked or not ignored, since approving
+again would write the same file. The sentence says what is true: "purlis ignores {what} in this
+project, because git could share them. Stop git tracking them, then approve again.", where
+`{what}` is the record's own name, such as "your harness approvals". The path and the cause
+(tracked, or not ignored) go in the detail. Its remedies are the window adding the ignore line,
+or Copy command for `git rm --cached`. The check uses `profiles`' hardened git runner
+(`profiles.rs:1588`, `git_ignore_state`): if git cannot answer (missing, timed out, failed),
+nothing is approved; outside a repository the record passes. The sentence is a line of
+`records-unread` and of the doctor.
 
 **Every adapter has the same events** (R3): approved, changed, forgotten and moved. An event
 the adapter does not raise is written down as a decision, not left as an omission. Each event
@@ -410,23 +513,29 @@ approved.** For each call the page declares (`<id>@<N>` with its parameter names
   (`extension/queries.rs`, `Declared`), as the extension is approved now;
 - for an extension query whose extension is not installed or not approved, `needs-extension`.
 
-The reach is canonical JSON, sorted, and its SHA-256 is recorded on the page's entry as
-`reach`, beside the template's fingerprint. A page whose own declaration changes is already a
-changed template, because the declaration is in the fingerprint. **The reach catches what
-changes outside the page:** a purlis release that moves a query from `workspace` to `plane` or
-gives it a new widening parameter, and an extension update that widens its query.
+The reach is canonical JSON, sorted. The page's entry records it as `reach`, beside the
+template's fingerprint: **the canonical lines themselves and their SHA-256** (R12). The digest
+is the quick compare; the lines are what the Notice compares, so it can say what changed. The
+baseline holds lines too, so an entry with no `reach` is compared the same way. A page whose own
+declaration changes is already a changed template, because the declaration is in the
+fingerprint. **The reach catches what changes outside the page:** a purlis release that moves a
+query from `workspace` to `plane` or gives it a new widening parameter, and an extension update
+that widens its query.
 
 **A changed reach asks again.** At every load, and at every ask on the page's port, the standing
 computes the reach afresh and compares the digest. A different digest is `Changed(reach)`: the
-page renders without its script, its port answers `not-approved`, and the Notice (§7) lists the
-lines under two headings, "Now also reads" and "No longer reads". A narrower reach also differs
-and asks too: the digest cannot tell the direction, and one press is a small price for a page
-that reads less.
+page renders without its script, its port answers `not-approved`, and the Notice (§7) compares
+the lines now with the lines approved, line by line, and lists those that differ under two
+headings, "Now also reads" and "No longer reads". A narrower reach also differs and asks too: one
+press is a small price for a page that reads less. The reach travels with the standing the
+window is served and is handed back on Approve, so nothing computes it at the press (B-F21).
 
 **The plane grant is bound to the reach.** Today it is a flag on the entry
 (`artifact/approval.rs:331`, `grant_plane`) that a new approval drops. It stays a flag, and it
 is good only while the entry's `reach` is the reach now, so a query that newly reads the whole
-plane cannot ride an old grant.
+plane cannot ride an old grant. On an entry with no `reach`, the grant holds exactly while the
+entry passes the baseline. The grant press refuses unless the reach it was shown is the reach
+now (B-F11, D-F16).
 
 **What is not in the reach:**
 
@@ -442,21 +551,25 @@ installing the extension asks again, because what the page can read grew (Q8).
 
 **Pages approved before the reach existed have no `reach`.** They are compared with a **baseline
 reach** (Q6), which ships as data the running purlis reads, not as a test fixture (C8, D12): the
-reach each core query had at the release that ships this. `tests/fixtures/queries/v1.json` holds
-no scope, so it cannot serve. The baseline is kept for as long as an entry with no `reach` can
-exist, which is for good. Such a page asks again only if a query it declares reads more now than
-it did in the baseline. A query the baseline does not hold (one removed since, or one newer than
-it) asks. An extension's queries were never in any baseline, so a page with no `reach` that
-declares one asks once. An older purlis that approves a page writes its entry without `reach`
-(it replaces the entry whole), and the entry is then compared with the baseline again: at worst
-one more ask, never a wider grant.
+reach each core query had at the release that ships this. It is a checked-in file compiled into
+the binary, never generated from the catalogue, and a test pins its SHA-256, so a query widened
+on main later still asks and no change to the baseline goes unseen (D-F5, B-F12).
+`tests/fixtures/queries/v1.json` holds no scope, so it cannot serve. The baseline is kept for as
+long as an entry with no `reach` can exist, which is for good. Such a page asks again only if a
+query it declares reads more now than it did in the baseline. A query the baseline does not hold
+(one removed since, or one newer than it) asks. An extension's queries were never in any
+baseline, so a page with no `reach` that declares one asks once. An older purlis that approves a
+page writes its entry without `reach` (it replaces the entry whole), and the entry is then
+compared with the baseline again: at worst one more ask, never a wider grant.
 
 ### 7. One re-ask, as one Notice (R4, gap 14)
 
 **Every code approval asks in one place: a `Notice`, the code-approval Notice**, following
 ADR 0112's "one notice for one need". It is built from the `Notice` family
-(`app/src/Notice.tsx`). Its cause key is `code-approval:<adapter>:<key>`, so it settles when the
-standing does, in every window. It says:
+(`app/src/Notice.tsx`). Its cause key is `code-approval:<adapter>:<key>:<digest>`, where the
+digest is of what the Notice shows (the fingerprints and the reach), so it settles when the
+standing does, in every window, and a new change brings a dismissed Notice back (R20). The family
+is in `KEPT` (`app/src/keptCauses.ts:19`), with the core as its source. It says:
 
 - **what** asks: the name and where it is (an extension's folder, a page's folder and pin, a
   declaration's file);
@@ -464,21 +577,29 @@ standing does, in every window. It says:
   capabilities; a harness's command;
 - **how it runs**, in the core's own words, carried to the window and rendered as given:
   an extension's `RUNS_AS_YOU` and `FINGERPRINTED` (`extension.rs:321`, `:339`), which ADR 0041
-  requires and `app/src/Extensions.test.tsx:596` pins; and for a harness, "A harness's command
-  runs as you, with your files and your network." (E2);
+  requires and `app/src/Extensions.test.tsx:596` pins; for a harness, "A harness's command
+  runs as you, with your files and your network." (E2); for Regenerate, today's words
+  (`app/src/ArtifactRegenerate.tsx:151`); and a sentence each for a page's script and an MCP
+  server (E19). A string a file controls, such as a name or a folder, is shown on one line
+  (B-F18);
 - **why it asks now:** "You have not approved it on this machine", or what changed: its code,
   its pin and who changed it (from git history, as today), or its reach, as "Now also reads" and
   "No longer reads";
 - **its way out**, as every Notice has: **Approve** (the `grants` button), and a second remedy
-  of the adapter's own: Review the folder, Open the extension, Show the declaration. Dismiss
-  hides it until its cause changes.
+  of the adapter's own: Review the folder, Open the extension, Show the declaration. An adapter
+  with no window approve (MCP) offers Copy command instead, so Approve is optional (C14). Dismiss
+  hides it until what it shows changes. For a page that already has a storage origin, the
+  Notice says that approving starts it with empty storage (E20).
 
 **Where it is drawn, for each adapter** (E3):
 
 - **Extension:** in Notices, and on its row in the Extensions view, which keeps a standing word.
+  The word is a press that opens the Notice again (R20).
 - **Page and Regenerate:** in the artifact tab's band of notices, and in Notices of its project.
-  The page bar keeps one short standing word, approved or not, which the frame's border already
-  carries.
+  It is raised when the page is loaded or its Regenerate pressed, never by a scan of every pin
+  (E27). The page bar keeps a short standing word for each standing, which is a press that opens
+  the Notice again (R20). It keeps the sentences of `not-here` and `as-of`, which never ask
+  (E12).
 - **Harness declaration and local profile:** in Notices of its project. While a chat is held on
   it, it is also a Blocking ask (below).
 - **MCP servers:** in Notices of its project. Its remedy is Copy command for
@@ -494,8 +615,22 @@ with no amendment of ADR 0121 needed:
 - both are derived from one standing, so an answer in either place settles both;
 - there is one ask per subject, of no one chat, however many chats wait on it. It is counted on
   the ✋, listed in Asks under its project, and notified, like every Blocking ask;
-- its answers are the Notice's, and its Approve is sent the fingerprints the row showed;
-- a chat's start refusal names where it waits: its row in Asks, under the ✋;
+- a chat is **held** from a start the window made that was refused for this subject, until the
+  subject is approved, the ask is answered Not now, the start is cancelled, or the project closes
+  (R21);
+- its answers are Approve, sent the fingerprints the row showed, and **Not now**, kept in memory
+  while the project is open, as a persona's Allow has (R21). The settle guard holds its Approve
+  (ADR 0097). Its labels are written once in the asks registry, and the Notice draws them (E16);
+- it is never offered a rule, and never answered by a rule, by Quiet, by a timeout or by a bulk
+  triage action. Only a connection that holds the approval scope answers it, never one from a
+  chat's process tree (B-F8);
+- the Notice and the row show the profile's whole line, and Approve is refused when what would be
+  shown now differs. "Approve and start" approves, then starts through the full launch gate, so a
+  declaration changed in between starts nothing and asks again (B-F8);
+- the start's press opens Asks on the subject's row, and no second Notice is raised for the
+  refusal. The refusal's sentence, in ADR 0121 decision 16's form, is "waiting for the person:
+  Asks (✋) in the purlis window, project {name}". The row keeps the sentence about what is typed
+  and not sent (E18). A refused dispatch raises no notification;
 - dismissing the Notice never strands the chat, because the ask stays until it is answered.
 
 Today only the harness-declaration adapter holds a chat. An extension, a page and an MCP server
@@ -509,7 +644,21 @@ opened by the press (Q12), as ADR 0121 lets a Notice that answers a press open (
 2026-11-12). **An Approve raised by a press finishes what the press began** (E6), and its label
 says so, as today's labels do: "Approve and run" for Regenerate, "Approve and start" for a
 harness, whose Notice and ask carry the start to make again once approved (C3). An extension's
-Approve stays a separate press from its install and runs nothing.
+Approve stays a separate press from its install and runs nothing. "Approve and run" is offered
+only when the Notice was opened by a Regenerate press on a page that stands Approved (E36).
+
+**The labels** (E16), a verb and what it acts on:
+
+| When | Label |
+| --- | --- |
+| a page's script asks | "Approve script" |
+| a Regenerate part asks, with no press behind it | "Approve Regenerate code" |
+| opened by a Regenerate press | "Approve and run" |
+| both parts ask | "Approve script and Regenerate code" |
+| an extension asks | "Approve extension" |
+| a harness asks, with no chat held | "Approve {profile}" |
+| a harness asks, with one chat held | "Approve and start" |
+| a harness asks, with several chats held | "Approve and start {n} chats" |
 
 **One press for one subject.** The page and its Regenerate are one subject, so they ask in one
 Notice, with a headed line for each part that asks: "Script", then "Regenerate code". One
@@ -518,10 +667,12 @@ names them: "Approve script and Regenerate code" when both ask (Q5, E5).
 
 **What it replaces:**
 
-- the re-ask branch of `ApproveExtension.tsx` ("“X” has changed since you approved it", "Trust
-  it anyway"), and the comments that say "the next launch asks" where nothing does;
-- the page bar's `<span>` and its Approve script button (`ArtifactTab.tsx:236`,
-  `ScriptStanding`, and `:264`, `standingSaid`);
+- the whole `ApproveExtension.tsx` dialog, first ask ("Trust it") and re-ask ("“X” has changed
+  since you approved it", "Trust it anyway") alike, whose "What it declares" list becomes the
+  Notice's "what it may do" (E15), and the comments that say "the next launch asks" where nothing
+  does;
+- the page bar's three re-ask sentences (`new`, `changed`, `pin-changed`) and its Approve script
+  button (`ArtifactTab.tsx:236`, `ScriptStanding`, and `:264`, `standingSaid`);
 - the Regenerate `AlertDialog` (`ArtifactRegenerate.tsx:144`) and `asksBecause`
   (`ArtifactRegenerate.tsx:165`). The Regenerate *failure* Notice stays: it is a refusal, not
   an approval;
@@ -537,8 +688,14 @@ dispatch grant is about access (who may dispatch to whom), not code, and it stay
 at the same time as Regenerate's own standing: right before the run, in `run_pressed`
 (`app/src-tauri/src/regenerate.rs:232`), and in `artifact_regenerate_about`
 (`app/src-tauri/src/regenerate.rs:118`), so the button is disabled with its reason before any
-press. `purlis artifact regenerate --check` prints both parts. The refusal says "Approve the
-page first", and its remedy opens the subject's Notice.
+press. `purlis artifact regenerate --check` prints both parts. All three call one core function,
+page standing and Regenerate standing in, run or refusal out, so the rule is tested without a
+session host and stays out of the Tauri crate (C11). The gate is an allow-list: it passes only
+Approved and `script-free`, and refuses every other standing, one added later included. The
+declaration it runs, the fingerprint it checks and the stamp it compares come from one read of
+the template, so a template swapped between reads is never run (B-F9). The refusal says "Approve
+its script first", since the window's noun is artifact, not page (E25), and its remedy opens the
+subject's Notice.
 
 **A script-free page satisfies the gate**, because it has nothing to approve and its data is
 inert. A page on a platform where script never runs does not, because it cannot be approved
@@ -591,7 +748,7 @@ the same press as B1's.
   stamp on a Regenerate approval's entry (§8). `docs/plane-format.md` records each before the
   code writes it, as the repository's rules require. No `written_by` key is added (Q1).
 - **One folder is added:** the dispatch queue's `refused/` (§2), with its entry and tier in
-  `docs/plane-format.md`, and the set-aside copies (`<file>.unread*`, `<file>.set-aside-*`),
+  `docs/plane-format.md`, and the kept copies (`<file>.unread*`, `<file>.set-aside-*`),
   which take their store's tier.
 - **The approval records' `version: 1` is read at last.** 1, or absent, is Understood. A higher
   version is refused and kept (R2). The two harness approval records have no version, and they
@@ -603,7 +760,9 @@ the same press as B1's.
     leaves a Regenerate part beside a page that does not stand Approved, which the gate (§8)
     refuses to run. The page asks, and approving it is the one more press.
   - **Forget** removes the page part first. A crash leaves a Regenerate part with no page part,
-    which the gate refuses to run.
+    which the gate refuses to run. Unpin and a workspace's removal forget first and remove
+    second, and a forget that fails refuses the removal, so a pin made again with the same id
+    never inherits an approval (D-F15).
   - **Moved** writes the Regenerate part first. A crash leaves the page part under the old key,
     and the page asks once at its new place. Nothing retries the move. The old entry names a
     place no workspace has now. A workspace made again at that place, with the same folder, pin
@@ -630,7 +789,12 @@ the same press as B1's.
   R8). A re-pinned page's Regenerate asks again, and a page whose reach changes asks again, and
   loses its stored data with its new origin. Each is the point of R3, R4 and ADR 0122.
 - **A refused store degrades a feature until purlis is updated, or the record is set aside.**
-  That is R2's price, and it is smaller than the record lost today.
+  That is R2's price, and it is smaller than the record lost today. For a store where starting
+  fresh grants more, a damaged file degrades it too, until the person sets it aside (R13).
+- **A skipped dispatch message holds its chat's queue** until a newer purlis delivers it or the
+  person removes it (R16). That is the price of never delivering a message twice.
+- **This protects a downgrade only to a build that has the record store**, and only for stores
+  already moved. Going back past it runs the old readers (E22).
 
 ## What this changes in other records
 
@@ -655,6 +819,9 @@ Each change is an amendment file of its own in the amended record's folder
   becomes every private store's, through the record store, and its rule for a store that reads
   but does not parse (copy aside, then start fresh) becomes every whole-file store's, with no
   copy ever replaced.
+- **ADR 0067 (class 2):** the sandbox denies every sibling whose name starts with a held
+  record's name, under every spelling of the state folder and under `$PURLIS_HOME`, so the kept
+  copies and locks beside a sandbox-held approval record are held as the record is (R14).
 
 It leans on **ADR 0121** (asks, and Notices that open only on a press), **ADR 0104** (the UI
 families), **ADR 0037** (`Notice` and its required way out), **ADR 0041** (an extension's honest
@@ -685,9 +852,10 @@ device-bound by its tier, not keyed by the device id.
 - **Give the MCP record a server key** (C6), so it could answer Changed. It is a format change,
   and R11 declined it.
 
-## Decisions on Q1 to Q16 and R6 to R11
+## Decisions on Q1 to Q16, R6 to R11 and R12 to R24
 
-The operator decided Q1 to Q16 on 2026-11-15, after the draft. "Default" means the operator took
+The operator decided Q1 to Q16 on 2026-11-15, after the draft, and R12 to R24 on the same day,
+after review round 2. "Default" means the operator took
 the draft's recommendation. "Changed" means the operator chose an alternative. "Reverted" and
 "narrowed" mean a ruling of review round 1 changed it.
 
@@ -705,8 +873,9 @@ the draft's recommendation. "Changed" means the operator chose an alternative. "
   release that ships this, shipped as runtime data.
 - **Q7, default.** Result shapes stay out of the reach.
 - **Q8, default.** Installing an extension a page waited on asks again.
-- **Q9, default.** A harness declaration's approval is forgotten by removing it through purlis,
-  or by Forget on its card. A pull that removes it does not forget it.
+- **Q9, default; narrowed by R22.** A harness declaration's approval is forgotten by Forget on
+  its card. Removing it through purlis is deferred until such a command exists. A pull that
+  removes it does not forget it.
 - **Q10, default.** The local-profile record is part of the harness-declaration adapter.
 - **Q11, default.** Removing a workspace forgets its pages' approvals.
 - **Q12, default.** A first ask raised by the person's press uses the same Notice.
@@ -735,6 +904,50 @@ the draft's recommendation. "Changed" means the operator chose an alternative. "
   plus the doctor.
 - **R11, Q16 narrowed.** The MCP-server adapter answers only Approved or New, with an approve that
   replaces the persona's set. There is no format change.
+- **R12, the reach's stored form.** A page's approval entry stores the canonical reach lines plus
+  their digest. The digest is the quick compare, and the Notice compares the lines for "Now also
+  reads" and "No longer reads". The baseline holds lines too, so an entry with no `reach` is
+  compared the same way.
+- **R13, stores where starting fresh grants more.** A declaration flag. For such a store, Damaged
+  is refused like Unplaceable: the fail-closed answer holds and writes refuse. Set it aside is
+  offered on the person's press, and its sentence names what is forgotten. It is set on
+  `dispatch-never.json` and `runners-unsandboxed.json`, whose fail-closed answer becomes "every
+  runner counts as tainted". Each store's ticket checks whether the extension record's off set
+  and `runners-stopped.json` have the same property. Test 25 covers these stores.
+- **R14, files beside the sandbox-held records.** ADR 0067 is amended so the sandbox denies every
+  sibling whose name starts with a held record's name, under every spelling of the state folder
+  and under `$PURLIS_HOME`. The copy aside is an exclusive, no-follow `0600` create through the
+  gated walk, with a counter suffix when the name is taken.
+- **R15, a tracked approval record.** Approve refuses while the record is tracked or not ignored.
+  The sentence says git could share the approvals, so stop git tracking them, then approve again,
+  with the path and the cause in the detail. The window adds the ignore line, or offers Copy
+  command. If git cannot answer, nothing is approved; outside a repository the record passes. The
+  check uses `profiles`' hardened git runner. The sentence is a line of `records-unread` and of
+  the doctor.
+- **R16, the delivered floor.** A chat's drain stops at the lowest skipped message, as it stops
+  at a `.part`. Later messages wait and are listed. The person can remove a skipped message to
+  unblock the queue. There is no format change, and a copy of a delivered message is never
+  delivered twice.
+- **R17, keys readable but no key for a message.** Never moved to `refused/`. It is reported as
+  undelivered, as an ended chat's queue is today, and kept on disk.
+- **R18, the kill switch.** A last line this build cannot read counts as halted, and the window
+  says why. This build's own re-arm, written after it, ends the halt. A stop or a re-arm is never
+  refused for the bound or the 1000-line cap. An Unreadable journal with the marker present counts
+  as halted. One build's re-arm is never read as tampering by another.
+- **R19, the forge budget.** A budget this build cannot read counts as spent for background
+  requests, never for a request a person waits on. It is a lockout, and its lock name is kept.
+- **R20, a dismissed code-approval Notice.** The cause key carries a digest of what the Notice
+  shows. The family joins `KEPT`. The page bar's and the Extensions row's standing words are
+  presses that reopen the Notice. `records-unread` is keyed by the set of refused stores.
+- **R21, Not now on the held-chat ask.** The Blocking ask gains Not now, kept in memory while the
+  project is open. "Held" is defined, and the settle guard holds Approve (ADR 0097).
+- **R22, forgetting a harness declaration.** A Forget press on the harness card. Removal through
+  purlis is deferred until such a command exists, which narrows Q9.
+- **R23, `runners-stopped.json`.** It stays out of the record store as the one named exception,
+  because the host crate does not link the core. Its versioned read is fixed in place in the
+  host.
+- **R24, granularity.** The plan's oversized tickets are split, from 29 to about 45, and their
+  edges redone (design note §4).
 
 ## New questions for the operator (decided)
 

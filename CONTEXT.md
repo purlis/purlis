@@ -275,8 +275,10 @@ such as the extension list, an approval or a queued message. Each says which ver
 A record written by a newer purlis is never deleted or overwritten: a whole-file record is
 refused, with Update purlis and Set it aside and start fresh as its remedies, and one row of a
 record of rows is skipped and kept. Only a record marked rebuildable may be rebuilt over a newer
-one, since nothing is lost. A damaged record is set aside, never deleted, and purlis starts it
-fresh (ADR 0125).
+one, since nothing is lost. A damaged record is copied aside, never deleted, and purlis starts
+it fresh, unless starting fresh would let through what the person refused, as for a dispatch
+never; then it is refused like a newer one. A record is **set aside** only on the person's press,
+and the copies of both kinds are its kept copies (ADR 0125).
 _Avoid_: config (that is what a person edits), cache (unless it is marked rebuildable), state
 file
 
@@ -1996,8 +1998,8 @@ _Avoid_: permission, grant (that is a runner's **Grant**), power
 **Code approval**:
 A setting of **Project**, as the trust gate is: a person's yes to code purlis will run that the
 person did not write into purlis. Its **Subject** is an **Extension**, a pinned **Artifact**'s
-script with its **Regenerate** code, a project's **Harness declaration** or local profile, or a
-**Persona**'s MCP servers. It covers exactly what the person was shown, and it asks again when
+script with its **Regenerate** code, a project's **Harness declaration** or a local profile (a
+profile this machine declares in `charter.local.toml`), or a **Persona**'s MCP servers. It covers exactly what the person was shown, and it asks again when
 that changes. A teammate's approval never counts as yours. It is kept where its subject belongs:
 an extension's and an artifact's on this machine, and a harness declaration's, a local
 profile's and a persona's MCP servers' in this clone, never committed. While a chat waits on
