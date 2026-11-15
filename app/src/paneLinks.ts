@@ -588,10 +588,12 @@ function besideOf(
   end: Cell,
 ): { before: string; after: string } {
   const buffer = pane.buffer.active;
-  const blank = (chars: string): boolean => chars === "" || /\s/u.test(chars);
-  // A cell may hold characters that take room but draw nothing: a line or paragraph separator,
-  // with any invisible xterm folded into it (U+2028 U+200B). They join, as the core reads them.
-  const drawsNothing = (chars: string): boolean => chars !== "" && [...chars].every(nothing);
+  // What a cell draws: its characters but those that draw nothing (a line or paragraph
+  // separator, an invisible), as the core reads them. xterm folds a zero-width character into
+  // the cell before it, so a separator's cell may hold a mark that draws (U+2028 U+0301): the
+  // mark is part of the word. `undefined` for a cell no program wrote, which reads as a blank.
+  const drawn = (chars: string): string | undefined =>
+    chars === "" ? undefined : [...chars].filter((ch) => !nothing(ch)).join("");
   let before = "";
   for (let { y, x } = { y: start.y, x: start.x - 1 }; before.length < MOST_TARGET;) {
     if (x < 0) {
@@ -603,9 +605,9 @@ function besideOf(
     const cell = buffer.getLine(y)?.getCell(x);
     if (cell === undefined) break;
     x -= 1;
-    const chars = cell.getChars();
-    if (cell.getWidth() === 0 || drawsNothing(chars)) continue;
-    if (blank(chars)) break;
+    if (cell.getWidth() === 0) continue;
+    const chars = drawn(cell.getChars());
+    if (chars === undefined || /\s/u.test(chars)) break;
     before = chars + before;
   }
   let after = "";
@@ -619,9 +621,9 @@ function besideOf(
     const cell = buffer.getLine(y)?.getCell(x);
     if (cell === undefined) break;
     x += 1;
-    const chars = cell.getChars();
-    if (cell.getWidth() === 0 || drawsNothing(chars)) continue;
-    if (blank(chars)) break;
+    if (cell.getWidth() === 0) continue;
+    const chars = drawn(cell.getChars());
+    if (chars === undefined || /\s/u.test(chars)) break;
     after += chars;
   }
   return { before, after };

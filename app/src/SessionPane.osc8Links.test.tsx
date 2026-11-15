@@ -369,6 +369,59 @@ describe("a link a program marked (OSC 8)", () => {
     );
   });
 
+  it.each([
+    ["N17", "\u2028\u0301"],
+    ["N47", "\u2028\u1161"],
+    ["N48", "\u2028\u06DE"],
+    ["N51", "\u2028\u200B\u0301"],
+  ])(
+    "joins text printed before its words across a separator holding a mark that draws (%s)",
+    async (_row, between) => {
+      const { term, drawn } = await opened();
+      await write(term, `evil${between}${osc8(TARGET, ".com")} y`);
+      const mark = [...between].filter((ch) => !/[\u2028\u2029\u200B]/u.test(ch)).join("");
+
+      hover(drawn, 6, 0);
+      await waitFor(() =>
+        expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+          { kind: "osc8", text: `.com evil${mark}.com`, target: TARGET },
+        ]),
+      );
+    },
+  );
+
+  it.each([
+    ["N18", "\u2029\u0338"],
+    ["N44", "\u2028\u0301"],
+    ["N49", "\u2029\u20DD"],
+  ])(
+    "joins text printed after its words across a separator holding a mark that draws (%s)",
+    async (_row, between) => {
+      const { term, drawn } = await opened();
+      await write(term, `${osc8(TARGET, "evil.")}${between}com y`);
+      const mark = [...between].slice(1).join("");
+
+      hover(drawn, 1, 0);
+      await waitFor(() =>
+        expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+          { kind: "osc8", text: `evil. evil.${mark}com`, target: TARGET },
+        ]),
+      );
+    },
+  );
+
+  it("joins nothing across a space holding a mark, which still draws a blank (N20)", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `evil \u0301${osc8(TARGET, ".com")} y`);
+
+    hover(drawn, 6, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: ".com", target: TARGET },
+      ]),
+    );
+  });
+
   it("reads a NEL before its words as the next line, joining nothing across it", async () => {
     const { term, drawn } = await opened();
     await write(term, `evil\u0085${osc8(TARGET, ".com")} y`);
