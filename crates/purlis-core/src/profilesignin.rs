@@ -501,7 +501,7 @@ fn billed_in(
 pub const WAITS_FOR_THE_PROXY: &str = "waits for the key proxy";
 
 /// What a key profile's row says where its harness takes no base URL, so its own sign-in only.
-pub const TAKES_ITS_OWN_SIGN_IN_ONLY: &str = "";
+pub const TAKES_ITS_OWN_SIGN_IN_ONLY: &str = "takes its own sign-in only";
 
 /// What a row says where its credentials go into the harness's environment (ADR 0087 §7).
 pub const READABLE_BY_ITS_COMMANDS: &str = "the commands it runs can read these credentials";
@@ -655,7 +655,9 @@ enum Handing {
 ///   for a chat, and Codex reaches Azure through a provider set in its configuration, so both
 ///   are refused in words.
 /// - **A key waits for the key proxy** (#822, ruling V36), wherever the harness takes a base
-///   URL, which every harness purlis ships does: the chat does not start, and says so.
+///   URL: the chat does not start, and says so. A harness whose declaration states no wire
+///   format takes no base URL, and its own sign-in only (R-257,
+///   [`crate::keyroute::own_sign_in_only`]).
 fn handing(
     harness: &str,
     kind: SignInKind,
@@ -676,6 +678,17 @@ fn handing(
         "GOOGLE_CLOUD_PROJECT",
         "VERTEX_LOCATION",
     ]);
+    // The environment path is dropped (R-257): a harness that takes no base URL takes its own
+    // sign-in only, and a key is never set in its environment instead.
+    if kind == SignInKind::ApiKey
+        && let Some(own) =
+            crate::harness_declaration::builtin(harness).and_then(crate::keyroute::own_sign_in_only)
+    {
+        return Handing::Refused {
+            row: TAKES_ITS_OWN_SIGN_IN_ONLY,
+            why: format!("a key from your vault, and {own}"),
+        };
+    }
     match kind {
         SignInKind::Cloud if harness == "codex" => Handing::Refused {
             row: "Codex on Azure is not signed in from a vault",

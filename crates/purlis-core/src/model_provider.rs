@@ -85,11 +85,20 @@ pub enum Format {
 }
 
 impl Format {
-    fn word(self) -> &'static str {
+    /// Every wire format purlis reads, in the order a refusal lists them.
+    pub const ALL: [Format; 2] = [Self::AnthropicMessages, Self::OpenaiChat];
+
+    /// The word a declaration names it by.
+    pub fn word(self) -> &'static str {
         match self {
             Self::AnthropicMessages => "anthropic-messages",
             Self::OpenaiChat => "openai-chat",
         }
+    }
+
+    /// The format `word` names, where it is one purlis reads.
+    pub fn of_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|format| format.word() == word)
     }
 }
 

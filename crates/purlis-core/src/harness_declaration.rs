@@ -919,7 +919,7 @@ struct RawSignIn {
     plans: Vec<RawPlan>,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRoute {
     formats: Option<Vec<String>>,
@@ -1191,6 +1191,21 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             &at,
         )?,
     };
+    // A routing fact never comes from a project or this machine (H-19): only a built-in's
+    // declaration may carry `[route]`, and a replacement routes as the built-in it replaces.
+    let route = match (origin, replaces, raw.route) {
+        (Origin::BuiltIn, _, Some(raw_route)) => route(raw_route, &at)?,
+        (_, Some(replaced), None) => replaced.route.clone(),
+        (_, _, None) => RouteFacts::default(),
+        (Origin::Project | Origin::Local, _, Some(_)) => {
+            return Err(format!(
+                "{} is a routing table, and only a harness purlis ships may carry one: where a \
+                 chat's model calls go is never a project's or this machine's to say. Remove \
+                 [route].",
+                at("[route]")
+            ));
+        }
+    };
     let folders = match (replaces, raw.folders) {
         (None, raw_folders) => folders(raw_folders.unwrap_or_default(), &env, origin, &at)?,
         (Some(replaced), None) => replaced.folders.clone(),
@@ -1232,7 +1247,7 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         terminal,
         levels,
         sign_in,
-        route: RouteFacts::default(),
+        route,
         folders,
         conversation,
         capabilities,
@@ -1287,6 +1302,36 @@ fn kept_as_built<T: PartialEq>(
         at(table),
         replaced.title
     ))
+}
+
+/// A built-in's `[route]`: each format one purlis reads, once (spec C-14).
+fn route(raw: RawRoute, at: &dyn Fn(&str) -> String) -> Result<RouteFacts, String> {
+    let mut formats = Vec::new();
+    for word in raw.formats.unwrap_or_default() {
+        let Some(format) = crate::model_provider::Format::of_word(&word) else {
+            return Err(format!(
+                "{} holds {}, and a wire format is one of: {}. Write one of them.",
+                at("[route] formats"),
+                shown::short(&word),
+                crate::model_provider::Format::ALL
+                    .map(crate::model_provider::Format::word)
+                    .join(", ")
+            ));
+        };
+        if formats.contains(&format) {
+            return Err(format!(
+                "{} names {} twice. Remove one.",
+                at("[route] formats"),
+                format.word()
+            ));
+        }
+        formats.push(format);
+    }
+    Ok(RouteFacts {
+        formats,
+        min_context: raw.min_context,
+        unsigned_cloud: raw.unsigned_cloud.unwrap_or(false),
+    })
 }
 
 /// A declaration's `[sign_in]`, of the harness `name`: each kind one of the four words, once;
