@@ -104,7 +104,7 @@ import {
 } from "./taskQuestions";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Tree, TreeRow, TreeSection, useRowDescription, type Key } from "./ui/tree/Tree";
-import { CLOSED_CHATS, closedChatsRow, useClosedChats } from "./ChatsClosed";
+import { CLOSED_CHATS, closedChatsRow, closedNotRead, useClosedChats } from "./ChatsClosed";
 import { BlockedMarker } from "./BlockedMarker";
 import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { useWindowLeft } from "./ui/windowLeft";
@@ -464,7 +464,8 @@ export function ChatsSection({
 
   /** **The closed chats the filter finds** (#6484): read only while words or a number are typed,
    *  and none the list draws already as a finished task. */
-  const closedRead = useClosedChats(chats.plane, filter.text.trim() !== "" && ranks.length === 0);
+  const closedAsked = useClosedChats(chats.plane, filter.text.trim() !== "" && ranks.length === 0);
+  const closedRead = closedAsked.chats;
   const closedShown = useMemo(() => {
     if (closedRead.length === 0) return closedRead;
     const drawnAsTasks = new Set<number>();
@@ -1038,6 +1039,7 @@ export function ChatsSection({
           : hidden === 0
             ? "The filter hides no chat."
             : `The filter hides ${hidden} of ${steady.length} chats.`,
+        closedNotRead(closedAsked),
         elsewhere,
       ]
         .filter((one) => one !== "")
@@ -1291,7 +1293,12 @@ export function ChatsSection({
               )}
               {/* **Closed chats the filter finds** (#6484): after every open chat, as the pinned
                   browsers whose chat closed stand; each opens its card. */}
-              {closedChatsRow({ closed: closedShown, plane: chats.plane, onPress: press })}
+              {closedChatsRow({
+                closed: closedShown,
+                plane: chats.plane,
+                onPress: press,
+                onSay: setSaid,
+              })}
             </Tree>
           )}
         </div>

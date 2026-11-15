@@ -31,30 +31,49 @@ export const CLOSED_CHATS = "closed-chats";
 
 const NONE: readonly ClosedChat[] = [];
 
+/** What the filter read of the closed chats: those it found, and why none were read, if so. */
+export type ClosedRead = { chats: readonly ClosedChat[]; failed?: string };
+
+const NOTHING_READ: ClosedRead = { chats: NONE };
+
+/** The words of a refusal or a throw, for a line that says what failed. */
+function whyOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * **The closed chats of `plane`, read as the filter starts to ask** (`asking`): none while it
  * does not, and the newest read while it does, read again each time it starts again, so a chat
- * closed meanwhile is found. A refusal finds none.
+ * closed meanwhile is found. A refusal finds none, and says why (`failed`).
  */
-export function useClosedChats(plane: PlaneId | undefined, asking: boolean): readonly ClosedChat[] {
-  const [read, setRead] = useState<readonly ClosedChat[]>(NONE);
+export function useClosedChats(plane: PlaneId | undefined, asking: boolean): ClosedRead {
+  const [read, setRead] = useState<ClosedRead>(NOTHING_READ);
   useEffect(() => {
     if (plane === undefined || !asking) return;
     let current = true;
     void commands
       .closedChats(plane)
       .then((said) => {
+        if (!current) return;
+        if (said.status !== "ok") setRead({ chats: NONE, failed: whyOf(said.error) });
         // Only a list is an answer: anything else finds none.
-        if (current) setRead(said.status === "ok" && Array.isArray(said.data) ? said.data : NONE);
+        else setRead({ chats: Array.isArray(said.data) ? said.data : NONE });
       })
-      .catch(() => {
-        if (current) setRead(NONE);
+      .catch((error: unknown) => {
+        if (current) setRead({ chats: NONE, failed: whyOf(error) });
       });
     return () => {
       current = false;
     };
   }, [plane, asking]);
-  return asking ? read : NONE;
+  return asking ? read : NOTHING_READ;
+}
+
+/** The line under the filter when the closed chats could not be read: what, and what to do. */
+export function closedNotRead(read: ClosedRead): string {
+  return read.failed === undefined
+    ? ""
+    : `purlis could not read the closed chats (${read.failed}). Clear the filter and type again.`;
 }
 
 /** **The *Closed chats* row**, with a row for each closed chat the filter found, or nothing. */
@@ -62,11 +81,14 @@ export function closedChatsRow({
   closed,
   plane,
   onPress,
+  onSay,
 }: {
   closed: readonly ClosedChat[];
   plane: PlaneId | undefined;
   /** Runs the card's *Read it* and *Reopen*, and shows a chat open again. */
   onPress?: (offer: Offer) => void;
+  /** Says why choosing a row opened nothing. */
+  onSay?: (said: string) => void;
 }): ReactNode {
   if (closed.length === 0 || plane === undefined) return null;
   return (
@@ -78,21 +100,34 @@ export function closedChatsRow({
       content={<RowLabel className="session">Closed chats</RowLabel>}
     >
       {closed.map((chat) => (
-        <ClosedChatRow key={chat.number} chat={chat} plane={plane} onPress={onPress} />
+        <ClosedChatRow
+          key={chat.number}
+          chat={chat}
+          plane={plane}
+          onPress={onPress}
+          onSay={onSay}
+        />
       ))}
     </TreeRow>
   );
 }
 
-/** **One closed chat's row**: chosen, it opens the chat's card beside it. */
+/** Why choosing closed chat `number` opened no card, and what to do. */
+function notOpened(number: number, why: string): string {
+  return `purlis could not open chat #${number}'s card (${why}). Choose it again.`;
+}
+
+/** **One closed chat's row**: chosen, it opens the chat's card beside it, or says why not. */
 function ClosedChatRow({
   chat,
   plane,
   onPress,
+  onSay,
 }: {
   chat: ClosedChat;
   plane: PlaneId;
   onPress?: (offer: Offer) => void;
+  onSay?: (said: string) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const [card, setCard] = useState<ChatCard | null>(null);
@@ -102,14 +137,19 @@ function ClosedChatRow({
     void commands
       .chatByNumber(plane, chat.number)
       .then((said) => {
-        if (said.status !== "ok") return;
+        if (said.status !== "ok") {
+          onSay?.(notOpened(chat.number, whyOf(said.error)));
+          return;
+        }
         const lookup = said.data;
         if (lookup.is === "ended") setCard(lookup.card);
         // Open again since the filter read it: that chat, as a link to it shows it.
         else if (lookup.is === "restarted") onPress?.(showLinkedChatOffer(lookup.now));
         else if (lookup.is === "open") onPress?.(showLinkedChatOffer(lookup.number));
+        // Swept since the filter read it.
+        else onSay?.(`Chat #${chat.number} is no longer kept, so it has no card to open.`);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => onSay?.(notOpened(chat.number, whyOf(error))));
   };
   const press = (offer: Offer) => {
     setCard(null);

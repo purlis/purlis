@@ -62,13 +62,14 @@ const CARD: ChatCard = {
   task: null,
 };
 
-function draw() {
+function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => unknown } = {}) {
   const asked: string[] = [];
   mockIPC((cmd, args) => {
     asked.push(cmd);
-    if (cmd === "closed_chats") return [CLOSED];
+    if (cmd === "closed_chats") return answers.closed === undefined ? [CLOSED] : answers.closed();
     if (cmd === "chat_by_number") {
       const { number } = args as { number: number };
+      if (answers.byNumber !== undefined) return answers.byNumber(number);
       return number === 731 ? { is: "ended", card: CARD } : { is: "no_chat" };
     }
     return null;
@@ -122,6 +123,38 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     draw();
     await typeInTheFilter("702");
     expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
+  });
+
+  it("says so when the closed chats could not be read", async () => {
+    draw({
+      closed: () => {
+        throw new Error("the disk is gone");
+      },
+    });
+    await typeInTheFilter("changelog");
+    expect(
+      await screen.findByText(/purlis could not read the closed chats \(.*the disk is gone.*\)/),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when its card could not be read as it is chosen", async () => {
+    draw({
+      byNumber: () => {
+        throw new Error("the disk is gone");
+      },
+    });
+    await typeInTheFilter("changelog");
+    await userEvent.click(await findRow(await theTree(), /^#731 · Tidy the changelog/));
+    expect(
+      await screen.findByText(/purlis could not open chat #731's card \(.*the disk is gone.*\)/),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when it is no longer kept as it is chosen", async () => {
+    draw({ byNumber: () => ({ is: "no_chat" }) });
+    await typeInTheFilter("changelog");
+    await userEvent.click(await findRow(await theTree(), /^#731 · Tidy the changelog/));
+    expect(await screen.findByText(/Chat #731 is no longer kept/)).toBeInTheDocument();
   });
 
   it("is not found by words it does not hold, and the open chats stay as the filter finds them", async () => {
