@@ -22,13 +22,23 @@
 //! **What it answers** (T1a-05). A request must carry its run's token as the bearer credential,
 //! the header a harness sets from `ANTHROPIC_AUTH_TOKEN`, compared in constant time (R-063); one
 //! without it is refused and the listener goes on (R-064). One with it is sent to its listener's
-//! [`Route`], the token taken out and the run's [`Key`] put in the header the declaration names,
-//! its body passed through as it came and the answer's body back as it came, streamed or not:
-//! nothing translated, nothing added (R-042, R-045). A listener started with no route refuses
-//! every request. Every refusal is in the Messages error shape, 400 with `x-should-retry: false`
-//! (D6640-C2 §2; its final shape is T1a-26's), and every request is recorded. The header strip,
-//! `Host`, upstream TLS and the outbound proxy are T1a-60's; the route here is reached over plain
-//! HTTP.
+//! [`Route`], its body passed through as it came and the answer's body back as it came, streamed
+//! or not: nothing translated, nothing added (R-042, R-045). A listener started with no route
+//! refuses every request. Every refusal is in the Messages error shape, 400 with
+//! `x-should-retry: false` (D6640-C2 §2; its final shape is T1a-26's), and every request is
+//! recorded.
+//!
+//! **What changes on the way** (T1a-60). Every header a credential may come in
+//! ([`CREDENTIAL_HEADERS`], in any letter case) is taken out before the run's [`Key`] goes into
+//! the one its declaration names (R-097), and `Host` is the upstream origin's, whatever the
+//! harness sent (R-100). A key that can't be a header value is refused, never sent empty.
+//!
+//! **How the upstream is reached** (T1a-60, R-056). Through the [`Reach`] the key proxy was made
+//! with: purlis-core's [`Outbound`] connects, off the reactor, to the upstream or to the outbound
+//! proxy hyper-util's [`Matcher`] names for it; through a proxy the call is a `CONNECT` tunnel,
+//! never a redirect; and an `https` origin is reached over TLS verified against the OS trust
+//! store by purlis-core's `upstream::trust` client, under the declared name. A failure to reach
+//! it is a 502 in the Messages error shape whose `purlis:` message names the cause (W81).
 //!
 //! **The token** never leaves this crate but in [`Started`], to the start's caller: it is in no
 //! line [`Heard::say`] is told, and no [`Record`], which carries no header. The listener's copy
@@ -38,23 +48,32 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
-use hyper::header::{AUTHORIZATION, HeaderValue};
+use hyper::header::{AUTHORIZATION, HOST, HeaderName, HeaderValue, PROXY_AUTHORIZATION};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{HeaderMap, Request, Response, StatusCode};
+use hyper::upgrade::Upgraded;
+use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
+use hyper_util::client::proxy::matcher::Intercept;
+pub use hyper_util::client::proxy::matcher::Matcher;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use purlis_core::upstream::{Destination, Direct, Outbound, trust};
+use purlis_core::window_copy::{self, line};
+use rustls::ClientConfig;
+use rustls::pki_types::ServerName;
 use subtle::ConstantTimeEq;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 use tokio::task::{JoinHandle, JoinSet};
+use tokio_rustls::TlsConnector;
 
 /// The name of each of the key proxy's runtime threads (R-054).
 pub const THREAD_NAME: &str = "purlis-key-proxy";
@@ -85,8 +104,24 @@ const NOT_ROUTED: &str = r#"{"type":"error","error":{"type":"invalid_request_err
 /// What a request without its run's token is answered (R-064): Anthropic's error shape.
 const NO_TOKEN: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this request does not carry its run's token"}}"#;
 
-/// What a request is answered when its route's upstream could not be reached.
-const UNREACHED: &str = r#"{"type":"error","error":{"type":"api_error","message":"purlis: the key proxy could not reach its route's upstream"}}"#;
+/// What a request is answered when its run's key can't be a header value: refused, never sent
+/// with an empty credential.
+const NOT_A_HEADER_VALUE: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this run's key can't be sent in a header"}}"#;
+
+/// What a request is answered when its route's origin can't be a `Host` header.
+const NOT_A_HOST: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this run's route names an origin that can't be sent as Host"}}"#;
+
+/// **Every header a credential may come in**, each taken out of what the harness sent, in any
+/// letter case, before the run's key goes into the one its declaration names (R-097). The
+/// declarations' own auth headers (`x-api-key` and `authorization`) are among them.
+pub const CREDENTIAL_HEADERS: [&str; 6] = [
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+    "api-key",
+    "x-goog-api-key",
+    "cookie",
+];
 
 /// What the key proxy answers the harness with: a refusal of its own, or the upstream's body.
 type Body = BoxBody<Bytes, hyper::Error>;
@@ -152,12 +187,105 @@ impl std::fmt::Debug for Key {
     }
 }
 
-/// **Where a listener sends what it serves**: the upstream's address, reached over plain HTTP
-/// (upstream TLS is T1a-60's), and the run's key.
+/// How an upstream origin is spoken to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scheme {
+    /// Plain HTTP: a loopback server's, or a test's.
+    Http,
+    /// TLS, verified against the OS trust store under the origin's name (R-056).
+    Https,
+}
+
+/// **An upstream origin**: its scheme, its host name as the route names it, and its port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Origin {
+    pub scheme: Scheme,
+    pub host: String,
+    pub port: u16,
+}
+
+impl Origin {
+    /// `https://host:port`.
+    pub fn https(host: &str, port: u16) -> Origin {
+        Origin {
+            scheme: Scheme::Https,
+            host: host.to_owned(),
+            port,
+        }
+    }
+
+    /// `http://host:port`.
+    pub fn http(host: &str, port: u16) -> Origin {
+        Origin {
+            scheme: Scheme::Http,
+            ..Origin::https(host, port)
+        }
+    }
+
+    /// The host, in brackets when it is an IPv6 address.
+    fn bracketed(&self) -> String {
+        if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        }
+    }
+
+    /// The host, with `:port` where the port isn't its scheme's own: what `Host` carries.
+    fn authority(&self) -> String {
+        let own = match self.scheme {
+            Scheme::Http => 80,
+            Scheme::Https => 443,
+        };
+        if self.port == own {
+            self.bracketed()
+        } else {
+            format!("{}:{}", self.bracketed(), self.port)
+        }
+    }
+
+    /// The origin as a URI, for the outbound proxy's matcher.
+    fn uri(&self) -> Option<Uri> {
+        let scheme = match self.scheme {
+            Scheme::Http => "http",
+            Scheme::Https => "https",
+        };
+        format!("{scheme}://{}/", self.authority()).parse().ok()
+    }
+}
+
+/// **Where a listener sends what it serves**: the upstream origin, and the run's key.
 #[derive(Debug, Clone)]
 pub struct Route {
-    pub upstream: SocketAddr,
+    pub origin: Origin,
     pub key: Key,
+}
+
+/// **How the key proxy reaches its upstreams**, one for the process (R-056): what connects, the
+/// TLS client every upstream is verified with, and which outbound proxy a connection goes
+/// through.
+pub struct Reach {
+    /// What makes each connection, to the upstream or to the outbound proxy in its place.
+    pub outbound: Arc<dyn Outbound>,
+    /// The one TLS client config, which verifies against the trust store.
+    pub tls: Arc<ClientConfig>,
+    /// Which outbound proxy, if any, an origin is reached through.
+    pub proxies: Matcher,
+}
+
+impl Reach {
+    /// **What every build that ships reaches upstreams with**: the system's resolver; the OS
+    /// trust store, through `rustls-platform-verifier`; and the outbound proxy the system names,
+    /// read once here by `Matcher::from_system()` from the proxy variables in this process's
+    /// environment (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lower-case
+    /// forms), then the OS's proxy settings. No PAC file is read (C-16).
+    pub fn system() -> io::Result<Reach> {
+        Ok(Reach {
+            outbound: Arc::new(Direct::new()),
+            tls: Arc::new(trust::client_config().map_err(io::Error::other)?),
+            proxies: Matcher::from_system(),
+        })
+    }
 }
 
 /// A listener started for a run.
@@ -172,6 +300,7 @@ pub struct KeyProxy {
     /// Always there until it is dropped, when it is shut down without waiting: a key proxy may
     /// be dropped on another runtime, where waiting is not allowed.
     runtime: Option<Runtime>,
+    reach: Arc<Reach>,
     listening: Mutex<HashMap<String, Listening>>,
 }
 
@@ -183,8 +312,14 @@ struct Listening {
 
 impl KeyProxy {
     /// A key proxy with its own runtime of [`WORKER_THREADS`] threads named [`THREAD_NAME`],
-    /// running no listener yet.
+    /// reaching upstreams as every build that ships does ([`Reach::system`]), running no
+    /// listener yet.
     pub fn new() -> io::Result<KeyProxy> {
+        KeyProxy::reaching(Reach::system()?)
+    }
+
+    /// [`KeyProxy::new`], reaching upstreams through `reach`.
+    pub fn reaching(reach: Reach) -> io::Result<KeyProxy> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(WORKER_THREADS)
             .thread_name(THREAD_NAME)
@@ -193,6 +328,7 @@ impl KeyProxy {
             .build()?;
         Ok(KeyProxy {
             runtime: Some(runtime),
+            reach: Arc::new(reach),
             listening: Mutex::new(HashMap::new()),
         })
     }
@@ -230,6 +366,7 @@ impl KeyProxy {
             run: run.to_string(),
             token: token.clone(),
             route,
+            reach: Arc::clone(&self.reach),
             heard: heard.clone(),
         });
         let accepting = self.runtime().spawn(accept(listener, serving));
@@ -270,6 +407,7 @@ struct Serving {
     run: String,
     token: Token,
     route: Option<Route>,
+    reach: Arc<Reach>,
     heard: Heard,
 }
 
@@ -321,9 +459,10 @@ async fn answer(
     let response = match &serving.route {
         _ if !carries(&serving.token, request.headers()) => refuse(request, NO_TOKEN).await,
         None => refuse(request, NOT_ROUTED).await,
-        Some(route) => match forward(request, route).await {
+        Some(route) => match forward(request, route, &serving.reach).await {
             Ok(response) => response.map(BodyExt::boxed),
-            Err(_) => fixed(StatusCode::BAD_GATEWAY, UNREACHED, false),
+            Err(Failed::Refused(why)) => fixed(StatusCode::BAD_REQUEST, why, false),
+            Err(Failed::Unreached(why)) => unreached(why, &route.origin),
         },
     };
     (serving.heard.record)(&Record {
@@ -348,33 +487,217 @@ fn carries(token: &Token, headers: &HeaderMap) -> bool {
         .is_some_and(|presented| bool::from(presented.ct_eq(token.0.as_bytes())))
 }
 
-/// Takes the token out of `headers` and puts `key` in the header its declaration names (R-042):
-/// every other header is left as the harness sent it.
-fn swap(headers: &mut HeaderMap, key: &Key) {
-    headers.remove(AUTHORIZATION);
-    let (name, value) = match key {
-        Key::XApiKey(key) => ("x-api-key", key.clone()),
-        Key::Bearer(key) => ("authorization", format!("Bearer {key}")),
+/// Takes every credential the harness sent out of `headers` ([`CREDENTIAL_HEADERS`], the token
+/// among them) before `route`'s key goes into the one header its declaration names (R-097), and
+/// sets `Host` to the upstream origin's (R-100): every other header is left as the harness sent
+/// it. A key or an origin that can't be a header value is refused, and `headers` then carry no
+/// credential at all.
+fn swap(headers: &mut HeaderMap, route: &Route) -> Result<(), &'static str> {
+    headers.remove(AUTHORIZATION); // RED STUB
+    let _ = (CREDENTIAL_HEADERS, NOT_A_HOST, NOT_A_HEADER_VALUE, HOST);
+    let (name, value) = match &route.key {
+        Key::XApiKey(key) => (HeaderName::from_static("x-api-key"), key.clone()),
+        Key::Bearer(key) => (AUTHORIZATION, format!("Bearer {key}")),
     };
     let mut value = HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static(""));
     value.set_sensitive(true);
     headers.insert(name, value);
+    Ok(())
 }
 
-/// Sends `request` to `route`'s upstream with the key swapped in, on a connection of its own,
-/// and hands back its answer as it comes: neither body is read, changed or added to (R-042,
-/// R-045).
+/// Why a request was not carried to its upstream.
+#[derive(Debug)]
+enum Failed {
+    /// Refused before anything was sent, with the answer's body.
+    Refused(&'static str),
+    /// The upstream could not be reached.
+    Unreached(Unreached),
+}
+
+/// **Why an upstream could not be reached**, each named by its W81 line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unreached {
+    /// The connect to the upstream failed (no route, refused).
+    NoConnection,
+    /// Its certificate did not verify against the trust store under the declared name.
+    Untrusted,
+    /// The outbound proxy could not be reached, or refused the tunnel (a 407 among them).
+    ProxyRefused,
+    /// The connection broke once made.
+    Reset,
+}
+
+impl Unreached {
+    /// What a failed TLS handshake was: an untrusted certificate where rustls says so.
+    fn of_tls(why: &io::Error) -> Unreached {
+        let untrusted = why
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+            .is_some_and(|inner| matches!(inner, rustls::Error::InvalidCertificate(_)) && false); // RED STUB
+        if untrusted {
+            Unreached::Untrusted
+        } else {
+            Unreached::NoConnection
+        }
+    }
+
+    /// The `purlis:` message naming it, for `host`.
+    fn message(self, host: &str) -> String {
+        let said = match self {
+            Unreached::NoConnection => line::W81_NO_CONNECTION,
+            Unreached::Untrusted => line::W81_UNTRUSTED_CERTIFICATE,
+            Unreached::ProxyRefused => line::W81_PROXY_REFUSED,
+            Unreached::Reset => line::W81_RESET,
+        };
+        format!("purlis: {}", window_copy::fill(said, &[("host", host)]))
+    }
+}
+
+/// Where a connection to `origin` goes: straight there, or through the outbound proxy `proxies`
+/// name for it, with the proxy's credentials where its address carried them. A loopback
+/// upstream always goes direct, never through the proxy (design §3.3).
+fn destination(origin: &Origin, proxies: &Matcher) -> (Destination, Option<Intercept>) {
+    let loopback = origin.host.eq_ignore_ascii_case("localhost")
+        || origin
+            .host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    let intercept = origin
+        .uri()
+        .filter(|_| !loopback && false) // RED STUB
+        .and_then(|uri| proxies.intercept(&uri));
+    let proxy = intercept.as_ref().and_then(|intercept| {
+        let uri = intercept.uri();
+        let own = if uri.scheme_str() == Some("https") {
+            443
+        } else {
+            80
+        };
+        Some(format!("{}:{}", uri.host()?, uri.port_u16().unwrap_or(own)))
+    });
+    match proxy {
+        Some(proxy) => (
+            Destination::through(&origin.host, origin.port, &proxy),
+            intercept,
+        ),
+        None => (Destination::direct(&origin.host, origin.port), None),
+    }
+}
+
+/// The `CONNECT` that asks the outbound proxy for a tunnel to `origin`, carrying a
+/// `Proxy-Authorization` only where the proxy's address in the system's settings carried one:
+/// purlis never sends a proxy credential it wasn't given.
+fn connect_request(origin: &Origin, proxy: &Intercept) -> Option<Request<Empty<Bytes>>> {
+    let authority = format!("{}:{}", origin.bracketed(), origin.port);
+    let mut request = Request::connect(authority.as_str()).header(HOST, authority.as_str());
+    if let Some(credential) = proxy.basic_auth().filter(|_| false) {
+        // RED STUB
+        request = request.header(PROXY_AUTHORIZATION, credential.clone());
+    }
+    request.body(Empty::new()).ok()
+}
+
+/// A connection's byte stream, whichever layers it went through.
+trait Wire: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Wire for T {}
+
+/// Asks the outbound proxy on `stream` for a tunnel to `origin` (a `CONNECT`, never followed as
+/// a redirect): the tunnel, or the proxy's refusal.
+async fn tunnel(
+    stream: TcpStream,
+    origin: &Origin,
+    proxy: &Intercept,
+) -> Result<Upgraded, Unreached> {
+    let request = connect_request(origin, proxy).ok_or(Unreached::ProxyRefused)?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .await
+        .map_err(|_| Unreached::ProxyRefused)?;
+    tokio::spawn(connection.with_upgrades());
+    let response = sender
+        .send_request(request)
+        .await
+        .map_err(|_| Unreached::ProxyRefused)?;
+    if !response.status().is_success() {
+        return Err(Unreached::ProxyRefused);
+    }
+    hyper::upgrade::on(response)
+        .await
+        .map_err(|_| Unreached::ProxyRefused)
+}
+
+/// A connection to `origin` through `reach`: made by its outbound off the reactor, through the
+/// outbound proxy's tunnel where one is named, and under TLS for an `https` origin.
+async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreached> {
+    let (destination, proxy) = destination(origin, &reach.proxies);
+    let failed = if proxy.is_some() {
+        Unreached::ProxyRefused
+    } else {
+        Unreached::NoConnection
+    };
+    let outbound = Arc::clone(&reach.outbound);
+    let stream = tokio::task::spawn_blocking(move || outbound.connect(&destination))
+        .await
+        .map_err(|_| failed)?
+        .map_err(|_| failed)?;
+    stream.set_nonblocking(true).map_err(|_| failed)?;
+    let stream = TcpStream::from_std(stream).map_err(|_| failed)?;
+    let _ = stream.set_nodelay(true);
+    let wire: Box<dyn Wire> = match &proxy {
+        Some(proxy) => Box::new(TokioIo::new(tunnel(stream, origin, proxy).await?)),
+        None => Box::new(stream),
+    };
+    match origin.scheme {
+        Scheme::Http | Scheme::Https => Ok(wire), // RED STUB
+        #[allow(unreachable_patterns)]
+        Scheme::Https => {
+            let name =
+                ServerName::try_from(origin.host.clone()).map_err(|_| Unreached::NoConnection)?;
+            let tls = TlsConnector::from(Arc::clone(&reach.tls))
+                .connect(name, wire)
+                .await
+                .map_err(|why| Unreached::of_tls(&why))?;
+            Ok(Box::new(tls))
+        }
+    }
+}
+
+/// Sends `request` to `route`'s upstream with the credentials and `Host` swapped, on a
+/// connection of its own, and hands back its answer as it comes: neither body is read, changed
+/// or added to (R-042, R-045).
 async fn forward(
     mut request: Request<Incoming>,
     route: &Route,
-) -> Result<Response<Incoming>, Box<dyn std::error::Error + Send + Sync>> {
-    swap(request.headers_mut(), &route.key);
-    let stream = TcpStream::connect(route.upstream).await?;
-    let (mut sender, connection) =
-        hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+    reach: &Reach,
+) -> Result<Response<Incoming>, Failed> {
+    swap(request.headers_mut(), route).map_err(Failed::Refused)?;
+    let wire = connect(&route.origin, reach)
+        .await
+        .map_err(Failed::Unreached)?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(wire))
+        .await
+        .map_err(|_| Failed::Unreached(Unreached::Reset))?;
     // Ends when the answer has been carried, or the harness let go of it.
     tokio::spawn(connection);
-    Ok(sender.send_request(request).await?)
+    sender
+        .send_request(request)
+        .await
+        .map_err(|_| Failed::Unreached(Unreached::Reset))
+}
+
+/// The 502 for an upstream that could not be reached, in the Messages error shape, its `purlis:`
+/// message naming the cause; no `x-should-retry: false`, so the harness retries as it would
+/// against the provider (design §3.3).
+fn unreached(why: Unreached, origin: &Origin) -> Response<Body> {
+    let body = serde_json::json!({
+        "type": "error",
+        "error": {"type": "api_error", "message": why.message(&origin.host)},
+    });
+    answer_of(
+        StatusCode::BAD_GATEWAY,
+        Bytes::from(body.to_string()),
+        false,
+        false,
+    )
 }
 
 /// Refuses `request` with `why`, reading its body to its end and letting go of it first, so the
@@ -391,21 +714,24 @@ async fn refuse(request: Request<Incoming>, why: &'static str) -> Response<Body>
     fixed(StatusCode::BAD_REQUEST, why, !whole)
 }
 
-/// An answer of the key proxy's own, in the Messages error shape.
+/// A refusal of the key proxy's own, in the Messages error shape.
 fn fixed(status: StatusCode, body: &'static str, close: bool) -> Response<Body> {
+    answer_of(status, Bytes::from_static(body.as_bytes()), true, close)
+}
+
+/// An answer of the key proxy's own: `body` as JSON, told not to retry where `final_`.
+fn answer_of(status: StatusCode, body: Bytes, final_: bool, close: bool) -> Response<Body> {
     let mut response = Response::builder()
         .status(status)
-        .header("content-type", "application/json")
-        .header("x-should-retry", "false");
+        .header("content-type", "application/json");
+    if final_ {
+        response = response.header("x-should-retry", "false");
+    }
     if close {
         response = response.header("connection", "close");
     }
     response
-        .body(
-            Full::new(Bytes::from_static(body.as_bytes()))
-                .map_err(|never| match never {})
-                .boxed(),
-        )
+        .body(Full::new(body).map_err(|never| match never {}).boxed())
         .expect("a response of fixed parts")
 }
 

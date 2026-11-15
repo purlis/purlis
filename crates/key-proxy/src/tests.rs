@@ -2,20 +2,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! What a request must carry and what is put in its place, without a socket: the run's token
-//! (R-063) and the key swapped in for it (R-042). A listener's own tests, which bind
-//! `127.0.0.1`, are `purlis-host`'s `the_key_proxy_through_a_start_path`.
+//! (R-063), the key swapped in for it (R-042), the credentials stripped and `Host` set (R-097,
+//! R-100), and how the upstream is reached: through which outbound proxy, with which `CONNECT`,
+//! and what a failure is named (R-056). A listener's own tests, which bind `127.0.0.1`, are
+//! `purlis-host`'s `the_key_proxy_through_a_start_path`.
 
 use std::collections::HashSet;
 
 use hyper::HeaderMap;
 use hyper::header::HeaderValue;
 
-use super::{Key, Token, carries, swap};
+use purlis_core::upstream::Destination;
+
+use super::{
+    CREDENTIAL_HEADERS, Key, Matcher, Origin, Route, Token, Unreached, carries, connect_request,
+    destination, swap,
+};
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn token() -> Token {
     Token(TOKEN.to_owned())
+}
+
+fn route(key: Key) -> Route {
+    Route {
+        origin: Origin::https("api.anthropic.com", 443),
+        key,
+    }
 }
 
 fn headers(lines: &[(&str, &str)]) -> HeaderMap {
@@ -102,14 +116,14 @@ fn the_key_goes_in_the_declarations_header_and_the_token_goes_nowhere() {
         ("anthropic-version", "2023-06-01"),
         ("x-api-key", "the harness's own"),
     ]);
-    swap(&mut sent, &Key::XApiKey("sk-stand-in".to_owned()));
+    swap(&mut sent, &route(Key::XApiKey("sk-stand-in".to_owned()))).unwrap();
     assert_eq!(sent.get_all("x-api-key").iter().count(), 1);
     assert_eq!(sent["x-api-key"], "sk-stand-in");
     assert!(sent.get("authorization").is_none(), "the token went on");
     assert_eq!(sent["anthropic-version"], "2023-06-01");
 
     let mut sent = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
-    swap(&mut sent, &Key::Bearer("sk-stand-in".to_owned()));
+    swap(&mut sent, &route(Key::Bearer("sk-stand-in".to_owned()))).unwrap();
     assert_eq!(sent.get_all("authorization").iter().count(), 1);
     assert_eq!(sent["authorization"], "Bearer sk-stand-in");
 }
@@ -118,4 +132,164 @@ fn the_key_goes_in_the_declarations_header_and_the_token_goes_nowhere() {
 fn a_key_is_never_written_out_by_debug() {
     let shown = format!("{:?}", Key::XApiKey("sk-stand-in".to_owned()));
     assert!(!shown.contains("sk-stand-in"), "{shown}");
+}
+
+#[test]
+fn every_credential_header_is_stripped_and_only_the_declarations_carries_the_key() {
+    for (key, declared, carried) in [
+        (
+            Key::XApiKey("sk-stand-in".to_owned()),
+            "x-api-key",
+            "sk-stand-in",
+        ),
+        (
+            Key::Bearer("sk-stand-in".to_owned()),
+            "authorization",
+            "Bearer sk-stand-in",
+        ),
+    ] {
+        let mut sent = headers(&[
+            ("authorization", &format!("Bearer {TOKEN}")),
+            ("Proxy-Authorization", "Basic aGFybmVzczpvd24="),
+            ("X-Api-Key", "the harness's own"),
+            ("API-KEY", "the harness's own"),
+            ("x-goog-api-key", "the harness's own"),
+            ("Cookie", "session=the harness's own"),
+            ("anthropic-version", "2023-06-01"),
+        ]);
+        swap(&mut sent, &route(key)).unwrap();
+        for name in CREDENTIAL_HEADERS {
+            if name == declared {
+                continue;
+            }
+            assert!(
+                sent.get(name).is_none(),
+                "{name} went on beside {declared}: {sent:?}"
+            );
+        }
+        assert_eq!(sent.get_all(declared).iter().count(), 1, "{sent:?}");
+        assert_eq!(sent[declared], carried);
+        assert_eq!(sent["anthropic-version"], "2023-06-01");
+    }
+}
+
+#[test]
+fn host_is_the_upstream_origins_whatever_the_harness_sent() {
+    let key = || Key::XApiKey("sk-stand-in".to_owned());
+    for (origin, host) in [
+        (Origin::https("api.anthropic.com", 443), "api.anthropic.com"),
+        (
+            Origin::https("api.anthropic.com", 8443),
+            "api.anthropic.com:8443",
+        ),
+        (Origin::http("127.0.0.1", 8080), "127.0.0.1:8080"),
+    ] {
+        let mut sent = headers(&[("Host", "evil.example")]);
+        swap(&mut sent, &Route { origin, key: key() }).unwrap();
+        assert_eq!(sent.get_all("host").iter().count(), 1, "{sent:?}");
+        assert_eq!(sent["host"], host);
+    }
+}
+
+#[test]
+fn a_key_that_is_no_header_value_is_refused_never_sent_empty() {
+    for key in [
+        Key::XApiKey("sk-stand-in\r\nx-injected: yes".to_owned()),
+        Key::Bearer("sk-\u{0}".to_owned()),
+    ] {
+        let mut sent = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
+        assert!(
+            swap(&mut sent, &route(key)).is_err(),
+            "a key that can't be a header value was sent: {sent:?}"
+        );
+        for name in CREDENTIAL_HEADERS {
+            assert!(sent.get(name).is_none(), "{name} left in: {sent:?}");
+        }
+    }
+}
+
+#[test]
+fn the_system_proxy_is_asked_for_the_upstream_and_no_proxy_exempts_it() {
+    let origin = Origin::https("api.anthropic.com", 443);
+    let proxied = Matcher::builder().https("http://127.0.0.1:3128").build();
+    assert_eq!(
+        destination(&origin, &proxied).0,
+        Destination::through("api.anthropic.com", 443, "127.0.0.1:3128")
+    );
+
+    let exempt = Matcher::builder()
+        .https("http://127.0.0.1:3128")
+        .no("api.anthropic.com")
+        .build();
+    assert_eq!(
+        destination(&origin, &exempt).0,
+        Destination::direct("api.anthropic.com", 443)
+    );
+
+    let unset = Matcher::builder().build();
+    assert_eq!(
+        destination(&origin, &unset).0,
+        Destination::direct("api.anthropic.com", 443)
+    );
+
+    let everything = Matcher::builder().all("http://127.0.0.1:3128").build();
+    for host in ["127.0.0.1", "::1", "localhost"] {
+        let loopback = Origin::http(host, 8080);
+        assert_eq!(
+            destination(&loopback, &everything).0,
+            Destination::direct(host, 8080),
+            "a loopback upstream went through the outbound proxy"
+        );
+    }
+}
+
+#[test]
+fn the_connect_carries_no_proxy_credential_it_was_not_given() {
+    let origin = Origin::https("api.anthropic.com", 443);
+    let uri = "https://api.anthropic.com/".parse().unwrap();
+
+    let bare = Matcher::builder().https("http://127.0.0.1:3128").build();
+    let request = connect_request(&origin, &bare.intercept(&uri).unwrap()).unwrap();
+    assert_eq!(request.method(), hyper::Method::CONNECT);
+    assert_eq!(request.uri().to_string(), "api.anthropic.com:443");
+    assert_eq!(request.headers()["host"], "api.anthropic.com:443");
+    assert!(
+        request.headers().get("proxy-authorization").is_none(),
+        "a proxy credential nobody gave: {:?}",
+        request.headers()
+    );
+
+    let given = Matcher::builder()
+        .https("http://someone:secret@127.0.0.1:3128")
+        .build();
+    let request = connect_request(&origin, &given.intercept(&uri).unwrap()).unwrap();
+    assert_eq!(
+        request
+            .headers()
+            .get("proxy-authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic c29tZW9uZTpzZWNyZXQ="),
+        "the credential the proxy's address carried was not sent"
+    );
+}
+
+#[test]
+fn each_failure_to_reach_the_upstream_is_named_by_its_cause() {
+    let untrusted = std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer),
+    );
+    assert_eq!(
+        Unreached::of_tls(&untrusted).message("api.anthropic.com"),
+        "purlis: api.anthropic.com's certificate isn't trusted."
+    );
+    let broken = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "reset");
+    assert_eq!(
+        Unreached::of_tls(&broken).message("api.anthropic.com"),
+        "purlis: purlis couldn't connect to api.anthropic.com."
+    );
+    assert_eq!(
+        Unreached::ProxyRefused.message("api.anthropic.com"),
+        "purlis: The outbound proxy refused the connection."
+    );
 }
