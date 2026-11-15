@@ -7608,7 +7608,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   absent. A chat closed again replaces its entry, by its ULID
   or its number. At most 2000 entries and 8 MiB read; an entry that does not hold together (an
   id that is not a ULID, a time that is not one) is left out, and a file of another version,
-  too large, a link or not a file reads as empty.
+  too large, a link or not a file reads as empty and is never written over. A write keeps the
+  newest closes that fit in 2000 entries and 8 MiB, so purlis never writes one too large to
+  read.
 - **Status:** **internal** — **purlis only**. Written by the app as a chat closes for good:
   closed in the window, dropped at a launch's Start fresh, or left out of a launch's put back
   (a task that had finished, or one that cannot carry on; #6487). Not at a restart, not at a

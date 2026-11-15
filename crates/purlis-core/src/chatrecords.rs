@@ -36,7 +36,8 @@
 //!   project's root following no link on the way or at the file, as [`crate::reopen`] opens the
 //!   record of open chats, and written whole through a temp file at 0600 under the folder's
 //!   lock. An entry that does not hold together (an id that is not a ULID, a time that is not
-//!   one) is left out, and a file that is not one purlis wrote reads as empty. Losing it only costs those chats their
+//!   one) is left out, and a file that is not one purlis wrote reads as empty and is never
+//!   written over: the oldest closes go first, so purlis never writes one too large to read. Losing it only costs those chats their
 //!   card: nothing starts, ends or allows anything by it.
 //!
 //! **Tier:** Clone state (ADR 0069), never committed; not rebuildable.
@@ -270,21 +271,43 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
     holds_together(&chat).then_some(chat)
 }
 
-/// The file's entries in the project at `root` as they read, newest close first: none where it
-/// is absent, reached through a link, not a plain file, too large, or not what purlis writes.
-/// Opened as the record of open chats is ([`crate::reopen`]): from the project's root, following
-/// no link on the way or at the file, and what it is asked of the descriptor the read uses.
-fn read_values(root: &Path) -> Vec<serde_json::Value> {
+/// **What the file in the project at `root` holds**, as it reads.
+enum Read {
+    /// No file: no chat has closed for good yet.
+    Absent,
+    /// Its entries, newest close first.
+    Kept(Vec<serde_json::Value>),
+    /// A file that is not one this purlis writes: reached through a link, not a plain file,
+    /// larger than [`MOST_FILE_BYTES`], not JSON, or of another version. It reads as empty and
+    /// is never written over, so what it holds is not lost to the next close.
+    Foreign,
+}
+
+impl Read {
+    fn entries(self) -> Vec<serde_json::Value> {
+        match self {
+            Self::Kept(entries) => entries,
+            Self::Absent | Self::Foreign => Vec::new(),
+        }
+    }
+}
+
+/// The file in the project at `root`, as it reads. Opened as the record of open chats is
+/// ([`crate::reopen`]): from the project's root, following no link on the way or at the file,
+/// and what it is asked of the descriptor the read uses.
+fn read_values(root: &Path) -> Read {
     crate::fence::hold(crate::fence::Act::Read, root);
     let file = path(root);
-    let Ok(open) = crate::contain::open_no_link(root, &file) else {
-        return Vec::new();
+    let open = match crate::contain::open_no_link(root, &file) {
+        Ok(open) => open,
+        Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => return Read::Absent,
+        Err(_) => return Read::Foreign,
     };
-    let usable = open.metadata().and_then(|found| {
-        crate::reopen::refuse_unusable_over(&file, &found, MOST_FILE_BYTES)
-    });
+    let usable = open
+        .metadata()
+        .and_then(|found| crate::reopen::refuse_unusable_over(&file, &found, MOST_FILE_BYTES));
     if usable.is_err() {
-        return Vec::new();
+        return Read::Foreign;
     }
     let mut text = String::new();
     if open
@@ -292,17 +315,18 @@ fn read_values(root: &Path) -> Vec<serde_json::Value> {
         .read_to_string(&mut text)
         .is_err()
     {
-        return Vec::new();
+        return Read::Foreign;
     }
     match serde_json::from_str::<File>(&text) {
-        Ok(kept) if kept.v == VERSION => kept.chats,
-        _ => Vec::new(),
+        Ok(kept) if kept.v == VERSION => Read::Kept(kept.chats),
+        _ => Read::Foreign,
     }
 }
 
 /// **Every chat closed in the project at `root`** that this store keeps, newest close first.
 pub fn every(root: &Path) -> Vec<ChatRecord> {
     read_values(root)
+        .entries()
         .into_iter()
         .filter_map(sound)
         .take(MOST_KEPT)
@@ -323,9 +347,31 @@ impl ChatRecord {
     }
 }
 
-/// Writes `chats`, newest first, whole, under the folder's lock already held.
+/// Writes `chats`, newest first, whole, under the folder's lock already held: at most
+/// [`MOST_KEPT`] of them and [`MOST_FILE_BYTES`] in all, the oldest close going first, so the
+/// file is never larger than it is read.
 fn write_all(root: &Path, chats: impl Iterator<Item = serde_json::Value>) -> std::io::Result<()> {
     let chats: Vec<serde_json::Value> = chats.take(MOST_KEPT).collect();
+    let empty = serde_json::to_string(&File {
+        v: VERSION,
+        chats: Vec::new(),
+    })
+    .map_err(std::io::Error::other)?;
+    let mut bytes = empty.len();
+    let mut fit = 0;
+    for (n, one) in chats.iter().enumerate() {
+        let comma = usize::from(n > 0);
+        let this = serde_json::to_string(one)
+            .map_err(std::io::Error::other)?
+            .len()
+            + comma;
+        if u64::try_from(bytes + this).map_or(true, |all| all > MOST_FILE_BYTES) {
+            break;
+        }
+        bytes += this;
+        fit += 1;
+    }
+    let chats = chats.into_iter().take(fit).collect();
     let text = serde_json::to_string(&File { v: VERSION, chats }).map_err(std::io::Error::other)?;
     crate::plane::write_private(&dir(root), &path(root), text.as_bytes())
 }
@@ -364,7 +410,8 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
 
 /// **Keeps every chat in `chats`, which have just closed for good together** (#6487): a fresh
 /// start's, or what a launch leaves out of its put back. [`keep`] for each, under one lock and
-/// one write, the first in `chats` the newest. Refused whole where any does not hold together.
+/// one write, the first in `chats` the newest. Refused whole where any does not hold together,
+/// and where the file there is not one this purlis writes ([`Read::Foreign`]).
 pub fn keep_all(root: &Path, chats: &[ChatRecord]) -> std::io::Result<()> {
     if chats.is_empty() {
         return Ok(());
@@ -387,7 +434,17 @@ pub fn keep_all(root: &Path, chats: &[ChatRecord]) -> std::io::Result<()> {
         .map(|chat| serde_json::to_value(OnDisk::of(chat)).map_err(std::io::Error::other))
         .collect::<std::io::Result<Vec<_>>>()?;
     let _held = locked(root)?;
-    let others = read_values(root).into_iter().filter(|one| {
+    let others = match read_values(root) {
+        Read::Absent => Vec::new(),
+        Read::Kept(entries) => entries,
+        Read::Foreign => {
+            return Err(std::io::Error::other(
+                "the closed chats' records are not a file this purlis writes, and are left as \
+                 they are",
+            ));
+        }
+    };
+    let others = others.into_iter().filter(|one| {
         let id = one.get("id").and_then(serde_json::Value::as_str);
         let number = one.get("number").and_then(serde_json::Value::as_u64);
         !chats
@@ -414,7 +471,10 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
     if !std::fs::symlink_metadata(path(root)).is_ok_and(|meta| meta.is_file()) {
         return 0;
     }
-    let values = read_values(root);
+    // A file this purlis did not write is never written over, so it is not swept either.
+    let Read::Kept(values) = read_values(root) else {
+        return 0;
+    };
     let before = values.len();
     let kept: Vec<serde_json::Value> = values
         .into_iter()

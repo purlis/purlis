@@ -166,10 +166,8 @@ fn a_link_on_the_way_from_the_project_is_never_read_through() {
 fn a_fifo_in_its_place_reads_as_none_without_blocking() {
     let (_dir, root) = project();
     std::fs::create_dir_all(dir(&root)).unwrap();
-    let made = std::process::Command::new("mkfifo")
-        .arg(path(&root))
-        .status()
-        .unwrap();
+    let made =
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(path(&root))).unwrap();
     assert!(made.success());
     assert!(every(&root).is_empty());
 }
@@ -430,4 +428,66 @@ fn a_closed_chat_whose_harness_named_no_conversation_does_not_reopen() {
 fn a_chat_closed_before_its_reopen_was_kept_does_not_reopen() {
     let record = chat(702, ID, "2026-11-12T09:40:00Z");
     assert_eq!(record.reopened().unwrap_err(), CannotReopen::NotKept);
+}
+
+/// A chat whose words are `bytes` long: what fills the file in a few closes.
+fn ran_long(number: u32, id: &str, bytes: usize) -> ChatRecord {
+    ChatRecord {
+        chat: Some(crate::reopen::Chat {
+            args: vec!["x".repeat(bytes)],
+            ..as_it_ran(Some(CONVERSATION))
+        }),
+        ..chat(number, id, "2026-11-12T09:40:00Z")
+    }
+}
+
+fn an_id(n: u32) -> String {
+    ulid::Ulid::from_parts(1_700_000_000_000 + u64::from(n), u128::from(n)).to_string()
+}
+
+#[test]
+fn the_file_is_never_written_larger_than_it_is_read_the_oldest_close_going_first() {
+    let (_dir, root) = project();
+    let each = usize::try_from(MOST_FILE_BYTES / 4).unwrap();
+    for n in 1..=6 {
+        keep(&root, &ran_long(700 + n, &an_id(n), each)).unwrap();
+    }
+
+    let written = std::fs::metadata(path(&root)).unwrap().len();
+    assert!(written <= MOST_FILE_BYTES, "{written} bytes");
+    let kept: Vec<u32> = every(&root).iter().map(|one| one.number).collect();
+    assert_eq!(kept, [706, 705, 704], "the newest that fit, newest first");
+}
+
+#[test]
+fn a_file_too_large_to_read_is_never_written_over() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let mut too_large = format!(
+        r#"{{"v":1,"chats":[{}]}}"#,
+        serde_json::to_string(&OnDisk::of(&chat(650, OTHER, "2026-11-12T09:00:00Z"))).unwrap()
+    );
+    too_large.push_str(&" ".repeat(usize::try_from(MOST_FILE_BYTES).unwrap()));
+    std::fs::write(path(&root), &too_large).unwrap();
+
+    assert!(keep(&root, &chat(702, ID, "2026-11-12T09:40:00Z")).is_err());
+    assert_eq!(sweep(&root, at("2027-06-01T00:00:00Z")), 0);
+
+    assert_eq!(
+        std::fs::read_to_string(path(&root)).unwrap(),
+        too_large,
+        "left as it was"
+    );
+}
+
+#[test]
+fn a_file_of_another_version_is_never_written_over() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let later = r#"{"v":2,"chats":[]}"#;
+    std::fs::write(path(&root), later).unwrap();
+
+    assert!(keep(&root, &chat(702, ID, "2026-11-12T09:40:00Z")).is_err());
+
+    assert_eq!(std::fs::read_to_string(path(&root)).unwrap(), later);
 }
