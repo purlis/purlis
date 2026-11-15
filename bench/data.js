@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794736182800,
+  "lastUpdate": 1794738648886,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49770,6 +49770,48 @@ window.BENCHMARK_DATA = {
             "value": 101.06772699999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.536, 100.821, 101.068, 101.926, 103.050 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d2ef108d1c3355cc97d6752d5d43da0c4d22a17",
+          "message": "Follow-ups to #6665: minidump 0.26, built binaries in the target dir, a hold kept as its row goes (#6671)\n\n* A held tree keeps its hold as the focused row is taken away: failing test\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* Keep rust-minidump's reader on 0.26 with its writer, and refuse a second minidump-common\n\nminidump 0.27 builds a second minidump-common, scroll, scroll_derive and\nnum-derive, since minidump-writer 0.13 and minidumper 0.11 are still on\n0.26. deny.toml now refuses two of any of them; Dependabot leaves the\nreader alone until the writer moves.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* Find the workspace's built binaries where Cargo copies them, and never build over one\n\nThe test binary is under Cargo's build directory, and the binaries\n(purlis, fake-harness, sandbox-probe, the app) are copied into the target\ndirectory. With build.build-dir set apart, built_beside looked in the\nbuild directory, found nothing, and ran a plain cargo build that put an\nunfenced purlis over CARGO_BIN_EXE_purlis and returned a path that did\nnot exist.\n\ntestrun::bin_dir maps the profile folder from the build directory to the\ntarget directory, as cargo metadata names them. testrun::built builds\nonly when nothing is there, takes the path from cargo's JSON messages,\nand fails loudly when that is not the binary looked for. profile_dir_of\nnow answers only for deps/ and build/<crate>/<hash>/out/, as its doc\nsays, not for any folder named build or deps.\n\nrelease.yml: a dSYM links into the build directory, no longer deps/.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* A held list keeps its hold as the focused row goes: a story in the browser and a test that catch the unheld frame\n\nRed on purpose: the fix follows once the stories run has shown the story\nfail in Chromium.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* Keep a list's hold until the focus a taken-away row went with lands\n\nThe row the keyboard is on goes with the focus and no blur. Where the\nlist puts the keyboard back a frame later (React Aria focuses the\ncollection's root from an effect once its focused key is gone), the\nhold let go in between and was taken again, drawing for that frame\nevery row that came while it held. A focus left on nothing is now\nlooked at again a frame later: on the list's own, the hold follows it;\non nothing or elsewhere, it lets go.\n\nThe story added before is taken out: in Chromium and WebKit the Chats\nlist, as React Aria's Tree draws it, kept its hold without this change\n(its row leaves the page a commit after the draw that took it away), so\nit never failed. The unit test was red before this ([true, false]).\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* The Chats list keeps its keyboard hold as the focused row goes, and lets go once the keyboard leaves\n\nReact Aria puts the keyboard back on the tree after the focused row has\ngone; the list is still held then, as V100-47 says. The window test that\nasked the hold to let go at once now asks it to hold while the keyboard\nis on the tree, and to let go when it leaves: not held for good, as\n9f46474271 meant. Red on the old hook, which drew the moved order with\nthe keyboard still in the tree.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward\n\n* Review of #6671: say why a binary did not build, fall back where Cargo cannot place the build, and catch the hold taken again\n\n- testrun::built puts what Cargo said on stderr in its failure, which\n  forklock::output had kept (a test asks for it).\n- bin_dir and built fall back to the profile directory where cargo\n  metadata fails or names a build directory the test binary is not in\n  (--target-dir on the command line, an archive), so the sandbox-probe\n  lookups do not skip quietly. Cargo is asked once a process. The bare\n  name takes the platform's executable suffix.\n- The Chats list test moves the chats before the keyboard's row goes, so\n  a hold let go or taken again after the row goes draws the move, and\n  fails it. Red on the old hook.\n- A doc comment in sandboxing.rs rewrapped.\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7EG9T51ZEH89JJPN1VXYH08\nPurlis-Persona: steward",
+          "timestamp": "2026-11-15T08:44:23Z",
+          "tree_id": "aae7e5c275ab541f55a728b44079076d47dcdfb8",
+          "url": "https://github.com/purlis/purlis/commit/4d2ef108d1c3355cc97d6752d5d43da0c4d22a17"
+        },
+        "date": 1794738644051,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3526865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.336, 0.351, 0.353, 0.364, 0.370 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.701386,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.289, 16.512, 16.701, 16.722, 16.789 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.76165900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.081, 101.251, 101.762, 102.057, 103.324 ms"
           }
         ]
       }
