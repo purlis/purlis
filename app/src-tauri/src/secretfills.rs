@@ -1026,6 +1026,7 @@ fn read_now(asker: &brokered::Asker, asked: &FillAsked) -> Result<Option<Secret>
         purlis_core::secrets::handedto::remember(
             &asker.root,
             asker.chat,
+            &asked.vault,
             &asked.key,
             secret.expose(),
         );

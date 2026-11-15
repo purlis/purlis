@@ -5350,7 +5350,8 @@ impl Chats {
             };
         // Known to mask the chat's kept screen with once it has its number (#6309): the values
         // themselves go to its start.
-        let signed_in_with = (!handed.is_empty()).then(|| handed.known());
+        let signed_in_with =
+            (!handed.is_empty()).then(|| (handed.entries().to_vec(), handed.known()));
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -6212,8 +6213,8 @@ impl Chats {
                 gone(announced);
             }
         })?;
-        if let Some(known) = signed_in_with {
-            purlis_core::secrets::handedto::remember_known(&self.project, session, known);
+        if let Some((entries, known)) = signed_in_with {
+            purlis_core::secrets::handedto::remember_known(&self.project, session, &entries, known);
         }
         // The key its host set in its environment, where the window launched it: a host that
         // answers none set none, and its prompts are marked under none (#3369).

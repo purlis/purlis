@@ -4201,7 +4201,7 @@ pub(crate) fn serve_recorded(
     };
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for (entry, value) in &prepared.named {
-        super::handedto::remember(&asker.root, asker.chat, entry, value);
+        super::handedto::remember(&asker.root, asker.chat, &wanted.vault, entry, value);
     }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {

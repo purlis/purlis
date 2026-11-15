@@ -212,7 +212,10 @@ fn keep_screen(
     };
     // Never one of purlis's own secrets (#6309): what the chat was handed is masked first, and
     // a screen whose secrets could not be known is not kept.
-    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, &screen) else {
+    let read_again = purlis_core::secrets::handedto::read_again(root);
+    let Some(screen) =
+        purlis_core::secrets::handedto::masked_for(root, session, &screen, &read_again)
+    else {
         tracing::info!(
             "purlis: task chat {session}'s screen was not kept: what it was handed could not be \
              known to mask"
@@ -645,7 +648,13 @@ mod tests {
         host.open(Some(7), &crate::host::Opening::default(), &|_| {})
             .expect("running");
         host.shows(7, "token: FAKE-VAULT-VALUE-6309\r\n");
-        purlis_core::secrets::handedto::remember(&root, 7, "github-token", "FAKE-VAULT-VALUE-6309");
+        purlis_core::secrets::handedto::remember(
+            &root,
+            7,
+            "team",
+            "github-token",
+            "FAKE-VAULT-VALUE-6309",
+        );
 
         keep_screen_on_close(&root, &host, 7, TASK);
 
@@ -673,6 +682,61 @@ mod tests {
             ["watched left 7", "unwatched left 7 1"],
             "read through a view of what the host left, and the view closed"
         );
+    }
+
+    /// What the window that crashed named on disk for task chat 7: one entry of vault `team`,
+    /// which the project holds in a plain file as `value` (an obvious fake), or not at all.
+    fn handed_before_the_crash(root: &std::path::Path, value: Option<&str>) {
+        let named = purlis_core::secrets::handedto::dir(root);
+        std::fs::create_dir_all(&named).expect("made");
+        std::fs::write(
+            named.join("7.names"),
+            "{\"vault\":\"team\",\"key\":\"github-token\"}\n",
+        )
+        .expect("named");
+        std::fs::write(
+            root.join("vaults.json"),
+            r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "team.json"}}}}"#,
+        )
+        .expect("registered");
+        let held = value.map_or_else(
+            || "{}".to_owned(),
+            |value| format!(r#"{{"github-token": "{value}"}}"#),
+        );
+        std::fs::write(root.join("team.json"), held).expect("held");
+    }
+
+    #[test]
+    fn a_task_left_by_a_crashed_window_has_what_it_was_handed_before_masked() {
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.leaves_running(7, None);
+        host.shows(7, "token: FAKE-VAULT-VALUE-6680\r\n");
+        handed_before_the_crash(&root, Some("FAKE-VAULT-VALUE-6680"));
+        let shared: Arc<dyn SessionHost> = Arc::new(host);
+
+        start_keeping_screens_left(&root, &shared, &[a_task_s_ref()])
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
+
+        assert_eq!(
+            purlis_core::chatscreens::kept(&root, TASK).as_deref(),
+            Some("token: ‹secret: github-token›\r\n")
+        );
+    }
+
+    #[test]
+    fn a_task_left_by_a_crashed_window_keeps_no_screen_where_what_it_was_handed_cannot_be_read() {
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.leaves_running(7, None);
+        host.shows(7, "token: FAKE-VAULT-VALUE-6681\r\n");
+        handed_before_the_crash(&root, None);
+        let shared: Arc<dyn SessionHost> = Arc::new(host);
+
+        start_keeping_screens_left(&root, &shared, &[a_task_s_ref()])
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
+
+        assert_eq!(purlis_core::chatscreens::kept(&root, TASK), None);
     }
 
     #[test]

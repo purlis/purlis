@@ -193,14 +193,17 @@ mod tests;
 pub struct Handed {
     pairs: Vec<(String, String)>,
     /// The vault entry each of `pairs` was read from, in step with it: what a kept screen's mask
-    /// names (#6309).
-    entries: Vec<String>,
+    /// names, and what a launch after a crash reads again to mask it (#6309).
+    entries: Vec<crate::secrets::handedto::Entry>,
 }
 
 impl Handed {
     /// Each variable and its value, as a caller that read them hands them on.
     pub fn of(pairs: Vec<(String, String)>) -> Self {
-        let entries = pairs.iter().map(|(name, _)| name.clone()).collect();
+        let entries = pairs
+            .iter()
+            .map(|(name, _)| crate::secrets::handedto::Entry::new("", name))
+            .collect();
         Self { pairs, entries }
     }
 
@@ -210,9 +213,14 @@ impl Handed {
     pub fn known(&self) -> Option<Vec<crate::secrets::handedto::Known>> {
         let mut known = Vec::new();
         for ((_, value), entry) in self.pairs.iter().zip(&self.entries) {
-            known.extend(crate::secrets::handedto::Known::of(entry, value)?);
+            known.extend(crate::secrets::handedto::Known::of(&entry.key, value)?);
         }
         Some(known)
+    }
+
+    /// The vault entry each value was read from, never a value.
+    pub fn entries(&self) -> &[crate::secrets::handedto::Entry] {
+        &self.entries
     }
 
     /// The variables it sets, never a value.
@@ -351,7 +359,10 @@ pub fn read(
             }
         };
         pairs.push((variable.clone(), value));
-        entries.push(reference.key.clone());
+        entries.push(crate::secrets::handedto::Entry::new(
+            &reference.vault,
+            &reference.key,
+        ));
         resolved.push(format!("{}/{}", reference.vault, reference.key));
     }
     // The values are what the record is scrubbed of; it names the entries.

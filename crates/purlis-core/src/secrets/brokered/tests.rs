@@ -5051,11 +5051,11 @@ fn a_value_a_brokered_run_was_handed_masks_the_chat_s_kept_screen_under_its_entr
 
     let shown = format!("printed {TOKEN}\r\n");
     assert_eq!(
-        super::super::handedto::masked_for(project.path(), 7, &shown).as_deref(),
+        super::super::handedto::masked_for(project.path(), 7, &shown, &|_| None).as_deref(),
         Some("printed ‹secret: TOKEN›\r\n")
     );
     assert_eq!(
-        super::super::handedto::masked_for(project.path(), 8, &shown).as_deref(),
+        super::super::handedto::masked_for(project.path(), 8, &shown, &|_| None).as_deref(),
         Some(shown.as_str())
     );
 }

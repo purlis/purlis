@@ -5,6 +5,11 @@ use super::*;
 
 // Every value here is an obvious fake; none is or was a credential.
 
+/// A reader that reads no entry again.
+fn nothing(_: &Entry) -> Option<zeroize::Zeroizing<String>> {
+    None
+}
+
 fn known(name: &str, value: &str) -> Vec<Known> {
     Known::of(name, value).expect("a key for the process")
 }
@@ -86,39 +91,122 @@ fn a_value_inside_an_osc_title_sequence_is_masked_in_the_title_text_too() {
     assert!(!masked.contains("FAKE-TITLE-VALUE-06"), "{masked:?}");
 }
 
+/// A project folder of its own: what a chat was handed is named on disk under it.
+fn a_project() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = std::fs::canonicalize(dir.path()).expect("canonical");
+    (dir, root)
+}
+
 #[test]
 fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
-    let root = Path::new("/projects/handed-to-a-chat");
-    remember(root, 41, "github-token", "FAKE-HANDED-VALUE-0007");
+    let (_dir, root) = a_project();
+    let (_other_dir, another) = a_project();
+    remember(&root, 41, "team", "github-token", "FAKE-HANDED-VALUE-0007");
 
     assert_eq!(
-        masked_for(root, 41, "x FAKE-HANDED-VALUE-0007").unwrap(),
+        masked_for(&root, 41, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
         "x ‹secret: github-token›"
     );
     assert_eq!(
-        masked_for(root, 42, "x FAKE-HANDED-VALUE-0007").unwrap(),
+        masked_for(&root, 42, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
         "x FAKE-HANDED-VALUE-0007"
     );
     assert_eq!(
-        masked_for(
-            Path::new("/projects/another"),
-            41,
-            "x FAKE-HANDED-VALUE-0007"
-        )
-        .unwrap(),
+        masked_for(&another, 41, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
         "x FAKE-HANDED-VALUE-0007"
     );
 }
 
 #[test]
-fn a_chat_forgotten_as_it_closes_masks_nothing_of_what_it_was_handed() {
-    let root = Path::new("/projects/handed-then-forgotten");
-    remember(root, 43, "k", "FAKE-HANDED-VALUE-0008");
+fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
+    let (_dir, root) = a_project();
+    remember(&root, 43, "team", "k", "FAKE-HANDED-VALUE-0008");
+    assert!(file(&root, 43).exists(), "named as it was handed");
 
-    forget(root, 43);
+    forget(&root, 43);
 
     assert_eq!(
-        masked_for(root, 43, "FAKE-HANDED-VALUE-0008").unwrap(),
+        masked_for(&root, 43, "FAKE-HANDED-VALUE-0008", &nothing).unwrap(),
         "FAKE-HANDED-VALUE-0008"
     );
+    assert!(!file(&root, 43).exists());
+}
+
+#[test]
+fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value() {
+    let (_dir, root) = a_project();
+    remember(&root, 44, "team", "db-password", "FAKE-HANDED-VALUE-0009");
+    remember(&root, 44, "team", "db-password", "FAKE-HANDED-VALUE-0009");
+
+    let written = std::fs::read_to_string(file(&root, 44)).expect("named");
+
+    assert_eq!(written, "{\"vault\":\"team\",\"key\":\"db-password\"}\n");
+}
+
+/// What a crashed window's process named on disk for chat `chat`, which this process never
+/// handed anything.
+fn named_by_a_crashed_window(root: &Path, chat: u32, vault: &str, key: &str) {
+    std::fs::create_dir_all(dir(root)).expect("made");
+    std::fs::write(
+        file(root, chat),
+        format!("{{\"vault\":\"{vault}\",\"key\":\"{key}\"}}\n"),
+    )
+    .expect("written");
+}
+
+#[test]
+fn after_a_crash_an_entry_named_on_disk_is_read_again_and_masked() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(&root, 45, "team", "api-key");
+    let read = |entry: &Entry| {
+        (entry == &Entry::new("team", "api-key"))
+            .then(|| zeroize::Zeroizing::new("FAKE-HANDED-VALUE-0010".to_owned()))
+    };
+
+    assert_eq!(
+        masked_for(&root, 45, "x FAKE-HANDED-VALUE-0010", &read).as_deref(),
+        Some("x ‹secret: api-key›")
+    );
+}
+
+#[test]
+fn after_a_crash_an_entry_that_cannot_be_read_again_leaves_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(&root, 46, "team", "minted-token");
+
+    assert_eq!(masked_for(&root, 46, "x anything", &nothing), None);
+}
+
+#[test]
+fn an_entry_this_process_knows_is_not_read_again() {
+    let (_dir, root) = a_project();
+    remember(&root, 47, "team", "k", "FAKE-HANDED-VALUE-0011");
+
+    assert_eq!(
+        masked_for(&root, 47, "FAKE-HANDED-VALUE-0011", &|_| panic!(
+            "read again"
+        ))
+        .as_deref(),
+        Some("‹secret: k›")
+    );
+}
+
+#[test]
+fn names_left_30_days_are_swept_at_the_project_s_open_and_younger_ones_kept() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(&root, 48, "team", "k");
+    let now = std::time::SystemTime::now();
+
+    on_open(
+        &root,
+        now + crate::retention::KEEP_FOR - std::time::Duration::from_secs(60),
+    );
+    assert!(file(&root, 48).exists());
+
+    on_open(
+        &root,
+        now + crate::retention::KEEP_FOR + std::time::Duration::from_secs(60),
+    );
+    assert!(!file(&root, 48).exists());
 }

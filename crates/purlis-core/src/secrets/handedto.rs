@@ -15,6 +15,11 @@
 //! - **Per chat, by project and chat number**: what the app's own code knows of the chat asking
 //!   (`brokered::Asker`), remembered as each value is handed ([`remember`]) and forgotten when
 //!   the chat closes for good ([`forget`]).
+//! - **And named on disk, never a value**: each chat's entries, by vault and key, in
+//!   `<state>/app/chat-handed/<chat>.names` ([`dir`]), so a launch after a crash, which kept
+//!   nothing in memory of what the chat was handed before, reads those entries again to mask its
+//!   screen ([`masked_for`]). Clone state, denied to every sandboxed chat, gone as the chat
+//!   closes for good, and swept at the project's open once 30 days old ([`on_open`]).
 //! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
 //!   value a colour change or a soft wrap runs through is still one run of characters there.
 //!   A hard line break is not: a value the program printed in two pieces is two words.
@@ -22,14 +27,15 @@
 //!   stretch, shown as the mask of each, in the order they start, so no tail of either is left.
 //! - **A value shorter than [`super::seen::SHORTEST`] is not masked**: as `seen` says, three
 //!   characters or fewer is an ordinary word as often as a secret.
-//! - **It fails closed**: where no key could be made for the process, a value handed cannot be
-//!   known, and the chat's screen is said not to be maskable ([`masked`] answers `None`), so it
-//!   is not kept.
-//! - **What the process does not know it cannot mask**: a value read by another process (a
-//!   `purlis secret exec` that found no app and read the vault itself), and every value handed
-//!   before this process started.
+//! - **It fails closed**: a screen with a value handed that cannot be known is not maskable
+//!   ([`masked_for`] answers `None`), so it is not kept. That is where no key could be made for
+//!   the process, and where an entry named on disk cannot be read again without asking the
+//!   person ([`read_again`]): a vault whose provider asks macOS, an entry gone or changed, and a
+//!   GitHub App token, which is minted and never read.
+//! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
+//!   where no app answered, and anything the chat found on its own.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -75,7 +81,25 @@ impl Known {
 #[derive(Clone, Default)]
 struct Handed {
     known: Vec<Known>,
+    /// The entries `known` holds, by vault and key: named on disk once, and not read again.
+    entries: BTreeSet<Entry>,
     blind: bool,
+}
+
+/// A vault's entry, by its vault and its key: what [`dir`] names, never a value.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct Entry {
+    pub vault: String,
+    pub key: String,
+}
+
+impl Entry {
+    pub fn new(vault: &str, key: &str) -> Self {
+        Self {
+            vault: vault.to_owned(),
+            key: key.to_owned(),
+        }
+    }
 }
 
 static HANDED: Mutex<Option<HashMap<(PathBuf, u32), Handed>>> = Mutex::new(None);
@@ -84,16 +108,32 @@ fn handed() -> MutexGuard<'static, Option<HashMap<(PathBuf, u32), Handed>>> {
     HANDED.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// **Remembers that chat `chat` of the project at `root` was handed `value`, the entry
-/// `name`**: from now on its kept screen masks it ([`masked_for`]).
-pub fn remember(root: &Path, chat: u32, name: &str, value: &str) {
-    remember_known(root, chat, Known::of(name, value));
+/// The store's folder under the state folder's `app/`.
+pub const DIR_NAME: &str = "chat-handed";
+
+const SUFFIX: &str = ".names";
+
+/// The store of the project at `root`: each chat's entries, by its number.
+pub fn dir(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join(DIR_NAME)
 }
 
-/// **Remembers that chat `chat` of the project at `root` was handed each of `known`**, or, for
-/// `None`, something that could not be known ([`Known::of`]): for a value read before the chat
-/// had its number, as a profile's sign-in is.
-pub fn remember_known(root: &Path, chat: u32, known: Option<Vec<Known>>) {
+fn file(root: &Path, chat: u32) -> PathBuf {
+    dir(root).join(format!("{chat}{SUFFIX}"))
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed `value`, the entry `key` of
+/// vault `vault`**: from now on its kept screen masks it ([`masked_for`]).
+pub fn remember(root: &Path, chat: u32, vault: &str, key: &str, value: &str) {
+    remember_known(root, chat, &[Entry::new(vault, key)], Known::of(key, value));
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed `entries`, known as
+/// `known`**, or, for `None`, as something that could not be known ([`Known::of`]): for values
+/// read before the chat had its number, as a profile's sign-in is. Each entry not named for the
+/// chat before is named on disk ([`dir`]), best effort: one that cannot be leaves only a
+/// launch after a crash without it.
+pub fn remember_known(root: &Path, chat: u32, entries: &[Entry], known: Option<Vec<Known>>) {
     let mut handed = handed();
     let one = handed
         .get_or_insert_with(HashMap::new)
@@ -103,6 +143,39 @@ pub fn remember_known(root: &Path, chat: u32, known: Option<Vec<Known>>) {
         Some(known) => one.known.extend(known),
         None => one.blind = true,
     }
+    let new: Vec<Entry> = entries
+        .iter()
+        .filter(|entry| one.entries.insert((*entry).clone()))
+        .cloned()
+        .collect();
+    drop(handed);
+    if !new.is_empty()
+        && let Err(why) = name_on_disk(root, chat, new)
+    {
+        tracing::info!("purlis: what chat {chat} was handed was not named on disk ({why})");
+    }
+}
+
+/// `new` added to what chat `chat` has named on disk, the file written whole and private.
+fn name_on_disk(root: &Path, chat: u32, new: Vec<Entry>) -> std::io::Result<()> {
+    let mut all = named(root, chat);
+    for entry in new {
+        if !all.contains(&entry) {
+            all.push(entry);
+        }
+    }
+    let mut text = String::new();
+    for entry in &all {
+        text.push_str(&serde_json::to_string(entry).map_err(std::io::Error::other)?);
+        text.push('\n');
+    }
+    crate::keptscreen::made_private(&dir(root))?;
+    crate::rewrite::replace(
+        &dir(root),
+        &file(root, chat),
+        text.as_bytes(),
+        crate::rewrite::Mode::Private,
+    )
 }
 
 /// **Forgets what chat `chat` of the project at `root` was handed**, as it closes for good: a
@@ -111,11 +184,75 @@ pub fn forget(root: &Path, chat: u32) {
     if let Some(handed) = handed().as_mut() {
         handed.remove(&(root.to_path_buf(), chat));
     }
+    match std::fs::remove_file(file(root, chat)) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
+            tracing::info!("purlis: what chat {chat} was handed is still named on disk ({why})");
+        }
+        _ => {}
+    }
+}
+
+/// The entries named on disk for chat `chat`, read through no link: a line that does not read
+/// is skipped.
+fn named(root: &Path, chat: u32) -> Vec<Entry> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let mut text = String::new();
+    let read = crate::contain::nofollow(&mut options)
+        .open(file(root, chat))
+        .and_then(|mut opened| std::io::Read::read_to_string(&mut opened, &mut text));
+    if read.is_err() {
+        return Vec::new();
+    }
+    text.lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+/// **Sweeps the store at the project's open**: a chat's names last written
+/// [`crate::retention::KEEP_FOR`] or more before go, as a task's screen and its record do.
+pub fn on_open(root: &Path, now: std::time::SystemTime) {
+    let Ok(entries) = std::fs::read_dir(dir(root)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|written| now.duration_since(written).ok())
+            .is_some_and(|age| age >= crate::retention::KEEP_FOR);
+        if old && entry.file_name().to_string_lossy().ends_with(SUFFIX) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// What reads an entry's value again: its vault and key, to the value, or `None`.
+pub type ReadAgain<'a> = &'a dyn Fn(&Entry) -> Option<zeroize::Zeroizing<String>>;
+
+/// **Reads an entry of the project at `root` again, where that asks nobody**: through its vault's
+/// provider, the read every hand-out makes ([`super::cmd::get_value`]), where opening the vault
+/// reads no secret ([`super::reads_on_open`]: a keyring, plain-file or reference vault). `None`
+/// for any other provider, which macOS may ask the person about, and for an entry gone, or one
+/// never read raw (a GitHub App's key).
+pub fn read_again(root: &Path) -> impl Fn(&Entry) -> Option<zeroize::Zeroizing<String>> + '_ {
+    move |entry| {
+        let ctx = super::Ctx::new(root, super::Env::from_process());
+        let vault = super::cmd::provider(&ctx, &entry.vault).ok()?;
+        if super::reads_on_open(&vault.provider) {
+            return None;
+        }
+        super::cmd::get_value(&ctx, &vault, &entry.key)
+            .ok()
+            .map(zeroize::Zeroizing::new)
+    }
 }
 
 /// **`screen`, what chat `chat` of the project at `root` showed, masked** with every secret it
-/// was handed ([`masked`]); `None` where one could not be known.
-pub fn masked_for(root: &Path, chat: u32, screen: &str) -> Option<String> {
+/// was handed ([`masked`]): those this process knows, and each entry named on disk that it does
+/// not, read again by `read` (a launch after a crash). `None` where one could not be known.
+pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> Option<String> {
     let one = handed()
         .as_ref()
         .and_then(|handed| handed.get(&(root.to_path_buf(), chat)).cloned())
@@ -123,7 +260,15 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str) -> Option<String> {
     if one.blind {
         return None;
     }
-    masked(screen, &one.known)
+    let mut known = one.known;
+    for entry in named(root, chat) {
+        if one.entries.contains(&entry) {
+            continue;
+        }
+        let value = read(&entry)?;
+        known.extend(Known::of(&entry.key, &value)?);
+    }
+    masked(screen, &known)
 }
 
 /// **`screen` with each of `known` it shows replaced by its [`mask`]**, the sequences that draw

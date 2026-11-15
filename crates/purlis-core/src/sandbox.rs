@@ -2400,6 +2400,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::chatscreens::DIR_NAME),
             Access::ReadWrite,
         );
+        // What each chat was handed, by vault and key (#6309), neither read nor written: a chat
+        // that rewrote its own would choose what its kept screen is masked with after a crash.
+        deny(
+            Class::Integrity,
+            app.join(crate::secrets::handedto::DIR_NAME),
+            Access::ReadWrite,
+        );
         // Every closed chat's record (#6304), neither read nor written: its title and who
         // started it are the person's, and the list of what they ran is not a chat's to read.
         deny(

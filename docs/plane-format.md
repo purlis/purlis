@@ -134,6 +134,9 @@ its own plane:
   dispatch record names, or last written 30 days or more before (`chatscreens::on_open`, #6214).
   It runs whatever the reopen record says, so a screen never outlives its record.
   A killed write's temp file beside it goes too, once older than `chatscreens::LOCK_WAIT`.
+- the names of what a chat was handed, `.charter/app/chat-handed/<chat>.names`, last written
+  30 days or more before (`secrets::handedto::on_open`, #6309). A chat closed for good takes
+  its own with it.
 - a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
@@ -354,6 +357,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/chat-records/closed.json` — every chat that closed, by its number](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number)
   - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
   - [`app/chat-screens/.lock`](#appchat-screenslock)
+  - [`app/chat-handed/<chat>.names` — what a chat was handed, by vault and key](#appchat-handedchatnames--what-a-chat-was-handed-by-vault-and-key)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
@@ -7647,6 +7651,28 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   them (#6451's review). Best effort, as `rewrite`'s lock is: on a filesystem that cannot
   `flock`, the store is written and deleted unlocked (#6508's review).
 - **Tier:** Clone state, rebuildable — deleted, it is made again by the next write.
+
+### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
+- **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
+  brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in or a browser fill
+  (#6309, parent #5820). A launch after a window crashed reads these entries again to mask
+  the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
+  process took what it knew of the values with it. **Never a value**: the values themselves
+  are known only in memory, as a keyed digest (`secrets::handedto`).
+- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>"}`, each entry
+  once, written whole through a temp file (mode 0600, its folder 0700) and read through no link.
+  A line that does not read is skipped.
+- **Status:** **internal** — **purlis only**. Written by the app as it hands a chat a value,
+  for every chat, and deleted as the chat closes for good. Denied a sandboxed chat's reading
+  and writing under every harness: a chat that rewrote its own would choose what its kept
+  screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
+  `retention::on_open`) once last written 30 days or more before. An entry that cannot be read
+  again without asking anybody (a vault whose provider asks macOS, an entry gone, a GitHub
+  App's token) leaves that task's screen not kept.
+- **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
+  screen with what was handed before the crash unmasked, and nothing else is lost.
+- **Git:** gitignored (under `/.charter/`).
+- **Written by:** `crates/purlis-core/src/secrets/handedto.rs`.
 
 ### `app/hooks.sock`
 - **Format:** a unix socket, not a file. Each chat's hooks write one JSON line to it with the

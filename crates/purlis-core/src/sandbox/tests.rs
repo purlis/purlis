@@ -982,6 +982,17 @@ fn every_harness_denies_a_chat_the_records_of_closed_chats() {
     );
 }
 
+/// #6309: the names of what each chat was handed (`secrets::handedto`) are denied the same way:
+/// a chat that rewrote its own would choose what its kept screen is masked with after a crash.
+#[test]
+fn every_harness_denies_a_chat_the_names_of_what_chats_were_handed() {
+    every_harness_denies_a_chat_the_store(
+        crate::secrets::handedto::DIR_NAME,
+        "7.names",
+        crate::secrets::handedto::dir,
+    );
+}
+
 /// The store `dir_name` under the state folder's `app/`, holding `file_name`, which the app
 /// writes at `dir_of`, is denied for reading and writing in what each harness is compiled.
 fn every_harness_denies_a_chat_the_store(

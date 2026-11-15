@@ -761,7 +761,7 @@ pub fn run_on_its_runner(
         let values = read_or_mint(persona, tool);
         // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
         for (key, value) in values.iter().flatten() {
-            purlis_core::secrets::handedto::remember(root, session, key, value);
+            purlis_core::secrets::handedto::remember(root, session, &tool.vault, key, value);
         }
         values
     };
