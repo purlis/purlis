@@ -71,10 +71,15 @@ fn a_host_that_kept_both(crashed: &Crashed) -> Pretend {
 
 /// The next launch opens the project on `host` and puts the record back, as a launch does.
 fn launches_on(host: &Pretend, crashed: &Crashed) -> (Planes, Arc<Held>) {
+    launches_choosing(host, crashed, Choice::ReopenAll)
+}
+
+/// [`launches_on`], the person choosing `choice` for the record.
+fn launches_choosing(host: &Pretend, crashed: &Crashed, choice: Choice) -> (Planes, Arc<Held>) {
     let planes = planes_on(host);
     let again = planes.open(&crashed.plane.root);
     let held = planes.held(&again).expect("held");
-    held.reopen(A_SIZE, Ok(crashed.at_crash.clone()), Choice::ReopenAll);
+    held.reopen(A_SIZE, Ok(crashed.at_crash.clone()), choice);
     (planes, held)
 }
 
@@ -153,4 +158,29 @@ fn a_launch_is_not_held_past_its_deadline_by_a_left_task_s_screen_that_will_not_
         took < crate::chatcard::SCREENS_KEPT_WITHIN + slack,
         "the launch took {took:?}"
     );
+}
+
+#[test]
+fn a_launch_that_starts_fresh_after_a_crash_still_keeps_a_finished_task_s_screen() {
+    // #6504's review: starting fresh puts nothing back, but the task had finished all the same,
+    // and the sweep closes it with the rest.
+    let crashed = a_window_that_crashed_after_its_task_reported();
+    let host = a_host_that_kept_both(&crashed);
+
+    let (_planes, held) = launches_choosing(&host, &crashed, Choice::StartFresh);
+
+    assert!(
+        host.reattached().is_empty(),
+        "precondition: nothing put back"
+    );
+    assert_eq!(
+        purlis_core::chatscreens::kept(held.root(), &crashed.task_id).as_deref(),
+        Some("check prod: all green\r\n")
+    );
+    assert_eq!(
+        purlis_core::chatscreens::kept(held.root(), &crashed.steward_id),
+        None,
+        "the person's own chat keeps nothing"
+    );
+    assert_eq!(host.closed_left(), [crashed.task, crashed.steward]);
 }
