@@ -319,8 +319,39 @@ describe("Shift+Enter in a chat's terminal (SI-4)", () => {
 describe("finding text in a chat's terminal (SI-4)", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const bar = () => screen.queryByRole("search", { name: "Find in the chat" });
+  // `pane()` opens a shell's pane, which has no title and is no chat (#6826).
+  const bar = () => screen.queryByRole("search", { name: "Find in the pane" });
   const field = () => screen.getByRole("searchbox", { name: "Find" });
+
+  it("names its bar for the pane in a shell's pane, which is no chat (#6826)", async () => {
+    onA("MacIntel");
+    opening(null);
+    await openPane();
+
+    press({ key: "f", keyCode: 70, metaKey: true });
+
+    expect(screen.getByRole("search", { name: "Find in the pane" })).toBeInTheDocument();
+    expect(screen.queryByRole("search", { name: "Find in the chat" })).toBeNull();
+  });
+
+  it("names its bar for the chat in a chat's pane (#6826)", async () => {
+    onA("MacIntel");
+    opening("\u001b\r");
+    render(
+      <SessionPane
+        plane={PLANE}
+        session={1}
+        title="Fix the login form"
+        focused={false}
+        onFocus={() => {}}
+      />,
+    );
+    await waitFor(() => expect(made[0].options.scrollback).toBe(5000));
+
+    press({ key: "f", keyCode: 70, metaKey: true });
+
+    expect(screen.getByRole("search", { name: "Find in the chat" })).toBeInTheDocument();
+  });
 
   it("opens on ⌘F on a Mac, with the keyboard in the find field", async () => {
     onA("MacIntel");
