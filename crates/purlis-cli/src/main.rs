@@ -178,6 +178,11 @@ enum Command {
         /// a check of the way there, which prints no token (#4207).
         #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port"], value_name = "APP", hide = true)]
         mint_check: Option<String>,
+        /// Remove the folders of every version installed beside this one older than the one
+        /// before it whose host has drained, and print what went (#6688). Run by the desktop
+        /// as it installs this version on the runner.
+        #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port", "mint_check"], hide = true)]
+        prune: bool,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -5529,6 +5534,7 @@ fn main() -> ExitCode {
         mint_port,
         again,
         mint_check,
+        prune,
     } = &cli.command
     {
         #[cfg(not(unix))]
@@ -5542,6 +5548,7 @@ fn main() -> ExitCode {
                 mint_port,
                 again,
                 mint_check,
+                prune,
             );
             return bridge();
         }
@@ -5555,6 +5562,7 @@ fn main() -> ExitCode {
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
             },
+            _ if *prune => bridge::Asked::Prune,
             _ if *mint_port => bridge::Asked::MintPort { again: *again },
             _ if mint_check.is_some() => bridge::Asked::MintCheck {
                 app: mint_check.clone().unwrap_or_default(),

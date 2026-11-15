@@ -38,11 +38,16 @@
 //! person's login shell, which may be `bash`, `zsh` or `fish`, and each reads that line alike,
 //! so the script inside is read by POSIX `sh` alone.
 //!
-//! **Versions sit side by side** (ADR 0068 §8): an install never touches another version's
-//! folder, and never stops a host. A binary run from `<config>/server/<version>/` knows its
+//! **Versions sit side by side** (ADR 0068 §8): placing a version never touches another
+//! version's folder, and never stops a host. A binary run from `<config>/server/<version>/` knows its
 //! version from where it is ([`version_of_binary`]), and its host takes a place of its own
 //! (`crate::hostsocket::here`, `crate::machine::host_folder`), so a new version's host starts
 //! beside the old one, takes the new chats, and the old one keeps its chats until each ends.
+//!
+//! **A drained version goes on the next install** ([`prune`], #6688): once it is in place, the
+//! running version's binary there removes the folders of every version older than the one
+//! before it whose host has drained, no host serving it and no chat left in its record
+//! ([`prune`](mod@prune) says how). The running version and the one before it always stay.
 //!
 //! **Nothing ssh prints decides anything but what purlis's own commands print and how they
 //! exit**: the probe's lines, the temporary file's path, and the exit of the command that checks
@@ -603,13 +608,13 @@ impl Delivery<'_> {
     }
 }
 
-/// **What an install did.**
+/// **What an install did**, and the drained versions it removed ([`prune`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Installed {
     /// The version was placed, at this path there.
-    Placed { binary: String },
+    Placed { binary: String, pruned: Vec<String> },
     /// The version was there already; nothing was sent.
-    AlreadyThere { binary: String },
+    AlreadyThere { binary: String, pruned: Vec<String> },
 }
 
 impl Installed {
@@ -617,7 +622,15 @@ impl Installed {
     #[must_use]
     pub fn binary(&self) -> &str {
         match self {
-            Installed::Placed { binary } | Installed::AlreadyThere { binary } => binary,
+            Installed::Placed { binary, .. } | Installed::AlreadyThere { binary, .. } => binary,
+        }
+    }
+
+    /// The drained versions removed from the runner as it was installed ([`prune`]).
+    #[must_use]
+    pub fn pruned(&self) -> &[String] {
+        match self {
+            Installed::Placed { pruned, .. } | Installed::AlreadyThere { pruned, .. } => pruned,
         }
     }
 }
@@ -760,7 +773,12 @@ pub fn install(
             sshroute::RUN_WITHIN,
         )?;
         match ran.code {
-            Some(0) => return Ok(Installed::AlreadyThere { binary }),
+            Some(0) => {
+                return Ok(Installed::AlreadyThere {
+                    pruned: pruned_after(reach, probed, verified),
+                    binary,
+                });
+            }
             // Not the file verified: placed again below, by one rename over it, which a host
             // running the old file keeps running.
             Some(NOT_THE_SAME) => {}
@@ -813,7 +831,10 @@ pub fn install(
         )
     });
     match settled {
-        Ok(ran) if ran.code == Some(0) => Ok(Installed::Placed { binary }),
+        Ok(ran) if ran.code == Some(0) => Ok(Installed::Placed {
+            pruned: pruned_after(reach, probed, verified),
+            binary,
+        }),
         // Deleted by the command itself.
         Ok(ran) if ran.code == Some(NOT_THE_SAME) => Err(Refused::NotTheSame {
             host,
@@ -828,6 +849,45 @@ pub fn install(
             discard(reach, &incoming);
             Err(refused)
         }
+    }
+}
+
+/// **The drained versions removed from the runner `probed` describes, through `reach`**, by
+/// the binary of `version` there, the running one ([`prune::prune_command`]): every version
+/// older than the one before it whose host has drained (`prune`'s docs). The versions it
+/// said it removed; a version with a live chat is never one of them.
+#[cfg(unix)]
+pub fn prune(reach: &Reach, probed: &Probed, version: &str) -> Result<Vec<String>, Refused> {
+    if !a_version(version) {
+        return Err(Refused::Unusable {
+            host: reach.route.host().to_owned(),
+            why: format!(
+                "{} isn't a version purlis installs",
+                crate::shown::short(version)
+            ),
+        });
+    }
+    let ran = run_there(
+        reach,
+        prune::prune_command(&probed.config, version),
+        None,
+        4 * 1024,
+        sshroute::RUN_WITHIN,
+    )?;
+    ran_ok(reach, ran).map(|printed| prune::removed_from(&printed))
+}
+
+/// What [`prune`] removed once `verified` is in place: a prune that fails leaves the old
+/// versions for the next install, and never fails the install.
+fn pruned_after(reach: &Reach, probed: &Probed, verified: &Verified) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        prune(reach, probed, verified.version()).unwrap_or_default()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (reach, probed, verified);
+        Vec::new()
     }
 }
 
@@ -891,6 +951,9 @@ pub fn this_binarys_version() -> Option<String> {
 pub fn host_folder_of(daemon_folder: &Path, version: &str) -> PathBuf {
     daemon_folder.join(SERVER_DIR).join(version)
 }
+
+#[cfg(unix)]
+pub mod prune;
 
 #[cfg(test)]
 mod tests;
