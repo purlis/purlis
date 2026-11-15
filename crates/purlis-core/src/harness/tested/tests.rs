@@ -116,7 +116,10 @@ fn each_harness_has_a_last_tested_version() {
 fn the_declarations_tested_version_and_the_ci_pin_move_together() {
     let pin = crate::profilestore::pin::version_in("claude", CLAUDE_CODE_PIN)
         .map(|version| version.to_string());
-    assert!(pin.is_some(), "the pin names a version: {CLAUDE_CODE_PIN:?}");
+    assert!(
+        pin.is_some(),
+        "the pin names a version: {CLAUDE_CODE_PIN:?}"
+    );
     assert_eq!(
         crate::harness_declaration::of(Harness::ClaudeCode)
             .tested
