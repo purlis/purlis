@@ -164,34 +164,91 @@ impl ChatRecord {
 /// already kept, so its Reopen and every later start of it ask its profile again
 /// ([`crate::dispatchprofiles::may_start_again`]), as a finished task's Reopen does.
 pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
+    // Every field named, so a field added to a chat is decided here: kept for its Reopen, or
+    // its run's or its place's alone.
+    let crate::reopen::Chat {
+        program,
+        args,
+        cwd,
+        name,
+        resume,
+        active: _,
+        profile,
+        persona,
+        show_footer,
+        pinned,
+        number,
+        earlier,
+        label,
+        from,
+        reopened,
+        held: _,
+        tab_opened: _,
+        unseen: _,
+        graded,
+        held_from_clusters: _,
+        unattended: _,
+        shows: _,
+        beside: _,
+        renamed_from,
+        runs_on,
+        unsandboxed,
+        no_sandbox,
+        identity,
+        pid: _,
+        model,
+        plane_skills,
+        routing,
+        task_level,
+        unrecorded,
+        studio: _,
+        own_work: _,
+        own_pieces: _,
+        mid_turn: _,
+        kept_tmp: _,
+    } = chat.clone();
+    let crate::reopen::Identity {
+        id,
+        device,
+        run: _,
+        resumed_from,
+    } = identity;
     crate::reopen::Chat {
-        active: false,
-        from: None,
-        reopened: chat
-            .from
-            .as_ref()
+        program,
+        args,
+        cwd,
+        name,
+        resume,
+        profile,
+        persona,
+        show_footer,
+        pinned,
+        number,
+        earlier,
+        label,
+        // A dispatch it came from is held as a reopened task's, which owes nobody a report.
+        reopened: from
             .map(|from| crate::reopen::ReopenedTask {
                 by_person: from.by_person,
             })
-            .or(chat.reopened),
-        held: None,
-        tab_opened: false,
-        unseen: false,
-        held_from_clusters: false,
-        unattended: false,
-        shows: None,
-        beside: None,
-        pid: None,
-        studio: None,
-        own_work: None,
-        own_pieces: Vec::new(),
-        mid_turn: false,
-        kept_tmp: None,
+            .or(reopened),
+        graded,
+        renamed_from,
+        runs_on,
+        unsandboxed,
+        no_sandbox,
         identity: crate::reopen::Identity {
-            run: None,
-            ..chat.identity.clone()
+            id,
+            device,
+            resumed_from,
+            ..Default::default()
         },
-        ..chat.clone()
+        model,
+        plane_skills,
+        routing,
+        task_level,
+        unrecorded,
+        ..Default::default()
     }
 }
 
