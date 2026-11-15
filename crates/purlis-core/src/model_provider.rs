@@ -212,6 +212,12 @@ impl Declaration {
         &self.digest
     }
 
+    /// The model for Claude Code's `haiku` slot, the background model (R-148, R-293): its
+    /// `[models] background`, or nothing, which leaves the slot to the chosen model.
+    pub fn background_model(&self) -> Option<&str> {
+        None
+    }
+
     /// The origins this declaration may reach: its endpoints' and its list's, and no other.
     pub fn hosts(&self) -> BTreeSet<String> {
         self.endpoints
@@ -221,6 +227,11 @@ impl Declaration {
             .map(|base| base.origin.clone())
             .collect()
     }
+}
+
+/// The built-in declarations this build ships, in the binary and read-only (R-159, R-613).
+pub fn built_ins() -> &'static [Declaration] {
+    &[]
 }
 
 /// A reference to a project's declaration: the project's identity, the declaration's id and
@@ -683,5 +694,7 @@ fn is_near(host: &str) -> bool {
     }
 }
 
+#[cfg(test)]
+mod built_in_tests;
 #[cfg(test)]
 mod tests;
