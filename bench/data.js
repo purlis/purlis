@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794699538868,
+  "lastUpdate": 1794702345644,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49518,6 +49518,48 @@ window.BENCHMARK_DATA = {
             "value": 101.69407799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.213, 101.538, 101.694, 101.832, 101.853 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0be2cab70d2f8ae4e25252c0c16c65c2ceda001",
+          "message": "Docker on another machine: doctor and Try it pass (#6272) (#6663)\n\n* Docker on another machine: doctor and Try it (#6272)\n\nReplays purlis/purlis#6655 at 771b8d9751 onto main as one commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DPSW4311ZGCVMHRF94BKRW\nPurlis-Persona: steward\n\n* Docker on another machine: doctor and Try it, its new files (#6272)\n\nThe second half of the replay of purlis/purlis#6655 at 771b8d9751: the\nfiles it adds. The lane's commit stages only tracked files without names\nand cannot amend, so the replay is two commits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DPSW4311ZGCVMHRF94BKRW\nPurlis-Persona: steward\n\n* Doctor on another machine: Connect checks the engine, and the review's findings (#6272)\n\n- Trust this machine asks the engine doctor's first checks before the pool is kept\n  (it confines runners, and purlis's runner image is built for its platform), with\n  docker info alone. What doctor finds is kept for the machine's route and laid\n  over the next read, until it runs there again.\n- Connect marks a line of the engine's as passed only where doctor ran it; a disk\n  it couldn't measure reads so, and Every check passed only where every line did.\n- Send to your admin and Get help name no path of this machine's: the TLS files\n  and the SSH key are placeholders.\n- Get help keeps commands that change something apart from those that only read.\n- An engine that doesn't answer is silent, not unconfined; a download that fills\n  the disk is a full disk; an unmeasured disk passes and is said so.\n- A full disk is mended with docker system df, then docker image prune.\n- The round trip says what it covers: one docker command, start to answer.\n- Your own image built for another platform offers another image, on a new pool.\n- The context is checked before the image is looked for; the admin's findings\n  are an allow-list; Check again says it may download the runner image.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DPSW4311ZGCVMHRF94BKRW\nPurlis-Persona: steward\n\n* Doctor's fault test fails on a fixture half set, Connect's engine checks for real; stories, ADR amendment (#6272)\n\n- The fault test says it skipped where there is no fixture, and fails where up.sh's route is set\n  and the rest isn't; plain TCP is refused by Trust this machine too, keeping nothing; Trust this\n  machine against the fixture runs Connect's engine checks and keeps what they found.\n- sshd.Dockerfile's comment on nokey reads as one sentence again.\n- Connect's stories: a trusted machine reads Connected, its image and disk lines not yet; a made\n  pool that passed every check; a disk that couldn't be measured; your own image for another\n  platform. The full disk's words, and Try it's line, as they read now.\n- ADR 0123 amended (2026-11-14) with the decisions the review changed, \"new enough\" included.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DPSW4311ZGCVMHRF94BKRW\nPurlis-Persona: steward\n\n* Connect's and Try it's story baselines, drawn by #6663's stories run (#6272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DPSW4311ZGCVMHRF94BKRW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T23:26:52Z",
+          "tree_id": "eb454d1ec433064b25dc36a10d74580c22b4312e",
+          "url": "https://github.com/purlis/purlis/commit/c0be2cab70d2f8ae4e25252c0c16c65c2ceda001"
+        },
+        "date": 1794702338644,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5628805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.558, 0.560, 0.563, 0.570, 0.581 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.232566,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.130, 16.226, 16.233, 16.375, 16.544 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.358599,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.362, 101.186, 101.359, 103.262, 105.569 ms"
           }
         ]
       }
