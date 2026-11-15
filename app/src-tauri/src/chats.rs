@@ -4387,14 +4387,6 @@ impl Chats {
     ) -> Result<u32, String> {
         use purlis_core::chatrecords::CannotReopen;
         let number = record.number;
-        if lock(&self.open)
-            .values()
-            .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
-        {
-            return Err(format!(
-                "purlis did not reopen chat {number}: it is open again under another number."
-            ));
-        }
         let again = record.reopened().map_err(|why| match why {
             CannotReopen::NotKept => format!(
                 "purlis did not reopen chat {number}: it closed before purlis kept what a reopen \
@@ -4402,8 +4394,19 @@ impl Chats {
             ),
             CannotReopen::NoConversation => nothing_to_reopen_on(number),
         })?;
+        // Claimed before it is asked whether it is open, so a second press while the first
+        // starts it is refused by the claim, and one after finds it open: never started twice.
         self.claim(number)?;
-        let started = self.start_recorded_told(&again, size, Why::Relaunch, None, None);
+        let started = if lock(&self.open)
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
+        {
+            Err(format!(
+                "purlis did not reopen chat {number}: it is open again under another number."
+            ))
+        } else {
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        };
         self.unclaim(number);
         started
     }

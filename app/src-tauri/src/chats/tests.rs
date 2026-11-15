@@ -2999,6 +2999,28 @@ fn a_closed_chat_reopens_from_its_record_on_its_conversation() {
     later.end_all();
 }
 
+/// A closed chat's Reopen pressed while another press of it is starting it is refused, and
+/// nothing more starts (#6485).
+#[test]
+fn a_closed_chat_being_reopened_is_not_reopened_twice() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(session).expect("closes for good");
+    let record = purlis_core::chatrecords::every(plane.path()).remove(0);
+    let opened = host.openings().len();
+    chats.claim(session).expect("the first press holds it");
+
+    let second = chats.reopen_closed(&record, SIZE).unwrap_err();
+
+    assert!(second.contains("not started twice"), "{second}");
+    assert_eq!(host.openings().len(), opened, "nothing more started");
+    chats.unclaim(session);
+}
+
 /// A closed chat whose harness named no conversation is not reopened, and says why (#6485).
 #[test]
 fn a_closed_chat_with_no_conversation_is_not_reopened_and_says_why() {
