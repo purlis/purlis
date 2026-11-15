@@ -120,6 +120,7 @@ fn a_wrapped_chat_writing(chat: &Path, socket: &Path, elsewhere: &Path) -> Start
             reporting: None,
             confinement: None,
             prompt_key: None,
+            pools_held: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }
