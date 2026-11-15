@@ -1,0 +1,282 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The secrets purlis handed each chat, known well enough to mask them** (#6309, parent
+//! #5820): what a dispatched task's kept screen ([`crate::chatscreens`]) is masked with before
+//! it is written, so a kept screen never holds one of purlis's own secrets.
+//!
+//! The person ruled it on 2026-11-15: every vault value purlis handed the chat and every
+//! credential it brokered for it, matched exactly, each shown as a named mask,
+//! `‹secret: github-token›` ([`mask`]), so *Read it* says what was there without showing it.
+//!
+//! - **Never the value itself**, as [`super::seen`] keeps none: each is held as its entry's name,
+//!   its length and its keyed digest under [`super::seen`]'s key for the process, so nothing here
+//!   can give a value back, in a crash report or anywhere else.
+//! - **Per chat, by project and chat number**: what the app's own code knows of the chat asking
+//!   (`brokered::Asker`), remembered as each value is handed ([`remember`]) and forgotten when
+//!   the chat closes for good ([`forget`]).
+//! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
+//!   value a colour change or a soft wrap runs through is still one run of characters there.
+//!   A hard line break is not: a value the program printed in two pieces is two words.
+//! - **Every overlapping find masked whole**: two values that overlap on a screen become one
+//!   stretch, shown as the mask of each, in the order they start, so no tail of either is left.
+//! - **A value shorter than [`super::seen::SHORTEST`] is not masked**: as `seen` says, three
+//!   characters or fewer is an ordinary word as often as a secret.
+//! - **It fails closed**: where no key could be made for the process, a value handed cannot be
+//!   known, and the chat's screen is said not to be maskable ([`masked`] answers `None`), so it
+//!   is not kept.
+//! - **What the process does not know it cannot mask**: a value read by another process (a
+//!   `purlis secret exec` that found no app and read the vault itself), and every value handed
+//!   before this process started.
+
+use std::collections::HashMap;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+use super::seen::{self, Digest};
+
+/// How a masked value is shown: its entry's name in angle quotes, never its value.
+pub fn mask(name: &str) -> String {
+    format!("‹secret: {name}›")
+}
+
+/// One secret handed to a chat, as it is known: its entry's name, and its length and digest.
+#[derive(Clone)]
+pub struct Known {
+    name: String,
+    length: usize,
+    digest: Digest,
+}
+
+impl Known {
+    /// `value`, handed as `name`, as it is known: as written and with the white space around it
+    /// trimmed, which a value read from a file often carries. Empty where it is shorter than
+    /// [`seen::SHORTEST`] both ways; `None` where no key could be made for the process.
+    pub fn of(name: &str, value: &str) -> Option<Vec<Self>> {
+        let keyed = seen::keyed()?;
+        let mut known: Vec<Self> = Vec::new();
+        for one in [value, value.trim()] {
+            let bytes = one.as_bytes();
+            if bytes.len() < seen::SHORTEST || known.iter().any(|k| k.length == bytes.len()) {
+                continue;
+            }
+            known.push(Self {
+                name: name.to_owned(),
+                length: bytes.len(),
+                digest: seen::digest(keyed, bytes),
+            });
+        }
+        Some(known)
+    }
+}
+
+/// What a chat was handed, or that something was handed it that could not be known.
+#[derive(Clone, Default)]
+struct Handed {
+    known: Vec<Known>,
+    blind: bool,
+}
+
+static HANDED: Mutex<Option<HashMap<(PathBuf, u32), Handed>>> = Mutex::new(None);
+
+fn handed() -> MutexGuard<'static, Option<HashMap<(PathBuf, u32), Handed>>> {
+    HANDED.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed `value`, the entry
+/// `name`**: from now on its kept screen masks it ([`masked_for`]).
+pub fn remember(root: &Path, chat: u32, name: &str, value: &str) {
+    remember_known(root, chat, Known::of(name, value));
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed each of `known`**, or, for
+/// `None`, something that could not be known ([`Known::of`]): for a value read before the chat
+/// had its number, as a profile's sign-in is.
+pub fn remember_known(root: &Path, chat: u32, known: Option<Vec<Known>>) {
+    let mut handed = handed();
+    let one = handed
+        .get_or_insert_with(HashMap::new)
+        .entry((root.to_path_buf(), chat))
+        .or_default();
+    match known {
+        Some(known) => one.known.extend(known),
+        None => one.blind = true,
+    }
+}
+
+/// **Forgets what chat `chat` of the project at `root` was handed**, as it closes for good: a
+/// chat number is given again to a later chat.
+pub fn forget(root: &Path, chat: u32) {
+    if let Some(handed) = handed().as_mut() {
+        handed.remove(&(root.to_path_buf(), chat));
+    }
+}
+
+/// **`screen`, what chat `chat` of the project at `root` showed, masked** with every secret it
+/// was handed ([`masked`]); `None` where one could not be known.
+pub fn masked_for(root: &Path, chat: u32, screen: &str) -> Option<String> {
+    let one = handed()
+        .as_ref()
+        .and_then(|handed| handed.get(&(root.to_path_buf(), chat)).cloned())
+        .unwrap_or_default();
+    if one.blind {
+        return None;
+    }
+    masked(screen, &one.known)
+}
+
+/// **`screen` with each of `known` it shows replaced by its [`mask`]**, the sequences that draw
+/// it left as they were. `None` where no key could be made for the process to look with.
+///
+/// A string sequence's payload (a window title, a link's address) is text a reader may be
+/// shown too, so it is looked in as text, and a value there is masked in it.
+pub fn masked(screen: &str, known: &[Known]) -> Option<String> {
+    if known.is_empty() {
+        return Some(screen.to_owned());
+    }
+    let keyed = seen::keyed()?;
+    let raw = screen.as_bytes();
+    let pieces = pieces(raw);
+    // The text the screen shows, and where in `screen` each of its bytes stands.
+    let at: Vec<usize> = pieces
+        .iter()
+        .filter(|piece| piece.shown)
+        .flat_map(|piece| piece.bytes.clone())
+        .collect();
+    let shown: Vec<u8> = at.iter().map(|&i| raw[i]).collect();
+
+    let mut by_length: HashMap<usize, Vec<&Known>> = HashMap::new();
+    for one in known {
+        by_length.entry(one.length).or_default().push(one);
+    }
+    let mut found: Vec<(Range<usize>, &str)> = Vec::new();
+    for (length, of_it) in &by_length {
+        for (start, run) in shown.windows(*length).enumerate() {
+            let digest = seen::digest(keyed, run);
+            for one in of_it.iter().filter(|one| one.digest == digest) {
+                found.push((start..start + length, one.name.as_str()));
+            }
+        }
+    }
+    let spans = joined(found);
+
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut spans = spans.iter().peekable();
+    let mut index = 0;
+    for piece in &pieces {
+        if !piece.shown {
+            out.extend_from_slice(&raw[piece.bytes.clone()]);
+            continue;
+        }
+        for i in piece.bytes.clone() {
+            while spans.next_if(|(span, _)| span.end <= index).is_some() {}
+            match spans.peek() {
+                Some((span, names)) if span.start == index => {
+                    for name in names {
+                        out.extend_from_slice(mask(name).as_bytes());
+                    }
+                }
+                Some((span, _)) if span.contains(&index) => {}
+                _ => out.push(raw[i]),
+            }
+            index += 1;
+        }
+    }
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// `found` in order, each run of finds that overlap joined into one stretch, named by each
+/// entry found in it once, in the order they start.
+fn joined(mut found: Vec<(Range<usize>, &str)>) -> Vec<(Range<usize>, Vec<&str>)> {
+    found.sort_by_key(|(span, name)| (span.start, std::cmp::Reverse(span.end), *name));
+    let mut joined: Vec<(Range<usize>, Vec<&str>)> = Vec::new();
+    for (span, name) in found {
+        match joined.last_mut() {
+            Some((last, names)) if span.start < last.end => {
+                last.end = last.end.max(span.end);
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            _ => joined.push((span, vec![name])),
+        }
+    }
+    joined
+}
+
+/// A stretch of a screen's bytes: text it shows, or a sequence that draws it.
+struct Piece {
+    bytes: Range<usize>,
+    shown: bool,
+}
+
+/// `raw` cut into the text it shows and the escape sequences that draw it (ECMA-48): a control
+/// sequence (`ESC [` … final byte), a string sequence's introducer and terminator (`ESC ]`,
+/// `ESC P`, `ESC X`, `ESC ^`, `ESC _` … `BEL` or `ESC \`) with its payload as text, and any
+/// other escape with its intermediates and final byte. Every other byte is shown, a line break
+/// among them.
+fn pieces(raw: &[u8]) -> Vec<Piece> {
+    const ESC: u8 = 0x1b;
+    const BEL: u8 = 0x07;
+    let mut pieces: Vec<Piece> = Vec::new();
+    let mut push = |bytes: Range<usize>, shown: bool| {
+        if bytes.is_empty() {
+            return;
+        }
+        match pieces.last_mut() {
+            Some(last) if last.shown == shown && last.bytes.end == bytes.start => {
+                last.bytes.end = bytes.end;
+            }
+            _ => pieces.push(Piece { bytes, shown }),
+        }
+    };
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] != ESC {
+            push(i..i + 1, true);
+            i += 1;
+            continue;
+        }
+        let start = i;
+        i += 1;
+        match raw.get(i) {
+            Some(b'[') => {
+                i += 1;
+                while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
+                    i += 1;
+                }
+                i = (i + 1).min(raw.len());
+                push(start..i, false);
+            }
+            Some(b']' | b'P' | b'X' | b'^' | b'_') => {
+                i += 1;
+                push(start..i, false);
+                let payload = i;
+                while i < raw.len() && raw[i] != BEL && raw[i] != ESC {
+                    i += 1;
+                }
+                push(payload..i, true);
+                let end = match raw.get(i) {
+                    Some(&BEL) => i + 1,
+                    Some(&ESC) if raw.get(i + 1) == Some(&b'\\') => i + 2,
+                    _ => i,
+                };
+                push(i..end, false);
+                i = end;
+            }
+            Some(_) => {
+                while i < raw.len() && (0x20..=0x2f).contains(&raw[i]) {
+                    i += 1;
+                }
+                i = (i + 1).min(raw.len());
+                push(start..i, false);
+            }
+            None => push(start..i, false),
+        }
+    }
+    pieces
+}
+
+#[cfg(test)]
+mod tests;
