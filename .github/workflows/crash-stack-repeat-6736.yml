@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # TEMPORARY (#6736): repeats the macOS crash-stack checks on this pull request, to show the fix
 # holds. Removed before the pull request merges.
 name: crash stack repeat (#6736)
@@ -49,7 +52,6 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - uses: ./.github/actions/npm-ci
       - uses: ./.github/actions/npm-ci
         with:
           directory: app
