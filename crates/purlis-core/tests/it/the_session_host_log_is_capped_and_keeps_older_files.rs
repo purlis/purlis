@@ -106,3 +106,40 @@ fn the_host_keeps_a_few_older_files_of_a_bounded_size() {
     assert_eq!(hostlog::KEPT, 3);
     assert_eq!(hostlog::CAP, 1024 * 1024);
 }
+
+/// The acceptance (#6687): a host running with its log past the cap rotates it, keeping the
+/// older files, without a restart.
+#[test]
+fn a_running_host_rotates_its_log_once_it_passes_the_cap_and_keeps_older_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join(hostlog::NAME);
+    let mut held = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+        .unwrap();
+    hostlog::keep_capped_at(
+        log.clone(),
+        1_000,
+        3,
+        std::time::Duration::from_millis(10),
+    );
+
+    for fill in [b'a', b'b', b'c', b'd'] {
+        held.write_all(&[fill; 2_000]).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while len(&log) != 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the log was not rotated while the host ran"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    let kept: Vec<u8> = (1..=3)
+        .map(|n| std::fs::read(hostlog::older(&log, n)).unwrap()[0])
+        .collect();
+    assert_eq!(kept, b"dcb", "newest first, three kept");
+    assert!(!hostlog::older(&log, 4).exists());
+}
