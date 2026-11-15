@@ -111,3 +111,32 @@ fn on_crash(client: Arc<Client>) -> Box<dyn CrashEvent> {
         })
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use std::os::unix::net::UnixListener;
+
+    /// The companion binds its socket before it checks in its Mach service (minidumper's
+    /// `Server::with_name`). An app that connected the socket in that gap gave up on the missing
+    /// service and closed it, and the companion took the close for the app's end and exited: the
+    /// app's retry then reached a companion on its way out, and its crash left no minidump (#6909).
+    #[test]
+    fn the_app_opens_no_socket_before_the_companions_mach_service_is_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("crash.sock");
+        // A companion caught between the two: its socket bound, its Mach service not yet there.
+        let bound = UnixListener::bind(&socket).unwrap();
+        bound.set_nonblocking(true).unwrap();
+
+        let connected = super::connect(&socket);
+
+        assert!(connected.is_err(), "no companion served");
+        let opened = bound.accept();
+        assert!(
+            opened
+                .as_ref()
+                .is_err_and(|why| why.kind() == std::io::ErrorKind::WouldBlock),
+            "the app opened the socket of a companion not yet serving: {opened:?}"
+        );
+    }
+}
