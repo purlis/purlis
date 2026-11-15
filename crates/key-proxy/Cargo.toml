@@ -18,13 +18,15 @@ publish = false
 # Its own runtime: two worker threads, named, never the host's current-thread runtime (R-054).
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
 # hyper's own HTTP/1 server connection is the parser (D6640-C2 §1): no framing parser of its own.
-hyper = { version = "1.12", features = ["http1", "server"] }
+hyper = { version = "1.12", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
 # The run's 256-bit token, from the operating system's generator: the version
 # purlis-session-protocol already links.
 getrandom = "0.4"
+# The token's comparison in constant time (R-063): the version rustls and ring already bring.
+subtle = "2.6"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }

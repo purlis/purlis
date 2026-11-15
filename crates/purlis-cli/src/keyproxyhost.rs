@@ -37,8 +37,9 @@ impl ProxiesKeys for ProxiesKeysHere {
                 })
             }),
         };
+        // No route yet: binding a run to its route is T1a-08's, so every request is refused.
         let started = proxy
-            .start(run, heard)
+            .start(run, None, heard)
             .map_err(|why| format!("the key proxy could not listen for this run: {why}"))?;
         Ok(KeyProxyStarted {
             port: started.port,
