@@ -1886,20 +1886,42 @@ impl Hosting {
     }
 
     /// **Starts a key proxy for `run`** (1.90, T1a-04, R-055), through the binary's
-    /// [`crate::confining::ProxiesKeys`]. Skeleton: refused until it is built.
-    fn start_key_proxy(&self, _run: &str) -> Result<Answer, Refusal> {
-        Err(Refusal {
+    /// [`crate::confining::ProxiesKeys`]: answered with its port and token, which leave the host
+    /// in this answer alone. What it says goes to the host's log; its network record is carried
+    /// to the window by T1a-19, and until then goes nowhere.
+    fn start_key_proxy(&self, run: &str) -> Result<Answer, Refusal> {
+        let tell: crate::confining::KeyProxyTell = Arc::new(|told| {
+            if let crate::confining::KeyProxyTold::Said(line) = told {
+                crate::say(&format!("key proxy: {line}"));
+            }
+        });
+        let started = self.key_proxies().start(run, tell).map_err(|why| Refusal {
             code: session::NOT_STARTED.into(),
-            why: "not built yet".into(),
+            why,
+        })?;
+        Ok(Answer::KeyProxyStarted {
+            port: started.port,
+            token: session::KeyProxyToken(started.token),
         })
     }
 
-    /// **Stops `run`'s key proxy** (1.90). Skeleton: refused until it is built.
-    fn stop_key_proxy(&self, _run: &str) -> Result<Answer, Refusal> {
-        Err(Refusal {
-            code: session::NOT_STARTED.into(),
-            why: "not built yet".into(),
-        })
+    /// **Stops `run`'s key proxy** (1.90), through the binary's
+    /// [`crate::confining::ProxiesKeys`]; refused where none runs.
+    fn stop_key_proxy(&self, run: &str) -> Result<Answer, Refusal> {
+        self.key_proxies()
+            .stop(run)
+            .map(|()| Answer::Done)
+            .map_err(|why| Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    fn key_proxies(&self) -> &dyn crate::confining::ProxiesKeys {
+        match self.inner.key_proxies.get() {
+            Some(proxies) => proxies.as_ref(),
+            None => &crate::confining::ProxiesNoKeys,
+        }
     }
 
     /// **Audits a skill change a terminal made** (1.82, SK-11a, #6030): the binary writes it in

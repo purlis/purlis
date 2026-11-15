@@ -17,12 +17,14 @@ use tokio::net::TcpStream;
 /// How long a test waits for the key proxy before it fails.
 pub const PATIENCE: Duration = Duration::from_secs(10);
 
+/// A record line, with the name and id of the thread that told it.
+pub type Served = (Record, Option<String>, std::thread::ThreadId);
+
 /// What a start's callbacks were told.
 #[derive(Clone, Default)]
 pub struct Told {
     pub said: Arc<Mutex<Vec<String>>>,
-    /// Each record line, with the name and id of the thread that told it.
-    pub records: Arc<Mutex<Vec<(Record, Option<String>, std::thread::ThreadId)>>>,
+    pub records: Arc<Mutex<Vec<Served>>>,
 }
 
 impl Told {

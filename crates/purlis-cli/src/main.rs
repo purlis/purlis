@@ -50,6 +50,8 @@ mod handoff;
 mod hooks;
 mod internal;
 #[cfg(unix)]
+mod keyproxyhost;
+#[cfg(unix)]
 mod listen;
 mod mcp;
 mod memory;
@@ -1145,7 +1147,10 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
                     // and the code the desktop moves in them over the link (#2046).
-                    .moving_code_with(purlis_core::codelink::Moves::on_this_runner()),
+                    .moving_code_with(purlis_core::codelink::Moves::on_this_runner())
+                    // A run's key proxy (T1a-04): the window's alone, so on a runner none is
+                    // started yet; its start from the desktop's plan is phase 1a's set iii.
+                    .proxying_keys_with(keyproxyhost::ProxiesKeysHere::default()),
                 ))
             },
             pairing,
