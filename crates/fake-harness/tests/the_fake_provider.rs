@@ -57,7 +57,9 @@ const ASKED: &[u8] = br#"{"model":"claude-sonnet-4-5","max_tokens":64,"stream":t
 
 /// `count` chunks of `size` bytes each, every chunk's bytes its own index.
 fn chunks(count: usize, size: usize) -> Vec<Vec<u8>> {
-    (0..count).map(|i| vec![b'a' + (i % 26) as u8; size]).collect()
+    (0..count)
+        .map(|i| vec![b'a' + (i % 26) as u8; size])
+        .collect()
 }
 
 fn injected() -> (Arc<InjectedClock>, Arc<dyn Clock>) {
@@ -76,7 +78,10 @@ fn fixture(name: &str) -> ErrorFixture {
 fn error_type(body: &[u8]) -> String {
     let body: Value = serde_json::from_slice(body).expect("a JSON error body");
     assert_eq!(body["type"], "error", "{body}");
-    body["error"]["type"].as_str().unwrap_or_default().to_owned()
+    body["error"]["type"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 #[test]
@@ -94,13 +99,19 @@ fn the_fake_provider_replays_a_streamed_recording_over_tls_under_a_test_root() {
     let answer = connection
         .post(
             "/v1/messages?beta=true",
-            &[("x-api-key", "sk-ant-stand-in"), ("anthropic-version", "2023-06-01")],
+            &[
+                ("x-api-key", "sk-ant-stand-in"),
+                ("anthropic-version", "2023-06-01"),
+            ],
             ASKED,
         )
         .unwrap();
 
     assert_eq!(answer.head.status, 200);
-    assert_eq!(answer.head.header("content-type"), Some("text/event-stream"));
+    assert_eq!(
+        answer.head.header("content-type"),
+        Some("text/event-stream")
+    );
     assert_eq!(String::from_utf8(answer.body).unwrap(), STREAMED);
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "{requests:?}");
@@ -201,7 +212,11 @@ fn the_anthropic_origin_is_served_on_loopback_under_the_test_root() {
         refused.to_string().to_lowercase().contains("certificate"),
         "the handshake failed for another reason than verification: {refused}"
     );
-    assert_eq!(provider.requests().len(), 1, "nothing was sent without the root");
+    assert_eq!(
+        provider.requests().len(),
+        1,
+        "nothing was sent without the root"
+    );
 }
 
 #[test]
@@ -229,7 +244,10 @@ fn paced_streaming_records_each_chunk_send_time() {
     const SIZE: usize = 200;
     let (clock, shared) = injected();
     let provider = Provider::builder()
-        .answer("/v1/messages", Recording::chunked("text/event-stream", chunks(CHUNKS, SIZE)))
+        .answer(
+            "/v1/messages",
+            Recording::chunked("text/event-stream", chunks(CHUNKS, SIZE)),
+        )
         .clock(shared)
         .paced(100)
         .start()
@@ -264,7 +282,10 @@ fn paced_streaming_records_each_chunk_send_time() {
     let sends = provider.sends();
     assert_eq!(sends.len(), CONNECTIONS * CHUNKS);
     for connection in 1..=CONNECTIONS {
-        let mine: Vec<_> = sends.iter().filter(|s| s.connection == connection).collect();
+        let mine: Vec<_> = sends
+            .iter()
+            .filter(|s| s.connection == connection)
+            .collect();
         assert_eq!(mine.len(), CHUNKS, "connection {connection}");
         let first = mine[0].at;
         for (i, send) in mine.iter().enumerate() {
@@ -282,18 +303,26 @@ fn paced_streaming_records_each_chunk_send_time() {
 fn the_fake_provider_can_answer_gzip() {
     let provider = Provider::builder()
         .answer("/v1/messages", Recording::message(WHOLE).gzipped())
-        .answer("/v1/messages/streamed", Recording::events(STREAMED).gzipped())
+        .answer(
+            "/v1/messages/streamed",
+            Recording::events(STREAMED).gzipped(),
+        )
         .start()
         .unwrap();
     let mut connection = Connection::plain(provider.address()).unwrap();
 
-    for (path, recorded) in [
-        ("/v1/messages", WHOLE),
-        ("/v1/messages/streamed", STREAMED),
-    ] {
+    for (path, recorded) in [("/v1/messages", WHOLE), ("/v1/messages/streamed", STREAMED)] {
         let answer = connection.post(path, &[], ASKED).unwrap();
-        assert_eq!(answer.head.header("content-encoding"), Some("gzip"), "{path}");
-        assert_ne!(answer.body, recorded.as_bytes(), "{path} was sent as it was");
+        assert_eq!(
+            answer.head.header("content-encoding"),
+            Some("gzip"),
+            "{path}"
+        );
+        assert_ne!(
+            answer.body,
+            recorded.as_bytes(),
+            "{path} was sent as it was"
+        );
         let mut inflated = String::new();
         GzDecoder::new(&answer.body[..])
             .read_to_string(&mut inflated)
@@ -338,7 +367,10 @@ fn a_slow_accept_delays_the_handshake_by_the_injected_amount() {
 fn the_fake_provider_records_a_peer_close_mid_stream() {
     let (clock, shared) = injected();
     let provider = Provider::builder()
-        .answer("/v1/messages", Recording::chunked("text/event-stream", chunks(100, 200)))
+        .answer(
+            "/v1/messages",
+            Recording::chunked("text/event-stream", chunks(100, 200)),
+        )
         .clock(shared)
         .paced(100)
         .start()
@@ -357,7 +389,9 @@ fn the_fake_provider_records_a_peer_close_mid_stream() {
     });
 
     for _ in 1..10 {
-        until("the provider to wait for its next chunk", || clock.sleepers() == 1);
+        until("the provider to wait for its next chunk", || {
+            clock.sleepers() == 1
+        });
         clock.advance(Duration::from_millis(10));
     }
     client_gone.recv_timeout(Duration::from_secs(30)).unwrap();
@@ -375,8 +409,15 @@ fn the_fake_provider_records_a_peer_close_mid_stream() {
     assert_eq!(closes.len(), 1, "{closes:?}");
     let PeerClose { connection, sent } = closes[0];
     assert_eq!(connection, 1);
-    assert!((10..100).contains(&sent), "saw the close after {sent} chunks");
-    assert_eq!(provider.sends().len(), sent, "it kept sending after the close");
+    assert!(
+        (10..100).contains(&sent),
+        "saw the close after {sent} chunks"
+    );
+    assert_eq!(
+        provider.sends().len(),
+        sent,
+        "it kept sending after the close"
+    );
 }
 
 #[test]
@@ -445,7 +486,11 @@ fn the_documented_fixtures_are_marked_unrecorded() {
         match kind {
             Some(kind) => assert_eq!(error_type(&answer.body), kind, "{name}"),
             None => {
-                assert_eq!(answer.head.header("content-type"), Some("text/plain"), "{name}");
+                assert_eq!(
+                    answer.head.header("content-type"),
+                    Some("text/plain"),
+                    "{name}"
+                );
                 assert!(
                     serde_json::from_slice::<Value>(&answer.body).is_err(),
                     "the {name} body is JSON"
@@ -490,7 +535,9 @@ fn paced_streaming_takes_either_clock() {
     let (clock, shared) = injected();
     let sends = run(shared, &|| {
         for _ in 1..10 {
-            until("the provider to wait for its next chunk", || clock.sleepers() == 1);
+            until("the provider to wait for its next chunk", || {
+                clock.sleepers() == 1
+            });
             clock.advance(Duration::from_millis(10));
         }
     });
@@ -506,6 +553,9 @@ fn paced_streaming_takes_either_clock() {
         let paced = Duration::from_millis(10) * i as u32;
         // Wall time: never early, and late by at most a wide margin.
         assert!(since >= paced, "chunk {i} went early: {since:?}");
-        assert!(since < paced + Duration::from_secs(2), "chunk {i} went late: {since:?}");
+        assert!(
+            since < paced + Duration::from_secs(2),
+            "chunk {i} went late: {since:?}"
+        );
     }
 }

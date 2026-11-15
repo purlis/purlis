@@ -1,0 +1,76 @@
+{
+  "about": [
+    "The fake provider's error answers (crates/fake-harness, T1a-03). Each says where its shape came from:",
+    "\"recorded\" names the recording; \"unrecorded\" waits for the gate's hand run on a real key;",
+    "\"from the docs, unrecorded\" follows Anthropic's documented errors (platform.claude.com/docs/en/api/errors)",
+    "until a recording replaces it. A test that reads an unrecorded fixture says so. Only the headers listed",
+    "were recorded or documented; the provider adds its own content-length, and content_type is the body's type."
+  ],
+  "fixtures": [
+    {
+      "name": "401",
+      "status": 401,
+      "provenance": "recorded",
+      "recorded": "api.anthropic.com, POST /v1/messages with a dummy x-api-key, 2026-11-15 (specs review round 2, axis C, finding 1). Status, x-should-retry and body recorded; the rest of the header set waits for T1a-02's record at the pin.",
+      "headers": [["x-should-retry", "false"]],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}"
+    },
+    {
+      "name": "403",
+      "status": 403,
+      "provenance": "unrecorded",
+      "headers": [],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"Your API key does not have permission to use the specified resource.\"}}"
+    },
+    {
+      "name": "429",
+      "status": 429,
+      "provenance": "unrecorded",
+      "headers": [["retry-after", "30"]],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Your account has hit a rate limit.\"}}"
+    },
+    {
+      "name": "529",
+      "status": 529,
+      "provenance": "unrecorded",
+      "headers": [],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"
+    },
+    {
+      "name": "400-spend-limit",
+      "status": 400,
+      "provenance": "from the docs, unrecorded",
+      "headers": [],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.\"}}"
+    },
+    {
+      "name": "402",
+      "status": 402,
+      "provenance": "from the docs, unrecorded",
+      "headers": [],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"billing_error\",\"message\":\"There's an issue with your billing or payment information.\"}}"
+    },
+    {
+      "name": "429-spend-cap",
+      "status": 429,
+      "provenance": "from the docs, unrecorded",
+      "headers": [],
+      "content_type": "application/json",
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Your workspace has reached its spend limit.\"}}"
+    },
+    {
+      "name": "413",
+      "status": 413,
+      "provenance": "from the docs, unrecorded",
+      "headers": [],
+      "content_type": "text/plain",
+      "body": "413 Request Entity Too Large"
+    }
+  ]
+}

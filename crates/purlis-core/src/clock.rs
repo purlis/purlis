@@ -5,8 +5,9 @@
 //!
 //! The key proxy's deadlines, idle timeouts, its 24-hour cache, a token's refresh and its rate
 //! limits all ask a [`Clock`] what time it is, and wait on it. A build that ships uses
-//! [`Monotonic`], the machine's own monotonic clock. A test hands in an [`InjectedClock`] and
-//! moves it by hand, so no test sleeps on the wall clock for a budget's sake.
+//! [`Monotonic`], the machine's own monotonic clock. A test hands in the injected clock
+//! (`test-support` only) and moves it by hand, so no test sleeps on the wall clock for a
+//! budget's sake.
 
 use std::time::{Duration, Instant};
 

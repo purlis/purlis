@@ -30,8 +30,7 @@ impl TestReach {
 impl Direct {
     /// The system's resolver, but `entry`'s name resolves to `entry`'s address.
     pub fn with_test_reach(entry: TestReach) -> Direct {
-        let _ = entry;
-        Direct::default()
+        Direct { reach: vec![entry] }
     }
 }
 
@@ -53,12 +52,19 @@ impl<O: Outbound> RecordingOutbound<O> {
 
     /// Every destination asked for so far, in order.
     pub fn destinations(&self) -> Vec<Destination> {
-        self.log.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        self.log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
 impl<O: Outbound> Outbound for RecordingOutbound<O> {
     fn connect(&self, to: &Destination) -> io::Result<TcpStream> {
+        self.log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(to.clone());
         self.inner.connect(to)
     }
 }

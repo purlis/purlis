@@ -158,7 +158,12 @@ impl Connection {
     }
 
     /// Sends a `POST` of `body` to `path` and reads the whole answer.
-    pub fn post(&mut self, path: &str, headers: &[(&str, &str)], body: &[u8]) -> io::Result<Answer> {
+    pub fn post(
+        &mut self,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> io::Result<Answer> {
         self.send("POST", path, headers, body)?;
         let head = self.head()?;
         let body = self.body(&head)?;

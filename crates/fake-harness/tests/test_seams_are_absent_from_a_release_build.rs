@@ -6,30 +6,42 @@
 //! injected clock are purlis-core's, behind its `test-support` feature, which only tests turn on
 //! (`release-manifest`'s `no_release_build_turns_on_the_test_fence` holds that). Here:
 //!
-//! - purlis-core is built as a release build has it, without `test-support`, and the library it
-//!   makes is read for each seam's name: a name absent from the crate's metadata is one no
-//!   build without the feature can call, and one the binaries that link it cannot carry. A name
-//!   every build has must be there, so the read cannot pass by reading nothing;
+//! - purlis-core is built as a release build has it, without `test-support`, and a use of each
+//!   seam is compiled against that library: each must fail to compile, while a use of what every
+//!   build has compiles, so the check cannot pass by compiling nothing. (The library's bytes are
+//!   not read for the names: rustc records the names of items a `cfg` left out, to say which
+//!   feature they wait for, so a name there proves nothing.)
 //! - the files that hold the seams read no environment variable and no file, so nothing a
 //!   release build reads could turn one on.
 //!
-//! A later seam adds its name to [`SEAMS`] (T1a-35's policy fixture path, T1a-69's recording
+//! A later seam adds its use to [`SEAMS`] (T1a-35's policy fixture path, T1a-69's recording
 //! file-system and vault).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Each seam's name, as its item is called.
-const SEAMS: [&str; 5] = [
-    "TestReach",
-    "with_test_reach",
-    "trusting_test_root",
-    "RecordingOutbound",
-    "InjectedClock",
+/// A use of each seam, by its name.
+const SEAMS: [(&str, &str); 5] = [
+    ("TestReach", "use purlis_core::upstream::TestReach;"),
+    (
+        "with_test_reach",
+        "pub fn seam() { let _ = purlis_core::upstream::Direct::with_test_reach; }",
+    ),
+    (
+        "trusting_test_root",
+        "use purlis_core::upstream::trust::trusting_test_root;",
+    ),
+    (
+        "RecordingOutbound",
+        "use purlis_core::upstream::RecordingOutbound;",
+    ),
+    ("InjectedClock", "use purlis_core::clock::InjectedClock;"),
 ];
 
-/// Names every build of purlis-core has, from the same files.
-const ALWAYS: [&str; 3] = ["Destination", "client_config", "Monotonic"];
+/// A use of what every build has, from the same files.
+const ALWAYS: &str = "use purlis_core::clock::{Clock, Deadline, Monotonic};\n\
+                      use purlis_core::upstream::{Destination, Direct, Outbound, trust};\n\
+                      pub fn always() { let _ = (trust::client_config, Direct::new); }";
 
 /// The files that hold the seams, under purlis-core's `src`.
 const SEAM_FILES: [&str; 4] = [
@@ -91,30 +103,67 @@ fn release_library() -> PathBuf {
         .expect("cargo named purlis-core's library")
 }
 
-fn holds(haystack: &[u8], name: &str) -> bool {
-    haystack
-        .windows(name.len())
-        .any(|window| window == name.as_bytes())
+/// Whether `source` compiles against `library` and the crates beside it.
+fn compiles(library: &Path, name: &str, source: &str) -> (bool, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(format!("{name}.rs"));
+    std::fs::write(&file, format!("#![allow(unused)]\n{source}\n")).unwrap();
+    let out = Command::new("rustc")
+        .args([
+            "--edition",
+            "2024",
+            "--crate-type",
+            "lib",
+            "--emit",
+            "metadata",
+        ])
+        .arg("--crate-name")
+        .arg(format!("seam_{}", name.to_lowercase()))
+        .arg("--out-dir")
+        .arg(dir.path())
+        .arg("-L")
+        // The library cargo names is the copy beside `deps/`, where the crates it links are.
+        .arg(format!(
+            "dependency={}",
+            library.parent().unwrap().join("deps").display()
+        ))
+        .arg("--extern")
+        .arg(format!("purlis_core={}", library.display()))
+        .arg(&file)
+        .output()
+        .expect("rustc runs");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
 #[test]
 fn test_seams_are_absent_from_a_release_build() {
-    let library = std::fs::read(release_library()).unwrap();
-    for name in ALWAYS {
-        assert!(
-            holds(&library, name),
-            "`{name}` is missing from the release library: this read finds nothing"
-        );
-    }
+    let library = release_library();
+    let (always, why) = compiles(&library, "always", ALWAYS);
+    assert!(
+        always,
+        "what every build has did not compile against {}, so this check proves nothing:\n{why}",
+        library.display()
+    );
     let carried: Vec<_> = SEAMS
         .iter()
-        .filter(|name| holds(&library, name))
+        .filter(|(name, source)| {
+            let (compiled, why) = compiles(&library, name, source);
+            // A use refused for another reason (a typo here) would prove nothing.
+            assert!(
+                compiled || why.contains(name),
+                "{name} was refused for another reason:\n{why}"
+            );
+            compiled
+        })
+        .map(|(name, _)| name)
         .collect();
     assert!(
         carried.is_empty(),
         "a build without test-support carries these test seams: {carried:?}"
     );
-
     for file in SEAM_FILES {
         let text = std::fs::read_to_string(core().join("src").join(file)).unwrap();
         for read in READS_OUTSIDE {

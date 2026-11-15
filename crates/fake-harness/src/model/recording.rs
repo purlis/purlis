@@ -80,9 +80,43 @@ impl Recording {
     /// The usage it recorded: a message's `usage`, or a stream's `message_start` usage with the
     /// last `message_delta`'s counts over it. None recorded reads as zero.
     pub fn usage(&self) -> Usage {
-        let _ = (Value::Null, usage_of);
-        Usage::default()
+        let mut usage = Usage::default();
+        let body = self.body();
+        if !self.streamed {
+            if let Ok(message) = serde_json::from_slice::<Value>(&body) {
+                usage_of(&message["usage"], &mut usage);
+            }
+            return usage;
+        }
+        for data in String::from_utf8_lossy(&body)
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+        {
+            let Ok(event) = serde_json::from_str::<Value>(data.trim()) else {
+                continue;
+            };
+            match event["type"].as_str() {
+                Some("message_start") => usage_of(&event["message"]["usage"], &mut usage),
+                Some("message_delta") => usage_of(&event["usage"], &mut usage),
+                _ => {}
+            }
+        }
+        usage
     }
 }
 
-fn usage_of(_block: &Value, _into: &mut Usage) {}
+/// Each count `block` states, over what `into` held.
+fn usage_of(block: &Value, into: &mut Usage) {
+    let take = |name: &str, field: &mut u64| {
+        if let Some(count) = block[name].as_u64() {
+            *field = count;
+        }
+    };
+    take("input_tokens", &mut into.input_tokens);
+    take("output_tokens", &mut into.output_tokens);
+    take(
+        "cache_creation_input_tokens",
+        &mut into.cache_creation_input_tokens,
+    );
+    take("cache_read_input_tokens", &mut into.cache_read_input_tokens);
+}

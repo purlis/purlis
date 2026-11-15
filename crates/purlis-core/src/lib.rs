@@ -37,8 +37,8 @@ pub mod chattools;
 pub mod checks;
 pub mod cistate;
 pub mod cliname;
-pub mod clock;
 pub mod clipath;
+pub mod clock;
 pub mod cloneupdate;
 pub mod cloning;
 #[cfg(unix)]
