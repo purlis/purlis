@@ -284,6 +284,11 @@ pub fn sign_in_with(
     })?
 }
 
+/// STUB (T1a-12 red).
+pub fn key_into(_config_root: &Path, _name: &str, _entry: ulid::Ulid) -> Result<(), String> {
+    Err("stub".to_owned())
+}
+
 /// [`list`] of this machine's own config home, for a reader that only shows what is there: empty
 /// where there is no store, it cannot be read, or a fenced test build has no business reading
 /// it.

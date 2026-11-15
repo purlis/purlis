@@ -60,7 +60,41 @@ impl Reference {
     }
 }
 
+/// What a profile's card says of whether it can start, as core reports it (STUB, T1a-12 red).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardState {
+    Available,
+    Unavailable(Unavailable),
+}
+
+/// Why a card is unavailable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    KeyMissing,
+}
+
+impl std::fmt::Display for CardState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("available")
+    }
+}
+
 impl SignIn {
+    /// STUB (T1a-12 red).
+    pub fn declaration(&self) -> Result<Option<crate::yourkeys::Product>, String> {
+        Ok(None)
+    }
+
+    /// STUB (T1a-12 red).
+    pub fn key(&self) -> Option<&str> {
+        None
+    }
+
+    /// STUB (T1a-12 red).
+    pub fn card_state(&self) -> CardState {
+        CardState::Available
+    }
+
     /// Its kind, where it is one of the four words.
     pub fn kind(&self) -> Option<SignInKind> {
         SignInKind::ALL

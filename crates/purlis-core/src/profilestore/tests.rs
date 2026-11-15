@@ -354,3 +354,192 @@ fn tree(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
     out.sort();
     out
 }
+
+/// T1a-12 (#6757): `profiles.json`'s new `sign_in` shape, an `api-key` profile naming its
+/// declaration and its entry in your keys, with no `version` step.
+mod the_new_sign_in_shape {
+    use super::*;
+
+    const ENTRY: &str = "01JD6Y8ZQK3V4T5N6P7R8S9TAB";
+
+    /// A record of the profile `name`, with the store's own fields, signed in as `sign_in`.
+    fn record(name: &str, sign_in: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "harness": "claude",
+            "title": name,
+            "folders": { "config": format!("/profiles/{name}/config") },
+            "sign_in": sign_in,
+        })
+    }
+
+    fn written(machine: &Machine, profiles: &[serde_json::Value]) {
+        fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
+        fs::write(
+            path(&machine.config),
+            serde_json::to_string(&serde_json::json!({ "version": 1, "profiles": profiles }))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn on_disk(machine: &Machine) -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(path(&machine.config)).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn profiles_json_round_trips_the_declaration_and_entry() {
+        let machine = Machine::new();
+        let sign_in = serde_json::json!({
+            "kind": "api-key",
+            "declaration": { "from": "built-in", "id": "anthropic" },
+            "key": ENTRY,
+        });
+        written(&machine, &[record("claude-anthropic", sign_in.clone())]);
+
+        let listed = machine.listed();
+        let kept = listed[0].sign_in.as_ref().expect("its sign-in is read");
+        assert_eq!(
+            kept.declaration(),
+            Ok(Some(crate::yourkeys::Product::anthropic()))
+        );
+        assert_eq!(kept.key(), Some(ENTRY));
+        update(&machine.config, |store| {
+            store.profiles[0].title = "Claude on my key".to_owned()
+        })
+        .unwrap();
+
+        let doc = on_disk(&machine);
+        assert_eq!(doc["version"], 1, "no version step");
+        assert_eq!(doc["profiles"][0]["sign_in"], sign_in);
+    }
+
+    #[test]
+    fn a_keyless_profile_takes_an_entry_id() {
+        let machine = Machine::new();
+        let mut keyless = record(
+            "claude-anthropic",
+            serde_json::json!({
+                "kind": "api-key",
+                "label": "Work",
+                "declaration": { "from": "built-in", "id": "anthropic" },
+                "later": { "kept": true },
+            }),
+        );
+        keyless["pinned_later"] = serde_json::json!(7);
+        written(&machine, &[keyless.clone()]);
+        let entry: ulid::Ulid = ENTRY.parse().unwrap();
+
+        key_into(&machine.config, "claude-anthropic", entry).expect("a keyless profile takes it");
+
+        let doc = on_disk(&machine);
+        let mut expected = keyless;
+        expected["sign_in"]["key"] = serde_json::json!(ENTRY);
+        assert_eq!(doc["profiles"][0], expected);
+        assert_eq!(doc["version"], 1);
+    }
+
+    #[test]
+    fn an_entry_id_is_written_only_into_a_keyless_key_profile() {
+        let machine = Machine::new();
+        written(
+            &machine,
+            &[
+                record(
+                    "keyed",
+                    serde_json::json!({
+                        "kind": "api-key",
+                        "declaration": { "from": "built-in", "id": "anthropic" },
+                        "key": ENTRY,
+                    }),
+                ),
+                record("plan", serde_json::json!({ "kind": "subscription" })),
+            ],
+        );
+        let before = fs::read(path(&machine.config)).unwrap();
+        let other = ulid::Ulid::generate();
+
+        for name in ["keyed", "plan", "nobody"] {
+            assert!(key_into(&machine.config, name, other).is_err(), "{name}");
+        }
+        assert_eq!(fs::read(path(&machine.config)).unwrap(), before);
+    }
+
+    /// The previous release's records, frozen here as they were before the new `sign_in` shape:
+    /// what an older purlis reads the file with.
+    mod older {
+        use serde::{Deserialize, Serialize};
+        use serde_json::{Map, Value};
+        use std::collections::BTreeMap;
+
+        #[derive(Serialize, Deserialize)]
+        pub struct OnDisk {
+            #[serde(default)]
+            pub version: u64,
+            #[serde(default)]
+            pub profiles: Vec<MachineProfile>,
+            #[serde(flatten)]
+            pub rest: Map<String, Value>,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        pub struct MachineProfile {
+            pub name: String,
+            pub harness: String,
+            pub title: String,
+            pub folders: Value,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub sign_in: Option<SignIn>,
+            #[serde(flatten)]
+            pub rest: Map<String, Value>,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        pub struct SignIn {
+            pub kind: String,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub label: Option<String>,
+            #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+            pub credentials: BTreeMap<String, String>,
+            #[serde(flatten)]
+            pub rest: Map<String, Value>,
+        }
+    }
+
+    #[test]
+    fn an_older_purlis_keeps_the_new_sign_in_fields() {
+        let machine = Machine::new();
+        written(
+            &machine,
+            &[record(
+                "claude-anthropic",
+                serde_json::json!({
+                    "kind": "api-key",
+                    "declaration": { "from": "built-in", "id": "anthropic" },
+                }),
+            )],
+        );
+        key_into(&machine.config, "claude-anthropic", ENTRY.parse().unwrap()).unwrap();
+
+        // An older purlis reads the file, changes a field it knows, and writes it back.
+        let text = fs::read_to_string(path(&machine.config)).unwrap();
+        let mut older: older::OnDisk = serde_json::from_str(&text).unwrap();
+        older.profiles[0].title = "renamed by an older purlis".to_owned();
+        fs::write(
+            path(&machine.config),
+            serde_json::to_string_pretty(&older).unwrap(),
+        )
+        .unwrap();
+
+        let doc = on_disk(&machine);
+        assert_eq!(doc["version"], 1, "no version step");
+        let listed = machine.listed();
+        let kept = listed[0].sign_in.as_ref().unwrap();
+        assert_eq!(
+            kept.declaration(),
+            Ok(Some(crate::yourkeys::Product::anthropic()))
+        );
+        assert_eq!(kept.key(), Some(ENTRY));
+        assert_eq!(listed[0].title, "renamed by an older purlis");
+    }
+}
