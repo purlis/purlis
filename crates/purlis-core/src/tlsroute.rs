@@ -375,7 +375,7 @@ impl Ca {
         use x509_cert::der::Decode;
         x509_cert::Certificate::from_der(&self.der)
             .ok()
-            .map(|cert| cert.tbs_certificate.subject.to_string())
+            .map(|cert| cert.tbs_certificate().subject().to_string())
             .filter(|subject| !subject.is_empty())
     }
 }
