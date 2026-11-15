@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794741834172,
+  "lastUpdate": 1794744474027,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49854,6 +49854,48 @@ window.BENCHMARK_DATA = {
             "value": 100.6999165,
             "unit": "ms",
             "extra": "median of 5 runs: 99.336, 99.797, 100.700, 100.960, 102.945 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a2db82e3a9dd845c664fbc042ee10324654d4f78",
+          "message": "RR-14: purlis installs itself on a runner over SSH, checked before it runs, versions side by side, signed runner assets, with review fixes (part of #723) (#6696)\n\n* RR-14: purlis installs itself on a runner over SSH, checked before it runs, versions side by side, signed runner assets (#723)\n\nReplayed from #6679 as one commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* RR-14: the new files of #6679 (runnerinstall, ssh-runner fixture, signer, changelog)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* runnerinstall: every command through sh -c, one command checks and places, curl only, a cut-off delivery leaves nothing\n\nReview fixes 3-6 of #6679:\n- Every remote command is exec sh -c '...' (for_login_shell), as sshroute's\n  HELD_BY is (ADR 0123 amendment 2026-11-12), so a fish or zsh login shell\n  works. The old probe died under zsh on its version glob.\n- Downloads use curl -q --proto =https --proto-redir =https; wget is\n  dropped, and a runner with only wget is told why (Refused::OnlyWget).\n- Hash, compare, chmod and mv are one remote command (settle_command); a\n  version already there is hashed again before it is trusted, and placed\n  again where it changed.\n- The temporary file is made by a run of its own before any byte is sent,\n  so a cut-off delivery is deleted; the probe sweeps .incoming-* older than\n  a day.\n- install() is tested end to end through a stub ssh whose login shell is\n  fish or zsh.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* Name an installed version's host socket by a hash of its version, and record the review fixes in ADR 0078\n\nThe versioned socket was purlisd-v<version>.sock; a 64-character version\nunder macOS's user temporary directory made a 134-byte path, past the\n104-byte sun_path. It is now purlisd-v<8 hex of SHA-256>.sock, with a test\non the longest version and keyed name.\n\nADR 0078 amended 2026-11-15 (D-723-11..17): the check guards the transfer,\nnot a compromised runner account; one command checks and places; every\ncommand goes through sh -c; curl only; the temporary file is made first;\ndev runner assets kept for five builds; the hashed socket name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* release.yml: sign build's own runner binaries, build only aarch64 apart, keep five dev builds' runner assets\n\nReview fixes 1 and 2 of #6679:\n- macOS arm64 and Linux x86_64 runner assets are build's own purlis\n  binaries (same profile, version stamp and cargo auditable), handed on\n  after tools/runner-binary-check.sh; no second cold build of purlis.\n- runner-binary-aarch64 builds the third, keyless (it names no signing\n  key), with cargo-auditable from install-action's digest-checked pinned\n  release rather than cargo install. No cache: its output is signed and\n  published, the rule build keeps.\n- runner-binaries only signs: the signer is compiled in a step with no\n  secret, and the step holding the key runs it and compiles nothing.\n  Each platform is downloaded and handed on by exact name, so a missing\n  asset still stops the publish loudly.\n- The dev publish keeps the last five dev builds' runner assets\n  (tools/dev-runner-assets.mjs, tested), so a desktop a dev build behind\n  still resolves its asset_url.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* ssh-runner fixture: a fisher user whose login shell is fish, and the install test runs through it\n\nThe remote-parity install test now installs through a fish login shell,\nfinds the version again and re-hashes it before trusting it, and places\nit again once the copy there changed. rustfmt on the review fixes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n* Changelog: the runner install works with any login shell and downloads only with curl over https\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7F7SSZX362B3ZKAE6NQRXZS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T11:04:21Z",
+          "tree_id": "953ed34351652d422ae099741ccb899714bfded2",
+          "url": "https://github.com/purlis/purlis/commit/a2db82e3a9dd845c664fbc042ee10324654d4f78"
+        },
+        "date": 1794744467909,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5543914999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.539, 0.554, 0.559, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2461785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.090, 16.125, 16.246, 16.256, 16.331 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.50731999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.394, 100.089, 100.507, 101.044, 103.306 ms"
           }
         ]
       }
