@@ -61,7 +61,10 @@ fn refusal(text: &str, from: &From) -> String {
 
 /// `ANTHROPIC` with `from` replaced by `to`, which must be there.
 fn edited(from: &str, to: &str) -> String {
-    assert!(ANTHROPIC.contains(from), "{from} is not in the built-in's text");
+    assert!(
+        ANTHROPIC.contains(from),
+        "{from} is not in the built-in's text"
+    );
     ANTHROPIC.replacen(from, to, 1)
 }
 
@@ -75,14 +78,23 @@ fn the_anthropic_built_in_parses() {
     assert_eq!(anthropic.endpoints.len(), 1);
     assert_eq!(anthropic.endpoints[0].format, Format::AnthropicMessages);
     assert_eq!(anthropic.endpoints[0].auth, Auth::XApiKey);
-    assert_eq!(anthropic.endpoints[0].base.origin(), "https://api.anthropic.com");
+    assert_eq!(
+        anthropic.endpoints[0].base.origin(),
+        "https://api.anthropic.com"
+    );
 }
 
 #[test]
 fn an_unknown_field_is_refused_naming_it() {
-    let why = refusal(&edited("kind = \"vendor\"", "kind = \"vendor\"\nflavour = \"mint\""), &From::BuiltIn);
+    let why = refusal(
+        &edited("kind = \"vendor\"", "kind = \"vendor\"\nflavour = \"mint\""),
+        &From::BuiltIn,
+    );
     assert!(why.contains("flavour"), "{why}");
-    let why = refusal(&edited("auth = \"x-api-key\"", "auth = \"x-api-key\"\nretries = 3"), &From::BuiltIn);
+    let why = refusal(
+        &edited("auth = \"x-api-key\"", "auth = \"x-api-key\"\nretries = 3"),
+        &From::BuiltIn,
+    );
     assert!(why.contains("retries"), "{why}");
 }
 
@@ -94,7 +106,10 @@ fn a_missing_id_is_refused() {
 
 #[test]
 fn a_project_id_equal_to_a_built_ins_is_refused() {
-    let why = refusal(&project_text("anthropic", "Acme gateway", "router"), &project());
+    let why = refusal(
+        &project_text("anthropic", "Acme gateway", "router"),
+        &project(),
+    );
     assert!(why.contains("`id`") && why.contains("anthropic"), "{why}");
     let acme = parse(
         &project_text("acme", "Acme gateway", "router"),
@@ -147,14 +162,22 @@ fn a_missing_kind_is_refused() {
 fn a_project_cloud_or_local_kind_is_refused() {
     for kind in ["cloud", "local"] {
         let why = refusal(&project_text("acme", "Acme gateway", kind), &project());
-        assert!(why.contains("`kind`") && why.contains(kind), "{kind}: {why}");
+        assert!(
+            why.contains("`kind`") && why.contains(kind),
+            "{kind}: {why}"
+        );
     }
 }
 
 #[test]
 fn key_defaults_per_kind() {
-    let vendor = parse(&edited("key = \"required\"\n", ""), &From::BuiltIn, &[], "a.toml")
-        .expect("a vendor with no key is read");
+    let vendor = parse(
+        &edited("key = \"required\"\n", ""),
+        &From::BuiltIn,
+        &[],
+        "a.toml",
+    )
+    .expect("a vendor with no key is read");
     assert_eq!(vendor.key, Key::Required);
     let local = parse(
         "id = \"ollama\"\nname = \"Ollama\"\nkind = \"local\"\n\n[[endpoint]]\n\
@@ -186,22 +209,34 @@ fn a_declaration_with_no_endpoint_is_refused() {
 #[test]
 fn an_unknown_format_is_refused() {
     let why = refusal(
-        &edited("format = \"anthropic-messages\"", "format = \"anthropic-smoke-signals\""),
+        &edited(
+            "format = \"anthropic-messages\"",
+            "format = \"anthropic-smoke-signals\"",
+        ),
         &From::BuiltIn,
     );
-    assert!(why.contains("format") && why.contains("anthropic-smoke-signals"), "{why}");
+    assert!(
+        why.contains("format") && why.contains("anthropic-smoke-signals"),
+        "{why}"
+    );
 }
 
 #[test]
 fn an_http_base_on_a_vendor_is_refused() {
     let why = refusal(
-        &edited("base = \"https://api.anthropic.com\"", "base = \"http://api.anthropic.com\""),
+        &edited(
+            "base = \"https://api.anthropic.com\"",
+            "base = \"http://api.anthropic.com\"",
+        ),
         &From::BuiltIn,
     );
     assert!(why.contains("base") && why.contains("https"), "{why}");
     // The same scheme on a vendor's loopback is still refused: only `local` may use `http`.
     let why = refusal(
-        &edited("base = \"https://api.anthropic.com\"", "base = \"http://127.0.0.1:8080\""),
+        &edited(
+            "base = \"https://api.anthropic.com\"",
+            "base = \"http://127.0.0.1:8080\"",
+        ),
         &From::BuiltIn,
     );
     assert!(why.contains("base"), "{why}");
@@ -236,7 +271,10 @@ fn malformed_bases_are_refused() {
         "https://",
     ] {
         let why = refusal(
-            &edited("base = \"https://api.anthropic.com\"", &format!("base = \"{base}\"")),
+            &edited(
+                "base = \"https://api.anthropic.com\"",
+                &format!("base = \"{base}\""),
+            ),
             &From::BuiltIn,
         );
         assert!(why.contains("base"), "{base}: {why}");
@@ -257,8 +295,13 @@ fn malformed_bases_are_refused() {
 
 #[test]
 fn absent_auth_resolves_to_bearer() {
-    let anthropic = parse(&edited("auth = \"x-api-key\"\n", ""), &From::BuiltIn, &[], "a.toml")
-        .expect("no auth is read");
+    let anthropic = parse(
+        &edited("auth = \"x-api-key\"\n", ""),
+        &From::BuiltIn,
+        &[],
+        "a.toml",
+    )
+    .expect("no auth is read");
     assert_eq!(anthropic.endpoints[0].auth, Auth::Bearer);
 }
 
@@ -278,10 +321,16 @@ fn egress_hosts_are_derived_from_the_bases() {
     .map(str::to_owned)
     .collect();
     assert_eq!(deepseek.hosts(), expected);
-    assert_eq!(built_in().hosts().into_iter().collect::<Vec<_>>(), ["https://api.anthropic.com"]);
+    assert_eq!(
+        built_in().hosts().into_iter().collect::<Vec<_>>(),
+        ["https://api.anthropic.com"]
+    );
 
     let why = refusal(
-        &edited("kind = \"vendor\"", "kind = \"vendor\"\nhosts = [\"evil.example.com\"]"),
+        &edited(
+            "kind = \"vendor\"",
+            "kind = \"vendor\"\nhosts = [\"evil.example.com\"]",
+        ),
         &From::BuiltIn,
     );
     assert!(why.contains("hosts"), "{why}");
@@ -291,7 +340,10 @@ fn egress_hosts_are_derived_from_the_bases() {
 fn the_built_in_allowlist_matches_the_joined_upstream_path() {
     let allowlist = ["/v1/messages"];
     let plain = built_in();
-    assert_eq!(plain.endpoints[0].base.upstream_path("/v1/messages"), "/v1/messages");
+    assert_eq!(
+        plain.endpoints[0].base.upstream_path("/v1/messages"),
+        "/v1/messages"
+    );
     assert!(plain.endpoints[0].base.allows("/v1/messages", &allowlist));
 
     let proxied = parse(
@@ -313,7 +365,10 @@ fn the_built_in_allowlist_matches_the_joined_upstream_path() {
 #[test]
 fn the_models_table_parses_with_every_1a_field() {
     let anthropic = built_in();
-    assert_eq!(anthropic.models.background.as_deref(), Some("claude-haiku-4-5"));
+    assert_eq!(
+        anthropic.models.background.as_deref(),
+        Some("claude-haiku-4-5")
+    );
     assert_eq!(
         anthropic.models.list.as_ref().map(Base::origin),
         Some("https://api.anthropic.com")
@@ -339,9 +394,15 @@ fn the_models_table_parses_with_every_1a_field() {
         }
     );
 
-    let why = refusal(&edited("[models]\n", "[models]\ncolour = 1\n"), &From::BuiltIn);
+    let why = refusal(
+        &edited("[models]\n", "[models]\ncolour = 1\n"),
+        &From::BuiltIn,
+    );
     assert!(why.contains("colour"), "{why}");
-    let why = refusal(&edited("tools = true\n", "tools = \"yes\"\n"), &From::BuiltIn);
+    let why = refusal(
+        &edited("tools = true\n", "tools = \"yes\"\n"),
+        &From::BuiltIn,
+    );
     assert!(why.contains("tools"), "{why}");
 }
 
@@ -359,13 +420,26 @@ fn the_digest_covers_every_field_but_the_models_table_and_background() {
         ("input = 3.0", "input = 4.0"),
         ("tier_above = 100001", "tier_above = 200001"),
         ("as_of = \"2026-11-14\"", "as_of = \"2026-12-01\""),
-        ("source = \"https://www.anthropic.com/pricing\"", "source = \"elsewhere\""),
-        ("background = \"claude-haiku-4-5\"", "background = \"claude-haiku-5\""),
+        (
+            "source = \"https://www.anthropic.com/pricing\"",
+            "source = \"elsewhere\"",
+        ),
+        (
+            "background = \"claude-haiku-4-5\"",
+            "background = \"claude-haiku-5\"",
+        ),
     ] {
-        assert_eq!(digest(&edited(from, to)), original, "{from} -> {to} moved the digest");
+        assert_eq!(
+            digest(&edited(from, to)),
+            original,
+            "{from} -> {to} moved the digest"
+        );
     }
     for (from, to) in [
-        ("base = \"https://api.anthropic.com\"", "base = \"https://api.anthropic.com/v2\""),
+        (
+            "base = \"https://api.anthropic.com\"",
+            "base = \"https://api.anthropic.com/v2\"",
+        ),
         (
             "list = \"https://api.anthropic.com/v1/models\"",
             "list = \"https://api.anthropic.com/v2/models\"",
@@ -374,6 +448,10 @@ fn the_digest_covers_every_field_but_the_models_table_and_background() {
         ("key = \"required\"", "key = \"optional\""),
         ("auth = \"x-api-key\"", "auth = \"bearer\""),
     ] {
-        assert_ne!(digest(&edited(from, to)), original, "{from} -> {to} left the digest");
+        assert_ne!(
+            digest(&edited(from, to)),
+            original,
+            "{from} -> {to} left the digest"
+        );
     }
 }
