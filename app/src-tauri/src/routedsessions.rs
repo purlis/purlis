@@ -1456,9 +1456,38 @@ impl SessionHost for RoutedSessions {
         }
     }
 
-    /// This machine's: a pool's are closed as their records are settled.
+    /// Each where it is held: on the pool a restart found it on, whose record of it then goes, as
+    /// nothing holds it any more, or else on this machine. What a launch reads a finished task's
+    /// screen from it closes this way (#6504's review): finding it kept it as that pool's, so the
+    /// settling of records skips it, and the sweep closes only what routed pools hold.
     fn close_left(&self, numbers: &[u32]) {
-        self.here.close_left(numbers);
+        let mut here = Vec::new();
+        for &number in numbers {
+            match self.host_of(number) {
+                Some(host) => {
+                    host.close_left(&[number]);
+                    self.landed_here(number);
+                }
+                None => here.push(number),
+            }
+        }
+        self.here.close_left(&here);
+    }
+
+    /// Of the host that said it runs the chat ([`Self::left_running_in`] keeps a pool's), else of
+    /// this machine's (#6504).
+    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+        match self.host_of(number) {
+            Some(host) => host.watch_left(number, sink),
+            None => self.here.watch_left(number, sink),
+        }
+    }
+
+    fn unwatch_left(&self, number: u32, view: u32) {
+        match self.host_of(number) {
+            Some(host) => host.unwatch_left(number, view),
+            None => self.here.unwatch_left(number, view),
+        }
     }
 
     /// A chat a restart found with no record of where it runs is kept as its pool's once it is

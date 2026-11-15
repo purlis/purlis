@@ -48,6 +48,17 @@ allow = [
 multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
+# rust-minidump's crates move as one: the reader (`minidump`, `minidump-unwind`) and the writer
+# under the crash handler (`minidump-writer`, `minidumper`) each pull in `minidump-common` and
+# its parsing crates, and a reader a release ahead of the writer builds two of each. The writer
+# lags the reader, so the reader waits for it (`.github/dependabot.yml`), and these say so the
+# moment a lockfile holds two.
+deny = [
+  { crate = "minidump-common", deny-multiple-versions = true },
+  { crate = "scroll", deny-multiple-versions = true },
+  { crate = "scroll_derive", deny-multiple-versions = true },
+  { crate = "num-derive", deny-multiple-versions = true },
+]
 
 [sources]
 unknown-registry = "deny"

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ChartLine } from "lucide-react";
 import {
   commands,
@@ -58,7 +58,8 @@ import { Notice } from "./Notice";
  * - **Script runs only once approved, and only from this bar** (ADR 0122 §4, #5959): a page with
  *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
  *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
- *   its template, tears the page down and opens it again under its new standing.
+ *   its template, tears the page down and opens it again under its new standing; a change to
+ *   its folder that leaves the template it is served as it was opens nothing again (#6697).
  * - **Live** (#5955): the page is loaded again in place when its data changes, as the plane's
  *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
  *   window draws, and in each one it draws after; and the bar says when its data was last
@@ -113,7 +114,10 @@ export function ArtifactTab({
   const [opened, setOpened] = useState<ArtifactOpened | null>(null);
   // Each change of either loads the page again: the old webview closes before the new one opens.
   const approvals = useApprovalsHeard(workspace, folder);
-  const template = useViewChanged([plane], templateOf(workspace, folder));
+  const template = useTemplateMoved(
+    useViewChanged([plane], templateOf(workspace, folder)),
+    opened?.label ?? null,
+  );
   const data = useViewChanged([plane], artifactDataIn(workspace, folder));
   // Shown as of a version from its History (#5966): nothing on it reloads or runs live.
   const [asOf, setAsOf] = useState<AsOf | null>(null);
@@ -203,7 +207,7 @@ export function ArtifactTab({
       ) : about.said === undefined ? null : (
         <div className="artifact-edge" data-standing={edgeOf(opened)} data-testid="artifact-edge">
           <ArtifactFrame
-            key={asOf === null ? `${approvals}:${template}` : `as-of:${asOf.id}`}
+            key={asOf === null ? `${approvals}:${template.moved}` : `as-of:${asOf.id}`}
             name={name}
             opens={`${plane}\u0000${workspace}\u0000${folder}\u0000${asOf?.id ?? ""}`}
             open={
@@ -213,6 +217,7 @@ export function ArtifactTab({
             }
             dataChanged={asOf === null ? data : 0}
             onOpened={setOpened}
+            onFailed={template.refused}
             wayOut={remedies}
           />
         </div>
@@ -293,6 +298,49 @@ function useApprovalsHeard(workspace: string, folder: string): number {
     [workspace, folder],
   );
   return heard;
+}
+
+/**
+ * **How many times the template the page is served moved** (#6697): each change to its folder
+ * the window hears (`heard`) asks the core whether what webview `label` was served differs from
+ * the folder now, and only a yes moves it. So a late event of a write the page was already
+ * served, as when it was written just before the page opened, loads nothing twice. A change
+ * heard while the page opens is asked of once it is open; one the core cannot answer moves it.
+ * Once the core would not open the page (`refused`), there is nothing served to compare: a
+ * change moves it at once, so a fixed template is opened again.
+ */
+function useTemplateMoved(
+  heard: number,
+  label: string | null,
+): { moved: number; refused: () => void } {
+  const [moved, setMoved] = useState(0);
+  // The `moved` whose frame the core would not open, or nothing.
+  const [refusedAt, setRefusedAt] = useState<number | null>(null);
+  // The last change a refused page was opened again for: the core is not asked of it.
+  const [retried, setRetried] = useState(heard);
+  if (label === null && refusedAt === moved && heard !== retried) {
+    setRetried(heard);
+    setMoved((n) => n + 1);
+  }
+  const asked = useRef(heard);
+  useEffect(() => {
+    if (heard === asked.current || heard === retried || label === null) return;
+    asked.current = heard;
+    let gone = false;
+    commands.artifactTemplateMoved(label).then(
+      (answer) => {
+        if (!gone && (answer.status === "error" || answer.data)) setMoved((n) => n + 1);
+      },
+      () => {
+        if (!gone) setMoved((n) => n + 1);
+      },
+    );
+    return () => {
+      gone = true;
+    };
+  }, [heard, label, retried]);
+  const refused = useCallback(() => setRefusedAt(moved), [moved]);
+  return { moved, refused };
 }
 
 /** A sentence the core said, as the window starts one: its first letter capital. */
@@ -446,6 +494,7 @@ export function ArtifactFrame({
   open,
   dataChanged = 0,
   onOpened = () => {},
+  onFailed = () => {},
   wayOut,
 }: {
   name: string;
@@ -463,6 +512,8 @@ export function ArtifactFrame({
   dataChanged?: number;
   /** Where the page it opened stands, or nothing once it is gone. */
   onOpened?: (opened: ArtifactOpened | null) => void;
+  /** The core would not open the page: no page is open, and none is coming until it is made again. */
+  onFailed?: () => void;
   /** Repin and Unpin, for a pinned page the core would not open (#5954); a preview has none. */
   wayOut?: ReactNode;
 }) {
@@ -478,8 +529,10 @@ export function ArtifactFrame({
   const hint = useId();
   // Read when the page opens or goes, not listened under: a new callback must not reopen it.
   const opened = useRef(onOpened);
+  const refused = useRef(onFailed);
   useEffect(() => {
     opened.current = onOpened;
+    refused.current = onFailed;
   });
 
   // The webview, made once for this frame's life and closed as it goes.
@@ -508,7 +561,10 @@ export function ArtifactFrame({
     asks.current(first, drawnTheme()).then(
       (answer) => {
         if (answer.status === "error") {
-          if (!gone) setFailed(answer.error);
+          if (!gone) {
+            setFailed(answer.error);
+            refused.current();
+          }
           return;
         }
         if (gone) {
@@ -521,7 +577,10 @@ export function ArtifactFrame({
         follow();
       },
       (why: unknown) => {
-        if (!gone) setFailed(String(why));
+        if (!gone) {
+          setFailed(String(why));
+          refused.current();
+        }
       },
     );
     return () => {

@@ -202,6 +202,10 @@ struct Served {
     /// The number of the newest set of offers taken from the open load (#6232): an older set,
     /// gated after it, is not drawn over it.
     offered: u64,
+    /// The WebKit data store it was laid in (`store_of`), kept for its life: its host may move
+    /// when its folder is read again, but its webview stays in the store it was made in, and
+    /// forgetting that store's approval closes it (#6697).
+    store: Option<[u8; 16]>,
 }
 
 /// The artifact a webview shows, as it was read when it was opened, or last read again.
@@ -479,6 +483,23 @@ impl Artifacts {
         }
     }
 
+    /// **Whether artifact webview `label`'s template on disk is other than what it was served**
+    /// (in window `window`): its pin, or any path or byte of its folder but its data. Changes
+    /// nothing it is served. A template it cannot read now has moved; a view as of a version
+    /// never does.
+    fn template_moved(&self, label: &str, window: &str) -> Result<bool, String> {
+        let (of, fingerprint) = self
+            .served_to(label, window)
+            .ok_or_else(|| "the artifact is not open in this window".to_owned())?;
+        if of.then.is_some() {
+            return Ok(false);
+        }
+        Ok(match read_pinned(&of.dir, &of.folder) {
+            Ok((pin, snapshot)) => pin != of.pin || snapshot.fingerprint() != fingerprint,
+            Err(_) => true,
+        })
+    }
+
     /// What artifact webview `label` of window `window` was served: the artifact, and the
     /// fingerprint of the template it was served.
     fn served_to(&self, label: &str, window: &str) -> Option<(Of, String)> {
@@ -486,6 +507,26 @@ impl Artifacts {
             .get(label)
             .filter(|one| one.window == window)
             .map(|one| (one.of.clone(), one.snapshot.fingerprint().to_owned()))
+    }
+
+    /// Forgets every artifact webview served from host `host`, or laid in the store it names
+    /// though served from another since, answering their labels.
+    fn forget_host(&self, host: &str) -> Vec<String> {
+        let store = store_named(host);
+        let mut served = self.served();
+        let gone: Vec<String> = served
+            .iter()
+            .filter(|(_, one)| one.host == host || (store.is_some() && one.store == store))
+            .map(|(label, _)| label.clone())
+            .collect();
+        for label in &gone {
+            served.remove(label);
+        }
+        drop(served);
+        for label in &gone {
+            self.unsubscribe_label(label);
+        }
+        gone
     }
 
     /// Forgets every artifact webview of window `window`, answering their labels.
@@ -504,6 +545,79 @@ impl Artifacts {
             self.unsubscribe_label(label);
         }
         gone
+    }
+}
+
+/// **The WebKit data store a page is laid in** (#6697): an approved page's own, named by the
+/// host its approval serves it from ([`approval::page_host`], 128 bits of which are drawn with
+/// the approval), so forgetting the approval can remove what its page kept
+/// ([`forget_web_data`]). A page whose script does not run keeps nothing and is laid in the
+/// window's store, and so is a view as of a version. macOS 14 and later alone have stores of
+/// their own; elsewhere this names one that nothing uses.
+fn store_of(served: &Served) -> Option<[u8; 16]> {
+    (served.of.then.is_none() && served.of.standing.runs())
+        .then(|| store_named(&served.host))
+        .flatten()
+}
+
+/// The store named by host `host`, as 32 hex digits are 16 bytes; none for any other host.
+fn store_named(host: &str) -> Option<[u8; 16]> {
+    if host.len() != 32 {
+        return None;
+    }
+    let mut store = [0u8; 16];
+    for (byte, pair) in store.iter_mut().zip(host.as_bytes().chunks(2)) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(store)
+}
+
+/// Whether this macOS keeps a webview's data in a store of its own when asked (14 and later,
+/// as wry decides): an older one has no such store, and asking it to remove one would fail.
+#[cfg(target_os = "macos")]
+fn stores_of_their_own() -> bool {
+    use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
+    NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
+        majorVersion: 14,
+        minorVersion: 0,
+        patchVersion: 0,
+    })
+}
+
+/// **Removes the web data of the approved page that was served from host `host`** (#6697), once
+/// its approval is forgotten: every artifact webview still served from there is closed, and
+/// then its store (`store_of`) is removed, so nothing it kept stays on disk. WebKit refuses a
+/// store a webview still holds, so it is asked a few times while the closed ones let go. Only
+/// on macOS, the one platform with a store per page; on Linux what the page kept stays,
+/// unreachable, as ADR 0122 (amended 2026-11-15) records.
+async fn forget_web_data<R: Runtime>(app: &tauri::AppHandle<R>, host: &str) {
+    let Some(_store) = store_named(host) else {
+        return;
+    };
+    let gone = app
+        .try_state::<Artifacts>()
+        .map(|artifacts| artifacts.forget_host(host))
+        .unwrap_or_default();
+    let links = app.try_state::<crate::artifact_links::Links>();
+    for label in gone {
+        if let Some(links) = &links {
+            links.forget(&label);
+        }
+        if let Some(webview) = app.get_webview(&label) {
+            let _ = webview.close();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if stores_of_their_own() {
+        let mut tries = 0;
+        while let Err(why) = app.remove_data_store(_store).await {
+            tries += 1;
+            if tries == 5 {
+                tracing::warn!("purlis: unpinned an artifact, but what its page kept stays: {why}");
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
     }
 }
 
@@ -940,12 +1054,14 @@ pub async fn artifact_unpin(
     let config = purlis_core::machine::config_root();
     // Unpinned here, its approval on this machine goes with it, and so does the origin its
     // storage was kept in (ADR 0122, amended 2026-11-10).
-    let kept = blocking(move || {
-        artifact::unpin_here(&root, &at, &folder, config.as_deref()).map(|(_, kept)| kept)
-    })
-    .await?;
-    if let Some(why) = kept {
+    // Its page's web data goes too (#6697).
+    let unpinned =
+        blocking(move || artifact::unpin_here(&root, &at, &folder, config.as_deref())).await?;
+    if let Some(why) = unpinned.kept {
         tracing::warn!("purlis: unpinned an artifact, but {why}");
+    }
+    if let Some(host) = unpinned.forgot {
+        forget_web_data(&app, &host).await;
     }
     moved(&app, plane, workspace);
     Ok(())
@@ -1055,6 +1171,7 @@ pub async fn artifact_open(
         declared,
         load: None,
         offered: 0,
+        store: None,
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpened {
@@ -1335,6 +1452,7 @@ pub async fn artifact_preview_open(
         declared: None,
         load: None,
         offered: 0,
+        store: None,
     };
     Ok(ArtifactOpened {
         label: lay(&window, &artifacts, served, place)?,
@@ -1358,6 +1476,8 @@ fn lay(
 ) -> Result<String, String> {
     let label = label(artifacts.made.fetch_add(1, Ordering::Relaxed) + 1);
     let own = origin(&served.host);
+    let store = store_of(&served);
+    let served = Served { store, ..served };
     artifacts.served().insert(label.clone(), served);
     let url: tauri::Url = format!("{own}/")
         .parse()
@@ -1382,6 +1502,15 @@ fn lay(
             .focused(false)
             .devtools(false)
             .disable_drag_drop_handler();
+    // An approved page's data is kept in its approval's own store, removed when the approval is
+    // forgotten (#6697).
+    #[cfg(target_os = "macos")]
+    let builder = match store {
+        Some(store) => builder.data_store_identifier(store),
+        None => builder,
+    };
+    #[cfg(not(target_os = "macos"))]
+    let _ = store;
     let (position, size) = place.physical();
     if let Err(why) = window.add_child(builder, position, size) {
         artifacts.served().remove(&label);
@@ -1546,6 +1675,22 @@ pub async fn artifact_reload(
     })
 }
 
+/// **Whether the template of artifact webview `label` moved from what it was served** (#6697):
+/// a change to its folder heard by the window opens the page again only when it did, so a late
+/// event of a write it was already served loads nothing twice.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_template_moved(window: tauri::Window, label: String) -> Result<bool, String> {
+    let owner = window.label().to_owned();
+    let app = window.app_handle().clone();
+    blocking(move || {
+        app.try_state::<Artifacts>()
+            .ok_or_else(|| "no artifact is open".to_owned())?
+            .template_moved(&label, &owner)
+    })
+    .await
+}
+
 /// **Draws an artifact's page in the theme the window draws now** (#5955): its sheet is
 /// written again, and the page asks for it again when it changed.
 #[tauri::command]
@@ -1642,6 +1787,7 @@ mod tests {
                     declared: None,
                     load: None,
                     offered: 0,
+                    store: None,
                 },
             );
         }
@@ -1658,6 +1804,153 @@ mod tests {
             standing,
             then: None,
         }
+    }
+
+    /// #6697: an approved page is laid in a store of its approval's own, and unpinning it here
+    /// names that store, so what its page kept is removed with the approval; a page whose
+    /// script does not run, or a view as of a version, is laid in the window's store.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn an_approved_page_s_store_is_the_one_its_forgotten_approval_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("project");
+        let ws = root.join("workspaces").join("alpha");
+        let config = dir.path().join("config");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").unwrap();
+        artifact::adopt(&root, &ws, "board", "<script>draw()</script>").unwrap();
+        let request = artifact::Request {
+            folder: "board".into(),
+            ..artifact::Request::default()
+        };
+        artifact::pin(&root, &ws, &request).unwrap();
+        let (pin, snapshot) = read_pinned(&ws, "board").unwrap();
+        approval::approve(&config, &ws, "board", &pin, snapshot.fingerprint()).unwrap();
+        let (standing, host) =
+            approval::standing_and_host(Some(&config), &ws, "board", &pin, &snapshot, "");
+        assert_eq!(standing, Standing::Approved);
+        let mut page = Served {
+            window: "main".to_owned(),
+            host,
+            snapshot,
+            of: of(standing),
+            theme: String::new(),
+            declared: None,
+            load: None,
+            offered: 0,
+            store: None,
+        };
+        let store = store_of(&page).expect("an approved page has a store of its own");
+
+        let unpinned = artifact::unpin_here(&root, &ws, "board", Some(&config)).unwrap();
+        let forgot = unpinned.forgot.expect("its approval was forgotten");
+        assert_eq!(store_named(&forgot), Some(store));
+
+        page.of.standing = Standing::ScriptFree;
+        assert_eq!(store_of(&page), None);
+        page.of.standing = Standing::New;
+        assert_eq!(store_of(&page), None);
+    }
+
+    /// A page pinned in a real workspace, served to window `main` as label `artifact-1` with
+    /// what is on disk now: the folder it reads, and where its template is.
+    fn served_from_disk() -> (tempfile::TempDir, Artifacts, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("project");
+        let ws = root.join("workspaces").join("alpha");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").unwrap();
+        artifact::adopt(&root, &ws, "board", "<h1>Board</h1>").unwrap();
+        let request = artifact::Request {
+            folder: "board".into(),
+            ..artifact::Request::default()
+        };
+        artifact::pin(&root, &ws, &request).unwrap();
+        let (pin, snapshot) = read_pinned(&ws, "board").unwrap();
+        let folder = artifact::resolve(&ws, "board").unwrap();
+        let artifacts = Artifacts::default();
+        artifacts.served().insert(
+            "artifact-1".to_owned(),
+            Served {
+                window: "main".to_owned(),
+                host: "0123456789abcdef0123456789abcdef".to_owned(),
+                snapshot,
+                of: Of {
+                    dir: ws,
+                    pin,
+                    ..of(Standing::ScriptFree)
+                },
+                theme: String::new(),
+                declared: None,
+                load: None,
+                offered: 0,
+                store: None,
+            },
+        );
+        (dir, artifacts, folder)
+    }
+
+    /// #6697: a template event the page was already served moves nothing, so its frame stays.
+    #[test]
+    fn a_template_the_page_was_served_has_not_moved() {
+        let (_dir, artifacts, _folder) = served_from_disk();
+        assert_eq!(artifacts.template_moved("artifact-1", "main"), Ok(false));
+        assert!(artifacts.template_moved("artifact-1", "tab-2").is_err());
+    }
+
+    /// #6697: a template on disk other than the one the page was served has moved, so the page
+    /// opens again; its data alone changing is not its template.
+    #[test]
+    fn a_template_changed_on_disk_since_the_page_was_served_has_moved() {
+        let (_dir, artifacts, folder) = served_from_disk();
+        let served = || {
+            artifacts.served()["artifact-1"]
+                .snapshot
+                .fingerprint()
+                .to_owned()
+        };
+        let before = served();
+        std::fs::write(folder.join("data.json"), "{\"open\": 2}").unwrap();
+        assert_eq!(artifacts.template_moved("artifact-1", "main"), Ok(false));
+
+        std::fs::write(folder.join("index.html"), "<h1>Board, again</h1>").unwrap();
+        assert_eq!(artifacts.template_moved("artifact-1", "main"), Ok(true));
+        assert_eq!(
+            served(),
+            before,
+            "asking changes nothing the page is served"
+        );
+    }
+
+    /// #6697: a page whose host moved since it was laid (its folder read again) stays in the
+    /// store it was made in, and forgetting that store's approval closes it.
+    #[test]
+    fn a_forgotten_approval_closes_the_pages_laid_in_its_store_though_served_elsewhere_since() {
+        let laid = "0123456789abcdef0123456789abcdef";
+        let artifacts = served(&[("artifact-1", "main", "fedcba9876543210fedcba9876543210")]);
+        artifacts.served().get_mut("artifact-1").unwrap().store = store_named(laid);
+
+        assert_eq!(artifacts.forget_host(laid), ["artifact-1"]);
+        assert!(artifacts.served().is_empty());
+    }
+
+    #[test]
+    fn a_forgotten_approval_s_host_closes_only_the_pages_served_from_it() {
+        let one = "0123456789abcdef0123456789abcdef";
+        let other = "fedcba9876543210fedcba9876543210";
+        let artifacts = served(&[
+            ("artifact-1", "main", one),
+            ("artifact-2", "main", other),
+            ("artifact-3", "tab-2", one),
+        ]);
+
+        let mut gone = artifacts.forget_host(one);
+        gone.sort();
+        assert_eq!(gone, ["artifact-1", "artifact-3"]);
+        let left: Vec<String> = artifacts.served().keys().cloned().collect();
+        assert_eq!(left, ["artifact-2"]);
+        assert_eq!(store_named("not a host"), None);
+        assert_eq!(store_named(one).map(|store| store[0]), Some(0x01));
     }
 
     fn standing_of(artifacts: &Artifacts, label: &str, standing: Standing) {
@@ -2198,6 +2491,7 @@ mod tests {
                 declared: None,
                 load: None,
                 offered: 0,
+                store: None,
             },
         );
         artifacts

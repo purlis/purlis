@@ -59,6 +59,18 @@ pub fn run_within(
     most_said: u64,
     within: Option<std::time::Duration>,
 ) -> Result<Ran, Unanswered> {
+    run_within_giving(command, input.map(str::as_bytes), most, most_said, within)
+}
+
+/// [`run_within`], with `input` as bytes: a file that is not text, such as a binary sent to
+/// another machine (`runnerinstall`, #723).
+pub fn run_within_giving(
+    command: &mut Command,
+    input: Option<&[u8]>,
+    most: u64,
+    most_said: u64,
+    within: Option<std::time::Duration>,
+) -> Result<Ran, Unanswered> {
     command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -76,7 +88,7 @@ pub fn run_within(
     // Its input is written beside the reading, so a command that never reads it holds up
     // neither the reading nor the clock; the writing ends as the command does.
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        let input = input.as_bytes().to_vec();
+        let input = input.to_vec();
         std::thread::spawn(move || {
             let _ = stdin.write_all(&input);
         });

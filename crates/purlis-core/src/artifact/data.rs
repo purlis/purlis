@@ -221,7 +221,7 @@ impl TokenSink for Block {
                 }
                 TokenSinkResult::Continue
             }
-            Token::TagToken(tag) if tag.name.as_ref() == "script" => {
+            Token::TagToken(tag) if &*tag.name == "script" => {
                 if tag.kind == TagKind::EndTag {
                     if let Some(text) = self.inside.borrow_mut().take() {
                         *self.found.borrow_mut() = Some(text);
@@ -231,7 +231,7 @@ impl TokenSink for Block {
                 let attr = |wanted: &str| {
                     tag.attrs
                         .iter()
-                        .find(|a| a.name.local.as_ref().eq_ignore_ascii_case(wanted))
+                        .find(|a| (*a.name.local).eq_ignore_ascii_case(wanted))
                         .map(|a| a.value.to_string())
                 };
                 let ours = attr("id").as_deref() == Some(BLOCK_ID)
@@ -247,7 +247,7 @@ impl TokenSink for Block {
                 }
             }
             Token::TagToken(tag) if tag.kind == TagKind::StartTag && !tag.self_closing => {
-                match tag.name.as_ref() {
+                match &*tag.name {
                     "style" | "xmp" | "iframe" | "noembed" | "noframes" => {
                         TokenSinkResult::RawData(RawKind::Rawtext)
                     }

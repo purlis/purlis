@@ -226,6 +226,7 @@ pub async fn artifact_open_as_of(
         declared,
         load: None,
         offered: 0,
+        store: None,
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpenedAsOf {

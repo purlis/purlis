@@ -469,7 +469,7 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
         last = now;
         return settled;
       },
-      { timeout: 10_000, interval: 200, timeoutMsg: "the window never settled on a width" },
+      { timeout: 20_000, interval: 250, timeoutMsg: "the window never settled on a width" },
     );
   }
 

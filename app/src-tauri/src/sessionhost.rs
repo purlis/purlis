@@ -24,6 +24,15 @@
 //! what the last one left from its host record (the core's
 //! [`purlis_core::hookchannel::EventLog`], #2494).
 //!
+//! **While something keeps the host running, the service manager supervises it** (FD-17, #655;
+//! [`managed`]): a trigger or a paired device makes the host a login item, a launchd agent or a
+//! systemd user unit starts it and starts it again, and the window connects to that host rather
+//! than starting one of its own. The window's breaker then counts for launchd, which keeps no
+//! limit of its own, and systemd's own limit is read from its unit; either raises the same
+//! Notice. The login items are installed as Quit goes to the background, and removed once a
+//! quit finds nothing keeping the host ([`SessionHost::keep_login_items`],
+//! [`SessionHost::forget_login_items`]).
+//!
 //! **Its folder is made first, the host is started off the first paint.** The socket's folder
 //! is made this user's alone on the window's own start, before any chat can start, so every
 //! chat's sandbox denies a folder that is there; the host then starts on a thread of its own,
@@ -227,6 +236,11 @@ pub struct SessionHost {
     /// The link to it, for the chats that run in it.
     connection: Arc<Connection>,
     supervision: Arc<Supervision>,
+    /// This platform's service manager, where there is one (FD-17): what runs the host while
+    /// something keeps it running, and what removes its login items once nothing does.
+    manager: Mutex<Option<Arc<dyn purlis_core::loginitem::Manager>>>,
+    /// Whether the manager runs the host this launch, rather than the window.
+    managed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 struct Held {
@@ -236,8 +250,9 @@ struct Held {
 }
 
 /// **The window supervises its host** (ADR 0068 §3, #2007): no service manager may be used
-/// for a host that is not a login item, so the window is the one that starts it again. What the
-/// supervisor shares with the window's other threads.
+/// for a host that is not a login item, so the window is the one that starts it again; for one
+/// that is, the window watches the manager's ([`managed`]). What the supervisor shares with the
+/// window's other threads.
 #[derive(Default)]
 struct Supervision {
     /// The window is ending its host: nothing starts it again.
@@ -333,11 +348,128 @@ impl SessionHost {
             // Where a runner a chat ran on without the sandbox is kept as one (D-2050-27).
             self.connection.runners_in(config);
         }
-        self.start_at(place, || {
-            std::env::current_exe()
-                .map(|binary| command(&binary))
-                .map_err(|why| format!("this program's path is unknown: {why}"))
-        });
+        if self.managed.load(std::sync::atomic::Ordering::SeqCst)
+            && let Some(manager) = self.manager()
+        {
+            self.start_managed_at(
+                place,
+                manager,
+                managed::log_here(),
+                READY_WITHIN,
+                own_binary,
+            );
+            return;
+        }
+        self.start_at(place, own_binary);
+    }
+
+    /// **The service manager this platform has**, for the host's login items (FD-17); and, with
+    /// `runs_it`, the manager runs the host this launch: something keeps it running
+    /// (`purlis_core::loginitem::supervisor`). Said before [`Self::start`].
+    pub fn with_manager(&self, manager: Arc<dyn purlis_core::loginitem::Manager>, runs_it: bool) {
+        *self.manager.lock().unwrap_or_else(PoisonError::into_inner) = Some(manager);
+        self.managed
+            .store(runs_it, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn manager(&self) -> Option<Arc<dyn purlis_core::loginitem::Manager>> {
+        self.manager
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Whether the service manager runs the host this launch (FD-17).
+    #[cfg(test)]
+    pub fn is_managed(&self) -> bool {
+        self.managed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// **Installs the host's login items** (FD-17): something keeps the host running, so the
+    /// manager starts it at the next login, and the app in the background with it. A host the
+    /// window runs this launch goes on as it is; the manager's, finding it serving, has nothing
+    /// to do. Where there is no manager, nothing is installed and the host ends with the app.
+    pub fn keep_login_items(&self) {
+        if let Some(manager) = self.manager()
+            && let Err(why) = manager.install()
+        {
+            tracing::warn!("purlis: the session host's login items were not installed: {why}");
+        }
+    }
+
+    /// **Removes the host's login items** (FD-17): nothing keeps the host running any more, so
+    /// it ends with the app, as before. Said once the host has quit.
+    pub fn forget_login_items(&self) {
+        if let Some(manager) = self.manager()
+            && let Err(why) = manager.remove()
+        {
+            tracing::warn!("purlis: the session host's login items were not removed: {why}");
+        }
+    }
+
+    /// [`SessionHost::start`], the host run by `manager` and serving at `place`, with what it
+    /// says written to `log` where the manager writes it (FD-17, [`managed`]). Where the manager
+    /// cannot run it, the window does, started by `starts` as [`Self::start_at`] starts it, and
+    /// says why.
+    pub(crate) fn start_managed_at(
+        &self,
+        place: purlis_host::Place,
+        manager: Arc<dyn purlis_core::loginitem::Manager>,
+        log: Option<PathBuf>,
+        answers_within: Duration,
+        starts: impl Fn() -> Result<Command, String> + Send + Sync + 'static,
+    ) {
+        *self.manager.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&manager));
+        *self
+            .supervision
+            .place
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(place.clone());
+        self.managed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
+            let why = format!(
+                "its folder {} could not be made this user's alone: {why}",
+                place.socket.parent().unwrap_or(&place.socket).display()
+            );
+            tracing::warn!("purlis: no session host: {why}");
+            self.connection.gone(why);
+            return;
+        }
+        let try_again = Arc::clone(&self.supervision);
+        self.supervision.failing.tried_again_by(Arc::new(move || {
+            try_again.wake(|woken| woken.try_again = true)
+        }));
+        let connection = Arc::clone(&self.connection);
+        let supervision = Arc::clone(&self.supervision);
+        let held = Arc::clone(&self.held);
+        let managed = Arc::clone(&self.managed);
+        let spawned = std::thread::Builder::new()
+            .name("session host".into())
+            .spawn({
+                let connection = Arc::clone(&connection);
+                move || {
+                    let supervised = managed::supervise(
+                        &place,
+                        &manager,
+                        log.as_deref(),
+                        answers_within,
+                        &connection,
+                        &supervision,
+                    );
+                    if let managed::Supervised::NotByTheManager(why) = supervised {
+                        // The window runs it as before, and says why it is not in the
+                        // background; the host does not start at the next login.
+                        managed.store(false, std::sync::atomic::Ordering::SeqCst);
+                        supervision.failing.not_run_in_the_background(why);
+                        supervise(&held, &place, &starts, &connection, &supervision);
+                    }
+                }
+            });
+        if let Err(why) = spawned {
+            tracing::warn!("purlis: the session host was not started: {why}");
+            connection.gone(format!("it was not started: {why}"));
+        }
     }
 
     /// [`SessionHost::start`], the host serving at `place` and started, each time, by the
@@ -470,10 +602,20 @@ impl SessionHost {
     /// 0068 §2).
     pub fn end(&self) {
         self.supervision.end_now();
-        if let Ok(link) = self.connection.wait(Duration::ZERO)
-            && let Err(why) = link.quit_within(QUITS_WITHIN)
-        {
+        let quit = self
+            .connection
+            .wait(Duration::ZERO)
+            .and_then(|link| link.quit_within(QUITS_WITHIN));
+        if let Err(why) = quit {
             tracing::warn!("purlis: the session host did not answer the quit: {why}");
+            // A host its service manager runs is stopped by the manager instead, so no chat
+            // outlives the quit (FD-17).
+            if self.managed.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(manager) = self.manager()
+                && let Err(why) = manager.hold()
+            {
+                tracing::warn!("purlis: the service manager was not told to stop the host: {why}");
+            }
         }
         end_held(&self.held);
     }
@@ -609,37 +751,76 @@ fn supervise(
             .iter()
             .cloned()
             .collect();
-        let why = format!(
-            "it ended unexpectedly {} times within {} minutes, so purlis stopped starting it \
-             again",
-            breaker::EXITS,
-            breaker::WITHIN.as_secs() / 60
-        );
-        tracing::warn!("purlis: the session host is failing: {why}");
-        connection.gone(why);
-        supervision.failing.failing(crate::hostfailing::Failing {
-            exits: u32::try_from(breaker::EXITS).unwrap_or(u32::MAX),
-            within_minutes: u32::try_from(breaker::WITHIN.as_secs() / 60).unwrap_or(u32::MAX),
+        say_it_is_failing(
+            connection,
+            supervision,
             said,
-        });
-        loop {
-            let woken = supervision.rest();
-            if supervision.ending() {
-                return;
-            }
-            if woken.try_again {
-                break;
-            }
+            crate::hostfailing::StoppedBy::Purlis,
+        );
+        if !wait_to_try_again(supervision) {
+            return;
         }
-        tracing::info!("purlis: the session host is tried again");
-        supervision
-            .breaker
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .reset();
-        supervision.failing.not_failing();
-        connection.restarting();
+        tried_again(connection, supervision);
     }
+}
+
+/// A breaker tripped, purlis's or the system's (`stopped_by`): no chat starts, and the window
+/// says the host is failing, with `said`, the last lines it wrote to its log.
+fn say_it_is_failing(
+    connection: &Connection,
+    supervision: &Supervision,
+    said: Vec<String>,
+    stopped_by: crate::hostfailing::StoppedBy,
+) {
+    let who = match stopped_by {
+        crate::hostfailing::StoppedBy::Purlis => "purlis",
+        crate::hostfailing::StoppedBy::System => "your system",
+    };
+    let why = format!(
+        "it ended unexpectedly {} times within {} minutes, so {who} stopped starting it again",
+        breaker::EXITS,
+        breaker::WITHIN.as_secs() / 60
+    );
+    tracing::warn!("purlis: the session host is failing: {why}");
+    connection.gone(why);
+    supervision.failing.failing(crate::hostfailing::Failing {
+        exits: u32::try_from(breaker::EXITS).unwrap_or(u32::MAX),
+        within_minutes: u32::try_from(breaker::WITHIN.as_secs() / 60).unwrap_or(u32::MAX),
+        said,
+        stopped_by,
+    });
+}
+
+/// The window's own binary, started as its session host ([`command`]).
+fn own_binary() -> Result<Command, String> {
+    std::env::current_exe()
+        .map(|binary| command(&binary))
+        .map_err(|why| format!("this program's path is unknown: {why}"))
+}
+
+/// Waits for the person's Try again: whether they pressed it, or the window is ending.
+fn wait_to_try_again(supervision: &Supervision) -> bool {
+    loop {
+        let woken = supervision.rest();
+        if supervision.ending() {
+            return false;
+        }
+        if woken.try_again {
+            return true;
+        }
+    }
+}
+
+/// The host is tried again: the count starts over, and the Notice goes.
+fn tried_again(connection: &Connection, supervision: &Supervision) {
+    tracing::info!("purlis: the session host is tried again");
+    supervision
+        .breaker
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .reset();
+    supervision.failing.not_failing();
+    connection.restarting();
 }
 
 /// Waits until the link to a host this window reattached to ends (#2006): whether the window
@@ -1016,6 +1197,7 @@ fn dialing(
 }
 
 mod breaker;
+pub mod managed;
 
 #[cfg(test)]
 mod tests;

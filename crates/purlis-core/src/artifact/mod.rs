@@ -430,14 +430,31 @@ pub fn unpin_here(
     workspace: &Path,
     key: &str,
     config_root: Option<&Path>,
-) -> Result<(Pin, Option<String>), String> {
-    let gone = unpin(root, workspace, key)?;
-    let kept = config_root.and_then(|config| {
-        approval::forget(config, workspace, &gone.folder)
-            .err()
-            .map(|why| format!("its approval on this machine stays: {why}"))
-    });
-    Ok((gone, kept))
+) -> Result<Unpinned, String> {
+    let pin = unpin(root, workspace, key)?;
+    let (kept, forgot) =
+        match config_root.map(|config| approval::forget(config, workspace, &pin.folder)) {
+            Some(Err(why)) => (
+                Some(format!("its approval on this machine stays: {why}")),
+                None,
+            ),
+            Some(Ok(forgot)) => (None, forgot),
+            None => (None, None),
+        };
+    Ok(Unpinned { pin, kept, forgot })
+}
+
+/// What [`unpin_here`] did.
+#[derive(Debug)]
+pub struct Unpinned {
+    /// The pin that went.
+    pub pin: Pin,
+    /// Why its approval on this machine stays, when it could not be forgotten.
+    pub kept: Option<String>,
+    /// The host its approved page was served from, when an approval of its own was forgotten:
+    /// the app removes the web data kept there (#6697). None for one recorded before its
+    /// `storage` was drawn, whose host a clone of the plane may share ([`approval::forget`]).
+    pub forgot: Option<String>,
 }
 
 /// Put the pins named by `keys` (ids or folders) first, in that order, numbered from 1, and
@@ -707,7 +724,12 @@ mod tests {
         let host = || approval::page_host(Some(&config), &ws, "board", &id, &snapshot, "");
         let before = host();
 
-        unpin_here(&root, &ws, "board", Some(&config)).unwrap();
+        let unpinned = unpin_here(&root, &ws, "board", Some(&config)).unwrap();
+        assert_eq!(
+            unpinned.forgot,
+            Some(before.clone()),
+            "the host whose web data goes"
+        );
         pin(&root, &ws, &request).unwrap();
         assert_eq!(pinned(&ws, "board").unwrap().id, id, "the same pin's id");
         assert_eq!(

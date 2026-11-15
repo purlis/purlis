@@ -6220,7 +6220,7 @@ fn under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy() 
 fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy() {
     let probe = match std::env::var_os("PURLIS_SANDBOX_PROBE") {
         Some(named) => Some(PathBuf::from(named)),
-        None => crate::testrun::profile_dir()
+        None => crate::testrun::bin_dir()
             .map(|built| built.join("sandbox-probe"))
             .filter(|beside| beside.is_file()),
     };

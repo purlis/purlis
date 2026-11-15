@@ -27,6 +27,7 @@ import { CHAT_EVENTS } from "./chatEvents";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { measuring } from "./stripRoom.testkit";
 import { findTree, keysOn, queryTree, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
+import { focusIsNotTheKeyboards } from "./focusVisible.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -444,20 +445,27 @@ describe("the order of the Chats list (V100-47)", () => {
     expect(shape()).toEqual(["1 steward 1", "2 devops 4", "1 steward 3", "1 steward 2"]);
   });
 
-  it("lets the keyboard's hold go when the row the keyboard was on is taken away", async () => {
+  it("keeps the keyboard's hold as the row the keyboard was on is taken away, and lets it go once the keyboard leaves", async () => {
     const { move, end } = await settled();
 
-    // The keyboard is on the task's row, which holds the list.
+    // The keyboard is on the task's row, which holds the list, and the chats move meanwhile.
     act(() => row("steward 1").focus());
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(row("devops 4"));
-    // The task is stopped and ends: its row goes, and no blur says the keyboard left.
+    const before = shape();
+    move(1, "waiting", [3, 1]);
+    expect(shape()).toEqual(before);
+    // The task is stopped and ends: its row goes, and no blur says the keyboard left. React
+    // Aria puts the keyboard back in the tree, so the list is still held: the move is not
+    // drawn, whether the hold let go in between or was taken again after.
     end(4);
     await waitFor(() => expect(shape()).toHaveLength(3));
+    await waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("treegrid"));
+    await act(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done))));
+    expect(shape()).toEqual(before.filter((drawn) => drawn !== "2 devops 4"));
 
-    move(1, "waiting", [3, 1]);
-
-    // Not held for good: the order follows the chats again.
+    // Not held for good: once the keyboard leaves, the order follows the chats again.
+    act(() => (document.activeElement as HTMLElement).blur());
     expect(shape()).toEqual(["1 steward 1", "1 steward 3", "1 steward 2"]);
   });
 
@@ -499,6 +507,7 @@ describe("the order of the Chats list (V100-47)", () => {
     const { move } = await settled();
 
     // Focused, and not by the keyboard: what a click does on the WebViews that focus a button.
+    focusIsNotTheKeyboards();
     act(() => row("steward 2").focus());
     move(1, "waiting", [3, 1]);
 

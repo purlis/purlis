@@ -2831,18 +2831,37 @@ const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
 /// [`A_SCREEN_IS_WHOLE_AFTER`], at most [`A_SCREEN_TAKES_AT_MOST`] and
 /// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
 pub(crate) fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
+    screen_through(
+        |sink| host.watch(session, sink),
+        |view| {
+            let _ = host.unwatch(session, view);
+        },
+    )
+}
+
+/// [`screen_of`] chat `number`, left in the session host from before this window and not
+/// reattached (#6504): a finished task's, which a launch keeps before it closes the chat.
+pub(crate) fn screen_left_of(host: &dyn crate::host::SessionHost, number: u32) -> Option<String> {
+    screen_through(
+        |sink| host.watch_left(number, sink),
+        |view| host.unwatch_left(number, view),
+    )
+}
+
+/// What a view `watch` opens is sent until it is whole ([`gathered`]), and the view closed with
+/// `unwatch`.
+fn screen_through(
+    watch: impl FnOnce(crate::host::Sink) -> Result<crate::host::Watching, String>,
+    unwatch: impl FnOnce(u32),
+) -> Option<String> {
     let (send, pieces) = std::sync::mpsc::channel();
     let mut text = crate::sessions::Utf8Stream::default();
-    let view = host
-        .watch(
-            session,
-            Box::new(move |bytes: Vec<u8>| {
-                let _ = send.send(text.push(&bytes));
-            }),
-        )
-        .ok()?;
+    let view = watch(Box::new(move |bytes: Vec<u8>| {
+        let _ = send.send(text.push(&bytes));
+    }))
+    .ok()?;
     let shown = gathered(&pieces, Instant::now());
-    let _ = host.unwatch(session, view.view);
+    unwatch(view.view);
     shown
 }
 

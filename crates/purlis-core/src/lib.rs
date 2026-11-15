@@ -145,6 +145,7 @@ pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;
 pub mod hostedchats;
+pub mod hostlog;
 pub mod hostsocket;
 pub mod hoststart;
 pub mod humanedit;
@@ -164,6 +165,8 @@ pub mod linkkey;
 pub mod livesub;
 pub mod localproject;
 pub mod loginask;
+#[cfg(unix)]
+pub mod loginitem;
 pub mod loginstart;
 pub mod looping;
 pub mod machine;
@@ -248,9 +251,12 @@ pub mod roster;
 pub mod rulespelling;
 pub mod runnercursors;
 #[cfg(unix)]
+pub mod runnerhost;
+#[cfg(unix)]
 pub mod runnerhours;
 #[cfg(unix)]
 pub mod runnerimage;
+pub mod runnerinstall;
 #[cfg(unix)]
 pub mod runnerlink;
 #[cfg(unix)]

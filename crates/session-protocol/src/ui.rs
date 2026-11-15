@@ -1209,6 +1209,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_enter",
     // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
     "artifact_reload",
+    // Whether its template moved from what it was served, before it is opened again (#6697).
+    "artifact_template_moved",
     "artifact_theme",
     "artifact_close",
     // Managing pins from the window (#5953): only the person's press pins or reorders, and an
@@ -1656,6 +1658,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
+    // Why the session host is not run in the background, if it could not be (FD-17).
+    "session_host_not_in_the_background",
     "session_record",
     "set_dismissed",
     // What setup's Protection row shows: the host's bound and the local project's level, a read.

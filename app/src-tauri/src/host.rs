@@ -888,6 +888,20 @@ pub trait SessionHost: Send + Sync {
         let _ = numbers;
     }
 
+    /// **A view of chat `number`, left in the host from before this window and not reattached**
+    /// (#6504), as [`Self::watch`] opens one of a session this window runs: what a launch reads
+    /// a finished task's screen through before [`Self::close_what_was_not_reattached`] ends it.
+    /// A host that outlives no window has none.
+    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+        let _ = sink;
+        Err(format!("chat {number} was not left in the session host"))
+    }
+
+    /// Closes view `view` of chat `number`, left in the host ([`Self::watch_left`]).
+    fn unwatch_left(&self, number: u32, view: u32) {
+        let _ = (number, view);
+    }
+
     /// **The browsers this plane left in the host from before this window** (#2025), running
     /// or ended, each answered once: what the put back takes back with their chats
     /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
@@ -1887,6 +1901,30 @@ pub(crate) mod pretend {
         fn close_left(&self, numbers: &[u32]) {
             lock(&self.seen.left).retain(|(one, _)| !numbers.contains(one));
             lock(&self.seen.closed_left).extend_from_slice(numbers);
+        }
+        fn watch_left(&self, number: u32, mut sink: Sink) -> Result<Watching, String> {
+            if !self.left_running(number) {
+                return Err(format!("chat {number} is not left running"));
+            }
+            self.reached(format!("watched left {number}"));
+            let shown = lock(&self.seen.screens)
+                .iter()
+                .find(|(one, _)| *one == number)
+                .map(|(_, screen)| screen.clone());
+            if let Some(screen) = shown {
+                sink(screen.into_bytes());
+            }
+            Ok(Watching {
+                view: 1,
+                size: Size {
+                    columns: 80,
+                    rows: 24,
+                },
+                older: 0,
+            })
+        }
+        fn unwatch_left(&self, number: u32, view: u32) {
+            self.reached(format!("unwatched left {number} {view}"));
         }
         fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
             std::mem::take(&mut *lock(&self.seen.browsers_left))

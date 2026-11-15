@@ -65,11 +65,11 @@ impl TokenSink for Finder {
         if tag.kind != TagKind::StartTag {
             return TokenSinkResult::Continue;
         }
-        let name = tag.name.as_ref();
+        let name = &*tag.name;
         let attr = |wanted: &str| {
             tag.attrs
                 .iter()
-                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case(wanted))
+                .find(|a| (*a.name.local).eq_ignore_ascii_case(wanted))
                 .map(|a| a.value.as_ref())
         };
         let runs = name == "script" && runs_as_script(attr("type"));
@@ -80,7 +80,7 @@ impl TokenSink for Finder {
         let url = tag.attrs.iter().any(|a| {
             is_javascript_url(&a.value)
                 || (name == "meta"
-                    && a.name.local.as_ref().eq_ignore_ascii_case("content")
+                    && (*a.name.local).eq_ignore_ascii_case("content")
                     && squeezed(&a.value).contains("javascript:"))
         });
         if runs || handler || url {
