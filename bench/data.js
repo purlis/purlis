@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794772685257,
+  "lastUpdate": 1794778040487,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50190,6 +50190,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6611345,
             "unit": "ms",
             "extra": "median of 5 runs: 101.166, 101.327, 101.661, 102.848, 102.868 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "98d22135a02943f613592a1711cb22fae5a62f29",
+          "message": "e2e: say why the picker never offered Start (#4351) (#6805)\n\nA timeout in pickAndStart now says what the picker shows: not up, still\nchecking its rows, not seen (and which element holds it at what opacity,\nas a paused charter-appear fade-in does in a hidden window), or its\nbuttons, and the page's visibilityState.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7G6C6EEGXTFSJHPW1XK6T2F\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T20:43:54Z",
+          "tree_id": "5b2c817c94020e27bc7689e94126a8ad49f2f627",
+          "url": "https://github.com/purlis/purlis/commit/98d22135a02943f613592a1711cb22fae5a62f29"
+        },
+        "date": 1794778031771,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4762125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.474, 0.476, 0.479, 0.489 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.204679999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.077, 16.083, 16.205, 16.247, 16.438 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.618854,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.479, 101.515, 101.619, 101.742, 102.232 ms"
           }
         ]
       }
