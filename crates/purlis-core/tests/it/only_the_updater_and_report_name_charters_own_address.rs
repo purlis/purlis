@@ -46,6 +46,13 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
          runner image (#2749, 2026-10-30), through the updater, listed in the network log",
     ),
     (
+        "crates/purlis-core/src/runnerinstall.rs",
+        Some("pub const RELEASES"),
+        "a release's runner binary, downloaded by the runner it is installed on, never by this \
+         machine, and run there only once its SHA-256 is the one the release's minisign key \
+         signed (RR-14, #723; ADR 0078 §5)",
+    ),
+    (
         "crates/purlis-core/src/adopt.rs",
         None,
         "`purlis update --channel` says which manifest the app will read; it reads nothing",
