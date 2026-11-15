@@ -395,9 +395,9 @@ pub struct Doctor {
     /// (#1364). `None` for a doctor a test names, which must never read the operator's own.
     pub(crate) cache_home: Option<PathBuf>,
     /// The session host's `session-host.log` (#6687), whose size the `session host log` row
-    /// says once its rotation has failed. `None` for a doctor a test names, which must never
-    /// read the operator's own.
-    pub(crate) host_log: Option<PathBuf>,
+    /// says once trimming it has stopped working while a host serves. `None` for a doctor a
+    /// test names, which must never read the operator's own.
+    pub(crate) host_log: Option<host_log::HostLog>,
 }
 
 impl Doctor {
@@ -424,7 +424,7 @@ impl Doctor {
             .clone()
             .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
-        d.host_log = crate::hostlog::path();
+        d.host_log = host_log::HostLog::here();
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -463,9 +463,13 @@ impl Doctor {
         self
     }
 
-    /// This doctor, reading the session host's log at `log` (#6687).
-    pub fn reading_host_log(mut self, log: &Path) -> Self {
-        self.host_log = Some(log.to_path_buf());
+    /// This doctor, reading the session host's log at `log`, a session host serving while
+    /// `serving` says so (#6687).
+    pub fn reading_host_log(mut self, log: &Path, serving: fn() -> bool) -> Self {
+        self.host_log = Some(host_log::HostLog {
+            log: log.to_path_buf(),
+            serving,
+        });
         self
     }
 

@@ -110,11 +110,37 @@ fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
     assert!(!hostlog::older(&log, 1).exists());
 }
 
+/// A disk that is full fails the copy (ENOSPC), and the host tries again each minute: a copy
+/// that fails leaves every older file where it was and the log whole, so trying again loses
+/// nothing. A log the host may not read stands in for the full disk.
+#[cfg(unix)]
 #[test]
-fn the_host_keeps_a_few_older_files_of_a_bounded_size() {
+fn a_copy_that_fails_leaves_the_older_files_and_the_log_as_they_were() {
+    use std::os::unix::fs::PermissionsExt as _;
     purlis_core::unsteered!();
-    assert_eq!(hostlog::KEPT, 3);
-    assert_eq!(hostlog::CAP, 1024 * 1024);
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join(hostlog::NAME);
+    for (n, fill) in (1..=3).zip(*b"bcd") {
+        write(&hostlog::older(&log, n), 100, fill);
+    }
+    write(&log, 2_000, b'a');
+    let mode = |m| std::fs::set_permissions(&log, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o200);
+
+    for _ in 0..3 {
+        assert!(hostlog::cap_at(&log, 1_000, 3).is_err());
+    }
+
+    mode(0o600);
+    let kept: Vec<Vec<u8>> = (1..=3)
+        .map(|n| std::fs::read(hostlog::older(&log, n)).unwrap_or_default())
+        .collect();
+    assert_eq!(kept, [vec![b'b'; 100], vec![b'c'; 100], vec![b'd'; 100]]);
+    assert_eq!(
+        std::fs::read(&log).unwrap(),
+        vec![b'a'; 2_000],
+        "the log is not emptied"
+    );
 }
 
 /// The acceptance (#6687): a host running with its log past the cap rotates it, keeping the

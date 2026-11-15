@@ -21,7 +21,8 @@
 //! writes the file, and what has to be bounded is its size.
 //!
 //! Nothing but a person and the Notice that the host is failing reads the log, and the doctor's
-//! `session host log` row says its size once it is far past its cap: rotation that failed.
+//! `session host log` row says its size once it is far past its cap while a host serves: the
+//! trimming has stopped working.
 //! `docs/plane-format.md` records the files: Machine, device-bound, transient.
 
 use std::fs::OpenOptions;
@@ -32,8 +33,12 @@ use std::time::Duration;
 /// The log's file name, in the app's log directory.
 pub const NAME: &str = "session-host.log";
 
-/// The size past which the log is rotated, in bytes: 1 MiB, thousands of warnings.
-pub const CAP: u64 = 1024 * 1024;
+/// The size past which the log is rotated, in bytes: 1 MB ([`CAP_SAID`]), thousands of
+/// warnings.
+pub const CAP: u64 = 1_000_000;
+
+/// [`CAP`] as a person reads it, in the doctor and the docs.
+pub const CAP_SAID: &str = "1 MB";
 
 /// How many older files are kept beside the log, `session-host.log.1` the newest.
 pub const KEPT: usize = 3;
@@ -68,8 +73,13 @@ pub fn cap(log: &Path) -> io::Result<Capped> {
     cap_at(log, CAP, KEPT)
 }
 
-/// **Rotates `log` once it is past `cap` bytes**, keeping `kept` older files: the oldest goes,
-/// each other moves up one, the log is copied to the first, and then emptied in place.
+/// **Rotates `log` once it is past `cap` bytes**, keeping `kept` older files: the log is copied
+/// beside them first (`<log>.1.tmp`), then the oldest goes, each other moves up one, the copy
+/// becomes the first, and the log is emptied in place.
+///
+/// The copy comes first because it is what fails on a full disk: one that fails has moved and
+/// removed nothing, so the host trying again each minute never loses the older files, and the
+/// log is not emptied until its copy is in place.
 ///
 /// Only a plain file is rotated: a link in the log's place is refused, and what it points to is
 /// left alone. A log that is not there is within its cap.
@@ -81,7 +91,7 @@ pub fn cap_at(log: &Path, cap: u64, kept: usize) -> io::Result<Capped> {
     };
     if !meta.is_file() {
         return Err(io::Error::other(format!(
-            "{} is not a plain file, so it is not rotated",
+            "{} is not a plain file, so it is not trimmed",
             log.display()
         )));
     }
@@ -90,6 +100,19 @@ pub fn cap_at(log: &Path, cap: u64, kept: usize) -> io::Result<Capped> {
     }
     if kept == 0 {
         return empty(log).map(|()| Capped::Rotated);
+    }
+    let copy = staged(log);
+    // One a copy that failed left, or a link, which the copy would otherwise write through.
+    if std::fs::symlink_metadata(&copy).is_ok_and(|meta| !meta.is_dir()) {
+        std::fs::remove_file(&copy)?;
+    }
+    if let Err(why) = std::fs::copy(log, &copy) {
+        // What a full disk let it write is no use, and only takes room; not a copy that cannot
+        // be removed, such as a folder in its place.
+        if std::fs::symlink_metadata(&copy).is_ok_and(|meta| meta.is_file()) {
+            let _ = std::fs::remove_file(&copy);
+        }
+        return Err(why);
     }
     match std::fs::remove_file(older(log, kept)) {
         Err(why) if why.kind() != io::ErrorKind::NotFound => return Err(why),
@@ -101,9 +124,16 @@ pub fn cap_at(log: &Path, cap: u64, kept: usize) -> io::Result<Capped> {
             _ => {}
         }
     }
-    std::fs::copy(log, older(log, 1))?;
+    std::fs::rename(&copy, older(log, 1))?;
     empty(log)?;
     Ok(Capped::Rotated)
+}
+
+/// Where `log` is copied before the older files move: `session-host.log.1.tmp`.
+fn staged(log: &Path) -> PathBuf {
+    let mut name = older(log, 1).into_os_string();
+    name.push(".tmp");
+    PathBuf::from(name)
 }
 
 /// Empties `log` in place, never through a link: the writer that holds it open to append goes
@@ -120,7 +150,7 @@ fn empty(log: &Path) -> io::Result<()> {
 }
 
 /// **Keeps `log` capped while this process runs**: [`cap`] now, and every [`LOOK_EVERY`] after,
-/// on a thread of its own. What the session host that is a login item starts, before it serves.
+/// on a thread of its own. What the session host that is a login item starts once it serves.
 pub fn keep_capped(log: PathBuf) {
     keep_capped_at(log, CAP, KEPT, LOOK_EVERY);
 }
@@ -129,7 +159,7 @@ pub fn keep_capped(log: PathBuf) {
 ///
 /// A rotation that fails is said once, as a warning, which goes to the host's standard error and
 /// so into the log itself; again only once it fails for another reason. The doctor's `session
-/// host log` row says the log's size once it is far past its cap.
+/// host log` row says the log's size once it is far past its cap while a host serves.
 pub fn keep_capped_at(log: PathBuf, cap: u64, kept: usize, every: Duration) {
     let spawned = std::thread::Builder::new()
         .name("session-host-log".into())
@@ -142,7 +172,7 @@ pub fn keep_capped_at(log: PathBuf, cap: u64, kept: usize, every: Duration) {
                         let why = why.to_string();
                         if said.as_deref() != Some(why.as_str()) {
                             tracing::warn!(
-                                "purlis: the session host's log could not be rotated: {why}"
+                                "purlis: the session host's log could not be trimmed: {why}"
                             );
                             said = Some(why);
                         }
@@ -152,6 +182,6 @@ pub fn keep_capped_at(log: PathBuf, cap: u64, kept: usize, every: Duration) {
             }
         });
     if let Err(why) = spawned {
-        tracing::warn!("purlis: the session host's log is not kept capped: {why}");
+        tracing::warn!("purlis: the session host's log is not kept trimmed: {why}");
     }
 }
