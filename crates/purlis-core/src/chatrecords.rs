@@ -107,7 +107,7 @@ pub struct ChatRecord {
     /// Where it ran: its workspace's name, or `project root`.
     pub place: String,
     /// The numbers it answered to before a restart dealt it [`Self::number`], oldest first
-    /// (#6486): each is looked up to it too. At most [`MOST_EARLIER`].
+    /// (#6486): each is looked up to it too. At most [`crate::reopen::MOST_EARLIER`].
     pub earlier: Vec<u32>,
     /// **What its Reopen starts** (#6485): the chat as it closed, held to what a reopen needs
     /// ([`for_a_reopen`]), spelt as the record of open chats spells it. `None` in an entry
@@ -252,21 +252,6 @@ pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
     }
 }
 
-/// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
-pub const MOST_EARLIER: usize = 64;
-
-/// **The numbers `earlier` keeps**: none zero, none twice, at most [`MOST_EARLIER`], the newest.
-pub fn held_earlier(earlier: &[u32]) -> Vec<u32> {
-    let mut kept: Vec<u32> = Vec::new();
-    for number in earlier.iter().rev() {
-        if *number != 0 && !kept.contains(number) && kept.len() < MOST_EARLIER {
-            kept.push(*number);
-        }
-    }
-    kept.reverse();
-    kept
-}
-
 /// **Who started a chat**, as the app knows it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "by", rename_all = "snake_case")]
@@ -307,7 +292,7 @@ impl OnDisk {
             ended: chat.ended.clone(),
             started_by: chat.started_by.clone(),
             place: chat.place.clone(),
-            earlier: held_earlier(&chat.earlier),
+            earlier: crate::reopen::held_earlier(&chat.earlier),
             chat: chat
                 .chat
                 .as_ref()
@@ -357,7 +342,7 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
         ended: one.ended,
         started_by: one.started_by.held(),
         place: held_words(&one.place),
-        earlier: held_earlier(&one.earlier),
+        earlier: crate::reopen::held_earlier(&one.earlier),
         chat: one.chat.and_then(crate::reopen::chat_from_json),
     };
     holds_together(&chat).then_some(chat)

@@ -135,7 +135,7 @@ pub struct Chat {
     /// first (#6486): a restart keeps the chat's ULID and deals a new number, and a `chat 702`
     /// link printed before it still names this chat. Carried into its closed record
     /// ([`crate::chatrecords::ChatRecord::earlier`]) as it closes. Held to
-    /// [`crate::chatrecords::MOST_EARLIER`]; empty for a chat never restarted, which is what
+    /// [`MOST_EARLIER`]; empty for a chat never restarted, which is what
     /// every record written before this field says — not a format change, for
     /// [`Self::pinned`]'s reason.
     pub earlier: Vec<u32>,
@@ -365,6 +365,21 @@ pub struct Chat {
     pub kept_tmp: Option<String>,
 }
 
+/// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
+pub const MOST_EARLIER: usize = 64;
+
+/// **The numbers `earlier` keeps**: none zero, none twice, at most [`MOST_EARLIER`], the newest.
+pub fn held_earlier(earlier: &[u32]) -> Vec<u32> {
+    let mut kept: Vec<u32> = Vec::new();
+    for number in earlier.iter().rev() {
+        if *number != 0 && !kept.contains(number) && kept.len() < MOST_EARLIER {
+            kept.push(*number);
+        }
+    }
+    kept.reverse();
+    kept
+}
+
 impl Chat {
     /// **This chat as a restart starts it again** (#6486): the same chat under its ULID, in a new
     /// run, its process gone, a new number to be dealt, and the number it has now kept with
@@ -379,7 +394,7 @@ impl Chat {
             },
             pid: None,
             number: None,
-            earlier: crate::chatrecords::held_earlier(&earlier),
+            earlier: held_earlier(&earlier),
             ..self
         }
     }
@@ -2153,7 +2168,7 @@ impl From<&Chat> for ChatOnDisk {
             },
             pinned: chat.pinned,
             number: chat.number.unwrap_or_default(),
-            earlier: crate::chatrecords::held_earlier(&chat.earlier),
+            earlier: held_earlier(&chat.earlier),
             label: chat.label.clone().unwrap_or_default(),
             from: chat.from.as_ref().map(FromOnDisk::from),
             reopened: chat
@@ -2246,7 +2261,7 @@ impl From<ChatOnDisk> for Chat {
             // that `contain::segment_ok` would pass for any integer, and a record that names
             // a number no chat here holds costs at most a gap in the counting.
             number: (chat.number > 0).then_some(chat.number),
-            earlier: crate::chatrecords::held_earlier(&chat.earlier),
+            earlier: held_earlier(&chat.earlier),
             label: label(&chat.label).ok().flatten(),
             tab_opened,
             unseen: chat.unseen,
