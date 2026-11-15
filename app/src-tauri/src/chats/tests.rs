@@ -2413,7 +2413,7 @@ fn a_chat_started_before_a_cluster_pool_was_added_is_told_to_restart_for_it() {
     );
     assert_eq!(
         behind.chats[0].pool.as_deref(),
-        Some(POOL_ADDED),
+        Some(NOTICE_CLUSTER_POOL_ADDED),
         "the pool is why"
     );
 
@@ -12953,8 +12953,13 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
     );
     assert_eq!(
         behind.chats[0].pool.as_deref(),
-        Some(TLS_POOL_ADDED),
+        Some(NOTICE_TLS_POOL_ADDED),
         "the TLS pool is why"
+    );
+    assert_eq!(
+        behind.pool.as_deref(),
+        Some(NOTICE_TLS_POOL_ADDED),
+        "for every chat"
     );
 
     chats.ask_restart(session).expect("asked");
@@ -12965,40 +12970,143 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
         None,
         "restarted, it holds the pool's files"
     );
-    chats.close(started).expect("ends");
+
+    // The key's link is pointed at another file, and no pool changes: the chat holds the file
+    // it led to, by its real path, and not the one it leads to now.
+    let new_key = docker.path().join("new-key.pem");
+    std::fs::write(&new_key, "pem").expect("another key");
+    std::fs::remove_file(&key).expect("the old link gone");
+    std::os::unix::fs::symlink(&new_key, &key).expect("the key's link, pointed anew");
+    let behind = older_on(&chats).expect("told, for the file the key now leads to");
+    assert_eq!(behind.sessions(), [started]);
+    assert_eq!(
+        behind.chats[0].pool.as_deref(),
+        Some(NOTICE_TLS_FILE_RETARGETED),
+        "no pool was added: a file it connects with leads elsewhere"
+    );
+
+    chats.ask_restart(started).expect("asked");
+    let again = chats.restart(started, SIZE).expect("restarts");
+    chats.close(started).expect("the old run ends");
+    assert_eq!(older_on(&chats), None, "restarted, it holds the new file");
+    chats.close(again).expect("ends");
 }
 
 /// #6472: **which pool the Notice names is which pool moved what a chat holds**, and none where
-/// anything else moved too: a cluster pool's programs, a TLS pool's files, or both.
+/// anything else moved too: a cluster pool's programs, a TLS pool's files, or both. A file a
+/// TLS pool names that a chat already holds, where only the real path it leads to is new, is a
+/// link pointed anew, and no pool added (the review of #6662).
 #[test]
 fn the_pool_named_as_why_a_chat_is_behind_is_the_kind_of_pool_that_moved() {
     let started = Settled::of(
         &purlis_core::sandbox::Confines::default(),
         &PoolsHeld::none(),
     );
-    let with = |cluster: &[&str], tls: &[&str]| Settled {
+    let with = |cluster: &[&str], named: &[&str], real: &[&str]| Settled {
         cluster: cluster.iter().map(std::path::PathBuf::from).collect(),
-        tls: tls.iter().map(std::path::PathBuf::from).collect(),
+        tls: named
+            .iter()
+            .chain(real)
+            .map(std::path::PathBuf::from)
+            .collect(),
+        tls_named: named.iter().map(std::path::PathBuf::from).collect(),
         ..started.clone()
     };
+    let said = |was: &Settled, now: &Settled| was.pool_added(now).and_then(PoolMoved::said);
+    let key = "/home/op/.docker/key.pem";
+    let kubectl = "/usr/bin/kubectl";
     assert_eq!(started.pool_added(&started), None, "nothing moved");
     assert_eq!(
-        started.pool_added(&with(&["/usr/bin/kubectl"], &[])),
-        Some(POOL_ADDED)
+        said(&started, &with(&[kubectl], &[], &[])),
+        Some(NOTICE_CLUSTER_POOL_ADDED)
     );
     assert_eq!(
-        started.pool_added(&with(&[], &["/home/op/.docker/key.pem"])),
-        Some(TLS_POOL_ADDED)
+        said(&started, &with(&[], &[key], &[])),
+        Some(NOTICE_TLS_POOL_ADDED)
     );
     assert_eq!(
-        started.pool_added(&with(&["/usr/bin/kubectl"], &["/home/op/.docker/key.pem"])),
-        Some(POOLS_ADDED)
+        said(&started, &with(&[kubectl], &[key], &[])),
+        Some(NOTICE_POOLS_ADDED)
     );
-    let mut wider = with(&[], &["/home/op/.docker/key.pem"]);
+    let held = with(&[], &[key], &[]);
+    let pointed_anew = with(&[], &[key], &["/home/op/keys/new.pem"]);
+    assert_eq!(
+        said(&held, &pointed_anew),
+        Some(NOTICE_TLS_FILE_RETARGETED),
+        "the same files named: a link leads elsewhere"
+    );
+    assert_eq!(
+        said(
+            &with(&[], &[key], &[]),
+            &with(&[kubectl], &[key], &["/home/op/keys/new.pem"])
+        ),
+        None,
+        "a cluster pool added and a link pointed anew: no pool sentence is true of both"
+    );
+    let mut wider = with(&[], &[key], &[]);
     wider.hosts.push("example.com".to_owned());
     assert_eq!(
         started.pool_added(&wider),
         None,
         "the project's settings moved too"
     );
+}
+
+/// The review of #6662: **the Notice's pool sentences say what moved in the window's words**:
+/// no protocol, the pool on another machine as Connect and the pin Notice name it, and nothing
+/// claimed of a key a vault keeps, which no chat's sandbox holds as a file.
+#[test]
+fn the_pool_sentences_name_no_protocol_and_claim_nothing_of_a_key_in_a_vault() {
+    for said in [
+        NOTICE_CLUSTER_POOL_ADDED,
+        NOTICE_TLS_POOL_ADDED,
+        NOTICE_POOLS_ADDED,
+        NOTICE_TLS_FILE_RETARGETED,
+    ] {
+        assert!(!said.contains("TLS") && !said.contains("API"), "{said}");
+        assert!(!said.contains("key"), "a key may be in a vault: {said}");
+        assert!(said.split_whitespace().count() <= 22, "short: {said}");
+    }
+    assert!(NOTICE_TLS_POOL_ADDED.starts_with("A pool on another machine was added"));
+}
+
+/// The review of #6662: **one sentence for every chat behind**, where pools are the only cause
+/// for each: chats behind different kinds of pool are behind pools, and none where any chat is
+/// behind something else, or no sentence is true of them all.
+#[test]
+fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_only_cause() {
+    let cluster = PoolMoved {
+        cluster: true,
+        ..PoolMoved::default()
+    };
+    let tls = PoolMoved {
+        tls_added: true,
+        ..PoolMoved::default()
+    };
+    let retargeted = PoolMoved {
+        tls_retargeted: true,
+        ..PoolMoved::default()
+    };
+    assert_eq!(
+        PoolMoved::said_for_all(&[Some(cluster), Some(cluster)]),
+        Some(NOTICE_CLUSTER_POOL_ADDED)
+    );
+    assert_eq!(
+        PoolMoved::said_for_all(&[Some(cluster), Some(tls)]),
+        Some(NOTICE_POOLS_ADDED)
+    );
+    assert_eq!(
+        PoolMoved::said_for_all(&[Some(tls), Some(retargeted)]),
+        Some(NOTICE_TLS_POOL_ADDED)
+    );
+    assert_eq!(
+        PoolMoved::said_for_all(&[Some(cluster), None]),
+        None,
+        "one chat is behind the project"
+    );
+    assert_eq!(
+        PoolMoved::said_for_all(&[Some(cluster), Some(retargeted)]),
+        None
+    );
+    assert_eq!(PoolMoved::said_for_all(&[]), None);
 }

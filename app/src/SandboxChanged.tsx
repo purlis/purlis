@@ -24,8 +24,9 @@ export const POLICY_CHANGED = "sandbox-policy-changed";
  *  before it holds none of the programs the pool runs until it restarts. */
 export const CLUSTER_POOL_ADDED = "cluster-pool-added";
 
-/** What the core sends every window when a pool over Docker's TLS API is added (#6472): a chat
- *  started before it reads the pool's certificate and key until it restarts. */
+/** What the core sends every window when a pool on another machine, over Docker's API over TLS,
+ *  is added (#6472): a chat started before it reads the files the pool connects with until it
+ *  restarts. */
 export const TLS_POOL_ADDED = "tls-pool-added";
 
 /**
@@ -246,12 +247,9 @@ export function SandboxChangedNotice({
   /** The policy's sentence, where it is the cause for any of them: the same for each. */
   const policy = behind.find((chat) => chat.policy != null)?.policy ?? undefined;
   const allPolicy = policy !== undefined && behind.every((chat) => chat.policy != null);
-  /** Where pools added while they ran are the only cause for every one, and the same pools
-   *  (#1750, #6472): one sentence for chats behind different pools would be false for some. */
-  const firstPool = behind[0]?.pool ?? undefined;
-  const pool = behind.every((chat) => chat.pool != null && chat.pool === firstPool)
-    ? firstPool
-    : undefined;
+  /** Where pools on this machine are the only cause for every one (#1750, #6472): the core's
+   *  one sentence true of them all, behind different pools or the same. */
+  const pool = older?.pool ?? undefined;
   const dismissAll = () => {
     for (const cause of causes) dismiss(cause);
   };

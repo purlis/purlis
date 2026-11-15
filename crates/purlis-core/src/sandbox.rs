@@ -2054,6 +2054,19 @@ pub fn cluster_programs(machine: &Machine) -> Vec<PathBuf> {
 /// sandbox holds their whole folder ([`crate::dockercontext::kept_tls_dir`]) whatever the pools
 /// name, so a pool that names them leaves no chat behind.
 pub fn tls_pool_files(machine: &Machine) -> Vec<PathBuf> {
+    tls_pool_files_as(machine, true)
+}
+
+/// **The files every pool over Docker's TLS API on `machine` names, by those names alone**
+/// (#6472, the review of #6662): [`tls_pool_files`] without the real paths they lead to. A file
+/// in these that a chat already holds, where only a real path is new, is a link that now leads
+/// elsewhere, not a pool added.
+pub fn tls_pool_files_named(machine: &Machine) -> Vec<PathBuf> {
+    tls_pool_files_as(machine, false)
+}
+
+/// [`tls_pool_files`], with each file's real path where `resolved`.
+fn tls_pool_files_as(machine: &Machine, resolved: bool) -> Vec<PathBuf> {
     let Some(config_root) = crate::machine::rooted(
         machine.env.get(crate::machine::HOME_VAR).map(Into::into),
         machine.env.get("XDG_CONFIG_HOME").map(Into::into),
@@ -2065,8 +2078,8 @@ pub fn tls_pool_files(machine: &Machine) -> Vec<PathBuf> {
     let copies = [real(&copies), copies];
     let mut held: Vec<PathBuf> = Vec::new();
     for file in crate::runners::tls_files(&config_root) {
-        let resolved = real(&file);
-        for path in [file, resolved] {
+        let real_path = resolved.then(|| real(&file));
+        for path in std::iter::once(file).chain(real_path) {
             let copied = copies.iter().any(|folder| path.starts_with(folder));
             if !copied && !held.contains(&path) {
                 held.push(path);

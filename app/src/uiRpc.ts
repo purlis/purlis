@@ -841,6 +841,12 @@ export const commands = {
 	chatsOnOlderSandbox: (plane: PlaneId) => typedError<{
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
+	/**
+	 *  **What the Notice says where pools on this machine are the only cause for every one of
+	 *  them** (#1750, #6472): one sentence true of them all (`PoolMoved::said_for_all`), as a
+	 *  pool is the machine's and not a project's. None otherwise.
+	 */
+	pool?: string | null,
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
 	chatsLevelWhy: __WINDOW_ONLY_RESULT,
 	restartChatWithoutSandbox: __WINDOW_ONLY_RESULT,
@@ -9502,6 +9508,12 @@ export type OlderRunner =
 export type OlderSandbox = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
+	/**
+	 *  **What the Notice says where pools on this machine are the only cause for every one of
+	 *  them** (#1750, #6472): one sentence true of them all (`PoolMoved::said_for_all`), as a
+	 *  pool is the machine's and not a project's. None otherwise.
+	 */
+	pool?: string | null,
 };
 
 /**  What runs on one device, of what the window has open. */
@@ -9529,11 +9541,11 @@ export type OnOlderSandbox = {
 	 */
 	policy?: string | null,
 	/**
-	 *  **Where a pool added since the chat started is the only cause** (#1750, #6472): the
-	 *  chat's sandbox does not yet keep it from changing the programs a cluster pool runs, or
-	 *  from reading the certificate and key of a pool over Docker's TLS API, which it holds once
-	 *  it restarts. The sentence the Notice says it in ([`POOL_ADDED`], [`TLS_POOL_ADDED`],
-	 *  [`POOLS_ADDED`]). None otherwise.
+	 *  **Where pools on this machine are the only cause** (#1750, #6472): the chat's sandbox
+	 *  does not yet keep it from changing the programs a cluster pool runs, or from reading
+	 *  the files a pool on another machine connects with, which it holds once it restarts. The
+	 *  sentence for this chat alone (`PoolMoved::said`); the Notice says
+	 *  [`OlderSandbox::pool`]. None otherwise.
 	 */
 	pool?: string | null,
 };
