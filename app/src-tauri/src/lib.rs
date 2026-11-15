@@ -199,6 +199,8 @@ mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
+#[cfg(test)]
+mod sandbox_scenarios;
 mod sandboxchoose;
 mod sandboxing;
 mod savefix;
