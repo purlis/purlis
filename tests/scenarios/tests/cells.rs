@@ -931,60 +931,53 @@ fn a_hook_word_purlis_answers_with_nothing_is_not_a_kind() {
     assert!(kinds.knows("hook.posttooluse-blocked"));
 }
 
-/// Chat 682's run record (test-matrix-phase-1.md §8, B0, 2026-11-15) as the assertions it makes
-/// fail, judged against B0's marks: every cell `expected_fail` on the issues the record lists,
-/// M-PRB-03 included (its only failure is the doubled ask, #6674).
+/// Chat 682's run record (test-matrix-phase-1.md §8, B0, 2026-11-15) as the plane's live checker
+/// judged its log (`tests/fixtures/chat-682-b0.json`): the step assertions that failed and the
+/// global checks that failed, judged against B0's marks. Every cell is `expected_fail` on the
+/// issues the record lists, M-PRB-03 included (its only failure is the doubled ask, #6674).
 #[test]
 fn b0_judges_chat_682s_record_as_the_record_says() {
     let b0 = Batch::from_value(read_json(&root().join("cells/B0.json"))).expect("B0 reads");
+    let record = read_json(&root().join("tests/fixtures/chat-682-b0.json"));
     let live = run(Dialect::Claude, Leg::Live, TimingsMode::Production);
-    let record: [(&str, Vec<Assertion>, &[u64]); 7] = [
-        (
-            "M-PRB-01",
-            vec![
-                fails(1, "require[0]", json!(2)),
-                fails(1, "require[1]", json!(0)),
-                fails(1, "require[2]", json!(45.0)),
-            ],
-            &[6672, 6673, 6674],
-        ),
-        (
-            "M-PRB-02",
-            vec![
-                fails(1, "require[0]", json!(2)),
-                fails(1, "forbid[0]", json!(1)),
-            ],
-            &[6673, 6674],
-        ),
-        ("M-PRB-03", vec![fails(1, "require[0]", json!(2))], &[6674]),
-        (
-            "M-PRB-04",
-            vec![
-                fails(1, "require[0]", json!(0)),
-                fails(1, "forbid[0]", json!(1)),
-            ],
-            &[6657],
-        ),
-        ("M-PRB-04b", vec![fails(1, "require[0]", json!(0))], &[6657]),
-        ("M-PRB-05", vec![fails(1, "require[0]", json!(0))], &[6675]),
-        (
-            "M-PRB-06",
-            vec![
-                fails(1, "require[0]", json!(0)),
-                fails(1, "require[1]", json!(0)),
-                fails(1, "forbid[0]", json!(1)),
-            ],
-            &[6672, 6673, 6676],
-        ),
+    let expected: [(&str, &[u64]); 7] = [
+        ("M-PRB-01", &[6672, 6673, 6674]),
+        ("M-PRB-02", &[6673, 6674]),
+        ("M-PRB-03", &[6674]),
+        ("M-PRB-04", &[6657]),
+        ("M-PRB-04b", &[6657]),
+        ("M-PRB-05", &[6675]),
+        ("M-PRB-06", &[6672, 6673]),
     ];
-    for (id, failed, issues) in record {
+    let recorded = record["cells"].as_object().expect("the record's cells");
+    assert_eq!(
+        recorded.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+        expected.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>(),
+        "the record covers B0's cells"
+    );
+    for (id, issues) in expected {
         let cell = b0.cells.iter().find(|c| c.id == id).expect("the cell");
         assert!(
             cell.expected_fail.iter().all(|m| m.note.is_some()),
             "{id}: every mark cites the record"
         );
+        let failed: Vec<Assertion> = recorded[id]["failed"]
+            .as_array()
+            .expect("failed")
+            .iter()
+            .map(|f| fails(1, f[0].as_str().expect("an assertion"), f[1].clone()))
+            .collect();
+        let globals: Vec<GlobalFailure> = recorded[id]["globals"]
+            .as_array()
+            .expect("globals")
+            .iter()
+            .map(|g| GlobalFailure {
+                check: g["check"].as_str().expect("a check").into(),
+                refusal: g["refusal"].as_str().expect("a refusal").into(),
+            })
+            .collect();
         assert_eq!(
-            judge(cell, &live, &failed, &[]),
+            judge(cell, &live, &failed, &globals),
             Verdict::ExpectedFail {
                 issues: issues.iter().copied().collect()
             },

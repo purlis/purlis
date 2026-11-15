@@ -108,7 +108,9 @@
       }],
       "expected_fail": [
         {"issue": 6657, "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): the repeat was throttled and silent"}
+         "note": "chat 682 (§8): the repeat was throttled and silent"},
+        {"issue": 6657, "check": "refusal_black_hole", "refusal": "step 1",
+         "note": "chat 682 (§8): the throttled repeat refused with no ask, block or hold"}
       ]
     },
     {
@@ -123,7 +125,9 @@
       }],
       "expected_fail": [
         {"issue": 6675, "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"}
+         "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"},
+        {"issue": 6675, "check": "refusal_black_hole", "refusal": "step 1",
+         "note": "chat 682 (§8): the refusal came with no ask, block or hold"}
       ]
     },
     {
@@ -144,8 +148,6 @@
       "expected_fail": [
         {"issue": 6672, "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"},
-        {"issue": 6676, "step": 1, "assertion": "require[1]", "observed": 0,
-         "note": "chat 682 (§8): the hook lines were spooled and lost args, so the block carried no GET digest"},
         {"issue": 6673, "step": 1, "assertion": "forbid[0]", "observed": 1,
          "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"}
       ]
