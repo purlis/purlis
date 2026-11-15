@@ -607,6 +607,33 @@ describe("an artifact with script (#5959)", () => {
     expect(asked(calls, "artifact_close")).toEqual([]);
     expect(asked(calls, "artifact_template_moved")).toHaveLength(1);
   });
+
+  it("opens its page again when its template changes after the core would not open it (#6697)", async () => {
+    const calls: Call[] = [];
+    let opens = 0;
+    mockIPC(
+      (cmd, args) => {
+        calls.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "artifact_about") return ABOUT;
+        if (cmd === "artifact_open") {
+          opens += 1;
+          if (opens === 1) throw "its template does not parse";
+          return { ...OPENED, standing: "approved" };
+        }
+        if (cmd === "artifact_template_moved") return false;
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<Tab />);
+    expect(await screen.findByTestId("artifact-missing")).toHaveTextContent(
+      "Its template does not parse",
+    );
+
+    await changed("alpha", "backlog-state/index.html");
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(2));
+    expect(screen.queryByTestId("artifact-missing")).toBeNull();
+  });
 });
 
 describe("an artifact's view", () => {
