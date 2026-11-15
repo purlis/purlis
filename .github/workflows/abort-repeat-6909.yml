@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [serial, parallel, loaded]
+        mode: [test-serial, test-parallel, test-all, heavy]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
@@ -28,14 +28,21 @@ jobs:
         with:
           save-if: false
       - run: cargo build --locked -p purlis-crash-handler --bin crash-probe
+      - run: cargo test --locked -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run
       - name: Loop
         env:
           MODE: ${{ matrix.mode }}
         run: |
+          T=$(ls -t target/debug/deps/a_native_crash_leaves_a_minidump-* | grep -v '\.d$' | head -1)
           case "$MODE" in
-            serial) N=600; J=1 ;;
-            parallel) N=2000; J=8 ;;
-            loaded) N=2000; J=8
-              for k in 1 2 3 4; do (while :; do :; done) & done ;;
+            heavy)
+              for k in 1 2 3 4 5 6; do (while :; do :; done) & done
+              bash tools/abort-loop-6909.sh target/debug/crash-probe 4000 16; exit ;;
+            test-serial) N=800; J=1; F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler ;;
+            test-parallel) N=2000; J=6; F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler ;;
+            test-all) N=300; J=1; F= ;;
           esac
-          bash tools/abort-loop-6909.sh target/debug/crash-probe "$N" "$J"
+          seq 1 "$N" | xargs -P "$J" -I{} sh -c "'$T' $F > \"\$TMPDIR/t{}.txt\" 2>&1 || echo {}" > failed.txt || true
+          echo "failed: $(wc -l < failed.txt) of $N"
+          for i in $(cat failed.txt); do echo "::group::run $i"; cat "$TMPDIR/t$i.txt"; echo "::endgroup::"; done
+          test ! -s failed.txt
