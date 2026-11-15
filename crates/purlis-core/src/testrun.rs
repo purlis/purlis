@@ -38,25 +38,166 @@ pub fn rerun_ignored(tests: &[&str], env: &[(&str, &OsStr)]) -> String {
     rerun_with(tests, env, false, true)
 }
 
-/// **The profile directory this test binary was built under**, `target[/<triple>]/<profile>`,
-/// where Cargo puts the workspace's binaries: `purlis`, `fake-harness`, `sandbox-probe`, the app.
+/// **The profile directory this test binary was built under**, `<build-dir>[/<triple>]/<profile>`:
+/// what its name says (`debug`, `dev-release`), and where Cargo filed it.
 ///
 /// A test binary is filed in its `deps/`, or in `build/<crate>/<hash>/out/` from Cargo 1.100's
-/// build directory layout, so its parent's parent is the profile directory only in the first.
-/// `None` for a binary in neither, which is not one Cargo built for a test.
+/// build directory layout. `None` for a binary in neither, which is not one Cargo built for a
+/// test, whatever folder above it is named `build` or `deps`.
+///
+/// **Not where the workspace's binaries are** when `build.build-dir` is set apart from the
+/// target directory: Cargo copies those into the target directory, which [`bin_dir`] answers.
 pub fn profile_dir() -> Option<std::path::PathBuf> {
     profile_dir_of(&std::env::current_exe().ok()?).map(std::path::Path::to_path_buf)
 }
 
 /// [`profile_dir`] for the binary at `exe`.
 pub fn profile_dir_of(exe: &std::path::Path) -> Option<&std::path::Path> {
-    exe.ancestors()
-        .skip(1)
-        .find(|dir| {
-            dir.file_name()
-                .is_some_and(|name| name == "deps" || name == "build")
-        })?
-        .parent()
+    let named = |dir: &std::path::Path, name: &str| dir.file_name().is_some_and(|it| it == name);
+    let parent = exe.parent()?;
+    if named(parent, "deps") {
+        return parent.parent();
+    }
+    // `<profile>/build/<crate>/<hash>/out/<exe>`.
+    let build = parent.ancestors().nth(3)?;
+    (named(parent, "out") && named(build, "build"))
+        .then(|| build.parent())
+        .flatten()
+}
+
+/// **The folder the workspace's binaries are in** for this test binary's build,
+/// `<target-dir>[/<triple>]/<profile>`: `purlis`, `fake-harness`, `sandbox-probe`, the app.
+///
+/// Cargo builds under its build directory and copies each binary into the target directory,
+/// and the two are apart when `build.build-dir` says so (in `~/.cargo/config.toml`, say), so
+/// where they are is asked of Cargo (`cargo metadata`). `None` where this binary was not built
+/// for a test ([`profile_dir`]) or Cargo cannot say.
+pub fn bin_dir() -> Option<std::path::PathBuf> {
+    let profile = resolved(profile_dir()?);
+    let (build_dir, target_dir) = cargo_dirs()?;
+    bin_dir_of(&profile, &build_dir, &target_dir)
+}
+
+/// [`bin_dir`] for the profile directory `profile` of a build under `build_dir`, whose binaries
+/// Cargo copies into `target_dir`: the same place under the one as under the other.
+pub fn bin_dir_of(
+    profile: &std::path::Path,
+    build_dir: &std::path::Path,
+    target_dir: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    Some(target_dir.join(profile.strip_prefix(build_dir).ok()?))
+}
+
+/// The build directory and the target directory, as `cargo metadata` says them for the
+/// workspace this test was built in, each with its links resolved as [`std::env::current_exe`]
+/// resolves them. The build directory is the target directory for a Cargo that names none.
+fn cargo_dirs() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let mut cargo = cargo();
+    cargo.args(["metadata", "--format-version", "1", "--no-deps"]);
+    let out = crate::forklock::output(&mut cargo).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let said: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let dir = |key: &str| Some(resolved(said.get(key)?.as_str()?.into()));
+    let target_dir = dir("target_directory")?;
+    Some((
+        dir("build_directory").unwrap_or_else(|| target_dir.clone()),
+        target_dir,
+    ))
+}
+
+/// `path` with its links resolved, or as it is where it cannot be (it is not there yet).
+fn resolved(path: std::path::PathBuf) -> std::path::PathBuf {
+    path.canonicalize().unwrap_or(path)
+}
+
+/// The Cargo that runs this test, in the package it was built from.
+fn cargo() -> Command {
+    let mut cargo = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    if let Some(package) = std::env::var_os("CARGO_MANIFEST_DIR") {
+        cargo.current_dir(package);
+    }
+    cargo
+}
+
+/// **The binary `name` of package `package`, as this test's build has it**, in [`bin_dir`]: built
+/// first when it is not there yet, with the profile and target this test was built with.
+///
+/// What Cargo built is taken from what Cargo says it built (`--message-format=json`, the
+/// artifact's `executable`), and the test fails at once when that is not the binary looked for,
+/// or is not there. **Never built over one that is**: a binary already there may be one another
+/// package's tests built with their features (`purlis` with `purlis-core/fenced`, which those
+/// tests reach as `CARGO_BIN_EXE_purlis`), and a plain build would put one without them in its
+/// place.
+///
+/// # Panics
+///
+/// Where this binary was not built for a test, Cargo cannot say where its binaries go, the
+/// build fails, or what it built is not where its binaries go.
+pub fn built(name: &str, package: &str) -> std::path::PathBuf {
+    let profile =
+        resolved(profile_dir().expect("this test binary is in a folder of Cargo's build"));
+    let (build_dir, target_dir) = cargo_dirs().expect("cargo metadata says where it builds");
+    let bins = bin_dir_of(&profile, &build_dir, &target_dir).unwrap_or_else(|| {
+        panic!(
+            "this test was built in {}, outside the build directory Cargo names, {}",
+            profile.display(),
+            build_dir.display()
+        )
+    });
+    let beside = bins.join(name);
+    if beside.is_file() {
+        return beside;
+    }
+    let mut build = cargo();
+    build.args([
+        "build",
+        "--message-format=json-render-diagnostics",
+        "-p",
+        package,
+        "--bin",
+        name,
+    ]);
+    // `[<triple>/]<profile>`, as Cargo names a build of the profile for that target.
+    let filed: Vec<_> = bins
+        .strip_prefix(&target_dir)
+        .expect("in the target directory")
+        .iter()
+        .collect();
+    if let [triple, _] = filed.as_slice() {
+        build.arg("--target").arg(triple);
+    }
+    match filed.last().and_then(|it| it.to_str()) {
+        Some("debug") => {}
+        Some(other) => {
+            build.args(["--profile", other]);
+        }
+        None => panic!("no profile in {}", bins.display()),
+    }
+    build.stderr(std::process::Stdio::inherit());
+    let out = crate::forklock::output(&mut build).expect("cargo runs");
+    assert!(out.status.success(), "{name} did not build: {}", out.status);
+    let made = executable_of(&String::from_utf8_lossy(&out.stdout), name)
+        .unwrap_or_else(|| panic!("cargo built {name} and named no executable for it"));
+    assert!(
+        made.is_file() && resolved(made.clone()) == resolved(beside.clone()),
+        "cargo built {name} at {}, where this test's build has its binaries in {}: \
+         no test runs a binary of another build",
+        made.display(),
+        bins.display()
+    );
+    made
+}
+
+/// The `executable` Cargo's JSON `messages` name for the binary `name`, which it built.
+fn executable_of(messages: &str, name: &str) -> Option<std::path::PathBuf> {
+    messages
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact")
+        .filter(|message| message["target"]["name"] == name)
+        .find_map(|message| message["executable"].as_str().map(std::path::PathBuf::from))
 }
 
 /// Set on a child [`rerun_steered`] started: its steering variables were chosen by the test,
@@ -154,6 +295,100 @@ macro_rules! unsteered {
 mod tests {
     /// Set on the child: where the test's body writes what it saw.
     const SAW: &str = "TESTRUN_GUARD_SAW";
+
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn a_test_binary_in_deps_is_filed_under_its_profile() {
+        assert_eq!(
+            super::profile_dir_of(Path::new("/w/target/debug/deps/it-0123abcd")),
+            Some(Path::new("/w/target/debug"))
+        );
+    }
+
+    #[test]
+    fn a_test_binary_in_the_build_directory_layout_is_filed_under_its_profile() {
+        assert_eq!(
+            super::profile_dir_of(Path::new(
+                "/w/target/aarch64-apple-darwin/debug/build/purlis-core/0123abcd/out/it-0123abcd"
+            )),
+            Some(Path::new("/w/target/aarch64-apple-darwin/debug"))
+        );
+    }
+
+    #[test]
+    fn a_binary_cargo_did_not_file_for_a_test_has_no_profile_even_under_a_folder_named_build_or_deps()
+     {
+        for exe in [
+            "/home/me/build/target/debug/purlis",
+            "/home/me/build/src/tool",
+            "/srv/deps/project/target/debug/purlis",
+            "/w/target/debug/build/purlis-core/0123abcd/it-0123abcd",
+            "/w/target/debug/purlis",
+        ] {
+            assert_eq!(super::profile_dir_of(Path::new(exe)), None, "{exe}");
+        }
+    }
+
+    #[test]
+    fn the_binaries_of_a_build_directory_set_apart_are_in_the_target_directory() {
+        assert_eq!(
+            super::bin_dir_of(
+                Path::new("/cache/build/w-0123/aarch64-apple-darwin/debug"),
+                Path::new("/cache/build/w-0123"),
+                Path::new("/w/target"),
+            ),
+            Some(PathBuf::from("/w/target/aarch64-apple-darwin/debug"))
+        );
+    }
+
+    #[test]
+    fn the_binaries_of_a_build_directory_that_is_the_target_directory_are_beside_its_profile() {
+        assert_eq!(
+            super::bin_dir_of(
+                Path::new("/w/target/debug"),
+                Path::new("/w/target"),
+                Path::new("/w/target"),
+            ),
+            Some(PathBuf::from("/w/target/debug"))
+        );
+    }
+
+    #[test]
+    fn a_profile_outside_the_build_directory_has_no_folder_of_binaries() {
+        assert_eq!(
+            super::bin_dir_of(
+                Path::new("/elsewhere/debug"),
+                Path::new("/cache/build/w-0123"),
+                Path::new("/w/target"),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn this_builds_binaries_are_in_the_target_directory_cargo_names_under_this_tests_profile() {
+        let (_, target_dir) = super::cargo_dirs().expect("cargo metadata answers");
+        let profile = super::profile_dir().expect("a test binary of Cargo's");
+        let bins = super::bin_dir().expect("a folder of binaries");
+        assert!(bins.starts_with(&target_dir), "{}", bins.display());
+        assert_eq!(bins.file_name(), profile.file_name());
+    }
+
+    #[test]
+    fn what_cargo_built_is_the_executable_its_messages_name_for_that_binary() {
+        let messages = [
+            r#"{"reason":"compiler-artifact","target":{"name":"purlis_core","kind":["lib"]},"executable":null}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"purlis","kind":["bin"]},"executable":"/w/target/debug/purlis"}"#,
+            r#"{"reason":"build-finished","success":true}"#,
+        ]
+        .join("\n");
+        assert_eq!(
+            super::executable_of(&messages, "purlis"),
+            Some(PathBuf::from("/w/target/debug/purlis"))
+        );
+        assert_eq!(super::executable_of(&messages, "fake-harness"), None);
+    }
 
     #[test]
     fn a_test_started_with_a_steering_variable_set_runs_again_without_it() {

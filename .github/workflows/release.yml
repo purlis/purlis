@@ -1039,8 +1039,9 @@ jobs:
       # `release` writes line tables into a packed dSYM beside each binary and still strips the
       # binary (`strip = true`), since the native crash handler was switched on (ADR 0092 amended
       # 2026-11-10, #5692). The dSYMs are copied here alone: the bundles take the binary, never
-      # its dSYM. Cargo leaves each as a symlink into `deps/`, so `-L` copies what it points at:
-      # a copied link dangles and upload-artifact leaves it out. A dSYM with no DWARF in it is a
+      # its dSYM. Cargo leaves each as a symlink to where it built the binary in its build
+      # directory (`build/<crate>/<hash>/` from Cargo 1.100, no longer `deps/`), so `-L` copies
+      # what it points at: a copied link dangles and upload-artifact leaves it out. A dSYM with no DWARF in it is a
       # warning, not a failure: symbols never hold a release back. An empty folder saves no
       # artifact, and the `symbols` job says it found none.
       #

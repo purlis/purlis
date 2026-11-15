@@ -788,17 +788,18 @@ pub(crate) fn claude_is_wrapped_here_for_tests() -> bool {
 /// the test binary. The wrap is purlis's own program run as `<program> _sandbox …`
 /// ([`purlis_core::sandbox::program::checked_wrap`]), which in a test is the test binary, and
 /// libtest refuses that line (`Unrecognized option: 'profile'`): the chat would end at once,
-/// before anything ran inside the wrap. The app program, built beside the test binary for this
-/// crate's integration tests, serves `_sandbox` before anything else, as it does for a person.
+/// before anything ran inside the wrap. The app program, which Cargo puts with this build's other
+/// binaries for this crate's integration tests, serves `_sandbox` before anything else, as it does for a person.
 /// Nothing where no wrap is held.
 #[cfg(test)]
 pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox::Applied) {
-    let Some(this) = applied.wrap_program() else {
+    if applied.wrap_program().is_none() {
         return;
-    };
-    // The test binary under `target/<profile>` (`purlis_core::testrun::profile_dir`), and the app program
-    // in `target/<profile>`.
-    let app = purlis_core::testrun::profile_dir_of(this)
+    }
+    // The app program is where Cargo copies this build's binaries, which is the target
+    // directory even where the test binary is under a build directory set apart from it
+    // (`purlis_core::testrun::bin_dir`).
+    let app = purlis_core::testrun::bin_dir()
         .map(|built| built.join(env!("CARGO_PKG_NAME")))
         .expect("the test binary is in a folder of the build");
     assert!(
