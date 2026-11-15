@@ -801,12 +801,14 @@ mod declaration {
             ..record_named("work")
         };
 
-        let why = at_start(&profile("work"), &[record.clone()], &[]).unwrap_err();
+        let machine = [record];
+
+        let why = at_start(&profile("work"), &machine, &[]).unwrap_err();
 
         assert!(why.contains(W117), "{why}");
         assert!(why.contains("Nothing was started"), "{why}");
         assert!(
-            billed(&profile("work"), &[record], &[])
+            billed(&profile("work"), &machine, &[])
                 .unwrap()
                 .ends_with(W117)
         );
