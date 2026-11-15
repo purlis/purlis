@@ -45,6 +45,11 @@ use crate::loginitem::{self, Os, Runs};
 /// The hidden flag a service manager starts the host with: `purlis serve --as-a-service`.
 pub const AS_A_SERVICE: &str = "--as-a-service";
 
+/// **How long a stop waits for the host** (#6700): systemd's `TimeoutStopSec=` and launchd's
+/// `ExitTimeOut`. The host ends its chats within `purlis_host::ENDS_WITHIN` of `SIGTERM`;
+/// this is for a machine slow to shut down.
+pub const STOPS_WITHIN_SECONDS: u64 = 30;
+
 /// Where `systemd-logind` notes each user whose manager lingers (`loginctl(1)`, `enable-linger`).
 pub const LINGER_DIR: &str = "/var/lib/systemd/linger";
 
@@ -102,10 +107,12 @@ impl Service {
 
 /// **The systemd user unit**: wanted by `default.target`, which a user manager reaches whether
 /// or not anyone has a desktop; restarted after a failure, and held stopped after
-/// [`loginitem::EXITS`] failures within [`loginitem::WITHIN_SECONDS`]. A stop or the machine's
-/// shutdown ends the host and every chat in its control group; the next host of this version
-/// settles each as ended by that (`purlis_host::HostRecord`). The config home install resolved
-/// is pinned in `Environment=`.
+/// [`loginitem::EXITS`] failures within [`loginitem::WITHIN_SECONDS`]. **A stop or the machine's
+/// shutdown reaches the host first** (`KillMode=mixed`, #6700): `SIGTERM` goes to it alone, it
+/// ends every chat as a quit, empties its host record and exits 0, and only then, or after
+/// [`STOPS_WITHIN_SECONDS`], is what is left of its control group killed. A host killed outright
+/// leaves its record, and the next host of this version settles each chat in it as a crash
+/// (`purlis_host::HostRecord`). The config home install resolved is pinned in `Environment=`.
 pub fn unit(service: &Service) -> String {
     let command: Vec<String> = std::iter::once(service.binary.to_string_lossy().into_owned())
         .chain(service.job().args)
@@ -137,6 +144,8 @@ pub fn unit(service: &Service) -> String {
          ExecStart={}\n\
          Restart=on-failure\n\
          RestartSec=5\n\
+         KillMode=mixed\n\
+         TimeoutStopSec={STOPS_WITHIN_SECONDS}\n\
          \n\
          [Install]\n\
          WantedBy=default.target\n",
@@ -149,8 +158,11 @@ pub fn unit(service: &Service) -> String {
 
 /// **The LaunchAgent**: loaded now, into the account's GUI domain or, signed in over SSH alone,
 /// its user domain; started again after an exit that was not a success. After a restart launchd
-/// loads it only at a sign-in at the Mac's screen. The config home install resolved is pinned
-/// in `EnvironmentVariables`. What the host says on standard error goes to `log`.
+/// loads it only at a sign-in at the Mac's screen. A bootout sends `SIGTERM` to the host alone,
+/// which ends every chat as a quit (#6700), and `SIGKILL` only after `ExitTimeOut`
+/// ([`STOPS_WITHIN_SECONDS`]), as `KillMode=mixed` does for the unit. The config home install
+/// resolved is pinned in `EnvironmentVariables`. What the host says on standard error goes to
+/// `log`.
 pub fn plist(service: &Service, log: &Path) -> String {
     let mut keep_alive = plist::Dictionary::new();
     keep_alive.insert("SuccessfulExit".into(), false.into());
@@ -162,6 +174,7 @@ pub fn plist(service: &Service, log: &Path) -> String {
     );
     agent.insert("RunAtLoad".into(), true.into());
     agent.insert("KeepAlive".into(), keep_alive.into());
+    agent.insert("ExitTimeOut".into(), STOPS_WITHIN_SECONDS.into());
     if let Some(home) = &service.config_home {
         let mut environment = plist::Dictionary::new();
         environment.insert(

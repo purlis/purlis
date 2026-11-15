@@ -133,6 +133,34 @@ fn the_unit_starts_with_the_user_manager_whether_or_not_anyone_has_a_desktop() {
     assert!(unit.contains("version 0.9.0-rc.1"), "{unit}");
 }
 
+/// #6700: a stop reaches the host alone, which ends its chats as a quit and exits; only then
+/// is what is left killed. `KillMode=mixed` sends `SIGTERM` to the main process only and
+/// `SIGKILL` to the rest of the control group once it has gone or the timeout has passed;
+/// launchd sends `SIGTERM` to the job alone on a bootout, and `SIGKILL` after `ExitTimeOut`.
+#[test]
+fn a_stop_reaches_the_host_first_with_time_to_end_its_chats_as_a_quit() {
+    let unit = unit(&versioned());
+    assert!(unit.contains("\nKillMode=mixed\n"), "{unit}");
+    assert!(
+        unit.contains(&format!("\nTimeoutStopSec={STOPS_WITHIN_SECONDS}\n")),
+        "{unit}"
+    );
+    let agent = plist::Value::from_reader_xml(
+        plist(&versioned(), Path::new("/Users/runner/serve.log")).as_bytes(),
+    )
+    .unwrap()
+    .into_dictionary()
+    .unwrap();
+    assert_eq!(
+        agent["ExitTimeOut"].as_signed_integer(),
+        Some(i64::try_from(STOPS_WITHIN_SECONDS).unwrap())
+    );
+    assert!(
+        std::time::Duration::from_secs(STOPS_WITHIN_SECONDS) >= purlis_host::ENDS_WITHIN * 4,
+        "the host's own wait for its programs fits well inside the manager's"
+    );
+}
+
 #[test]
 fn the_unit_and_the_agent_pin_the_config_home_install_resolved() {
     let unit = unit(&versioned());
