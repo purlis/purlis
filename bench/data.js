@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794702345644,
+  "lastUpdate": 1794711408146,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49560,6 +49560,48 @@ window.BENCHMARK_DATA = {
             "value": 101.358599,
             "unit": "ms",
             "extra": "median of 5 runs: 100.362, 101.186, 101.359, 103.262, 105.569 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "69a8cf0051e1db49e6b240177c11507f4a161920",
+          "message": "Say the pool sentences in the window's words, and tell a link pointed anew from a pool added (#6472) (#6666)\n\nThe review of #6662: no protocol names, a pool on another machine as Connect\nsays it, nothing claimed of a key a vault keeps, and one short sentence where\npools of both kinds were added. The Notice takes one sentence for every chat\nfrom the core (OlderSandbox.pool), so chats behind different pools are told\npools were added, not that the project's sandbox changed. A file a pool names\nthat now leads elsewhere, with no pool changed, has words of its own, and the\nrestart test pins the real paths by pointing the key's link anew. The\nsentence constants are NOTICE_*, so TLS_POOL_ADDED is the event alone.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6PHMW0VF0B2135DFEFMJR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T02:16:35Z",
+          "tree_id": "5b6d858c8372749b31e63cd8cd80eeb1d61de213",
+          "url": "https://github.com/purlis/purlis/commit/69a8cf0051e1db49e6b240177c11507f4a161920"
+        },
+        "date": 1794711401692,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.34032799999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.327, 0.340, 0.349, 0.351 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.32094,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.123, 16.221, 16.321, 16.480, 16.706 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.735552,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.042, 101.057, 101.736, 102.242, 102.312 ms"
           }
         ]
       }
