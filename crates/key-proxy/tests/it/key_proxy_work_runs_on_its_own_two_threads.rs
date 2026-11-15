@@ -16,7 +16,7 @@ async fn key_proxy_work_runs_on_its_own_two_threads() {
     let proxy = KeyProxy::new().expect("its runtime starts");
     let told = Told::default();
     let started = proxy
-        .start("run-1", told.heard())
+        .start("run-1", None, told.heard())
         .expect("a listener starts");
 
     // A probe spawned through the host runtime: where the host's own work runs.

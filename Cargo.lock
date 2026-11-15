@@ -6555,7 +6555,11 @@ name = "purlis-host"
 version = "0.5.2"
 dependencies = [
  "bytes",
+ "fake-harness",
  "futures",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "nix 0.31.3",
  "purlis-host",
  "purlis-key-proxy",
@@ -6581,6 +6585,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "serde_json",
+ "subtle",
  "tokio",
 ]
 

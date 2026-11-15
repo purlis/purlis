@@ -276,6 +276,7 @@ mod upgrading_leaves_every_chat_start_as_it_was_and_records_its_folder;
 mod what_codex_keeps_of_a_briefing_and_takes_in_mid_chat_is_measured;
 mod when_the_forge_cache_is_refreshed;
 mod workspace_remove_clears_only_its_own_exclude_lines;
+mod your_keys_holds_a_keychain_value_and_its_index;
 
 /// Set on the child [`alone`] starts.
 const ALONE: &str = "CORE_TEST_ALONE";

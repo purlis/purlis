@@ -698,3 +698,35 @@ fn a_chat_touches_a_file(run: &Path) {
     drop(reading);
     drop(recorder);
 }
+
+/// The tier of the table row whose first cell starts with `path`, in the checked range.
+fn row_tier<'a>(text: &'a str, path: &str) -> Option<&'a str> {
+    let start = text.find(FIRST)?;
+    let end = text[start..].find(LAST).map_or(text.len(), |at| start + at);
+    text[start..end]
+        .lines()
+        .filter(|line| line.trim_start().starts_with('|'))
+        .map(cells)
+        .find(|row| row.first().is_some_and(|cell| cell.starts_with(path)))
+        .and_then(|row| row.get(1).copied())
+}
+
+/// **Your keys' stores state whether a backup carries them** (T1a-09, R-647, H-18): the
+/// keychain items are on the Keyring tier and never backed up, and the index is on the Machine
+/// tier, device-bound, and backed up.
+#[test]
+fn each_store_states_its_backed_up_value() {
+    purlis_core::unsteered!();
+    let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/plane-format.md");
+    let text = std::fs::read_to_string(&doc).expect("docs/plane-format.md is readable");
+    for (path, backed) in [
+        ("keyring `purlis/@your-keys`", false),
+        ("`<config>/model-keys/index.json`", true),
+    ] {
+        let tier = row_tier(&text, path);
+        assert!(tier.is_some(), "no row for {path}");
+        let tier = tier.unwrap_or_default();
+        assert_eq!(check(tier), None, "{path}: {tier}");
+        assert_eq!(backed_up(tier), backed, "{path}: {tier}");
+    }
+}

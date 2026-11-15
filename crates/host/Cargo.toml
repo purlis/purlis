@@ -51,6 +51,12 @@ purlis-host = { path = ".", features = ["test-support"] }
 # The real key proxy behind a test's own trait, for what it tells the host (T1a-04): a
 # dev-dependency only, so the host's guard against HTTP code, which skips those, stays green.
 purlis-key-proxy.workspace = true
+# A run's key proxy served through a start path (T1a-05): the fake provider it routes to, and
+# hyper's own client as the harness's side, both dev-dependencies the host's guard skips.
+fake-harness = { path = "../fake-harness" }
+hyper = { version = "1.12", features = ["client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http-body-util = "0.1"
 # In-memory links for the tests of what the host does with its programs (`link::serve_any`).
 purlis-session-protocol = { path = "../session-protocol", features = ["any-stream"] }
 tempfile.workspace = true
