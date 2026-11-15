@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794717911917,
+  "lastUpdate": 1794720902337,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49686,6 +49686,48 @@ window.BENCHMARK_DATA = {
             "value": 101.523087,
             "unit": "ms",
             "extra": "median of 5 runs: 100.285, 101.484, 101.523, 101.740, 102.786 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2dc0d73c204caecd1fbca6f0a44b88052352e4a7",
+          "message": "Restart ask after a pool is added uses the sandbox a chat started with (#6667)\n\n* Older-sandbox check uses the sandbox a chat started with\n\nThe restart ask after a pool is added is more accurate in two cases:\n\n- A chat the window takes back from the session host is compared by\n  what its own start held of the pools, which the host now keeps with\n  its confinement's plan (session protocol 1.89), rather than by a\n  sandbox compiled when the window came back.\n- A pool added outside the window, such as with `purlis pool add`, is\n  noticed by a read of the pools every few seconds, which tells the\n  window as a pool added in it does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Changelog fragment for the restart ask after a pool is added\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Check what a chat's start held of the pools on every system\n\nThe start test needs a Codex chat on no profile, which starts behind\npurlis's proxy on macOS alone. It runs there; a test of the session\nhost keeping what the start held, and handing it to a window that comes\nback, runs everywhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Use the Codex chat helper the tests already have\n\nThe helper added for the start test was compiled on macOS alone, but the\nreattach test uses it on every system.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Keep what a chat's start held of the pools with every start\n\nWhat a start held of the pools rode the plan of a chat's confinement, so\na chat with no proxy beside it, such as Claude Code on its own sandbox,\ncame back with no record and was asked to restart once any pool was\nheld. The record now goes with each start's launch, and the host keeps\nit with the program for a window that takes the chat back. A chat whose\nhost kept none is asked where a pool is held now, with no pool named as\nwhy. The tests run on every system, and the pools watch is tested for a\ncluster pool too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Name what a start held of the pools in the Linux tests' launches\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n* Name the TLS pool's sentence by its new name in the reattach test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7E6P2ZQXXF664JKYA02W444\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T04:35:27Z",
+          "tree_id": "7c38fd4d9cbcf4e4be53c8ac9652c9fc9f44819d",
+          "url": "https://github.com/purlis/purlis/commit/2dc0d73c204caecd1fbca6f0a44b88052352e4a7"
+        },
+        "date": 1794720894885,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.559563,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.548, 0.559, 0.560, 0.560, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.273301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.187, 16.253, 16.273, 16.281, 16.334 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.712123,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.147, 101.347, 101.712, 102.223, 102.649 ms"
           }
         ]
       }
