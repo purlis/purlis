@@ -10,7 +10,13 @@ use std::collections::HashSet;
 use hyper::HeaderMap;
 use hyper::header::HeaderValue;
 
-use super::{Key, Token, carries, swap};
+use purlis_core::model_provider::{Format, built_ins};
+use purlis_core::model_route;
+
+use super::{
+    Decision, Key, NO_TOKEN, NOT_A_PATH, NOT_LISTED, NOT_ROUTED, Route, Token, carries, decide,
+    swap,
+};
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -118,4 +124,81 @@ fn the_key_goes_in_the_declarations_header_and_the_token_goes_nowhere() {
 fn a_key_is_never_written_out_by_debug() {
     let shown = format!("{:?}", Key::XApiKey("sk-stand-in".to_owned()));
     assert!(!shown.contains("sk-stand-in"), "{shown}");
+}
+
+/// A listener's route through the Anthropic built-in, to an upstream it never reaches here.
+fn anthropic() -> Route {
+    let declaration = built_ins()
+        .iter()
+        .find(|declaration| declaration.id == "anthropic")
+        .expect("the Anthropic built-in ships");
+    Route {
+        upstream: ([127, 0, 0, 1], 9).into(),
+        bound: model_route::Route::bind("claude-anthropic", declaration, Format::AnthropicMessages)
+            .expect("a Messages endpoint"),
+        key: Key::XApiKey("sk-stand-in".to_owned()),
+    }
+}
+
+#[test]
+fn only_a_listed_request_carrying_the_token_is_forwarded_at_the_joined_path() {
+    let route = anthropic();
+    let token = token();
+    let with = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
+    assert_eq!(
+        decide(Some(&route), &token, "POST", "/v1/messages?beta=true", &with),
+        Decision::Forward("/v1/messages?beta=true".parse().unwrap())
+    );
+    assert_eq!(
+        decide(Some(&route), &token, "POST", "/v1/messages", &headers(&[])),
+        Decision::Refuse(NO_TOKEN),
+        "a listed request without the token"
+    );
+    assert_eq!(
+        decide(None, &token, "POST", "/v1/messages", &with),
+        Decision::Refuse(NOT_ROUTED),
+        "a listener with no route"
+    );
+}
+
+#[test]
+fn a_request_the_route_refuses_is_refused_whatever_it_carries() {
+    let route = anthropic();
+    let token = token();
+    let with = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
+    for (method, target, why) in [
+        ("GET", "/v1/messages", NOT_LISTED),
+        ("POST", "/v1/files", NOT_LISTED),
+        ("DELETE", "/v1/messages", NOT_LISTED),
+        ("OPTIONS", "*", NOT_A_PATH),
+        ("POST", "/v1/messages/count_tokens", NOT_LISTED),
+        ("GET", "/v1/models?limit=1000", NOT_LISTED),
+        ("POST", "http://elsewhere.example/v1/messages", NOT_A_PATH),
+        ("CONNECT", "elsewhere.example:443", NOT_A_PATH),
+        ("POST", "/v1/../v1/messages", NOT_A_PATH),
+        ("POST", "/v1%2Fmessages", NOT_A_PATH),
+    ] {
+        for carried in [&with, &headers(&[])] {
+            assert_eq!(
+                decide(Some(&route), &token, method, target, carried),
+                Decision::Refuse(why),
+                "{method} {target}"
+            );
+        }
+    }
+}
+
+#[test]
+fn claude_codes_hello_is_absent_with_or_without_the_token() {
+    let route = anthropic();
+    let token = token();
+    for carried in [
+        headers(&[]),
+        headers(&[("authorization", &format!("Bearer {TOKEN}"))]),
+    ] {
+        assert_eq!(
+            decide(Some(&route), &token, "HEAD", "/api/hello", &carried),
+            Decision::Absent
+        );
+    }
 }
