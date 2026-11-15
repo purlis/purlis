@@ -76,10 +76,16 @@ fn launches_on(host: &Pretend, crashed: &Crashed) -> (Planes, Arc<Held>) {
 
 /// [`launches_on`], the person choosing `choice` for the record.
 fn launches_choosing(host: &Pretend, crashed: &Crashed, choice: Choice) -> (Planes, Arc<Held>) {
+    let (planes, held) = opens_on(host, crashed);
+    held.reopen(A_SIZE, Ok(crashed.at_crash.clone()), choice);
+    (planes, held)
+}
+
+/// The next launch opens the project on `host`, and has put nothing back yet.
+fn opens_on(host: &Pretend, crashed: &Crashed) -> (Planes, Arc<Held>) {
     let planes = planes_on(host);
     let again = planes.open(&crashed.plane.root);
     let held = planes.held(&again).expect("held");
-    held.reopen(A_SIZE, Ok(crashed.at_crash.clone()), choice);
     (planes, held)
 }
 
@@ -141,9 +147,10 @@ fn a_launch_is_not_held_past_its_deadline_by_a_left_task_s_screen_that_will_not_
     let crashed = a_window_that_crashed_after_its_task_reported();
     let host = a_host_that_kept_both(&crashed);
     host.terminal_takes(std::time::Duration::from_secs(30));
+    let (_planes, held) = opens_on(&host, &crashed);
     let began = std::time::Instant::now();
 
-    let (_planes, _held) = launches_on(&host, &crashed);
+    held.reopen(A_SIZE, Ok(crashed.at_crash.clone()), Choice::ReopenAll);
 
     let took = began.elapsed();
     // The read left behind ends now, not 30 s on in a folder already deleted.
@@ -153,7 +160,8 @@ fn a_launch_is_not_held_past_its_deadline_by_a_left_task_s_screen_that_will_not_
         [crashed.task],
         "the sweep still closed it"
     );
-    let slack = std::time::Duration::from_secs(5);
+    // The put back alone is timed, with the slack the quit's own test gives.
+    let slack = std::time::Duration::from_millis(1500);
     assert!(
         took < crate::chatcard::SCREENS_KEPT_WITHIN + slack,
         "the launch took {took:?}"
