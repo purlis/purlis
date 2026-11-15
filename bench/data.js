@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794713607403,
+  "lastUpdate": 1794717911917,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49644,6 +49644,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7114175,
             "unit": "ms",
             "extra": "median of 5 runs: 101.372, 101.658, 101.711, 101.801, 101.895 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5b4b9de1b5415a4c7d5fd2f304af9a259c626d31",
+          "message": "Count the merge row story's hold age from now, so main's stories go green (#6670)\n\n* Count the merge row story's hold age from now, so its pictures hold past a day\n\nThe stories held the merge at a fixed instant (1_763_000_000), and the row draws the hold's\nage (\"366d\", \"Waiting 366 d\"). Each day turned every MergeRow picture red; main went red on\n69a8cf005 and 38782cd76 when the age read 367d. The hold is now two minutes old, as AsksOrder's\nasks are counted from now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EKXJWDGQDPX72NJF7TRD84\nPurlis-Persona: steward\n\n* Take MergeRow's baselines from #6670's stories run (the hold now reads 2m)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7EKXJWDGQDPX72NJF7TRD84\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T04:12:12Z",
+          "tree_id": "4798fd1caf3a47ac360025f1b14f3e5470853a96",
+          "url": "https://github.com/purlis/purlis/commit/5b4b9de1b5415a4c7d5fd2f304af9a259c626d31"
+        },
+        "date": 1794717905321,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33842300000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.331, 0.338, 0.338, 0.346, 0.358 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.290391,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.190, 16.235, 16.290, 16.601, 16.747 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.523087,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.285, 101.484, 101.523, 101.740, 102.786 ms"
           }
         ]
       }
