@@ -47,6 +47,49 @@ fn a_value_broken_by_a_hard_line_break_is_two_words_and_is_not_masked() {
 }
 
 #[test]
+fn a_value_of_several_lines_printed_by_cat_is_masked_whole() {
+    // `cat` of a credential file: the terminal shows each of its lines on a row of its own, each
+    // row ended as a terminal ends one, with a carriage return.
+    let value = "FAKE-LINE-ONE-0012\nFAKE-LINE-TWO-0012\n";
+    let screen = "$ cat kubeconfig\r\nFAKE-LINE-ONE-0012\r\nFAKE-LINE-TWO-0012\r\n$ ";
+
+    let masked = masked(screen, &known("kubeconfig", value)).unwrap();
+
+    assert_eq!(masked, "$ cat kubeconfig\r\n‹secret: kubeconfig›\r\n$ ");
+}
+
+#[test]
+fn a_value_of_several_lines_cat_printed_is_masked_in_the_terminal_s_own_snapshot() {
+    use crate::engine::{AlacrittyEngine, Engine, Size};
+    let value = "FAKE-LINE-ONE-0014\nFAKE-LINE-TWO-0014\n";
+    let mut terminal = AlacrittyEngine::new(Size { columns: 80, rows: 10 }, 100);
+    // What `cat` wrote, as the terminal's line discipline hands it on (ONLCR).
+    terminal.advance(b"$ cat kubeconfig\r\n");
+    terminal.advance(value.replace('\n', "\r\n").as_bytes());
+    let snapshot = String::from_utf8(terminal.snapshot()).expect("text");
+
+    let masked = masked(&snapshot, &known("kubeconfig", value)).unwrap();
+
+    assert!(!masked.contains("FAKE-LINE"), "{masked:?}");
+    assert!(masked.contains("‹secret: kubeconfig›"), "{masked:?}");
+}
+
+#[test]
+fn each_line_of_a_value_of_several_lines_is_masked_where_it_is_shown_alone() {
+    // A harness that indents what a command printed breaks the value up: each line is still
+    // the value's, and is masked where it stands.
+    let value = "FAKE-LINE-ONE-0013\r\n  FAKE-LINE-TWO-0013\r\n";
+    let screen = "  │ FAKE-LINE-TWO-0013\r\n  │ FAKE-LINE-ONE-0013\r\n";
+
+    let masked = masked(screen, &known("service-account", value)).unwrap();
+
+    assert_eq!(
+        masked,
+        "  │ ‹secret: service-account›\r\n  │ ‹secret: service-account›\r\n"
+    );
+}
+
+#[test]
 fn every_occurrence_is_masked_and_text_around_is_untouched() {
     let screen = "a FAKE-VALUE-0004 b FAKE-VALUE-0004 c ‹é›";
 

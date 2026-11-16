@@ -22,7 +22,9 @@
 //!   closes for good, and swept at the project's open once 30 days old ([`on_open`]).
 //! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
 //!   value a colour change or a soft wrap runs through is still one run of characters there.
-//!   A hard line break is not: a value the program printed in two pieces is two words.
+//!   A hard line break is not: a value the program printed in two pieces is two words. A value
+//!   of several lines is known by each of its lines too ([`Known::of`]), so it is masked
+//!   however a program lays its lines out.
 //! - **Every overlapping find masked whole**: two values that overlap on a screen become one
 //!   stretch, shown as the mask of each, in the order they start, so no tail of either is left.
 //! - **A value shorter than [`super::seen::SHORTEST`] is not masked**: as `seen` says, three
@@ -57,20 +59,44 @@ pub struct Known {
 
 impl Known {
     /// `value`, handed as `name`, as it is known: as written and with the white space around it
-    /// trimmed, which a value read from a file often carries. Empty where it is shorter than
-    /// [`seen::SHORTEST`] both ways; `None` where no key could be made for the process.
+    /// trimmed, which a value read from a file often carries. A value of several lines is known
+    /// as a terminal shows it too, its lines ended by a carriage return and a line feed, and by
+    /// each line alone, trimmed, as a program that prints it line by line, or indents it, shows
+    /// it. Any form shorter than [`seen::SHORTEST`] is left out; `None` where no key could be
+    /// made for the process.
     pub fn of(name: &str, value: &str) -> Option<Vec<Self>> {
         let keyed = seen::keyed()?;
+        let trimmed = value.trim();
+        let mut forms: Vec<zeroize::Zeroizing<String>> = [value, trimmed]
+            .into_iter()
+            .map(|one| zeroize::Zeroizing::new(one.to_owned()))
+            .collect();
+        if trimmed.contains('\n') {
+            let lines: Vec<&str> = trimmed
+                .split('\n')
+                .map(|line| line.trim_end_matches('\r'))
+                .collect();
+            forms.push(zeroize::Zeroizing::new(lines.join("\r\n")));
+            forms.extend(
+                lines
+                    .iter()
+                    .map(|line| zeroize::Zeroizing::new(line.trim().to_owned())),
+            );
+        }
         let mut known: Vec<Self> = Vec::new();
-        for one in [value, value.trim()] {
+        for one in &forms {
             let bytes = one.as_bytes();
-            if bytes.len() < seen::SHORTEST || known.iter().any(|k| k.length == bytes.len()) {
+            if bytes.len() < seen::SHORTEST {
+                continue;
+            }
+            let digest = seen::digest(keyed, bytes);
+            if known.iter().any(|k| k.digest == digest) {
                 continue;
             }
             known.push(Self {
                 name: name.to_owned(),
                 length: bytes.len(),
-                digest: seen::digest(keyed, bytes),
+                digest,
             });
         }
         Some(known)
