@@ -77,7 +77,12 @@ fn the_shipped_table_parses() {
 fn an_entry_without_a_source_is_refused() {
     let entry = "[[entry]]\nharness = \"claude\"\nprovider = \"anthropic\"\nlosses = []\n";
     let sourced = format!("{entry}source = \"reported: https://example.com/losses\"\n");
-    let refused = parse(entry, harnesses(), model_provider::built_ins(), "tested.toml");
+    let refused = parse(
+        entry,
+        harnesses(),
+        model_provider::built_ins(),
+        "tested.toml",
+    );
     assert!(
         refused
             .as_ref()
@@ -85,7 +90,13 @@ fn an_entry_without_a_source_is_refused() {
         "{refused:?}"
     );
     assert!(
-        parse(&sourced, harnesses(), model_provider::built_ins(), "tested.toml").is_ok(),
+        parse(
+            &sourced,
+            harnesses(),
+            model_provider::built_ins(),
+            "tested.toml"
+        )
+        .is_ok(),
         "the same entry with a source is read"
     );
     for not_a_source in [
@@ -97,7 +108,12 @@ fn an_entry_without_a_source_is_refused() {
         "reported: not a link",
     ] {
         let malformed = format!("{entry}source = \"{not_a_source}\"\n");
-        let read = parse(&malformed, harnesses(), model_provider::built_ins(), "tested.toml");
+        let read = parse(
+            &malformed,
+            harnesses(),
+            model_provider::built_ins(),
+            "tested.toml",
+        );
         assert!(
             read.as_ref().is_err_and(|why| why.contains("source")),
             "{not_a_source:?} is no source: {read:?}"
@@ -105,8 +121,13 @@ fn an_entry_without_a_source_is_refused() {
     }
     let measured = format!("{entry}source = \"measured on 2026-11-16, 2.1.300\"\n");
     assert_eq!(
-        parse(&measured, harnesses(), model_provider::built_ins(), "tested.toml")
-            .map(|table| table.entries()[0].source.clone()),
+        parse(
+            &measured,
+            harnesses(),
+            model_provider::built_ins(),
+            "tested.toml"
+        )
+        .map(|table| table.entries()[0].source.clone()),
         Ok(Source::Measured {
             on: "2026-11-16".into(),
             version: "2.1.300".into()
@@ -168,10 +189,12 @@ fn an_entry_whose_pair_shares_no_format_is_refused() {
         );
         let refused = parse(&entry, harnesses(), &providers, "tested.toml");
         assert!(
-            refused.as_ref().is_err_and(|why| why.contains("tested.toml")
-                && why.contains(harness)
-                && why.contains(provider)
-                && why.contains("no wire format")),
+            refused
+                .as_ref()
+                .is_err_and(|why| why.contains("tested.toml")
+                    && why.contains(harness)
+                    && why.contains(provider)
+                    && why.contains("no wire format")),
             "{harness} × {provider}: {refused:?}"
         );
     }
@@ -182,7 +205,12 @@ fn an_entry_naming_its_format_is_refused() {
     let entry = "[[entry]]\nharness = \"claude\"\nprovider = \"anthropic\"\n\
                  format = \"anthropic-messages\"\nlosses = []\n\
                  source = \"reported: https://example.com/losses\"\n";
-    let refused = parse(entry, harnesses(), model_provider::built_ins(), "tested.toml");
+    let refused = parse(
+        entry,
+        harnesses(),
+        model_provider::built_ins(),
+        "tested.toml",
+    );
     assert!(
         refused
             .as_ref()

@@ -7,9 +7,12 @@
 //! An entry is keyed by harness, model provider declaration and, where a model behaves apart
 //! from its provider's others, a model pattern. It carries a grade only where it overrides the
 //! rule, the losses, and a source: `"measured on <date>, <harness version>"` or
-//! `"reported: <link>"`. **An entry without a source is refused.** A Chat Completions pair
-//! (`format = "openai-chat"`) says whether the harness asks for usage (`asks_for_usage`), and an
-//! entry for one without it is refused; no other pair carries the field. A loss is a word
+//! `"reported: <link>"`. **An entry without a source is refused.** An entry names no wire
+//! format: the pair's is the first of the harness's `[route] formats` the provider serves
+//! ([`crate::keyroute::pair_format`]), and a pair sharing none is refused. A Chat Completions
+//! pair (one whose worked-out format is `openai-chat`) says whether the harness asks for usage
+//! (`asks_for_usage`), and an entry for one without it is refused; no other pair carries the
+//! field. A loss is a word
 //! (`fast-disabled`), never a sentence: what the window says for one is window copy, drawn from
 //! the copy module by the ticket that shows it (1c).
 //!
@@ -98,7 +101,8 @@ pub struct Entry {
     pub provider: String,
     /// The model pattern, where the entry is for some of the provider's models only.
     pub model: Option<String>,
-    /// The wire format the pair speaks, one the provider's declaration serves.
+    /// The wire format the pair speaks, worked out, never written: the first of the harness's
+    /// `[route] formats` the provider serves ([`crate::keyroute::pair_format`]).
     pub format: model_provider::Format,
     /// The grade, where it overrides the rule.
     pub grade: Option<Grade>,
@@ -146,16 +150,15 @@ struct RawEntry {
     harness: Option<String>,
     provider: Option<String>,
     model: Option<String>,
-    format: Option<String>,
     grade: Option<String>,
     losses: Option<Vec<String>>,
     source: Option<String>,
     asks_for_usage: Option<bool>,
 }
 
-/// **Reads the table in `text`**, named `file` in every refusal, against the model provider
-/// declarations `providers` (an entry naming another is refused), or the one sentence saying
-/// why it is not one. The first failure wins.
+/// **Reads the table in `text`**, named `file` in every refusal, against the harness
+/// declarations `harnesses` and the model provider declarations `providers` (an entry naming
+/// another is refused), or the one sentence saying why it is not one. The first failure wins.
 pub fn parse(
     text: &str,
     harnesses: &[crate::harness_declaration::Declaration],
@@ -166,8 +169,8 @@ pub fn parse(
     let mut keys = BTreeSet::new();
     let mut entries = Vec::with_capacity(raw.entry.len());
     for (at, raw) in raw.entry.into_iter().enumerate() {
-        let entry =
-            read_entry(raw, harnesses, providers).map_err(|why| format!("{file}: entry {}: {why}", at + 1))?;
+        let entry = read_entry(raw, harnesses, providers)
+            .map_err(|why| format!("{file}: entry {}: {why}", at + 1))?;
         let key = (
             entry.harness.clone(),
             entry.provider.clone(),
@@ -191,26 +194,21 @@ fn read_entry(
 ) -> Result<Entry, String> {
     let missing = |field: &str| format!("has no `{field}`");
     let harness = raw.harness.ok_or_else(|| missing("harness"))?;
-    if !harnesses.iter().any(|declared| declared.name == harness) {
+    let Some(declaration) = harnesses.iter().find(|declared| declared.name == harness) else {
         return Err(format!(
             "`harness` names {harness:?}, which is no harness purlis ships"
         ));
-    }
+    };
     let provider_id = raw.provider.ok_or_else(|| missing("provider"))?;
     let Some(provider) = providers.iter().find(|p| p.id == provider_id) else {
         return Err(format!(
             "`provider` names {provider_id:?}, which is no model provider declaration"
         ));
     };
-    let format_word = raw.format.ok_or_else(|| missing("format"))?;
-    let Some(format) = provider
-        .endpoints
-        .iter()
-        .map(|endpoint| endpoint.format)
-        .find(|format| format.word() == format_word)
-    else {
+    let Some(format) = crate::keyroute::pair_format(declaration, provider) else {
         return Err(format!(
-            "`format` is {format_word:?}, which {provider_id:?} does not serve"
+            "{harness:?} and {provider_id:?} share no wire format: the harness speaks none the \
+             provider serves"
         ));
     };
     if raw.model.as_deref().is_some_and(str::is_empty) {

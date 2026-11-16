@@ -110,7 +110,9 @@ fn a_provider(id: &str, formats: &[&str]) -> crate::model_provider::Declaration 
     let endpoints: String = formats
         .iter()
         .map(|format| {
-            format!("\n[[endpoint]]\nformat = \"{format}\"\nbase = \"https://{format}.{id}.example\"\n")
+            format!(
+                "\n[[endpoint]]\nformat = \"{format}\"\nbase = \"https://{format}.{id}.example\"\n"
+            )
         })
         .collect();
     crate::model_provider::parse(
@@ -141,7 +143,10 @@ fn the_pair_format_is_the_first_of_the_harness_formats_the_provider_serves() {
         Some(Format::AnthropicMessages)
     );
     assert_eq!(
-        pair_format(&both_ways, &a_provider("duo", &["anthropic-messages", "openai-chat"])),
+        pair_format(
+            &both_ways,
+            &a_provider("duo", &["anthropic-messages", "openai-chat"])
+        ),
         Some(Format::OpenaiChat),
         "the harness's order decides, not the provider's"
     );

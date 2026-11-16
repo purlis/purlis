@@ -105,10 +105,15 @@ pub fn own_sign_in_only(declaration: &Declaration) -> Option<String> {
 /// route. The one place a pair's format is worked out: the shipped table reads it rather than
 /// restating it.
 pub fn pair_format(
-    _declaration: &Declaration,
-    _provider: &crate::model_provider::Declaration,
+    declaration: &Declaration,
+    provider: &crate::model_provider::Declaration,
 ) -> Option<Format> {
-    None
+    declaration.route.formats.iter().copied().find(|&format| {
+        provider
+            .endpoints
+            .iter()
+            .any(|endpoint| endpoint.format == format)
+    })
 }
 
 #[cfg(test)]
