@@ -42,6 +42,17 @@ function core(state: PolicyState, after: PolicyState = QUIET) {
 }
 
 describe("the project's policy (Q308a)", () => {
+  it("draws nothing, and never breaks the window, for an answer of another shape", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return null;
+    });
+    const { container } = render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(asked).toContain("project_policy_state"));
+    expect(container.querySelector("[data-cause]")).toBeNull();
+  });
+
   it("says nothing where nothing waits and every value reads", async () => {
     const asked = core(QUIET);
     const { container } = render(<ProjectPolicyNotice plane={PLANE} canAccept />);

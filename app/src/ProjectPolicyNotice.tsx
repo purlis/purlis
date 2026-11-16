@@ -17,6 +17,10 @@ export const mayAcceptPolicy = (): boolean => inTheWindow(commands, "acceptProje
 export const POLICY_ACCEPT_MEANS =
   "Accept, and your chats here run that way from now on. Until you do, they keep what you accepted before.";
 
+/** Whether an answer is a policy state to draw: one of any other shape says nothing. */
+const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
+  Array.isArray(data?.waiting);
+
 /** The families that wait, one clause each: "guards.merge from enforce to log". */
 export const waitingSaid = (state: PolicyState): string =>
   state.waiting.map((one) => `${one.family} from ${one.accepted} to ${one.committed}`).join(", ");
@@ -50,7 +54,8 @@ export function ProjectPolicyNotice({
     void commands
       .projectPolicyState(plane)
       .then((answer) => {
-        if (live && answer.status === "ok") setState(answer.data);
+        // Only a policy state is drawn: an answer of any other shape says nothing.
+        if (live && answer.status === "ok" && drawable(answer.data)) setState(answer.data);
       })
       // A state that cannot be read asks nothing: until an Accept, nothing is loosened.
       .catch(() => {});
@@ -73,7 +78,7 @@ export function ProjectPolicyNotice({
           setAgain((n) => n + 1);
           return;
         }
-        setState(done.data);
+        if (drawable(done.data)) setState(done.data);
         sandboxCommandReturned();
       })
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))
