@@ -6,7 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
-import type { DoctorRow, PlaneSaving } from "../bindings";
+import type { DoctorRow, PlaneSaving, YourKeyRow } from "../bindings";
+import { askSettingsLink, yourKeyLink } from "./links";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { stripNamed } from "../test-strips";
@@ -45,6 +46,20 @@ const ROW = (over: Partial<DoctorRow> = {}): DoctorRow => ({
 
 let doctorRows: DoctorRow[] = [];
 
+/** Your keys, as core answers `your_keys` (T1a-11). */
+const YOUR_KEY: YourKeyRow = {
+  id: "01JD6Y8ZQK3V4T5N6P7R8S9TAB",
+  product: "Anthropic",
+  origins: ["https://api.anthropic.com"],
+  approval: "off",
+  checked: "passed",
+  state: "marked",
+  profiles: ["claude-anthropic"],
+  chats: [],
+  pools: [],
+};
+let keys: YourKeyRow[] = [];
+
 /** The project's save standing: a request mode on an origin no forge charter knows (NO-7). */
 const NO_FORGE =
   "[plane] mode is pr, and this plane's origin is not a GitHub or GitLab forge purlis knows, so a save goes no further than a commit";
@@ -71,6 +86,7 @@ const saving: PlaneSaving = {
 beforeEach(() => {
   forgetThisLaunch();
   doctorRows = [ROW()];
+  keys = [];
   (globalThis as Record<string, unknown>)[GLOBAL] = {
     layout: { path: "/home/op/.config/charter/layout.json", found: false, document: null },
     theme: { path: "", found: false, document: null, trouble: null },
@@ -89,6 +105,7 @@ beforeEach(() => {
       if (cmd === "plane_doctor") return { rows: doctorRows, full: true, app_rows: [], path: null };
       if (cmd === "alerts_everywhere") return [];
       if (cmd === "plane_saving") return saving;
+      if (cmd === "your_keys") return keys;
       return null;
     },
     { shouldMockEvents: true },
@@ -235,6 +252,23 @@ describe("a notice about this machine that names a setting", () => {
 
     await waitFor(() => expect(level("You")).toBeChecked());
     expect(group("Text")).toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("a key's Replace the key… on a card, a Notice or an Ask (T1a-11, R-578)", () => {
+  it("opens Settings at You › Your keys, on that key", async () => {
+    keys = [YOUR_KEY];
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+
+    // What the card's Replace the key… does.
+    askSettingsLink(PLANE, yourKeyLink("Anthropic"));
+
+    await waitFor(() => expect(level("You")).toBeChecked());
+    expect(group("Your keys")).toHaveAttribute("aria-current", "page");
+    expect(
+      await screen.findByRole("button", { name: "Replace the key… for Anthropic" }),
+    ).toBeInTheDocument();
   });
 });
 

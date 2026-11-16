@@ -73,6 +73,7 @@ describe("the Settings tab, at the You level", () => {
       "Pools",
       "Accounts",
       "Profiles",
+      "Your keys",
       "Previews",
     ]);
     expect(group("Text")).toHaveAttribute("aria-current", "page");

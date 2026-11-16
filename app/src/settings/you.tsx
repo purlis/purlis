@@ -29,14 +29,16 @@ import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
 import { reportsGroup } from "./reports";
 import { profilesGroup } from "./profiles";
+import { yourKeysGroup } from "./yourKeys";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { minimumContrast, reduceMotion, yourColours } from "./youLook";
 
 /**
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
  * (charter-app#283, RC-20), Notifications (#1989), This machine (ST-2), which is the machine
- * store's, Accounts (#1814), this machine's forge accounts, and Profiles (#2034), this machine's
- * own profiles, which `plane`, the project whose window Settings is in, signs in from. Nothing
+ * store's, Accounts (#1814), this machine's forge accounts, Profiles (#2034), this machine's
+ * own profiles, which `plane`, the project whose window Settings is in, signs in from, and Your
+ * keys (T1a-11), the model keys this machine keeps. Nothing
  * here is a project's: each value is this machine's, kept in
  * its layout file (`charter/layout.json`, beside `machine.json`), so it is the same in every
  * project and reaches no clone.
@@ -96,6 +98,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     poolsGroup(plane),
     accountsGroup(),
     profilesGroup(plane),
+    yourKeysGroup(),
     previewsGroup(),
   ];
 }

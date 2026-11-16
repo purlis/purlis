@@ -338,6 +338,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". The browser sign-in's own lines (#730), inside its dialog: that it is waiting for the " +
       "browser, and the core's refusal of the sign-in; its Try again and Cancel are the way out",
   },
+  "KeyForm.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". The key form's refusal (T1a-11): why the save failed (W89, W88) under the box, beside its own Try again",
+  },
   "ForgeTokenSignIn.tsx": {
     count: 2,
     why:
@@ -823,6 +829,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". The Signed commits card's read refusal (#5628), in the core's words; another device's " +
       "key Remove refused, beside its row; and what Replace key or Remove signing came to, with " +
       "a refusal's keys page (#5632). Set up signing, Remove and Open its keys page are the ways on",
+  },
+  "settings/yourKeys.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". Your keys' lines (T1a-11): the list's read refusal beside its Try again (W115), and an act's refusal under the row (W84, W114, W128) or the pool's line (W129) whose own button tries it again",
   },
   "settings/profiles.tsx": {
     count: 2,

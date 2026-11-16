@@ -137,6 +137,24 @@ empty state and error copy follow it.
 - **An `aria-label` says what the visible label says**, and an icon-only control's label is the
   verb it would have had as text: *Close find*, *Next match*.
 
+## Model keys (phase 1a)
+
+The lines about a model key are drafted once, in the Window copy table
+(`app/src/windowCopy.table.md`), and taken by their W-number from the copy module
+(`app/src/windowCopy.ts`, `purlis_core::window_copy`), never typed. You › Your keys draws these,
+each held to the rules above:
+
+- **Its empty state:** W4, *No keys yet*, with *Add a key…*.
+- **Its questions, through `counted`:** W5, *Remove…*'s count of the chats using the key, then
+  *There is no undo.*, since a removed key can't be brought back; and W123, *Stop sending*'s count
+  of the chats on that pool.
+- **A row's states, each with its way out:** W6 (*Unlock*), W55 (*Remove…* only), W60 (*Mark
+  again*, W126), W7 (*Try again*) and W46 (*Replace the key…*).
+- **Its errors, each what failed then why:** W88, W89, W114, W115, W128 and W129.
+
+*Stop sending* (W125) asks before it acts and is written with no ellipsis, as the table writes
+it; a change to that is a change to the table first.
+
 ## What the build checks
 
 `app/src/copy.test.ts` reads every string in `app/src` (`uiStrings.ts` finds them with

@@ -73,6 +73,7 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
+      "Your keys",
       "Previews",
     ]);
     expect(box().compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -127,6 +128,19 @@ describe("filtering the Settings tab by name", () => {
       expect(screen.getByRole("radiogroup", { name: "Agent drafts" })).toBeInTheDocument();
     }
     expect(screen.queryByText(/telemetry/i)).not.toBeInTheDocument();
+  });
+
+  it("finds Your keys by its label and its other words (T1a-11)", async () => {
+    render(<SettingsTab />);
+
+    for (const word of ["your keys", "model keys", "api key"]) {
+      await userEvent.clear(box());
+      await userEvent.type(box(), word);
+
+      expect(inNav(), word).toContain("Your keys");
+      await userEvent.click(group("Your keys"));
+      expect(shown()).toHaveAccessibleName("Your keys");
+    }
   });
 
   it("says in a sentence when nothing matches, and the nav holds no page of the level", async () => {
@@ -184,6 +198,7 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
+      "Your keys",
       "Previews",
     ]);
     expect(group("Editor")).toHaveAttribute("aria-current", "page");
@@ -221,6 +236,7 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
+      "Your keys",
       "Previews",
     ]);
   });

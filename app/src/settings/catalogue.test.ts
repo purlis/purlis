@@ -37,6 +37,7 @@ const BUILDERS = [
   "notifications.tsx",
   "accounts.tsx",
   "profiles.tsx",
+  "yourKeys.tsx",
   "yourLevel.tsx",
   "skillsSummary.tsx",
 ];

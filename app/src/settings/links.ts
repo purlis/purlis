@@ -130,6 +130,23 @@ export const ALLOWED_LIST: SettingsLink = {
 /** The words of a link to [`ALLOWED_LIST`]. */
 export const OPEN_ALLOWED_LIST = "Open the Allowed list";
 
+/** The words of a key's *Replace the key…* on You › Your keys, which a link to a key lands on. */
+export const REPLACE_THE_KEY = "Replace the key…";
+
+/**
+ * **A key's row on You › Your keys** (T1a-11, R-578): where every *Replace the key…* on a card, a
+ * Notice or an Ask goes (W15 and the like), with the keyboard on that key's row, at its own
+ * *Replace the key…*. A key is named by its product (*Anthropic*): 1a holds one key per product.
+ * W9's and W28's *Replace the key…* never come here: they replace in place (X2).
+ */
+export function yourKeyLink(product: string): SettingsLink {
+  return {
+    group: "you.models",
+    setting: "you.models.list",
+    control: { words: REPLACE_THE_KEY, about: product },
+  };
+}
+
 /** What a link asked of a project's window: which project, and the link. */
 export type SettingsLinkAsk = { plane: string; link: SettingsLink };
 

@@ -12,6 +12,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { useRef } from "react";
 import { enterSettings, forgetEntering, landSettingsFocus, useEnteringFocus } from "./entering";
+import { askSettingsLink, yourKeyLink } from "./links";
 import { chipName, findTheWorkspaces, workspaceChips } from "../test-strips";
 
 /**
@@ -103,6 +104,19 @@ function core(plane: string | null) {
       if (cmd === "project_settings") return { shared: FILE("shared"), local: FILE("local") };
       if (cmd === "workspace_settings") return WORKSPACE((args as { workspace: string }).workspace);
       if (cmd === "plane_doctor") return { rows: [ROW], full: true, app_rows: [], path: null };
+      // Your keys (T1a-11): two keys, so the link lands on the one it names.
+      if (cmd === "your_keys")
+        return ["Other", "Anthropic"].map((product, at) => ({
+          id: `01JD6Y8ZQK3V4T5N6P7R8S9TA${at}`,
+          product,
+          origins: [],
+          approval: "off",
+          checked: "passed",
+          state: "marked",
+          profiles: [],
+          chats: [],
+          pools: [],
+        }));
       if (cmd === "alerts_everywhere") return [];
       if (cmd === "start_details") return [];
       if (cmd === "start_options" || cmd === "start_options_first")
@@ -428,6 +442,22 @@ function Holder({ place, group, front }: { place: string; group: string; front?:
     </div>
   );
 }
+
+describe("a key's Replace the key… on a card (T1a-11, R-578)", () => {
+  it("replace_the_key_opens_you_your_keys_on_that_key_with_focus", async () => {
+    core(PLANE);
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+
+    // What the card's Replace the key… does, for the Anthropic key.
+    askSettingsLink(PLANE, yourKeyLink("Anthropic"));
+
+    await waitFor(() => expect(level("You")).toBeChecked());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Replace the key… for Anthropic" })).toHaveFocus(),
+    );
+  });
+});
 
 describe("a way in the person has moved on from (#1600)", () => {
   afterEach(() => forgetEntering());
