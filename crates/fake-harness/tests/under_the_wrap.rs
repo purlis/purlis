@@ -739,7 +739,20 @@ const HARNESS_REMINDERS: [&str; 4] = [
     "Available agent types for the Agent tool",
 ];
 
+/// Where Claude Code's own environment section begins, in the system message it sends a
+/// SessionStart hook's context in: what comes after it is Claude Code's, not the hook's.
+const CLAUDE_ENVIRONMENT: &str =
+    "\n\n# Environment\nYou have been invoked in the following environment";
+
 fn without_harness_reminders(recording: &mut Value) {
+    for shown in recording["shown"].as_array_mut().into_iter().flatten() {
+        if shown["kind"] == "context"
+            && let Some(text) = shown["text"].as_str()
+            && let Some(at) = text.find(CLAUDE_ENVIRONMENT)
+        {
+            shown["text"] = Value::String(text[..at].to_owned());
+        }
+    }
     if let Some(shown) = recording["shown"].as_array_mut() {
         shown.retain(|s| {
             s["kind"] != "context"

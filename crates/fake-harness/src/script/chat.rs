@@ -1169,7 +1169,8 @@ impl Chat {
                         "Async agent launched successfully. (This tool result is internal metadata \u{2014} never quote or paste any part of it, including the agentId below, into a user-facing reply.)\nagentId: {agent_id} (internal ID - do not mention to user. Use SendMessage with to: '{agent_id}', summary: '<5-10 word recap>' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes. You know nothing about its results until that notification arrives \u{2014} do not report, assume, or predict them; continue other work or respond to the user in the meantime.\nDo not duplicate this agent's work \u{2014} avoid working with the same files or topics it is using.\noutput_file: {}\nDo NOT Read or tail this file via the shell tool \u{2014} it is the full subagent JSONL transcript and reading it will overflow your context. If the user asks for progress, say the agent is still running; you'll get a completion notification.",
                         file.display()
                     ),
-                    is_error: Some(false),
+                    // Claude Code 2.1.325 sends this one result with no `is_error`.
+                    is_error: None,
                     ran: None,
                     refused_by: None,
                 });
@@ -1180,7 +1181,7 @@ impl Chat {
                         "<task-notification>\n<task-id>{agent_id}</task-id>\n<tool-use-id>{}</tool-use-id>\n<output-file>{}</output-file>\n<status>completed</status>\n<summary>Agent \"{description}\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>{says}</result>\n<usage><subagent_tokens>{}</subagent_tokens><tool_uses>{}</tool_uses><duration_ms>{}</duration_ms></usage>\n</task-notification>",
                         c.id,
                         file.display(),
-                        says.len().div_ceil(4),
+                        call.tokens.unwrap_or_else(|| says.len().div_ceil(4) as u64),
                         call.calls.len(),
                         started.elapsed().as_millis()
                     ), false));

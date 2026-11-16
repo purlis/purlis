@@ -77,6 +77,11 @@ pub struct Call {
     pub calls: Vec<Call>,
     #[serde(default)]
     pub says: Option<String>,
+    /// For a sub-agent call: the tokens its model reported, which Claude Code says back in its
+    /// task notification (`subagent_tokens`). Where it is missing, its last message's length in
+    /// fours.
+    #[serde(default)]
+    pub tokens: Option<u64>,
 }
 
 /// The kinds of call a script written once for every dialect names.
