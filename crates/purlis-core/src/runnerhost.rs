@@ -611,6 +611,31 @@ pub fn remove_version(here: &Here, version: &str) -> Result<(), String> {
     .map(drop)
 }
 
+/// **Whether this machine's manager starts a host of the installed version `version` at boot**,
+/// read from disk alone, by the service's name ([`Service::unit_name`], [`Service::label`]):
+/// under systemd, the link `systemctl --user enable` puts in `default.target.wants/` (the unit's
+/// `WantedBy=`), which `disable` takes away; under launchd, its agent's file. Never where no
+/// manager keeps hosts. What tells an older version's host kept by its machine that a newer one
+/// takes over from it (#6704): a newer version disabled or taken back takes over nothing.
+#[must_use]
+pub fn version_started_at_boot(here: &Here, version: &str) -> bool {
+    let service = Service {
+        binary: PathBuf::new(),
+        version: Some(version.to_owned()),
+        config_home: None,
+    };
+    match here.keeper {
+        // `exists` follows the link: one left naming a unit file that is gone starts nothing.
+        Keeper::SystemdUser => here
+            .user_units
+            .join("default.target.wants")
+            .join(service.unit_name())
+            .exists(),
+        Keeper::Launchd => here.plist_path(&service).exists(),
+        Keeper::Foreground(_) => false,
+    }
+}
+
 /// **What doctor finds of a runner's host** (read by [`look`], judged by [`rows`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Look {

@@ -38,8 +38,10 @@ const LINK_MAY_START_WITHIN: Duration = Duration::from_secs(60);
 
 /// **How long a runner's host kept by its machine waits, once a newer version is installed
 /// beside it and it has nothing left to run, before it stops itself** (#6704; ADR 0068 §3 as
-/// amended for #6704). A minute: a desktop that has just linked holds it off as long
-/// (`LINK_MAY_START_WITHIN`), and an old version's host has nothing else to wait for.
+/// amended for #6704). A minute, so a chat that ends and another that starts at once, or a link
+/// that drops and comes straight back, does not find this host gone. An open link holds it off
+/// for as long as the link lasts, and every break in the minute starts it again
+/// ([`Hosting::until_superseded_and_idle`]).
 pub const SUPERSEDED_IDLE_FOR: Duration = Duration::from_secs(60);
 
 /// **What tells a runner's host kept by its machine that it is the old one** (#6704): `newer`

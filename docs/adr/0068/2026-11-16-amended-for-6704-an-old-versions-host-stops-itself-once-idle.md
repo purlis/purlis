@@ -7,7 +7,7 @@ drains: systemd or launchd starts it at every boot, and it holds its lock for ev
 it. So on a supervised runner pruning removed nothing, and every version ever installed kept a
 host running. This note says who stops an idle old host. §3, the amendments for #724 and #6700
 stay as accepted. Each item was **decided in implementation, to be confirmed** (D-6704-1 to
-D-6704-5).
+D-6704-6).
 
 1. **The old host stops itself.** A host started by its service manager (`purlis serve
    --as-a-service`, `Serves::AsARunnersService`) and installed as a version stops serving once,
@@ -17,7 +17,8 @@ D-6704-5).
    journal (`purlis_host::SUPERSEDED`) and exits 0
    (`Hosting::until_superseded_and_idle`, `purlis_host::Superseded`). "A newer version installed
    beside it" is a folder in `<config>/server/` read as a later version, ordered as pruning
-   orders them, that holds its binary (`runnerinstall::prune::newer_beside`). The host reads its
+   orders them, that holds its binary and whose service the manager starts at boot, as item 6
+   says (`runnerinstall::prune::newer_beside`). The host reads its
    own disk. It asks no other host and parses nothing printed, so a change of state has a named
    cause: an act of the host (ADR 0076). The clock starts again whenever any of the three fails,
    so a chat or a link holds the host for as long as it lasts.
@@ -56,3 +57,23 @@ D-6704-5).
    cannot keep anything wrongly. *Rejected:* looking in the user manager's folder only where a
    runner service is installed. A host started by hand listens in the folder its own shell
    named, so either folder alone could miss a serving host. *D-6704-5.*
+6. **Only a newer version whose service starts at boot takes over.** A newer version counts for
+   item 1 only while the machine's manager would start its host at the next boot
+   (`runnerhost::version_started_at_boot`): under systemd, the link `systemctl --user enable`
+   puts in `default.target.wants/` for its unit, which `disable` takes away; under launchd, its
+   agent's file. The host reads it from disk by the service's name, as `remove_version` names it,
+   and runs no manager. So a person going back to an older version beside a newer one disables
+   the newer one's service, or takes it back with that binary's `serve --remove`, and the older
+   host serves on. A newer binary put there with no `serve --install` run takes over nothing
+   either, so a supervised host never stops itself in favour of a version nothing supervises.
+   *Rejected:* a newer binary alone, as item 1 first had it. A person who installs an older
+   version beside a newer one would have the host they wanted stop itself, while the newer host
+   served for ever. *Rejected:* asking the manager (`systemctl --user is-enabled`, `launchctl
+   print-disabled`) at each look. It runs a program every few seconds for the life of the host,
+   and the file is what the manager reads anyway. *Rejected:* the service installed last wins,
+   by its file's time. A reinstall that changes nothing does not rewrite the file
+   (`write_if_changed`), so the time says nothing about what the person last chose.
+   Prune's runtime folders (item 5) are compared as the system resolves them, so one folder
+   named two ways (`/var/run/user/<uid>`, where `/var/run` links to `/run`) is looked in once:
+   twice, its lock's two `flock`s conflict within prune itself, and every version would be kept
+   as serving. *D-6704-6.*

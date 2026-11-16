@@ -1115,14 +1115,19 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
             purlis_core::runnerinstall::version_of_binary(&config, &std::env::current_exe().ok()?)
         })
         .flatten()
-        .map(|version| {
+        .and_then(|version| {
             let config = config.clone();
-            purlis_host::Superseded {
+            // Only a newer version whose service the manager starts at boot takes over: one a
+            // person disabled or took back, going back to this version, does not (#6704).
+            let here = purlis_core::runnerhost::Here::this(std::path::PathBuf::new(), &config)?;
+            Some(purlis_host::Superseded {
                 after: purlis_host::SUPERSEDED_IDLE_FOR,
                 newer: Box::new(move || {
-                    purlis_core::runnerinstall::prune::newer_beside(&config, &version)
+                    purlis_core::runnerinstall::prune::newer_beside(&config, &version, &|newer| {
+                        purlis_core::runnerhost::version_started_at_boot(&here, newer)
+                    })
                 }),
-            }
+            })
         });
     // A runner's binary installed as one version of several keeps a socket and a folder of its
     // version's own, so it serves beside an older version's host, which drains (RR-14, #723).

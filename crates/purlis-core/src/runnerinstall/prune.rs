@@ -349,21 +349,42 @@ pub fn prune_here() -> Option<Pruned> {
 /// environment prune runs in names (a `su` shell keeps another account's, a job may name its
 /// own), and one started by hand listens in the one its own shell named. `None` is the folder a
 /// host takes where none is named and the user manager's is not there (`/tmp/purlis-<uid>`).
+///
+/// **One folder named two ways is looked in once**: they are compared as the system resolves
+/// them, so `XDG_RUNTIME_DIR=/var/run/user/<uid>`, where `/var/run` links to `/run`, is the user
+/// manager's. Looked in twice, prune would open one lock file twice, and the second `flock` would
+/// conflict with its own first, so every version would be kept as serving for ever.
 fn runtimes_to_look_in(named: Option<&std::ffi::OsStr>, run_user: &Path) -> Vec<Option<PathBuf>> {
     let mut runtimes = vec![runtime_dir(named, run_user)];
-    if run_user.is_dir() && !runtimes.contains(&Some(run_user.to_path_buf())) {
-        runtimes.push(Some(run_user.to_path_buf()));
+    if run_user.is_dir() {
+        let resolved = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.into());
+        let managers = resolved(run_user);
+        let looked_in = runtimes
+            .iter()
+            .flatten()
+            .any(|runtime| resolved(runtime) == managers);
+        if !looked_in {
+            runtimes.push(Some(run_user.to_path_buf()));
+        }
     }
     runtimes
 }
 
-/// **Whether a version newer than `version` is installed beside it** under `config_root`: a
-/// folder in `<config>/server/` read as a later version ([`a_version`], ordered as [`may_go`]
-/// orders them) that holds its binary. What tells a runner's host kept by its machine that it
-/// is the old one, which stops itself once it has nothing left to run (#6704). `false` where
-/// `version` is not read as a version.
+/// **Whether a version newer than `version` is installed beside it, and takes over from it**,
+/// under `config_root`: a folder in `<config>/server/` read as a later version ([`a_version`],
+/// ordered as [`may_go`] orders them) that holds its binary, and whose service the machine's
+/// manager starts at boot (`started_at_boot`: [`crate::runnerhost::version_started_at_boot`]).
+/// What tells a runner's host kept by its machine that it is the old one, which stops itself once
+/// it has nothing left to run (#6704). A newer version with no service started at boot (its
+/// binary put there and no `serve --install` run, or its service disabled or taken back, as a
+/// person going back to an older version does) takes over nothing, so the older host serves on.
+/// `false` where `version` is not read as a version.
 #[must_use]
-pub fn newer_beside(config_root: &Path, version: &str) -> bool {
+pub fn newer_beside(
+    config_root: &Path,
+    version: &str,
+    started_at_boot: &dyn Fn(&str) -> bool,
+) -> bool {
     let Ok(this) = semver::Version::parse(version) else {
         return false;
     };
@@ -371,6 +392,7 @@ pub fn newer_beside(config_root: &Path, version: &str) -> bool {
     versions_in(&server).iter().any(|name| {
         semver::Version::parse(name).is_ok_and(|other| other > this)
             && server.join(name).join(super::BINARY).is_file()
+            && started_at_boot(name)
     })
 }
 
