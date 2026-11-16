@@ -335,6 +335,40 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
 /// The hook calls of each parallel group, in one canonical order (their masked text), in the
 /// places the group took. Calls outside a group keep their order.
 fn canonical_parallel_order(recording: &mut Value) {
+    // What the model was shown of one response's calls run at once, in one order too.
+    let groups: Vec<Vec<String>> = recording["model"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|asked| asked["parallel"] == true)
+        .map(|asked| {
+            asked["calls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["tool_use_id"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .collect();
+    if let Some(shown) = recording.get_mut("shown").and_then(Value::as_array_mut) {
+        for ids in &groups {
+            let places: Vec<usize> = shown
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| {
+                    s["tool_use_id"]
+                        .as_str()
+                        .is_some_and(|id| ids.iter().any(|i| i == id))
+                })
+                .map(|(at, _)| at)
+                .collect();
+            let mut members: Vec<Value> = places.iter().map(|&at| shown[at].clone()).collect();
+            members.sort_by_key(|s| s["tool_use_id"].as_str().unwrap_or_default().to_owned());
+            for (&at, item) in places.iter().zip(members) {
+                shown[at] = item;
+            }
+        }
+    }
     let Some(calls) = recording
         .get_mut("hook_calls")
         .and_then(Value::as_array_mut)

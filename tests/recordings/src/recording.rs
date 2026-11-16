@@ -157,8 +157,8 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
     }
     let mut calls: Vec<HookCall> = Vec::new();
     let mut before: Option<u64> = None;
-    // The hooks of one event the harness runs at once: each begun before the one before it of
-    // the same event answered (Codex runs every SessionStart hook together).
+    // The hooks the harness runs at once: each begun before the one before it answered (Codex
+    // runs every SessionStart hook together).
     let mut previous: Option<(String, u64, Option<u64>)> = None;
     for line in lines.iter().filter(|l| l.phase == "call") {
         let reply = lines
@@ -192,11 +192,12 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
             .iter()
             .find(|l| l.phase == "reply" && l.id == line.id)
             .map(|l| l.at_ms);
+        // Begun before the hook call before it answered, whatever its event: OpenCode's shim
+        // runs `notification` and `permissionrequest` for one ask at once.
         let at_once = group.is_none()
-            && !event.is_empty()
-            && previous.as_ref().is_some_and(|(e, _, replied)| {
-                *e == event && replied.is_none_or(|replied| line.at_ms < replied)
-            });
+            && previous
+                .as_ref()
+                .is_some_and(|(_, _, replied)| replied.is_none_or(|replied| line.at_ms < replied));
         let group = if at_once {
             calls.last().and_then(|c| c.group).or_else(|| {
                 let first = calls.len() as u32;
@@ -281,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn hooks_of_one_event_begun_before_the_last_answered_are_one_group() {
+    fn hooks_begun_before_the_last_answered_are_one_group() {
         // Two SessionStart hooks at once, then a Stop after both answered.
         let lines = [
             line("a", "call", 100, "SessionStart"),

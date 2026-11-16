@@ -14,7 +14,7 @@
       {"step": "parallel-one", "kind": "bash", "command": "echo one"},
       {"step": "parallel-two", "kind": "bash", "command": "echo two"}
     ]},
-    {"calls": [{"step": "background", "kind": "bash", "command": "sleep 1; echo background", "background": true}], "dialects": ["claude"]},
+    {"calls": [{"step": "background", "kind": "bash", "command": "echo background", "background": true}], "dialects": ["claude"]},
     {"calls": [{"step": "subagent", "kind": "subagent", "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for."}], "dialects": ["claude", "opencode"]},
     {"calls": [{"step": "failing-bash", "kind": "bash", "command": "echo failing >&2; exit 2"}]},
     {"esc": true, "calls": [{"step": "esc", "kind": "bash", "command": "python3 -c \"import time; time.sleep(120)\""}]}
