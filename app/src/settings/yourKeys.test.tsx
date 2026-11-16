@@ -288,6 +288,7 @@ describe("the key form", () => {
     await userEvent.click(screen.getByRole("button", { name: "Replace the key" }));
 
     await waitFor(() => expect(saved).toBe("01H"));
+    expect(box, "the box is emptied once the key is saved").toHaveValue("");
     expect(called("your_key_replace_held").map((one) => one.args)).toEqual([
       { held: "01H", value: "synthetic-pasted-value", profile: "claude-anthropic" },
     ]);
