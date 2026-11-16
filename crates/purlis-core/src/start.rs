@@ -432,6 +432,17 @@ fn ready_given_on(
         return Err(why);
     }
 
+    // This machine's policy file, before anything is written or run (R-430, R-714): a
+    // `min-version` above this build, or a key inside `models`, refuses every chat that reaches
+    // a model, one on the harness's own sign-in included. Every chat started here is on its
+    // harness's own sign-in: a key from your keys waits for the key proxy, whose start
+    // (`keyroute::start`) also refuses it for a policy file that can't be read.
+    if let Some(why) = crate::sandbox::policy::Locks::of(root)
+        .refuses_model_start(crate::keyroute::Route::OwnSignIn)
+    {
+        return Err(why);
+    }
+
     let here = start.cwd.clone().unwrap_or_else(|| root.to_path_buf());
     // The plane's layer: its ask/deny rules have to be in the tree before a chat stands in it.
     //

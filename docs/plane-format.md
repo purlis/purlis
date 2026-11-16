@@ -592,6 +592,8 @@ is listed, with who set the policy.
 ```json
 {
   "owner": "Platform team <platform@example.com>",
+  "min-version": "0.6.0",
+  "models": {},
   "sandbox": {
     "presets": ["model-providers", "forge"],
     "hosts": ["*.corp.example.com", "api.example.com"],
@@ -623,6 +625,8 @@ is listed, with who set the policy.
 | Key | Type | Locks |
 |---|---|---|
 | `owner` | string | nothing; who set the policy, as Settings and a block's Notice name them (absent: "this machine's administrator") |
+| `min-version` | string, `MAJOR.MINOR.PATCH` with an optional pre-release (`0.6.0`, `0.6.0-rc.1`) | the oldest purlis that may start a chat that reaches a model on this machine (any-model R-714, T1a-35). Compared with this build's release (a dev build compares its base version; a pre-release compares below its release). Above this build, every chat that reaches a model is refused naming `min-version`, a subscription chat included, even where the rest of the file is refused. It is read after the trust check and a JSON parse, from the top level only, and before the strict parse, so one in a file anyone could write is never read. Any other value (`2`, `0.6`, `v0.6.0`, `1!0.6.0`, `0.6.0.post1`, a number) refuses the whole file |
+| `models` | object | model policy, more keys of this one file with no store of its own (any-model R-428, R-617). **Unknown keys are tolerated here only** (R-429): the file is not refused for one. This version enforces none of them, so **any key inside `models` refuses every chat that reaches a model**, a subscription chat included, naming the key (R-430); the sandbox locks stay as the file states them. A `models` that is not an object refuses the whole file. The keys themselves (an allowlist and the rest) are phase 5b's |
 | `sandbox.presets` | list of preset words | the Internet access presets a project may turn on; any other is off |
 | `sandbox.hosts` | list of hosts | the hosts the project (its own and its `[[forge]]` blocks'), you, a persona or a block's Allow may add (`*.domain` covers every name under it; no port covers every port); any other is not reached. A preset's fixed list is `presets`' to lock. |
 | `sandbox.personal-hosts` | bool | `false`: your own hosts, and a block's Allow for one chat or for you, reach no chat |
@@ -647,10 +651,13 @@ Absent keys and `true` lock nothing. **It is read only when no one but an admini
 have written it**: a regular file, never a link, owned by root, in a folder owned by root, and
 neither writable by anyone else by its permission bits; every chat is denied writing its folder.
 A file that is there and fails that (or a folder that is there and fails it, file or no file),
-does not parse, or says anything this version does not know is refused, and then every lock but
-the presets is set, the required sandbox among them, so purlis never reads a policy it cannot
-trust as no policy. **Decided, not yet written** ([ADR 0124](adr/0124-who-judges-a-chat-and-how-much.md) decision 15, phase 4): a last-known-good copy of the policy, kept in a keychain item bound to the app binary (**Tier:** Keyring), used with an audit entry when the file can't be read, and expired after 30 days unless a policy key says otherwise; with no good copy ever, every lock is set, as above. No other layer of C9 (an MDM profile, a Windows policy key, an
-organisation's policy) is read yet, so no policy is read on Windows.
+does not parse, says one key twice in an object at any depth, or says anything this version does
+not know outside `models` is refused, and then every lock but the presets is set, the required sandbox among them, so purlis never reads a policy it cannot
+trust as no policy. A refused file also refuses every chat that would start through the key proxy, naming the
+file and why; a chat on the harness's own sign-in still starts. The file is read whole up to 64 KiB;
+a larger one is refused naming the cap. **Decided, not yet written** ([ADR 0124](adr/0124-who-judges-a-chat-and-how-much.md) decision 15, phase 4): a last-known-good copy of the policy, kept in a keychain item bound to the app binary (**Tier:** Keyring), used with an audit entry when the file can't be read, and expired after 30 days unless a policy key says otherwise; with no good copy ever, every lock is set, as above. No other layer of C9 (an MDM profile, a Windows policy key, an
+organisation's policy) is read yet, so no policy is read on Windows. So `min-version` and `models` are not enforced on Windows yet either: a stated gap, closed with
+the Windows policy work.
 
 **Access-control lists are not read.** On Linux an ACL that grants write shows in the
 permission bits (the group bits are its mask) and is refused. On macOS an ACL is kept apart from

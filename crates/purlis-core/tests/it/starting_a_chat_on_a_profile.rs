@@ -1969,3 +1969,43 @@ fn on_a_runner_a_claude_code_chat_is_never_started_without_the_sandbox() {
     )
     .expect("it starts on a Mac");
 }
+
+#[test]
+fn a_models_key_or_a_min_version_above_this_build_refuses_a_subscription_chat_s_start() {
+    // R-430, R-714: a policy file's key this build can't enforce refuses every chat that reaches
+    // a model, a chat on the harness's own sign-in included, in words naming the key.
+    use purlis_core::sandbox::policy::{
+        Fixture, Locks, set_for_this_test, use_fixture_for_this_test,
+    };
+    use purlis_core::window_copy::{fill, line};
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let bin = plane.harness();
+    plane.plain_profile("claude", &bin, "");
+    let policy = tempfile::tempdir().unwrap();
+    let file = policy.path().join("policy.json");
+    let shown = file.display().to_string();
+    for (text, said) in [
+        (
+            r#"{"models": {"allowed": ["claude-sonnet-5-5"]}}"#,
+            fill(line::W66, &[("file", &shown), ("key", "allowed")]),
+        ),
+        (
+            r#"{"min-version": "999.0.0"}"#,
+            fill(line::W36, &[("file", &shown), ("version", "999.0.0")]),
+        ),
+    ] {
+        fs::write(&file, text).unwrap();
+        use_fixture_for_this_test(Fixture::at(&file));
+        let why = start::ready(&plane.start("work"), plane.root());
+        set_for_this_test(Locks::none());
+        assert_eq!(why.map(|_| ()), Err(said), "{text}");
+        assert!(!plane.root().join("ran").exists(), "nothing was run");
+    }
+    // With neither, it starts.
+    fs::write(&file, "{}").unwrap();
+    use_fixture_for_this_test(Fixture::at(&file));
+    let ready = start::ready(&plane.start("work"), plane.root());
+    set_for_this_test(Locks::none());
+    ready.expect("it starts");
+}

@@ -118,6 +118,19 @@ empty state and error copy follow it.
   can tell from blocked, so the window has one word for it. A sentence may still use *refused*
   as English where it is no stop: *The pool refused the move: it is full.*
 
+### A policy file at a chat's start
+
+Core writes these from the copy module (`purlis_core::window_copy`, `app/src/windowCopy.ts`),
+keyed by the W-number of the any-model spec's Window copy table; never typed by hand.
+
+- **W36**, every chat that reaches a model: *<file> requires purlis <version> or later
+  (`min-version`). Chats can't start. Update purlis.*
+- **W64**, a chat through the key proxy: *<file> can't be read: <error>. Chats on a key can't
+  start until it's fixed.* `<error>` is the reader's own cause, as `purlis-core`'s
+  `sandbox::policy` says it (*it is a link*, *it says "owner" twice*).
+- **W66**, every chat that reaches a model: *<file> sets `models.<key>`, which this version of
+  purlis can't enforce. Chats can't start.*
+
 ## Words
 
 - **The nouns are ADR 0072's.** Five concepts (Project, Workspace, Chat, Persona, Memory), and
