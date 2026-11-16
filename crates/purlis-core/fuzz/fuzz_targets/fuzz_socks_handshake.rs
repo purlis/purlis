@@ -10,6 +10,26 @@
 use libfuzzer_sys::fuzz_target;
 use purlis_core::sandbox::fuzzing::socks_handshake;
 
+/// Whether `host` is a name a URL's host could be: labels of letters, digits, `-` and `_`, none
+/// empty, with one final dot at most, whose last label is not a number. One that is (all digits,
+/// or `0x` and hex digits, in either case: WHATWG's "ends in a number") is an IPv4 address in
+/// another notation to curl, Node and the resolver (`0x7f.1`, `2130706433`).
+fn a_name(host: &str) -> bool {
+    let name = host.strip_suffix('.').unwrap_or(host);
+    let last = name.rsplit('.').next().unwrap_or(name).to_ascii_lowercase();
+    let a_number = (!last.is_empty() && last.bytes().all(|b| b.is_ascii_digit()))
+        || last
+            .strip_prefix("0x")
+            .is_some_and(|hex| hex.bytes().all(|b| b.is_ascii_hexdigit()));
+    !a_number
+        && name.split('.').all(|label| {
+            !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+        })
+}
+
 fuzz_target!(|bytes: &[u8]| {
     let read = socks_handshake(bytes);
     assert!(read.read <= bytes.len());
@@ -28,11 +48,10 @@ fuzz_target!(|bytes: &[u8]| {
             // The request: version, CONNECT, reserved, then the address.
             assert_eq!((bytes[at], bytes[at + 1]), (5, 1));
             assert_eq!(&bytes[read.read - 2..read.read], &port.to_be_bytes());
-            let ok = host.parse::<std::net::IpAddr>().is_ok()
-                || host
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b));
-            assert!(ok && !host.is_empty(), "{host:?}");
+            assert!(
+                host.parse::<std::net::IpAddr>().is_ok() || a_name(host),
+                "{host:?}"
+            );
         }
         Some(Err(code)) => {
             assert!(offered);
