@@ -317,7 +317,16 @@ async function onPage(origin: string, host: string) {
 /** The header's rows fit the pane: none is wider than it, and neither is taller than two lines. */
 async function fitsThePane(canvas: { getByTestId: (id: string) => HTMLElement }) {
   const head = canvas.getByTestId("browser-head");
-  await expect(head.scrollWidth).toBeLessThanOrEqual(head.clientWidth);
+  // What each part of the row took, said where the row runs past the pane.
+  const parts = [...head.querySelectorAll<HTMLElement>("*")]
+    .filter((one) => one.getBoundingClientRect().right > head.getBoundingClientRect().right)
+    .map(
+      (one) => `${one.tagName}.${one.className} ${Math.round(one.getBoundingClientRect().width)}`,
+    )
+    .join("; ");
+  await expect(head.scrollWidth, `the row's parts past it: ${parts}`).toBeLessThanOrEqual(
+    head.clientWidth,
+  );
   await expect(head.getBoundingClientRect().height).toBeLessThan(64);
   const bar = head.parentElement?.querySelector(".browser-bar");
   await expect(bar?.getBoundingClientRect().height ?? 0).toBeLessThan(96);

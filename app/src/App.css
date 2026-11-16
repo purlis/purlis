@@ -8119,6 +8119,11 @@ nav.piece-files-head {
   background: var(--surface-raised);
 }
 
+/* Whatever the row holds gives up its room before the row runs past the pane. */
+.browser-head > * {
+  min-inline-size: 0;
+}
+
 /* **Who drives, as a sentence with the one next step** (#6937): the sentence takes what room
    there is and wraps rather than being cut; in a narrow pane the controls go under it. */
 .browser-bar {
@@ -8320,6 +8325,7 @@ nav.piece-files-head {
   align-items: center;
   min-inline-size: 0;
   max-inline-size: 50%;
+  overflow: hidden;
 }
 
 .browser-secret {
