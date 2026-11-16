@@ -427,9 +427,30 @@ fn native(api: Api, step: &Step, offers: &[Offer], id: String) -> NativeCall {
                     text(&step.new)
                 )
             };
-            match offered("apply_patch") {
-                Some(o) if !o.custom => ("apply_patch".to_owned(), json!({"input": patch}), false),
-                _ => ("apply_patch".to_owned(), Value::String(patch), true),
+            // Its own tool where it offers one; else through its shell, as its instructions tell
+            // a model of its own to (`apply_patch` and the patch), which Codex takes over and
+            // applies itself (0.169.0, a custom provider's model).
+            let heredoc = format!("apply_patch <<'PATCH'\n{patch}PATCH\n");
+            match (
+                offered("apply_patch"),
+                offered("exec_command"),
+                offered("shell_command"),
+            ) {
+                (Some(o), _, _) if !o.custom => {
+                    ("apply_patch".to_owned(), json!({"input": patch}), false)
+                }
+                (Some(_), _, _) => ("apply_patch".to_owned(), Value::String(patch), true),
+                (None, Some(_), _) => ("exec_command".to_owned(), json!({"cmd": heredoc}), false),
+                (None, None, Some(_)) => (
+                    "shell_command".to_owned(),
+                    json!({"command": heredoc}),
+                    false,
+                ),
+                (None, None, None) => (
+                    "shell".to_owned(),
+                    json!({"command": ["apply_patch", patch]}),
+                    false,
+                ),
             }
         }
         (_, kind) => (

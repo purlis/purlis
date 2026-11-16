@@ -296,6 +296,8 @@ fn each_recording_keeps_the_models_received_requests() {
         "instructions": "HARNESS SYSTEM PROMPT",
         "tools": [{"type": "function", "name": "shell_command"}],
         "input": [
+            {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "HARNESS SYSTEM PROMPT, as Codex sends it"}]},
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "<environment_context>"}]},
             {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "hook context"}]},
             {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "COVERING-SCRIPT go"}]},
             {"type": "function_call", "call_id": "call_1", "name": "shell_command", "arguments": "{}"},

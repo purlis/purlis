@@ -83,6 +83,10 @@ pub fn project(api: Api, body: &Value) -> Vec<Shown> {
             }
         }
         Api::Responses => {
+            // Codex sends its own system prompt as the developer messages before the first
+            // user message (its instructions, its permissions): the harness's prompt, left out.
+            // A hook's context comes after.
+            let mut met_a_user = false;
             for item in array(body, "input") {
                 match item["type"].as_str() {
                     Some("message") | None if item.get("role").is_some() => {
@@ -92,8 +96,11 @@ pub fn project(api: Api, body: &Value) -> Vec<Shown> {
                         }
                         let text = text_of(&item["content"]);
                         if role == "developer" {
-                            push(&mut out, "context", text, None, None);
+                            if met_a_user {
+                                push(&mut out, "context", text, None, None);
+                            }
                         } else {
+                            met_a_user = true;
                             user_text(&text, &mut out);
                         }
                     }
