@@ -314,6 +314,7 @@ export function LinkAnswer({
       <FileOutsideAsk
         target={answer.target}
         home={answer.about.home}
+        runner={answer.about.runner}
         chat={chat}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
@@ -356,28 +357,35 @@ export function LinkAnswer({
  * the family's rule that an ask starts on its safe answer. `home` is the chat's workspace, or
  * the project for a chat at its root; with none, its row is left out. `chat` is the chat whose
  * output named the file, said under the title as the prototype's S7 draws it (#6355): none for
- * a shell's pane, which is no chat.
+ * a shell's pane, which is no chat. `runner` names the runner a runner chat's file is on (#6387):
+ * the file is outside the chat's workspace there, and opens read-only, read on that runner.
  */
 export function FileOutsideAsk({
   target,
   home,
+  runner = null,
   chat,
   onClose,
   onOpen,
 }: {
   target: string;
   home: LinkHome | null;
+  runner?: string | null;
   chat?: AskingChat;
   onClose: () => void;
   onOpen: () => void;
 }) {
-  const workspace = home?.is === "workspace";
+  const workspace = home?.is === "workspace" || runner !== null;
   const within = home?.is === "workspace" ? home.name : "the project";
   return (
     <Dialog
       title={workspace ? "Open a file outside this workspace?" : "Open a file outside the project?"}
       subtitle={chat === undefined ? undefined : fromChatSaid(chat)}
-      description={`This chat's output names a file that is not in ${within}.`}
+      description={
+        runner === null
+          ? `This chat's output names a file that is not in ${within}.`
+          : `This chat's output names a file on runner ${runner} that is not in its workspace there.`
+      }
       cancel={{ children: "Don't open" }}
       alternative={{
         children: "Copy path",
@@ -395,13 +403,22 @@ export function FileOutsideAsk({
         <Fact label="File">
           <span className="pane-link-path">{target}</span>
         </Fact>
+        {runner !== null && (
+          <Fact label="Runner">
+            <span className="pane-link-path">{runner}</span>
+          </Fact>
+        )}
         {home !== null && (
-          <Fact label={workspace ? "Workspace" : "Project"}>
+          <Fact label={home.is === "workspace" ? "Workspace" : "Project"}>
             <span className="pane-link-path">{home.folder}</span>
           </Fact>
         )}
       </Facts>
-      <p className="ui-text-secondary">It opens in an editor tab. Nothing is run.</p>
+      <p className="ui-text-secondary">
+        {runner === null
+          ? "It opens in an editor tab. Nothing is run."
+          : "It opens read-only in an editor tab. Nothing is run."}
+      </p>
     </Dialog>
   );
 }

@@ -61,7 +61,13 @@ struct Recorded {
 }
 
 /// One file read for the window, as the runner's binary was handed it.
-type FileAsked = (PathBuf, Option<PathBuf>, String, session::FileReach, Option<u64>);
+type FileAsked = (
+    PathBuf,
+    Option<PathBuf>,
+    String,
+    session::FileReach,
+    Option<u64>,
+);
 
 const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";
 
@@ -802,7 +808,12 @@ async fn the_window_reads_a_file_a_runner_chat_printed_and_no_other_client_does(
 
     let read = tokio::time::timeout(
         PATIENCE,
-        client.read_file(&program, "src/$(rm -rf ~).rs", session::FileReach::Workspace, Some(0)),
+        client.read_file(
+            &program,
+            "src/$(rm -rf ~).rs",
+            session::FileReach::Workspace,
+            Some(0),
+        ),
     )
     .await
     .unwrap()
@@ -827,12 +838,20 @@ async fn the_window_reads_a_file_a_runner_chat_printed_and_no_other_client_does(
 
     let unknown = tokio::time::timeout(
         PATIENCE,
-        client.read_file("01J9ZQ8000000000000000000Z", "a.rs", session::FileReach::Anywhere, None),
+        client.read_file(
+            "01J9ZQ8000000000000000000Z",
+            "a.rs",
+            session::FileReach::Anywhere,
+            None,
+        ),
     )
     .await
     .unwrap()
     .unwrap_err();
-    assert_eq!(unknown.refusal().expect("refused").code, session::NO_SUCH_CHAT);
+    assert_eq!(
+        unknown.refusal().expect("refused").code,
+        session::NO_SUCH_CHAT
+    );
 
     for scope in [Scope::Terminal, Scope::FleetMcp] {
         let (client, _streams) = through_the_relay(scope, &runner).await;
@@ -843,7 +862,11 @@ async fn the_window_reads_a_file_a_runner_chat_printed_and_no_other_client_does(
         .await
         .unwrap()
         .unwrap_err();
-        assert_eq!(refused.refusal().expect("refused").code, session::NOT_ALLOWED, "{scope:?}");
+        assert_eq!(
+            refused.refusal().expect("refused").code,
+            session::NOT_ALLOWED,
+            "{scope:?}"
+        );
     }
     assert_eq!(runner.recorded.files_read.lock().unwrap().len(), 1);
 }

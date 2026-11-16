@@ -584,8 +584,8 @@ use crate::view::{Limits, Views};
 /// it printed, as data, never a shell line, resolved there from the chat's own folder with every
 /// link followed on the host's side, and held to the chat's workspace unless the person
 /// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
-/// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. A host before
-/// 1.90 is not asked, and its chat's paths stay no link.
+/// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
+/// is not asked, and its chat's paths stay no link.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 90,

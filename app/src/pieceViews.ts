@@ -89,9 +89,47 @@ export function outsideFileTitle(path: string): string {
   return `${path.slice(path.lastIndexOf("/") + 1)} · Outside the project`;
 }
 
-/** The chat and the absolute path a file outside the project's view is about; `undefined` for
- *  every other view. */
-export function outsideFileOf(view: ViewRef): { session: number | null; path: string } | undefined {
+/**
+ * **A file on the runner a chat runs on** (#6387), keyed by its chat, its runner and its path
+ * there: one a runner chat's pane link opened, read on that runner, read-only.
+ */
+export const RUNNER_FILE = "runner-file";
+
+/** A file on a runner chat's runner, in a tab of its own. The key is the chat's number, the
+ *  runner's name escaped so it holds no `/`, then the path, which starts with `/`. */
+export function runnerFileView(session: number | null, runner: string, path: string): ViewRef {
+  return {
+    from: null,
+    view: RUNNER_FILE,
+    key: `${session ?? ""}/${encodeURIComponent(runner)}/${path}`,
+  };
+}
+
+/** What a runner's file's tab is called: its name, and that it is in the runner, read-only. */
+export function runnerFileTitle(runner: string, path: string): string {
+  return `${path.slice(path.lastIndexOf("/") + 1)} · In runner ${runner}, read-only`;
+}
+
+/** The chat, its runner and the path there of a runner's file's view. */
+function runnerFileOf(
+  view: ViewRef,
+): { session: number | null; runner: string; path: string } | undefined {
+  const [chat, runner, ...rest] = view.key.split("/");
+  if (rest.length < 2 || rest[0] !== "" || runner === undefined || runner === "") return undefined;
+  if (chat === undefined || (chat !== "" && !/^\d+$/u.test(chat))) return undefined;
+  return {
+    session: chat === "" ? null : Number(chat),
+    runner: decodeURIComponent(runner),
+    path: rest.join("/"),
+  };
+}
+
+/** The chat and the absolute path a file outside the project's view is about, and the runner
+ *  it is on for one on a runner chat's runner; `undefined` for every other view. */
+export function outsideFileOf(
+  view: ViewRef,
+): { session: number | null; path: string; runner?: string } | undefined {
+  if (view.from === null && view.view === RUNNER_FILE) return runnerFileOf(view);
   if (view.from !== null || view.view !== OUTSIDE_FILE) return undefined;
   const at = view.key.indexOf("/");
   if (at < 0) return undefined;
@@ -140,7 +178,8 @@ export function isFileView(view: ViewRef): boolean {
     (view.view === FILE ||
       view.view === DIFF ||
       view.view === PLANE_FILE ||
-      view.view === OUTSIDE_FILE)
+      view.view === OUTSIDE_FILE ||
+      view.view === RUNNER_FILE)
   );
 }
 

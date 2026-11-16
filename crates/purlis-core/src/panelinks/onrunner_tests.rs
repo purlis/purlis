@@ -100,7 +100,14 @@ fn a_relative_path_is_found_from_the_chats_folder_and_said_from_its_workspace() 
     assert_eq!(path, r.shown(&r.cwd.join("src/main.rs")));
     assert_eq!(from_workspace, Some("repos/web/src/main.rs"));
     assert!(
-        matches!(found, FileRead::Plain { size: 13, piece: None, .. }),
+        matches!(
+            found,
+            FileRead::Plain {
+                size: 13,
+                piece: None,
+                ..
+            }
+        ),
         "a look carries no bytes: {found:?}"
     );
 }
@@ -196,10 +203,7 @@ fn dot_dot_out_of_the_workspace_is_outside_and_not_read() {
 fn dot_dot_that_stays_in_the_workspace_is_found() {
     let r = runner();
 
-    assert_eq!(
-        plain(&r.look("../../workspace.md")).1,
-        Some("workspace.md")
-    );
+    assert_eq!(plain(&r.look("../../workspace.md")).1, Some("workspace.md"));
 }
 
 #[test]
@@ -259,7 +263,10 @@ fn a_workspace_reached_through_a_link_holds_only_what_resolves_inside_it() {
         at: None,
     };
 
-    assert_eq!(plain(&read_for_window(&asked)).1, Some("repos/web/src/main.rs"));
+    assert_eq!(
+        plain(&read_for_window(&asked)).1,
+        Some("repos/web/src/main.rs")
+    );
 }
 
 #[test]
@@ -279,9 +286,7 @@ fn a_folder_is_not_a_plain_file() {
 fn a_pipe_is_not_a_plain_file_and_is_never_waited_on() {
     let r = runner();
     let fifo = r.cwd.join("pipe");
-    let made = std::process::Command::new("mkfifo")
-        .arg(&fifo)
-        .status()
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&fifo))
         .expect("mkfifo runs");
     assert!(made.success(), "a pipe");
 
@@ -315,7 +320,11 @@ fn a_device_is_never_read_even_when_it_may_reach_anywhere() {
 fn the_systems_own_files_are_never_read() {
     let r = runner();
 
-    for path in ["/proc/self/environ", "/proc/self/cmdline", "/sys/kernel/hostname"] {
+    for path in [
+        "/proc/self/environ",
+        "/proc/self/cmdline",
+        "/sys/kernel/hostname",
+    ] {
         assert!(
             matches!(
                 r.read(path, FileReach::Anywhere, 0),

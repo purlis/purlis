@@ -53,6 +53,12 @@ export const commands = {
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
 	paneLinkFile: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
+	 *  chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
+	 *  run of the app and within the hour. Read on the runner, as data, through its kind's adapter.
+	 */
+	paneLinkRunnerFile: (from: LinkFrom, runner: string, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_runner_file", { from, runner, path })),
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -8450,8 +8456,11 @@ export type LinesShown = {
 export type LinkAsk = 
 /**  A link, asked about in general words. */
 { about: "link" } | 
-/**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
-{ about: "file-outside"; home: LinkHome | null };
+/**
+ *  A file outside the chat's home (the prototype's S7), and that home where it has one; or
+ *  outside its workspace on the runner it runs on, named (#6387).
+ */
+{ about: "file-outside"; home: LinkHome | null; runner: string | null };
 
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
@@ -8486,7 +8495,12 @@ export type LinkFileAt =
 /**  The project's own files. */
 { in: "project"; path: string } | 
 /**  Not in the project. */
-{ in: "outside"; path: string };
+{ in: "outside"; path: string } | 
+/**
+ *  On the runner the chat runs on, by its path there, read from there and read-only
+ *  ([`pane_link_runner_file`], #6387).
+ */
+{ in: "runner"; runner: string; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them

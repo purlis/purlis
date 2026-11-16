@@ -196,6 +196,7 @@ mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
 mod runnerdispatches;
+mod runnerfiles;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;

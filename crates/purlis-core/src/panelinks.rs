@@ -31,8 +31,8 @@ pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, h
 mod chat;
 pub mod onrunner;
 mod runner;
-pub use runner::{RunnerFile, RunnerFiles};
 pub use chat::{ChatAt, ChatNumber, Goes};
+pub use runner::{RunnerFile, RunnerFiles};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.

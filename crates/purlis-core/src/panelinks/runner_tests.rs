@@ -133,8 +133,16 @@ fn a_file_in_the_runner_chats_workspace_links_and_opens_at_its_line_without_aski
     assert_eq!(at.shown(), format!("{MAIN}:42:7"));
     assert!(matches!(*opening, Opening::Open(_)));
 
-    let opened = links.open(&file("src/main.rs:42:7"), &on_runner(), &Asks::default(), None);
-    assert!(matches!(opened, Opening::Open(Target::File(_))), "{opened:?}");
+    let opened = links.open(
+        &file("src/main.rs:42:7"),
+        &on_runner(),
+        &Asks::default(),
+        None,
+    );
+    assert!(
+        matches!(opened, Opening::Open(Target::File(_))),
+        "{opened:?}"
+    );
 }
 
 #[test]
@@ -163,17 +171,32 @@ fn a_file_outside_the_runner_chats_workspace_asks_first_naming_the_runner() {
     };
     assert!(reason.contains("docker-1"), "{reason}");
     assert_eq!(file_at(&target).short(), "/etc/hosts");
-    assert!(asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts").is_none());
+    assert!(
+        asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
+            .is_none()
+    );
 
     let opened = links.open(&file("/etc/hosts"), &on_runner(), &asks, Some(&token));
-    assert!(matches!(opened, Opening::Open(Target::File(_))), "{opened:?}");
-    assert!(asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts").is_some());
+    assert!(
+        matches!(opened, Opening::Open(Target::File(_))),
+        "{opened:?}"
+    );
+    assert!(
+        asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
+            .is_some()
+    );
     let other_chat = Pane {
         session: Some(8),
         ..on_runner()
     };
-    assert!(asks.opened_on_runner(&other_chat, "docker-1", "/etc/hosts").is_none());
-    assert!(asks.opened_on_runner(&on_runner(), "docker-2", "/etc/hosts").is_none());
+    assert!(
+        asks.opened_on_runner(&other_chat, "docker-1", "/etc/hosts")
+            .is_none()
+    );
+    assert!(
+        asks.opened_on_runner(&on_runner(), "docker-2", "/etc/hosts")
+            .is_none()
+    );
 }
 
 #[test]
@@ -218,7 +241,13 @@ fn a_runner_that_does_not_answer_leaves_the_text_quiet() {
 fn a_home_path_or_a_spaced_word_is_never_asked_of_the_runner() {
     let runner = fake();
 
-    for text in ["~/.claude/.credentials.json", "~purlis/x", "", "a b", "src/\u{7}x"] {
+    for text in [
+        "~/.claude/.credentials.json",
+        "~purlis/x",
+        "",
+        "a b",
+        "src/\u{7}x",
+    ] {
         assert_eq!(
             links(&runner).resolve(&file(text), &on_runner()),
             Resolved::Quiet,
@@ -234,19 +263,27 @@ fn a_file_address_names_the_runners_file() {
 
     let resolved = links(&runner).resolve(&file("file:///etc/hosts"), &on_runner());
 
-    assert!(matches!(resolved, Resolved::Link(Target::File(_))), "{resolved:?}");
+    assert!(
+        matches!(resolved, Resolved::Link(Target::File(_))),
+        "{resolved:?}"
+    );
     assert_eq!(*runner.asked.lock().unwrap(), ["/etc/hosts"]);
 }
 
 #[test]
 fn a_runner_chats_path_is_never_read_on_this_machine() {
     let here = tempfile::tempdir().expect("a folder");
-    let local = std::fs::canonicalize(here.path()).expect("resolved").join("notes.md");
+    let local = std::fs::canonicalize(here.path())
+        .expect("resolved")
+        .join("notes.md");
     std::fs::write(&local, "notes\n").expect("written");
     let runner = fake();
     let text = local.to_str().expect("text");
 
-    assert_eq!(links(&runner).resolve(&file(text), &on_runner()), Resolved::Quiet);
+    assert_eq!(
+        links(&runner).resolve(&file(text), &on_runner()),
+        Resolved::Quiet
+    );
     assert_eq!(*runner.asked.lock().unwrap(), [text]);
 }
 

@@ -70,8 +70,8 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if SYSTEMS_OWN.iter().any(|own| resolved.starts_with(own)) {
         return FileRead::NotPlain { path };
     }
-    let from_workspace = workspace_of(asked)
-        .and_then(|workspace| slashed(resolved.strip_prefix(workspace).ok()?));
+    let from_workspace =
+        workspace_of(asked).and_then(|workspace| slashed(resolved.strip_prefix(workspace).ok()?));
     if asked.reach == FileReach::Workspace && from_workspace.is_none() {
         return FileRead::Outside { path };
     }
@@ -92,7 +92,11 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
         return FileRead::TooLarge { path, size };
     }
     let mut bytes = Vec::new();
-    if file.take(MOST_FILE_READ + 1).read_to_end(&mut bytes).is_err() {
+    if file
+        .take(MOST_FILE_READ + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
         return FileRead::NotThere;
     }
     let read = bytes.len() as u64;
@@ -104,8 +108,8 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     }
     let piece = asked.at.map(|at| {
         let from = usize::try_from(at.min(read)).unwrap_or(bytes.len());
-        let to = usize::try_from(at.saturating_add(MOST_FILE_PIECE).min(read))
-            .unwrap_or(bytes.len());
+        let to =
+            usize::try_from(at.saturating_add(MOST_FILE_PIECE).min(read)).unwrap_or(bytes.len());
         FilePiece {
             at,
             bytes: bytes[from..to].to_vec(),
@@ -171,7 +175,12 @@ fn open_plain(path: &Path) -> std::io::Result<std::fs::File> {
     }
     let file_flags =
         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC;
-    Ok(std::fs::File::from(openat(&at, *last, file_flags, Mode::empty())?))
+    Ok(std::fs::File::from(openat(
+        &at,
+        *last,
+        file_flags,
+        Mode::empty(),
+    )?))
 }
 
 #[cfg(not(unix))]

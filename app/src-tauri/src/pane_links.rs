@@ -34,7 +34,7 @@ use std::time::Duration;
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
     Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, LocalFile,
-    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE, WebAddress,
+    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE, WebAddress,
 };
 use serde::{Deserialize, Serialize};
 
@@ -123,11 +123,17 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
         let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
         local.then_some(at)
     });
+    // A chat on a runner whose files the window can read there (#6387).
+    let on_runner = from
+        .session
+        .is_some_and(|session| here.is_none() && chats.reads_files_on_runner(session));
     let pane = Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
         runs: if here.is_some() {
             Runs::Here
+        } else if on_runner {
+            Runs::OnRunner
         } else {
             Runs::Elsewhere
         },
@@ -315,6 +321,9 @@ pub enum LinkFileAt {
     Project { path: String },
     /// Not in the project.
     Outside { path: String },
+    /// On the runner the chat runs on, by its path there, read from there and read-only
+    /// ([`pane_link_runner_file`], #6387).
+    Runner { runner: String, path: String },
 }
 
 /// **What a chat counts as its own**, for the ask that says a file is not in it, with its folder.
@@ -341,8 +350,12 @@ impl From<Home> for LinkHome {
 pub enum LinkAsk {
     /// A link, asked about in general words.
     Link,
-    /// A file outside the chat's home (the prototype's S7), and that home where it has one.
-    FileOutside { home: Option<LinkHome> },
+    /// A file outside the chat's home (the prototype's S7), and that home where it has one; or
+    /// outside its workspace on the runner it runs on, named (#6387).
+    FileOutside {
+        home: Option<LinkHome>,
+        runner: Option<String>,
+    },
 }
 
 /// **The open command's answer.**
@@ -456,14 +469,25 @@ fn file_at(file: &FileAt) -> LinkFileAt {
         ReadFrom::Outside => LinkFileAt::Outside {
             path: file.path.display().to_string(),
         },
+        ReadFrom::Runner { runner } => LinkFileAt::Runner {
+            runner: runner.clone(),
+            path: file.path.display().to_string(),
+        },
     }
 }
 
 /// What an ask for `target` in `pane` is about.
 fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
     match target {
-        Target::File(_) => LinkAsk::FileOutside {
-            home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+        Target::File(file) => match &file.read_from {
+            ReadFrom::Runner { runner } => LinkAsk::FileOutside {
+                home: None,
+                runner: Some(runner.clone()),
+            },
+            _ => LinkAsk::FileOutside {
+                home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+                runner: None,
+            },
         },
         Target::Url(_) | Target::Chat(_) => LinkAsk::Link,
     }
@@ -635,11 +659,18 @@ pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it 
 /// **The resolver for a pane in `held`'s project, and what it knows of its chats**: every kind,
 /// the chat kind given the chats open there now. A pane in no project the window holds links no
 /// chat.
-fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
+fn for_project(held: Option<&Held>, session: Option<u32>) -> (Resolver, ChatsHere<'_>) {
     // With no project, the chat kind still reads a chat's number, and finds none: it says
     // nothing on a hover.
     let open = held.map(crate::chatcard::open_chats).unwrap_or_default();
-    let resolver = resolver().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    let mut resolver = resolver().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    // A runner chat's paths are read on its runner (#6387).
+    if let Some(reads) = held
+        .zip(session)
+        .and_then(|(held, session)| held.chats().runner_files_of(session))
+    {
+        resolver = resolver.with_kind(Box::new(RunnerFile::new(Box::new(reads))));
+    }
     let Some(held) = held else {
         return (resolver, ChatsHere::none());
     };
@@ -673,11 +704,12 @@ pub async fn pane_link_resolve(
     candidates: Vec<LinkCandidate>,
 ) -> Vec<Option<LinkSeen>> {
     use tauri::Manager as _;
+    let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let count = candidates.len();
     // A chat's number reads the project's dispatch records: looked at as a file is.
     let look = move || {
-        let (resolver, chats) = for_project(held.as_deref());
+        let (resolver, chats) = for_project(held.as_deref(), session);
         candidates
             .into_iter()
             .map(|candidate| seen_in(&resolver, &pane, &candidate.into(), &chats))
@@ -702,6 +734,7 @@ pub async fn pane_link_open(
     token: Option<String>,
 ) -> LinkOpened {
     use tauri::Manager as _;
+    let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
     if candidate.kind == Kind::Url {
@@ -720,7 +753,7 @@ pub async fn pane_link_open(
     let handle = app.clone();
     let look = move || {
         let asks = handle.state::<PaneLinkAsks>();
-        let (resolver, chats) = for_project(held.as_deref());
+        let (resolver, chats) = for_project(held.as_deref(), session);
         answer_in(
             &resolver,
             &pane,
@@ -768,6 +801,41 @@ pub async fn pane_link_file(
     crate::off_the_window("reading the file", move || {
         purlis_core::files::folder::read_absolute(&path, identity).map(|opened| LinkFile::File {
             file: PieceFile::from(opened),
+        })
+    })
+    .await
+}
+
+/// **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
+/// chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
+/// run of the app and within the hour. Read on the runner, as data, through its kind's adapter.
+#[tauri::command]
+#[specta::specta]
+pub async fn pane_link_runner_file(
+    app: tauri::AppHandle,
+    from: LinkFrom,
+    runner: String,
+    path: String,
+) -> Result<LinkFile, String> {
+    use tauri::Manager as _;
+    let session = from.session;
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
+    let reads = held
+        .zip(session)
+        .and_then(|(held, session)| held.chats().runner_files_of(session))
+        .filter(|reads| reads.runner() == runner)
+        .ok_or_else(|| crate::runnerfiles::not_reachable(&runner))?;
+    let reach = match app
+        .state::<PaneLinkAsks>()
+        .0
+        .opened_on_runner(&pane, &runner, &path)
+    {
+        Some(()) => purlis_session_protocol::session::FileReach::Anywhere,
+        None => purlis_session_protocol::session::FileReach::Workspace,
+    };
+    crate::off_the_window("reading the file", move || {
+        reads.read(&path, reach).map(|read| LinkFile::File {
+            file: crate::runnerfiles::shown(read),
         })
     })
     .await

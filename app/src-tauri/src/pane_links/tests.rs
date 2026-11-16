@@ -277,6 +277,7 @@ fn a_file_outside_the_workspace_asks_with_a_token_and_its_answer_opens_it_once()
                 name: "smart-ide".into(),
                 folder: folder.display().to_string(),
             }),
+            runner: None,
         }
     );
     // The target the ask showed is no answer: only its token is.
@@ -397,13 +398,15 @@ fn the_window_s_words_for_a_file_and_an_ask_are_these() {
                     name: "w".into(),
                     folder: "/p/workspaces/w".into()
                 }),
+                runner: None,
             },
         }),
         serde_json::json!({
             "answer": "ask", "reason": "outside w", "shown": "/etc/hosts",
             "target": "/etc/hosts", "token": "t",
             "about": {"about": "file-outside",
-                      "home": {"is": "workspace", "name": "w", "folder": "/p/workspaces/w"}}
+                      "home": {"is": "workspace", "name": "w", "folder": "/p/workspaces/w"},
+                      "runner": null}
         })
     );
 }
@@ -567,7 +570,7 @@ fn an_unknown_number_says_nothing_on_a_hover_and_opening_it_is_refused() {
 
 #[test]
 fn a_pane_in_no_project_links_no_chat_and_says_nothing_on_its_hover() {
-    let (links, chats) = for_project(None);
+    let (links, chats) = for_project(None, None);
     assert_eq!(
         seen_in(&links, &Pane::default(), &chat("chat 652"), &chats),
         None

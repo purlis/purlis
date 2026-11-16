@@ -4757,6 +4757,18 @@ impl HostedSessions {
         })
     }
 
+    /// **Whether this project's chats run on a Docker pool's runner** (#6387): a pool this
+    /// machine keeps among its Docker pools, on this machine's engine or another's. A cluster
+    /// pool's runner has no adapter to read its files yet.
+    fn on_a_docker_pool(&self) -> bool {
+        let (Some(pool), Some(config)) = (self.connection.pool(), self.connection.runners_config())
+        else {
+            return false;
+        };
+        purlis_core::runners::pools(&config)
+            .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+    }
+
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
     /// on a link to this machine's host.
     fn runner_named(&self, link: &HostLink) -> Option<String> {
@@ -5403,6 +5415,28 @@ impl SessionHost for HostedSessions {
     /// is ever used again.
     fn let_go_of_runner(&self) {
         self.connection.fresh_runner_went();
+    }
+
+    /// Only of a link already open, to a Docker pool's runner of 1.90 or later (#6387): a hover
+    /// never opens one to the runner.
+    fn reads_files_on_runner(&self, id: u32) -> bool {
+        self.runner_files_of(id).is_some()
+    }
+
+    fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        if !self.kept_on_the_runner || !self.on_a_docker_pool() {
+            return None;
+        }
+        let link = self.own_link(Duration::ZERO).ok()?;
+        if link.version() < session::KNOWS_READ_FILE {
+            return None;
+        }
+        let program = lock(&self.running).get(&id)?.id.clone();
+        let runner = self.runner_named(&link)?;
+        Some(crate::runnerfiles::ReadsOnRunner::new(
+            runner,
+            Box::new(crate::runnerfiles::OnLink { link, program }),
+        ))
     }
 
     /// Only of a link already open: a tab drawn never opens one to the runner.

@@ -425,6 +425,21 @@ pub trait SessionHost: Send + Sync {
         ))
     }
 
+    /// **Whether the window can read chat `id`'s files on the runner it runs on** (#6387): a
+    /// Docker pool's runner of session protocol 1.90 or later, on a link open now. False for a
+    /// chat here, and on every other kind of runner, which has no adapter yet.
+    fn reads_files_on_runner(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
+    /// **Chat `id`'s files on its runner, as a pane's file links read them** (#6387): none where
+    /// [`Self::reads_files_on_runner`] is false.
+    fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        let _ = id;
+        None
+    }
+
     /// **Whether Move here brings back a clone the runner chat `id` runs on made** (#3811): its
     /// runner names the clones it holds (session protocol 1.51). False for a chat here, and for
     /// one on a runner before 1.51, or one this window has no link to now.
