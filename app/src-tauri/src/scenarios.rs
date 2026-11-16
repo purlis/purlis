@@ -184,10 +184,10 @@ fn the_scenario_host_runs_chats_in_the_session_host() {
             .all(|one| one.planned != purlis_host::Planned::Elsewhere),
         "{started:?}"
     );
-    let events = purlis_core::eventlog::read(&homes.data).expect("the host's event log reads");
+    let events = scenario.events();
     assert!(
         !events.is_empty(),
-        "the host wrote the event log in the scenario's data home"
+        "the host wrote the event log in the scenario's own folder of the data home"
     );
 }
 
@@ -351,11 +351,20 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
                 "run": reaches(&held)
             }]}]
         }));
+        scenario.until_played(chat, &["held"]);
+        let took = began.elapsed();
+        // Today's behaviour (B0, #6672, #6673): an ask can reach the log well after the call it
+        // held was refused, as late as the chat's run ending. Waited for, and its lateness said.
         until(&scenario, "the window is asked", || {
             scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED) > asked_before
         });
-        scenario.until_played(chat, &["held"]);
-        let took = began.elapsed();
+        let _ = std::io::Write::write_fmt(
+            &mut std::io::stderr(),
+            format_args!(
+                "{dialect:?}: the call ended after {took:?}, the ask was in the log after {:?}\n",
+                began.elapsed()
+            ),
+        );
         assert!(
             took >= scenario.timings.hold(),
             "{dialect:?}: the call ended after {took:?}, before the hold of {:?} ended",
