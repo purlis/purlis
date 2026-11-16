@@ -2359,10 +2359,7 @@ fn hello_naming(
         }
     }
     let record = whole(&hello)?;
-    // DELIBERATE MUTATION M13 (T1.1-23): a first record that names no server is carried.
-    let Some(named) = hello.get(..record).and_then(hello_names) else {
-        return Some(hello);
-    };
+    let named = hello_names(hello.get(..record)?)?;
     let wanted = host.trim_end_matches('.');
     named.eq_ignore_ascii_case(wanted).then_some(hello)
 }
