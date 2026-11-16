@@ -162,6 +162,9 @@ pub enum ReadError {
     Unreadable,
     /// The index could not be read.
     Index(String),
+    /// The keychain is locked: reading it would have asked the person to unlock it, and the
+    /// start asks with *Unlock* instead ([`start`], R-510).
+    Locked,
     /// The keychain could not be read.
     Store(String),
 }
@@ -171,6 +174,7 @@ impl std::fmt::Display for ReadError {
         match self {
             Self::NotInYourKeys => f.write_str("the key is not in your keys"),
             Self::Unreadable => f.write_str("the key's item is missing from your keychain"),
+            Self::Locked => f.write_str("your keychain is locked"),
             Self::Index(why) | Self::Store(why) => f.write_str(why),
         }
     }
@@ -406,6 +410,8 @@ fn read_item(credentials: &dyn Credentials, entry: &Entry) -> Result<Secret, Rea
     match credentials.get(SERVICE, &entry.id.to_string()) {
         Ok(Some(value)) => Ok(value),
         Ok(None) => Err(ReadError::Unreadable),
+        // The store would have asked the person: with its dialogs off, a locked keychain.
+        Err(why) if why.kind == crate::secrets::Kind::WouldAsk => Err(ReadError::Locked),
         Err(why) => Err(ReadError::Store(why.to_string())),
     }
 }

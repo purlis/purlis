@@ -307,9 +307,11 @@ pub enum AskGroup {
     LoopPause,
     Budget,
     HookGiveUp,
-    #[serde(rename = "modelkey")]
+    /// A model key's Ask (phase 1a, U12): your keys locked at a start, a key removed or
+    /// unmarked, an old profile's key to copy. Keyed by the entry, or by the profile.
     ModelKey,
-    #[serde(rename = "poolallow")]
+    /// The pool key allowance at an unattended start (phase 1a, U12): keyed by the entry and
+    /// the pool.
     PoolAllow,
 }
 
