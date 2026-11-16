@@ -13,7 +13,7 @@ use super::{Compiled, Level, Machine, Os, Plane, applied_of, claude, compiler};
 use crate::harness::Harness;
 
 mod deny_prefix;
-mod size_budget;
+mod size_budget_tests;
 
 /// Open hosts (a preset and the project's own, a private address and port among them) and a
 /// persona's hosts, which the person on this machine allowed.
