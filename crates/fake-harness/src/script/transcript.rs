@@ -69,6 +69,9 @@ impl Transcript {
     pub fn tool_result(&self, result: &ToolResult) {
         let mut line = base("tool_result", &result.text);
         line.insert("tool_use_id".to_owned(), result.id.clone().into());
+        if let Some(step) = &result.step {
+            line.insert("step".to_owned(), step.clone().into());
+        }
         if let Some(is_error) = result.is_error {
             line.insert("is_error".to_owned(), is_error.into());
         }
@@ -111,6 +114,8 @@ pub struct Ran {
 #[derive(Debug, Clone)]
 pub struct ToolResult {
     pub id: String,
+    /// The script's step the call came from, where it named one.
+    pub step: Option<String>,
     pub text: String,
     pub is_error: Option<bool>,
     pub ran: Option<Ran>,

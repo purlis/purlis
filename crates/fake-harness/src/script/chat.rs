@@ -364,6 +364,7 @@ impl Chat {
         let Some((tool, input)) = self.dialect.tool_of(call) else {
             self.transcript.tool_result(&ToolResult {
                 id,
+                step: call.step.clone(),
                 text: format!("unsupported call: {} offers no {} tool", self.dialect.name(), call.tool),
                 is_error: Some(true),
                 ran: None,
@@ -374,6 +375,7 @@ impl Chat {
         let action = self.dialect.action_of(&tool, &input);
         let checked = Checked {
             id,
+            step: call.step.clone(),
             tool,
             input,
             action,
@@ -394,6 +396,7 @@ impl Chat {
             let text = self.frame_refusal(&checked, &refusal);
             self.transcript.tool_result(&ToolResult {
                 id: checked.id.clone(),
+                step: checked.step.clone(),
                 text,
                 is_error: self.error_flag(true),
                 ran: None,
@@ -404,6 +407,7 @@ impl Chat {
         if self.dialect == Dialect::Opencode && !self.opencode_asks(&checked) {
             self.transcript.tool_result(&ToolResult {
                 id: checked.id.clone(),
+                step: checked.step.clone(),
                 text: "The user rejected permission to use this specific tool call.".to_owned(),
                 is_error: None,
                 ran: None,
@@ -434,6 +438,7 @@ impl Chat {
         };
         Some(ToolResult {
             id: c.id.clone(),
+            step: c.step.clone(),
             text,
             is_error: Some(true),
             ran: None,
@@ -735,6 +740,7 @@ impl Chat {
             if outcome != Outcome::Interrupted {
                 self.transcript.tool_result(&ToolResult {
                     id: c.id.clone(),
+                    step: c.step.clone(),
                     text,
                     is_error: framed.is_error,
                     ran: framed.ran,
@@ -746,6 +752,7 @@ impl Chat {
         if outcome != Outcome::Interrupted {
             self.transcript.tool_result(&ToolResult {
                 id: c.id.clone(),
+                step: c.step.clone(),
                 text: framed.text,
                 is_error: framed.is_error,
                 ran: framed.ran,
@@ -1023,6 +1030,7 @@ impl Chat {
                 self.lock_background().retain(|t| t["id"] != agent_id.as_str());
                 self.transcript.tool_result(&ToolResult {
                     id: c.id.clone(),
+                    step: c.step.clone(),
                     text: format!(
                         "Async agent launched successfully. (This tool result is internal metadata \u{2014} never quote or paste any part of it, including the agentId below, into a user-facing reply.)\nagentId: {agent_id} (internal ID - do not mention to user. Use SendMessage with to: '{agent_id}', summary: '<5-10 word recap>' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes. You know nothing about its results until that notification arrives \u{2014} do not report, assume, or predict them; continue other work or respond to the user in the meantime.\nDo not duplicate this agent's work \u{2014} avoid working with the same files or topics it is using.\noutput_file: {}\nDo NOT Read or tail this file via the shell tool \u{2014} it is the full subagent JSONL transcript and reading it will overflow your context. If the user asks for progress, say the agent is still running; you'll get a completion notification.",
                         file.display()
@@ -1060,6 +1068,7 @@ impl Chat {
                 );
                 self.transcript.tool_result(&ToolResult {
                     id: c.id.clone(),
+                    step: c.step.clone(),
                     text: output,
                     is_error: None,
                     ran: None,
@@ -1289,6 +1298,7 @@ impl Chat {
 #[derive(Debug, Clone)]
 struct Checked {
     id: String,
+    step: Option<String>,
     tool: String,
     input: Value,
     action: Action,

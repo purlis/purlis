@@ -32,6 +32,8 @@ portable-pty.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# `scripted.rs` writes the stand-in `purlis` its hooks run.
+stand-in.workspace = true
 
 [lints]
 workspace = true

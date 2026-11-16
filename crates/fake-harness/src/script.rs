@@ -74,7 +74,13 @@ fn run(argv: &[String]) -> Result<u8, String> {
     }
     let script_path = own.script.clone().ok_or("--script needs a file")?;
     let cwd = std::env::current_dir().map_err(|e| format!("no current folder: {e}"))?;
-    let mut places = own.places.clone();
+    // `$FAKE_HARNESS_PLACES`, a JSON object, where a wrapper cannot pass `--place`.
+    let mut places: std::collections::BTreeMap<String, String> =
+        std::env::var("FAKE_HARNESS_PLACES")
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+    places.extend(own.places.clone());
     places
         .entry("work".to_owned())
         .or_insert_with(|| cwd.display().to_string());

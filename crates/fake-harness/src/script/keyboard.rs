@@ -129,7 +129,8 @@ impl Keyboard {
                 None => return false,
                 Some(Key::Esc) => return true,
                 Some(Key::Line(line)) => lines.push(line),
-                Some(Key::End) => return true,
+                // The end of input ends the session once the turn is done, not the turn.
+                Some(Key::End) => return false,
             }
         }
     }
