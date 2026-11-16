@@ -75,6 +75,8 @@ impl Beside for Host {
             &[],
             Arc::new(|_| {}),
             Arc::new(|| false),
+            // A person's chat's own: the recording runs at production timings.
+            &purlis_core::sandbox::timings::Timings::production(),
         )?;
         let confined = started.confined();
         *self.hosted.lock().expect("the confinement") = Some(started);

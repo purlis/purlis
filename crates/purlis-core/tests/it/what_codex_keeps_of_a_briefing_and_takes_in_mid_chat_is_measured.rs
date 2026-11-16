@@ -108,13 +108,22 @@ fn answer_each(stream: std::net::TcpStream) {
                 "output_tokens": 1, "output_tokens_details": {"reasoning_tokens": 0},
                 "total_tokens": 2});
             let events = [
-                ("response.created", json!({"type": "response.created",
-                    "response": {"id": "resp_1", "status": "in_progress", "output": []}})),
-                ("response.output_item.done", json!({"type": "response.output_item.done",
-                    "output_index": 0, "item": message})),
-                ("response.completed", json!({"type": "response.completed",
+                (
+                    "response.created",
+                    json!({"type": "response.created",
+                    "response": {"id": "resp_1", "status": "in_progress", "output": []}}),
+                ),
+                (
+                    "response.output_item.done",
+                    json!({"type": "response.output_item.done",
+                    "output_index": 0, "item": message}),
+                ),
+                (
+                    "response.completed",
+                    json!({"type": "response.completed",
                     "response": {"id": "resp_1", "status": "completed", "output": [message],
-                    "usage": usage}})),
+                    "usage": usage}}),
+                ),
             ];
             let text: String = events
                 .iter()
@@ -122,7 +131,11 @@ fn answer_each(stream: std::net::TcpStream) {
                 .collect();
             ("200 OK", "text/event-stream", text)
         } else {
-            ("404 Not Found", "text/plain", "no such thing here".to_owned())
+            (
+                "404 Not Found",
+                "text/plain",
+                "no such thing here".to_owned(),
+            )
         };
         let reply = format!(
             "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\n\r\n{text}",
