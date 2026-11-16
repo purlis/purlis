@@ -1698,9 +1698,7 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return socks_reply(&mut client, reply::NOT_ALLOWED);
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    // DELIBERATE MUTATION M12 (T1.1-23): SOCKS dials the decided host's parent, not the host.
-    let dialled = host.split_once('.').map_or(host.as_str(), |(_, parent)| parent);
-    let upstream = match allowed.connect(dialled, port, &own, read.as_deref()) {
+    let upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
@@ -2361,7 +2359,10 @@ fn hello_naming(
         }
     }
     let record = whole(&hello)?;
-    let named = hello_names(hello.get(..record)?)?;
+    // DELIBERATE MUTATION M13 (T1.1-23): a first record that names no server is carried.
+    let Some(named) = hello.get(..record).and_then(hello_names) else {
+        return Some(hello);
+    };
     let wanted = host.trim_end_matches('.');
     named.eq_ignore_ascii_case(wanted).then_some(hello)
 }
