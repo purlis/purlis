@@ -137,12 +137,7 @@ fn the_chat_s_connection(
 ) -> Result<Result<hookwire::reach::Reached, String>, NotTaken> {
     use hookwire::reach::{self, Unreached};
     let cwd = std::env::current_dir().unwrap_or_default();
-    let reached = reach::reach(&cwd, &purlis_core::envvar::var, within);
-    // DIAGNOSTIC (#6995, to be reverted): why no app was reached.
-    if let Err(not) = &reached {
-        eprintln!("DIAG reach: {not:?} under {:?}", reach::under());
-    }
-    match reached {
+    match reach::reach(&cwd, &purlis_core::envvar::var, within) {
         Ok(reached) => Ok(Ok(reached)),
         Err(Unreached::NotAChat) => Err(NotTaken::NotAChat),
         // A chat whose harness handed it no socket at all, and no app at the plane's.
