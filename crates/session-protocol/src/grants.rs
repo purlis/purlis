@@ -47,7 +47,7 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
-//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
+//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `key_proxy_plan`, a run's key-proxy plan sent with its start (1.91), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
 //! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59), and `start_sign_in`, `sign_in_next`, `sign_in_input`, `end_sign_in`, the runner's own sign-in run over the link (1.79) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |

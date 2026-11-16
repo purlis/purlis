@@ -273,3 +273,7 @@
 {"reply":{"re":216,"ok":{"key_proxy_started":{"port":49152,"token":"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"}}}}
 {"call":{"id":217,"command":"stop_key_proxy","run":"01J9CHAT0000000000000000KP"}}
 {"reply":{"re":217,"ok":"done"}}
+{"call":{"id":218,"command":"key_proxy_plan","run":"01J9RUN00000000000000000KP","built_in":{"id":"anthropic","digest":"5f0c0b5d6a1e4f3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a29180f7e6d5c4b3","purlis":"0.5.2"},"sign_in":"api-key","locks":{"hosts":["api.anthropic.com"],"never_hosts":["evil.example"]},"origins":["https://api.anthropic.com"],"pinned_key":"sha256/AAAA","key":"a-stand-in-model-key"}}
+{"reply":{"re":218,"ok":"done"}}
+{"call":{"id":219,"command":"key_proxy_plan","run":"01J9RUN00000000000000001KP","built_in":{"id":"anthropic","digest":"00","purlis":"0.5.2"},"sign_in":"api-key","template":{"region":"us"},"origins":["https://api.anthropic.com"],"key":"a-stand-in-model-key"}}
+{"reply":{"re":219,"refused":{"code":"plan_does_not_match","why":"0.4.9"}}}

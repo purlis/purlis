@@ -584,9 +584,25 @@ use crate::view::{Limits, Views};
 /// [`Command::StopKeyProxy`], T1a-04): a listener on `127.0.0.1` whose port and token only the
 /// start's answer carries, run by the binary on a runtime of its own. The window's alone, and
 /// relayed to no other host. An older host refuses either `unknown_command`, so it is not asked.
+///
+/// 1.91 has the desktop send a run's key-proxy plan to its runner with the run's start
+/// ([`Command::KeyProxyPlan`], T1a-51, R-469): the built-in declaration by id and digest, the
+/// sign-in kind, the template values, the desktop's locks, the key's bound origins and pinned
+/// certificate, and the key, in one message ([`crate::keyplan::KeyProxyPlan`]). Carried and
+/// refused as `keep_profile` is: the paired desktop's alone, on its own link. A plan with a field
+/// this version doesn't name, a reserved field set or no key is refused; a built-in whose digest
+/// the runner's binary doesn't have is refused [`crate::keyplan::PLAN_DOES_NOT_MATCH`]. An older
+/// host refuses it `unknown_command`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 90,
+    minor: 91,
+};
+
+/// The version that first takes a run's key-proxy plan ([`Command::KeyProxyPlan`], T1a-51):
+/// none is sent to a runner before.
+pub const KNOWS_KEY_PROXY_PLAN: Version = Version {
+    major: 1,
+    minor: 91,
 };
 
 /// The version that first starts a key proxy for a run ([`Command::StartKeyProxy`], T1a-04):
@@ -975,6 +991,7 @@ pub const REFUSALS: &[&str] = &[
     KEY_CHANGED,
     NO_ENGINE_SANDBOX,
     PROGRAMS_NOT_KNOWN,
+    crate::keyplan::PLAN_DOES_NOT_MATCH,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -1178,6 +1195,13 @@ pub enum Command {
     /// host, on the link between hosts from the desktop it is paired with, carries it out;
     /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
     KeepProfile(ProfileToKeep),
+    /// **The desktop on this link sends a run's key-proxy plan** with the run's start (1.91,
+    /// T1a-51, R-469): the runner checks it at arrival and keeps it for that run alone, and
+    /// answers [`Answer::Done`]; refused where it isn't 1a's schema, sets a reserved field,
+    /// carries no key, or names a built-in the runner's binary doesn't have
+    /// ([`crate::keyplan::PLAN_DOES_NOT_MATCH`]). Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    KeyProxyPlan(Box<crate::keyplan::KeyProxyPlan>),
     /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
     /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
     /// sign-in there, and answers [`Answer::Done`]; one it does not keep for that desktop,
@@ -3251,6 +3275,7 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
+    KeyProxyPlan => "key_proxy_plan",
     ForgetProfile => "forget_profile",
     StageProfileSettings => "stage_profile_settings",
     SettingsHeld => "settings_held",
@@ -3331,6 +3356,7 @@ impl Command {
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_)
+            | Command::KeyProxyPlan(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
             | Command::SettingsHeld { .. }
@@ -3892,6 +3918,7 @@ impl Lane {
             | Command::NameWindow { .. }
             | Command::Unpair
             | Command::KeepProfile(_)
+            | Command::KeyProxyPlan(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
             | Command::SettingsHeld { .. }

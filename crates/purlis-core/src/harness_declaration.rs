@@ -212,7 +212,8 @@ impl SignInKind {
         }
     }
 
-    fn of_word(word: &str) -> Option<Self> {
+    /// The kind `word` names, as a declaration or a key-proxy plan writes it.
+    pub fn of_word(word: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.word() == word)
     }
 }

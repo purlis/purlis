@@ -4427,6 +4427,7 @@ impl session::Host for Hosting {
             // A runner's host keeps its desktop's profile on its link from that desktop
             // (`serving`) before this host hears of it (1.43, #2049).
             Command::KeepProfile(_)
+            | Command::KeyProxyPlan(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
             | Command::SettingsHeld { .. }

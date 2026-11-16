@@ -332,6 +332,27 @@ fn every_command() -> Vec<Command> {
             settings_staged: None,
             settings_changed: None,
         }),
+        // A run's key-proxy plan, sent with its start on the desktop's own link (1.91, T1a-51).
+        Command::KeyProxyPlan(Box::new(purlis_session_protocol::keyplan::KeyProxyPlan {
+            run: "01J9RUN00000000000000000KP".into(),
+            built_in: purlis_session_protocol::keyplan::BuiltInReference {
+                id: "anthropic".into(),
+                digest: "00".into(),
+                purlis: "0.5.2".into(),
+            },
+            sign_in: "api-key".into(),
+            template: Default::default(),
+            locks: Default::default(),
+            origins: vec!["https://api.anthropic.com".into()],
+            pinned_key: None,
+            key: Some(purlis_session_protocol::keyplan::PlanKey::of("a stand-in key")),
+            project_declaration: None,
+            your_declaration: None,
+            policy_declaration: None,
+            confirmations: None,
+            remaining_budget: None,
+            hosting_terms: None,
+        })),
         // A desktop's profile taken off its runner (1.52, #4047).
         Command::ForgetProfile {
             name: "work".into(),
@@ -734,6 +755,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "keep_profile",
+            "key_proxy_plan",
             "forget_profile",
             "stage_profile_settings",
             "settings_held",

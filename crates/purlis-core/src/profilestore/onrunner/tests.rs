@@ -2908,3 +2908,26 @@ fn a_keep_clears_opencodes_package_and_its_modules() {
     assert!(!own.join("package.json").exists());
     assert!(own.join("opencode.json").exists());
 }
+
+/// **Pinned until T1a-73's swap deletes it** (T1a-51, B-7, D-5): a key profile is still refused
+/// on a runner, so no runner takes a key-proxy plan for a real start (B-9), whatever the plan seam
+/// can do. T1a-73 swaps this refusal for the ownership check and deletes this pin.
+#[test]
+fn kept_of_still_refuses_a_runner_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.sign_in = Some(SignIn {
+        kind: "api-key".to_owned(),
+        label: None,
+        credentials: Default::default(),
+        rest: Default::default(),
+    });
+    assert_eq!(
+        Kept::of(&desktop),
+        Err(format!(
+            "the profile '{}' signs in with credentials from your vault, which purlis hands to \
+             no chat on a pool's runner in this version",
+            crate::shown::short(&desktop.name)
+        ))
+    );
+}

@@ -84,6 +84,7 @@ pub mod code;
 pub mod fixedlimits;
 pub mod grants;
 pub mod hostlink;
+pub mod keyplan;
 pub mod link;
 #[cfg(unix)]
 pub mod local;

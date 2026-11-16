@@ -539,6 +539,13 @@ impl session::Host for PairedLink {
         }
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
+            // No runner takes a key-proxy plan for a real start until the ownership gate, the
+            // pool key allowance, the version refusal and the wrap are in (T1a-51, B-9): T1a-73
+            // lets one through, beside `Kept::of`'s refusal it lifts.
+            session::Command::KeyProxyPlan(_) => Err(session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why: "this runner takes no key-proxy plan in this version".into(),
+            }),
             session::Command::ForgetProfile { name } => self.forget(name).await,
             session::Command::StageProfileSettings(batch) => self.stage(batch),
             session::Command::SettingsHeld { profile, after } => self.held(profile, after).await,

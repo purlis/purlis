@@ -57,7 +57,8 @@
 //! on from it (R-290, Q240, id 212), and 1.88's Allow next time of a block, made and removed,
 //! and listed by `reach_of` until it is used (T1-34, R-291, ids 213 to 215), and told used up
 //! or put out, so the window audits its end (Q278), and 1.90's key proxy started for a run and
-//! stopped (T1a-04, ids 216 and 217).
+//! stopped (T1a-04, ids 216 and 217), and 1.91's key-proxy plan sent with a run's start, taken
+//! and refused for a built-in the runner's binary doesn't have (T1a-51, ids 218 and 219).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

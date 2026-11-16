@@ -1486,6 +1486,7 @@ impl session::Host for Relay {
         // A runner keeps a profile for the desktop it is paired with, on that desktop's own link
         // to it (#2049): never sent on for a client.
         if let Command::KeepProfile(_)
+        | Command::KeyProxyPlan(_)
         | Command::ForgetProfile { .. }
         | Command::StageProfileSettings(_)
         | Command::SettingsHeld { .. }
