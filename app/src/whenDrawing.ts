@@ -93,6 +93,18 @@ export function watchTheFrames(): () => void {
 let stopWatching = () => {};
 
 /**
+ * **Watches the frames in every build but the scenario-test one** (#4351), where work told runs
+ * at once, as where nothing watches them. WebKit draws no frame while its window is behind
+ * another, as a scenario run on a person's own Mac often is, and calls it hidden: everything the
+ * core told the window was owed until the window came to the front, so a chat's skills-changed
+ * offer and the studio's Library never came while WebDriver waited for them. `VITE_E2E` is set by
+ * `vite build --mode e2e` alone. Answers how to stop watching.
+ */
+export function watchTheFramesOutsideScenarioTests(scenarioBuild: boolean): () => void {
+  return scenarioBuild ? () => {} : watchTheFrames();
+}
+
+/**
  * Runs `run` now if the window is being drawn, or else once it is drawn again, after the paint:
  * once, however many times it is asked for before then. Answers how to call it off.
  */

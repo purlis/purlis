@@ -169,13 +169,16 @@ export const MOTION_ATTRIBUTE = "data-motion";
  * **The root's attribute that says an overlay is drawn at once** (#4351): `at-once`, set only in
  * the scenario-test build ({@link arriveAtOnceInScenarioTests}). Under it a dialog, the palette
  * among them, and a popover skip their fade in (`ui/dialog/dialog.css`, `ui/popover/popover.css`)
- * and are at full opacity from their first frame.
+ * and are at full opacity from their first frame, and so do a workspace switch's slide and a side
+ * view's list taking another's place (`App.css`).
  *
  * WebKit suspends CSS animations while its window is hidden or behind another, as a scenario run
  * on a person's own Mac often is. A suspended fade leaves an overlay at opacity 0, which
  * WebDriver reads as not displayed. React Aria also waits for an overlay's animations to finish
  * before it takes the overlay away, so a fade that never ends leaves the overlay up for good.
- * A region's arrivals keep their motion: the specs that hear them run in front.
+ * The slide and the swap stayed at opacity 0 the same way, hiding every region, the Skills view
+ * among them. A region slot's own arrivals (the right panel, a bottom half, the rail's peek) keep
+ * their motion: the specs that hear them (`e2e/animations.ts`) run in front.
  */
 export const ARRIVALS_ATTRIBUTE = "data-arrivals";
 

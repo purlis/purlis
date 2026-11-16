@@ -13,7 +13,7 @@ import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
 import { shareTheReads } from "./sharedReads";
 import { watchForStalls } from "./slowLog";
-import { watchTheFrames } from "./whenDrawing";
+import { watchTheFramesOutsideScenarioTests } from "./whenDrawing";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import {
   DEFAULT_THEME,
@@ -105,8 +105,9 @@ if (frame !== undefined) void partsLand(frame);
 watchForStalls();
 
 // Whether the window is being drawn, so what the core tells a window hidden, or dark with the
-// display asleep or the screen locked, is caught up once it is drawn again (`whenDrawing.ts`).
-watchTheFrames();
+// display asleep or the screen locked, is caught up once it is drawn again (`whenDrawing.ts`). Not
+// in a scenario-test build, whose window is often behind another and must still hear (#4351).
+watchTheFramesOutsideScenarioTests(Boolean(import.meta.env.VITE_E2E));
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
