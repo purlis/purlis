@@ -3277,6 +3277,40 @@ impl Hosting {
             })?
     }
 
+    /// **A file chat `program` printed, read for the window** (1.90, #6387): from the
+    /// program's own folder, in the project it runs in, which the asking link must hold. The
+    /// binary reads it ([`crate::code::Code::read_file`]), off the runtime.
+    async fn read_file(
+        &self,
+        program: &str,
+        path: String,
+        reach: session::FileReach,
+        at: Option<u64>,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let (project, cwd) = {
+            let state = self.state();
+            let hosted = state
+                .programs
+                .get(program)
+                .ok_or_else(|| no_such_program(program))?;
+            if held_by(&state, &hosted.at.project, link_of(peer)).is_none() {
+                return Err(no_such_program(program));
+            }
+            (hosted.at.path.clone(), hosted.cwd.clone())
+        };
+        let code = self.code();
+        let read = tokio::task::spawn_blocking(move || {
+            code.read_file(&project, cwd.as_deref(), &path, reach, at)
+        })
+        .await
+        .map_err(|why| Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!("the read did not finish: {why}"),
+        })??;
+        Ok(Answer::File(Box::new(read)))
+    }
+
     /// The hook channel of `project`, where it has one, for the link `peer` came on, which must
     /// hold the project.
     fn held_channel(
@@ -4112,6 +4146,12 @@ impl session::Host for Hosting {
                 self.clones_of(&project, workspace, peer).await
             }
             Command::ReposHeld => self.repos_held().await,
+            Command::ReadFile {
+                program,
+                path,
+                reach,
+                at,
+            } => self.read_file(&program, path, reach, at, peer).await,
             Command::UndoTurn {
                 project,
                 workspace,

@@ -150,6 +150,25 @@ pub trait Code: Send + Sync + 'static {
         Err(moves_no_chat())
     }
 
+    /// **A file a chat on this host printed, read for the window** (1.90, #6387): `path` as it
+    /// was printed, from `cwd` where it is relative, in the project at `project`, held to the
+    /// chat's workspace there unless `reach` says anywhere. A binary that reads no file
+    /// refuses it.
+    fn read_file(
+        &self,
+        project: &Path,
+        cwd: Option<&Path>,
+        path: &str,
+        reach: session::FileReach,
+        at: Option<u64>,
+    ) -> Result<session::FileRead, Refusal> {
+        let _ = (project, cwd, path, reach, at);
+        Err(Refusal {
+            code: session::NOT_STARTED.into(),
+            why: "this session host reads no file for its window".into(),
+        })
+    }
+
     /// **Where each of `repos`, clones in `workspace`, came from** (1.54, #3985): the `origin`
     /// URL of each one's own configuration, by its folder name, only where it is a forge's
     /// address with no sign-in in it. None from a binary that moves no chat.

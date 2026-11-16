@@ -55,7 +55,13 @@ struct Recorded {
     clones_asked: Arc<Mutex<Vec<(PathBuf, String)>>>,
     /// Whether it refuses to mark a program's start (#4933).
     refuses_starts: Arc<std::sync::atomic::AtomicBool>,
+    /// Each file read for the window (1.90): the project, the chat's folder, the path as
+    /// printed, the reach and where from.
+    files_read: Arc<Mutex<Vec<FileAsked>>>,
 }
+
+/// One file read for the window, as the runner's binary was handed it.
+type FileAsked = (PathBuf, Option<PathBuf>, String, session::FileReach, Option<u64>);
 
 const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";
 
@@ -151,6 +157,26 @@ impl Code for Recorded {
             "{{config}}/projects/{{cwd_key}}/{}.jsonl",
             carried.conversation
         ))
+    }
+
+    fn read_file(
+        &self,
+        project: &Path,
+        cwd: Option<&Path>,
+        path: &str,
+        reach: session::FileReach,
+        at: Option<u64>,
+    ) -> Result<session::FileRead, Refusal> {
+        self.files_read.lock().unwrap().push((
+            project.to_path_buf(),
+            cwd.map(Path::to_path_buf),
+            path.to_owned(),
+            reach,
+            at,
+        ));
+        Ok(session::FileRead::NotPlain {
+            path: format!("/runner/{path}"),
+        })
     }
 
     fn clones_of(&self, project: &Path, workspace: &str) -> Result<Vec<String>, Refusal> {
@@ -752,4 +778,72 @@ async fn a_program_whose_start_the_runner_cannot_mark_is_not_started() {
         0,
         "nothing runs"
     );
+}
+
+/// **The window reads a file a chat on a runner printed** (1.90, #6387): through the relay, the
+/// path reaches the runner's binary as data, with the project and folder of that chat, and the
+/// binary's answer comes back whole. A program the runner does not hold is refused, and no other
+/// client of the desktop's host may ask.
+#[tokio::test]
+async fn the_window_reads_a_file_a_runner_chat_printed_and_no_other_client_does() {
+    let runner = a_runner();
+    let (client, _streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    let program = tokio::time::timeout(
+        PATIENCE,
+        client.start_program(session::StartProgram::of(
+            PROJECT,
+            session::ProgramKind::Shell,
+        )),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let read = tokio::time::timeout(
+        PATIENCE,
+        client.read_file(&program, "src/$(rm -rf ~).rs", session::FileReach::Workspace, Some(0)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(
+        read,
+        session::FileRead::NotPlain {
+            path: "/runner/src/$(rm -rf ~).rs".into()
+        }
+    );
+    assert_eq!(
+        *runner.recorded.files_read.lock().unwrap(),
+        vec![(
+            runner.projects.join(PROJECT),
+            None,
+            "src/$(rm -rf ~).rs".to_owned(),
+            session::FileReach::Workspace,
+            Some(0),
+        )]
+    );
+
+    let unknown = tokio::time::timeout(
+        PATIENCE,
+        client.read_file("01J9ZQ8000000000000000000Z", "a.rs", session::FileReach::Anywhere, None),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(unknown.refusal().expect("refused").code, session::NO_SUCH_CHAT);
+
+    for scope in [Scope::Terminal, Scope::FleetMcp] {
+        let (client, _streams) = through_the_relay(scope, &runner).await;
+        let refused = tokio::time::timeout(
+            PATIENCE,
+            client.read_file(&program, "a.rs", session::FileReach::Anywhere, None),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(refused.refusal().expect("refused").code, session::NOT_ALLOWED, "{scope:?}");
+    }
+    assert_eq!(runner.recorded.files_read.lock().unwrap().len(), 1);
 }
