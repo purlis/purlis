@@ -119,14 +119,38 @@ function nodeInProcess(url) {
   });
 }
 
+/** The host and port a URL names, as a WHATWG URL client reads it: `[host, port]`, or null. */
+function hostOf(text) {
+  try {
+    const url = new URL(text);
+    const port = url.port || { "http:": "80", "https:": "443" }[url.protocol];
+    return port ? `${url.hostname.toLowerCase()}:${port}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The host and port `head`'s request line names: the absolute form, or a CONNECT's authority. */
+function namedOnRequestLine(head) {
+  const target = head.split("\r\n")[0].split(" ")[1] ?? "";
+  return hostOf(target.startsWith("http://") ? target : `https://${target}/`);
+}
+
 async function main([out, flag]) {
   if (!out) throw new Error("usage: node record.mjs <out> [--no-listen]");
   mkdirSync(out, { recursive: true });
-  let written = 0;
+  const written = { node: 0, curl: 0 };
+  const mispaired = [];
   const write = (client, n, url, head) => {
     if (!head) return;
+    // A recording is a head and the URL its client was asked for. One whose request line names
+    // another host is a head filed under the wrong URL, which the differential target would
+    // silently pass over: the recording fails instead.
+    if (namedOnRequestLine(head) !== hostOf(url)) {
+      mispaired.push(`${client}-${n}: ${url} -> ${head.split("\r\n")[0]}`);
+    }
     writeFileSync(join(out, `${client}-${n}`), `${url}\n${head}`, "latin1");
-    written += 1;
+    written[client] += 1;
   };
   if (flag === "--no-listen") {
     for (const [n, url] of urls.entries()) {
@@ -142,7 +166,16 @@ async function main([out, flag]) {
     }
     proxy.close();
   }
-  console.log(`recorded ${written} heads from ${urls.length} URLs into ${out}`);
+  console.log(
+    `recorded ${written.node + written.curl} heads (node ${written.node}, curl ${written.curl}) ` +
+      `from ${urls.length} URLs into ${out}`,
+  );
+  if (mispaired.length > 0) {
+    throw new Error(`heads whose request line names another host than their URL:\n${mispaired.join("\n")}`);
+  }
+  if (written.node === 0 || (flag !== "--no-listen" && written.curl === 0)) {
+    throw new Error("a client recorded no heads at all");
+  }
 }
 
 await main(process.argv.slice(2));
