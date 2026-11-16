@@ -298,7 +298,8 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
                 .map(|item| rewrite(item, None, roots, ids))
                 .collect(),
         ),
-        _ if key == Some(GAP_KEY) && !value.is_null() => Value::String("<gap>".to_owned()),
+        // The first call's too, which has none: a parallel group's order moves it.
+        _ if key == Some(GAP_KEY) => Value::String("<gap>".to_owned()),
         // By its key alone: a process id is a short number, which replaced wherever it appears
         // would eat part of others.
         Value::String(_) | Value::Number(_) if key.is_some_and(|k| PID_KEYS.contains(&k)) => {

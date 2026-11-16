@@ -356,7 +356,17 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         // A harness's own permission ask during the turn (OpenCode's "Permission required" for
         // a folder outside the project) is allowed once, as a person who lets the sandbox judge
         // allows it: then the wrap, not the harness, decides the call. Counted in the recording.
-        if harness_asks < 8 && screen.contains("Permission required") {
+        // Only once purlis's own hook on the ask has answered (`permissionrequest`): pressed
+        // sooner, OpenCode cuts that hook off, and the recording says so (1.19.5, run 9).
+        let hooks_settled = recorder::read(&recorder_out).is_ok_and(|lines| {
+            lines
+                .iter()
+                .filter(|l| {
+                    l.phase == "call" && l.argv.get(1).is_some_and(|w| w == "permissionrequest")
+                })
+                .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
+        });
+        if harness_asks < 8 && hooks_settled && screen.contains("Permission required") {
             session.write(b"\r").expect("Allow once is chosen");
             harness_asks += 1;
             std::thread::sleep(Duration::from_secs(2));

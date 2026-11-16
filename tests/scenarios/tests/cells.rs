@@ -256,7 +256,9 @@ fn a_cell_naming_an_event_codex_lacks_must_say_what_codex_shows() {
         "require": [{"kind": "hook.posttoolusefailure-blocked"}]
     });
     let bare = json!({"id": "M-T-03", "dialects": ["claude", "codex"], "steps": [step]});
-    let found = problems(json!([bare]));
+    // Without the repo's pins: the rule itself.
+    let unpinned = |cells: Value| validator().with_pins(Pins::default()).check(&batch(cells));
+    let found = unpinned(json!([bare.clone()]));
     assert!(
         found
             .iter()
@@ -266,6 +268,9 @@ fn a_cell_naming_an_event_codex_lacks_must_say_what_codex_shows() {
     assert!(
         problems(json!([{"id": "M-T-03", "dialects": ["claude"], "steps": [step]}])).is_empty()
     );
+    // The repo's Codex pins file (ticket 3, drawn from Codex 0.169.0's recording) says it for
+    // every cell.
+    assert_eq!(problems(json!([bare.clone()])), Vec::<String>::new());
 
     // The cell says it, for one step...
     let mut per_step = bare.clone();
@@ -1026,9 +1031,24 @@ fn b0_judges_chat_682s_record_as_the_record_says() {
 #[test]
 fn the_codex_and_opencode_pins_files_exist_and_are_drawn_from_their_recordings() {
     let kinds = Kinds::from_core();
+    // Found by the dialect each names, as the loader reads them (`Pins::read`): a file named
+    // `opencode.json` is OpenCode's own configuration's name, which a sandboxed chat may not
+    // write, so OpenCode's is `opencode.pins.json`.
+    let files: Vec<(Dialect, std::path::PathBuf)> = fs::read_dir(root().join("pins"))
+        .expect("pins/ reads")
+        .map(|e| e.expect("an entry").path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .map(|p| {
+            let pins: PinsFile = serde_json::from_value(read_json(&p)).expect("a pins file");
+            (pins.dialect, p)
+        })
+        .collect();
     for (word, dialect) in [("codex", Dialect::Codex), ("opencode", Dialect::Opencode)] {
-        let path = root().join("pins").join(format!("{word}.json"));
-        assert!(path.is_file(), "{} is not there", path.display());
+        let path = files
+            .iter()
+            .find(|(d, _)| *d == dialect)
+            .map(|(_, p)| p.clone())
+            .unwrap_or_else(|| panic!("no pins file in pins/ names {word}"));
         let value = read_json(&path);
         let errors = schema_errors("cells.schema.json", Some("pins_file"), &value);
         assert!(errors.is_empty(), "{}: {errors:#?}", path.display());
@@ -1036,7 +1056,12 @@ fn the_codex_and_opencode_pins_files_exist_and_are_drawn_from_their_recordings()
         assert_eq!(pins.dialect, dialect, "{}", path.display());
         let recorded = pins.recorded.expect("the recording it was drawn from");
         let from = root().join("../..").join(&recorded.from);
-        assert!(from.is_file(), "{} names {}, not checked in", path.display(), recorded.from);
+        assert!(
+            from.is_file(),
+            "{} names {}, not checked in",
+            path.display(),
+            recorded.from
+        );
         assert!(!recorded.facts.is_empty(), "{}", path.display());
         assert!(!pins.shows.is_empty(), "{}", path.display());
         for (kind, instead) in &pins.shows {
