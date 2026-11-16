@@ -155,7 +155,8 @@ fn policy_check_on_a_draft_path_skips_ownership_and_says_so() {
 #[test]
 fn policy_check_exit_status_is_0_1_or_2_as_stated() {
     // 0: this build reads the file and enforces every key in it.
-    let clean = Draft::holding(r#"{"sandbox": {"presets": ["forge"]}, "dispatch": {"allow": false}}"#);
+    let clean =
+        Draft::holding(r#"{"sandbox": {"presets": ["forge"]}, "dispatch": {"allow": false}}"#);
     assert_eq!(clean.check().code, 0, "{}", clean.check().out);
 
     // 1: a key this build doesn't enforce.
@@ -167,7 +168,8 @@ fn policy_check_exit_status_is_0_1_or_2_as_stated() {
     let ran = unknown.check();
     assert_eq!(ran.code, 1, "{}", ran.out);
     assert!(
-        ran.lines().contains(&"not known to this version: sandbox.colour"),
+        ran.lines()
+            .contains(&"not known to this version: sandbox.colour"),
         "{}",
         ran.out
     );
@@ -197,7 +199,10 @@ fn policy_check_exit_status_is_0_1_or_2_as_stated() {
     // 2: the file can't be read or parsed.
     for (text, why) in [
         ("not json", "not read: it is not JSON"),
-        (r#"{"owner": "a", "owner": "b"}"#, "not read: it says \"owner\" twice"),
+        (
+            r#"{"owner": "a", "owner": "b"}"#,
+            "not read: it says \"owner\" twice",
+        ),
         (
             r#"{"sandbox": {"opt-out": "no"}}"#,
             "not read: its \"opt-out\" is not true or false",

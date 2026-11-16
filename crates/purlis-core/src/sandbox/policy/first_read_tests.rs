@@ -65,5 +65,8 @@ fn min_version_and_models_are_in_no_stable_release_yet() {
             .map(|(_, first)| *first)
     };
     assert_eq!(first("sandbox.opt-out"), Some(FirstRead::Release("0.5.0")));
-    assert_eq!(first("sandbox.run-grants"), Some(FirstRead::Release("0.5.1")));
+    assert_eq!(
+        first("sandbox.run-grants"),
+        Some(FirstRead::Release("0.5.1"))
+    );
 }

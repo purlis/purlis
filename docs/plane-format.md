@@ -659,6 +659,23 @@ a larger one is refused naming the cap. **Decided, not yet written** ([ADR 0124]
 organisation's policy) is read yet, so no policy is read on Windows. So `min-version` and `models` are not enforced on Windows yet either: a stated gap, closed with
 the Windows policy work.
 
+**Rolling out `min-version` and `models`** (any-model R-431, T1a-64). No policy file should
+carry `min-version` or `models` until every install that reads it is 1c or later. There is no
+extra stable release for it. An install before any-model 1a refuses a file with either key as
+one it does not know, and so locks every lock but the presets; an install of 1a or 1b reads them
+but enforces nothing inside `models`, so any key there refuses every chat that reaches a model.
+**`purlis policy check`** says what this build reads in a file before it is rolled out, one line
+per fact: the file read, the lowest purlis version that reads it (the highest first release
+among its keys, or *not in a stable release yet* for `min-version` and `models`), each key this
+version parses and doesn't enforce (every key inside `models`), each key it doesn't know, and
+whether chats on a key and chats on a sign-in would be refused under it, in the window's words.
+With no argument it judges this machine's file as the reader does; `purlis policy check
+<draft.json>` reads a draft without judging its owner and permissions, and its first line says
+so. It exits 0 when this build reads the file and enforces every key in it, 1 when a key is
+unenforced or unknown or `min-version` is above this build, and 2 when the file can't be read or
+parsed. The first release of each key is `FIRST_READ` in `crates/purlis-core/src/sandbox/policy.rs`,
+each sourced from `CHANGELOG.md`.
+
 **Access-control lists are not read.** On Linux an ACL that grants write shows in the
 permission bits (the group bits are its mask) and is refused. On macOS an ACL is kept apart from
 the bits, so a policy file or folder whose ACL lets someone else write passes this check. Only

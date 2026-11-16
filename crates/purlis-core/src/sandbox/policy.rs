@@ -1079,8 +1079,82 @@ pub enum FirstRead {
     NotYet,
 }
 
-/// The first stable release that reads each key the parser takes (stub).
-pub const FIRST_READ: &[(&str, FirstRead)] = &[];
+/// **The first stable release that reads each key the parser takes** (H-11, T1a-64): what
+/// `purlis policy check` says is the lowest purlis version that reads a file. A key is named as
+/// the check names it: a top-level key, `sandbox.<key>` or `dispatch.<key>`; every key inside
+/// `models` is `models`'s. Each is sourced from `CHANGELOG.md`, cited beside it: the release's
+/// own entry where one names the key, else its release section, where the release's tag is the
+/// first whose `policy.rs` (or `dispatchlimits.rs`, whose every limit the policy's `dispatch`
+/// takes) takes the key (`git show v0.5.0:crates/purlis-core/src/sandbox/policy.rs`). No release
+/// before 0.5.0 reads a policy file. The release that first ships `min-version` and `models`
+/// sets their version.
+pub const FIRST_READ: [(&str, FirstRead); 36] = [
+    // CHANGELOG.md [0.5.0], "An administrator's policy locks sandbox values, and the strictest
+    // wins" (#1343): `owner` is who the window names; `sandbox` holds the locks.
+    ("owner", FirstRead::Release("0.5.0")),
+    ("sandbox", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1437, #1440).
+    ("dispatch", FirstRead::Release("0.5.0")),
+    // Unreleased: any-model 1a (R-714, R-430), CHANGELOG.md [Unreleased]'s fragment
+    // `changes/policy-min-version-and-models.md`.
+    ("min-version", FirstRead::NotYet),
+    ("models", FirstRead::NotYet),
+    // CHANGELOG.md [0.5.0], "An administrator's policy locks sandbox values": "fix the Internet
+    // access presets and the hosts any level may add ... forbid your own hosts, a persona's own
+    // hosts, a person's opt-out, and folders granted to a chat".
+    ("sandbox.presets", FirstRead::Release("0.5.0")),
+    ("sandbox.hosts", FirstRead::Release("0.5.0")),
+    ("sandbox.personal-hosts", FirstRead::Release("0.5.0")),
+    ("sandbox.persona-hosts", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1407); [0.5.1] names it beside run-grants.
+    ("sandbox.persona-tools", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], "An administrator's policy locks sandbox values" (above).
+    ("sandbox.opt-out", FirstRead::Release("0.5.0")),
+    ("sandbox.write-grants", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1430).
+    ("sandbox.vault-grants", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1666).
+    ("sandbox.live-asks", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0]: "an administrator's `sandbox.socket-grants: false` turns it off on
+    // that machine".
+    ("sandbox.socket-grants", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1975, PC-14).
+    ("sandbox.proposed-changes", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#5078, ADR 0109).
+    (
+        "sandbox.undeclared-secret-asks",
+        FirstRead::Release("0.5.0"),
+    ),
+    // CHANGELOG.md [0.5.1], "A policy lock on Run grants. `sandbox.run-grants` ..." (#5243).
+    ("sandbox.run-grants", FirstRead::Release("0.5.1")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1666).
+    ("sandbox.allow-scopes", FirstRead::Release("0.5.0")),
+    ("sandbox.never-hosts", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#2445, #2530).
+    ("sandbox.relayed-internal", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's policy.rs (#1437).
+    ("dispatch.allow", FirstRead::Release("0.5.0")),
+    ("dispatch.locked", FirstRead::Release("0.5.0")),
+    // CHANGELOG.md [0.5.0], in v0.5.0's dispatchlimits.rs (#1440, #1512, #1981).
+    ("dispatch.running-per-chat", FirstRead::Release("0.5.0")),
+    ("dispatch.live-per-lineage", FirstRead::Release("0.5.0")),
+    ("dispatch.depth", FirstRead::Release("0.5.0")),
+    ("dispatch.messages-per-minute", FirstRead::Release("0.5.0")),
+    ("dispatch.may-dispatch", FirstRead::Release("0.5.0")),
+    ("dispatch.may-run-at-once", FirstRead::Release("0.5.0")),
+    ("dispatch.tokens-per-session", FirstRead::Release("0.5.0")),
+    ("dispatch.minutes-per-task", FirstRead::Release("0.5.0")),
+    ("dispatch.quiet-note-minutes", FirstRead::Release("0.5.0")),
+    (
+        "dispatch.one-command-note-minutes",
+        FirstRead::Release("0.5.0"),
+    ),
+    // CHANGELOG.md [0.5.1], "A working chat reads Stuck? ... Each threshold is a setting"
+    // (#6014), in v0.5.1's dispatchlimits.rs.
+    ("dispatch.stuck-silent-minutes", FirstRead::Release("0.5.1")),
+    ("dispatch.stuck-failing-times", FirstRead::Release("0.5.1")),
+    ("dispatch.stuck-long-minutes", FirstRead::Release("0.5.1")),
+];
 
 /// The keys a policy file's top level may hold.
 const TOP_KEYS: [&str; 5] = ["owner", "sandbox", "dispatch", "min-version", "models"];
@@ -1512,7 +1586,6 @@ pub fn judge_folder(folder: Seen) -> Result<(), String> {
 /// following one, and what was opened is judged again before it is read.
 #[cfg(unix)]
 fn read_trusted(path: &Path, judging: &Judging) -> Result<Option<String>, String> {
-    use std::io::Read;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let seen = |meta: &std::fs::Metadata, dir: bool| {
         judging.see(
@@ -1557,9 +1630,15 @@ fn read_trusted(path: &Path, judging: &Judging) -> Result<Option<String>, String
         return Err("it changed while it was read".to_owned());
     }
     judge(seen(&now, false), seen(&folder, true))?;
+    capped(opened).map(Some)
+}
+
+/// The text `from` holds, read whole up to [`MOST_BYTES`], or why it is refused: larger than
+/// that, or not UTF-8.
+fn capped(from: impl std::io::Read) -> Result<String, String> {
+    use std::io::Read;
     let mut bytes = Vec::new();
-    opened
-        .take(MOST_BYTES + 1)
+    from.take(MOST_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|err| format!("it cannot be read: {err}"))?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MOST_BYTES {
@@ -1568,9 +1647,7 @@ fn read_trusted(path: &Path, judging: &Judging) -> Result<Option<String>, String
             MOST_BYTES / 1024
         ));
     }
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| "it is not UTF-8 text".to_owned())
+    String::from_utf8(bytes).map_err(|_| "it is not UTF-8 text".to_owned())
 }
 
 /// No policy file is read off Unix yet: a Windows policy key is one of C9's layers no ADR

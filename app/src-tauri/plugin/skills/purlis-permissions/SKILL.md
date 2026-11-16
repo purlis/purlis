@@ -64,6 +64,11 @@ pane when it is on screen. It names what was blocked and offers what purlis can 
 - For a command run with a vault, the way that works instead.
 - Where a policy forbids it, which policy and who set it, so the person knows whom to ask.
 
+An administrator asking what this version makes of a policy file runs `purlis policy check`
+(this machine's file) or `purlis policy check <draft.json>` (a draft): it prints the lowest purlis
+version that reads it, the keys this version doesn't enforce or know, and whether chats would be
+refused under it.
+
 Your part is short: say what was blocked, by its host, path, socket or service name, and wait.
 If they allow it, this chat restarts on the same conversation and is told to retry. Do not
 retry before that, and do not look for a way round the block.
