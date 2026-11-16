@@ -144,9 +144,11 @@ impl World {
         root
     }
 
-    /// `purlis <args>` in `root`, with `chat` the env of a chat the app started, or none.
+    /// `purlis <args>` in `root`, with `chat` the env of a chat the app started, or none: the
+    /// person's own terminal, which no app runs above (#6995), so it is started as an orphan.
     fn purlis(&self, root: &Path, args: &[&str], chat: &[(&str, &str)]) -> Output {
-        support::purlis()
+        let mut command = support::purlis();
+        command
             .args(args)
             .current_dir(root)
             .env_clear()
@@ -154,9 +156,68 @@ impl World {
             .env("HOME", &self.home)
             .env("PATH", "/usr/bin:/bin")
             .env("USER", "tester")
-            .envs(chat.iter().copied())
-            .output()
-            .expect("the binary runs")
+            .envs(chat.iter().copied());
+        if chat.is_empty() {
+            return orphaned(&command, &self.base);
+        }
+        command.output().expect("the binary runs")
+    }
+}
+
+/// `command` run as an orphan: started in the background by a shell that exits at once, so the
+/// process that started it (this test, which plays the app) is not above it. What it said and
+/// its status, through files under `scratch`; it reads nothing on its standard input.
+fn orphaned(command: &Command, scratch: &Path) -> Output {
+    use std::os::unix::process::ExitStatusExt;
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let (out, err, code) = (
+        scratch.join(format!("orphan-{id}.out")),
+        scratch.join(format!("orphan-{id}.err")),
+        scratch.join(format!("orphan-{id}.code")),
+    );
+    let mut shell = Command::new("/bin/sh");
+    shell
+        .arg("-c")
+        .arg(r#"o=$1; e=$2; c=$3; shift 3; ( "$@" >"$o" 2>"$e" </dev/null; echo $? >"$c.part"; mv "$c.part" "$c" ) &"#)
+        .arg("sh")
+        .arg(&out)
+        .arg(&err)
+        .arg(&code)
+        .arg(command.get_program())
+        .args(command.get_args())
+        .env_clear()
+        .stdin(std::process::Stdio::null());
+    if let Some(dir) = command.get_current_dir() {
+        shell.current_dir(dir);
+    }
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            shell.env(key, value);
+        }
+    }
+    assert!(shell.status().unwrap().success());
+    let until = std::time::Instant::now() + Duration::from_secs(120);
+    while !code.exists() {
+        assert!(
+            std::time::Instant::now() < until,
+            "the orphan never finished"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let status: i32 = std::fs::read_to_string(&code)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    Output {
+        status: std::process::ExitStatus::from_raw(status << 8),
+        stdout: std::fs::read(&out).unwrap_or_default(),
+        stderr: std::fs::read(&err).unwrap_or_default(),
     }
 }
 
@@ -1430,46 +1491,21 @@ fn a_socket_planted_in_a_plane_of_the_chat_s_making_is_never_believed() {
     assert_eq!(chats_heard(&asked), vec![3]);
 }
 
-/// `purlis worktree add widget p1 -w alpha` in `root`, started as an orphan (a shell that
-/// starts it in the background and exits), so no app runs above it; what it said and its status.
+/// `purlis worktree add widget p1 -w alpha` in `root`, started as an orphan, so no app runs
+/// above it; its status and what it said.
 fn orphaned_worktree_add(world: &World, root: &Path, chat: &[(&str, &str)]) -> (i32, String) {
-    let out = world.base.join("orphan.err");
-    let code = world.base.join("orphan.code");
-    let _ = std::fs::remove_file(&code);
-    let started = Command::new("/bin/sh")
-        .args([
-            "-c",
-            r#"( "$0" worktree add widget p1 -w alpha 2>"$1" >/dev/null; echo $? >"$2.part"; mv "$2.part" "$2" ) &"#,
-        ])
-        .arg(support::purlis().get_program())
-        .arg(&out)
-        .arg(&code)
+    let mut command = support::purlis();
+    command
+        .args(["worktree", "add", "widget", "p1", "-w", "alpha"])
         .current_dir(root)
         .env_clear()
         .env("CHARTER_ROOT", root)
         .env("HOME", &world.home)
         .env("PATH", "/usr/bin:/bin")
         .env("USER", "tester")
-        .envs(chat.iter().copied())
-        .status()
-        .unwrap();
-    assert!(started.success());
-    let until = std::time::Instant::now() + Duration::from_secs(60);
-    while !code.exists() {
-        assert!(
-            std::time::Instant::now() < until,
-            "the orphan never finished"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    (
-        std::fs::read_to_string(&code)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap(),
-        std::fs::read_to_string(&out).unwrap_or_default(),
-    )
+        .envs(chat.iter().copied());
+    let ran = orphaned(&command, &world.base);
+    (ran.status.code().unwrap_or(-1), err(&ran))
 }
 
 #[test]

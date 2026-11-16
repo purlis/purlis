@@ -200,6 +200,9 @@ pub fn reach_from(
     within: Duration,
 ) -> Result<Reached, Unreached> {
     let claimed = claimed_chat(env);
+    // Where the app is read, a claim goes only to the socket the environment names, where it
+    // names one: one of another plane's, or none the app holds, is no app of this chat's.
+    let mut claim_only: Option<PathBuf> = None;
     let (knock, admitted): (Vec<PathBuf>, Admit) = match under {
         Under::NoApp => {
             return Err(match claimed {
@@ -218,10 +221,12 @@ pub fn reach_from(
                 .collect();
             sockets.dedup();
             // The one the environment names first, where the app holds it: among several
-            // planes' sockets it is where a claim is put. It chooses nothing the app does not
-            // hold.
+            // planes' sockets it is the one a claim is put to. It chooses nothing the app does
+            // not hold, and one the app does not hold is no app of this chat's.
             if let Some(hinted) = env(super::SOCKET_ENV).filter(|it| !it.is_empty()) {
-                sockets.sort_by_key(|socket| !same_socket(socket, Path::new(&hinted)));
+                let hinted = PathBuf::from(hinted);
+                sockets.sort_by_key(|socket| !same_socket(socket, &hinted));
+                claim_only = Some(hinted);
             }
             (sockets, Admit::Ancestors(app))
         }
@@ -244,27 +249,58 @@ pub fn reach_from(
     for socket in knock {
         match asked_at(&socket, &admitted, within) {
             Ok(Asked::Named(reached)) => return Ok(reached),
-            Ok(Asked::InNoChat | Asked::Older) => {
-                answered.get_or_insert(socket);
+            Ok(Asked::InNoChat) => {
+                if answered.is_none() {
+                    answered = Some((socket, None));
+                }
+            }
+            // An app older than the question that answered it with something else, and kept
+            // the connection: the claim is put to it there.
+            Ok(Asked::Older(kept)) => {
+                if answered.as_ref().is_none_or(|(_, kept)| kept.is_none()) {
+                    answered = Some((socket, kept));
+                }
             }
             Err(Unreached::AppGone(why)) => last_why = Some(why),
             Err(other) => return Err(other),
         }
     }
+    if let (Some((socket, _)), Some(only)) = (&answered, &claim_only)
+        && !same_socket(socket, only)
+    {
+        answered = None;
+        last_why = Some(format!(
+            "the app this process runs under holds no socket at {}",
+            only.display()
+        ));
+    }
     match (answered, claimed) {
         // The app says this process runs in none of its chats, or is older than the question:
         // the environment's chat, where it names one, is put to it, and the app judges it as it
         // judges every line, by the chat's token and this process's ancestry.
-        (Some(socket), Some(chat)) => connect_app(&socket, &admitted)
-            .map(|stream| Reached {
-                chat,
-                token: ChatToken::read(env),
-                stream,
-                socket,
-            })
-            .map_err(|why| Unreached::NotTheApp(why.to_string())),
+        (Some((socket, kept)), Some(chat)) => {
+            let stream = match kept {
+                Some(stream) => Ok(stream),
+                None => connect_app(&socket, &admitted),
+            };
+            match stream {
+                Ok(stream) => Ok(Reached {
+                    chat,
+                    token: ChatToken::read(env),
+                    stream,
+                    socket,
+                }),
+                Err(why) if why.kind() == io::ErrorKind::PermissionDenied => {
+                    Err(Unreached::NotTheApp(why.to_string()))
+                }
+                Err(why) => Err(Unreached::AppGone(format!(
+                    "the app at {} went away ({why})",
+                    socket.display()
+                ))),
+            }
+        }
         (Some(_), None) if !a_chat_s => Err(Unreached::NotAChat),
-        (Some(socket), None) => Err(Unreached::AppGone(format!(
+        (Some((socket, _)), None) => Err(Unreached::AppGone(format!(
             "the app at {} names no chat this process runs in",
             socket.display()
         ))),
@@ -289,7 +325,9 @@ enum Admit {
 enum Asked {
     Named(Reached),
     InNoChat,
-    Older,
+    /// Older than the question: with the connection, where it answered something else and kept
+    /// it open.
+    Older(Option<UnixStream>),
 }
 
 /// Asks the app at `socket` which chat this process runs in. [`Unreached::AppGone`] where
@@ -315,8 +353,10 @@ fn asked_at(socket: &Path, admitted: &Admit, within: Duration) -> Result<Asked, 
         Ok(None) => Ok(Asked::InNoChat),
         // An app older than the question ends the connection with the sentence it says to a
         // line it cannot read, or ends it unanswered; one that does not answer in time is
-        // taken for one too, and a claim is put to it on a connection of its own.
-        Err(_) => Ok(Asked::Older),
+        // taken for one too, and a claim is put to it on a connection of its own. One that
+        // answered it with something else is still listening on this one.
+        Err(why) if why.kind() == io::ErrorKind::InvalidData => Ok(Asked::Older(Some(stream))),
+        Err(_) => Ok(Asked::Older(None)),
     }
 }
 
@@ -351,9 +391,17 @@ fn whoami(stream: &UnixStream, within: Duration) -> io::Result<Option<YouAre>> {
     if let Ok(you) = serde_json::from_slice::<YouAre>(&said) {
         return Ok(Some(you));
     }
-    match serde_json::from_slice::<Answer>(&said).map_err(io::Error::other)? {
-        Answer::No { why } if why == IN_NO_CHAT => Ok(None),
-        _ => Err(io::Error::other("the app did not read the question")),
+    match serde_json::from_slice::<Answer>(&said) {
+        Ok(Answer::No { why }) if why == IN_NO_CHAT => Ok(None),
+        // The sentence an older app says to a line it cannot read: it ends the connection.
+        Ok(Answer::No { why }) if why == super::UNKNOWN_LINE => {
+            Err(io::Error::other("the app is older than the question"))
+        }
+        // Anything else: an app that answered without reading the question, and listens on.
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the app answered something else",
+        )),
     }
 }
 
