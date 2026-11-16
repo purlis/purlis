@@ -8332,9 +8332,16 @@ nav.piece-files-head {
   overflow: hidden;
 }
 
-.browser-secret {
+/* One secret's chip shrinks with the row (the badge's own `flex: none` would keep it whole and
+   have the row clip it mid-letter), and its words end in an ellipsis inside its rounded ends. */
+.browser-secrets > [data-scope="badge"].browser-secret {
+  flex: 0 1 auto;
   min-inline-size: 0;
   max-inline-size: 100%;
+}
+
+.browser-secret-said {
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

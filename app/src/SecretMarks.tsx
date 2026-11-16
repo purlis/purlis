@@ -101,7 +101,9 @@ function OneMark({ one }: { one: SecretFilled }) {
         data-testid="secret-mark"
         className="browser-secret"
       >
-        secret: {one.key}
+        {/* The words in a box of their own: a badge lays out as a flex box, where an
+            ellipsis is drawn only by a box around the words (#6937). */}
+        <span className="browser-secret-said">secret: {one.key}</span>
       </Badge>
     </Tooltip>
   );

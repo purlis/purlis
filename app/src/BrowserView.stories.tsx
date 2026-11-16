@@ -531,8 +531,15 @@ export const InANarrowSplitPaneWithOneKey: Story = {
   beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(-1)),
   play: async ({ canvas }) => {
     await onPage("https://console.volaticloud.com", "console.volaticloud.com");
-    await waitFor(() => canvas.getByTestId("secret-mark"));
+    const chip = await waitFor(() => canvas.getByTestId("secret-mark"));
     await fitsThePane(canvas);
+    // The chip shrinks within the row, its rounded ends drawn, and its words end in an ellipsis
+    // rather than being clipped mid-letter by the row.
+    const group = chip.parentElement?.getBoundingClientRect();
+    await expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(group?.right ?? 0);
+    const said = chip.querySelector<HTMLElement>(".browser-secret-said");
+    await expect(said?.scrollWidth ?? 0).toBeGreaterThan(said?.clientWidth ?? 0);
+    await expect(said === null ? "" : getComputedStyle(said).textOverflow).toBe("ellipsis");
   },
 };
 
