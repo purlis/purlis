@@ -822,7 +822,7 @@ fn codex_runs_a_covering_script_against_the_responses_stand_in() {
             "model_provider=\"standin\"",
             "-c",
             // One its own catalogue lists with a freeform apply_patch, as the recording runs it.
-            "model=\"gpt-5.5\"",
+            "model=\"gpt-5.3-codex\"",
             "-c",
             "model_providers.standin.name=\"stand-in\"",
             "-c",

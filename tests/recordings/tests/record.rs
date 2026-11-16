@@ -780,7 +780,7 @@ fn harness_words(harness: &str, base_url: &str, asks: bool) -> Vec<String> {
 }
 
 /// The model Codex is told it runs: one its own catalogue lists with a freeform `apply_patch`.
-const CODEX_MODEL: &str = "gpt-5.5";
+const CODEX_MODEL: &str = "gpt-5.3-codex";
 
 /// The variables that point a harness at the stand-in.
 fn model_env(harness: &str, base_url: &str, opencode_config: &Path) -> Vec<(String, String)> {
