@@ -1144,6 +1144,7 @@ pub fn compose_ready(
         // Given with its token, by the host that starts it ([`spec`]).
         prompt_key: None,
         pools_held: None,
+        keyring: None,
     })
 }
 

@@ -3024,6 +3024,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             started_with: StartedWith::default(),
             composed_by_its_host: false,
             pools_unknown: false,
+            keyring: None,
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
@@ -3109,6 +3110,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 )),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -3555,6 +3557,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 )),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -8900,6 +8903,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 ran: ran.clone(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -9395,6 +9399,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -9455,6 +9460,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
                 grants_as: None,
                 skills: None,
@@ -9726,6 +9732,7 @@ pub(crate) fn a_chat_asking_live_on(
             started_with: StartedWith::default(),
             composed_by_its_host: false,
             pools_unknown: false,
+            keyring: None,
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
@@ -9768,6 +9775,7 @@ fn open_a_harness_chat(
             started_with: StartedWith::default(),
             composed_by_its_host: false,
             pools_unknown: false,
+            keyring: None,
             ran: None,
             grants_as: None,
             skills: None,
@@ -10094,6 +10102,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 ran: None,
                 grants_as: None,
                 skills: harness.map(|harness| {
@@ -10183,6 +10192,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 ran: None,
                 grants_as: None,
                 skills: Some(purlis_core::skills::stamp_now(
@@ -11918,6 +11928,7 @@ mod moved_on {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 pools_unknown: false,
+                keyring: None,
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),
@@ -13322,4 +13333,244 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
         None
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
+}
+
+// ----- A running chat's sandbox goes stale when model keys arrive (R-775, T1a-78) -----
+
+/// A machine whose config home is `config`, where your keys are kept.
+fn a_machine_keeping_your_keys_in(config: &std::path::Path) -> purlis_core::sandbox::Machine {
+    purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.display().to_string())]),
+        ..a_machine()
+    }
+}
+
+/// A key for the product `product` added to your keys under `config` by the window's write,
+/// against the fenced stub keyring.
+fn a_model_key_added(config: &std::path::Path, product: &str) {
+    use purlis_core::secrets::keyring::{FileStore, STUB_FILE};
+    let credentials = purlis_core::seam::RecordingCredentials::new(
+        Box::new(FileStore::at(
+            purlis_core::machine::dir(config).join(STUB_FILE),
+        )),
+        purlis_core::seam::Record::default(),
+    );
+    let saved = purlis_core::yourkeys::add(
+        config,
+        &credentials,
+        purlis_core::yourkeys::Product {
+            from: "built-in".to_owned(),
+            id: product.to_owned(),
+        },
+        purlis_core::yourkeys::Checked::Passed,
+        "synthetic-model-key-for-a-restart-test",
+    )
+    .expect("the key is added");
+    assert!(
+        matches!(saved, purlis_core::yourkeys::Saved::Added(_)),
+        "{saved:?}"
+    );
+}
+
+/// What each judging of chats against your keys told the window, in order (R-775).
+type KeysOwedTold = Arc<Mutex<Vec<Vec<u32>>>>;
+
+/// Chats of the sandboxed project at `plane` on `host`, judged against your keys under the
+/// config home of `machine`, telling what each judging owes into the list answered.
+fn chats_judged_against_your_keys(
+    plane: &std::path::Path,
+    host: Pretend,
+    machine: &purlis_core::sandbox::Machine,
+) -> (Arc<Chats>, KeysOwedTold) {
+    let chats =
+        Arc::new(restartable_chats_on(plane, host, machine.clone()).your_keys_on(machine.clone()));
+    let told = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_keys_owed_to({
+        let told = Arc::clone(&told);
+        Arc::new(move |sessions| lock(&told).push(sessions))
+    });
+    (chats, told)
+}
+
+/// What the app does on the window's write that makes your keys hold a key: every chat judged.
+fn judged_as_keys_arrive(
+    chats: &Arc<Chats>,
+    config: &std::path::Path,
+) -> purlis_core::yourkeys::Arrivals {
+    let (chats, config) = (Arc::clone(chats), config.to_path_buf());
+    purlis_core::yourkeys::when_keys_arrive(move |root| {
+        if root == config {
+            chats.judge_keyring();
+        }
+    })
+}
+
+/// **A running sandboxed chat is owed one restart when the first model key arrives** (R-775): a
+/// chat settled with an empty index is owed exactly one restart as the window's write adds a key,
+/// and the window is told it once. A second key, or a second judging, owes none. A chat started
+/// without the sandbox, and one started once the key was there (settled with the rule), are owed
+/// none.
+#[test]
+fn a_running_sandboxed_chat_is_owed_a_restart_when_the_first_model_key_arrives() {
+    let config = tempfile::tempdir().expect("a config home");
+    let machine = a_machine_keeping_your_keys_in(config.path());
+    let plane = a_sandboxed_plane();
+    let (chats, told) = chats_judged_against_your_keys(plane.path(), Pretend::default(), &machine);
+    let _arriving = judged_as_keys_arrive(&chats, config.path());
+    let stale = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let opt_out = purlis_core::sandbox::OptOut { reason: None };
+    let unsandboxed = chats
+        .start_as_opted(
+            &a_resumable_chat_in(plane.path()),
+            SIZE,
+            false,
+            Why::New,
+            Some(&opt_out),
+        )
+        .expect("starts");
+    assert_eq!(
+        chats.confines_now(stale).map(|confines| confines.keyring),
+        Some(false),
+        "settled with an empty index"
+    );
+    assert_eq!(chats.judge_keyring(), Vec::<u32>::new(), "no key yet");
+
+    a_model_key_added(config.path(), "anthropic");
+
+    assert_eq!(chats.owed_for_model_keys(), [stale]);
+    assert_eq!(chats.owed_restarts(), [stale]);
+    assert_eq!(*lock(&told), [vec![stale]], "the window is told once");
+
+    let with_the_rule = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    assert_eq!(
+        chats
+            .confines_now(with_the_rule)
+            .map(|confines| confines.keyring),
+        Some(true)
+    );
+    a_model_key_added(config.path(), "another-provider");
+    assert_eq!(
+        chats.judge_keyring(),
+        Vec::<u32>::new(),
+        "nothing more owed"
+    );
+    assert_eq!(chats.owed_for_model_keys(), [stale]);
+    assert_eq!(
+        chats.owed_restarts(),
+        [stale],
+        "one restart, however many keys"
+    );
+    assert_eq!(lock(&told).len(), 1);
+    for session in [stale, unsandboxed, with_the_rule] {
+        chats.close(session).expect("ends");
+    }
+}
+
+/// **The restarted chat's sandbox denies the credential service** (R-775): the restart a key owed
+/// settles its new run with the keyring rule, so it is owed nothing more and shows W140 no more.
+#[test]
+fn the_restarted_chat_s_sandbox_denies_the_credential_service() {
+    let config = tempfile::tempdir().expect("a config home");
+    let machine = a_machine_keeping_your_keys_in(config.path());
+    let plane = a_sandboxed_plane();
+    let (chats, _told) = chats_judged_against_your_keys(plane.path(), Pretend::default(), &machine);
+    let _arriving = judged_as_keys_arrive(&chats, config.path());
+    let stale = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    a_model_key_added(config.path(), "anthropic");
+    assert_eq!(chats.owed_for_model_keys(), [stale]);
+
+    let again = chats.restart(stale, SIZE).expect("restarts");
+    chats.close(stale).expect("the old run ends");
+
+    assert_eq!(
+        chats.confines_now(again).map(|confines| confines.keyring),
+        Some(true),
+        "its new sandbox denies the credential service"
+    );
+    assert_eq!(
+        purlis_core::sandbox::Denied::of(plane.path(), &machine).services,
+        [purlis_core::sandbox::Service::CredentialStore],
+        "as T1a-72's rule denies it"
+    );
+    assert_eq!(chats.owed_for_model_keys(), Vec::<u32>::new());
+    assert_eq!(chats.judge_keyring(), Vec::<u32>::new());
+    assert_eq!(chats.owed_restarts(), Vec::<u32>::new());
+    chats.close(again).expect("ends");
+}
+
+/// **A chat taken back at open, settled before a key existed, is owed a restart** (R-775): judged
+/// by its host's record of its start against the index found now. One whose host kept that it was
+/// settled with the rule is owed none; one whose host kept nothing is taken as without; with an
+/// empty index none is owed.
+#[test]
+fn a_reattached_chat_settled_before_a_key_is_owed_a_restart() {
+    let config = tempfile::tempdir().expect("a config home");
+    let machine = a_machine_keeping_your_keys_in(config.path());
+    let plane = a_sandboxed_plane();
+    let reattached = |kept: Option<bool>| {
+        let host = Pretend::default();
+        host.leaves_running(3, None);
+        if let Some(keyring) = kept {
+            host.left_with_keyring(3, keyring);
+        }
+        let (chats, told) = chats_judged_against_your_keys(plane.path(), host.clone(), &machine);
+        chats.put_back(
+            &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+            SIZE,
+        );
+        assert_eq!(host.reattached(), [3]);
+        let owed = (
+            chats.owed_for_model_keys(),
+            chats.owed_restarts(),
+            lock(&told).clone(),
+        );
+        chats.close(3).expect("ends");
+        owed
+    };
+    assert_eq!(
+        reattached(Some(false)),
+        (vec![], vec![], vec![]),
+        "an empty index"
+    );
+
+    a_model_key_added(config.path(), "anthropic");
+
+    assert_eq!(reattached(Some(false)), (vec![3], vec![3], vec![vec![3]]));
+    assert_eq!(
+        reattached(None),
+        (vec![3], vec![3], vec![vec![3]]),
+        "a host that kept nothing"
+    );
+    assert_eq!(
+        reattached(Some(true)),
+        (vec![], vec![], vec![]),
+        "settled with the rule"
+    );
+}
+
+/// **A chat's start hands its host whether its sandbox denies the credential service** (R-775),
+/// which the host keeps for a window that takes it back.
+#[test]
+fn a_chats_start_hands_its_host_whether_it_is_settled_with_the_keyring_rule() {
+    let config = tempfile::tempdir().expect("a config home");
+    let machine = a_machine_keeping_your_keys_in(config.path());
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let (chats, _told) = chats_judged_against_your_keys(plane.path(), host.clone(), &machine);
+    let before = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    a_model_key_added(config.path(), "anthropic");
+    let after = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    assert_eq!(host.keyring_opened(), [Some(false), Some(true)]);
+    chats.close(before).expect("ends");
+    chats.close(after).expect("ends");
 }

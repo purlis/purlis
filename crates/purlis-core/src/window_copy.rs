@@ -193,6 +193,8 @@ pub mod line {
     /// W132: Refusal, New chat; a sandboxed chat's start.
     pub const W132_PICKER: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Start this chat without the sandbox from the new-chat picker, or remove your model keys in Your keys.";
     pub const W132_KEYS: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.";
+    /// W140: Notice, the chat's notices.
+    pub const W140: &str = "Model keys were added after this chat started, so its sandbox doesn't keep them out of reach yet. It restarts at its next pause.";
 }
 
 /// The systems purlis runs on, for the table's first two rules.

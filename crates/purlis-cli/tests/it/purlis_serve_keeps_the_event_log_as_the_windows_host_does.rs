@@ -95,6 +95,7 @@ fn a_chat_that_ends_once(go: &Path) -> StartProgram {
             confinement: None,
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

@@ -329,6 +329,7 @@ fn run_in_the_host(
             confinement: None,
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }),
         ends_with_its_window: true,
         ..StartProgram::of(project, ProgramKind::Shell)

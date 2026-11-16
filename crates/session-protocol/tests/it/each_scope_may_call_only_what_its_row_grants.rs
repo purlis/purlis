@@ -212,6 +212,7 @@ fn every_command() -> Vec<Command> {
                 confinement: None,
                 prompt_key: None,
                 pools_held: None,
+                keyring: None,
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),

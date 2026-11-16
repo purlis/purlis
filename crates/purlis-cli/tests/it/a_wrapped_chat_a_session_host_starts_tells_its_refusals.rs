@@ -121,6 +121,7 @@ fn a_wrapped_chat_writing(chat: &Path, socket: &Path, elsewhere: &Path) -> Start
             confinement: None,
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

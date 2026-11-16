@@ -875,6 +875,13 @@ export const commands = {
 	 */
 	owedRestarts: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("owed_restarts", { plane })),
 	/**
+	 *  **The chats of this project that show W140** (R-775): owed a restart because model keys
+	 *  arrived after their sandbox was settled without the keyring rule, and not restarted yet. For
+	 *  the window, which drives each restart at the chat's next pause, read again when the view is
+	 *  drawn anew.
+	 */
+	chatsOwedForModelKeys: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_owed_for_model_keys", { plane })),
+	/**
 	 *  The folders you listed as ones chats in this project may be granted (D-1342-10), each as it
 	 *  was resolved; and each one dropped from the list now because it no longer resolves to itself
 	 *  (it, or a folder above it, was swapped for a link since: R8), for Settings to say.
@@ -6045,6 +6052,8 @@ export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 export const ENGINE_DOWNLOAD = "engine-download" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
+
+export const KEYS_OWED = "chat-keys-owed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
@@ -11524,6 +11533,17 @@ export type KeptMark =
 
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
+
+/**
+ *  **Chats owed a restart because model keys arrived** after their sandbox was settled without
+ *  the keyring rule (R-775, decisions.md D6640-T3 item 9): each restarts at its next pause between
+ *  turns, and shows W140 until it does.
+ */
+export type KeysOwed = {
+	plane: PlaneId,
+	/**  The chats newly owed, by number. */
+	sessions: number[],
+};
 
 /**
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's

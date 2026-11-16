@@ -94,6 +94,7 @@ fn a_chat_whose_hook_says_it_stopped() -> StartProgram {
             confinement: None,
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

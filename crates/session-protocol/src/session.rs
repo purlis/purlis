@@ -584,9 +584,15 @@ use crate::view::{Limits, Views};
 /// [`Command::StopKeyProxy`], T1a-04): a listener on `127.0.0.1` whose port and token only the
 /// start's answer carries, run by the binary on a runtime of its own. The window's alone, and
 /// relayed to no other host. An older host refuses either `unknown_command`, so it is not asked.
+///
+/// 1.91 has a host keep with a chat's program whether its sandbox denied the system's credential
+/// service as it started ([`Launch::keyring`], R-775), and `programs` answers it
+/// ([`HeldProgram::keyring`]), so a window that takes the chat back judges it against your keys by
+/// the sandbox it started with. A host before 1.91 keeps none, and the window takes such a chat as
+/// settled without the rule.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 90,
+    minor: 91,
 };
 
 /// The version that first starts a key proxy for a run ([`Command::StartKeyProxy`], T1a-04):
@@ -2290,6 +2296,12 @@ pub struct Launch {
     /// ([`HeldProgram::pools_held`]). Absent from a window before 1.89.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pools_held: Option<Vec<String>>,
+    /// **Whether the chat's sandbox denied the system's credential service as it started** (1.91,
+    /// R-775), where it started sandboxed: kept with the program as [`Self::pools_held`] is, for
+    /// a window that takes the chat back ([`HeldProgram::keyring`]). Absent from a window before
+    /// 1.91.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyring: Option<bool>,
 }
 
 /// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
@@ -2797,6 +2809,11 @@ pub struct HeldProgram {
     /// none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pools_held: Option<Vec<String>>,
+    /// Whether its sandbox denied the credential service as it started, as its launch said
+    /// ([`Launch::keyring`], 1.91): what a window that takes the chat back judges it by against
+    /// your keys (R-775). Absent from a host before 1.91, and for a launch that said none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyring: Option<bool>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).

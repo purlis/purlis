@@ -2666,6 +2666,9 @@ pub struct Planes {
     /// Told each chat whose project's Claude Code settings no longer pass (ADR 0067 as amended
     /// 2026-10-16).
     project_settings: crate::projectsettings::Teller,
+    /// Told the chats owed a restart because model keys arrived after their sandbox was settled
+    /// without the keyring rule (R-775).
+    keys_owed: Arc<dyn Fn(crate::sandboxing::KeysOwed) + Send + Sync>,
     /// The window, for each chat move's stage (#2048).
     moves_told: Arc<dyn Fn(PlaneId, crate::chatmoves::ChatMove) + Send + Sync>,
     /// Told each vault a chat was refused for its persona (#1430).
@@ -2964,6 +2967,7 @@ impl Planes {
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
             project_settings: Arc::new(|_| {}),
+            keys_owed: Arc::new(|_| {}),
             moves_told: Arc::new(|_, _| {}),
             vault_refused: Arc::new(|_| {}),
             browser_asks_ended: Arc::new(|_| {}),
@@ -3252,6 +3256,26 @@ impl Planes {
     pub(crate) fn telling_project_settings(mut self, told: crate::projectsettings::Teller) -> Self {
         self.project_settings = told;
         self
+    }
+
+    /// Tells `told` the chats, in a plane this registry holds, owed a restart because model keys
+    /// arrived after their sandbox was settled without the keyring rule (R-775): the window drives
+    /// each at its next pause and shows W140.
+    pub(crate) fn telling_keys_owed(
+        mut self,
+        told: Arc<dyn Fn(crate::sandboxing::KeysOwed) + Send + Sync>,
+    ) -> Self {
+        self.keys_owed = told;
+        self
+    }
+
+    /// **Judges every running chat of every project this registry holds against your keys**
+    /// (R-775): what the window's write that makes your keys hold a key asks
+    /// ([`purlis_core::yourkeys::when_keys_arrive`]). Each project's window is told its chats owed.
+    pub fn judge_keyring(&self) {
+        for held in self.every_held() {
+            held.chats().judge_keyring();
+        }
     }
 
     /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
@@ -4039,6 +4063,17 @@ impl Planes {
                     plane: plane.clone(),
                     session,
                     more,
+                });
+            })
+        });
+        // The chats owed a restart because model keys arrived after their sandbox was settled
+        // (R-775): the window drives each at its pause, and shows W140.
+        held.chats().tell_keys_owed_to({
+            let (plane, told) = (id.clone(), Arc::clone(&self.keys_owed));
+            Arc::new(move |sessions| {
+                told(crate::sandboxing::KeysOwed {
+                    plane: plane.clone(),
+                    sessions,
                 });
             })
         });

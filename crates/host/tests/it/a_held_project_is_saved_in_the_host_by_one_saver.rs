@@ -154,6 +154,7 @@ fn a_launch() -> Launch {
         confinement: None,
         prompt_key: None,
         pools_held: None,
+        keyring: None,
     }
 }
 
@@ -467,6 +468,7 @@ async fn a_program_that_ends_in_the_project_tells_its_saver_and_the_saver_sees_w
         confinement: None,
         prompt_key: None,
         pools_held: None,
+        keyring: None,
     };
     let program = client
         .start_program_told(StartProgram {

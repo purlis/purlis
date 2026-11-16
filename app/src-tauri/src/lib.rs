@@ -3403,6 +3403,9 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatBlocked>()
         // What `chat-sandbox-refused-more` carries (#1353).
         .typ::<hooks::RefusedMore>()
+        // What `chat-keys-owed` carries, and the event's name (R-775).
+        .typ::<sandboxing::KeysOwed>()
+        .constant("KEYS_OWED", sandboxing::KEYS_OWED)
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
         // What `chat-move` carries (#2048).
@@ -3654,6 +3657,10 @@ fn without_channel_commands(bindings: &str) -> String {
 
 /// The shared lock this app holds on the config home for its life (`renamelocal::busy::LOCK`).
 struct HoldsTheConfigHome(#[allow(dead_code)] purlis_core::filelock::Held);
+
+/// What tells this app each time the window's write makes your keys hold a key, for its life
+/// (R-775, [`purlis_core::yourkeys::when_keys_arrive`]).
+struct KeysArriving(#[allow(dead_code)] purlis_core::yourkeys::Arrivals);
 
 /// The variable the upgrade scenario sets to have the `e2e` build migrate at its launch
 /// (RN-10, #1268). Read only by that build; `e2e/upgrade.test.ts` holds the spec's spelling
@@ -4743,6 +4750,19 @@ pub fn run() {
                         windows::emit_for_plane(&window, &plane, chatmoves::EVENT, &told);
                     })
                 })
+                // The chats owed a restart because model keys arrived after their sandbox was
+                // settled without the keyring rule (R-775): driven at each one's pause, with W140.
+                .telling_keys_owed({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: sandboxing::KeysOwed| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            sandboxing::KEYS_OWED,
+                            &told,
+                        );
+                    })
+                })
                 .telling_project_settings({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: projectsettings::Rescreened| {
@@ -5027,6 +5047,17 @@ pub fn run() {
                     })
                 }),
             ));
+            // **The window's write that makes your keys hold a key** (R-775, decisions.md
+            // D6640-T3 item 9): every running chat settled without the keyring rule is owed a
+            // restart at its next pause. Raised by the write as it commits, never by a watch.
+            app.manage(KeysArriving(purlis_core::yourkeys::when_keys_arrive({
+                let window = app.handle().clone();
+                move |_| {
+                    if let Some(planes) = window.try_state::<Planes>() {
+                        planes.judge_keyring();
+                    }
+                }
+            })));
 
             // The working directory, resolved ONCE, to decide which plane the first window
             // opens. Everything after this names its plane; nothing asks the working

@@ -217,6 +217,7 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 armed_skills: None,
                 skills_not_there: None,
                 pools_held: None,
+                keyring: None,
             },
             HeldProgram {
                 program: shell,
@@ -238,6 +239,7 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 armed_skills: None,
                 skills_not_there: None,
                 pools_held: None,
+                keyring: None,
             },
         ],
         "running and ended, never closed"
@@ -269,6 +271,7 @@ async fn a_chats_prompt_key_is_answered_with_its_start_and_to_the_window_that_ta
                 confinement: None,
                 prompt_key: Some(key.clone()),
                 pools_held: None,
+                keyring: None,
             }),
             ..StartProgram::of(PROJECT, ProgramKind::Harness)
         })
@@ -339,6 +342,7 @@ async fn a_program_in_a_confinement_is_answered_with_where_its_confinement_is() 
                 confinement: Some(CONFINEMENT.into()),
                 prompt_key: None,
                 pools_held: None,
+                keyring: None,
             }),
             ..StartProgram::of(PROJECT, ProgramKind::Harness)
         })

@@ -2492,6 +2492,33 @@ pub fn owed_restarts(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result
     Ok(planes.held(&plane)?.chats().owed_restarts())
 }
 
+/// **The chats of this project that show W140** (R-775): owed a restart because model keys
+/// arrived after their sandbox was settled without the keyring rule, and not restarted yet. For
+/// the window, which drives each restart at the chat's next pause, read again when the view is
+/// drawn anew.
+#[tauri::command]
+#[specta::specta]
+pub fn chats_owed_for_model_keys(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<u32>, String> {
+    Ok(planes.held(&plane)?.chats().owed_for_model_keys())
+}
+
+/// The event the window is told the chats owed a restart because model keys arrived by
+/// ([`KeysOwed`], R-775).
+pub const KEYS_OWED: &str = "chat-keys-owed";
+
+/// **Chats owed a restart because model keys arrived** after their sandbox was settled without
+/// the keyring rule (R-775, decisions.md D6640-T3 item 9): each restarts at its next pause between
+/// turns, and shows W140 until it does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct KeysOwed {
+    pub plane: PlaneId,
+    /// The chats newly owed, by number.
+    pub sessions: Vec<u32>,
+}
+
 /// One grant, as Settings' Granted list shows it (#1348).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct SandboxGrant {
