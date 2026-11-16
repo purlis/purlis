@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::projection::Shown;
 use crate::recording::Recording;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +65,10 @@ pub struct TurnCall {
     /// For a sub-agent call: the sub-agent's last message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub says: Option<String>,
+    /// For a sub-agent call: the tokens the harness's task notification says it used (Claude
+    /// Code's `<subagent_tokens>`), which the harness works out itself and no stand-in gives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
 }
 
 /// The shell tools' names, in every harness, and where each keeps its command.
@@ -96,7 +101,8 @@ pub fn of(recording: &Recording) -> TurnScript {
         let Some(turn) = turns.get_mut((asked.turn as usize).saturating_sub(1)) else {
             continue;
         };
-        turn.calls.extend(calls_of(asked, at as u32 + 1));
+        turn.calls
+            .extend(calls_of(asked, at as u32 + 1, &recording.shown));
     }
     TurnScript {
         harness: recording.harness.clone(),
@@ -108,8 +114,26 @@ pub fn of(recording: &Recording) -> TurnScript {
     }
 }
 
+/// The tokens a task notification among `shown` says the sub-agent of the call `tool_use_id`
+/// used.
+fn subagent_tokens(shown: &[Shown], tool_use_id: &str) -> Option<u64> {
+    let id = format!("<tool-use-id>{tool_use_id}</tool-use-id>");
+    shown
+        .iter()
+        .filter(|s| s.text.contains("<task-notification>") && s.text.contains(&id))
+        .find_map(|s| {
+            let after = s.text.split("<subagent_tokens>").nth(1)?;
+            after
+                .split("</subagent_tokens>")
+                .next()?
+                .trim()
+                .parse()
+                .ok()
+        })
+}
+
 /// The calls of one model response, `response` its number; a sub-agent call with its own.
-fn calls_of(asked: &crate::recording::Asked, response: u32) -> Vec<TurnCall> {
+fn calls_of(asked: &crate::recording::Asked, response: u32, shown: &[Shown]) -> Vec<TurnCall> {
     asked
         .calls
         .iter()
@@ -131,9 +155,42 @@ fn calls_of(asked: &crate::recording::Asked, response: u32) -> Vec<TurnCall> {
                 .subagent_model
                 .iter()
                 .enumerate()
-                .flat_map(|(at, inner)| calls_of(inner, at as u32 + 1))
+                .flat_map(|(at, inner)| calls_of(inner, at as u32 + 1, shown))
                 .collect(),
             says: call.says.clone(),
+            tokens: call
+                .subagent
+                .then(|| subagent_tokens(shown, &call.tool_use_id))
+                .flatten(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notification(id: &str, tokens: u32) -> Shown {
+        Shown {
+            kind: "context".to_owned(),
+            text: format!(
+                "<task-notification>\n<tool-use-id>{id}</tool-use-id>\n<status>completed</status>\n\
+                 <usage><subagent_tokens>{tokens}</subagent_tokens><tool_uses>1</tool_uses></usage>\n\
+                 </task-notification>"
+            ),
+            tool_use_id: None,
+            is_error: None,
+        }
+    }
+
+    #[test]
+    fn a_subagents_tokens_are_read_from_its_own_task_notification() {
+        let shown = [
+            notification("<tool-use-3>", 41),
+            notification("<tool-use-12>", 23),
+        ];
+        assert_eq!(subagent_tokens(&shown, "<tool-use-12>"), Some(23));
+        assert_eq!(subagent_tokens(&shown, "<tool-use-3>"), Some(41));
+        assert_eq!(subagent_tokens(&shown, "<tool-use-9>"), None);
+    }
 }

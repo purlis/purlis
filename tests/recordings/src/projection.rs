@@ -6,8 +6,9 @@
 //! front of the model from purlis's side: the user's text, each tool's result, hook-injected
 //! context and deny reasons, and the lines purlis types into the chat. It leaves out the system
 //! prompt (`system`, `instructions`, a `system` message) and the tool schemas (`tools`), so a
-//! harness changing its own prompt changes no recording. Across a chat's requests, each thing
-//! shown is kept once, where it was first shown.
+//! harness changing its own prompt changes no recording, and, by the closed list
+//! [`CLAUDE_CODE_OWN`], the text Claude Code adds of its own among the messages. Across a chat's
+//! requests, each thing shown is kept once, where it was first shown.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -53,8 +54,108 @@ impl Api {
     }
 }
 
+/// How much of a context item a piece of Claude Code's own text takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Extent {
+    /// The whole item, when the item begins with the opening.
+    Item,
+    /// Each paragraph (text between blank lines) that is the opening whole, wherever it stands.
+    Paragraph,
+    /// From a paragraph that begins with the opening to the end of the item.
+    ToTheEnd,
+}
+
+/// A piece of text Claude Code adds among the messages of its own accord, from neither purlis
+/// nor the model's task: by its name, the words it opens with, and how far it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HarnessOwn {
+    pub name: &'static str,
+    pub opening: &'static str,
+    pub extent: Extent,
+}
+
+/// Every piece of Claude Code's own text the projection leaves out, by name (Claude Code
+/// 2.1.325's covering and asks recordings). Nothing is added without a recording showing it.
+pub const CLAUDE_CODE_OWN: &[HarnessOwn] = &[
+    HarnessOwn {
+        name: "attribution",
+        opening: "Attribution for git commits and pull requests you create from here on",
+        extent: Extent::Item,
+    },
+    HarnessOwn {
+        name: "not-heard-from",
+        opening: "The user hasn't heard from you in a while. As you continue, keep them updated \
+                  when there's something to tell — a finding, a change of plan.",
+        extent: Extent::Paragraph,
+    },
+    HarnessOwn {
+        name: "deferred-tools",
+        opening: "The following deferred tools are now available via ToolSearch.",
+        extent: Extent::Item,
+    },
+    HarnessOwn {
+        name: "agent-types",
+        opening: "Available agent types for the Agent tool:",
+        extent: Extent::Item,
+    },
+    // Its environment section, and what it puts after it in the same message (the model, the
+    // deferred tools, the agent types, its MCP servers' instructions, the skills, the mode,
+    // the date): in Claude Code 2.1.325 it follows a SessionStart hook's context in one
+    // `system` message.
+    HarnessOwn {
+        name: "environment",
+        opening: "# Environment\nYou have been invoked in the following environment:",
+        extent: Extent::ToTheEnd,
+    },
+];
+
+/// `text`, a context item, without the pieces of `own`; empty when nothing else is left.
+pub fn without_harness_own(text: &str, own: &[HarnessOwn]) -> String {
+    if own
+        .iter()
+        .any(|o| o.extent == Extent::Item && text.starts_with(o.opening))
+    {
+        return String::new();
+    }
+    let mut kept: Vec<&str> = Vec::new();
+    for paragraph in text.split("\n\n") {
+        if own
+            .iter()
+            .any(|o| o.extent == Extent::ToTheEnd && paragraph.starts_with(o.opening))
+        {
+            break;
+        }
+        if own
+            .iter()
+            .any(|o| o.extent == Extent::Paragraph && paragraph.trim() == o.opening)
+        {
+            continue;
+        }
+        kept.push(paragraph);
+    }
+    kept.join("\n\n").trim().to_owned()
+}
+
 /// What `body`, a request in `api`, shows the model, in order.
 pub fn project(api: Api, body: &Value) -> Vec<Shown> {
+    let mut shown = shown_in(api, body);
+    if api == Api::Messages {
+        shown = shown
+            .into_iter()
+            .filter_map(|mut item| {
+                if item.kind != "context" {
+                    return Some(item);
+                }
+                item.text = without_harness_own(&item.text, CLAUDE_CODE_OWN);
+                (!item.text.is_empty()).then_some(item)
+            })
+            .collect();
+    }
+    shown
+}
+
+/// What `body` shows the model, Claude Code's own text and all.
+fn shown_in(api: Api, body: &Value) -> Vec<Shown> {
     let mut out = Vec::new();
     match api {
         Api::Messages => {
@@ -219,5 +320,63 @@ fn text_of(content: &Value) -> String {
             .join("\n"),
         Value::Null => String::new(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn reminder(text: &str) -> String {
+        format!("<system-reminder>\n{text}\n</system-reminder>")
+    }
+
+    #[test]
+    fn claude_codes_own_text_is_left_out_and_purliss_and_the_tasks_are_kept() {
+        let not_heard = "The user hasn't heard from you in a while. As you continue, keep them \
+                         updated when there's something to tell — a finding, a change of plan.";
+        let body = json!({"messages": [
+            {"role": "system", "content": "SessionStart hook additional context: purlis's own.\n\n\
+                # Environment\nYou have been invoked in the following environment: \n - Platform: linux\n\n\
+                The following skills are available for use with the Skill tool:\n- a skill"},
+            {"role": "user", "content": [
+                {"type": "text", "text": reminder("Attribution for git commits and pull requests you create from here on (…):\n- End git commit messages with: x")},
+                {"type": "text", "text": "THE TASK"},
+                {"type": "text", "text": reminder(&format!("{not_heard}\n\n{not_heard}"))},
+                {"type": "text", "text": reminder("The following deferred tools are now available via ToolSearch. …\nMonitor")},
+                {"type": "text", "text": reminder("Available agent types for the Agent tool:\n- claude: …\n\n# MCP Server Instructions")},
+                {"type": "text", "text": reminder(&format!("{not_heard}\n\n<task-notification>\n<result>done</result>\n</task-notification>"))},
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": ""}
+            ]}
+        ]});
+        let shown: Vec<(String, String)> = project(Api::Messages, &body)
+            .into_iter()
+            .map(|s| (s.kind, s.text))
+            .collect();
+        let pair = |kind: &str, text: &str| (kind.to_owned(), text.to_owned());
+        assert_eq!(
+            shown,
+            [
+                pair(
+                    "context",
+                    "SessionStart hook additional context: purlis's own."
+                ),
+                pair("user_text", "THE TASK"),
+                pair(
+                    "context",
+                    "<task-notification>\n<result>done</result>\n</task-notification>"
+                ),
+                pair("tool_result", ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_claude_codes_requests_lose_its_own_text() {
+        let body = json!({"messages": [{"role": "user", "content":
+            "<system-reminder>Available agent types for the Agent tool:</system-reminder>hi"}]});
+        let shown = project(Api::ChatCompletions, &body);
+        assert_eq!(shown[0].text, "Available agent types for the Agent tool:");
     }
 }

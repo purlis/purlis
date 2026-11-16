@@ -472,6 +472,13 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
                 subagent.says.is_some(),
                 "{harness}: the sub-agent's last message"
             );
+            // The tokens Claude Code's task notification says the sub-agent used, which the
+            // fake harness cannot work out; OpenCode sends no task notification.
+            assert_eq!(
+                subagent.tokens.is_some(),
+                harness == "claude",
+                "{harness}: the sub-agent's tokens"
+            );
         }
     }
     // Codex writes with its native apply_patch.
