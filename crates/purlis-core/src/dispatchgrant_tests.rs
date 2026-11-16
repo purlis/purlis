@@ -709,3 +709,31 @@ fn a_committed_pair_this_machine_has_not_acknowledged_covers_nothing_until_it_is
     std::fs::write(crate::names::manifest(root), "schema = 1\n").expect("another push");
     assert_eq!(InForce::read(root, Vec::new()).project, []);
 }
+
+/// **The `dispatch` family** (Q308, instruction 50): under `off` or `log` a pair nothing covers
+/// is covered, with no grant; enforced, it needs one as before. A lock, the person's never, a
+/// never above and an unreadable nevers record hold in every mode.
+#[test]
+fn a_pair_nothing_covers_starts_with_no_grant_only_where_the_policy_does_not_enforce_dispatch() {
+    use crate::enforcement::Mode;
+    assert_eq!(
+        as_the_policy_runs(Covers::NeedsGrant, Mode::Enforce),
+        Covers::NeedsGrant
+    );
+    for mode in [Mode::Off, Mode::Log] {
+        assert_eq!(
+            as_the_policy_runs(Covers::NeedsGrant, mode),
+            Covers::Covered
+        );
+    }
+    for mode in [Mode::Off, Mode::Log, Mode::Enforce] {
+        for held in [
+            Covers::Never,
+            Covers::NeverAbove("qa".to_owned()),
+            Covers::Unread,
+            Covers::Locked("Policy forbids it.".to_owned()),
+        ] {
+            assert_eq!(as_the_policy_runs(held.clone(), mode), held, "{mode:?}");
+        }
+    }
+}

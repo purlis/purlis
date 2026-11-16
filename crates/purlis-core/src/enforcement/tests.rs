@@ -39,7 +39,7 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
             assert_eq!(settings.mode(family), want, "{}", family.key());
         }
     }
-    assert_eq!(Template::Watch.sandbox_level(), SandboxLevel::Floor);
+    assert_eq!(Template::Watch.sandbox_level(), Some(SandboxLevel::Floor));
 }
 
 #[test]
@@ -60,6 +60,7 @@ fn each_template_runs_each_family_as_the_ruling_says() {
         };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
+            || family.added_by_q308b()
             || matches!(
                 family,
                 Family::GuardsMerge | Family::GuardsRelease | Family::GuardsSave
@@ -76,9 +77,11 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             template
         );
     }
-    assert_eq!(Template::Open.sandbox_level(), SandboxLevel::Off);
-    assert_eq!(Template::Hold.sandbox_level(), SandboxLevel::Floor);
-    assert_eq!(Template::Team.sandbox_level(), SandboxLevel::Full);
+    assert_eq!(Template::Open.sandbox_level(), Some(SandboxLevel::Off));
+    assert_eq!(Template::Hold.sandbox_level(), Some(SandboxLevel::Floor));
+    assert_eq!(Template::Team.sandbox_level(), Some(SandboxLevel::Full));
+    // Strict is today's purlis: `[sandbox]` decides, the floor unless its mode is on (Q316).
+    assert_eq!(Template::Strict.sandbox_level(), None);
 }
 
 #[test]

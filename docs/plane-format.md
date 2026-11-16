@@ -1765,7 +1765,7 @@ of that name at that level replaces it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets` and `vaults` enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. |
+| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. |
 | `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. **Not switchable yet**: enforced. |
 | `ports` | as `network` | the template's | local sockets, listening and connect ports. **Not switchable yet**: enforced. |
 | `processes` | as `network` | the template's | the floor's refusal of `launchctl`, `osascript`, `open`, cron and Apple Events. A kernel's refusal cannot log, so `log` lifts it as `off` does. The full sandbox keeps its own. |
@@ -1774,21 +1774,22 @@ of that name at that level replaces it.
 | `guards.release` | as `network` | the template's | the release floor (A4), and a live substitution in a forge's prose (A5). |
 | `guards.save` | as `network` | the template's | personal data in what a chat commits and pushes, a commit that skips the hooks (A8), and a live substitution in purlis's own text (A6). |
 | `guards.credential` | as `network` | the template's | one credential per forge (A2), and the token scan on commit and push. |
-| `asks` | as `network` | the template's | host, folder and socket asks. **Not switchable yet**: enforced. |
-| `dispatch` | as `network` | the template's | who may dispatch to whom, and the guards on a dispatch's or a handoff's call. **Not switchable yet**: enforced. |
+| `asks` | as `network` | the template's | host, folder and socket asks. Under `off` or `log` a host nothing lists is answered Allow for the chat, nobody asked, and logged; the person's Keep blocked still holds. Folder and socket asks stay enforced for now. |
+| `dispatch` | as `network` | the template's | who may dispatch to whom. Under `off` or `log` a pair nothing covers starts with no grant, from an unsandboxed or unattended chat too; a lock, the person's nevers (a never above, and a nevers record that does not read, included) hold in every mode. The guards on a dispatch's or a handoff's call are `guards.shape`'s. |
 | `vaults` | `"off"` or `"enforce"` | the template's | a chat's reach to a vault: reads across personas, a vault's Allow. `log` is enforced. **Not switchable yet**: enforced. |
 | `browser` | as `network` | the template's | the browser's reach to a site. **Not switchable yet**: enforced. |
 | `skills` | as `network` | the template's | a skill's install or load. **Not switchable yet**: enforced. |
 | `secrets` | as `network` | the template's | a vault's value kept out of a chat: masking of `secret exec`'s output, the leak guard (A), and the vault-file guard on Read and Grep. |
+| `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open` | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps and the backstops on the consent rules' spelling, A7b and A7c, are `guards.shape`'s); the plane itself; the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions; runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). **Keys now, not switchable yet**: enforced. |
 
 **What `log` writes:** one line per refusal that would have been made, in the chat's
 [enforcement log](#appenforcementchatjsonl--what-a-chat-would-have-been-refused). Nothing is
 shown to the chat or the person: no Notice, no ask, no denial.
 
-**What no family switches**, and so stays enforced: the caps on what the guard reads, the
-backstops on the consent rules' and the operator's rules' spelling (A7b, A7c), the state-folder
-edit guard, a judge's read rule, the scan's allowlist and runs-under checks, the kill switch, and
-a grader's lock bundles.
+**What stays outside the policy** (Q308b): a chat changing its own policy (the scan's
+runs-under check, the brokered write's, the sandbox's hold on the file), the kill switch, and a
+grader's lock bundles. **The person's own denies hold in every mode**, `open` included: dispatch
+nevers and "Keep blocked" hosts.
 
 ### `[skill_policy]` — the org's controls over skill sources
 
@@ -4764,6 +4765,25 @@ write into this folder cannot make its own text arrive as the person's.
 
 ---
 
+### The seal's key — the keyring item `purlis-seal`
+- **What:** the random key purlis's app seals the answers this machine keeps with (rulings Q308b
+  and Q309): an HMAC-SHA256 over the answer's kind, the clone's key and its text. The first is
+  `policy_accepted` ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)).
+- **Format:** one generic password, service `purlis-seal`, account `answers`: 32 random bytes as
+  64 hex digits.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Keyring — device-bound; never synced, never backed up. Lost, every sealed answer
+  counts as none, and the shipped default stands until the person accepts again.
+- **Written by:** `purlis_core::secrets::seal`, in the app's own process alone
+  (`keyhold::is_the_app`), the first time the app seals. On macOS the Keychain then lets that one
+  program read it without asking. **Its service is outside purlis's own prefixes**, so the app's
+  one-item writer (`keyhold::HOLD_ARG`), which any program can start, refuses it: no other program
+  can put a key of its choosing there.
+- **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
+  cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
+  read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
+  nothing is sealed and the shipped default holds.
+
 ### `~/.config/purlis/sandbox-grants/<clone key>.json` (outside the plane)
 - **What:** everything this machine keeps about one project's sandbox (ADR 0093): the keys
   described under [`app/sandbox.json`](#appsandboxjson), which an older build kept in the
@@ -4786,6 +4806,14 @@ write into this folder cannot make its own text arrive as the person's.
   `expects_seen`, the same answer as an older build kept it (the items alone), is still read
   where `expects_answered` is absent, each item as answered under the name it is written by,
   and is dropped at the next answer.
+  `policy_accepted` is what you last accepted of the project's
+  [`[policy]`](#policy--which-of-purliss-refusals-run) (rulings Q308a, Q308b): family key to
+  mode, the least each family runs at here until you press to loosen it; a chat start keeps a
+  tightening in it, and only the window's Accept keeps a loosening. `policy_seal` is its
+  [seal](#the-seals-key--the-keyring-item-purlis-seal), bound to this clone: an acceptance whose
+  seal does not hold, or one this process cannot verify, counts as none, the shipped default
+  (`watch`) stands, and the window says so. It is never re-sealed in bulk; only Accept on the
+  committed file as it stands replaces it.
 - **`every-project.json`**, in the same folder: what you allowed **for every project on this
   machine** (the operator's ruling of 2026-10-13): `sockets` (local sockets, each as the kernel
   names it), `services` (system services, each by its whole name) and `granted` (when each was

@@ -560,6 +560,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's answer to the project's sandbox off (#2071, SO-8): theirs alone, so no chat
     // turns its own sandbox off through a link.
     "answer_team_sandbox_off",
+    // The person's press accepting a loosening of the project's `[policy]` (Q308a): theirs
+    // alone, so no chat loosens its own enforcement through a link.
+    "accept_project_policy",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",

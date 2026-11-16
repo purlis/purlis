@@ -107,6 +107,7 @@ mod inboxupdates;
 mod machineprofiles;
 mod mainwatch;
 mod personaskills;
+mod policypress;
 mod regenerate;
 mod routergrade;
 mod scriptless;

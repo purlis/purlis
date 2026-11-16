@@ -5669,6 +5669,7 @@ impl Chats {
                     ended: Arc::clone(&self.nexts_ended),
                 },
                 self.project.clone(),
+                answered_by_the_policy(&self.project, identity.id.clone()),
             )
         });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
@@ -9799,7 +9800,11 @@ struct Asking {
 ///
 /// Every answer comes from the window ([`Chats::allow_live`], [`Chats::keep_blocked_live`]);
 /// nothing a chat sends reaches the board.
-fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
+fn asked_by_the_proxy(
+    asking: Asking,
+    root: PathBuf,
+    answered: Option<purlis_core::sandbox::asks::Answered>,
+) -> purlis_core::sandbox::plan::Asking {
     use purlis_core::sandbox::asks::Heard;
     use purlis_core::sandboxblock::{Block, Operation};
     let Asking {
@@ -9901,7 +9906,34 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
             purlis_core::sandbox::grant::allowed_already(&root, host)
                 .map(purlis_core::sandbox::reach::By::from)
         }),
+        answered,
     }
+}
+
+/// **What a chat's board tells of a host it answered Allow** because the project's `[policy]`
+/// does not enforce `asks` (Q308, instruction 50), as its start resolved it: nothing where the
+/// family is enforced (the board asks as before), a log line for chat `chat` where it logs.
+fn answered_by_the_policy(
+    root: &std::path::Path,
+    chat: Option<String>,
+) -> Option<purlis_core::sandbox::asks::Answered> {
+    use purlis_core::enforcement::{self, Family, Mode};
+    let mode = enforcement::mode(root, Family::Asks);
+    if mode == Mode::Enforce {
+        return None;
+    }
+    let root = root.to_path_buf();
+    Some(Arc::new(move |host: &str, port: u16| {
+        if let (Mode::Log, Some(chat)) = (mode, chat.as_deref()) {
+            enforcement::record(
+                &root,
+                chat,
+                Family::Asks,
+                "host-ask",
+                Some(&format!("{host}:{port}")),
+            );
+        }
+    }))
 }
 
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**

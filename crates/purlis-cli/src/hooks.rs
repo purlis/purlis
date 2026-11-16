@@ -177,12 +177,12 @@ fn pretooluse_read(hook: &Hook) -> Answer {
         return answer;
     }
     let mode =
-        enforcement::for_this_chat(&hook.root, &|name| (hook.env)(name)).mode(Family::Secrets);
+        enforcement::for_this_chat(hook.root, &|name| (hook.env)(name)).mode(Family::Secrets);
     match mode {
         Mode::Enforce => answer,
         Mode::Log => {
             if let Some(chat) = (hook.env)(purlis_core::hookwire::CHAT_ID_ENV) {
-                enforcement::record(&hook.root, &chat, Family::Secrets, "A-read", None);
+                enforcement::record(hook.root, &chat, Family::Secrets, "A-read", None);
             }
             Answer::Nothing
         }

@@ -143,16 +143,15 @@ fn an_arm_that_only_logs_leaves_a_later_enforced_arm_to_refuse() {
 }
 
 #[test]
-fn an_arm_no_family_switches_refuses_under_every_mode() {
+fn every_arm_has_a_family_and_the_shape_arms_hold_under_open_until_wired() {
     for arm in Arm::ALL {
-        if arm.family().is_none() {
-            assert!(
-                matches!(arm, Arm::Caps | Arm::ConsentSpelling | Arm::RuleSpelling),
-                "{}",
-                arm.id()
-            );
-        }
+        assert!(arm.family().is_some(), "{}", arm.id());
     }
+    // `guards.shape` is a key now and not yet switchable: `open` leaves the caps refusing.
+    let open = crate::enforcement::Resolved::of(
+        &crate::enforcement::Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
+        &crate::sandbox::policy::Locks::none(),
+    );
     let huge = "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES + 1);
     let dir = tempfile::tempdir().expect("a directory");
     let state = dir.path().join(".charter");
@@ -166,6 +165,6 @@ fn an_arm_no_family_switches_refuses_under_every_mode() {
             permission_mode: Some("default"),
         },
     };
-    let judged = judged(&call, None, &|_| Mode::Off);
+    let judged = judged(&call, None, &|family| open.mode(family));
     assert_eq!(judged.refused.and_then(|v| v.arm), Some(Arm::Caps));
 }

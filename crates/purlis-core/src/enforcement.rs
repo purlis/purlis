@@ -100,11 +100,31 @@ pub enum Family {
     Skills,
     /// A vault's value kept out of a chat: masking, the leak guard, the vault-file Read guard.
     Secrets,
+    /// The guards on a forge: its verbs and its login (Q308b).
+    GuardsForge,
+    /// The shape of a call: the tool gate's caps, prose, handoff and plumbing arms, and the
+    /// backstops on the consent rules' spelling (Q308b).
+    GuardsShape,
+    /// The plane itself: the plane root's git, brokered writes, proposals, removal (Q308b).
+    GuardsPlane,
+    /// The harness's permission mode and attendance (Q308b).
+    HarnessMode,
+    /// Persona tools, disallowed tools, MCP servers and pre-allows (Q308b).
+    Tools,
+    /// Profiles, harness declarations and extensions a project trusts (Q308b).
+    Trust,
+    /// Runners and pools (Q308b).
+    Runners,
+    /// The window-only presses and reports (Q308b).
+    Consents,
+    /// Depth, concurrency, rates, timeouts and budgets: under `log` a limit is counted, not
+    /// applied (Q308b).
+    Limits,
 }
 
 impl Family {
     /// Every family, in the order the docs list them.
-    pub const ALL: [Family; 15] = [
+    pub const ALL: [Family; 24] = [
         Family::Sandbox,
         Family::Network,
         Family::Ports,
@@ -120,6 +140,15 @@ impl Family {
         Family::Browser,
         Family::Skills,
         Family::Secrets,
+        Family::GuardsForge,
+        Family::GuardsShape,
+        Family::GuardsPlane,
+        Family::HarnessMode,
+        Family::Tools,
+        Family::Trust,
+        Family::Runners,
+        Family::Consents,
+        Family::Limits,
     ];
 
     /// The family's key, as `[policy]` and the log spell it.
@@ -140,12 +169,38 @@ impl Family {
             Family::Browser => "browser",
             Family::Skills => "skills",
             Family::Secrets => "secrets",
+            Family::GuardsForge => "guards.forge",
+            Family::GuardsShape => "guards.shape",
+            Family::GuardsPlane => "guards.plane",
+            Family::HarnessMode => "mode",
+            Family::Tools => "tools",
+            Family::Trust => "trust",
+            Family::Runners => "runners",
+            Family::Consents => "consents",
+            Family::Limits => "limits",
         }
     }
 
     /// The family whose key is `key`, or none.
     pub fn of_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|family| family.key() == key)
+    }
+
+    /// Whether Q308b added the family: `team` and `strict` enforce it, `watch` and `hold` log it,
+    /// `open` turns it off.
+    pub fn added_by_q308b(self) -> bool {
+        matches!(
+            self,
+            Family::GuardsForge
+                | Family::GuardsShape
+                | Family::GuardsPlane
+                | Family::HarnessMode
+                | Family::Tools
+                | Family::Trust
+                | Family::Runners
+                | Family::Consents
+                | Family::Limits
+        )
     }
 
     /// Whether the family takes `log`: `vaults` takes off or enforce only (Q308a), and the
@@ -157,19 +212,25 @@ impl Family {
     /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
     /// ruling; those stay enforced, as before Q308, whatever `[policy]` says:
     ///
-    /// - `dispatch`, `vaults`, `asks` and `browser`, and the sandbox's level: each holds grants
-    ///   or remembered answers (dispatch grants and nevers, sandbox grants, browser reach, the
-    ///   team's sandbox accept) whose fit with `[policy]` the second review settles
-    ///   (instruction of 2026-11-16);
+    /// - `vaults` and `browser`, and the sandbox's level: each holds grants or remembered
+    ///   answers (sandbox grants, browser reach, the team's sandbox accept) whose fit with
+    ///   `[policy]` the follow-up settles. `dispatch` and `asks` switch their simple half now
+    ///   (instruction of 2026-11-16): a pair nothing covers starts with no grant, and a host ask
+    ///   is answered Allow; a lock and the person's nevers and Keep blocked hold in every mode;
     /// - `network` and `ports`: the egress proxy's refusal is its live ask, and a port or socket
     ///   is a sandbox grant, both held with the above;
     /// - `skills`: every skills refusal a chat meets is a hand-over to the person (a draft, a
     ///   proposal) or the org's `[skill_policy]` on an install only the window makes, so which
-    ///   of them the family switches needs a ruling.
+    ///   of them the family switches needs a ruling;
+    /// - the families Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
+    ///   `tools`, `trust`, `runners`, `consents`, `limits`): keys with their template defaults
+    ///   now, wired with the inventory's full mapping next.
     pub fn switchable(self) -> bool {
         matches!(
             self,
             Family::Processes
+                | Family::Dispatch
+                | Family::Asks
                 | Family::GuardsGit
                 | Family::GuardsMerge
                 | Family::GuardsRelease
@@ -268,6 +329,7 @@ impl Template {
             Template::Hold if secret || family == Family::GuardsMerge => Mode::Enforce,
             Template::Team
                 if secret
+                    || family.added_by_q308b()
                     || matches!(
                         family,
                         Family::GuardsMerge | Family::GuardsRelease | Family::GuardsSave
@@ -278,7 +340,7 @@ impl Template {
             Template::Watch | Template::Hold | Template::Team => Mode::Log,
         };
         if family == Family::Sandbox {
-            return if self.sandbox_level() == SandboxLevel::Off {
+            return if self.sandbox_level() == Some(SandboxLevel::Off) {
                 Mode::Off
             } else {
                 Mode::Enforce
@@ -291,12 +353,15 @@ impl Template {
         }
     }
 
-    /// The sandbox level the template sets where the project's `[sandbox]` says none (Q308a).
-    pub fn sandbox_level(self) -> SandboxLevel {
+    /// **The sandbox level the template sets** (Q308a, Q316), or `None` for `strict`, under
+    /// which the project's `[sandbox]` decides it as it always has: the floor, unless
+    /// `[sandbox] mode = "on"`.
+    pub fn sandbox_level(self) -> Option<SandboxLevel> {
         match self {
-            Template::Open => SandboxLevel::Off,
-            Template::Watch | Template::Hold => SandboxLevel::Floor,
-            Template::Team | Template::Strict => SandboxLevel::Full,
+            Template::Open => Some(SandboxLevel::Off),
+            Template::Watch | Template::Hold => Some(SandboxLevel::Floor),
+            Template::Team => Some(SandboxLevel::Full),
+            Template::Strict => None,
         }
     }
 }
@@ -366,8 +431,8 @@ impl Settings {
                         }
                     }
                     None => said.refused.push(format!(
-                        "{TABLE}.guards is not a table of git, merge, release, save and \
-                         credential, and is not read"
+                        "{TABLE}.guards is not a table of git, merge, release, save, credential, \
+                         forge, shape and plane, and is not read"
                     )),
                 }
             } else {
@@ -592,9 +657,32 @@ pub fn waiting(root: &Path) -> Vec<(Family, Mode, Mode)> {
 }
 
 /// **The person's press, in the window**: they accept what the project says now, looser where
-/// it is looser. Never a chat's: no sandboxed chat writes the file it is kept in.
+/// it is looser, sealed by the app. Never a chat's: no sandboxed chat writes the file it is kept
+/// in, and only the app can seal it. One press, on the committed file as it stands; never a
+/// re-seal of an acceptance something else wrote.
 pub fn press(root: &Path) -> std::io::Result<()> {
     crate::sandbox::local::accept_policy(root, committed(root).as_kept())
+}
+
+/// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Standing {
+    /// Each family the project now runs looser than this person accepted: the family, the
+    /// accepted mode and the project's. What the press would accept.
+    pub waiting: Vec<(Family, Mode, Mode)>,
+    /// What the project's `[policy]` holds that purlis could not read, each enforced.
+    pub refused: Vec<String>,
+    /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
+    pub unsealed: bool,
+}
+
+/// [`Standing`] for the project at `root`.
+pub fn standing(root: &Path) -> Standing {
+    Standing {
+        waiting: waiting(root),
+        refused: Settings::read(root).refused,
+        unsealed: crate::sandbox::local::policy_unsealed(root),
+    }
 }
 
 /// **How `family` runs for the chat this process serves**, from a hook: the stricter of what its

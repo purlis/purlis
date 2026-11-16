@@ -42,6 +42,7 @@ export const LANES = {
       "chatNetwork",
       "sandboxKeptBlocked",
       "sandboxGrants",
+      "projectPolicyState",
     ],
     changes: [
       "answerSandboxOffer",
@@ -58,6 +59,7 @@ export const LANES = {
       "allowProjectExpects",
       "declineProjectExpects",
       "answerTeamSandboxOff",
+      "acceptProjectPolicy",
       "allowPersonaHosts",
       "allowPersonaGrants",
       // A proposed change applied to the project's manifest (#1975).
