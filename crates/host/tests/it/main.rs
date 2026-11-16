@@ -13,7 +13,9 @@
 //! **What one binary changes.** Under nextest, which CI's `rust` job runs, nothing: every test
 //! still runs in a process of its own. Under `cargo test` the tests now run as threads of one
 //! process instead of 32. No test here changes what its process shares: none re-runs itself,
-//! changes the working directory or a limit, or installs a hook. Each module mints its own
+//! changes the working directory or a limit, or installs a hook, but one:
+//! `a_host_told_to_stop_by_sigterm_hears_it_as_a_quit` installs the host's `SIGTERM` handler, which
+//! only changes that `SIGTERM` no longer ends the process. Each module mints its own
 //! `HELD` credentials once, as each binary did.
 
 mod a_browser_is_a_hosted_program_that_makes_frames_only_while_watched;
@@ -26,8 +28,10 @@ mod a_connector_is_a_command_checked_before_each_connection;
 mod a_held_project_is_saved_in_the_host_by_one_saver;
 mod a_held_projects_board_is_kept_in_the_host;
 mod a_held_projects_hooks_are_heard_in_the_host;
+mod a_host_ending_every_program_waits_for_each_end_to_be_kept;
 mod a_host_relays_a_window_to_another_host;
 mod a_host_started_after_one_that_crashed_settles_what_it_left;
+mod a_host_told_to_stop_by_sigterm_hears_it_as_a_quit;
 mod a_login_item_host_keeps_every_program_when_its_window_goes;
 mod a_relay_links_again_to_the_other_host_on_its_own;
 mod a_runner_answers_its_desktop_on_its_link_socket;
