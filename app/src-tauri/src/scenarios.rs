@@ -327,7 +327,8 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
 
 /// **A held connection in a scenario raises an ask and blocks at the hold** (T1.1-06): the first
 /// end-to-end smoke, in every dialect at Full. A chat asks for a host nothing lists; its proxy in
-/// the session host holds the connection and the window is asked (`ask.raised`); nobody answers,
+/// the session host holds the connection and the window is asked (the chat is held on the host
+/// in the window's registry of asks); nobody answers,
 /// so at the scaled hold the call is refused, never carried: the host is never looked up,
 /// dialled or reached. It shows today's behaviour: the block itself is written at the next
 /// prompt (#6673), and `ask.raised` may be written twice (#6674), so neither is pinned here.
@@ -351,18 +352,23 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
                 "run": reaches(&held)
             }]}]
         }));
+        // The window is asked while the call is held: the chat is held on the host in the
+        // window's own registry of asks, what the person's Notice draws from.
+        until(
+            &scenario,
+            "the window is asked while the call is held",
+            || held_on(&scenario, chat, &held).is_some(),
+        );
         scenario.until_played(chat, &["held"]);
         let took = began.elapsed();
-        // Today's behaviour (B0, #6672, #6673): an ask can reach the log well after the call it
-        // held was refused, as late as the chat's run ending. Waited for, and its lateness said.
-        until(&scenario, "the window is asked", || {
-            scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED) > asked_before
-        });
+        // Today's behaviour (B0, #6672, #6673): `ask.raised` can reach the event log well after
+        // the call it held was refused (on Codex, as the chat's run ends), so it is not waited
+        // for here; how late it was, where it came, is said.
         let _ = std::io::Write::write_fmt(
             &mut std::io::stderr(),
             format_args!(
-                "{dialect:?}: the call ended after {took:?}, the ask was in the log after {:?}\n",
-                began.elapsed()
+                "{dialect:?}: the call ended after {took:?}; ask.raised in the log by then: {}\n",
+                scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED) > asked_before
             ),
         );
         assert!(

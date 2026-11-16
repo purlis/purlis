@@ -833,9 +833,20 @@ impl Scenario {
     /// **What a red run's reader needs**: how each chat was launched, the chats open now, the
     /// kinds of event the log holds, and the transcript.
     pub(crate) fn said(&self) -> String {
-        let kinds: Vec<String> = self.events().into_iter().map(|event| event.kind).collect();
+        let kinds: Vec<String> = self
+            .events()
+            .into_iter()
+            .map(|event| {
+                let body = event.body.to_string();
+                format!(
+                    "{} {}",
+                    event.kind,
+                    body.chars().take(300).collect::<String>()
+                )
+            })
+            .collect();
         format!(
-            "launched: {:#?}\nopen now: {:?}\nconfinements: {:?}\nevents: {kinds:?}\n\
+            "launched: {:#?}\nopen now: {:?}\nconfinements: {:?}\nevents: {kinds:#?}\n\
              transcript: {:#?}",
             self.launched.lock().expect("launched"),
             self.open_chats(),
