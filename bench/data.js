@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794813616653,
+  "lastUpdate": 1794817681543,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50316,6 +50316,48 @@ window.BENCHMARK_DATA = {
             "value": 101.62839299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.704, 100.903, 101.628, 102.147, 102.166 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e22013dc69311335b24eec808ad3ff4bde1c87f9",
+          "message": "A signalled crash's stack is cut at the trampoline past the handler, not in a memset (#6736) (#6822)\n\n* A signalled crash's stack is cut at the trampoline past the handler, not in a memset (#6736)\n\nThe trampoline was found as the first frame in libsystem_platform, but memset, memmove and the\nunfair locks live there too. The crash handler's thread, which races from sending its message to\nwaiting on its condition variable while the handler thread suspends it, was sometimes stopped\ninside one of them, so its innermost frame was taken for the trampoline, one frame was cut, and\nthe handler's frames and the real _sigtramp were kept. The trampoline is now the first frame in\nlibsystem_platform past a frame in the app's own binary (the minidump's main module), where the\nhandler runs.\n\nAdds a temporary workflow repeating the crash checks on macOS, to come out before merge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7G5PFDC1HT6CAPBDYAQM271\nPurlis-Persona: steward\n\n* The temporary crash repeat workflow: one npm ci, its licence header, and listed as not shipping (#6736)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7G5PFDC1HT6CAPBDYAQM271\nPurlis-Persona: steward\n\n* Find the handler past the trampoline by a frame outside libSystem, not by the main module (#6736)\n\nThe app's minidump does not always name the app as its main module (minidump-writer takes the\nfirst image with no version), so the last commit trimmed nothing in the app: 20 of 20 repeat runs\nkept the handler. The handler's own code is never in libsystem_*, so a frame outside it marks the\nhandler, whatever the main module is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7G5PFDC1HT6CAPBDYAQM271\nPurlis-Persona: steward\n\n* Remove the temporary crash repeat workflow (#6736)\n\nIt ran its course: with the fix, the app's crash scenario passed 20 of 20 on macOS and the crash\nprobe's abort stack check passed every run whose probe left a minidump.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7G5PFDC1HT6CAPBDYAQM271\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-16T07:48:02Z",
+          "tree_id": "09d6378b07e64b6fc0cb0db2f59999785768f362",
+          "url": "https://github.com/purlis/purlis/commit/e22013dc69311335b24eec808ad3ff4bde1c87f9"
+        },
+        "date": 1794817675140,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.69186,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.681, 0.692, 0.693, 0.698 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6851925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.541, 16.676, 16.685, 16.778, 16.930 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.02929649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.945, 102.804, 103.029, 103.087, 103.422 ms"
           }
         ]
       }
