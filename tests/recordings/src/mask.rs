@@ -6,9 +6,13 @@
 //!
 //! 1. **session ids**: the value of a key in [`SESSION_KEYS`], and a value of a session id's
 //!    shape ([`SESSION_SHAPES`]: a UUID, OpenCode's `ses_…`), wherever it then appears;
-//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], wherever it then appears;
+//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], and the id of the background
+//!    task or agent a tool use started, as a harness writes it ([`TASK_IDS`]), wherever it then
+//!    appears;
 //! 3. **absolute paths**: each root the recording names in `roots` (its work tree, its home, its
-//!    temp folder, the harness's install), wherever a string holds it;
+//!    temp folder, the harness's install), wherever a string holds it, in its own spelling or as
+//!    a harness spells a folder in a file name (every `/` and `.` a `-`: Claude Code's project
+//!    folders);
 //! 4. **timestamps and gaps**: the value of a key in [`TIME_KEYS`], an ISO 8601 time inside any
 //!    string, and each hook call's `gap_ms`;
 //! 5. **the order of calls the harness itself runs in parallel**: the hook calls of one parallel
@@ -69,6 +73,12 @@ pub static SESSION_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
         r"\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ses_[0-9A-Za-z]{20,})\b",
     )
     .expect("a pattern")
+});
+
+/// How a harness writes the id of a background task or agent a tool use started: Claude Code's
+/// `with ID: …`, `agentId: …`, `<task-id>…` and `to: '…'`.
+pub static TASK_IDS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:with ID: |agentId: |<task-id>|to: ')([0-9a-z]{8,24})\b").expect("a pattern")
 });
 
 static ISO_TIME: LazyLock<Regex> = LazyLock::new(|| {
@@ -151,6 +161,11 @@ fn take_roots(value: &mut Value) -> Vec<(String, String)> {
             let path = path.as_str()?.trim_end_matches('/').to_owned();
             (!path.is_empty()).then(|| (path, format!("<{name}>")))
         })
+        .flat_map(|(path, placeholder)| {
+            let dashed = path.replace(['/', '.'], "-");
+            let dashed_placeholder = format!("{}-dashed>", placeholder.trim_end_matches('>'));
+            [(path, placeholder), (dashed, dashed_placeholder)]
+        })
         .collect();
     roots.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
     roots
@@ -162,6 +177,7 @@ struct Ids {
     named: BTreeMap<String, String>,
     sessions: usize,
     tool_uses: usize,
+    tasks: usize,
 }
 
 impl Ids {
@@ -190,6 +206,14 @@ impl Ids {
             Value::String(text) => {
                 for found in SESSION_SHAPES.find_iter(text) {
                     self.session(found.as_str());
+                }
+                for found in TASK_IDS.captures_iter(text) {
+                    let id = &found[1];
+                    if !self.named.contains_key(id) {
+                        self.tasks += 1;
+                        self.named
+                            .insert(id.to_owned(), format!("<tool-use-task-{}>", self.tasks));
+                    }
                 }
             }
             _ => {}
@@ -355,6 +379,18 @@ mod tests {
         assert_eq!(
             mask(&raw)["shown"][0]["text"],
             "<task id=\"<session-1>\" state=\"completed\">"
+        );
+    }
+
+    #[test]
+    fn a_background_task_id_and_a_dashed_root_are_masked() {
+        let raw = json!({
+            "roots": {"work": "/tmp/r/.tmpAb12/project"},
+            "shown": [{"text": "Command running in background with ID: bo82ltzx3. Output: /x/-tmp-r--tmpAb12-project/tasks/bo82ltzx3.output"}]
+        });
+        assert_eq!(
+            mask(&raw)["shown"][0]["text"],
+            "Command running in background with ID: <tool-use-task-1>. Output: /x/<work-dashed>/tasks/<tool-use-task-1>.output"
         );
     }
 
