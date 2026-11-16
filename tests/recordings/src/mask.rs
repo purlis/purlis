@@ -20,7 +20,7 @@
 //! 4. **timestamps and gaps**: the value of a key in [`TIME_KEYS`] (a call's `duration_ms`
 //!    among them), a date or time inside any string in any of the harnesses' spellings
 //!    ([`TIMES`]: ISO 8601, Codex's `rollout-…T03-01-24`, a `/2026/11/16/` folder, Codex's
-//!    `Wall time: …`), and each hook call's `gap_ms`;
+//!    `Wall time: …`, a task notification's `<duration_ms>`), and each hook call's `gap_ms`;
 //! 5. **the order of calls the harness itself runs in parallel**: the hook calls of one parallel
 //!    group (`group`: the calls the stand-in asked for at once, and the hooks of one event the
 //!    harness ran at once, each begun before the one before it answered) are put in one
@@ -105,6 +105,11 @@ pub static TIMES: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .expect("a pattern")
 });
+
+/// A duration a harness writes into text, as Claude Code's task notification does
+/// (`<duration_ms>559</duration_ms>`).
+pub static DURATION_IN_TEXT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(<duration_ms>)\d+(</duration_ms>)").expect("a pattern"));
 
 /// The id of the message or permission ask that carries a call: OpenCode's.
 pub static CALL_SHAPES: LazyLock<Regex> =
@@ -321,6 +326,11 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
             if ATOMIC_SUFFIX.is_match(&out) {
                 out = ATOMIC_SUFFIX
                     .replace_all(&out, ".tmp.<pid>.<suffix>")
+                    .into_owned();
+            }
+            if DURATION_IN_TEXT.is_match(&out) {
+                out = DURATION_IN_TEXT
+                    .replace_all(&out, "${1}<time>${2}")
                     .into_owned();
             }
             if TIMES.is_match(&out) {

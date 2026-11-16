@@ -1971,7 +1971,7 @@
         "prompt_id": "<session-2>",
         "permission_mode": "bypassPermissions",
         "hook_event_name": "UserPromptSubmit",
-        "prompt": "<task-notification>\n<task-id><tool-use-task-2></task-id>\n<tool-use-id><tool-use-12></tool-use-id>\n<output-file><chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-2>.output</output-file>\n<status>completed</status>\n<summary>Agent \"subagent\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>Covering script done.</result>\n<usage><subagent_tokens>23</subagent_tokens><tool_uses>1</tool_uses><duration_ms>559</duration_ms></usage>\n</task-notification>",
+        "prompt": "<task-notification>\n<task-id><tool-use-task-2></task-id>\n<tool-use-id><tool-use-12></tool-use-id>\n<output-file><chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-2>.output</output-file>\n<status>completed</status>\n<summary>Agent \"subagent\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>Covering script done.</result>\n<usage><subagent_tokens>23</subagent_tokens><tool_uses>1</tool_uses><duration_ms><time></duration_ms></usage>\n</task-notification>",
         "session_title": "chat 1"
       },
       "env": {

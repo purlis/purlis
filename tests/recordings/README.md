@@ -23,6 +23,10 @@ harness on a pull request into `phase-1-proven` and uploads `harness-recording-<
 the files from that run's artifact into `recorded/`, read their diff, and say in the pull request
 which contract moved and why. Never edit a recording by hand.
 
+A change to the mask is applied to what is checked in with
+`cargo run -p purlis-recordings --bin recording-remask -- tests/recordings/recorded/*/*/recording.json`,
+which masks each recording again and makes its turn script again; nothing else in it moves.
+
 Bumping a harness: change its version file, its `package.json` and lockfile
 (`npm install --package-lock-only` there), push, and check in what the run recorded.
 `every_pinned_version_has_a_recording_and_a_turn_script` fails until it is.
