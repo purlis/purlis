@@ -492,9 +492,18 @@ struct Gate<'a> {
 
 impl Gate<'_> {
     /// How `arm` runs: its family's mode; enforced for an arm no family switches.
+    ///
+    /// **A hook skip runs at the stricter of `guards.save` and `guards.credential`** (the
+    /// re-review of #6992): `--no-verify` and `send-pack` skip the token scan, which Q308a keeps
+    /// at enforce wherever `guards.credential` is.
     fn mode(&self, arm: Arm) -> Mode {
-        arm.family()
-            .map_or(Mode::Enforce, |family| (self.modes)(family))
+        let mode = arm
+            .family()
+            .map_or(Mode::Enforce, |family| (self.modes)(family));
+        if arm == Arm::HookSkip {
+            return mode.max((self.modes)(Family::GuardsCredential));
+        }
+        mode
     }
 
     /// Whether `arm` is asked at all.

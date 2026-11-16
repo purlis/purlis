@@ -86,7 +86,10 @@ fn judged_as(cmd: &str, mode_of_its_family: Mode, family: Family, prompts: Optio
         },
     };
     judged(&call, Some(&plane), &|asked| {
-        if asked == family {
+        // A hook skip runs at the stricter of save and credential (the re-review of #6992), so
+        // its row moves both.
+        if asked == family || (family == Family::GuardsSave && asked == Family::GuardsCredential)
+        {
             mode_of_its_family
         } else {
             Mode::Enforce
@@ -195,6 +198,62 @@ fn the_arms_that_exist_because_of_the_wrap_hold_under_every_template() {
                 "{} {}",
                 template.word(),
                 arm.id()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_hook_skip_is_refused_while_the_credential_scan_is_enforced_whatever_save_says() {
+    // The re-review of #6992, blocker: `--no-verify` skips the token scan `guards.credential`
+    // keeps at enforce (Q308a), so the hook skip runs at the stricter of save and credential.
+    let lines = [
+        "git commit --no-verify -m x",
+        "git push --no-verify origin main",
+        "git merge --no-verify feature",
+        "git send-pack origin main",
+    ];
+    for (policy, expected) in [
+        ("template = \"watch\"\n", Some(Arm::HookSkip)),
+        ("template = \"hold\"\n", Some(Arm::HookSkip)),
+        ("template = \"team\"\n", Some(Arm::HookSkip)),
+        ("template = \"team\"\nguards.save = \"off\"\n", Some(Arm::HookSkip)),
+        ("template = \"open\"\n", None),
+    ] {
+        let resolved = crate::enforcement::Resolved::of(
+            &crate::enforcement::Settings::from_text(Some(&format!("[policy]\n{policy}"))),
+            &crate::sandbox::policy::Locks::none(),
+        );
+        for cmd in lines {
+            let dir = tempfile::tempdir().expect("a directory");
+            let root = dir.path().display().to_string();
+            let state = dir.path().join(".charter");
+            let forges = vec![Forge::default_of(Kind::GitHub)];
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: &root,
+                launched: Launched {
+                    sandboxed: false,
+                    chat_dir: Some(&root),
+                    attendance: None,
+                },
+            };
+            let call = Call {
+                command: cmd,
+                cwd: &root,
+                state_dir: &state,
+                caller: Caller {
+                    agent_id: None,
+                    harness: Some("claude-code"),
+                    permission_mode: Some("default"),
+                },
+            };
+            let judged = judged(&call, Some(&plane), &|family| resolved.mode(family));
+            assert_eq!(
+                judged.refused.and_then(|v| v.arm),
+                expected,
+                "{policy:?} {cmd}"
             );
         }
     }
