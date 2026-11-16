@@ -169,6 +169,12 @@ pub const KNOWN_NOT_A_ROUTE: &[(&str, &str)] = &[
     ),
 ];
 
+pub const KNOWN_HARMLESS: &[(&str, &str)] = &[];
+
+pub fn host_or_socket_names_in_neither_list(_binary: &[u8]) -> Vec<String> {
+    Vec::new()
+}
+
 /// The prefix of the provider switches.
 pub const SWITCH_PREFIX: &str = "CLAUDE_CODE_USE_";
 

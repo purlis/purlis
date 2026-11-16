@@ -381,6 +381,76 @@ fn a_key_chat_reaches_its_route_with_a_unix_socket_in_the_launch_environment() {
     }
 }
 
+/// A key chat of the pinned Claude Code with `name` set to `value` in its launch environment,
+/// and the operator passing it, carries the run's token to its route on every call.
+fn reaches_its_route_with(test: &str, name: &str, value: &str) {
+    let Some(claude) = pinned(test) else {
+        return;
+    };
+    the_supported_version(&claude);
+    let (rt, server) = a_stand_in();
+    let home = tempfile::tempdir().expect("a home");
+    save_a_login(&home.path().join(".claude"));
+    let route = the_route(&server);
+
+    let status = run_bounded(a_key_chat(&claude, &route, home.path(), &[(name, value)]));
+
+    let requests = rt.block_on(server.received_requests()).unwrap_or_default();
+    every_call_carried_the_run_token(&requests, status);
+}
+
+/// Second fix round, finding 1: `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` in the launch
+/// environment makes Claude Code ignore `ANTHROPIC_BASE_URL` and send every call and the run's
+/// token to api.anthropic.com, and an empty value in `--settings` `env` does not undo it: a key
+/// chat is started without it, so every call still reaches the route.
+#[test]
+fn a_key_chat_reaches_its_route_with_provider_managed_by_host_in_the_launch_environment() {
+    reaches_its_route_with(
+        "a_key_chat_reaches_its_route_with_provider_managed_by_host_in_the_launch_environment",
+        "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+        "1",
+    );
+}
+
+/// Second fix round, finding 1: `CLAUDE_CODE_HOST_AUTH_ENV_VAR`, whatever it names, does the
+/// same: a key chat is started without it, so every call still reaches the route.
+#[test]
+fn a_key_chat_reaches_its_route_with_a_host_auth_env_var_in_the_launch_environment() {
+    reaches_its_route_with(
+        "a_key_chat_reaches_its_route_with_a_host_auth_env_var_in_the_launch_environment",
+        "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
+        "PURLIS_FIXTURE_HOST_AUTH",
+    );
+}
+
+/// Second fix round, finding 1: every `CLAUDE_CODE_` name in the pinned binary with `HOST` or
+/// `SOCKET` in it, and every `ANTHROPIC_` name with `SOCKET`, is kept out of a key chat or known
+/// harmless, so a new way around the route is a visible decision.
+#[test]
+fn every_host_or_socket_name_in_the_pinned_binary_is_kept_out_or_known_harmless() {
+    let Some(binary) = pinned_bytes(
+        "every_host_or_socket_name_in_the_pinned_binary_is_kept_out_or_known_harmless",
+    ) else {
+        return;
+    };
+
+    for measured in [
+        "ANTHROPIC_UNIX_SOCKET",
+        "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+        "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
+    ] {
+        assert!(
+            route::names_in(&binary, measured).contains(measured),
+            "{measured} is not in the binary"
+        );
+    }
+    assert_eq!(
+        route::host_or_socket_names_in_neither_list(&binary),
+        Vec::<String>::new(),
+        "a host or socket name in neither list: keep it out of a key chat, or say why it is harmless"
+    );
+}
+
 /// R-256: the CI step runs this module by name on Linux and on macOS, with the pin installed,
 /// through the guard that fails when it ran none, and with a skip turned into a failure.
 #[test]
