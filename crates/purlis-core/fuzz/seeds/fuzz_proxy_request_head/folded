@@ -1,0 +1,5 @@
+GET http://a.test/ HTTP/1.1
+Host: a.test
+X: 1
+ folded
+

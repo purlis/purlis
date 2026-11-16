@@ -53,8 +53,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-/// How long a request's head may take to arrive whole.
-pub const HEAD_WITHIN: Duration = Duration::from_secs(30);
+/// How long a request's head may take to arrive whole: production's
+/// [`head`](super::timings::Timings::head), the bound the chat's proxy reads a head within. A
+/// door is opened by a confinement, which holds no `Timings` of its own yet, so it reads
+/// production's (ticket 6 threads the value through).
+pub const HEAD_WITHIN: Duration = super::timings::Timings::production().head();
 
 /// The longest head the door reads, a request's or a server's answer's.
 pub const HEAD_MOST: usize = 32 * 1024;

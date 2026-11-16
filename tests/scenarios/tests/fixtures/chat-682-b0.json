@@ -1,0 +1,33 @@
+{
+  "note": "Chat 682 (01M7ES6PEDSM357T4RBWVBPPFE, B0, 2026-11-15; test-matrix-phase-1.md §8), as the plane's matrix-check.py judged its log on 2026-11-16: per cell, the step assertions that failed with what was observed, and the global checks that failed. Every assertion not listed passed, M-PRB-06 require[1] included (block seq 179136 carries the get call's args digest).",
+  "cells": {
+    "M-PRB-01": {
+      "failed": [["require[0]", 2], ["require[1]", 0], ["require[2]", 45.4]],
+      "globals": []
+    },
+    "M-PRB-02": {
+      "failed": [["require[0]", 2], ["forbid[0]", 1]],
+      "globals": []
+    },
+    "M-PRB-03": {
+      "failed": [["require[0]", 2]],
+      "globals": []
+    },
+    "M-PRB-04": {
+      "failed": [["require[0]", 0], ["forbid[0]", 1]],
+      "globals": []
+    },
+    "M-PRB-04b": {
+      "failed": [["require[0]", 0]],
+      "globals": [{"check": "refusal_black_hole", "refusal": "step 1"}]
+    },
+    "M-PRB-05": {
+      "failed": [["require[0]", 0]],
+      "globals": [{"check": "refusal_black_hole", "refusal": "step 1"}]
+    },
+    "M-PRB-06": {
+      "failed": [["require[0]", 0], ["forbid[0]", 1]],
+      "globals": []
+    }
+  }
+}

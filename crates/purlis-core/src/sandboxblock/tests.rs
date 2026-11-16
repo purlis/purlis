@@ -648,7 +648,7 @@ fn a_tool_result_that_is_one_string_is_read_for_its_violation_block_alone() {
 
 #[test]
 fn a_chat_is_heard_once_a_minute_per_block_and_a_handful_a_minute_in_all() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let write = block(Operation::Write, Kind::ProjectFiles, true);
     assert!(throttle.lets(3, &write, now));
@@ -664,10 +664,10 @@ fn a_chat_is_heard_once_a_minute_per_block_and_a_handful_a_minute_in_all() {
         .count();
     assert_eq!(
         let_through,
-        Throttle::PER_CHAT - 1,
+        crate::sandbox::timings::Timings::production().throttle_per_chat() - 1,
         "the chat's share of the minute"
     );
-    let later = now + THROTTLE_WINDOW;
+    let later = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(
         throttle.lets(3, &write, later),
         "a minute on, it is heard again"
@@ -678,7 +678,7 @@ fn a_chat_is_heard_once_a_minute_per_block_and_a_handful_a_minute_in_all() {
 /// the same block is the same block on the same target, whichever road told it.
 #[test]
 fn another_host_refused_within_the_minute_is_heard_and_the_same_one_is_not() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let host = block(Operation::Connect, Kind::Host, false);
     assert!(throttle.lets_on(3, &host, Some("api.example.com:443"), now));
@@ -699,14 +699,17 @@ fn another_host_refused_within_the_minute_is_heard_and_the_same_one_is_not() {
     let let_through = (0..100)
         .filter(|n| throttle.lets_on(3, &host, Some(&format!("h{n}.example:443")), now))
         .count();
-    assert_eq!(let_through, Throttle::PER_CHAT - 3);
+    assert_eq!(
+        let_through,
+        crate::sandbox::timings::Timings::production().throttle_per_chat() - 3
+    );
 }
 
 /// #1681: the repeats the throttle holds back are counted, not dropped: once a block's minute
 /// is over, how many times it came again in it is told once, for the record's own line.
 #[test]
 fn the_repeats_held_back_in_a_minute_are_told_once_the_minute_is_over() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let host = block(Operation::Connect, Kind::Host, false);
     let write = block(Operation::Write, Kind::ProjectFiles, false);
@@ -717,11 +720,15 @@ fn the_repeats_held_back_in_a_minute_are_told_once_the_minute_is_over() {
     assert!(!throttle.lets_on(3, &host, Some("api.example.com:443"), later));
     assert!(throttle.lets(4, &write, now));
     assert!(
-        throttle.repeats_over(now + THROTTLE_WINDOW / 2).is_empty(),
+        throttle
+            .repeats_over(
+                now + crate::sandbox::timings::Timings::production().throttle_window() / 2
+            )
+            .is_empty(),
         "not while its minute runs"
     );
 
-    let over = now + THROTTLE_WINDOW;
+    let over = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert_eq!(
         throttle.repeats_over(over),
         [Repeated {
@@ -740,12 +747,12 @@ fn the_repeats_held_back_in_a_minute_are_told_once_the_minute_is_over() {
 /// still told, not lost to the new minute.
 #[test]
 fn a_block_heard_anew_still_tells_the_repeats_of_its_minute_before() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let write = block(Operation::Write, Kind::ProjectFiles, false);
     assert!(throttle.lets(3, &write, now));
     assert!(!throttle.lets(3, &write, now));
-    let next = now + THROTTLE_WINDOW;
+    let next = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(throttle.lets(3, &write, next));
     assert_eq!(
         throttle
@@ -762,7 +769,7 @@ fn a_block_heard_anew_still_tells_the_repeats_of_its_minute_before() {
 /// repeat after the flush is counted afresh, so nothing is told twice.
 #[test]
 fn a_quiet_or_ended_chats_repeats_are_told_at_once_and_counted_afresh() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let write = block(Operation::Write, Kind::ProjectFiles, false);
     assert!(throttle.lets(3, &write, now));
@@ -782,19 +789,23 @@ fn a_quiet_or_ended_chats_repeats_are_told_at_once_and_counted_afresh() {
     assert_eq!(told(throttle.repeats_of(3)), [(3, 1)], "counted afresh");
     assert_eq!(told(throttle.every_repeat()), [(4, 1)], "the app quits");
     assert!(throttle.every_repeat().is_empty());
-    assert!(throttle.repeats_over(now + THROTTLE_WINDOW).is_empty());
+    assert!(
+        throttle
+            .repeats_over(now + crate::sandbox::timings::Timings::production().throttle_window())
+            .is_empty()
+    );
 }
 
 /// A repeat whose minute ended while another chat's block was heard, not told yet, is told with
 /// its chat's flush.
 #[test]
 fn a_repeat_whose_minute_ended_is_told_with_its_chats_flush() {
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     let now = std::time::Instant::now();
     let write = block(Operation::Write, Kind::ProjectFiles, false);
     assert!(throttle.lets(3, &write, now));
     assert!(!throttle.lets(3, &write, now));
-    let next = now + THROTTLE_WINDOW;
+    let next = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(throttle.lets(3, &write, next));
     assert_eq!(
         throttle
@@ -2213,7 +2224,7 @@ fn a_command_refused_after_its_refusal_was_read_back_is_heard_on_its_own() {
         ours: false,
     };
     let now = std::time::Instant::now();
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     assert!(throttle.lets_on_read(4, &socket, None, now));
     assert!(!throttle.lets_on_read(4, &socket, None, now), "read again");
     // The command itself, refused within the same minute: its own block, let through.
@@ -2619,7 +2630,7 @@ fn a_result_of_both_streams_in_one_text_names_the_check_by_the_same_rule() {
 fn a_lookup_that_names_no_host_is_one_with_any_lookup_of_its_chat_in_the_window() {
     let lookup = block(Operation::Lookup, Kind::Host, false);
     let now = std::time::Instant::now();
-    let mut throttle = Throttle::default();
+    let mut throttle = Throttle::new(&crate::sandbox::timings::Timings::production());
     assert!(throttle.lets_on(3, &lookup, None, now));
     assert!(!throttle.lets_on(3, &lookup, Some("api.example.com"), now));
     assert!(throttle.lets_on(4, &lookup, Some("api.example.com"), now));

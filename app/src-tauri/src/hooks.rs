@@ -385,6 +385,9 @@ pub struct Hooks {
     /// held-back repeats are told when a chat goes quiet or ends, and when the project is let
     /// go of, not only at the next block heard.
     throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>>,
+    /// The one value the project's sandbox timers wait by (T1.1-01): its throttle's, the
+    /// window's end of a live ask's hold (`asking::hold_ends`), and its chats' confinements'.
+    timings: purlis_core::sandbox::timings::Timings,
     /// The road every sandbox block takes into the app (#1338): the throttle, then
     /// [`Self::blocked`], which keeps it in the network record and shows it (#1662). Handed
     /// to what else hears a chat refused (#1663): purlis's own proxy beside a chat it wraps.
@@ -2400,8 +2403,9 @@ pub use purlis_core::hookchannel::{Where, socket_for};
 
 impl Hooks {
     /// Nothing listening: every chat is `unknown`, which is what the spec says a harness with
-    /// no state hook shows. The app runs perfectly well like this.
-    pub fn deaf(plane: PlaneId) -> Self {
+    /// no state hook shows. The app runs perfectly well like this. Its throttle waits by
+    /// `timings` (T1.1-01).
+    pub fn deaf(plane: PlaneId, timings: purlis_core::sandbox::timings::Timings) -> Self {
         let doings = crate::doing::Doings::new(plane.clone());
         let skill_runs = crate::skillrun::SkillRuns::new(plane.clone());
         Self {
@@ -2429,7 +2433,10 @@ impl Hooks {
             said_taken: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
-            throttle: Arc::default(),
+            throttle: Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+                &timings,
+            ))),
+            timings,
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
             parking: Arc::new(Mutex::new(None)),
@@ -2444,29 +2451,40 @@ impl Hooks {
     /// A socket that cannot be opened is not worth refusing to start over: the app comes up
     /// with every chat `unknown` and says so on stderr, which is a working app with one
     /// feature missing rather than no app at all.
+    ///
+    /// Its throttle waits by `timings` before the listener hears its first line (T1.1-01).
     pub fn listening_on(
         plane: PlaneId,
         at: &Where,
         moved: Teller,
         told_by_hand: ByHandTeller,
+        timings: purlis_core::sandbox::timings::Timings,
     ) -> std::io::Result<Self> {
         let listener = Listener::bind(&at.within, &at.socket)?;
         let socket = listener.path().to_path_buf();
         let tokens = listener.tokens();
-        let (mut hooks, hearing) = Self::wired(plane, socket, moved, told_by_hand);
+        let (mut hooks, hearing) = Self::wired(plane, socket, moved, told_by_hand, timings);
         hooks.tokens = Some(tokens);
         hooks.reading = Mutex::new(Some(listener.hear(hearing)));
         Ok(hooks)
     }
 
     /// Hears what the session host hands on from the hook channel it owns at `at` (#2000):
-    /// nothing is bound here, and every line is heard as [`Self::listening_on`] hears one.
-    pub fn relayed(plane: PlaneId, at: &Where, moved: Teller, told_by_hand: ByHandTeller) -> Self {
+    /// nothing is bound here, and every line is heard as [`Self::listening_on`] hears one,
+    /// throttled by `timings`.
+    pub fn relayed(
+        plane: PlaneId,
+        at: &Where,
+        moved: Teller,
+        told_by_hand: ByHandTeller,
+        timings: purlis_core::sandbox::timings::Timings,
+    ) -> Self {
         let (mut hooks, hearing) = Self::wired(
             plane.clone(),
             at.socket.clone(),
             Arc::clone(&moved),
             told_by_hand,
+            timings,
         );
         // The host hands each slot a chat's server dials in on to this window, which holds the
         // doors (#3316): on macOS alone, where a Claude Code chat's server dials in.
@@ -2507,6 +2525,7 @@ impl Hooks {
         socket: PathBuf,
         moved: Teller,
         told_by_hand: ByHandTeller,
+        timings: purlis_core::sandbox::timings::Timings,
     ) -> (Self, Hearing) {
         let board = Arc::new(Mutex::new(Board::new()));
         let answering: Arc<Mutex<Option<Answering>>> = Arc::new(Mutex::new(None));
@@ -2531,7 +2550,9 @@ impl Hooks {
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
-        let throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>> = Arc::default();
+        let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+            &timings,
+        )));
         let hear: HeardBlocks = {
             let blocked = Arc::clone(&blocked);
             let repeated = Arc::clone(&repeated);
@@ -2954,6 +2975,7 @@ impl Hooks {
             blocked,
             repeated,
             throttle,
+            timings,
             hear_block: Some(hear_block),
             secret_exec,
             parking,
@@ -3743,6 +3765,20 @@ impl Hooks {
                 .cloned();
         }
         self.tokens.as_ref()?.program_of(chat)
+    }
+
+    /// **The one value the project's sandbox timers wait by** (T1.1-01).
+    pub fn timings(&self) -> purlis_core::sandbox::timings::Timings {
+        self.timings
+    }
+
+    /// How long its throttle hears one chat's same block once, as the throttle itself holds it.
+    #[cfg(test)]
+    pub fn throttle_window(&self) -> std::time::Duration {
+        self.throttle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .window()
     }
 
     /// What a chat started in this plane is told to report to: the socket and the tokens it

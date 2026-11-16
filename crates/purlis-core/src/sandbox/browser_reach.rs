@@ -57,12 +57,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::egress::{
-    LIMITS, Limits, PATIENCE, PLAIN_PORTS, Request, TUNNEL_PORTS, answer, read_head, same_host,
-    splice,
+    Limits, PLAIN_PORTS, Request, TUNNEL_PORTS, answer, read_head, same_host, splice,
 };
 use super::hosts::{carried_v4, ends_in_a_number, refused_address, tunnelled_v4};
 use super::localport::is_a_name_of_this_mac;
 use super::reach::{self, Decision, Reach};
+use super::timings::Timings;
 
 /// **A browser's lane of its chat's reach**: the hosts the chat's sandbox lists, each with the
 /// layer that lists it, judged by the browser's own rules ([`Lane::decide`]). The same grants,
@@ -879,14 +879,19 @@ struct Served {
 
 impl ReachProxy {
     /// A reach proxy for `lane`, telling `new_sites` each public site nothing lists, within a
-    /// chat proxy's [`LIMITS`].
-    pub fn start(lane: Lane, new_sites: NewSites) -> io::Result<Self> {
-        Self::within(lane, new_sites, LIMITS)
+    /// chat proxy's limits at `timings` ([`Limits::of`]).
+    pub fn start(lane: Lane, new_sites: NewSites, timings: &Timings) -> io::Result<Self> {
+        Self::within(lane, new_sites, Limits::of(timings))
     }
 
     /// [`Self::start`], carrying nothing but what `bound` lets go once it is bound (#2016).
-    pub fn bound_by(lane: Lane, new_sites: NewSites, bound: Bound) -> io::Result<Self> {
-        Self::serving(lane, new_sites, bound, LIMITS)
+    pub fn bound_by(
+        lane: Lane,
+        new_sites: NewSites,
+        bound: Bound,
+        timings: &Timings,
+    ) -> io::Result<Self> {
+        Self::serving(lane, new_sites, bound, Limits::of(timings))
     }
 
     /// [`Self::start`], within `limits`.
@@ -1050,7 +1055,7 @@ impl Drop for Counted {
 /// One browser connection: its request read, decided, and carried or refused.
 fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     let idle = served.limits.idle;
-    let _ = client.set_write_timeout(Some(idle.min(PATIENCE)));
+    let _ = client.set_write_timeout(Some(idle.min(served.limits.patience)));
     let Some((head, rest)) = read_head(&mut client, served.limits.head) else {
         answer(
             &mut client,
@@ -1145,7 +1150,7 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     };
     let Some(mut upstream) = addresses
         .iter()
-        .find_map(|addr| TcpStream::connect_timeout(addr, PATIENCE).ok())
+        .find_map(|addr| TcpStream::connect_timeout(addr, served.limits.patience).ok())
     else {
         answer(
             &mut client,
