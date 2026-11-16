@@ -22,8 +22,15 @@ fuzz_target!(|authority: &str| {
         .rsplit_once(':')
         .expect("a CONNECT read has a port");
     assert_eq!(written, named, "{authority:?}");
-    assert_eq!(written_port.parse::<u16>().ok(), Some(port), "{authority:?}");
-    assert!(!host.contains(['@', '/', '?', '#', '\\', '%', '[', ']']), "{host:?}");
+    assert_eq!(
+        written_port.parse::<u16>().ok(),
+        Some(port),
+        "{authority:?}"
+    );
+    assert!(
+        !host.contains(['@', '/', '?', '#', '\\', '%', '[', ']']),
+        "{host:?}"
+    );
     if host.parse::<std::net::Ipv6Addr>().is_err() {
         assert!(!host.contains(':'), "{host:?}");
     }

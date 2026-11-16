@@ -1878,6 +1878,9 @@ fn a_host_no_url_client_sends_is_refused_before_it_is_judged() {
         "CONNECT a.github.com..:443 HTTP/1.1\r\n\r\n",
         "CONNECT a..github.com:443 HTTP/1.1\r\n\r\n",
         "CONNECT .github.com:443 HTTP/1.1\r\n\r\n",
+        // Port 0, which no site is on (`fuzz_browser_reach_request_head`).
+        "CONNECT github.com:0 HTTP/1.1\r\n\r\n",
+        "GET http://example.com:0/ HTTP/1.1\r\nHost: example.com:0\r\n\r\n",
     ] {
         assert_eq!(read_as(head), None, "{head:?}");
     }
@@ -1908,10 +1911,22 @@ fn a_host_that_ends_in_a_number_is_refused_unless_it_is_an_ipv4_address() {
 fn a_host_a_client_sends_is_read_as_it_sends_it() {
     for (head, host, port) in [
         ("CONNECT github.com:443 HTTP/1.1\r\n\r\n", "github.com", 443),
-        ("CONNECT GitHub.com.:443 HTTP/1.1\r\n\r\n", "GitHub.com.", 443),
+        (
+            "CONNECT GitHub.com.:443 HTTP/1.1\r\n\r\n",
+            "GitHub.com.",
+            443,
+        ),
         ("CONNECT [::1]:8443 HTTP/1.1\r\n\r\n", "::1", 8443),
-        ("CONNECT _dmarc.example.com:443 HTTP/1.1\r\n\r\n", "_dmarc.example.com", 443),
-        ("CONNECT xn--nxasmq6b.com:443 HTTP/1.1\r\n\r\n", "xn--nxasmq6b.com", 443),
+        (
+            "CONNECT _dmarc.example.com:443 HTTP/1.1\r\n\r\n",
+            "_dmarc.example.com",
+            443,
+        ),
+        (
+            "CONNECT xn--nxasmq6b.com:443 HTTP/1.1\r\n\r\n",
+            "xn--nxasmq6b.com",
+            443,
+        ),
         (
             "GET http://[::1]/x HTTP/1.1\r\nHost: [::1]\r\n\r\n",
             "::1",

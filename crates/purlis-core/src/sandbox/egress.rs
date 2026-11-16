@@ -1852,8 +1852,8 @@ fn is_token(byte: u8) -> bool {
 /// **A request's authority, `host[:port]`, spelled as a URL client sends one**, with an IPv6
 /// address's brackets taken off; `None` for any other spelling, so the host the proxy judges is
 /// the host curl and Node meant (T1.1-47, `docs/fuzzing.md`). The host is [`sent_as_a_name`] or a
-/// bracketed IPv6 address. `default` is the port of an authority that names none; a `CONNECT`'s
-/// always names one.
+/// bracketed IPv6 address, and the port is not 0. `default` is the port of an authority that
+/// names none; a `CONNECT`'s always names one.
 fn authority_of(authority: &str, default: Option<u16>) -> Option<(String, u16)> {
     let (host, port) = match authority.strip_prefix('[') {
         Some(rest) => {
@@ -1877,7 +1877,8 @@ fn authority_of(authority: &str, default: Option<u16>) -> Option<(String, u16)> 
         None if port.is_empty() => default?,
         _ => return None,
     };
-    Some((host.to_owned(), port))
+    // Port 0 is no site's: nothing listens on it, and nothing names a site on it.
+    (port != 0).then(|| (host.to_owned(), port))
 }
 
 /// **Whether `host` is a name or an IPv4 address as a URL client sends one**: a dotted IPv4

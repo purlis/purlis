@@ -40,9 +40,15 @@ fuzz_target!(|data: &[u8]| {
         format!("[::1]:{port}"),
     ];
     let hosts = named(head, "host");
-    assert!(hosts.len() == 1 && own.contains(&hosts[0].to_owned()), "{hosts:?}");
+    assert!(
+        hosts.len() == 1 && own.contains(&hosts[0].to_owned()),
+        "{hosts:?}"
+    );
     for origin in named(head, "origin") {
-        assert!(own.iter().any(|it| origin == format!("http://{it}")), "{origin:?}");
+        assert!(
+            own.iter().any(|it| origin == format!("http://{it}")),
+            "{origin:?}"
+        );
     }
     let sent = &carried.head;
     assert_eq!(sent.find("\r\n\r\n"), Some(sent.len() - 4), "{sent:?}");

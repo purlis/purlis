@@ -139,9 +139,7 @@ fuzz_target!(|text: &str| {
             // The URL as written, sent by a client that copies it whole.
             if let Some(rest) = written.strip_prefix("http://") {
                 let authority = rest.split('/').next().unwrap_or(rest);
-                let head = format!(
-                    "GET http://{rest} HTTP/1.1\r\nHost: {authority}\r\n\r\n"
-                );
+                let head = format!("GET http://{rest} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
                 same_or_refused(&head, &wanted, written);
             }
             if let Some(rest) = written.strip_prefix("https://") {

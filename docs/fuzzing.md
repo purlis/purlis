@@ -36,7 +36,7 @@ What it found, and what became of each:
   which the reach proxy judged as one site and wrote back as another), and a host that ends in a
   number but is no IPv4 address (`0x7f.1`, `0X7F000001`, `2130706433`, which curl, Node and the
   resolver all read as 127.0.0.1). `egress::Request::parse` and the SOCKS port now refuse all
-  three.
+  three, and port 0, which no site is on.
   None reached another host: the name dialled was the one judged, macOS's resolver and glibc's
   read none of them as an address, and an unlisted one was already refused by the policy's
   reading (`hosts::Host::parse`).

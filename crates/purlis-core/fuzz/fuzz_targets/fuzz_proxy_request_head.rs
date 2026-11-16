@@ -34,11 +34,20 @@ fuzz_target!(|stream: &[u8]| {
         return;
     };
     // One head, ending where it says, so nothing after it is read as a second request.
-    assert_eq!(forward.find("\r\n\r\n"), Some(forward.len() - 4), "{forward:?}");
+    assert_eq!(
+        forward.find("\r\n\r\n"),
+        Some(forward.len() - 4),
+        "{forward:?}"
+    );
     assert!(forward.ends_with("Connection: close\r\n\r\n"));
     let lines: Vec<&str> = forward.trim_end().split("\r\n").collect();
     // Origin form: the target's path, never its authority again.
-    assert!(lines[0].split(' ').nth(1).is_some_and(|path| path.starts_with('/')));
+    assert!(
+        lines[0]
+            .split(' ')
+            .nth(1)
+            .is_some_and(|path| path.starts_with('/'))
+    );
     let named = |wanted: &str| {
         lines[1..]
             .iter()

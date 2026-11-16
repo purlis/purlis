@@ -24,7 +24,11 @@ fuzz_target!(|asked: Asked| {
     let Asked { listed, host, port } = asked;
     let allowed = allows(&listed, &host);
     // Case and a final dot never change an answer.
-    assert_eq!(allowed, allows(&listed, &host.to_ascii_uppercase()), "{host:?}");
+    assert_eq!(
+        allowed,
+        allows(&listed, &host.to_ascii_uppercase()),
+        "{host:?}"
+    );
     let upper: Vec<String> = listed.iter().map(|it| it.to_ascii_uppercase()).collect();
     assert_eq!(allowed, allows(&upper, &host));
     if !host.ends_with('.') {

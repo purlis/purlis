@@ -33,5 +33,9 @@ fuzz_target!(|stream: &[u8]| {
         assert_eq!(Site::of(name, port), site, "{head:?}");
     }
     // The site judged is one a site's spelling reads back to.
-    assert_eq!(Site::parse(&site.to_string()).as_ref(), Ok(&site), "{site:?}");
+    assert_eq!(
+        Site::parse(&site.to_string()).as_ref(),
+        Ok(&site),
+        "{site:?}"
+    );
 });
