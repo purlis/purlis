@@ -2187,10 +2187,14 @@ name = "fake-harness"
 version = "0.5.2"
 dependencies = [
  "clap",
+ "glob",
  "portable-pty",
  "purlis-core",
+ "regex",
+ "serde",
  "serde_json",
  "tempfile",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
