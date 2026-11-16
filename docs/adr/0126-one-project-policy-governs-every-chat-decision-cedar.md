@@ -3,8 +3,8 @@
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
 Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5) and Q320b
 (R2-1–R2-4), in the who-judges orchestration (`work/who-judges/decisions.md` on the plane). It
-also takes in the calls of the spec's first three Fable review rounds
-(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-3.md` on the plane).
+also takes in the calls of the spec's first four Fable review rounds
+(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-4.md` on the plane).
 Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
 closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
@@ -94,32 +94,46 @@ rewriting every project's `policy.cedar`.
   a tool whose command differs runs the accepted one. So a tightening applies at once, and a
   loosening waits for the person's **loosening press**. The shipped default stands in until the
   first acceptance (Q309 point 2; review round 1, S-B8; review round 2, S2-SF1).
-- **Tightenings ratchet.** The app seals every tightening it sees into the accepted floor, which
-  is the conjunction of every committed version seen since the last press, and a sealed,
-  monotonic manifest covers the whole sealed store. Moving HEAD back, committing a broken file,
-  deleting the store's accepted entry or replaying an older store then loosens nothing (review
-  round 1, S-B1; review round 2, S2-SF2).
+- **Tightenings are sealed into the accepted floor.** The app seals every tightening it sees
+  into the **accepted floor** (distinct from the sandbox level `floor`), which is the conjunction
+  of every committed version seen since the last press. A sealed, monotonic manifest covers the
+  whole sealed store, and only the entries it lists are loaded: a sealed file it doesn't list is
+  ignored, with a Notice. Moving HEAD back, committing a broken file, deleting the store's
+  accepted entry, or replaying an older store or a removed grant then loosens nothing (review
+  round 1, S-B1; review round 2, S2-SF2; review round 4, SEC4-SF2, F4 SF-2).
 - **The anchors live outside the state folder,** in an app-only keyring item (the Keychain on
   macOS) that purlis's one-item writer refuses, keyed by the plane's real path, never the clone
   key. With the anchor present, a missing or older manifest, or a sealed entry other than a grant
-  that is missing or fails, is the **deny state**: the chat still starts, every action the policy
-  judges is refused, and nothing is allowed until the person re-presses. With no anchor, it is a
-  fresh install and the shipped default applies (review round 2, S2-B1, S2-B2, F2-2; Q320b R2-3;
-  review round 3, SEC3-B1, SEC3-B2). On Linux and Windows the anchor is only as strong as the
-  declared seal gap (Q320b R2-4).
+  that is missing or fails, is the **deny state**: the chat still starts, every action but
+  `start` is refused, and nothing is allowed until the person re-presses (review round 2, S2-B1,
+  S2-B2, F2-2; Q320b R2-3; review round 3, SEC3-B1, SEC3-B2; review round 4, F4 nit).
+- **A plane has a stable id, and the machine keeps a registry of anchored planes.** The plane id
+  is kept in the plane's sealed manifest. The keyring item holds a sealed, machine-level registry
+  of each anchored plane's id, real path and the path as opened. A plane whose id is anchored but
+  is seen at another path, an anchored path with no matching manifest, and a sealed store with no
+  anchor are each the deny state, so moving a plane never reads as a fresh install. Only no anchor
+  and no store is a fresh install, where the shipped default applies. The sandbox holds the plane
+  root against rename where it can; where it can't, that is a declared gap (review round 4,
+  SEC4-B1).
+- **The Everywhere nevers have their own manifest, anchor and counter** in the same keyring item.
+  If that manifest is missing or older, every plane is in the deny state (review round 4,
+  SEC4-B2). On Linux and Windows every anchor is only as strong as the declared seal gap (Q320b
+  R2-4).
 - Only the session host loads, verifies and evaluates the policy. Hooks, the proxy and dispatch
   ask the host, and an action is refused if the host can't be reached (Q309 point 3). This
   replaces ADR 0125 §3's `$PURLIS_POLICY` hand-off. The host is found from the plane, never from
   the environment, and the client requires the listener to be the app that started the chat. With
   no host, a chat inside a plane is refused; a process outside any plane runs the shipped default
-  under `strict`, locally (review round 1, S-B3; review round 2, S2-B3; review round 3,
-  SEC3-SF3).
+  under `strict`, locally, with the Organisation's files layered on it. A process counts as
+  outside any plane only when its working directory, its target's real path and its ancestry are
+  all outside every anchored plane; otherwise it asks that plane's host, or is refused (review
+  round 1, S-B3; review round 2, S2-B3; review round 3, SEC3-SF3; review round 4, SEC4-SF1).
 - A team changes the policy through git. Anyone, a chat included, may propose a change in a
   branch. Each machine's window shows the rule-by-rule diff, the commit and its author, and
   accepts it with one press. purlis enforces no commit review (Q309 points 5 and 6, Q313
   point 2).
 
-**Hard to reverse because** the seal, the press, "stricter of two" and the ratchet are what make
+**Hard to reverse because** the seal, the press, "stricter of two" and the accepted floor are what make
 Q307 Q4 hold: **a chat can never change the policy that governs it**. It holds fully on macOS.
 On Linux and Windows it holds with a declared gap: the full gap by default, and with the seal
 opt-in on a narrowed gap, since a same-user process can still read the app's memory or start a
@@ -249,8 +263,11 @@ the rule.
   "timed exception where it exists" (Q312 point 3), as an amendment file under `docs/adr/0124/`.
 - **Rulings rather than records:** Q307 Q5's "the start is refused" (Q319 C1); Q311 point 8's
   family `off` "skips the family's rules" (Q319 C2); Q315 point 5's "nothing is carried over",
-  for nevers (Q320); and Q319 C6, as amended by Q320a N1 (with an opt-in on, the seal gap is
-  narrowed, not closed, and stays declared). ADR 0126 states the amended reading.
+  for nevers (Q320); Q309 point 4's "counts as no acceptance", which under a current manifest
+  now holds for a grant only, any other missing or failing sealed entry being the deny state
+  (Q320b R2-3; review round 3, SEC3-B2; added by review round 4, F4 nit); and Q319 C6, as
+  amended by Q320a N1 (with an opt-in on, the seal gap is narrowed, not closed, and stays
+  declared). ADR 0126 states the amended reading.
 - **CONTEXT.md:** "Policy" widens to the whole statement; "admin lock" becomes **Lock**; **Level**
   gains Organisation and You, with You at the bottom and tighten-only (the M75 spec lists every
   entry).
