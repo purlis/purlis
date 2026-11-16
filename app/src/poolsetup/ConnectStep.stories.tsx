@@ -1001,18 +1001,18 @@ export const FindsNoAnswer: Story = {
 
 const NOT_MET = sshFinding(
   "not-met",
-  "purlis couldn't reach SSH on build-box (it said: kex_exchange_identification: Connection closed). Check that SSH is running there, then check again.",
+  "purlis reached SSH on build-box but couldn't record the host key it shows (it said: sam@build-box: Permission denied (publickey).). Run the command under See what this does to watch SSH sign in, or use Get help.",
   {
     note: "This signs in to build-box as purlis does, and prints what SSH says as it goes. It changes nothing there.",
     text: "ssh sam@build-box -v -o BatchMode=yes true",
   },
 );
 
-/** Something answers on the port, and it isn't SSH, or SSH closed on purlis. */
+/** Its port answers, and ssh records no key from it: the key's line fails, not the answer's. */
 export const FindsSshNotThere: Story = {
   beforeEach: faked([]),
   args: { step: NOT_MET, shown: shown(NOT_MET) },
-  play: playDoctor("SSH didn't answer there", 11),
+  play: playDoctor("purlis couldn't record its host key", 11),
 };
 
 const SIGN_IN_REFUSED = sshFinding(
