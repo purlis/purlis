@@ -31,7 +31,11 @@ pub(crate) async fn check(path: impl StartPath) {
         "a refused request reached upstream: {:?}",
         provider.requests()
     );
-    assert_eq!(provider.accepts(), 0, "a refused request opened a connection upstream");
+    assert_eq!(
+        provider.accepts(),
+        0,
+        "a refused request opened a connection upstream"
+    );
 }
 
 #[tokio::test]

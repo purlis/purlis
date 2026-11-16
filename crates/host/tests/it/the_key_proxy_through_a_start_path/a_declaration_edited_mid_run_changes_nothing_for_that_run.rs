@@ -13,8 +13,8 @@ pub(crate) async fn check(path: impl StartPath) {
     let sources = Sources::new(
         "https://one.example",
         &[
-            ("https://one.example", one.address()),
-            ("https://two.example", two.address()),
+            ("https://one.example", one.port()),
+            ("https://two.example", two.port()),
         ],
     );
     let (port, token) = path.start_from("run-1", sources.clone()).await;
@@ -28,7 +28,11 @@ pub(crate) async fn check(path: impl StartPath) {
     let (port, token) = path.start_from("run-2", sources).await;
     let answered = send(port, Some(&token), "/v1/messages", b"{}").await;
     assert_eq!(answered.status, 200, "{answered:?}");
-    assert_eq!(two.requests().len(), 1, "the next run did not take the edit");
+    assert_eq!(
+        two.requests().len(),
+        1,
+        "the next run did not take the edit"
+    );
     assert_eq!(one.requests().len(), 1);
 }
 

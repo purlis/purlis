@@ -179,7 +179,10 @@ fn normalised<'a>(method: &str, target: &'a str) -> Result<(String, Option<&'a s
         rest = &rest[at + 3..];
     }
     decoded.push_str(rest);
-    if decoded.split('/').any(|segment| segment == "." || segment == "..") {
+    if decoded
+        .split('/')
+        .any(|segment| segment == "." || segment == "..")
+    {
         return Err(Refusal::DotSegment);
     }
     Ok((decoded, query))

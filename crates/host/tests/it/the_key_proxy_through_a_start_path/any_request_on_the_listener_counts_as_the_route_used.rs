@@ -12,7 +12,11 @@ pub(crate) async fn check(path: impl StartPath) {
     let (port, _) = path.start("run-1", route_to(&provider)).await;
     assert_eq!(path.arrivals("run-1"), 0, "nothing has arrived yet");
     assert_eq!(raw(port, "HEAD", "/api/hello", None).await.status, 404);
-    assert_eq!(path.arrivals("run-1"), 1, "the hello did not count as the route used");
+    assert_eq!(
+        path.arrivals("run-1"),
+        1,
+        "the hello did not count as the route used"
+    );
     assert_eq!(raw(port, "GET", "/nowhere", None).await.status, 400);
     assert_eq!(path.arrivals("run-1"), 2, "a refused request did not count");
 }

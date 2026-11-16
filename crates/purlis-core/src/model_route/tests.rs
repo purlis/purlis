@@ -163,7 +163,10 @@ fn the_allowlist_is_matched_against_the_joined_upstream_path() {
 #[test]
 fn a_format_with_no_list_yet_sends_nothing() {
     assert!(allowlist(Format::OpenaiChat).is_empty());
-    assert_eq!(allowlist(Format::AnthropicMessages), &[("POST", "/v1/messages")]);
+    assert_eq!(
+        allowlist(Format::AnthropicMessages),
+        &[("POST", "/v1/messages")]
+    );
 }
 
 #[test]

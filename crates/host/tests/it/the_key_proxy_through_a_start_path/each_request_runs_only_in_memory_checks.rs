@@ -13,7 +13,7 @@ pub(crate) async fn check(path: impl StartPath) {
     let provider = provider();
     let sources = Sources::new(
         "https://gateway.example",
-        &[("https://gateway.example", provider.address())],
+        &[("https://gateway.example", provider.port())],
     );
     let (port, token) = path.start_from("run-1", sources.clone()).await;
     let at_start = (
@@ -22,9 +22,20 @@ pub(crate) async fn check(path: impl StartPath) {
     );
     assert_eq!(at_start, (1, 1), "the start reads each once");
 
-    assert_eq!(send(port, Some(&token), "/v1/messages", b"{}").await.status, 200);
-    assert_eq!(send(port, Some(&token), "/v1/messages?beta=true", b"{}").await.status, 200);
-    assert_eq!(raw(port, "POST", "/v1/files", Some(&token)).await.status, 400);
+    assert_eq!(
+        send(port, Some(&token), "/v1/messages", b"{}").await.status,
+        200
+    );
+    assert_eq!(
+        send(port, Some(&token), "/v1/messages?beta=true", b"{}")
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        raw(port, "POST", "/v1/files", Some(&token)).await.status,
+        400
+    );
     assert_eq!(send(port, None, "/v1/messages", b"{}").await.status, 400);
     assert_eq!(raw(port, "HEAD", "/api/hello", None).await.status, 404);
 

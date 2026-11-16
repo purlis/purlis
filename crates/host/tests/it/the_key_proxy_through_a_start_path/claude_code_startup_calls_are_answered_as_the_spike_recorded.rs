@@ -22,7 +22,11 @@ pub(crate) async fn check(path: impl StartPath) {
     assert_eq!(turn.body, MESSAGE.as_bytes());
 
     let requests = provider.requests();
-    assert_eq!(requests.len(), 1, "only the turn goes upstream: {requests:?}");
+    assert_eq!(
+        requests.len(),
+        1,
+        "only the turn goes upstream: {requests:?}"
+    );
     assert_eq!(requests[0].path, "/v1/messages?beta=true");
     assert_eq!(header(&requests[0], "x-api-key"), Some(STAND_IN_KEY));
 }

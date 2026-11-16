@@ -12,7 +12,9 @@ pub(crate) async fn check(path: impl StartPath) {
     let provider = provider();
     let (port, token) = path.start("run-1", route_to(&provider)).await;
     assert!(
-        THROUGH_A_PROXY.iter().all(|call| call.target != "/api/hello"),
+        THROUGH_A_PROXY
+            .iter()
+            .all(|call| call.target != "/api/hello"),
         "the recording through a proxy holds no hello"
     );
     let answered = replay(port, &token, THROUGH_A_PROXY).await;
