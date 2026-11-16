@@ -455,8 +455,16 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }
-    for command in ["vault_secret_reveal", "vault_secret_set"] {
+    // Your keys' two commands that take a pasted model key (T1a-11) are credential commands
+    // too, and listed once, there.
+    for command in [
+        "vault_secret_reveal",
+        "vault_secret_set",
+        "your_key_save",
+        "your_key_replace_held",
+    ] {
         assert!(ui::WINDOW_ONLY_CREDENTIALS.contains(&command), "{command}");
+        assert!(!ui::WINDOW_ONLY.contains(&command), "{command}");
     }
 }
 
