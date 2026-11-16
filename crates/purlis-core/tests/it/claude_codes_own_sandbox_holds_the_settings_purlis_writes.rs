@@ -1485,10 +1485,12 @@ impl Respond for AllAtOnce {
     }
 }
 
-/// `path` under each spelling a rule on it must hold: as written, and on macOS in upper case,
-/// in lower case and with its letters' cases swapped, through the `/var` and `/tmp` links, and
-/// across the `/System/Volumes/Data` firmlink, in two cases. A disk that folds case opens the
-/// same file under each.
+/// `path` under each spelling the rules before #6961 held it by: as written, and on macOS in
+/// upper case, in lower case and with its letters' cases swapped (held by its either-case copy),
+/// and across the `/System/Volumes/Data` firmlink, in two cases (held by its twin). A disk that
+/// folds case opens the same file under each. Not through the `/var` link: those rules named the
+/// kernel's spelling and not the link's, and Claude Code follows the link only for a path that
+/// is there.
 fn spellings(path: &Path) -> Vec<String> {
     let path = path.display().to_string();
     if !cfg!(target_os = "macos") {
@@ -1510,10 +1512,6 @@ fn spellings(path: &Path) -> Vec<String> {
         path.to_lowercase(),
         swapped,
     ];
-    if let Some(linked) = path.strip_prefix("/private") {
-        out.push(linked.to_owned());
-        out.push(linked.to_uppercase());
-    }
     let data = format!("/System/Volumes/Data{path}");
     out.push(data.to_uppercase());
     out.push(data);
@@ -1589,9 +1587,11 @@ fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
         panic!("not sandboxed");
     };
     applied.answered(SUPPORTED);
-    let compiled = match applied.form_in(Some(&root)) {
-        Form::ClaudeCode(compiled) => compiled,
-        Form::ClaudeWrapped(wrap) => wrap.settings(),
+    // A wrapped chat (Linux) holds a git folder by its wrap, not by these rules ([`Denied::
+    // git_folder_pins`]): its pins are probed only where Claude Code's own sandbox runs.
+    let (compiled, own_sandbox) = match applied.form_in(Some(&root)) {
+        Form::ClaudeCode(compiled) => (compiled, true),
+        Form::ClaudeWrapped(wrap) => (wrap.settings(), false),
         other => panic!("not Claude Code's settings: {other:?}"),
     };
     let file = at.join("settings.json");
@@ -1607,14 +1607,16 @@ fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
         dispatches.join("one.json"),
     ];
     // What is written below: each held path, by a new file in or below it.
-    let write_held = [
+    let mut write_held = vec![
         root.join(".purlis/vaults"),
         dispatches.clone(),
         root.join("purlis.toml"),
         root.join("repo/.git/config"),
-        piece.join(".git"),
-        root.join("workspaces/v/.worktrees/app/q2/.git"),
     ];
+    if own_sandbox {
+        write_held.push(piece.join(".git"));
+        write_held.push(root.join("workspaces/v/.worktrees/app/q2/.git"));
+    }
     let mut calls: Vec<(&'static str, Value)> = Vec::new();
     let mut expected: Vec<(String, bool)> = Vec::new();
     for path in &read_held {
@@ -1668,7 +1670,9 @@ fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
     let mut wrong = Vec::new();
     for (((what, held), result), (tool, input)) in expected.iter().zip(&results).zip(&calls) {
         let text = result.clone().unwrap_or_default();
-        let refused = text.to_lowercase().contains("denied");
+        // "… denied …", or "covered by a Read deny rule …": refused by a rule either way.
+        let said = text.to_lowercase();
+        let refused = said.contains("denied") || said.contains("deny rule");
         let path = Path::new(input["file_path"].as_str().expect("a path"));
         let went = match *tool {
             "Read" => text.contains(MARK),

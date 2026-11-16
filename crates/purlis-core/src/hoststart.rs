@@ -1327,7 +1327,7 @@ pub fn settings_past_the_budget(args: &[String]) -> Option<usize> {
     args.get(at)
         .filter(|json| json.starts_with('{'))
         .map(String::len)
-        .filter(|&bytes| bytes >= HARNESS_SETTINGS_BYTES) // DO NOT MERGE: mutation M4
+        .filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
 }
 
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
