@@ -205,7 +205,10 @@ fn adapter_merges_both_bypass_spellings() {
         ]
     );
     assert_eq!(
-        bypass_written_for(&[("NO_PROXY", "127.0.0.1"), ("no_proxy", "localhost, 127.0.0.1")]),
+        bypass_written_for(&[
+            ("NO_PROXY", "127.0.0.1"),
+            ("no_proxy", "localhost, 127.0.0.1")
+        ]),
         ["127.0.0.1,localhost", "127.0.0.1,localhost"]
     );
 }

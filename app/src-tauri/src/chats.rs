@@ -39,8 +39,8 @@ fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
     renamed
 }
 
-/// Every identity variable a vault of the project at `root` declares — both halves of each
-/// `env` binding — so a chat is started without any of them (#271 review, U6). `root` is the
+/// What a chat is started without: every identity variable a vault of the project at `root`
+/// declares — both halves of each `env` binding — so a chat is started without any of them (#271 review, U6). `root` is the
 /// open project's, never one found above the chat's folder (#1410). A registry that cannot be
 /// read yields none: the chat still loses every `OP_*` by prefix. Read on the thread that
 /// starts the chat; it is a small JSON read, once per start.
@@ -50,8 +50,12 @@ fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
 /// (`purlis_core::fence`, charter-app#129) — which a unit test's project routinely is. A test
 /// build therefore strips only by the `OP_` prefix; the declared-name strip is exercised at the
 /// session builder ([`crate::sessions`] tests pass `env_strip` directly) and in the core.
-fn declared_identity_vars(root: &Path) -> Vec<String> {
-    purlis_core::hoststart::declared_identity_vars(root)
+///
+/// A key chat of `harness` is started without what goes around its route too
+/// (`purlis_core::hoststart::started_without`, T1a-15), once T1a-17 hands its start a listener:
+/// no start here has one yet.
+fn started_without(root: &Path, harness: Option<Harness>) -> Vec<String> {
+    purlis_core::hoststart::started_without(root, harness, None)
 }
 
 /// What more of this machine's environment the operator lets a chat of the project at `root`
@@ -6168,7 +6172,8 @@ impl Chats {
                     // Every identity variable a vault of this chat's plane declares, so none
                     // reaches the chat even when it is not `OP_`-prefixed (#271 review, U6). Read
                     // from the plane the chat starts in; a chat outside a plane declares none.
-                    env_strip: declared_identity_vars(&self.project),
+                    // And a key chat's launch-only route escapes (`started_without`, T1a-15).
+                    env_strip: started_without(&self.project, harness),
                     harness,
                     // A declared harness's own namespace (#967), each variable judged as the
                     // session composes the chat's environment (#1013).

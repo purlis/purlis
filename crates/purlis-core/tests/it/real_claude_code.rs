@@ -242,7 +242,8 @@ fn a_key_chat(claude: &Path, route: &KeyRoute, home: &Path, launch: &[(&str, &st
             .map(|(name, value)| ((*name).into(), (*value).into()))
             .collect();
     let operator: Vec<String> = launch.iter().map(|(name, _)| (*name).to_owned()).collect();
-    let strip = purlis_core::hoststart::started_without(home, Some(Harness::ClaudeCode), Some(route));
+    let strip =
+        purlis_core::hoststart::started_without(home, Some(Harness::ClaudeCode), Some(route));
     let mut set = env;
     set.push(("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string()));
     let env = purlis_core::chatenv::compose(

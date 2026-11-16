@@ -20,8 +20,9 @@
 //! - an explicit empty value for every member of the [`STRIP_FLOOR`] but the base URL, since an
 //!   omitted key keeps a lower file's value, the seven provider switches among them
 //!   ([`BLANKED_SWITCHES`]);
-//! - `NO_PROXY` and `no_proxy`, each the person's value with `127.0.0.1` added (not `localhost`,
-//!   which doesn't cover it), so a proxy variable never sends a model call away from the listener.
+//! - `NO_PROXY` and `no_proxy`, both the person's two lists merged, each host once, with
+//!   `127.0.0.1` added once (not `localhost`, which doesn't cover it), so a proxy variable never
+//!   sends a model call away from the listener, and neither spelling outranks the other.
 //!
 //! **The token is not here.** It is `ANTHROPIC_AUTH_TOKEN` in the process environment alone
 //! (R-066, R-256), never in argv, `--settings` or a kept file, and it ranks above `apiKeyHelper`.
@@ -185,19 +186,33 @@ pub fn settings_env(route: &KeyRoute) -> serde_json::Map<String, serde_json::Val
     if let Some(model) = route.background_model() {
         env.insert(BACKGROUND_SLOT.to_owned(), model.into());
     }
-    for (name, theirs) in BYPASS.into_iter().zip(route.bypass()) {
-        env.insert(name.to_owned(), with_loopback(theirs).into());
+    let bypass = with_loopback(route.bypass());
+    for name in BYPASS {
+        env.insert(name.to_owned(), bypass.clone().into());
     }
     env
 }
 
-/// The person's bypass `theirs` with [`LOOPBACK`] added, where it doesn't name it already.
-fn with_loopback(theirs: Option<&str>) -> String {
-    match theirs.map(str::trim).filter(|theirs| !theirs.is_empty()) {
-        None => LOOPBACK.to_owned(),
-        Some(theirs) if theirs.split(',').any(|host| host.trim() == LOOPBACK) => theirs.to_owned(),
-        Some(theirs) => format!("{theirs},{LOOPBACK}"),
+/// **The one bypass both spellings are written with**: every host of the person's `theirs`
+/// (`NO_PROXY`, then `no_proxy`), each once, then [`LOOPBACK`] where neither names it. Both
+/// spellings carry the same list, so one purlis writes never outranks a list the person keeps
+/// in the other.
+fn with_loopback(theirs: [Option<&str>; 2]) -> String {
+    let mut hosts: Vec<&str> = Vec::new();
+    for host in theirs
+        .into_iter()
+        .flatten()
+        .flat_map(|list| list.split(','))
+    {
+        let host = host.trim();
+        if !host.is_empty() && !hosts.contains(&host) {
+            hosts.push(host);
+        }
     }
+    if !hosts.contains(&LOOPBACK) {
+        hosts.push(LOOPBACK);
+    }
+    hosts.join(",")
 }
 
 /// Each environment variable name in `binary` that starts with `prefix`: the prefix, then

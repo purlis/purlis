@@ -973,10 +973,12 @@ pub fn compose_ready(
         .plugins_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
+    // A key chat's listener is handed to its start by T1a-17 (with T1a-61's key): until then a
+    // key profile's start is refused before it gets here (W117). Its arming and what its process
+    // is started without both read this one value.
+    let key_route: Option<&crate::keyroute::KeyRoute> = None;
     let armed = armed(&Arming {
-        // A key chat's listener is handed to its start by T1a-17 (with T1a-61's key): until then
-        // a key profile's start is refused before it gets here (W117).
-        key_route: None,
+        key_route,
         root,
         kit,
         harness: ready.harness,
@@ -1127,7 +1129,7 @@ pub fn compose_ready(
         args,
         cwd: Some(cwd.display().to_string()),
         set: env,
-        strip: declared_identity_vars(root),
+        strip: started_without(root, ready.harness, key_route),
         pass: crate::chatenv::read(root),
         declared: ready
             .declared
@@ -1769,9 +1771,18 @@ pub fn started_without(
     harness: Option<Harness>,
     key_route: Option<&crate::keyroute::KeyRoute>,
 ) -> Vec<String> {
-    // Red-first stub: the key route is ignored.
-    let _ = (harness, key_route);
-    declared_identity_vars(root)
+    let mut without = declared_identity_vars(root);
+    if key_route.is_some()
+        && let Some(harness) = harness
+    {
+        without.extend(
+            harness
+                .kept_out_of_a_key_chat()
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
+    }
+    without
 }
 
 /// Every identity variable a vault of the project at `root` declares, both halves of each

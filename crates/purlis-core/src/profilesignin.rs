@@ -648,8 +648,8 @@ fn key_refused(kept: &SignIn, harness: &crate::harness_declaration::Declaration)
     }
     // The route resolver first (T1a-15): a harness a key can't reach is refused in its own words
     // (R-227). A start here arms the terminal, at level 2 where the harness takes hooks and 1
-    // where it doesn't; level 3 starts elsewhere, and is refused there through the same
-    // [`crate::keyroute::at_start`] (R-225).
+    // where it doesn't. Nothing in production calls [`crate::keyroute::at_start`] yet: T1a-17
+    // wires it with the start's real level, which is where level 3 is refused (R-225).
     let level = if harness.levels.hooks {
         crate::keyroute::Level::Two
     } else {
