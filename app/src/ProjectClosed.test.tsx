@@ -3,7 +3,14 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
@@ -126,14 +133,14 @@ describe("a project the core closed", () => {
       chats: { [TWO]: [chat(1, "two.1")] },
     });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
     expect(await screen.findByRole("tab", { name: /two\.1/ })).toBeInTheDocument();
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
     // Asked behind the window's back: the UI RPC, or another window.
     fire("plane-closed", { plane: TWO });
 
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     expect(screen.queryByRole("tab", { name: /two\.1/ })).not.toBeInTheDocument();
     // The core is told what this window holds now, so nothing of the closed project is
     // remembered as open in it.
@@ -147,7 +154,7 @@ describe("a project the core closed", () => {
   it("leaves the welcome when it was the last project", async () => {
     const { fire, listening } = core({ restore: [ONE] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
     fire("plane-closed", { plane: ONE });
@@ -158,7 +165,7 @@ describe("a project the core closed", () => {
   it("changes nothing in a window that does not draw it", async () => {
     const { fire, listening } = core({ restore: [ONE] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
     fire("plane-closed", { plane: TWO });
@@ -170,7 +177,7 @@ describe("a project the core closed", () => {
     mockWindows("window-1");
     const { fire, listening, sent } = core({ handed: [TWO] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
     fire("plane-closed", { plane: TWO });
