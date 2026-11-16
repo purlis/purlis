@@ -88,8 +88,7 @@ fn judged_as(cmd: &str, mode_of_its_family: Mode, family: Family, prompts: Optio
     judged(&call, Some(&plane), &|asked| {
         // A hook skip runs at the stricter of save and credential (the re-review of #6992), so
         // its row moves both.
-        if asked == family || (family == Family::GuardsSave && asked == Family::GuardsCredential)
-        {
+        if asked == family || (family == Family::GuardsSave && asked == Family::GuardsCredential) {
             mode_of_its_family
         } else {
             Mode::Enforce
@@ -217,7 +216,10 @@ fn a_hook_skip_is_refused_while_the_credential_scan_is_enforced_whatever_save_sa
         ("template = \"watch\"\n", Some(Arm::HookSkip)),
         ("template = \"hold\"\n", Some(Arm::HookSkip)),
         ("template = \"team\"\n", Some(Arm::HookSkip)),
-        ("template = \"team\"\nguards.save = \"off\"\n", Some(Arm::HookSkip)),
+        (
+            "template = \"team\"\nguards.save = \"off\"\n",
+            Some(Arm::HookSkip),
+        ),
         ("template = \"open\"\n", None),
     ] {
         let resolved = crate::enforcement::Resolved::of(
