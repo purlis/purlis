@@ -26,14 +26,14 @@ jobs:
       - run: cargo test --locked -p purlis-crash-handler --lib
 
   probe:
-    name: the abort test, looped (${{ matrix.code }}, ${{ matrix.mode }})
+    name: the abort test, looped (${{ matrix.code }}, ${{ matrix.window }} window)
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         code: [old, fixed]
-        mode: [serial, parallel]
+        window: [normal, widened]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,25 +45,25 @@ jobs:
       - name: The code before the fix (instrumented)
         if: matrix.code == 'old'
         run: git checkout 0704985df05ec6fbef986326b577de766d1610ae -- crates/crash-handler Cargo.lock
+      - name: Widen the gap between the companion binding its socket and checking in its Mach service
+        if: matrix.window == 'widened'
+        run: |
+          cargo fetch --locked
+          src=$(ls -d ~/.cargo/registry/src/*/minidumper-0.11.0 | head -1)
+          cp -R "$src" vendor-minidumper
+          perl -0pi -e 's/(\n(\s*)let port = crash_context::ipc::Server::create\(&port_name\)\?;)/\n$2std::thread::sleep(std::time::Duration::from_millis(30));$1/' vendor-minidumper/src/ipc/server.rs
+          grep -n -B1 "Server::create(&port_name)" vendor-minidumper/src/ipc/server.rs
+          grep -q "from_millis(30)" vendor-minidumper/src/ipc/server.rs
+          printf '\n[patch.crates-io]\nminidumper = { path = "vendor-minidumper" }\n' >> Cargo.toml
       - name: Build
         run: |
-          cargo test --locked -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run --message-format=json \
+          cargo test -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run --message-format=json \
             | jq -r 'select(.reason == "compiler-artifact" and .target.name == "a_native_crash_leaves_a_minidump") | .executable' \
             > test-binary.txt
-          cat test-binary.txt
           test -x "$(cat test-binary.txt)"
       - name: Loop
         env:
-          MODE: ${{ matrix.mode }}
+          WINDOW: ${{ matrix.window }}
         run: |
-          T=$(cat test-binary.txt)
-          F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler
-          case "$MODE" in
-            serial) N=1000; J=1 ;;
-            parallel) N=3000; J=6 ;;
-          esac
-          seq 1 "$N" | xargs -P "$J" -I{} sh -c "'$T' $F > \"\$TMPDIR/t{}.txt\" 2>&1 || echo {}" > failed.txt || true
-          echo "failed: $(wc -l < failed.txt | tr -d ' ') of $N"
-          for i in $(head -20 failed.txt); do echo "::group::run $i"; cat "$TMPDIR/t$i.txt"; echo "::endgroup::"; done
-          echo "::group::a run that passed"; cat "$TMPDIR/t$(seq 1 "$N" | grep -vxFf failed.txt | head -1).txt"; echo "::endgroup::"
-          test ! -s failed.txt
+          if [ "$WINDOW" = widened ]; then N=600; else N=2500; fi
+          bash tools/abort-loop-6909.sh "$(cat test-binary.txt)" "$N" 6
