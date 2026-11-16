@@ -59,33 +59,100 @@ pub struct Row {
     pub pools: Vec<String>,
 }
 
-/// **Your keys as the page lists it**: every entry the index holds, in its order.
+/// **Your keys as the page lists it**: every entry the index holds, in its order, each read
+/// once for its state (its value read and its mark verified, never shown), with the profiles in
+/// `profiles.json` naming it, the chats among `chats` on those profiles, and the pools
+/// `allowances` sends it to. An index that can't be read is the page's trouble state (W115).
 pub fn rows(
     config_root: &Path,
     credentials: &dyn Credentials,
     chats: &[ChatUse],
     allowances: &dyn Allowances,
 ) -> Result<Vec<Row>, String> {
-    let _ = (config_root, credentials, chats, allowances);
-    Ok(Vec::new())
+    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    Ok(super::list(config_root, credentials)?
+        .into_iter()
+        .map(|listed| {
+            let entry = listed.entry;
+            let (state, origins) = if listed.readable {
+                state_of(config_root, credentials, entry.id)
+            } else {
+                (State::Missing, Vec::new())
+            };
+            let named = naming(&profiles, entry.id);
+            Row {
+                id: entry.id,
+                product: entry.product,
+                origins,
+                approval: entry.approval,
+                checked: entry.checked,
+                state,
+                chats: on(&named, chats, |_| true),
+                profiles: named,
+                pools: allowances.pools(entry.id),
+            }
+        })
+        .collect())
+}
+
+/// Entry `id`'s state and its marked origins, from one read of its value and its mark.
+fn state_of(config_root: &Path, credentials: &dyn Credentials, id: Ulid) -> (State, Vec<String>) {
+    use super::ReadError;
+    use super::mark::{ModelKeyError, read_model_key};
+    match read_model_key(config_root, &crate::seam::RealFiles, credentials, id) {
+        Ok((_, binding)) => (State::Marked, binding.origins.into_iter().collect()),
+        Err(ModelKeyError::Unmarked(_)) => (State::Unmarked, Vec::new()),
+        Err(ModelKeyError::Read(ReadError::Unreadable)) => (State::Missing, Vec::new()),
+        Err(ModelKeyError::Read(why)) => (
+            State::Locked {
+                why: why.to_string(),
+            },
+            Vec::new(),
+        ),
+    }
+}
+
+/// The profiles of `profiles` whose sign-in names entry `id`, by name.
+fn naming(profiles: &[crate::profilestore::MachineProfile], id: Ulid) -> Vec<String> {
+    let id = id.to_string();
+    profiles
+        .iter()
+        .filter(|p| p.sign_in.as_ref().and_then(|s| s.key()) == Some(id.as_str()))
+        .map(|p| p.name.clone())
+        .collect()
+}
+
+/// The chats of `chats` on one of `profiles` that `keep` keeps, by name.
+fn on(profiles: &[String], chats: &[ChatUse], keep: impl Fn(&ChatUse) -> bool) -> Vec<String> {
+    chats
+        .iter()
+        .filter(|c| profiles.contains(&c.profile) && keep(c))
+        .map(|c| c.name.clone())
+        .collect()
 }
 
 /// **The chats *Remove* stops** (W5's count): the chats on a profile naming entry `id`.
 pub fn chats_using(config_root: &Path, id: Ulid, chats: &[ChatUse]) -> Vec<String> {
-    let _ = (config_root, id, chats);
-    Vec::new()
+    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    on(&naming(&profiles, id), chats, |_| true)
 }
 
 /// **The chats *Stop sending* stops** (W123's count): those of [`chats_using`] on `pool`.
 pub fn chats_on_pool(config_root: &Path, id: Ulid, pool: &str, chats: &[ChatUse]) -> Vec<String> {
-    let _ = (config_root, id, pool, chats);
-    Vec::new()
+    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    on(&naming(&profiles, id), chats, |c| {
+        c.pool.as_deref() == Some(pool)
+    })
 }
 
 /// **Unlock** (W6): reads entry `id`'s item, which on a locked keychain asks the system to
 /// unlock it. `Ok(true)` where it now reads, `Ok(false)` where it still doesn't (the person
 /// cancelled), and the error where the keychain failed (W84).
 pub fn unlock(config_root: &Path, credentials: &dyn Credentials, id: Ulid) -> Result<bool, String> {
-    let _ = (config_root, credentials, id);
-    Ok(false)
+    use super::ReadError;
+    match super::read_key(config_root, &crate::seam::RealFiles, credentials, id) {
+        Ok(_) => Ok(true),
+        Err(ReadError::Unreadable) => Ok(false),
+        Err(why) => Err(why.to_string()),
+    }
 }

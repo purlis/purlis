@@ -292,6 +292,16 @@ fn seal_into(
         .map_err(|e| fail(&e))
 }
 
+/// **Deletes entry `id`'s mark** (*Remove*'s second step, C-23): nothing to delete is done.
+pub(super) fn forget(config_root: &Path, id: Ulid) -> Result<(), String> {
+    let at = path(config_root, id);
+    match std::fs::remove_file(&at) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("purlis cannot delete {}: {e}", at.display())),
+    }
+}
+
 /// The refusal for marking `id`, which no line this build reads holds: a linked line names the
 /// entry to mark instead, and a line of another kind is not one purlis marks.
 fn refusal_for_unread(unread: &[Value], id: Ulid) -> String {

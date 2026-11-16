@@ -74,7 +74,9 @@ impl Here {
     }
 
     fn row(&self, id: Ulid) -> Option<Row> {
-        self.rows(&[], &NoneYet).into_iter().find(|row| row.id == id)
+        self.rows(&[], &NoneYet)
+            .into_iter()
+            .find(|row| row.id == id)
     }
 
     fn item(&self, id: Ulid) -> Option<String> {
@@ -85,10 +87,13 @@ impl Here {
     }
 
     fn line(&self, id: Ulid) -> bool {
-        yourkeys::list(self.root(), &RealCredentials::new(Box::new(stub(self.root()))))
-            .unwrap()
-            .iter()
-            .any(|listed| listed.entry.id == id)
+        yourkeys::list(
+            self.root(),
+            &RealCredentials::new(Box::new(stub(self.root()))),
+        )
+        .unwrap()
+        .iter()
+        .any(|listed| listed.entry.id == id)
     }
 
     fn seal(&self, id: Ulid) -> PathBuf {
@@ -158,6 +163,9 @@ enum Call {
     Removal(String, Ulid),
 }
 
+/// What the store looks at when its rows are all removed.
+type Look = Box<dyn Fn() -> String + Send + Sync>;
+
 /// A pool key allowance store holding rows in memory, recording each call, and failing where
 /// told; with what the store looked like when its rows were all removed.
 #[derive(Default, Clone)]
@@ -165,7 +173,7 @@ struct Recording {
     rows: Arc<Mutex<Vec<(Ulid, String)>>>,
     calls: Arc<Mutex<Vec<Call>>>,
     fails: Arc<Mutex<BTreeSet<&'static str>>>,
-    seen_at_remove_all: Arc<Mutex<Option<Box<dyn Fn() -> String + Send + Sync>>>>,
+    seen_at_remove_all: Arc<Mutex<Option<Look>>>,
     said_at_remove_all: Arc<Mutex<Option<String>>>,
 }
 
@@ -309,9 +317,7 @@ fn the_keys_page_says_each_rows_state() {
     assert_eq!(state(marked), Some(State::Unmarked));
     assert_eq!(state(missing), Some(State::Missing));
     assert_eq!(
-        rows.iter()
-            .find(|r| r.id == missing)
-            .map(|r| r.checked),
+        rows.iter().find(|r| r.id == missing).map(|r| r.checked),
         Some(Checked::NotCheckedYet)
     );
 }
@@ -438,7 +444,11 @@ fn remove_fails_safely_after_each_step() {
     let undeleting =
         RecordingCredentials::new(Box::new(Undeleting(stub(here.root()))), Record::default());
     let said = remove(here.root(), &undeleting, &NoneYet, id);
-    assert!(said.as_ref().is_err_and(|e| e.contains("refused the delete")), "{said:?}");
+    assert!(
+        said.as_ref()
+            .is_err_and(|e| e.contains("refused the delete")),
+        "{said:?}"
+    );
     assert_eq!(here.row(id).map(|r| r.state), Some(State::Marked));
 
     // 2. The mark's delete fails: the item is gone, the line stays, shown as W55.
@@ -455,7 +465,11 @@ fn remove_fails_safely_after_each_step() {
     let id = here.marked("synthetic-step-three");
     let allowances = Recording::holding(&[(id, "gpu")]).failing("remove_all");
     let said = remove(here.root(), &here.credentials, &allowances, id);
-    assert!(said.as_ref().is_err_and(|e| e.contains("refused remove_all")), "{said:?}");
+    assert!(
+        said.as_ref()
+            .is_err_and(|e| e.contains("refused remove_all")),
+        "{said:?}"
+    );
     assert_eq!(here.item(id), None);
     assert!(!here.seal(id).exists());
     assert_eq!(here.row(id).map(|r| r.state), Some(State::Missing));
@@ -523,9 +537,15 @@ fn stop_sending_deletes_that_pools_row() {
         chat("On lab", "claude-anthropic", Some("lab")),
         chat("Here", "claude-anthropic", None),
     ];
-    assert_eq!(page::chats_on_pool(here.root(), id, "gpu", &chats), ["On gpu"]);
+    assert_eq!(
+        page::chats_on_pool(here.root(), id, "gpu", &chats),
+        ["On gpu"]
+    );
 
-    assert_eq!(pools::stop_sending(id, "gpu", &allowances, &allowances), Ok(()));
+    assert_eq!(
+        pools::stop_sending(id, "gpu", &allowances, &allowances),
+        Ok(())
+    );
 
     assert_eq!(allowances.pools(id), ["lab"]);
     assert_eq!(
@@ -540,7 +560,10 @@ fn stop_sending_deletes_that_pools_row() {
     // A revoke that fails keeps the row, hands nothing to the link, and says why (W129).
     let failing = Recording::holding(&[(id, "lab")]).failing("revoke");
     let said = pools::stop_sending(id, "lab", &failing, &failing);
-    assert!(said.as_ref().is_err_and(|e| e.contains("refused revoke")), "{said:?}");
+    assert!(
+        said.as_ref().is_err_and(|e| e.contains("refused revoke")),
+        "{said:?}"
+    );
     assert_eq!(failing.pools(id), ["lab"]);
     assert_eq!(failing.calls(), [Call::Revoke(id, "lab".to_owned())]);
 }
@@ -553,6 +576,9 @@ fn the_rows_try_again_records_what_the_check_found() {
         yourkeys::set_checked(here.root(), id, Checked::RefusedAtSave),
         Ok(())
     );
-    assert_eq!(here.row(id).map(|r| r.checked), Some(Checked::RefusedAtSave));
+    assert_eq!(
+        here.row(id).map(|r| r.checked),
+        Some(Checked::RefusedAtSave)
+    );
     assert!(yourkeys::set_checked(here.root(), Ulid::generate(), Checked::Passed).is_err());
 }

@@ -180,7 +180,7 @@ fn the_read_function_serves_one_entry_to_any_project_or_persona() {
 // Who writes it (R-173)
 
 /// The store's writers: each a function only the window calls.
-const WRITERS: [&str; 3] = ["add", "replace", "set_approval"];
+const WRITERS: [&str; 5] = ["add", "replace", "set_approval", "set_checked", "remove"];
 
 /// Where the code a person or a chat reaches purlis through lives: every crate of the
 /// workspace (the `purlis` command's verbs, the session protocol and the host serving it, the

@@ -434,7 +434,6 @@ pub fn replace(
     value: &str,
     checked: Checked,
 ) -> Result<Replaced, String> {
-    let _ = (allowances, checked);
     let _held = crate::machine::Lock::named(config_root, LOCK);
     let index = read_to_write(config_root)?;
     let entry = index
@@ -462,28 +461,72 @@ pub fn replace(
             ));
         }
     }
+    // What the check found for the new value (V10): the window ran it before this call.
+    checked_into(config_root, index.clone(), id, checked).map_err(|why| {
+        format!("the key was replaced and what its check found wasn't kept: {why}")
+    })?;
     let Some(binding) = kept else {
         return Ok(Replaced::Unmarked);
     };
     mark::mark(config_root, credentials, id, &binding)
         .map_err(|why| format!("the key was replaced and couldn't be marked again: {why}"))?;
+    // The entry's pool key allowances are sealed over the value too, so they follow it (X1).
+    allowances.reseal(id).map_err(|why| {
+        format!("the key was replaced and its pools couldn't be sealed to it again: {why}")
+    })?;
     Ok(Replaced::Marked)
 }
 
-/// **Sets what the check found for entry `id`** (V10): the row's *Try again* (F-6). Only the
-/// window calls this (R-173).
-pub fn set_checked(config_root: &Path, id: Ulid, checked: Checked) -> Result<(), String> {
-    let _ = (config_root, id, checked);
-    Ok(())
+/// Writes `checked` into entry `id`'s line of `index`, already read under the lock.
+fn checked_into(
+    config_root: &Path,
+    mut index: Index,
+    id: Ulid,
+    checked: Checked,
+) -> Result<(), String> {
+    let Some(entry) = index.entries.iter_mut().find(|e| e.id == id) else {
+        return Err(ReadError::NotInYourKeys.to_string());
+    };
+    if entry.checked == checked {
+        return Ok(());
+    }
+    entry.checked = checked;
+    write(config_root, &index)
 }
 
-/// **Removes entry `id` from your keys** (the window's *Remove*).
+/// **Sets what the check found for entry `id`** (V10): the row's *Try again* (F-6), with the
+/// check's answer. Only the window calls this (R-173).
+pub fn set_checked(config_root: &Path, id: Ulid, checked: Checked) -> Result<(), String> {
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    let index = read_to_write(config_root)?;
+    checked_into(config_root, index, id, checked)
+}
+
+/// **Removes entry `id` from your keys** (the window's *Remove*; C-23, H-14): the keychain item,
+/// the mark, the entry's pool key allowances through `allowances`, then the index line, in that
+/// order. A step that fails stops there and says why, leaving what is left listed: before the
+/// item goes, the whole entry; after it, the line, which the page shows as W55 with *Remove*.
+/// Never an item no line lists. Only the window calls this (R-173).
 pub fn remove(
     config_root: &Path,
     credentials: &dyn Credentials,
     allowances: &dyn pools::Allowances,
     id: Ulid,
 ) -> Result<(), String> {
-    let _ = (config_root, credentials, allowances, id);
-    Ok(())
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    let mut index = read_to_write(config_root)?;
+    if !index.entries.iter().any(|e| e.id == id) {
+        return Err(ReadError::NotInYourKeys.to_string());
+    }
+    credentials
+        .delete(SERVICE, &id.to_string())
+        .map_err(|why| format!("your keychain didn't delete it: {why}"))?;
+    let left = "its line is still in your keys, with Remove";
+    mark::forget(config_root, id)
+        .map_err(|why| format!("its mark couldn't be deleted ({why}), and {left}"))?;
+    allowances
+        .remove_all(id)
+        .map_err(|why| format!("its pools couldn't be cleared ({why}), and {left}"))?;
+    index.entries.retain(|e| e.id != id);
+    write(config_root, &index).map_err(|why| format!("{why}, and {left}"))
 }

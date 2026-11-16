@@ -63,6 +63,10 @@ pub fn stop_sending(
     allowances: &dyn Allowances,
     link: &dyn Link,
 ) -> Result<(), String> {
-    let _ = (entry, pool, allowances, link);
-    Ok(())
+    allowances.revoke(entry, pool)?;
+    link.removal(pool, entry).map_err(|why| {
+        format!(
+            "the key is no longer sent to {pool}, and its running chats there weren't told: {why}"
+        )
+    })
 }
