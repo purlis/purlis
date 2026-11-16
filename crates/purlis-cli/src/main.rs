@@ -57,6 +57,7 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod policy;
 mod pool;
 mod poolsetup;
 mod queries;
@@ -240,6 +241,10 @@ enum Command {
     /// and a theme folder imported from another program's theme or exported as a zip.
     #[command(subcommand)]
     Theme(theme::ThemeCommand),
+
+    /// This machine's policy: what this build reads in a policy file, before it is rolled out.
+    #[command(subcommand)]
+    Policy(policy::PolicyCommand),
 
     /// Profiles: one identity of a harness each, and how it signs in.
     #[command(subcommand)]
@@ -1416,6 +1421,9 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         // This machine's themes and the theme folders of the plane and its workspaces: read
         // through the theme engine, and nothing is written.
         | Command::Theme(_)
+        // A policy file, this machine's or a draft, read and never written: nothing of a
+        // project's.
+        | Command::Policy(_)
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
@@ -3792,6 +3800,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
             | ProfileCommand::SignOut { .. },
         )
         | Command::Pool(_)
+        | Command::Policy(_)
         | Command::Signing(_)
         | Command::Vault(_) => {
             unreachable!("answered before run")
@@ -5893,6 +5902,9 @@ fn main() -> ExitCode {
         // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
         // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),
+        // `policy check` reads a policy file, this machine's or a draft, and needs no project;
+        // it chooses its own exit, 0, 1 or 2 (`policy.rs`).
+        Command::Policy(command) => return policy::run(command),
         // `news` and `update` say several lines of their own on both streams and choose their
         // own exit status, exactly as `init` does.
         Command::News(news) => {

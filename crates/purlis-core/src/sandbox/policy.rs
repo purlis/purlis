@@ -180,6 +180,8 @@ use super::grant;
 use super::hosts::{Granted, Host, Level};
 use super::internal::Entry;
 
+pub mod check;
+
 /// **This machine's policy file**: in a system folder only an administrator writes.
 pub const MACHINE_FILE: &str = "/etc/purlis/policy.json";
 
@@ -1068,6 +1070,18 @@ const KEYS: [&str; 16] = [
     "relayed-internal",
 ];
 
+/// The first stable release that reads a policy key (H-11): a release, or none yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstRead {
+    /// The first stable release whose reader takes the key.
+    Release(&'static str),
+    /// No stable release reads it yet.
+    NotYet,
+}
+
+/// The first stable release that reads each key the parser takes (stub).
+pub const FIRST_READ: &[(&str, FirstRead)] = &[];
+
 /// The keys a policy file's top level may hold.
 const TOP_KEYS: [&str; 5] = ["owner", "sandbox", "dispatch", "min-version", "models"];
 
@@ -1643,3 +1657,9 @@ mod tests;
 
 #[cfg(test)]
 mod model_tests;
+
+#[cfg(test)]
+mod first_read_tests;
+
+#[cfg(test)]
+mod check_tests;
