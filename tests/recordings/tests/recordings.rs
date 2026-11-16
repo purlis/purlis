@@ -372,10 +372,28 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
                 && c.reply.is_some()),
             "{harness}: no SessionStart answered"
         );
+        // What purlis's SessionStart answered reaches the model, wherever the harness puts it.
+        let context: Vec<String> = made
+            .hook_calls
+            .iter()
+            .filter(|c| c.argv.get(1).is_some_and(|w| w.starts_with("sessionstart")))
+            .filter_map(|c| {
+                c.reply.as_ref()?.stdout["hookSpecificOutput"]["additionalContext"]
+                    .as_str()
+                    .and_then(|t| t.lines().next())
+                    .map(str::to_owned)
+            })
+            .collect();
         assert!(
-            made.shown.iter().any(|s| s.kind == "context"),
-            "{harness}: the model was shown no hook context"
+            !context.is_empty(),
+            "{harness}: SessionStart gave no context"
         );
+        for line in &context {
+            assert!(
+                made.shown.iter().any(|s| s.text.contains(line.as_str())),
+                "{harness}: the model was not shown purlis's SessionStart context {line:?}"
+            );
+        }
         assert_eq!(
             made.conditions.get("summary").map(String::as_str),
             Some(recording::FULL_BYPASSED),

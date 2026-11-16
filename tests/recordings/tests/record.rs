@@ -172,10 +172,11 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     // What the refused dials aim at: a loopback listener of this run's, which could be dialled,
     // on a port the chat is never granted. Nothing may arrive at it.
     let refused = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a refused listener");
-    let refused_url = format!(
-        "http://127.0.0.1:{}/",
+    let refused_target = format!(
+        "127.0.0.1:{}",
         refused.local_addr().expect("its port").port()
     );
+    let refused_url = format!("http://{refused_target}/");
     let arrived = Arc::new(Mutex::new(Vec::<String>::new()));
     {
         let arrived = Arc::clone(&arrived);
@@ -443,13 +444,13 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             std::thread::sleep(Duration::from_secs(2));
         }
         // A harness's own permission ask during the turn (OpenCode's "Permission required" for
-        // a folder outside the project; Claude Code's "Do you want to proceed?" in its asks pass)
+        // a folder outside the project; Claude Code's "Do you want to create …?" in its asks pass)
         // is allowed once, as a person who lets the sandbox judge allows it: then the wrap, not
         // the harness, decides the call. Counted in the recording's conditions. Only once
         // purlis's own hook on the ask has answered (`permissionrequest`): pressed sooner,
         // OpenCode cuts that hook off, and the recording says so (1.19.5, run 9).
-        let asking = screen.contains("Permission required")
-            || (asks && screen.contains("Do you want to proceed?"));
+        let asking =
+            screen.contains("Permission required") || (asks && screen.contains("Do you want to"));
         if harness_asks < 8 && settled("permissionrequest") && asking {
             session.write(b"\r").expect("Allow once is chosen");
             harness_asks += 1;
@@ -458,11 +459,27 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         std::thread::sleep(Duration::from_millis(250));
     }
     let screen = session.screen().lines.join("\n");
-    for _ in 0..2 {
+    // The chat ends as a person ends it, Ctrl-C until the harness exits, and is left to run its
+    // closing hooks: every hook call it began answers before the confinement goes. Two quick
+    // Ctrl-Cs cut Claude Code's SessionEnd off in one of two runs (CI run 43834558626).
+    for _ in 0..3 {
         let _ = session.write(b"\x03");
-        std::thread::sleep(Duration::from_millis(700));
+        if matches!(session.wait(Duration::from_secs(3)), Ok(Some(_))) {
+            break;
+        }
     }
     let _ = session.wait(Duration::from_secs(10));
+    let since = Instant::now();
+    while since.elapsed() < Duration::from_secs(15)
+        && !recorder::read(&recorder_out).is_ok_and(|lines| {
+            lines
+                .iter()
+                .filter(|l| l.phase == "call" && l.forced.is_none())
+                .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
+        })
+    {
+        std::thread::sleep(Duration::from_millis(250));
+    }
     session.end();
 
     // **What the refused calls aimed at is untouched** (Q301): a file outside the chat's folders
@@ -533,11 +550,8 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     if let Ok(home) = std::env::var("HOME") {
         root_of("home", Path::new(&home));
     }
-    // The refused dial's target, whose port is this run's.
-    roots.insert(
-        "refused-url".to_owned(),
-        refused_url.trim_end_matches('/').to_owned(),
-    );
+    // The refused dial's target, whose port is this run's, as a URL or a host and port.
+    roots.insert("refused-target".to_owned(), refused_target.clone());
     let made = Recording {
         harness: harness.clone(),
         version: version.clone(),

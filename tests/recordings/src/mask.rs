@@ -70,6 +70,17 @@ pub const TOOL_USE_KEYS: &[&str] = &[
     "toolCallId",
 ];
 
+/// Keys whose value is the id of a background task or agent a tool use started, in Claude Code's
+/// spelling. The id is then replaced where a [`TASK_IDS`] shape holds it, or where a string is that
+/// id whole (`background_tasks[].id`), never inside another word.
+pub const TASK_KEYS: &[&str] = &[
+    "backgroundTaskId",
+    "agentId",
+    "agent_id",
+    "task_id",
+    "taskId",
+];
+
 /// Keys whose value is a time.
 pub const TIME_KEYS: &[&str] = &[
     "timestamp",
@@ -95,7 +106,12 @@ pub struct RacyOrder {
 }
 
 /// Every order the mask may put right, by name. Nothing is added without CI's evidence.
-pub const RACY_ORDERS: &[RacyOrder] = &[];
+pub const RACY_ORDERS: &[RacyOrder] = &[RacyOrder {
+    harness: "codex",
+    words: &["sessionstart", "sessionstart-skills"],
+    reason: "Codex 0.169 starts every SessionStart hook at once; these two began in both orders \
+             in the two recordings of one CI job (run 43834558626, `harness recording (codex)`)",
+}];
 
 /// Variables holding the harness process's id, which purlis reads as its session's.
 pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
@@ -260,6 +276,8 @@ impl Ids {
                     {
                         if SESSION_KEYS.contains(&key.as_str()) {
                             self.session(id);
+                        } else if TASK_KEYS.contains(&key.as_str()) {
+                            self.task(id);
                         } else if TOOL_USE_KEYS.contains(&key.as_str())
                             && !self.named.contains_key(id)
                         {
@@ -285,15 +303,18 @@ impl Ids {
                     }
                 }
                 for found in TASK_IDS.captures_iter(text) {
-                    let id = &found[1];
-                    if !self.tasks.contains_key(id) {
-                        let n = self.tasks.len() + 1;
-                        self.tasks
-                            .insert(id.to_owned(), format!("<tool-use-task-{n}>"));
-                    }
+                    self.task(&found[1]);
                 }
             }
             _ => {}
+        }
+    }
+
+    fn task(&mut self, id: &str) {
+        if !self.tasks.contains_key(id) {
+            let n = self.tasks.len() + 1;
+            self.tasks
+                .insert(id.to_owned(), format!("<tool-use-task-{n}>"));
         }
     }
 
@@ -309,6 +330,9 @@ impl Ids {
     fn replace(&self, text: &str) -> String {
         let mut ids: Vec<(&String, &String)> = self.named.iter().collect();
         ids.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(b.0)));
+        if let Some(placeholder) = self.tasks.get(text) {
+            return placeholder.clone();
+        }
         let mut out = text.to_owned();
         for (id, placeholder) in ids {
             if out.contains(id.as_str()) {
@@ -717,5 +741,50 @@ mod tests {
             .map(|c| c["argv"][1].as_str().expect("a word"))
             .collect();
         assert_eq!(words, ["a", "b", "c", "b", "c", "a"]);
+    }
+
+    #[test]
+    fn a_task_id_a_key_names_is_masked_where_it_is_a_whole_value() {
+        let raw = json!({"hook_calls": [
+            {"stdin": {"tool_response": {"agentId": "a1801bc59fc699e63"}}},
+            {"stdin": {"agent_id": "a1801bc59fc699e63",
+                "background_tasks": [{"id": "a1801bc59fc699e63"}], "note": "xa1801bc59fc699e63"}}
+        ]});
+        let masked = mask(&raw);
+        assert_eq!(
+            masked["hook_calls"][0]["stdin"]["tool_response"]["agentId"],
+            "<tool-use-task-1>"
+        );
+        assert_eq!(
+            masked["hook_calls"][1]["stdin"]["agent_id"],
+            "<tool-use-task-1>"
+        );
+        assert_eq!(
+            masked["hook_calls"][1]["stdin"]["background_tasks"][0]["id"],
+            "<tool-use-task-1>"
+        );
+        assert_eq!(
+            masked["hook_calls"][1]["stdin"]["note"],
+            "xa1801bc59fc699e63"
+        );
+    }
+
+    #[test]
+    fn codexs_session_start_pair_seen_both_ways_is_put_in_one_order() {
+        let call = |w: &str| json!({"argv": ["hook", w]});
+        let recording = |first: &str, second: &str| {
+            json!({"harness": "codex", "hook_calls": [call("sessionstart-notes"), call(first),
+                call(second), call("sessionstart-quoted")]})
+        };
+        let a = mask(&recording("sessionstart-skills", "sessionstart"));
+        assert_eq!(a, mask(&recording("sessionstart", "sessionstart-skills")));
+        assert_eq!(a["hook_calls"][1]["argv"][1], "sessionstart");
+        // Only Codex's: another harness's order is its own.
+        let mut other = recording("sessionstart-skills", "sessionstart");
+        other["harness"] = json!("claude");
+        assert_eq!(
+            mask(&other)["hook_calls"][1]["argv"][1],
+            "sessionstart-skills"
+        );
     }
 }

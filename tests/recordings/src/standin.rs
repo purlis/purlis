@@ -61,6 +61,11 @@ pub struct Heard {
     pub offered: Vec<String>,
     /// The calls it was asked to make, as its harness names them.
     pub asked: Vec<AskedCall>,
+    /// The request whole but its tool schemas, for the chat's first two requests only: what a
+    /// reader of the run's evidence needs to see where a harness put what it was given. Never
+    /// part of a recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Value>,
 }
 
 /// An HTTP answer.
@@ -207,7 +212,24 @@ impl StandIn {
                 })
                 .collect()
         });
+        let raw = (conversation == Conversation::Main
+            && self
+                .heard
+                .lock()
+                .expect("the stand-in's log")
+                .iter()
+                .filter(|h| h.conversation == Conversation::Main)
+                .count()
+                < 2)
+        .then(|| {
+            let mut raw = body.clone();
+            if let Some(map) = raw.as_object_mut() {
+                map.remove("tools");
+            }
+            raw
+        });
         self.heard.lock().expect("the stand-in's log").push(Heard {
+            raw,
             path: path.to_owned(),
             conversation,
             response: next,
