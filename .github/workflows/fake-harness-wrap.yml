@@ -68,10 +68,16 @@ jobs:
           status=0
           # The run's folder is named as the recording driver names its own, so an absolute path
           # in what a command printed is as long as it was there: Codex counts its tokens.
-          for test in the_fake_harness_reproduces_each_recorded_harness_session \
-                      a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_script \
-                      an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap; do
+          tests="the_fake_harness_reproduces_each_recorded_harness_session
+                 a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_script
+                 an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap"
+          # Claude Code's asks pass, recorded for it alone (T1.1-03).
+          if [ "$DIALECT" = claude ]; then
+            tests="$tests the_fake_claude_code_reproduces_its_recorded_permission_ask"
+          fi
+          for test in $tests; do
             echo "::group::$DIALECT: $test"
+            log="$out/$test.log"
             CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" \
               PATH="$PWD/crates/fake-harness/shims:$PATH" \
               FAKE_WRAP_DIALECT="$DIALECT" FAKE_WRAP_PURLIS="$PWD/target/debug/purlis" \
@@ -81,7 +87,12 @@ jobs:
               FAKE_WRAP_OUT="$out" FAKE_WRAP_BASE="$RUNNER_TEMP/recording-$DIALECT-covering" \
               PURLIS_CONFIG_HOME="$homes/config-$test" PURLIS_DATA_HOME="$homes/data-$test" \
               cargo test --locked -p fake-harness --test under_the_wrap -- --ignored --exact "$test" --nocapture \
-              || { echo "::error::$DIALECT: $test failed"; status=1; }
+              2>&1 | tee "$log"
+            # A test renamed or gone runs nothing and exits 0: only "1 passed" is a pass.
+            if [ "${PIPESTATUS[0]}" -ne 0 ] || ! grep -qE '^test result: ok\. 1 passed;' "$log"; then
+              echo "::error::$DIALECT: $test failed, or ran no test"
+              status=1
+            fi
             echo "::endgroup::"
           done
           exit "$status"
