@@ -2198,6 +2198,13 @@ body {
   animation: workspace-slide-back var(--motion-duration-slide) var(--motion-easing-enter);
 }
 
+/* A scenario-test build slides nothing (`theme/motion.ts`, `ARRIVALS_ATTRIBUTE`, #4351): WebKit
+   suspends the slide while the window is behind another, and every region stayed at opacity 0. */
+:root[data-arrivals="at-once"] .regions[data-slide="on"],
+:root[data-arrivals="at-once"] .regions[data-slide="back"] {
+  animation: none;
+}
+
 @keyframes workspace-slide-on {
   from {
     transform: translateX(28px);
@@ -6652,6 +6659,11 @@ nav.piece-files-head {
 
 .region-view[data-swapped] {
   animation: purlis-swap var(--motion-duration-swap) var(--motion-easing-enter);
+}
+
+/* And swaps a list in at once, for the slide's reason (#4351). */
+:root[data-arrivals="at-once"] .region-view[data-swapped] {
+  animation: none;
 }
 
 .panel-half.arrived {

@@ -64,6 +64,27 @@ describe("an overlay in the scenario-test build (#4351)", () => {
     expect(missing).toEqual([]);
   });
 
+  it("slides no workspace in and swaps no side view's list in, which hid every region", () => {
+    const all = SHEETS.flatMap(([, text]) => rules(text));
+    const arrivals = [
+      '.regions[data-slide="on"]',
+      '.regions[data-slide="back"]',
+      ".region-view[data-swapped]",
+    ];
+    const missing = arrivals.filter((selector) => {
+      // The arrival is still drawn with an animation, or this guards a selector gone.
+      expect(
+        all.some((rule) => rule.selector === selector && /\banimation\s*:/.test(rule.body)),
+      ).toBe(true);
+      return !all.some(
+        (rule) =>
+          rule.selector.split(",").some((one) => one.trim() === `${AT_ONCE} ${selector}`) &&
+          /\banimation\s*:\s*none\b/.test(rule.body),
+      );
+    });
+    expect(missing).toEqual([]);
+  });
+
   it("is marked on the root in the scenario-test build, and in no other", () => {
     const scenario = document.createElement("html");
     arriveAtOnceInScenarioTests(scenario, true);
