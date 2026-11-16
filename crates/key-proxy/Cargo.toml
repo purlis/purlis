@@ -27,7 +27,8 @@ http-body-util = "0.1"
 bytes = "1"
 # How an upstream is reached (T1a-60): purlis-core's `Outbound` connects, and its
 # `upstream::trust` client verifies against the OS trust store (R-056), one path for both
-# binaries; and the window's copy for what a failure names (W81).
+# binaries; the window's copy for what a failure names (W81); and a run's route with the checks
+# of each request against it, core's allowlist and URL join (T1a-08).
 purlis-core.workspace = true
 # TLS to the upstream on that client config: the rustls purlis-core links, on `ring`, and
 # tokio-rustls with no provider of its own.

@@ -4,14 +4,16 @@
 //! **What the tests start a run's key proxy through** (D-3): a [`StartPath`], and the desktop's,
 //! [`Desktop`]: the window's `StartKeyProxy` to its session host, which starts the real key
 //! proxy through the binary's trait. Here that trait is the test's own: it hands the key proxy
-//! the test route and the stand-in key the test named for the run (the run's real route is
-//! T1a-08's, its key T1a-61's). A start path is made with the [`Reach`] its key proxy reaches
+//! the route the test named for the run, or the one it resolves at the start from [`Sources`],
+//! a declaration store and your keys that count their reads (T1a-08), with the stand-in key (the
+//! real start's wiring is T1a-17's, its key T1a-61's). A start path is made with the [`Reach`] its key proxy reaches
 //! upstreams through (T1a-60): [`plain_reach`] for a plain-HTTP provider on loopback, or one the
 //! test made, with the fake provider's test root in the trust store, its name reached on
 //! loopback and the outbound proxy the test names in place of the system's.
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +22,8 @@ use fake_harness::model::{Provider, Recording, TestRoot};
 use http_body_util::{BodyExt, Full};
 use hyper::{HeaderMap, Request};
 use hyper_util::rt::TokioIo;
+use purlis_core::model_provider::{self, Format, built_ins};
+use purlis_core::model_route;
 use purlis_core::upstream::{Direct, TestReach, trust};
 use purlis_host::standin::StandIns;
 use purlis_host::{
@@ -31,7 +35,7 @@ use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
 use purlis_session_protocol::session::{self, Answer, Client, Command, Events};
 use purlis_terminal::session::Spec;
-use tokio::io::duplex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 /// How long a test waits on the key proxy or the host before it fails.
 pub const PATIENCE: Duration = Duration::from_secs(10);
@@ -45,6 +49,13 @@ pub const STAND_IN_KEY: &str = "stand-in-for-the-runs-key";
 pub(crate) trait StartPath {
     /// Starts `run`'s key proxy with `route` as its route: its port and token.
     async fn start(&self, run: &str, route: Route) -> (u16, String);
+
+    /// Starts `run`'s key proxy on the route the binary's trait resolves from `sources` when
+    /// the start reaches it, as a real start resolves its profile's: its port and token.
+    async fn start_from(&self, run: &str, sources: Arc<Sources>) -> (u16, String);
+
+    /// How many requests have arrived on `run`'s listener: the route-used signal.
+    fn arrivals(&self, run: &str) -> usize;
 
     /// Stops `run`'s key proxy, as its run ends.
     async fn stop(&self, run: &str);
@@ -63,7 +74,73 @@ pub(crate) trait StartPath {
 pub fn route_to(provider: &Provider) -> Route {
     Route {
         origin: Origin::http("127.0.0.1", provider.port()),
+        bound: anthropic(),
         key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+    }
+}
+
+/// The Anthropic built-in's Messages route for Claude Code (T1a-08).
+pub fn anthropic() -> model_route::Route {
+    let declaration = built_ins()
+        .iter()
+        .find(|declaration| declaration.id == "anthropic")
+        .expect("the Anthropic built-in ships");
+    model_route::Route::bind("claude-anthropic", declaration, Format::AnthropicMessages)
+        .expect("a Messages endpoint")
+}
+
+/// **Where a run's route comes from at its start** (R-077, R-479): a declaration store holding
+/// one declaration of the person's own, your keys holding the stand-in key, and the plain-HTTP
+/// port on loopback each declared origin is served at; each read of the store and of your keys
+/// counted.
+pub struct Sources {
+    declaration: Mutex<String>,
+    served_at: HashMap<String, u16>,
+    pub declaration_reads: AtomicUsize,
+    pub key_reads: AtomicUsize,
+}
+
+impl Sources {
+    /// A store holding a Messages declaration whose base is `base`, each origin in `served_at`
+    /// served on that loopback port.
+    pub fn new(base: &str, served_at: &[(&str, u16)]) -> Arc<Sources> {
+        Arc::new(Sources {
+            declaration: Mutex::new(Sources::text(base)),
+            served_at: served_at
+                .iter()
+                .map(|(origin, port)| ((*origin).to_owned(), *port))
+                .collect(),
+            declaration_reads: AtomicUsize::new(0),
+            key_reads: AtomicUsize::new(0),
+        })
+    }
+
+    fn text(base: &str) -> String {
+        format!(
+            "id = \"gateway\"\nname = \"A gateway\"\nkind = \"router\"\n\n[[endpoint]]\n\
+             format = \"anthropic-messages\"\nbase = \"{base}\"\nauth = \"x-api-key\"\n"
+        )
+    }
+
+    /// The person edits the declaration: its base is now `base`.
+    pub fn edit(&self, base: &str) {
+        *self.declaration.lock().unwrap() = Sources::text(base);
+    }
+
+    /// The route a start resolves: the declaration read once, bound, and the key read once.
+    fn route(&self) -> Route {
+        self.declaration_reads.fetch_add(1, Ordering::SeqCst);
+        let text = self.declaration.lock().unwrap().clone();
+        let declaration = model_provider::parse(&text, &model_provider::From::Yours, &[], "g.toml")
+            .expect("the store holds a declaration");
+        let bound = model_route::Route::bind("mine", &declaration, Format::AnthropicMessages)
+            .expect("a Messages endpoint");
+        self.key_reads.fetch_add(1, Ordering::SeqCst);
+        Route {
+            origin: Origin::http("127.0.0.1", self.served_at[bound.base.origin()]),
+            bound,
+            key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+        }
     }
 }
 
@@ -74,6 +151,7 @@ pub const UPSTREAM: &str = "api.anthropic.com";
 pub fn route_to_upstream() -> Route {
     Route {
         origin: Origin::https(UPSTREAM, 443),
+        bound: anthropic(),
         key: Key::XApiKey(STAND_IN_KEY.to_owned()),
     }
 }
@@ -198,6 +276,56 @@ pub async fn try_send_with(
     answered.map_err(|why| why.to_string())
 }
 
+/// Sends `method` on `target` to `port` as written, the run's `token` as the bearer credential
+/// when there is one, an empty body, and the connection closed after the answer: the request a
+/// client library would refuse to write, read to the connection's end.
+pub async fn raw(port: u16, method: &str, target: &str, token: Option<&str>) -> Answered {
+    let mut stream = tokio::time::timeout(
+        PATIENCE,
+        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .expect("connected in time")
+    .expect("the listener accepts");
+    let credential = token
+        .map(|token| format!("authorization: Bearer {token}\r\n"))
+        .unwrap_or_default();
+    let head = format!(
+        "{method} {target} HTTP/1.1\r\nhost: 127.0.0.1:{port}\r\n{credential}\
+         content-length: 0\r\nconnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let mut got = Vec::new();
+    tokio::time::timeout(PATIENCE, stream.read_to_end(&mut got))
+        .await
+        .expect("answered in time")
+        .expect("read to its end");
+    let text = String::from_utf8_lossy(&got);
+    let (head, body) = text
+        .split_once("\r\n\r\n")
+        .unwrap_or_else(|| panic!("no answer's head in {text:?}"));
+    let mut lines = head.lines();
+    let status = lines
+        .next()
+        .and_then(|line| line.split(' ').nth(1))
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_else(|| panic!("no status line in {head:?}"));
+    let mut headers = HeaderMap::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.append(
+                hyper::header::HeaderName::from_bytes(name.trim().as_bytes()).unwrap(),
+                value.trim().parse().unwrap(),
+            );
+        }
+    }
+    Answered {
+        status,
+        headers,
+        body: body.as_bytes().to_vec(),
+    }
+}
+
 /// [`try_send`], answered.
 pub async fn send(port: u16, token: Option<&str>, path: &str, body: &[u8]) -> Answered {
     try_send(port, token, path, body)
@@ -276,14 +404,32 @@ impl Record for Kept {
 #[derive(Clone)]
 struct RoutesTheTestNamed {
     proxy: Arc<KeyProxy>,
-    routes: Arc<Mutex<HashMap<String, Route>>>,
+    routes: Arc<Mutex<HashMap<String, Named>>>,
     told: Arc<Mutex<Vec<String>>>,
+    arrivals: Arc<Mutex<HashMap<String, usize>>>,
+}
+
+/// The route a test named for a run: a value, or what [`Sources`] resolve at the start.
+#[derive(Clone)]
+enum Named {
+    Route(Route),
+    From(Arc<Sources>),
 }
 
 impl ProxiesKeys for RoutesTheTestNamed {
     fn start(&self, run: &str, tell: KeyProxyTell) -> Result<KeyProxyStarted, String> {
-        let route = self.routes.lock().unwrap().get(run).cloned();
+        let route = self
+            .routes
+            .lock()
+            .unwrap()
+            .get(run)
+            .cloned()
+            .map(|named| match named {
+                Named::Route(route) => route,
+                Named::From(sources) => sources.route(),
+            });
         let (said, recorded) = (Arc::clone(&self.told), Arc::clone(&self.told));
+        let (arrivals, arrived_on) = (Arc::clone(&self.arrivals), run.to_owned());
         let (tell_said, tell_recorded) = (Arc::clone(&tell), tell);
         let started = self
             .proxy
@@ -304,6 +450,13 @@ impl ProxiesKeys for RoutesTheTestNamed {
                         };
                         recorded.lock().unwrap().push(format!("{told:?}"));
                         tell_recorded(told);
+                    }),
+                    arrived: Arc::new(move || {
+                        *arrivals
+                            .lock()
+                            .unwrap()
+                            .entry(arrived_on.clone())
+                            .or_default() += 1;
                     }),
                 },
             )
@@ -346,6 +499,7 @@ impl Desktop {
             proxy: Arc::new(KeyProxy::reaching(reach).expect("its runtime starts")),
             routes: Arc::default(),
             told: Arc::default(),
+            arrivals: Arc::default(),
         };
         let log = Kept::default();
         let hosting = Hosting::running_with_its_switch_in(folder.path(), Echo, StandIns::default())
@@ -377,13 +531,13 @@ impl Desktop {
     }
 }
 
-impl StartPath for Desktop {
-    async fn start(&self, run: &str, route: Route) -> (u16, String) {
+impl Desktop {
+    async fn start_named(&self, run: &str, named: Named) -> (u16, String) {
         self.proxies
             .routes
             .lock()
             .unwrap()
-            .insert(run.to_owned(), route);
+            .insert(run.to_owned(), named);
         let answer = self
             .window
             .call(Command::StartKeyProxy { run: run.into() })
@@ -393,6 +547,26 @@ impl StartPath for Desktop {
             panic!("not a key proxy's start: {answer:?}");
         };
         (port, token.0)
+    }
+}
+
+impl StartPath for Desktop {
+    async fn start(&self, run: &str, route: Route) -> (u16, String) {
+        self.start_named(run, Named::Route(route)).await
+    }
+
+    async fn start_from(&self, run: &str, sources: Arc<Sources>) -> (u16, String) {
+        self.start_named(run, Named::From(sources)).await
+    }
+
+    fn arrivals(&self, run: &str) -> usize {
+        self.proxies
+            .arrivals
+            .lock()
+            .unwrap()
+            .get(run)
+            .copied()
+            .unwrap_or_default()
     }
 
     async fn stop(&self, run: &str) {
