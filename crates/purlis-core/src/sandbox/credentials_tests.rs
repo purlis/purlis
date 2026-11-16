@@ -275,22 +275,25 @@ fn a_claude_code_chat_in_purlis_s_wrap_on_linux_never_reads_a_credential() {
     }
 }
 
-/// The person's own agent: a listening socket where `SSH_AUTH_SOCK` would name it, outside every
-/// folder a chat writes, and the grant a person's Allow keeps for it.
-fn agent() -> (
-    tempfile::TempDir,
-    std::os::unix::net::UnixListener,
-    PathBuf,
-    grant::Grants,
-) {
-    let dir = tempfile::tempdir().expect("the agent's folder");
-    let path = real(dir.path()).join("agent.sock");
-    let listening = std::os::unix::net::UnixListener::bind(&path).expect("the agent listens");
+/// The person's own agent, where `SSH_AUTH_SOCK` would name it, and the grant a person's Allow
+/// keeps for it. Outside every folder a chat may write, the temp folder among them, or the grant
+/// is refused (a chat could put any socket there): so at the root, not in a temp folder. Nothing
+/// listens there: a kept grant stands while the agent is not running ([`services::still_sockets`]),
+/// and what a chat may reach is read from its rules, not from the socket.
+fn agent() -> (PathBuf, grant::Grants) {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let path = PathBuf::from(format!(
+        "/purlis-test-agent-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ))
+    .join("agent.sock");
+    assert!(!path.exists(), "{} is there already", path.display());
     let grants = grant::Grants {
         sockets: vec![path.clone()],
         ..grant::Grants::default()
     };
-    (dir, listening, path, grants)
+    (path, grants)
 }
 
 /// Q321 point 27: the person's own agent, the socket `SSH_AUTH_SOCK` names, is reached by no
@@ -298,7 +301,7 @@ fn agent() -> (
 #[test]
 fn the_persons_own_ssh_agent_is_refused_until_a_person_allows_it() {
     let (_dir, home) = home();
-    let (_agent_dir, _listening, agent, allowed) = agent();
+    let (agent, allowed) = agent();
     for (os, harness) in [
         (Os::MacOs, Harness::Codex),
         (Os::Linux, Harness::ClaudeCode),
@@ -324,7 +327,7 @@ fn the_persons_own_ssh_agent_is_refused_until_a_person_allows_it() {
 #[test]
 fn a_claude_code_chat_on_macos_reaches_the_persons_agent_only_once_allowed() {
     let (_dir, home) = home();
-    let (_agent_dir, _listening, agent, allowed) = agent();
+    let (agent, allowed) = agent();
     let machine = machine(&home, Os::MacOs);
     let sockets = |applied: &Applied| {
         let Form::ClaudeCode(settings) = applied.form() else {
