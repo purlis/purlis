@@ -1,0 +1,96 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **Recordings of the real harnesses on this Linux runner** (M74.1, T1.1-03): each harness, at
+# its pinned version or at its latest release, runs the covering script under purlis's wrap at
+# Full against the stand-in model (`tests/recordings`). Its recording and turn script are written
+# under `target/recordings/<harness>/<version>/`, with what a reader of the run needs under
+# `target/recordings/evidence/`; the caller uploads them.
+#
+# With `compare: "true"` (the nightly re-record) each fresh recording is diffed against the one
+# checked in for the pinned version (`harness-drift`): drift opens a `harness-drift` issue, and a
+# refused call whose recording changed fails the step, which the nightly list's `kind: escape`
+# files as a public `area:security`, `priority:p0` issue (Q301).
+#
+# No credential is used and no model is called: the model is the stand-in on a loopback port.
+name: Harness recordings
+description: Records each harness's covering script under purlis's wrap against the stand-in model.
+inputs:
+  harnesses:
+    description: The harnesses to record, space-separated.
+    required: false
+    default: "claude codex opencode"
+  at:
+    description: "pinned (the version files' versions) or latest (each harness's latest release)."
+    required: false
+    default: pinned
+  compare:
+    description: "true to diff each fresh recording against the checked-in one and open drift issues."
+    required: false
+    default: "false"
+  github-token:
+    description: The token drift issues are opened with, when comparing.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: The sandbox's programs
+      uses: ./.github/actions/linux-packages
+      with:
+        packages: bubblewrap socat
+    - uses: ./.github/actions/rust-toolchain
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: rust
+        save-if: false
+    - name: Build purlis and the recording driver
+      shell: bash
+      run: |
+        cargo build --locked -p purlis-cli --bin purlis
+        cargo test --locked -p purlis-recordings --no-run
+    - name: Record each harness
+      shell: bash
+      env:
+        HARNESSES: ${{ inputs.harnesses }}
+        AT: ${{ inputs.at }}
+        COMPARE: ${{ inputs.compare }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        # Ubuntu 23.10 and later let only a program an AppArmor profile names make a user
+        # namespace; the harnesses' own helpers have none, so the runner allows them, as a
+        # machine without that rule does.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        out="$PWD/target/recordings"
+        mkdir -p "$out"
+        status=0
+        for harness in $HARNESSES; do
+          echo "::group::$harness at its $AT version"
+          bin=$(tools/harness-install.sh "$harness" "$AT") || { status=1; echo "::endgroup::"; continue; }
+          homes=$(mktemp -d "$RUNNER_TEMP/homes-$harness-XXXX")
+          if ! PATH="$bin:$PATH" PURLIS_RECORD_HARNESS="$harness" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
+              PURLIS_RECORD_OUT="$out" PURLIS_CONFIG_HOME="$homes/config" PURLIS_DATA_HOME="$homes/data" \
+              cargo test --locked -p purlis-recordings --test record -- --ignored --exact \
+              records_a_harness_under_purlis_wrap_at_full --nocapture; then
+            echo "::error::$harness at its $AT version did not record"
+            status=1
+          fi
+          if [ "$harness" = codex ]; then
+            PURLIS_CODEX="$bin/codex" cargo test --locked -p purlis-recordings --test recordings -- --ignored \
+              --exact codex_runs_a_covering_script_against_the_responses_stand_in --nocapture || status=1
+          fi
+          if [ "$COMPARE" = true ]; then
+            pinned=$(ls -d tests/recordings/recorded/"$harness"/*/ 2>/dev/null | head -1)
+            fresh=$(ls -d "$out/$harness"/*/ 2>/dev/null | head -1)
+            if [ -n "$pinned" ] && [ -n "$fresh" ]; then
+              cargo run --locked -q -p purlis-recordings --bin harness-drift -- \
+                "$pinned/recording.json" "$fresh/recording.json" "$AT" || status=1
+            else
+              echo "::error::no recording of $harness to compare"
+              status=1
+            fi
+          fi
+          echo "::endgroup::"
+        done
+        exit "$status"
