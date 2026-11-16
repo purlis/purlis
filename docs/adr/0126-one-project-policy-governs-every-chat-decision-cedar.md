@@ -1,10 +1,11 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
-Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5) and Q320b
-(R2-1–R2-4), in the who-judges orchestration (`work/who-judges/decisions.md` on the plane). It
-also takes in the calls of the spec's first five Fable review rounds
-(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-5.md` on the plane).
+Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5), Q320b
+(R2-1–R2-4), Q320c (R5-1–R5-3) and Q320d, in the who-judges orchestration
+(`work/who-judges/decisions.md` on the plane). It also takes in the calls of the spec's first six
+Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` to
+`review-round-5.md` on the plane; review round 6's calls are Q320c and Q320d).
 Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
 closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
@@ -88,14 +89,21 @@ rewriting every project's `policy.cedar`.
   from the working file (Q309 point 1). With no HEAD there is no committed policy: the accepted
   copy, or else the shipped default, applies (Q320a N3). The HEAD read, and the press's author
   check, read history as written: no replace objects (`GIT_NO_REPLACE_OBJECTS=1`), no grafts, and
-  no repo config key that changes what is read. The press calls the author unverified whenever
-  the repo holds a replace ref (review round 5, SEC5-SF1).
-- **Every input a rule can read is sealed or committed** (review round 5, SEC5-B1). The device
-  name that `context.machine` reads is sealed in the keyring item's registry and changes only by
-  a press in the window; every other entity attribute a rule can name (a vault's tags, a path's
-  owning workspace) is read at HEAD and falls under "stricter of two"; a rule that names an
-  attribute neither sealed nor committed is refused at load. A plain file such as `machine.json`,
-  which a chat at the sandbox level `off` can edit, decides nothing.
+  no repo config key that changes what is read, each such key overridden on the command line while
+  the repo's required extensions are kept (Q320c R5-1). The press calls the author unverified
+  whenever the repo holds a replace ref (review round 5, SEC5-SF1).
+- **Every input a rule can read is sealed, committed or supplied by the host** (review round 5,
+  SEC5-B1; review round 6). `context.machine` is the device id (the random ULID `machine.json`
+  holds; there is no device name, and the hostname is only a label). It is sealed into the
+  keyring item's registry at the plane's first open and stays **unset until the person confirms
+  it in the window**; with no keyring or an unreadable registry it is unset too, so a rule that
+  reads it is a deny, which doctor declares. Rules name a device by its id (Q320d, replacing
+  Q320c R5-3). Every other entity attribute a rule can name (a vault's tags, a path's owning
+  workspace) is read at HEAD and falls under "stricter of two"; a local vault registration's tag
+  counts only when the app sealed it as the person's answer, and an unsealed one is ignored
+  (Q320d). A push is judged against its target as git will resolve it, `pushurl` and `insteadOf`
+  applied by purlis (Q320d). Every attribute in the schema declares its source. A plain file such
+  as `machine.json`, which a chat at the sandbox level `off` can edit, decides nothing.
 - The text the person last accepted on this machine is kept **sealed**. Every decision is the
   stricter (deny > ask > allow) of the committed policy and the accepted policy, and "stricter"
   covers all the policy's data: scopes, modes, limits, locks, the scan-allow data and the entity
@@ -117,15 +125,20 @@ rewriting every project's `policy.cedar`.
   that is missing or fails, is the **deny state**: the chat still starts, every action but
   `start` is refused, and nothing is allowed until the person re-presses (review round 2, S2-B1,
   S2-B2, F2-2; Q320b R2-3; review round 3, SEC3-B1, SEC3-B2; review round 4, F4 nit). The deny
-  state only adds refusals: `start` is still judged by the Organisation, the committed HEAD and
-  the shipped default, so a forbid on `start` still applies (review round 5, SEC5-SF2). A seal key
+  state only adds refusals: `start` is still judged by the Organisation, the committed HEAD, the
+  person's local tighten-only file and the shipped default, so a forbid on `start` still applies
+  (review round 5, SEC5-SF2; Q320d). A seal key
   left locked on an anchored plane (a cancelled Windows Hello, a wrong Linux password) is the deny
   state too; the shipped default applies only on a fresh install (review round 5, FB5-B1).
 - **A plane has a stable id, and the machine keeps a registry of anchored planes.** The plane id
   is kept in the plane's sealed manifest. The keyring item holds a sealed, machine-level registry
   of each anchored plane's id, real path and the path as opened, written when the app first
   opens the plane, so a process inside a plane with nothing sealed yet is never plane-less
-  (review round 5, SEC5 nit). A plane whose id is anchored but
+  (review round 5, SEC5 nit). A registered plane whose counter is still 0, with no store, is a
+  fresh install, since nothing was sealed and nothing can be lost (Q320c R5-2). With no keyring,
+  a process is plane-less only by the planes found on disk, never by the registry alone, and
+  inside a found plane the shipped default applies with the seal gap declared (Q320d). A plane
+  whose id is anchored but
   is seen at another path, an anchored path with no matching manifest, and a sealed store with no
   anchor are each the deny state, so moving a plane never reads as a fresh install. Only no anchor
   and no store is a fresh install, where the shipped default applies. The sandbox holds the plane
