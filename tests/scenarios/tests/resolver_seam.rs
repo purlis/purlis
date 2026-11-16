@@ -605,7 +605,9 @@ fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
     let service = Origin::http().expect("a service on this machine's loopback");
     let decoy = Origin::http().expect("an origin the map names");
     let port = service.addr().port();
-    let listed = format!("localhost:{port}");
+    // The grant of a port of this machine (qw384b), asked for by a name of this Mac.
+    let listed = format!("127.0.0.1:{port}");
+    let asked = format!("localhost:{port}");
     let names = Names::new();
     // Mapped as an origin too: production never looks a pinned name up, so neither does the seam.
     names.origin("localhost", port, decoy.addr());
@@ -616,11 +618,11 @@ fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
         ..serving(&[&listed], &names)
     })
     .expect("the proxy starts");
-    let answer = get(pinned.port(), &listed, "/pinned");
+    let answer = get(pinned.port(), &asked, "/pinned");
     assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
     // A name of this Mac on a port the chat holds: pinned to the loopback by `address_of`.
     let held = proxy(&[&listed], &names);
-    let answer = get(held.port(), &listed, "/held");
+    let answer = get(held.port(), &asked, "/held");
     assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
 
     assert_eq!(names.lookups(), Vec::<Lookup>::new(), "never looked up");

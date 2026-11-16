@@ -1299,14 +1299,7 @@ impl Allowed {
                 resolve.unwrap_or(&by_providers),
                 exempt,
             )
-            // DO NOT MERGE N6: an origin's address skips the providers' check.
-            .and_then(|reached| {
-                if reached.iter().any(|at| exempt(*at)) {
-                    Ok(reached)
-                } else {
-                    not_at_a_model(reached, providers)
-                }
-            })
+            .and_then(|reached| not_at_a_model(reached, providers))
             {
                 Ok(reached) => connect_first_by(reached, self.patience, dial),
                 Err(refused) => refused,
