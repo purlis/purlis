@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794817681543,
+  "lastUpdate": 1794821120734,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50358,6 +50358,48 @@ window.BENCHMARK_DATA = {
             "value": 103.02929649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.945, 102.804, 103.029, 103.087, 103.422 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "eb9c63fe8de3aaddb14d677625d738dffd13f3fe",
+          "message": "An app connects to its crash companion only once the companion's Mach service is up, so a native crash on macOS always leaves its minidump (#6909) (#6919)\n\n* TEMPORARY (#6909): instrument the crash handler and loop the probe's abort on macOS CI\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* TEMPORARY (#6909): loop the real test binary too\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* An app opens no socket before its companion's Mach service is up: the test, before the fix (#6909)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* An app connects to its crash companion only once the companion's Mach service is up, so a connect attempt in between no longer ends the companion and leaves a crash with no minidump (#6909)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* TEMPORARY (#6909): loop the abort test on the code before and after the fix\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* TEMPORARY (#6909): loop under a watchdog, and with the companion's bind-to-check-in gap widened\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* TEMPORARY (#6909): no debug line in the crash callback (it allocates, and deadlocked on a thread suspended in malloc); widen the gap through the workspace's own patch table\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward\n\n* Remove the temporary abort loop and the companion's debug lines; a changelog fragment (#6909)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GRT74SHECTBKWN19Z585RC\nPurlis-Persona: steward",
+          "timestamp": "2026-11-16T07:48:07Z",
+          "tree_id": "e0f4f9914bab9610b9efd4df8754e76ab33d917c",
+          "url": "https://github.com/purlis/purlis/commit/eb9c63fe8de3aaddb14d677625d738dffd13f3fe"
+        },
+        "date": 1794821112667,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.327481,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.313, 0.315, 0.327, 0.338, 0.338 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.645955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.530, 16.637, 16.646, 16.683, 16.749 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1171675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.711, 101.079, 101.117, 101.316, 101.409 ms"
           }
         ]
       }
