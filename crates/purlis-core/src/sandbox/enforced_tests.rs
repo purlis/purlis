@@ -151,7 +151,7 @@ fn files_and_egress_are_enforced_on_claude_code() {
     );
     let vaults = project.vaults();
     assert!(
-        strings(&sandbox["filesystem"]["denyWrite"]).contains(&vaults),
+        claude::list_holds(&strings(&sandbox["filesystem"]["denyWrite"]), &vaults),
         "{sandbox}"
     );
 
@@ -167,7 +167,7 @@ fn files_and_egress_are_enforced_on_claude_code() {
     // Edit tool runs in Claude Code's own process, outside the sandbox.
     for rule in [format!("Edit(/{vaults})"), format!("Edit(/{vaults}/**)")] {
         assert!(
-            settings.deny.contains(&rule),
+            claude::rule_holds(&settings.deny, &rule),
             "{rule} in {:?}",
             settings.deny
         );
@@ -331,10 +331,13 @@ fn at_basic_sandbox_claude_codes_denial_classes_are_held_and_its_web_tools_allow
     // tool by a deny rule, as at the full sandbox.
     let deny_write = strings(&sandbox["filesystem"]["denyWrite"]);
     let vaults = project.vaults();
-    assert!(deny_write.contains(&vaults), "{vaults} in {deny_write:?}");
+    assert!(
+        claude::list_holds(&deny_write, &vaults),
+        "{vaults} in {deny_write:?}"
+    );
     for rule in [format!("Edit(/{vaults})"), format!("Edit(/{vaults}/**)")] {
         assert!(
-            settings.deny.contains(&rule),
+            claude::rule_holds(&settings.deny, &rule),
             "{rule} in {:?}",
             settings.deny
         );
@@ -346,7 +349,10 @@ fn at_basic_sandbox_claude_codes_denial_classes_are_held_and_its_web_tools_allow
         .filter(|denial| denial.access == Access::ReadWrite)
     {
         let path = denial.path.display().to_string();
-        assert!(deny_read.contains(&path), "{path} in {deny_read:?}");
+        assert!(
+            claude::list_holds(&deny_read, &path),
+            "{path} in {deny_read:?}"
+        );
     }
 
     // Its web tools are allowed, and nothing limits the hosts a command reaches: its proxy

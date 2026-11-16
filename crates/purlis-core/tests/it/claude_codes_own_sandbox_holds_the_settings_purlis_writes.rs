@@ -504,6 +504,34 @@ fn started(
     env: &[(&str, &Path)],
     stand_in: impl Respond + 'static,
 ) -> (std::process::ExitStatus, String) {
+    started_allowing(
+        program,
+        home,
+        tmp,
+        root,
+        settings,
+        sources,
+        what,
+        env,
+        stand_in,
+        &["Bash"],
+    )
+}
+
+/// [`started`], with `allowed` the tools Claude Code runs unasked.
+#[allow(clippy::too_many_arguments)]
+fn started_allowing(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    env: &[(&str, &Path)],
+    stand_in: impl Respond + 'static,
+    allowed: &[&str],
+) -> (std::process::ExitStatus, String) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -533,13 +561,9 @@ fn started(
         .args(sources)
         .arg("--settings")
         .arg(settings)
-        .args([
-            "--allowedTools",
-            "Bash",
-            "--output-format",
-            "json",
-            "--no-session-persistence",
-        ])
+        .arg("--allowedTools")
+        .args(allowed)
+        .args(["--output-format", "json", "--no-session-persistence"])
         .stdout(out.try_clone().expect("the log"))
         .stderr(out);
     let mut child = purlis_core::forklock::spawn(&mut command).expect("claude started");
@@ -1387,4 +1411,266 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
             names(workspace)
         );
     }
+}
+
+/// A stand-in for the Messages API that asks for every one of `calls` at once, each a
+/// `(tool, input)`, in the chat's first turn, and ends the next. What each call's result said is
+/// kept in `results`, by its place in `calls`.
+struct AllAtOnce {
+    calls: Vec<(&'static str, Value)>,
+    results: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+impl AllAtOnce {
+    fn id(at: usize) -> String {
+        format!("toolu_corpus_{at}")
+    }
+}
+
+impl Respond for AllAtOnce {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let model = body["model"].as_str().unwrap_or("stand-in").to_owned();
+        let usage = json!({ "input_tokens": 1, "output_tokens": 1 });
+        let said: Vec<Option<String>> = (0..self.calls.len())
+            .map(|at| result_of(&body, &Self::id(at)))
+            .collect();
+        let offers = |name: &str| {
+            body["tools"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == name))
+        };
+        let (content, stop) = if said.iter().any(Option::is_some) || !offers("Read") {
+            if said.iter().any(Option::is_some) {
+                *self.results.lock().expect("results") = said;
+            }
+            (vec![json!({ "type": "text", "text": "done" })], "end_turn")
+        } else {
+            let calls = self
+                .calls
+                .iter()
+                .enumerate()
+                .map(|(at, (tool, input))| {
+                    json!({ "type": "tool_use", "id": Self::id(at), "name": tool, "input": input })
+                })
+                .collect();
+            (calls, "tool_use")
+        };
+        // Whole, not streamed: Claude Code reads either, and many blocks are plainer whole.
+        ResponseTemplate::new(200).set_body_json(json!({
+            "id": "msg_stand_in",
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": content,
+            "stop_reason": stop,
+            "stop_sequence": null,
+            "usage": usage,
+        }))
+    }
+}
+
+/// `path` under each spelling a rule on it must hold: as written, and on macOS in upper case,
+/// in lower case and with its letters' cases swapped, through the `/var` and `/tmp` links, and
+/// across the `/System/Volumes/Data` firmlink, in two cases. A disk that folds case opens the
+/// same file under each.
+fn spellings(path: &Path) -> Vec<String> {
+    let path = path.display().to_string();
+    if !cfg!(target_os = "macos") {
+        return vec![path];
+    }
+    let swapped: String = path
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
+        .collect();
+    let mut out = vec![
+        path.clone(),
+        path.to_uppercase(),
+        path.to_lowercase(),
+        swapped,
+    ];
+    if let Some(linked) = path.strip_prefix("/private") {
+        out.push(linked.to_owned());
+        out.push(linked.to_uppercase());
+    }
+    let data = format!("/System/Volumes/Data{path}");
+    out.push(data.to_uppercase());
+    out.push(data);
+    out
+}
+
+/// **The smaller rules deny every spelling the rules before them denied** (T1.1-71, #6961),
+/// decided by Claude Code itself: the version purlis supports, started with the settings a chat
+/// in a sample plane starts with, its own Read and Write tools each asked for every spelling
+/// ([`spellings`]) of paths the plane holds. A path held from reading is never read, and a path
+/// held from writing never has anything written in or below it. A file nothing holds is read and
+/// written under its own name, so a refusal here is the rules' and not the stand-in's.
+///
+/// The rules before #6961 wrote each of these spellings out (`<p>` and `<p>/**`, its either-case
+/// copy, and its `/System/Volumes/Data` name), so each was denied by construction. The smaller
+/// rules lean on how Claude Code matches a rule's path, as gitignore does: a folder's rule holds
+/// what is below it, in either case. This is where that is measured.
+#[test]
+fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
+    purlis_core::unsteered!();
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, LEVELS[0].2);
+    // Workspaces, each with a clone and branch folders cut from it: every branch folder's git is
+    // held, the chat's own workspace's and another's.
+    for (workspace, pieces) in [("w", ["p1", "p2"]), ("v", ["q1", "q2"])] {
+        let clone = root.join("workspaces").join(workspace).join("app");
+        fs::create_dir_all(&clone).expect("a clone");
+        git(&clone, &["init", "-q", "-b", "main"]);
+        git(&clone, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        for piece in pieces {
+            let folder = clone.join("../.worktrees/app").join(piece);
+            git(
+                &clone,
+                &[
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    piece,
+                    folder.to_str().expect("a path"),
+                ],
+            );
+        }
+    }
+    const MARK: &str = "corpus-mark-7f3a";
+    let dispatches = root.join(".purlis/app/dispatches");
+    fs::create_dir_all(&dispatches).expect("the dispatch records");
+    fs::write(root.join(".purlis/vaults/ops.json"), MARK).expect("a vault");
+    fs::write(dispatches.join("one.json"), MARK).expect("a dispatch record");
+    let piece = root.join("workspaces/w/.worktrees/app/p1");
+    fs::write(piece.join("README.md"), MARK).expect("a file in a branch folder");
+    fs::write(root.join("notes.json"), MARK).expect("a file nothing holds");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let Some(Decided::Sandboxed(mut applied)) =
+        sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+    else {
+        panic!("not sandboxed");
+    };
+    applied.answered(SUPPORTED);
+    let compiled = match applied.form_in(Some(&root)) {
+        Form::ClaudeCode(compiled) => compiled,
+        Form::ClaudeWrapped(wrap) => wrap.settings(),
+        other => panic!("not Claude Code's settings: {other:?}"),
+    };
+    let file = at.join("settings.json");
+    fs::write(
+        &file,
+        json!({ "permissions": { "deny": compiled.deny } }).to_string(),
+    )
+    .expect("the settings");
+
+    // What is read: held, and the controls.
+    let read_held = [
+        root.join(".purlis/vaults/ops.json"),
+        dispatches.join("one.json"),
+    ];
+    // What is written below: each held path, by a new file in or below it.
+    let write_held = [
+        root.join(".purlis/vaults"),
+        dispatches.clone(),
+        root.join("purlis.toml"),
+        root.join("repo/.git/config"),
+        piece.join(".git"),
+        root.join("workspaces/v/.worktrees/app/q2/.git"),
+    ];
+    let mut calls: Vec<(&'static str, Value)> = Vec::new();
+    let mut expected: Vec<(String, bool)> = Vec::new();
+    for path in &read_held {
+        for spelled in spellings(path) {
+            calls.push(("Read", json!({ "file_path": spelled })));
+            expected.push((format!("Read {spelled}"), true));
+        }
+    }
+    for path in &write_held {
+        for (n, spelled) in spellings(path).into_iter().enumerate() {
+            let new = format!("{spelled}/corpus-{n}.txt");
+            calls.push(("Write", json!({ "file_path": new, "content": MARK })));
+            expected.push((format!("Write {new}"), true));
+        }
+    }
+    for path in [root.join("notes.json"), piece.join("README.md")] {
+        calls.push(("Read", json!({ "file_path": path.display().to_string() })));
+        expected.push((format!("Read {}", path.display()), false));
+    }
+    for path in [root.join("notes-new.json"), piece.join("written.md")] {
+        calls.push((
+            "Write",
+            json!({ "file_path": path.display().to_string(), "content": MARK }),
+        ));
+        expected.push((format!("Write {}", path.display()), false));
+    }
+
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let stand_in = AllAtOnce {
+        calls: calls.clone(),
+        results: results.clone(),
+    };
+    let (status, said) = started_allowing(
+        &program,
+        &home,
+        &tmp,
+        &root,
+        &file,
+        &["--setting-sources".to_owned(), "user".to_owned()],
+        "the corpus of spellings",
+        &[],
+        stand_in,
+        &["Read", "Write", "Edit"],
+    );
+    let results = results.lock().expect("results").clone();
+    assert_eq!(
+        results.len(),
+        calls.len(),
+        "not every call's result reached the stand-in ({status}):\n{said}"
+    );
+    let mut wrong = Vec::new();
+    for (((what, held), result), (tool, input)) in expected.iter().zip(&results).zip(&calls) {
+        let text = result.clone().unwrap_or_default();
+        let refused = text.to_lowercase().contains("denied");
+        let path = Path::new(input["file_path"].as_str().expect("a path"));
+        let went = match *tool {
+            "Read" => text.contains(MARK),
+            _ => fs::read_to_string(path).is_ok_and(|it| it == MARK),
+        };
+        if *held && (went || !refused) {
+            wrong.push(format!("{what}: not denied: {text}"));
+        }
+        if !*held && (refused || !went) {
+            wrong.push(format!("{what}: not done: {text}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of {} answered otherwise:\n{}",
+        wrong.len(),
+        calls.len(),
+        wrong.join("\n")
+    );
 }

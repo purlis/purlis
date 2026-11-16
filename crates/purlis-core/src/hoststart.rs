@@ -1312,6 +1312,16 @@ fn recorded(
 /// level of which it is denied writing, goes through a file.
 pub const SETTINGS_IN_A_WORD: usize = 120 * 1024;
 
+/// **The most a chat's harness settings should weigh** (T1.1-71, #6961): the future policy key
+/// `limits.harness_settings_bytes`, default 256 KB (Q307 Q6, #6969).
+pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
+
+/// How much the `--settings` JSON on `args` weighs, where it is past [`HARNESS_SETTINGS_BYTES`].
+/// Not yet measured: the test comes first (#6961).
+pub fn settings_past_the_budget(_args: &[String]) -> Option<usize> {
+    None
+}
+
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
 /// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
 /// integrity path.

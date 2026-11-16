@@ -13,6 +13,7 @@ use super::{Compiled, Level, Machine, Os, Plane, applied_of, claude, compiler};
 use crate::harness::Harness;
 
 mod deny_prefix;
+mod size_budget;
 
 /// Open hosts (a preset and the project's own, a private address and port among them) and a
 /// persona's hosts, which the person on this machine allowed.
@@ -767,9 +768,13 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_chat_s_to_write() 
         .iter()
         .filter_map(serde_json::Value::as_str)
         .collect();
-    assert!(deny_write.contains(&named.as_str()), "{deny_write:?}");
+    assert!(claude::list_holds(&deny_write, &named), "{deny_write:?}");
     for rule in [format!("Edit(/{named})"), format!("Edit(/{named}/**)")] {
-        assert!(settings.deny.contains(&rule), "{rule}: {:?}", settings.deny);
+        assert!(
+            claude::rule_holds(&settings.deny, &rule),
+            "{rule}: {:?}",
+            settings.deny
+        );
     }
     assert_eq!(
         settings.sandbox["network"]["allowUnixSockets"],
@@ -921,10 +926,11 @@ fn a_held_path_is_denied_as_spelled_through_each_link_on_the_way_to_it() {
         "through the link `.local` points at, so `second/hop` and `second` are pinned: {denied:?}"
     );
     assert!(
-        settings.deny.contains(&format!(
-            "Edit(/{})",
-            home.join("second/hop/inner/auth.json").display()
-        )),
+        claude::tool_holds(
+            &settings.deny,
+            "Edit",
+            &format!("/{}", home.join("second/hop/inner/auth.json").display())
+        ),
         "and to the Edit tool"
     );
 }

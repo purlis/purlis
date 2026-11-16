@@ -775,6 +775,70 @@ fn plain_and_cased(prefix: &str, name: &str) -> [String; 2] {
     ]
 }
 
+/// **Whether the rules `deny` hold `tool` from `path`**, as [`fewest`] leaves them: a rule on
+/// the path itself, on `<path>/**`, or on a plain folder above it, in any case. `path` is a
+/// rule's path, as a test asks for it (`//a/b`, a glob, `<p>/**`, or an [`either_case`] glob).
+/// What a test asks where it once asked for the exact rule.
+#[cfg(test)]
+pub(crate) fn tool_holds(deny: &[String], tool: &str, path: &str) -> bool {
+    let has = |path: &str| deny.iter().any(|rule| *rule == format!("{tool}({path})"));
+    if has(path) {
+        return true;
+    }
+    let path = path.strip_suffix("/**").unwrap_or(path);
+    if has(path) {
+        return true;
+    }
+    let path = uncased(path).to_lowercase();
+    if !literal(&path) {
+        return false;
+    }
+    deny.iter()
+        .filter_map(|rule| rule.strip_prefix(&format!("{tool}(")))
+        .filter_map(|rest| rest.strip_suffix(')'))
+        .map(str::to_lowercase)
+        .filter(|held| literal(held))
+        .any(|held| path == held || path.starts_with(&format!("{held}/")))
+}
+
+/// [`tool_holds`] for `rule`, written as a whole rule (`Edit(//a/b)`).
+#[cfg(test)]
+pub(crate) fn rule_holds(deny: &[String], rule: &str) -> bool {
+    match rule
+        .split_once('(')
+        .and_then(|(tool, rest)| Some((tool, rest.strip_suffix(')')?)))
+    {
+        Some((tool, path)) => tool_holds(deny, tool, path),
+        None => deny.iter().any(|it| it == rule),
+    }
+}
+
+/// **Whether a sandbox list (`denyRead`, `denyWrite`) holds `path`**, as [`once`] leaves it:
+/// listed itself, or below a plain path listed, of the same kind (plain, or [`either_case`]'s).
+#[cfg(test)]
+pub(crate) fn list_holds<S: AsRef<str>>(list: &[S], path: &str) -> bool {
+    let list: Vec<&str> = list.iter().map(AsRef::as_ref).collect();
+    if list.contains(&path) {
+        return true;
+    }
+    let cased = uncased(path) != path;
+    let path = uncased(path);
+    if !literal(&path) {
+        return false;
+    }
+    list.iter()
+        .filter(|it| (uncased(it) != **it) == cased)
+        .map(|it| uncased(it))
+        .filter(|it| literal(it))
+        .any(|it| path.starts_with(&format!("{it}/")))
+}
+
+#[cfg(test)]
+/// Whether `path` is a plain path, with nothing a glob reads as more than itself.
+fn literal(path: &str) -> bool {
+    !path.contains(['*', '?', '[', '\\'])
+}
+
 /// `glob` with each class [`either_case`] made written back as the letter it was made from:
 /// what a test compares a held name with.
 #[cfg(test)]

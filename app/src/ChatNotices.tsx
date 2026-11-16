@@ -165,7 +165,22 @@ export function ByHandBanner({
 
 /** What a chat's start found to say (ADR 0085, V35): its lines, and the branches whose
  *  `AGENTS.md` they name as the operator's and hidden by charter's line (NO-4). */
-export type StartNotes = { notes: readonly string[]; agentsMd: readonly TheirAgentsMd[] };
+export type StartNotes = {
+  notes: readonly string[];
+  agentsMd: readonly TheirAgentsMd[];
+  /** How many bytes its harness settings weigh, where that is past what purlis keeps them under
+   *  (`limits.harness_settings_bytes`, #6961). */
+  heavySettings?: number;
+};
+
+/** The cause of {@link SettingsNearTheLimitNotice}. */
+export const SETTINGS_NEAR_THE_LIMIT = "harness-settings-near-limit";
+
+/** A chat whose harness settings near the limit of its auto mode's check (#6961): the test comes
+ *  first, so nothing is said yet. */
+export function SettingsNearTheLimitNotice(_: { bytes: number; onDismiss: () => void }) {
+  return null;
+}
 
 /** `held` with `note` said on chat `session`'s tab after its start's own lines, once (#2013):
  *  a line purlis has to say while the chat runs, such as its browsers ending. */

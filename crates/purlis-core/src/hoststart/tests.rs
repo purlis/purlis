@@ -497,3 +497,24 @@ fn a_wrap_that_sets_its_own_tmpdir_names_claude_codes_temp_folder_over_the_armin
         pairs(&[(temp, "/wrap/temp"), ("TMPDIR", "/wrap/temp")])
     );
 }
+
+/// T1.1-71 (#6961): settings past `limits.harness_settings_bytes` are named by their weight, for
+/// the chat's tab to say; lighter ones, and a line with none, are not.
+#[test]
+fn settings_past_the_budget_are_named_by_their_weight() {
+    let at = |bytes: usize| {
+        let json = format!("{{\"k\":\"{}\"}}", "x".repeat(bytes - 8));
+        assert_eq!(json.len(), bytes);
+        words(&json)
+    };
+    assert_eq!(
+        settings_past_the_budget(&at(HARNESS_SETTINGS_BYTES + 1)),
+        Some(HARNESS_SETTINGS_BYTES + 1)
+    );
+    assert_eq!(settings_past_the_budget(&at(HARNESS_SETTINGS_BYTES)), None);
+    assert_eq!(settings_past_the_budget(&["claude".to_owned()]), None);
+    assert_eq!(
+        settings_past_the_budget(&["--settings".to_owned(), "/a/file.json".to_owned()]),
+        None
+    );
+}
