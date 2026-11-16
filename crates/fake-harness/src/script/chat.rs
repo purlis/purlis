@@ -618,14 +618,6 @@ impl Chat {
                 self.background_shell(command, &c.input)
             }
             Action::Shell(command) => self.shell(command),
-            // MUTATION (reverted in the next commit): the script, not the wrap, refuses a native
-            // write and edit, without trying the I/O.
-            Action::Write { path, .. } | Action::Edit { path, .. } if !path.is_empty() => {
-                Outcome::File(Err((
-                    std::io::Error::other("refused by the script"),
-                    path.clone(),
-                )))
-            }
             Action::Write { path, content } => Outcome::File(self.write(path, content)),
             Action::Edit { path, old, new } => Outcome::File(self.edit(path, old, new)),
             Action::Read(path) => {
@@ -633,10 +625,7 @@ impl Chat {
             }
             Action::Web(url) => Outcome::Web(dial(url)),
             Action::Mcp { server, tool } => {
-                // MUTATION (reverted in the next commit): purlis's server entry is never read.
-                let Some(entry) =
-                    mcp_call::server(self.dialect, server, &self.argv).filter(|_| false)
-                else {
+                let Some(entry) = mcp_call::server(self.dialect, server, &self.argv) else {
                     return Outcome::Mcp(Err(format!("no MCP server named {server}")));
                 };
                 Outcome::Mcp(mcp_call::call(&entry, tool, &c.input, MCP_PATIENCE))
