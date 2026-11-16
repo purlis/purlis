@@ -1,7 +1,7 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
 Status: proposed (2026-11-16), a draft for review. The person's rulings Q307, Q308b and Q309 to
-Q318 in the who-judges orchestration (`work/who-judges/decisions.md` on the plane), from the
+Q319 in the who-judges orchestration (`work/who-judges/decisions.md` on the plane), from the
 wayfinder map "One project policy governs everything a chat can do" (#6969) and its fifteen
 tickets (#6970 to #6981, #6986 to #6988). It builds on ADR 0125 (blocks off by default and opt-in
 per family, Q308, Q308a and Q308b) and keeps its names. The M75 spec
@@ -47,7 +47,14 @@ the session host (Q311 point 1, Q309 point 3).
   allows by default and ends in the catch-all permit `everything-else`, so even a default deny is
   named (Q311 point 1, Q316 point 1, Q318 point 1).
 - Each `[policy]` family is a Cedar action group of the same name, and its mode (`off`, `log`,
-  `enforce`) is applied after Cedar decides (Q311 point 8).
+  `enforce`) is applied after Cedar decides (Q311 point 8). There are 25: ADR 0125's 24 and
+  `audit`, which holds limits only and takes no `off` or `log` (Q313 point 4).
+- A family's mode acts on that family's forbids and asks only. Its permits always count, so
+  turning a family off never denies; a permit stops counting only when `[policy.rules]` names it,
+  as deny-by-default's `"everything-else" = "off"` does (Q319 C2, amending Q311 point 8, and Q318
+  point 1).
+- An `@ask` forbid on a read, write, connect or socket action takes the `asks` family's mode; the
+  action stays in its own family for everything else (Q319 C4).
 
 **Rejected.** OPA/Rego through regorus: pre-1.0, no allow/deny conflict model, no equivalence or
 reachability analysis, an unfinished explanation API. A TOML evaluator of purlis's own: the
@@ -74,13 +81,20 @@ rewriting every project's `policy.cedar`.
   accepts it with one press. purlis enforces no commit review (Q309 points 5 and 6, Q313 point 2).
 
 **Hard to reverse because** the seal, the press and "stricter of two" are what make Q307 Q4 hold:
-**a chat can never change the policy that governs it**. Any later design must keep that.
+**a chat can never change the policy that governs it**. It holds fully on macOS, and on Linux and
+Windows with the seal opt-in on (§7, Q319 C6). Any later design must keep that.
 
 ### 3. Levels and locks
 
 - Five **levels**, top to bottom: **Organisation** (an admin-owned folder per OS, delivered by
   MDM and never fetched), **Project**, **Workspace**, **Persona** and **You**. A chat is not a
   level (Q310 points 1, 2 and 6).
+- The Organisation's folder holds two files: `policy.cedar` for its rules, and `policy.toml` for
+  `[policy]`, `[policy.locks]` and `[policy.limits]` in the same syntax a project uses, typed and
+  validated. The Cedar files stay pure rules, for the validator and SymCC (Q319 C5).
+- Workspace and Persona defaults are written in the project's committed file, as
+  `[policy.workspace.<w>]` and `[policy.persona.<p>]`; workspaces have no files of their own and
+  persona.md holds no permissions (Q319 C3, Q309 point 1, Q315 point 3).
 - For defaults (the template and family modes) the nearest level wins, and the stricter wins
   when a workspace and a persona both set one. For rules, deny wins at every level (Q310 point 3).
 - Organisation loosens without a press; Project, Workspace and Persona loosen only after it; You
@@ -116,7 +130,7 @@ written into every sealed answer the person gives.
 Only three things (Q308b, Q314 point 16):
 
 1. **A chat can't change its own policy**, which includes that a chat never answers an ask or
-   makes a grant;
+   makes a grant; it holds fully on macOS, or with the seal opt-in on (§7);
 2. the **kill switch**, the person's emergency stop;
 3. the **grader bundles**: a skill can't grade itself.
 
@@ -136,6 +150,22 @@ key, its line and its new home. The old answer files are not carried over (Q315 
 
 **Hard to reverse because** once released, there is no reader for the old keys.
 
+### 7. Known gaps are declared, and the chat still starts
+
+A key a harness can't enforce is a **known gap**: it is declared in Settings and doctor, and the
+chat still starts. A project that wants a refusal writes a rule on `start` that refuses it while a
+gap affects a family it enforces; the shipped default has none (Q319 C1, amending Q307 Q5's "the
+start is refused").
+
+The seal is one such gap. On Linux and Windows no standard store binds a key to an unpackaged
+app (#6986), so by default the seal stops hand edits and sandboxed chats only, and the gap is
+declared. Two opt-ins close it: "Confirm with Windows Hello each time purlis starts" on Windows,
+built first, and "Ask for a password each time purlis starts" on Linux (Q319 C6).
+
+**Hard to reverse because** the gap cells, Settings and doctor all assert "declared, and started":
+refusing by default later would stop chats that start today, on every project that hasn't written
+the rule.
+
 ## What it amends
 
 - **ADR 0125:** §1's "`[policy]` has no `sandbox` key" (`[policy] sandbox = off|floor|full`
@@ -144,6 +174,8 @@ key, its line and its new home. The old answer files are not carried over (Q315 
   own (Q313 point 3). Each lands as an amendment file under `docs/adr/0125/`.
 - **ADR 0124:** §3's "Project recommends" row and item 3, the wording of §4.1 and §4.6, and §9's
   "timed exception where it exists" (Q312 point 3), as an amendment file under `docs/adr/0124/`.
+- **Q307 Q5's** "the start is refused" (Q319 C1) and **Q311 point 8's** family `off` "skips the
+  family's rules" (Q319 C2), as rulings rather than records; ADR 0126 states the amended reading.
 - **CONTEXT.md:** "Policy" widens to the whole statement; "admin lock" becomes **Lock**; **Level**
   gains Organisation and You (the M75 spec lists every entry).
 
@@ -153,10 +185,10 @@ key, its line and its new home. The old answer files are not carried over (Q315 
   `purlis policy why` answers for one action without running it.
 - Enforcement is proved equal to the policy: equality cells take their expected outcome from an
   independent Cedar oracle, a looser mismatch is an escape (a public p0), and each of the 24
-  known harness gaps is a declared gap cell (Q317).
-- On Linux and Windows no standard store binds the seal key to purlis alone, so the seal stops
-  hand edits and sandboxed chats only. That is a declared gap, shown in Settings and doctor
-  (Q309 point 4, #6986).
+  known harness gaps is a gap cell asserting its declaration (Q317, Q319 C1).
+- On Linux and Windows, unless the person turns on the seal opt-in, an unsandboxed program
+  running as the same user can read the seal key. That is a declared gap, shown in Settings and
+  doctor (Q309 point 4, Q319 C6, #6986).
 - The sandbox's paths are compiled from the policy with Cedar's typed partial evaluation, which
   is experimental, behind one function and a differential test (#6988). A rule the sandbox can't
   express (one that reads `attended` or `mode`, or uses `like`, on a sandbox action) is refused
