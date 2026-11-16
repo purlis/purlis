@@ -1,0 +1,34 @@
+{
+  "$schema": "../schema/cells.schema.json#/$defs/pins_file",
+  "dialect": "codex",
+  "shows": {
+    "hook.posttoolusefailure-blocked": [
+      {
+        "kind": "hook.posttooluse-blocked"
+      }
+    ],
+    "hook.pretooluse-edit": [
+      {
+        "kind": "hook.pretooluse"
+      }
+    ],
+    "hook.posttooluse": [],
+    "hook.notification": [],
+    "hook.permissiondenied": []
+  },
+  "recorded": {
+    "from": "tests/recordings/recorded/codex/0.169.0/recording.json",
+    "facts": {
+      "failed_command": "A command that exits non-zero (the refused curl, the refused write by redirection, `exit 2`) is heard as PostToolUse (posttooluse-blocked); Codex has no PostToolUseFailure.",
+      "native_write": "Told a model its catalogue lists (gpt-5.5), Codex 0.169 offers its own freeform apply_patch, and a write or edit is that tool. It runs no hook for it, PreToolUse or PostToolUse: purlis hears nothing of a native write. The wrap refused both writes outside the chat's folders, and the model is shown \"Exit code: 1 … Failed to write file <path>\".",
+      "hook_exit_2": "A PreToolUse hook's exit 2 blocks the call, and the model is shown \"Command blocked by PreToolUse hook: <stderr>. Command: <command>\".",
+      "shell_result": "What the model is shown of a command: \"Chunk ID: … Wall time: … Process exited with code <n> … Output: <output>\".",
+      "session_start": "Every SessionStart hook runs at once (sessionstart, -notes, -quoted, -skills), and they begin in any order (the mask's RACY_ORDERS). One that outlives its timeout is cut off and the turn goes on. Their additionalContext reaches the model as developer messages after its environment context.",
+      "esc": "A turn that ends normally fires Stop. Esc interrupts the running command (\"Conversation interrupted\"); no Stop fires for the interrupted turn, and SessionEnd fires as the chat ends.",
+      "folder_access": "At every sandboxed start Codex 0.169 asks \"Folder access: Open restricted\" for the folder purlis marks untrusted; Codex 0.147 did not. The recording answers Enter.",
+      "refused_network": "A command to a loopback port the chat was never granted is refused by purlis's proxy: the model is shown \"purlis's sandbox does not allow <host>:<port>: it is this machine, …\", and nothing arrives at the port.",
+      "command_timeout": "Measured: a hook that outlives its entry's timeout (5 s) is cut off and the turn goes on. The held posttooluse-blocked call's next hook call began 5014 to 5039 ms after it, in runs 43834558626 to 43866922203.",
+      "model_offer": "Under gpt-5.5, Codex 0.169 offers \"Meet GPT-6 Sol\" before the chat; the recording keeps the existing model."
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "covering",
+  "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+  "responses": [
+    {"calls": [{"step": "exit2-bash", "kind": "bash", "command": "echo exit-two"}]},
+    {"calls": [{"step": "bash", "kind": "bash", "command": "echo covered > {work}/covered.txt && cat {work}/covered.txt"}]},
+    {"calls": [{"step": "refused-bash-net", "kind": "bash", "command": "curl -sS -m 10 {refused_url}"}]},
+    {"calls": [{"step": "refused-bash-write", "kind": "bash", "command": "echo by-bash > {outside}/by-bash.txt"}]},
+    {"calls": [{"step": "refused-write", "kind": "write", "path": "{outside}/by-write.txt", "content": "by-write"}]},
+    {"calls": [{"step": "refused-edit", "kind": "edit", "path": "{outside}/existing.txt", "old": "before", "new": "after"}]},
+    {"calls": [{"step": "refused-read", "kind": "read", "path": "{denied_read}"}], "dialects": ["claude", "opencode"]},
+    {"calls": [{"step": "refused-web", "kind": "web", "url": "{refused_url}"}], "dialects": ["claude", "opencode"]},
+    {"parallel": true, "calls": [
+      {"step": "parallel-one", "kind": "bash", "command": "echo one"},
+      {"step": "parallel-two", "kind": "bash", "command": "echo two"}
+    ]},
+    {"calls": [{"step": "background", "kind": "bash", "command": "sleep 90; echo background", "background": true}], "dialects": ["claude"]},
+    {"calls": [{"step": "subagent", "kind": "subagent", "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for."}], "dialects": ["claude", "opencode"]},
+    {"calls": [{"step": "failing-bash", "kind": "bash", "command": "echo failing >&2; exit 2"}]}
+  ],
+  "subagent": [
+    {"calls": [{"step": "subagent-bash", "kind": "bash", "command": "echo from-subagent"}]}
+  ],
+  "then": [
+    {"prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.", "responses": [
+      {"esc": true, "calls": [{"step": "esc", "kind": "bash", "command": "python3 -c \"import time; time.sleep(120)\""}]}
+    ]}
+  ]
+}

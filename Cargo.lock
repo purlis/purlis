@@ -2249,10 +2249,17 @@ name = "fake-harness"
 version = "0.5.2"
 dependencies = [
  "clap",
+ "glob",
  "portable-pty",
  "purlis-core",
+ "purlis-recordings",
+ "purlis-session-protocol",
+ "regex",
+ "serde",
  "serde_json",
+ "stand-in",
  "tempfile",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
@@ -6821,6 +6828,19 @@ dependencies = [
  "regex",
  "rustix",
  "seccompiler",
+ "tempfile",
+]
+
+[[package]]
+name = "purlis-recordings"
+version = "0.5.2"
+dependencies = [
+ "purlis-core",
+ "purlis-session-protocol",
+ "regex",
+ "serde",
+ "serde_json",
+ "stand-in",
  "tempfile",
 ]
 

@@ -58,3 +58,32 @@ test("the list's tool has no mirror and no quiet run (Q301)", () => {
   assert.doesNotMatch(source, /mirror|quiet|Q287|Q298/i);
   assert.doesNotMatch(readFileSync(LIST, "utf8"), /mirror|quiet/i);
 });
+
+test("a harness re-record's ordinary failure is never filed as an escape (T1.1-03)", () => {
+  const entries = parseList(readFileSync(LIST, "utf8"));
+  const kind = (name) => entries.find((e) => e.entry === name)?.kind;
+  // Each re-record has an ordinary entry, red on a failed install, build, recording or `gh`,
+  // and an escape entry, red on an escape alone.
+  for (const at of ["pinned", "latest"]) {
+    assert.equal(kind(`harness-rerecord-${at}`), undefined, `harness-rerecord-${at}`);
+    assert.equal(kind(`harness-escapes-${at}`), "escape", `harness-escapes-${at}`);
+  }
+  const nightly = readFileSync(new URL("../.github/actions/nightly/action.yml", import.meta.url), "utf8");
+  for (const [entry, mode] of [
+    ["harness-rerecord-pinned", "drift"],
+    ["harness-rerecord-latest", "drift"],
+    ["harness-escapes-pinned", "escape"],
+    ["harness-escapes-latest", "escape"],
+  ]) {
+    const step = nightly.split("\n    - ").find((s) => s.includes(`inputs.entry == '${entry}'`));
+    assert.match(step ?? "", new RegExp(`mode: ${mode}\\b`), entry);
+  }
+  // In escape mode every step before the recording goes on when it fails.
+  const action = readFileSync(new URL("../.github/actions/harness-recordings/action.yml", import.meta.url), "utf8");
+  const steps = action.slice(action.indexOf("  steps:"), action.indexOf("    - name: Record each harness"));
+  const before = steps.split("\n    - ").slice(1);
+  assert.ok(before.length >= 4, steps);
+  for (const step of before) {
+    assert.match(step, /continue-on-error: \$\{\{ inputs\.mode == 'escape' \}\}/, step.split("\n")[0]);
+  }
+});

@@ -1,0 +1,94 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: fake-harness under the wrap
+
+# **The fake harness started as purlis starts a harness, under purlis's wrap at Full** (M74.1,
+# T1.1-04): per dialect, it reproduces T1.1-03's recording of the real harness
+# (`the_fake_harness_reproduces_each_recorded_harness_session`), a native write outside the
+# chat's folders is refused by the wrap and not by the script, and an MCP call reaches purlis's
+# own server (`crates/fake-harness/tests/under_the_wrap.rs`). Linux only: it binds a hook socket
+# and confines, which a sandboxed chat's machine cannot. No harness is installed and no model is
+# called.
+
+on:
+  pull_request:
+    branches: [phase-1-proven]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: fake-harness-wrap-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  wrap:
+    name: fake-harness under the wrap (${{ matrix.dialect }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: [claude, codex, opencode]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/linux-packages
+        with:
+          packages: bubblewrap socat
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      - name: Build purlis, the recorder and the fake
+        run: |
+          cargo build --locked -p purlis-cli --bin purlis
+          cargo build --locked -p purlis-recordings --bin purlis-recorder
+          cargo build --locked -p fake-harness
+          cargo test --locked -p fake-harness --test under_the_wrap --no-run
+      - name: The fake under the wrap
+        env:
+          DIALECT: ${{ matrix.dialect }}
+        run: |
+          set -uo pipefail
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          version=$(cat "tests/fixtures/harness-versions/$DIALECT.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          homes=$(mktemp -d "$RUNNER_TEMP/homes-XXXX")
+          out="$PWD/target/fake-wrap"
+          mkdir -p "$out"
+          status=0
+          # The run's folder is named as the recording driver names its own, so an absolute path
+          # in what a command printed is as long as it was there: Codex counts its tokens.
+          for test in the_fake_harness_reproduces_each_recorded_harness_session \
+                      a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_script \
+                      an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap; do
+            echo "::group::$DIALECT: $test"
+            CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" \
+              PATH="$PWD/crates/fake-harness/shims:$PATH" \
+              FAKE_WRAP_DIALECT="$DIALECT" FAKE_WRAP_PURLIS="$PWD/target/debug/purlis" \
+              FAKE_WRAP_RECORDER="$PWD/target/debug/purlis-recorder" \
+              FAKE_HARNESS_BIN="$PWD/target/debug/fake-harness" \
+              FAKE_HARNESS_SCRIPT="$PWD/tests/recordings/recorded/$DIALECT/$version/turns.json" \
+              FAKE_WRAP_OUT="$out" FAKE_WRAP_BASE="$RUNNER_TEMP/recording-$DIALECT-covering" \
+              PURLIS_CONFIG_HOME="$homes/config-$test" PURLIS_DATA_HOME="$homes/data-$test" \
+              cargo test --locked -p fake-harness --test under_the_wrap -- --ignored --exact "$test" --nocapture \
+              || { echo "::error::$DIALECT: $test failed"; status=1; }
+            echo "::endgroup::"
+          done
+          exit "$status"
+      - name: What it did
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fake-harness-wrap-${{ matrix.dialect }}
+          path: target/fake-wrap/
+          if-no-files-found: ignore

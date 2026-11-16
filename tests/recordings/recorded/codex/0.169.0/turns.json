@@ -1,0 +1,112 @@
+{
+  "harness": "codex",
+  "version": "0.169.0",
+  "recording": "recording.json",
+  "conditions": {
+    "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
+  },
+  "forced": {
+    "esc": "pressed",
+    "exit2": "pretooluse",
+    "stall": "posttooluse-blocked"
+  },
+  "turns": [
+    {
+      "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+      "calls": [
+        {
+          "step": "exit2-bash",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo exit-two"
+          },
+          "run": "echo exit-two",
+          "response": 1
+        },
+        {
+          "step": "bash",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo covered > <work>/covered.txt && cat <work>/covered.txt"
+          },
+          "run": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "response": 2
+        },
+        {
+          "step": "refused-bash-net",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "curl -sS -m 10 http://<refused-target>/"
+          },
+          "run": "curl -sS -m 10 http://<refused-target>/",
+          "response": 3
+        },
+        {
+          "step": "refused-bash-write",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo by-bash > <outside>/by-bash.txt"
+          },
+          "run": "echo by-bash > <outside>/by-bash.txt",
+          "response": 4
+        },
+        {
+          "step": "refused-write",
+          "tool": "apply_patch",
+          "input": "*** Begin Patch\n*** Add File: <outside>/by-write.txt\n+by-write\n*** End Patch\n",
+          "response": 5
+        },
+        {
+          "step": "refused-edit",
+          "tool": "apply_patch",
+          "input": "*** Begin Patch\n*** Update File: <outside>/existing.txt\n@@\n-before\n+after\n*** End Patch\n",
+          "response": 6
+        },
+        {
+          "step": "parallel-one",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo one"
+          },
+          "run": "echo one",
+          "response": 7,
+          "parallel": true
+        },
+        {
+          "step": "parallel-two",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo two"
+          },
+          "run": "echo two",
+          "response": 7,
+          "parallel": true
+        },
+        {
+          "step": "failing-bash",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "echo failing >&2; exit 2"
+          },
+          "run": "echo failing >&2; exit 2",
+          "response": 8
+        }
+      ],
+      "says": "Covering script done."
+    },
+    {
+      "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
+      "calls": [
+        {
+          "step": "esc",
+          "tool": "exec_command",
+          "input": {
+            "cmd": "python3 -c \"import time; time.sleep(120)\""
+          },
+          "run": "python3 -c \"import time; time.sleep(120)\"",
+          "response": 9
+        }
+      ]
+    }
+  ]
+}
