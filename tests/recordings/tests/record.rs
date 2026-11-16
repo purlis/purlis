@@ -483,10 +483,22 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         std::thread::sleep(Duration::from_millis(250));
     }
     let screen = session.screen().lines.join("\n");
-    // The chat ends as a person ends it, Ctrl-C until the harness exits, and is left to run its
-    // closing hooks: every hook call it began answers before the confinement goes. Two quick
-    // Ctrl-Cs cut Claude Code's SessionEnd off in one of two runs (CI run 43834558626).
+    // The chat ends as a person ends it, and is left to run its closing hooks: every hook call
+    // it began answers before the confinement goes. Claude Code is ended with its own `/exit`:
+    // ended with Ctrl-C, its SessionEnd fired in some runs and not others, whatever its budget
+    // (CI runs 43834558626 to 43861652433). The others, and Claude Code if it is still running,
+    // with Ctrl-C until they exit.
+    if harness == "claude" {
+        std::thread::sleep(Duration::from_secs(2));
+        let _ = session.write(b"/exit");
+        std::thread::sleep(Duration::from_millis(800));
+        let _ = session.write(b"\r");
+        let _ = session.wait(Duration::from_secs(15));
+    }
     for _ in 0..3 {
+        if matches!(session.wait(Duration::from_millis(100)), Ok(Some(_))) {
+            break;
+        }
         let _ = session.write(b"\x03");
         if matches!(session.wait(Duration::from_secs(3)), Ok(Some(_))) {
             break;

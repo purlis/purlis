@@ -103,6 +103,9 @@ pub struct RacyOrder {
     pub words: &'static [&'static str],
     /// Why the order is racy, and the CI runs it was seen both ways in.
     pub reason: &'static str,
+    /// Text one call of the run must hold for the entry to apply, so it puts right only the run
+    /// it names and never the same words elsewhere; any run of the words when `None`.
+    pub when: Option<&'static str>,
 }
 
 /// Every order the mask may put right, by name. Nothing is added without CI's evidence.
@@ -119,6 +122,7 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
                  between the two recordings of one CI job: sessionstart and -skills in run \
                  43834558626, -notes and sessionstart and -quoted and -skills in run \
                  43859227733 (`harness recording (codex)`)",
+        when: None,
     },
     RacyOrder {
         harness: "opencode",
@@ -126,6 +130,16 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
         reason: "OpenCode 1.19.5's shim runs both hooks of one permission ask at once; they began \
                  notification first in run 43834558626 and permissionrequest first in run \
                  43836719317 (`harness recording (opencode)`)",
+        when: None,
+    },
+    RacyOrder {
+        harness: "opencode",
+        words: &["stop", "posttooluse-blocked"],
+        reason: "After Esc, OpenCode 1.19.5 runs the interrupted turn's Stop and the aborted \
+                 command's PostToolUse at once; Stop began first in run 43859227733 and \
+                 PostToolUse first in run 43861652433 (`harness recording (opencode)`). Only \
+                 that run: a turn that ends normally keeps its PostToolUse, then Stop",
+        when: Some("User aborted the command"),
     },
 ];
 
@@ -541,7 +555,12 @@ fn racy_order(calls: &mut [Value], racy: &RacyOrder) {
             seen.push(p);
             end += 1;
         }
-        if end - at > 1 {
+        let named = racy.when.is_none_or(|text| {
+            calls[at..end]
+                .iter()
+                .any(|c| c["stdin"].to_string().contains(text))
+        });
+        if end - at > 1 && named {
             calls[at..end].sort_by_key(|call| place(call));
         }
         at = end.max(at + 1);
@@ -741,6 +760,7 @@ mod tests {
             harness: "codex",
             words: &["a", "b"],
             reason: "test",
+            when: None,
         };
         let call = |w: &str| json!({"argv": ["hook", w]});
         let mut calls = vec![
@@ -852,5 +872,22 @@ mod tests {
         let a = mask(&recording("permissionrequest", "notification"));
         assert_eq!(a, mask(&recording("notification", "permissionrequest")));
         assert_eq!(a["hook_calls"][1]["argv"][1], "notification");
+    }
+
+    #[test]
+    fn opencodes_stop_after_esc_is_put_in_one_order_and_a_normal_turns_end_keeps_its_own() {
+        let stop = json!({"argv": ["hook", "stop"], "stdin": {"hook_event_name": "Stop"}});
+        let aborted = json!({"argv": ["hook", "posttooluse-blocked"], "stdin": {
+            "hook_event_name": "PostToolUse", "tool_response": "User aborted the command"}});
+        let failed = json!({"argv": ["hook", "posttooluse-blocked"], "stdin": {
+            "hook_event_name": "PostToolUse", "tool_response": "failing"}});
+        let recording = |calls: Vec<&Value>| json!({"harness": "opencode", "hook_calls": calls});
+        // The Esc turn's two, seen in both orders, are put in one.
+        let a = mask(&recording(vec![&aborted, &stop, &stop]));
+        assert_eq!(a, mask(&recording(vec![&stop, &aborted, &stop])));
+        assert_eq!(a["hook_calls"][0]["argv"][1], "stop");
+        // A turn that ended normally keeps its real "PostToolUse, then Stop".
+        let normal = mask(&recording(vec![&failed, &stop]));
+        assert_eq!(normal["hook_calls"][0]["argv"][1], "posttooluse-blocked");
     }
 }
