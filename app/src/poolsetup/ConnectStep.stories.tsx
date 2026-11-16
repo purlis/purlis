@@ -999,20 +999,36 @@ export const FindsNoAnswer: Story = {
   play: playDoctor("The machine didn't answer", 11),
 };
 
-const NOT_MET = sshFinding(
-  "not-met",
-  "purlis reached SSH on build-box but couldn't record the host key it shows (it said: sam@build-box: Permission denied (publickey).). Run the command under See what this does to watch SSH sign in, or use Get help.",
+const NOT_SSH = sshFinding(
+  "not-ssh",
+  "build-box took the connection on port 22 but didn't answer as SSH (it said: kex_exchange_identification: Connection closed by remote host). Check that SSH is running on build-box and listening on that port.",
   {
-    note: "This signs in to build-box as purlis does, and prints what SSH says as it goes. It changes nothing there.",
-    text: "ssh sam@build-box -v -o BatchMode=yes true",
+    note: "This prints what answers on port 22 of build-box: an SSH server's first line starts with SSH-. It only reads.",
+    text: "nc -w 5 build-box 22 < /dev/null",
   },
 );
 
-/** Its port answers, and ssh records no key from it: the key's line fails, not the answer's. */
+/** Its port takes the connection and no SSH server answers there: the answer's line fails. */
 export const FindsSshNotThere: Story = {
   beforeEach: faked([]),
+  args: { step: NOT_SSH, shown: shown(NOT_SSH) },
+  play: playDoctor("The machine didn't answer as SSH", 11),
+};
+
+const NOT_MET = sshFinding(
+  "not-met",
+  "purlis reached build-box but couldn't save the key that identifies it (its host key) (it said: Failed to add the host to the list of known hosts (/tmp/known_hosts)). Run the command under See what this does to watch purlis's first contact, or use Get help.",
+  {
+    note: "This meets build-box as purlis's first contact does: it saves the key build-box shows to a new file of its own, and prints what SSH says as it goes, so you can see why the key wasn't saved. It signs in with nothing, so a refused sign-in at the end is expected, and it changes nothing there.",
+    text: 'ssh sam@build-box -v -o BatchMode=yes -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$(mktemp)" true',
+  },
+);
+
+/** SSH answers there, and ssh saves no key from it: the key's line fails, not the answer's. */
+export const FindsKeyNotSaved: Story = {
+  beforeEach: faked([]),
   args: { step: NOT_MET, shown: shown(NOT_MET) },
-  play: playDoctor("purlis couldn't record its host key", 11),
+  play: playDoctor("purlis couldn't save the machine's key", 11),
 };
 
 const SIGN_IN_REFUSED = sshFinding(

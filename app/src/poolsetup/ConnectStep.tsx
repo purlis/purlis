@@ -78,9 +78,10 @@ const ENGINE_CHECKS: readonly Check[] = [
 /** What Connect checks over SSH, in order, and the causes that fail each line. */
 const SSH_CHECKS: readonly Check[] = [
   { title: (host) => `${host} is found`, causes: ["no-such-name"] },
-  { title: (host) => `${host} answers`, causes: ["no-answer"] },
+  // Not SSH: its port, or a jump host, took the connection and no SSH server answered there.
+  { title: (host) => `${host} answers`, causes: ["no-answer", "not-ssh"] },
   {
-    // Not met: its SSH port answered, and ssh recorded no key from it.
+    // Not met: an SSH server greeted purlis there, and ssh saved no key from it.
     title: () => "Its key is the one you trusted",
     causes: ["not-met", "pool-pin-changed"],
   },
@@ -111,7 +112,8 @@ const checksOf = (over: Over) => (over === "tls" ? TLS_CHECKS : SSH_CHECKS);
 const TITLES: Record<string, string> = {
   "no-such-name": "purlis couldn't find that machine",
   "no-answer": "The machine didn't answer",
-  "not-met": "purlis couldn't record its host key",
+  "not-ssh": "The machine didn't answer as SSH",
+  "not-met": "purlis couldn't save the machine's key",
   "pool-pin-changed": "The machine shows a different key",
   "sign-in-refused": "The machine didn't accept your sign-in",
   "no-engine": "No Docker there that you can use",

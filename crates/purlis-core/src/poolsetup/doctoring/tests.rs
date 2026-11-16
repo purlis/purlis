@@ -59,15 +59,32 @@ fn every() -> Vec<Row> {
             ActionId::CheckAgain,
         ),
         row(
+            Finding::NotSsh {
+                host: "build-box".into(),
+                port: 22,
+                proxied: false,
+                said: "kex_exchange_identification: Connection closed by remote host".into(),
+            },
+            ssh,
+            "not-ssh",
+            "build-box took the connection on port 22 but didn't answer as SSH (it said: \
+             kex_exchange_identification: Connection closed by remote host). Check that SSH is \
+             running on build-box and listening on that port.",
+            ActionId::CheckAgain,
+        ),
+        row(
             Finding::NotMet {
                 host: "build-box".into(),
-                said: "root@build-box: Permission denied (publickey).".into(),
+                said: "Failed to add the host to the list of known hosts (/tmp/known_hosts).\n\
+                       root@build-box: Permission denied (publickey)."
+                    .into(),
             },
             ssh,
             "not-met",
-            "purlis reached SSH on build-box but couldn't record the host key it shows (it said: \
-             root@build-box: Permission denied (publickey).). Run the command under See what \
-             this does to watch SSH sign in, or use Get help.",
+            "purlis reached build-box but couldn't save the key that identifies it (its host \
+             key) (it said: Failed to add the host to the list of known hosts \
+             (/tmp/known_hosts)). Run the command under See what this does to watch purlis's \
+             first contact, or use Get help.",
             ActionId::CheckAgain,
         ),
         row(
@@ -354,10 +371,11 @@ fn variant(finding: &Finding) -> usize {
         Finding::ImageUnreachable { .. } => 21,
         Finding::ContextMoved { .. } => 22,
         Finding::Here(_) => 23,
+        Finding::NotSsh { .. } => 24,
     }
 }
 
-const VARIANTS: usize = 24;
+const VARIANTS: usize = 25;
 
 fn facts(route: &str, finding: &Finding) -> Facts {
     let tls = crate::tlsroute::is_tcp(route).then(|| crate::tlsroute::Files {
@@ -1268,5 +1286,44 @@ fn only_the_findings_named_for_the_admin_go_to_the_admin() {
         "a-cause-added-later",
     ] {
         assert!(!for_the_admin(cause), "{cause}");
+    }
+}
+
+/// **Past a jump host, not SSH names the jump host** (#6823 review), and the key not saved is
+/// seen by purlis's own first contact, not a sign-in with the person's keys, which saves nothing.
+#[test]
+fn not_ssh_through_a_jump_host_names_it_and_a_key_not_saved_is_seen_by_a_first_contact() {
+    let through = Finding::NotSsh {
+        host: "build-box".into(),
+        port: 22,
+        proxied: true,
+        said: "channel 0: open failed: connect failed: Connection refused".into(),
+    };
+    assert_eq!(
+        super::super::connecting::said(&through),
+        "purlis couldn't reach SSH on build-box through the jump host or proxy your SSH settings \
+         name for it (it said: channel 0: open failed: connect failed: Connection refused). \
+         Check that the jump host is on and lets you through."
+    );
+    let not_met = Finding::NotMet {
+        host: "build-box".into(),
+        said: "me@build-box: Permission denied (publickey).".into(),
+    };
+    let words = super::super::connecting::said(&not_met);
+    assert!(!words.contains("it said"), "{words}");
+    let row = Row {
+        finding: not_met,
+        route: "ssh://me@build-box",
+        cause: "not-met",
+        words: String::new(),
+        next: ActionId::CheckAgain,
+    };
+    let see = connect_of(&row).see.unwrap();
+    for part in [
+        "PubkeyAuthentication=no",
+        "StrictHostKeyChecking=accept-new",
+        "UserKnownHostsFile=\"$(mktemp)\"",
+    ] {
+        assert!(see.text.contains(part), "{part}: {}", see.text);
     }
 }
