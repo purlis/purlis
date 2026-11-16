@@ -245,7 +245,9 @@ describe("PoolSetupTab", () => {
     const calls = core(() => CHOSEN);
     const { unmount } = render(<PoolSetupTab plane="p" />);
     const box = await screen.findByRole("textbox", { name: /Name/ });
-    vi.useFakeTimers();
+    // Only the kind of wait the name is kept with: jsdom keeps its own rendering loop on
+    // setInterval, started or not by a value set depending on where its last one stood (#4707).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.change(box, { target: { value: "dev" } });
     const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
     expect(kept()).toEqual([]);
