@@ -340,7 +340,19 @@ fn play(given: &Given) -> Played {
         std::thread::sleep(Duration::from_millis(200));
     }
     let screen = session.screen().lines.join("\n");
+    // Claude Code ended with its own `/exit`, as T1.1-03's driver ends it, then Enter on the
+    // default of what it asks about its background work; the others with Ctrl-C.
+    if dialect == "claude" {
+        std::thread::sleep(Duration::from_secs(2));
+        let _ = session.write(b"/exit");
+        std::thread::sleep(Duration::from_millis(800));
+        let _ = session.write(b"\r");
+        let _ = session.wait(Duration::from_secs(20));
+    }
     for _ in 0..3 {
+        if matches!(session.wait(Duration::from_millis(100)), Ok(Some(_))) {
+            break;
+        }
         let _ = session.write(b"\x03");
         if matches!(session.wait(Duration::from_secs(3)), Ok(Some(_))) {
             break;
