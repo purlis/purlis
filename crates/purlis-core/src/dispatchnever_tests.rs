@@ -466,3 +466,19 @@ fn a_nevers_file_deleted_or_edited_behind_the_apps_back_reads_as_unread() {
         Covers::Unread
     );
 }
+
+/// **An older sealed nevers file put back reads as unread** (the M75 review, round 4): the
+/// keyring keeps the seal of the newest file the app wrote, so a copy from before a later never
+/// (a sealed copy, as the app once wrote it) is not it.
+#[test]
+fn an_older_nevers_file_put_back_reads_as_unread() {
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    add(root, "steward", "devops").unwrap();
+    let older = std::fs::read_to_string(path(root)).unwrap();
+    add(root, "qa", "prod").unwrap();
+    assert!(matches!(read(root), Nevers::Read(pairs) if pairs.len() == 2));
+    std::fs::write(path(root), older).unwrap();
+    assert_eq!(read(root), Nevers::Unread);
+}
