@@ -385,7 +385,7 @@ fn a_plane_with_a_persona() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
     std::fs::write(
         dir.path().join("charter.toml"),
-        "schema = 1\n\n[persona]\ndefault = \"ops\"\n",
+        "schema = 1\n\n[persona]\ndefault = \"ops\"\n\n[policy]\ntemplate = \"strict\"\n",
     )
     .expect("a manifest");
     let persona = dir.path().join("personas/ops");
@@ -634,7 +634,12 @@ fn bash(command: &str) -> String {
 /// leak guard to have something real to refuse.
 fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
-    std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    // Today's blocking, explicitly (Q308: the default is `watch`).
+    std::fs::write(
+        dir.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the marker");
     let vaults = dir.path().join(".charter").join("vaults");
     std::fs::create_dir_all(&vaults).expect("the vault directory");
     std::fs::write(vaults.join("db.json"), "{}\n").expect("a vault");
@@ -670,12 +675,12 @@ fn the_bash_guard_refuses_by_printing_and_exits_cleanly() {
         "{said}"
     );
     assert!(
-        said.contains("under [enforcement] in the project's committed settings"),
+        said.contains("under [policy] in the project's committed settings"),
         "every denial carries the override note: {said}"
     );
 }
 
-/// R-021: **guard A, the leak guard, is switched by nothing but the project's `[enforcement]`
+/// R-021: **guard A, the leak guard, is switched by nothing but the project's `[policy]`
 /// `secrets`** (Q308), which every template but `open` enforces. What this proves: with the project's
 /// files at their loosest (the manifest's and the machine file's sandbox keys, the harness's own
 /// settings allowing every Bash and Read call in bypass mode), on each harness, sandboxed or not,
@@ -1369,7 +1374,12 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
 /// from and writes an empty entry. A test that phoned a forge would be a test nobody could run.
 fn a_plane_with_a_clone() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
-    std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    // Today's blocking, explicitly (Q308: the default is `watch`).
+    std::fs::write(
+        dir.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the marker");
     let clone = dir.path().join("workspaces/alpha/svc");
     std::fs::create_dir_all(&clone).expect("the clone's directory");
     let done = support::command("git")

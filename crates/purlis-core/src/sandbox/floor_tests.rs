@@ -13,7 +13,12 @@ use std::io::Write as _;
 fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a project");
     let root = dir.path().canonicalize().expect("a real folder");
-    std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("charter.toml");
+    // Today's floor, explicitly (Q308: under the default, `watch`, programs are let out).
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("charter.toml");
     (dir, root)
 }
 
@@ -2511,6 +2516,46 @@ fn later_code_names_moved_by_xdg_folders_are_held_where_they_moved() {
                 writes(&profile, &still),
                 "{harness:?}: {} is not writable",
                 still.display()
+            );
+        }
+    }
+}
+
+/// **The floor's refusal of programs follows the `processes` family** (Q308a): enforced, the wrap
+/// refuses `launchctl`, `osascript`, `open`, cron and Apple Events; off, it does not; and `log`
+/// lifts it as `off` does, since a kernel's refusal cannot log and allow. A loosening holds only
+/// once the person pressed.
+#[test]
+fn the_floors_refusal_of_programs_follows_the_processes_family() {
+    let _home = super::local::OwnConfigHome::new();
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    for (mode, refused) in [("enforce", true), ("off", false), ("log", false)] {
+        let (_dir, root) = project();
+        std::fs::write(
+            root.join("charter.toml"),
+            format!("schema = 1\n[policy]\ntemplate = \"strict\"\nprocesses = \"{mode}\"\n"),
+        )
+        .expect("charter.toml");
+        // The first start accepts strict; the person's press accepts the family's mode.
+        crate::enforcement::at_start(&root);
+        crate::enforcement::press(&root).expect("pressed");
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
+            assert_eq!(
+                profile.contains("(literal \"/usr/bin/osascript\")"),
+                refused,
+                "{mode} {harness:?}"
+            );
+            assert_eq!(
+                profile.contains("(deny lsopen)"),
+                refused,
+                "{mode} {harness:?}"
+            );
+            // Sockets and this machine's ports are the ports family's, held either way.
+            assert!(
+                profile.contains("(deny network-outbound (remote unix-socket))"),
+                "{mode} {harness:?}"
             );
         }
     }

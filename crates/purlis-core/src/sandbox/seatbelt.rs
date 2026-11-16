@@ -89,6 +89,9 @@ pub struct Own {
     pub after: Vec<String>,
     /// At the floor, the held folders a person let this chat write ([`floor_planted_rules_but`]).
     pub lifted: Vec<PathBuf>,
+    /// At the floor, whether programs are let out ([`super::Widened::processes_lifted`]):
+    /// [`FLOOR_PROCESSES`] is then left out.
+    pub processes_lifted: bool,
 }
 
 /// `text` as an SBPL string, or [`CONTROL`].
@@ -361,6 +364,7 @@ pub const TRUST: &str = "(allow mach-lookup (global-name \"com.apple.trustd.agen
 /// (D-1337-7, R1).
 pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str> {
     own.lifted.extend(widened.lifted.iter().cloned());
+    own.processes_lifted |= widened.processes_lifted;
     if let Some(caches) = &widened.caches {
         for tree in &caches.trees {
             own.allow.push(format!("(subpath {})", quote(tree)?));
@@ -663,6 +667,10 @@ pub fn floor_profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     let mut out = String::from(FLOOR_BASE);
+    // The `processes` family (Q308a): left out where the project's `[policy]` does not enforce it.
+    if !own.processes_lifted {
+        out.push_str(FLOOR_PROCESSES);
+    }
     out.push_str(FLOOR_HELD);
     out.push_str(&terminal_rules());
     let mut line = |text: String| {
@@ -877,10 +885,9 @@ fn vault_rules(ops: &str) -> Result<Vec<String>, &'static str> {
     Ok(rules)
 }
 
-/// What the floor holds besides files ([`floor_profile`]): nothing started outside the profile,
-/// no unix socket and no port of this machine. The hook socket, the proxy's ports and what a
-/// person allowed are given back after it.
-pub const FLOOR_HELD: &str = "(deny appleevent-send)
+/// What the floor holds of programs ([`floor_profile`]): nothing started outside the profile.
+/// The `processes` family (Q308a): left out where the project's `[policy]` does not enforce it.
+pub const FLOOR_PROCESSES: &str = "(deny appleevent-send)
 (deny lsopen)
 (deny job-creation)
 (deny mach-lookup
@@ -893,7 +900,12 @@ pub const FLOOR_HELD: &str = "(deny appleevent-send)
   (literal \"/usr/bin/crontab\")
   (literal \"/usr/bin/at\")
   (literal \"/usr/bin/batch\"))
-(deny network-outbound (remote unix-socket))
+";
+
+/// What the floor holds besides files and programs ([`floor_profile`]): no unix socket and no
+/// port of this machine. The hook socket, the proxy's ports and what a person allowed are given
+/// back after it.
+pub const FLOOR_HELD: &str = "(deny network-outbound (remote unix-socket))
 (deny network-outbound (remote ip \"localhost:*\"))
 ";
 

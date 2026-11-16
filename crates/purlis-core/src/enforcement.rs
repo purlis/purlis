@@ -154,13 +154,28 @@ impl Family {
         !matches!(self, Family::Sandbox | Family::Vaults)
     }
 
-    /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on the second
-    /// review of how it fits with the grants and remembered answers it holds (instruction of
-    /// 2026-11-16): those stay enforced, as before Q308, whatever `[policy]` says.
+    /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
+    /// ruling; those stay enforced, as before Q308, whatever `[policy]` says:
+    ///
+    /// - `dispatch`, `vaults`, `asks` and `browser`, and the sandbox's level: each holds grants
+    ///   or remembered answers (dispatch grants and nevers, sandbox grants, browser reach, the
+    ///   team's sandbox accept) whose fit with `[policy]` the second review settles
+    ///   (instruction of 2026-11-16);
+    /// - `network` and `ports`: the egress proxy's refusal is its live ask, and a port or socket
+    ///   is a sandbox grant, both held with the above;
+    /// - `skills`: every skills refusal a chat meets is a hand-over to the person (a draft, a
+    ///   proposal) or the org's `[skill_policy]` on an install only the window makes, so which
+    ///   of them the family switches needs a ruling.
     pub fn switchable(self) -> bool {
-        !matches!(
+        matches!(
             self,
-            Family::Sandbox | Family::Dispatch | Family::Vaults | Family::Asks | Family::Browser
+            Family::Processes
+                | Family::GuardsGit
+                | Family::GuardsMerge
+                | Family::GuardsRelease
+                | Family::GuardsSave
+                | Family::GuardsCredential
+                | Family::Secrets
         )
     }
 }

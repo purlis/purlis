@@ -77,14 +77,14 @@ use crate::{
 ///
 /// **charter#370 said no switch may lift a guard's refusal**, because one purlis could read is
 /// one a committed file could flip. Ruling Q308 (2026-11-16) reverses that: each family of
-/// refusals is `off`, `log` or `enforce` by the project's committed `[enforcement]`
+/// refusals is `off`, `log` or `enforce` by the project's committed `[policy]`
 /// ([`crate::enforcement`]), and an administrator's lock wins over it. What stays of #370 is that
-/// the switch is a person's: a chat's own change to that table is held as its change to
-/// `[sandbox]` is.
+/// the switch is a person's: a loosening holds only once they press in the window, and a chat's
+/// own change to that table is held as its change to `[sandbox]` is (Q308a).
 pub const OVERRIDE_NOTE: &str = " — Wrong about this case? A person can set this guard's family to log or off under \
-     [enforcement] in the project's committed settings (docs/enforcement.md); a chat cannot. Or \
-     run it yourself, in your own terminal — these guards bound what an AGENT does with your \
-     authority, never what you do.";
+     [policy] in the project's committed settings, and accept it in the window (docs/policy.md); \
+     a chat cannot. Or run it yourself, in your own terminal — these guards bound what an AGENT \
+     does with your authority, never what you do.";
 
 /// The arms whose refusal names the exact shape the chat retries with, so the chat fixes its own
 /// call (#3830, the operator's ruling of 2026-10-29: when an agent can fix its own call, refuse
@@ -434,7 +434,7 @@ pub fn verdict(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
     judged(call, plane, &|_| Mode::Enforce).refused
 }
 
-/// What the gate made of a call under a project's `[enforcement]` (Q308).
+/// What the gate made of a call under a project's `[policy]` (Q308).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Judged {
     /// The refusal of the first arm whose family is enforced, or none.
@@ -1876,7 +1876,7 @@ mod tests {
         assert!(out.contains("a \\u2014 b \\u2026"), "{out}");
         assert!(out.contains("purlis guard: "));
         assert!(
-            out.contains("under [enforcement]"),
+            out.contains("under [policy]"),
             "the override note rides along"
         );
     }
