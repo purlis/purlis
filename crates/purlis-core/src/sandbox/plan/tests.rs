@@ -168,7 +168,10 @@ impl HeldElsewhere for Asking {
     }
 
     fn board(&self) -> Option<Arc<dyn Board>> {
-        Some(Arc::new(crate::sandbox::asks::Asks::new(Arc::new(|_| {}))))
+        Some(Arc::new(crate::sandbox::asks::Asks::new(
+            Arc::new(|_| {}),
+            &crate::sandbox::timings::Timings::production(),
+        )))
     }
 }
 
@@ -273,7 +276,10 @@ fn what_a_chat_held_elsewhere_keeps_is_written_in_the_folder_its_holder_made() {
 /// The window answers a board in this process and one the session host holds alike.
 #[test]
 fn a_board_here_answers_as_a_board() {
-    let board: Arc<dyn Board> = Arc::new(crate::sandbox::asks::Asks::new(Arc::new(|_| {})));
+    let board: Arc<dyn Board> = Arc::new(crate::sandbox::asks::Asks::new(
+        Arc::new(|_| {}),
+        &crate::sandbox::timings::Timings::production(),
+    ));
     let host = crate::sandbox::hosts::Host::parse("pypi.example.com").expect("a host");
 
     assert!(board.allow(&host, By::Chat).is_empty());

@@ -2737,6 +2737,9 @@ pub struct Planes {
     letting_go: Arc<LettingGo>,
     /// How long the quit waits for the opens and closes under way ([`QUIT_WAITS_FOR_TURNS`]).
     quit_waits: std::time::Duration,
+    /// **The one value every project's sandbox timers wait by** (T1.1-01): production's, which
+    /// nothing configures. Each plane's hooks and chats are handed it as they are made.
+    timings: purlis_core::sandbox::timings::Timings,
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
@@ -2996,6 +2999,7 @@ impl Planes {
             turns: Arc::default(),
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
+            timings: purlis_core::sandbox::timings::Timings::production(),
             network: None,
             pools_in: None,
             gate: None,
@@ -3049,6 +3053,14 @@ impl Planes {
     #[cfg(test)]
     pub(crate) fn quitting_within(mut self, within: std::time::Duration) -> Self {
         self.quit_waits = within;
+        self
+    }
+
+    /// Opens every plane with `timings` in place of production's: for a test of the one value
+    /// reaching each of a project's sandbox timers (T1.1-01).
+    #[cfg(test)]
+    pub(crate) fn timed_by(mut self, timings: purlis_core::sandbox::timings::Timings) -> Self {
+        self.timings = timings;
         self
     }
 
@@ -4909,6 +4921,7 @@ impl Planes {
                 &at,
                 Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
+                self.timings,
             ))
         } else {
             Hooks::listening_on(
@@ -4916,6 +4929,7 @@ impl Planes {
                 &at,
                 Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
+                self.timings,
             )
         };
         let hooks = hooks.unwrap_or_else(|why| {
@@ -4925,7 +4939,7 @@ impl Planes {
                 at.socket.display(),
                 root.display()
             );
-            Hooks::deaf(id.clone())
+            Hooks::deaf(id.clone(), self.timings)
         });
         if let Some(events) = &self.events {
             hooks.record_into(events.clone());
@@ -4972,6 +4986,7 @@ impl Planes {
             chats.sessions().hear_through(relayed);
         }
         chats.arming_with(self.shipped.clone());
+        chats.timed_by(self.timings);
         chats.keeping_skills_in(skills_now);
         if let Some(executor) = &self.routers {
             chats.asks_routers_with(Arc::new(purlis_core::skills::router::OnThisMachine {

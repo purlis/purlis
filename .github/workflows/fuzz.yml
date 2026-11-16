@@ -1,0 +1,57 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The parsers' fuzz targets, on every pull request that can change what they reach** (T1.1-47):
+# built, and the committed corpus replayed once, with this runner's curl's and Node's recorded
+# heads. It never fuzzes for a time box: that is the nightly entry `fuzz-parsers` alone
+# (`docs/fuzzing.md`).
+name: fuzz
+
+on:
+  pull_request:
+    branches: [main, phase-1-proven]
+    paths:
+      # purlis-core and every crate of this repository it builds with (its path dependencies,
+      # and theirs): a change to any of them can change what a target reaches.
+      - "crates/purlis-core/**"
+      - "crates/terminal/**"
+      - "crates/session-protocol/**"
+      - "crates/unicode/**"
+      - "crates/skills/**"
+      - "crates/linux-sandbox/**"
+      - "crates/cluster-doctor/**"
+      - "crates/changelog/**"
+      - "crates/host/**"
+      - "crates/browser-engine/**"
+      - "crates/same-user/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".nvmrc"
+      - ".github/workflows/fuzz.yml"
+      - ".github/actions/fuzz-parsers/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: fuzz targets (build, replay the corpus)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/fuzz-parsers
+      # The fuzz crate is a workspace of its own, so the repository's clippy never reads it.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: clippy
+      - name: Lint the fuzz crate
+        working-directory: crates/purlis-core/fuzz
+        run: cargo clippy --locked --all-targets -- -D warnings
