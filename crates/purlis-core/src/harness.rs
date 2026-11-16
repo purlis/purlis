@@ -235,6 +235,16 @@ impl Harness {
         &self.declared().env
     }
 
+    /// The variables a key chat of this harness is started without, whoever passed them: the
+    /// ones it reads from its launch environment alone that would carry its model calls around
+    /// the key proxy (T1a-15, [`claude::route::LAUNCH_ONLY`]). None for a harness that has none.
+    pub fn kept_out_of_a_key_chat(self) -> &'static [&'static str] {
+        match self {
+            Harness::ClaudeCode => &claude::route::LAUNCH_ONLY,
+            _ => &[],
+        }
+    }
+
     /// Whether charter chooses this harness's session id and hands it over at the start, so
     /// the link exists before the harness does.
     ///

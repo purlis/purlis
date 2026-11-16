@@ -21,6 +21,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use purlis_core::harness::claude::route;
+use purlis_core::harness::{Harness, Kit, StateHooks};
 use purlis_core::keyroute::{KeyRoute, Listener};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -170,20 +171,9 @@ fn run_bounded(mut command: Command) -> std::process::ExitStatus {
     }
 }
 
-/// R-256: with a claude.ai login saved in its config folder, a key chat of the pinned Claude
-/// Code carries the run's token on every call, and no other credential.
-#[test]
-fn a_key_chat_never_falls_back_to_a_saved_login() {
-    let Some(claude) = pinned("a_key_chat_never_falls_back_to_a_saved_login") else {
-        return;
-    };
-    let version = purlis_core::forklock::output(Command::new(&claude).arg("--version"))
-        .expect("it answers its version");
-    assert_eq!(
-        String::from_utf8_lossy(&version.stdout).trim(),
-        SUPPORTED.trim(),
-        "{PINNED} is not the version purlis supports"
-    );
+/// The stand-in Messages server on a loopback port, answering every model call with [`TURN`],
+/// and the runtime it runs on.
+fn a_stand_in() -> (tokio::runtime::Runtime, MockServer) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -199,40 +189,110 @@ fn a_key_chat_never_falls_back_to_a_saved_login() {
             )
             .mount(&server),
     );
-    let home = tempfile::tempdir().expect("a home");
-    let config = home.path().join(".claude");
-    save_a_login(&config);
-    let route = KeyRoute::new(
+    (rt, server)
+}
+
+/// Asserts `claude` is the version purlis supports.
+fn the_supported_version(claude: &Path) {
+    let version = purlis_core::forklock::output(Command::new(claude).arg("--version"))
+        .expect("it answers its version");
+    assert_eq!(
+        String::from_utf8_lossy(&version.stdout).trim(),
+        SUPPORTED.trim(),
+        "{PINNED} is not the version purlis supports"
+    );
+}
+
+/// **A key chat of the pinned Claude Code, as its start arms it** (fix round, finding 4): the
+/// whole argv `Harness::ClaudeCode.state_hooks` builds for `route`, so its one `--settings` is
+/// the adapter's merge, then `-p`. Its environment is composed as a chat's is
+/// (`chatenv::compose`) from `launch`, the app's own, the operator passing each of `launch`'s
+/// names, and started without what `hoststart::started_without` names for a key chat.
+fn a_key_chat(claude: &Path, route: &KeyRoute, home: &Path, launch: &[(&str, &str)]) -> Command {
+    let config = home.join(".claude");
+    let plugin = home.join("purlis-plugin");
+    std::fs::create_dir_all(&plugin).expect("a plugin folder");
+    let StateHooks::ThisSessionOnly { args, env, .. } = Harness::ClaudeCode.state_hooks(
+        Kit {
+            // Its hooks and its MCP server run a program that answers nothing and ends.
+            binary: Path::new("/usr/bin/true"),
+            plugin: Some(&plugin),
+            persona: None,
+            skills: None,
+            graded: false,
+            judging: false,
+            writes_its_piece: false,
+            runs_a_shell: false,
+            own: &[],
+            laid_out: None,
+            key_route: Some(route),
+        },
+        Some(home),
+        &purlis_core::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("Claude Code is armed per session");
+    };
+    let path = std::env::var("PATH").unwrap_or_default();
+    let home_text = home.display().to_string();
+    let app: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+        [("PATH", path.as_str()), ("HOME", home_text.as_str())]
+            .iter()
+            .chain(launch)
+            .map(|(name, value)| ((*name).into(), (*value).into()))
+            .collect();
+    let operator: Vec<String> = launch.iter().map(|(name, _)| (*name).to_owned()).collect();
+    let strip = purlis_core::hoststart::started_without(home, Some(Harness::ClaudeCode), Some(route));
+    let mut set = env;
+    set.push(("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string()));
+    let env = purlis_core::chatenv::compose(
+        app,
+        &purlis_core::chatenv::Starting {
+            harness: Some(Harness::ClaudeCode),
+            operator: &operator,
+            strip: &strip,
+            set: &set,
+            git_hooks: None,
+            declared: &[],
+        },
+    );
+    let mut command = Command::new(claude);
+    command
+        .args(&args)
+        .args(["-p", "say ok"])
+        .env_clear()
+        .envs(env)
+        .current_dir(home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+/// The route through the stand-in `server`, with [`RUN_TOKEN`].
+fn the_route(server: &MockServer) -> KeyRoute {
+    KeyRoute::new(
         Listener {
             port: server.address().port(),
             token: RUN_TOKEN.to_owned(),
         },
         Some("claude-fixture-background"),
         |_| None,
-    );
-    let settings = serde_json::json!({ "env": route::settings_env(&route) });
-    let mut command = Command::new(&claude);
-    command
-        .args(["-p", "say ok", "--settings", &settings.to_string()])
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("HOME", home.path())
-        .env("CLAUDE_CONFIG_DIR", &config)
-        .env(route::TOKEN, RUN_TOKEN)
-        .current_dir(home.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    )
+}
 
-    let status = run_bounded(command);
-
-    let requests = rt.block_on(server.received_requests()).unwrap_or_default();
+/// Asserts a model call reached the stand-in, and that every call carried the run's token and
+/// no other credential.
+fn every_call_carried_the_run_token(
+    requests: &[wiremock::Request],
+    status: std::process::ExitStatus,
+) {
     assert!(
         requests
             .iter()
             .any(|r| r.method.as_str() == "POST" && r.url.path() == "/v1/messages"),
         "no model call reached the route ({status}): {requests:?}"
     );
-    for request in &requests {
+    for request in requests {
         let said = format!("{} {}", request.method, request.url.path());
         let header = |name: &str| {
             request
@@ -261,6 +321,62 @@ fn a_key_chat_never_falls_back_to_a_saved_login() {
                 "{said} carried a claude.ai credential in {name}"
             );
         }
+    }
+}
+
+/// R-256: with a claude.ai login saved in its config folder, a key chat of the pinned Claude
+/// Code carries the run's token on every call, and no other credential.
+#[test]
+fn a_key_chat_never_falls_back_to_a_saved_login() {
+    let Some(claude) = pinned("a_key_chat_never_falls_back_to_a_saved_login") else {
+        return;
+    };
+    the_supported_version(&claude);
+    let (rt, server) = a_stand_in();
+    let home = tempfile::tempdir().expect("a home");
+    save_a_login(&home.path().join(".claude"));
+    let route = the_route(&server);
+
+    let status = run_bounded(a_key_chat(&claude, &route, home.path(), &[]));
+
+    let requests = rt.block_on(server.received_requests()).unwrap_or_default();
+    every_call_carried_the_run_token(&requests, status);
+}
+
+/// Fix round, finding 1: a socket path in the launch environment, which Claude Code reads from
+/// there alone and would send every call and the run's token to, around the route: a key chat is
+/// started without it, so every call still reaches the route and none reaches the socket.
+#[cfg(unix)]
+#[test]
+fn a_key_chat_reaches_its_route_with_a_unix_socket_in_the_launch_environment() {
+    let Some(claude) =
+        pinned("a_key_chat_reaches_its_route_with_a_unix_socket_in_the_launch_environment")
+    else {
+        return;
+    };
+    the_supported_version(&claude);
+    let (rt, server) = a_stand_in();
+    let home = tempfile::tempdir().expect("a home");
+    save_a_login(&home.path().join(".claude"));
+    let route = the_route(&server);
+    let socket = home.path().join("around.sock");
+    let around = std::os::unix::net::UnixListener::bind(&socket).expect("a socket to go around by");
+    around.set_nonblocking(true).expect("non-blocking");
+    let socket_text = socket.display().to_string();
+
+    let status = run_bounded(a_key_chat(
+        &claude,
+        &route,
+        home.path(),
+        &[("ANTHROPIC_UNIX_SOCKET", socket_text.as_str())],
+    ));
+
+    let requests = rt.block_on(server.received_requests()).unwrap_or_default();
+    every_call_carried_the_run_token(&requests, status);
+    match around.accept() {
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+        Ok(_) => panic!("a call went to the socket, around the route ({status})"),
+        Err(error) => panic!("the socket could not be read: {error}"),
     }
 }
 

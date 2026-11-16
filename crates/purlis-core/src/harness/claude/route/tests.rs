@@ -193,11 +193,14 @@ fn adapter_writes_the_route_into_settings_env() {
         "NO_PROXY".to_owned(),
         "corp.example,.internal,127.0.0.1".into(),
     );
-    expected.insert("no_proxy".to_owned(), "127.0.0.1".into());
+    expected.insert(
+        "no_proxy".to_owned(),
+        "corp.example,.internal,127.0.0.1".into(),
+    );
     assert_eq!(env, expected);
 }
 
-/// R-232: a person's bypass that already names the loopback is kept as it is.
+/// R-232: a person's bypass that already names the loopback names it once, in both spellings.
 #[test]
 fn adapter_writes_the_persons_bypass_once() {
     let route = route_in(&[
@@ -206,8 +209,8 @@ fn adapter_writes_the_persons_bypass_once() {
     ]);
     let env = settings_env_of(&armed(Some(&route)).0);
 
-    assert_eq!(env["NO_PROXY"], "127.0.0.1");
-    assert_eq!(env["no_proxy"], "localhost, 127.0.0.1");
+    assert_eq!(env["NO_PROXY"], "127.0.0.1,localhost");
+    assert_eq!(env["no_proxy"], "127.0.0.1,localhost");
 }
 
 /// R-232 (V3): no `ANTHROPIC_MODEL`, and no model slot but the background model's, in `env`,

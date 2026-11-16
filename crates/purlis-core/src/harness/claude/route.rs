@@ -97,6 +97,20 @@ pub const STRIP_FLOOR: &[&str] = &[
     "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
 ];
 
+/// **What a key chat's process is started without** (T1a-15 fix round): the variables of the
+/// floor (R-248, through "the additions T1a-02 found", `spikes/1a-startup.md`) that Claude Code
+/// reads from its launch environment alone, so a key chat's harness never carries them, whoever
+/// passed them (`hoststart::started_without`). An unproxied chat keeps the person's value.
+///
+/// **Found at build: `ANTHROPIC_UNIX_SOCKET` is not settable through `--settings` `env`.** Run on
+/// 2.1.300 with a key chat's exact `--settings` and the run token, a socket path in the launch
+/// environment sent every model call and the token to the socket, around the listener, and
+/// `"ANTHROPIC_UNIX_SOCKET": ""` in `--settings` `env` changed nothing: Claude Code reads it
+/// from the launch environment only. So it is not in [`STRIP_FLOOR`], whose members are blanked
+/// in `--settings` `env`; it is kept out of the process instead, and an empty value written there
+/// would prove nothing about it.
+pub const LAUNCH_ONLY: [&str; 1] = ["ANTHROPIC_UNIX_SOCKET"];
+
 /// **The provider switches a proxied chat blanks** (R-248, R-252, X8), each with why: every
 /// `CLAUDE_CODE_USE_` name in the pinned binary that routes a model call is here, or in
 /// [`KNOWN_NOT_A_ROUTE`] ([`switches_in_neither_list`]).

@@ -1759,6 +1759,21 @@ pub fn what_its_hooks_read(env: &mut Vec<(String, String)>, watched: &Watched<'_
     }
 }
 
+/// **What a chat is started without, whoever passed it** (the chat's `strip`,
+/// [`crate::chatenv::Starting::strip`]): every identity variable a vault of the project at `root`
+/// declares ([`declared_identity_vars`]), and, for a chat the key proxy carries (`key_route`),
+/// what its harness reads from its launch environment alone that would carry its calls around
+/// the route ([`Harness::kept_out_of_a_key_chat`], T1a-15). An unproxied chat keeps those.
+pub fn started_without(
+    root: &Path,
+    harness: Option<Harness>,
+    key_route: Option<&crate::keyroute::KeyRoute>,
+) -> Vec<String> {
+    // Red-first stub: the key route is ignored.
+    let _ = (harness, key_route);
+    declared_identity_vars(root)
+}
+
 /// Every identity variable a vault of the project at `root` declares, both halves of each
 /// binding, so a chat is started without any of them (#271 review, U6). A registry that cannot
 /// be read yields none: the chat still loses every `OP_*` by prefix. Skipped in a fenced build,
