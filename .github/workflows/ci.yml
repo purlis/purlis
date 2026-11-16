@@ -327,6 +327,20 @@ jobs:
           trap 'sudo umount /run/purlis-link; sudo rmdir /run/purlis-link' EXIT
           PURLIS_TEST_LINK_HANDOVER=/run/purlis-link PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
+      # **R-772's CI half: what a chat reaches of the keychain, under the real wrap** (T1a-72). A
+      # session bus of its own with a real Secret Service unlocked on it (an empty test password),
+      # so "reachable" means one answered. The step above leaves `sandbox-probe` built. Red unless
+      # the test really ran and compared every cell: it leaves a marker only then.
+      - name: R-772's keychain reach table, under purlis's wrap with a Secret Service
+        if: matrix.part == 1
+        run: |
+          sudo apt-get install -y --no-install-recommends gnome-keyring libsecret-tools
+          rm -rf target/tests-that-really-ran
+          PURLIS_TEST_SECRET_SERVICE=1 PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe dbus-run-session -- sh -c '
+            printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+              -E "package(purlis-core) & binary(it) & test(/the_keychain_service_reach_table_matches_the_pinned_table::/)"'
+          test -f target/tests-that-really-ran/keychain-reach-table || { echo "::error::the keychain reach table did not really run"; exit 1; }
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
@@ -1593,7 +1607,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|crates/purlis-core/tests/it/the_keychain_service_reach_table_matches_the_pinned_table\.rs|crates/purlis-core/tests/keychain_reach/|crates/purlis-core/src/yourkeys\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1650,6 +1664,15 @@ jobs:
       - name: A host hands on one connection, and nothing more, on macOS
         if: steps.scope.outputs.run == 'true'
         run: "tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::"
+      # R-772's CI half (T1a-72): what a chat's command, hook and MCP server reach of the keychain
+      # service and the stub keyring, each under its harness's real profile, against the pinned
+      # table. Red unless every cell was really measured: it leaves a marker only then.
+      - name: R-772's keychain reach table, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          rm -rf target/tests-that-really-ran
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- the_keychain_service_reach_table_matches_the_pinned_table::
+          test -f target/tests-that-really-ran/keychain-reach-table || { echo "::error::the keychain reach table did not really run"; exit 1; }
       # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
       # read by the program that made it, and silently by no other.
       - name: A held keychain item is read silently by no other program
