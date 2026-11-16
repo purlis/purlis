@@ -70,6 +70,14 @@ const PLACES = {
     how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
   },
   "trust-clones": { at: "no-chat" },
+  // Phase 1a (T1a-61): your keys locked at a start, and the pool key allowance at an unattended
+  // start, are their chat's; a key missing or unmarked, and an old profile's key to copy, are
+  // keyed by what is missing and mark the tabs of the chats they name.
+  "model-key-locked": { at: "pane" },
+  "pool-key-allowance": { at: "pane" },
+  "model-key-missing": { at: "no-chat" },
+  "model-key-unmarked": { at: "no-chat" },
+  "model-key-copy": { at: "no-chat" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */
@@ -129,6 +137,18 @@ describe("every kind of ask has a drawn place", () => {
     expect(
       shape.decision || shape.form || (shape.go && PLACE[source as AskSource].at !== "asks-only"),
     ).toBe(true);
+  });
+
+  it("draws your keys locked at a start as a decision with Unlock, on its chat's pane (T1a-61)", () => {
+    const ask: Shown = {
+      ...askOf("model-key-locked"),
+      options: [{ id: "unlock", label: "Unlock", allows: false }],
+      answer: { via: "unlock-your-keys", entry: "01JA0000000000000000000000" },
+    };
+    const shape = shapeOf(ask, undefined, undefined, undefined);
+    expect(shape.decision).toBe(true);
+    expect(shape.offers.map((one) => one.label)).toEqual(["Unlock"]);
+    expect(onItsPane([ask], 4)).toEqual([ask]);
   });
 
   it("lists the chats' asks drawn in Asks alone as debt", () => {

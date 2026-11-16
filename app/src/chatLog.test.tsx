@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { ChatLogRow } from "./bindings";
 import { ChatLogRows } from "./ChatLogTab";
-import { endSaid, startSaid } from "./chatLog";
+import { askSaid, endSaid, startSaid } from "./chatLog";
+import { windowCopy } from "./windowCopy";
 
 /**
  * **The Chat log's rows in words** (R-227's row, R-233, R-310; T1-27), as its stories draw
@@ -123,5 +124,45 @@ describe("the Chat log lists the chat end and its result", () => {
     ]);
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("log")).toBeNull();
+  });
+});
+
+describe("every Ask group has a Chat log sentence (R-229, T1a-61)", () => {
+  /** Every group the core writes an ask under (`AskGroup`), phase 1a's two last. */
+  const GROUPS = [
+    "sandbox",
+    "harness_prompt",
+    "consent",
+    "hold",
+    "loop_pause",
+    "budget",
+    "hook_give_up",
+    "model_key",
+    "pool_allow",
+  ];
+
+  it("every_ask_group_has_a_chat_log_sentence", () => {
+    for (const ask of GROUPS) {
+      expect(askSaid({ kind: "ask", at: null, ask, answered: null })).not.toMatch(
+        /Asked you something/,
+      );
+    }
+  });
+
+  it("says phase 1a's groups in W94 and W95, and a model key's Allow in W122", () => {
+    expect(askSaid({ kind: "ask", at: null, ask: "model_key", answered: null })).toBe(
+      `Asked you ${windowCopy.W94} · Not answered`,
+    );
+    expect(askSaid({ kind: "ask", at: null, ask: "pool_allow", answered: null })).toBe(
+      `Asked you ${windowCopy.W95} · Not answered`,
+    );
+    expect(
+      askSaid({
+        kind: "ask",
+        at: null,
+        ask: "model_key",
+        answered: { answer: "allowed", by: "window" },
+      } as Parameters<typeof askSaid>[0]),
+    ).toBe(`Asked you ${windowCopy.W94} · Allowed ${windowCopy.W122}, by you in the window`);
   });
 });
