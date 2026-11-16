@@ -299,6 +299,25 @@ fn a_branch_folders_file_never_loosens_what_the_chat_started_with() {
 }
 
 #[test]
+fn a_chats_own_environment_never_loosens_what_the_person_accepted() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"strict\"\n", None);
+    at_start(root.path());
+    // The project loosens to open, unpressed; the chat's own command names everything off.
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("the committed file");
+    let all_off = Resolved::all(Mode::Off).spelled();
+    let env = |name: &str| (name == ENV).then(|| all_off.clone());
+    assert_eq!(
+        for_this_chat(root.path(), &env).mode(Family::GuardsGit),
+        Mode::Enforce
+    );
+}
+
+#[test]
 fn the_resolved_policy_reads_back_as_it_was_spelled_and_a_missing_family_is_enforced() {
     let resolved = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
     assert_eq!(Resolved::parse(&resolved.spelled()), resolved);
@@ -366,4 +385,42 @@ fn an_off_refusal_allows_and_writes_nothing_and_an_enforced_one_refuses() {
     );
     assert_eq!(enforced, Some(1));
     assert!(!log_dir(plane.path()).exists());
+}
+
+#[test]
+fn secrets_under_watch_still_mask() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    for text in [
+        "",
+        "[policy]\ntemplate = \"watch\"\n",
+        "[policy]\ntemplate = \"hold\"\n",
+    ] {
+        let root = plane(text, None);
+        at_start(root.path());
+        let masked = crate::secrets::masked_of(root.path(), Some(CHAT), &values);
+        assert_eq!(masked, values.as_slice(), "{text:?}");
+        assert_eq!(
+            crate::secrets::redact(b"token s3cr3t-value", masked),
+            b"token ***"
+        );
+    }
+}
+
+#[test]
+fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    for (mode, lines) in [(Mode::Off, 0), (Mode::Log, 1)] {
+        let root = plane(&format!("[policy]\nsecrets = \"{}\"\n", mode.word()), None);
+        // Not pressed: still masked, and nothing logged.
+        at_start(root.path());
+        assert_eq!(
+            crate::secrets::masked_of(root.path(), Some(CHAT), &values),
+            values.as_slice()
+        );
+        press(root.path()).expect("the press is kept");
+        assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
+        assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
+    }
 }

@@ -851,6 +851,9 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>, gate: &Gate<'_>) -> Option<V
 }
 
 #[cfg(test)]
+mod policy_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::forge::{Forge, Kind};

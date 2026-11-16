@@ -368,6 +368,19 @@ pub fn redact(text: &[u8], secrets: &[String]) -> Vec<u8> {
     out
 }
 
+/// **The values a command's output is masked of in the project at `root`** (Q308a, the `secrets`
+/// family): `secrets` where the family is enforced, which every template but `open` does; none
+/// where it is off or logs, the log keeping one line that masking was let go, for chat `chat`.
+pub fn masked_of<'a>(root: &Path, chat: Option<&str>, secrets: &'a [String]) -> &'a [String] {
+    use crate::enforcement::{self, Family, Mode};
+    let mode = enforcement::mode(root, Family::Secrets);
+    if mode == Mode::Enforce || secrets.is_empty() {
+        return secrets;
+    }
+    enforcement::judged(root, chat, Family::Secrets, mode, "mask", None, ());
+    &[]
+}
+
 /// [`redact`] for a string charter is about to record, not print.
 pub fn redact_str(text: &str, secrets: &[String]) -> String {
     String::from_utf8_lossy(&redact(text.as_bytes(), secrets)).into_owned()

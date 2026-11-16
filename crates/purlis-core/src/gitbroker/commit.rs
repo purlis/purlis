@@ -1341,6 +1341,15 @@ fn scanned(top: &Path, message: &str, queue: &mut Option<String>) -> Result<(), 
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
     let said = crate::diffscan::message_checked(top, message);
     scan.refused.extend(said.refused);
+    // As the project's `[policy]` runs each finding's family (Q308a). The app has the chat's
+    // number here, not its id, so a logged finding is let through without a line.
+    let root = crate::plane::resolve(top).unwrap_or_else(|_| top.to_path_buf());
+    crate::diffscan::under_policy(
+        &mut scan.refused,
+        &root,
+        None,
+        &crate::enforcement::for_this_chat(&root, &|_| None),
+    );
     if scan.changes_the_allowlist {
         return Err(
             "the commit changes the scan's allowlist, which only a commit made outside a chat \

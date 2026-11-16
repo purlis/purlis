@@ -33,8 +33,9 @@
 //!   writes). A tightening is accepted as the start reads it; a loosening waits for the person's
 //!   press in the window ([`press`]). Before the first start the accepted is the shipped
 //!   default, `watch`, which the upgrade announces once.
-//! - A hook takes the stricter of what its chat started with and what the plane root's file says
-//!   now ([`for_this_chat`]): a tightening applies at once, a loosening never mid-chat.
+//! - A hook takes the stricter of what its chat started with, what the plane root's file says
+//!   now, and what this person accepted ([`for_this_chat`]): a tightening applies at once, a
+//!   loosening never mid-chat, and nothing a chat puts in its own environment loosens anything.
 //!
 //! **A value purlis cannot read never loosens anything**: an unknown template is `strict`, an
 //! unknown mode is `enforce` for its family, and each is said ([`Settings::refused`]) for the
@@ -582,15 +583,15 @@ pub fn press(root: &Path) -> std::io::Result<()> {
 }
 
 /// **How `family` runs for the chat this process serves**, from a hook: the stricter of what its
-/// chat started with ([`ENV`], read through `env`) and what the plane at `root` says now, so a
-/// tightening applies at once and a loosening waits for the next start. A harness the app did
-/// not start has no [`ENV`]: it runs as the project says, never looser than this person
-/// accepted.
+/// chat started with ([`ENV`], read through `env`), what the plane at `root` says now, and what
+/// this person accepted. A tightening applies at once; a loosening waits for a press and the
+/// next start. [`ENV`] can only ever tighten: a git hook runs under the environment the chat's
+/// own command gave it, so it is never trusted to loosen.
 pub fn for_this_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Resolved {
-    let now = committed(root);
+    let now = committed(root).stricter(&accepted(root));
     match env(ENV).filter(|said| !said.is_empty()) {
         Some(started) => Resolved::parse(&started).stricter(&now),
-        None => now.stricter(&accepted(root)),
+        None => now,
     }
 }
 
