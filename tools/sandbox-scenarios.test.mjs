@@ -129,7 +129,7 @@ test("every_required_check_name_reports_on_an_unlabelled_pr_into_phase_1_proven_
     assert.match(why, /needs\.plan\.outputs\.why/, id);
     assert.doesNotMatch(why, /\bif:/, `${id} always says why`);
     for (const step of rest) {
-      assert.match(step, new RegExp(`if: (failure\\(\\) && )?needs\\.plan\\.outputs\\.${LEG[id]} != 'false'\\n`), step);
+      assert.match(step, new RegExp(`if: ((failure|always)\\(\\) && )?needs\\.plan\\.outputs\\.${LEG[id]} != 'false'\\n`), step);
     }
   }
   // The names the gate is told to require are the ones the jobs report.
@@ -246,7 +246,7 @@ test("the Linux scenario build is the rust job's test build, so it restores the 
   assert.doesNotMatch(rust.text, /shared-key/);
   assert.match(action, /shared-key: \$\{\{ runner\.os == 'macOS' && 'app' \|\| 'rust' \}\}/);
   // The same packages build and run, so the run reuses the build.
-  assert.match(action, /CARGO_PACKAGES: \$\{\{ runner\.os == 'Linux' && '--workspace' \|\| '-p purlis-app -p purlis-scenarios' \}\}/);
+  assert.match(action, /CARGO_PACKAGES: \$\{\{ runner\.os == 'Linux' && '--workspace' \|\| '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' \}\}/);
   assert.equal(built, "--workspace --locked");
   assert.match(action, /cargo nextest run \$CARGO_PACKAGES --locked --no-run/);
   const linux = runScript("suite", { CARGO_PACKAGES: "--workspace" });

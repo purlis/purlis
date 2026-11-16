@@ -57,13 +57,18 @@ runs:
     # tauri::generate_context! reads the built frontend, so it has to exist before a build. Built
     # in a step of its own, so the step timings say how much of the job is the build.
     #
+    # On macOS the build names `fake-harness` and `purlis-cli` too, so the programs the tests run
+    # are built here, once (#2464, T1.1-06): without them every test process that starts before
+    # one exists builds it itself (`purlis_core::testrun::built`), with another set of features,
+    # one after another on Cargo's lock, and the first tests of a run waited 300 to 450 s on it.
+    #
     # On Linux the build is the `rust` job's own (`--workspace`), so the features Cargo resolves,
     # and so the objects its cache holds, are the same. The scenarios run with the same packages
     # (`CARGO_PACKAGES`, `tools/sandbox-scenarios.sh`), so the run builds nothing more.
     - name: Build the scenarios
       shell: bash
       env:
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: |
         mkdir -p app/dist
         cargo nextest run $CARGO_PACKAGES --locked --no-run
@@ -87,12 +92,12 @@ runs:
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
       if: inputs.production-timings == 'true'
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh production-timings
