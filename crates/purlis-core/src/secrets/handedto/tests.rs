@@ -361,3 +361,29 @@ fn after_a_crash_a_value_made_once_leaves_the_screen_unmaskable() {
 
     assert_eq!(masked_for(&root, 51, "code 123456", &read), None);
 }
+
+#[test]
+fn an_entry_linked_into_a_vault_that_may_ask_the_person_is_not_read_again() {
+    let (_dir, root) = a_project();
+    let ctx = super::super::Ctx::new(&root, super::super::Env::of(&[]));
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({"vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}},
+            "shared": {"provider": "1password", "config": {"op-vault": "Eng"}},
+        }})
+        .to_string(),
+    )
+    .expect("registered");
+    std::fs::create_dir_all(&ctx.state).expect("made");
+    std::fs::write(
+        super::super::links::path(&ctx),
+        serde_json::json!({"links": {"team": {"linked": {"vault": "shared", "key": "k"}}}})
+            .to_string(),
+    )
+    .expect("linked");
+
+    assert_eq!(asks_nobody(&ctx, &Entry::new("team", "linked")), Some(false));
+    assert_eq!(asks_nobody(&ctx, &Entry::new("team", "own")), Some(true));
+    assert_eq!(asks_nobody(&ctx, &Entry::new("shared", "k")), Some(false));
+}

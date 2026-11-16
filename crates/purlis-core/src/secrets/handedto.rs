@@ -380,19 +380,36 @@ pub type ReadAgain<'a> = &'a dyn Fn(&Entry) -> Option<zeroize::Zeroizing<String>
 
 /// **Reads an entry of the project at `root` again, where that asks nobody**: through its vault's
 /// provider, the read every hand-out makes ([`super::cmd::get_value`]), where opening the vault
-/// reads no secret ([`super::reads_on_open`]: a keyring, plain-file or reference vault). `None`
-/// for any other provider, which macOS may ask the person about, and for an entry gone, or one
-/// never read raw (a GitHub App's key).
+/// reads no secret ([`asks_nobody`]). `None` for any other provider, which macOS may ask the
+/// person about, and for an entry gone, or one never read raw (a GitHub App's key).
 pub fn read_again(root: &Path) -> impl Fn(&Entry) -> Option<zeroize::Zeroizing<String>> + '_ {
     move |entry| {
         let ctx = super::Ctx::new(root, super::Env::from_process());
-        let vault = super::cmd::provider(&ctx, &entry.vault).ok()?;
-        if super::reads_on_open(&vault.provider) {
+        if !asks_nobody(&ctx, entry)? {
             return None;
         }
+        let vault = super::cmd::provider(&ctx, &entry.vault).ok()?;
         super::cmd::get_value(&ctx, &vault, &entry.key)
             .ok()
             .map(zeroize::Zeroizing::new)
+    }
+}
+
+/// **Whether `entry` is read without asking anybody** ([`super::reads_on_open`]): its vault's
+/// provider, and, where the entry is a link, the provider of the vault it reads through
+/// ([`super::links`]), which is the one that is read. `None` where either cannot be told.
+fn asks_nobody(ctx: &super::Ctx, entry: &Entry) -> Option<bool> {
+    let quiet = |vault: &str| {
+        super::cmd::provider(ctx, vault)
+            .ok()
+            .map(|vault| !super::reads_on_open(&vault.provider))
+    };
+    if !quiet(&entry.vault)? {
+        return Some(false);
+    }
+    match super::links::of(ctx, &entry.vault, &entry.key).ok()? {
+        Some(to) => quiet(&to.vault),
+        None => Some(true),
     }
 }
 
