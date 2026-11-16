@@ -71,7 +71,13 @@ fn fixture() -> Option<Fixture> {
         .tempdir_in("/tmp")
         .expect("a folder");
     let ssh = sshroute::ssh_here().expect("the system's ssh");
-    let key = connect::meet(&ssh, &route, settings.path()).expect("the machine is met");
+    let key = connect::meet(
+        &ssh,
+        &route,
+        &connect::resolve(&ssh, &route).expect("resolved"),
+        settings.path(),
+    )
+    .expect("the machine is met");
     Some(Fixture {
         reach: Reach {
             ssh,

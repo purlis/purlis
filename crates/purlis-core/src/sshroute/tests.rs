@@ -900,12 +900,13 @@ fn a_first_contact_that_saved_no_key_is_not_met_only_where_ssh_answered() {
     let closing = answering_with(b"");
     assert!(matches!(
         connect::unmet(&route, &resolved_at(closing, false), String::new()),
-        connect::Finding::NotSsh { proxied: false, port, .. } if port == closing
+        connect::Finding::NotSsh { port, .. } if port == closing
     ));
-    // Past a jump host this machine can't ask, whatever answers at the address it names.
+    // Past a jump host this machine can't ask, whatever answers at the address it names, so no
+    // cause is claimed.
     assert!(matches!(
         connect::unmet(&route, &resolved_at(ssh_port, true), String::new()),
-        connect::Finding::NotSsh { proxied: true, .. }
+        connect::Finding::NotMetThrough { .. }
     ));
 }
 
@@ -917,24 +918,26 @@ fn a_first_contact_where_nothing_answers_as_ssh_is_not_ssh_and_one_ssh_answered_
     let settings = tempfile::tempdir().unwrap();
     let closing = answering_with(b"");
     let route = Route::parse(&format!("ssh://me@127.0.0.1:{closing}")).unwrap();
-    let found = connect::meet(&ssh, &route, settings.path()).unwrap_err();
+    let found =
+        connect::meet(&ssh, &route, &resolved_at(closing, false), settings.path()).unwrap_err();
     assert!(
-        matches!(found, connect::Finding::NotSsh { proxied: false, .. }),
+        matches!(found, connect::Finding::NotSsh { .. }),
         "{found:?}"
     );
     let greeting = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
     let route = Route::parse(&format!("ssh://me@127.0.0.1:{greeting}")).unwrap();
-    let found = connect::meet(&ssh, &route, settings.path()).unwrap_err();
+    let found =
+        connect::meet(&ssh, &route, &resolved_at(greeting, false), settings.path()).unwrap_err();
     assert!(
         matches!(found, connect::Finding::NotMet { .. }),
         "{found:?}"
     );
 }
 
-/// **A jump host that is down** (#6823 review): ssh reaches nothing as SSH through it, and the
-/// address it names past the jump is never asked, so it is not SSH, through the jump host.
+/// **A jump host that is down** (#6823 review): ssh meets nothing through it, and the address it
+/// names past the jump is never asked, so the finding claims no cause (#6942 review).
 #[test]
-fn a_first_contact_through_a_jump_host_that_is_down_is_not_ssh_through_it() {
+fn a_first_contact_through_a_jump_host_that_is_down_is_not_met_through_it() {
     let Ok(ssh) = ssh_here() else { return };
     let scratch = tempfile::tempdir().unwrap();
     let known = scratch.path().join("known_hosts");
@@ -966,6 +969,40 @@ fn a_first_contact_through_a_jump_host_that_is_down_is_not_ssh_through_it() {
     assert!(resolved.proxied);
     assert!(matches!(
         connect::unmet(&route, &resolved, ran.said),
-        connect::Finding::NotSsh { proxied: true, .. }
+        connect::Finding::NotMetThrough { .. }
     ));
+}
+
+/// **A machine on this one's loopback that answers each connection one byte at a time**, `every`
+/// apart, and never ends a line: its port.
+fn trickling(every: std::time::Duration) -> u16 {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                while stream.write_all(b"x").is_ok() {
+                    std::thread::sleep(every);
+                }
+            });
+        }
+    });
+    port
+}
+
+/// **A server that trickles its answer is given one deadline in all** (#6942 review): each byte
+/// comes well within a read's wait, and the greeting is still given up once the whole wait is
+/// spent, not after every byte the most it may send.
+#[test]
+fn a_server_that_trickles_its_answer_is_given_up_on_within_one_deadline() {
+    use std::time::{Duration, Instant};
+    let port = trickling(Duration::from_millis(100));
+    let started = Instant::now();
+    assert!(!connect::greets_as_ssh_within(
+        &resolved_at(port, false),
+        Duration::from_secs(1)
+    ));
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(3), "took {took:?}");
 }

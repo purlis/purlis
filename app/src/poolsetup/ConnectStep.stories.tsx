@@ -999,12 +999,16 @@ export const FindsNoAnswer: Story = {
   play: playDoctor("The machine didn't answer", 11),
 };
 
+/** Purlis's first contact by hand, with its own settings, as the core writes it for build-box. */
+const FIRST_CONTACT =
+  'known="$(mktemp)"; ssh -v -o GlobalKnownHostsFile=/dev/null -o KnownHostsCommand=none -o VerifyHostKeyDNS=no -o UpdateHostKeys=no -o CheckHostIP=no -o ControlMaster=no -o ControlPath=none -o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o ForwardAgent=no -o ForwardX11=no -o PermitLocalCommand=no -o RequestTTY=no -o RemoteCommand=none -o Tunnel=no -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known" -o HostKeyAlias=purlis-first-contact -o HashKnownHosts=no -o PubkeyAuthentication=no -o GSSAPIAuthentication=no -o HostbasedAuthentication=no -o NumberOfPasswordPrompts=0 -o ClearAllForwardings=yes -- sam@build-box true; rm -f "$known"';
+
 const NOT_SSH = sshFinding(
   "not-ssh",
   "build-box took the connection on port 22 but didn't answer as SSH (it said: kex_exchange_identification: Connection closed by remote host). Check that SSH is running on build-box and listening on that port.",
   {
-    note: "This prints what answers on port 22 of build-box: an SSH server's first line starts with SSH-. It only reads.",
-    text: "nc -w 5 build-box 22 < /dev/null",
+    note: "This meets build-box as purlis's first contact does, and prints what SSH says as it goes: an SSH server on port 22 first sends a line starting SSH-. It signs in with nothing and changes nothing there.",
+    text: FIRST_CONTACT,
   },
 );
 
@@ -1017,10 +1021,10 @@ export const FindsSshNotThere: Story = {
 
 const NOT_MET = sshFinding(
   "not-met",
-  "purlis reached build-box but couldn't save the key that identifies it (its host key) (it said: Failed to add the host to the list of known hosts (/tmp/known_hosts)). Run the command under See what this does to watch purlis's first contact, or use Get help.",
+  "purlis reached build-box but couldn't save its host key, the key that identifies it (it said: Failed to add the host to the list of known hosts (/tmp/known_hosts)). Run the command under See what this does to watch purlis's first contact, or use Get help.",
   {
-    note: "This meets build-box as purlis's first contact does: it saves the key build-box shows to a new file of its own, and prints what SSH says as it goes, so you can see why the key wasn't saved. It signs in with nothing, so a refused sign-in at the end is expected, and it changes nothing there.",
-    text: 'ssh sam@build-box -v -o BatchMode=yes -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$(mktemp)" true',
+    note: "This meets build-box as purlis's first contact does: it saves the key build-box shows to a new file of its own, removed after, and prints what SSH says as it goes, so you can see why the key wasn't saved. It signs in with nothing, so a refused sign-in at the end is expected, and it changes nothing there.",
+    text: FIRST_CONTACT,
   },
 );
 
@@ -1029,6 +1033,22 @@ export const FindsKeyNotSaved: Story = {
   beforeEach: faked([]),
   args: { step: NOT_MET, shown: shown(NOT_MET) },
   play: playDoctor("purlis couldn't save the machine's key", 11),
+};
+
+const NOT_MET_THROUGH = sshFinding(
+  "not-met-through",
+  "purlis couldn't meet build-box through the jump host or proxy your SSH settings name for it (it said: channel 0: open failed: connect failed: Connection refused). What stopped it may be the jump host, build-box itself, or saving its key on this machine. Run the command under See what this does to see where it stops.",
+  {
+    note: "This meets build-box as purlis's first contact does, through your jump host or proxy, and prints what SSH says as it goes, so you can see whether it stops at the jump host, at build-box, or at saving the key. It signs in with nothing and changes nothing there.",
+    text: FIRST_CONTACT,
+  },
+);
+
+/** Through a jump host no key is saved, and purlis can't tell what stopped it: no line fails. */
+export const FindsNothingMetThroughAJumpHost: Story = {
+  beforeEach: faked([]),
+  args: { step: NOT_MET_THROUGH, shown: shown(NOT_MET_THROUGH) },
+  play: playDoctor("purlis couldn't meet the machine", 11),
 };
 
 const SIGN_IN_REFUSED = sshFinding(

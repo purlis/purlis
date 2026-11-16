@@ -611,6 +611,7 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::NoAnswer { .. } => "no-answer",
         Finding::NotSsh { .. } => "not-ssh",
         Finding::NotMet { .. } => "not-met",
+        Finding::NotMetThrough { .. } => "not-met-through",
         Finding::KeyChanged { .. } => "pool-pin-changed",
         Finding::SignInRefused { .. } => "sign-in-refused",
         Finding::NoEngine { .. } => "no-engine",
@@ -683,13 +684,9 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
-        // Its port took the connection and no SSH server greeted ssh there (#6823 review).
-        Finding::NotSsh {
-            host,
-            port,
-            proxied: false,
-            said,
-        } => (
+        // Its port took the connection and no SSH server greeted this machine there (#6823
+        // review).
+        Finding::NotSsh { host, port, said } => (
             format!(
                 "{host} took the connection on port {port} but didn't answer as SSH{}. Check that \
                  SSH is running on {host} and listening on that port.",
@@ -697,26 +694,26 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
-        Finding::NotSsh {
-            host,
-            proxied: true,
-            said,
-            ..
-        } => (
+        // Past a jump host or command this machine asks nothing itself, so no cause is claimed:
+        // the jump host, the machine and this machine's own saving of the key are all named
+        // (#6942 review). The first contact signs in with nothing, so its refused sign-in is
+        // expected and left unsaid.
+        Finding::NotMetThrough { host, said } => (
             format!(
-                "purlis couldn't reach SSH on {host} through the jump host or proxy your SSH \
-                 settings name for it{}. Check that the jump host is on and lets you through.",
-                shown(said)
+                "purlis couldn't meet {host} through the jump host or proxy your SSH settings name \
+                 for it{}. What stopped it may be the jump host, {host} itself, or saving its key \
+                 on this machine. Run the command under See what this does to see where it stops.",
+                shown(&beyond_the_refused_sign_in(said))
             ),
             check_again(),
         ),
-        // An SSH server greeted ssh, and ssh saved no key from it. The first contact signs in
-        // with nothing, so its refused sign-in is expected and left unsaid.
+        // An SSH server greeted this machine, and ssh saved no key from it. The first contact
+        // signs in with nothing, so its refused sign-in is expected and left unsaid.
         Finding::NotMet { host, said } => (
             format!(
-                "purlis reached {host} but couldn't save the key that identifies it (its host \
-                 key){}. Run the command under See what this does to watch purlis's first \
-                 contact, or use Get help.",
+                "purlis reached {host} but couldn't save its host key, the key that identifies \
+                 it{}. Run the command under See what this does to watch purlis's first contact, \
+                 or use Get help.",
                 shown(&beyond_the_refused_sign_in(said))
             ),
             check_again(),
@@ -1076,7 +1073,6 @@ pub fn for_the_admin(cause: &str) -> bool {
         cause,
         "no-answer"
             | "not-ssh"
-            | "not-met"
             | "pool-pin-changed"
             | "no-engine"
             | "not-allowed"
@@ -1165,14 +1161,42 @@ pub fn sorted(see: &super::See) -> (Vec<&str>, Vec<&str>) {
     })
 }
 
-/// **Purlis's first contact, by hand** (`to` is ssh pointed at the machine): it signs in with
-/// nothing and saves the key the machine shows to a new file of its own, as
-/// [`crate::sshroute::contact_args`] does, so a key that can't be saved shows why.
-fn first_contact(to: &str) -> String {
-    format!(
-        "{to} -v -o BatchMode=yes -o PubkeyAuthentication=no -o \
-         StrictHostKeyChecking=accept-new -o UserKnownHostsFile=\"$(mktemp)\" true"
-    )
+/// Where the first contact by hand keeps the key it meets: a file `mktemp` makes, removed after.
+const SCRATCH: &str = "/purlis-first-contact-scratch";
+
+/// **Purlis's first contact, by hand** (#6942 review): the arguments
+/// [`crate::sshroute::contact_args`] gives purlis's own, so it signs in with nothing and saves the
+/// key the machine shows, under purlis's alias and in plain text, to a new file of its own, and
+/// `-v` so it prints what SSH says as it goes. The file is removed once ssh ends. `None` where no
+/// route is read or ssh can't be handed it.
+fn first_contact(route: Option<&Route>) -> Option<String> {
+    let q = |text: &str| crate::shellseg::shell_quote(text);
+    let stand = Route::parse("ssh://USER@HOST").ok();
+    let route = route.or(stand.as_ref())?;
+    let args = crate::sshroute::contact_args(route, std::path::Path::new(SCRATCH)).ok()?;
+    let scratch = format!("UserKnownHostsFile=\"{SCRATCH}\"");
+    let mut words = vec!["ssh".to_owned(), "-v".to_owned()];
+    let mut args = args.into_iter().peekable();
+    while let Some(arg) = args.next() {
+        // Quiet only for purlis, which reads none of it: here what SSH says is the point.
+        if arg == "-o"
+            && args
+                .peek()
+                .is_some_and(|next| next.starts_with("LogLevel="))
+        {
+            args.next();
+            continue;
+        }
+        words.push(if arg == scratch {
+            "UserKnownHostsFile=\"$known\"".to_owned()
+        } else {
+            q(&arg)
+        });
+    }
+    Some(format!(
+        "known=\"$(mktemp)\"; {}; rm -f \"$known\"",
+        words.join(" ")
+    ))
 }
 
 /// **Connect's See what this does, as it stands** (#6272, ADR 0123 §7): where a finding stands,
@@ -1271,35 +1295,38 @@ fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
             ),
             format!("nc -vz {} {port}", q(host)),
         ),
-        Finding::NotSsh {
-            host,
-            port,
-            proxied: false,
-            ..
-        } => see(
-            format!(
-                "This prints what answers on port {port} of {host}: an SSH server's first line \
-                 starts with SSH-. It only reads."
-            ),
-            format!("nc -w 5 {} {port} < /dev/null", q(host)),
-        ),
-        Finding::NotSsh { host, .. } => see(
-            format!(
-                "This meets {host} as purlis's first contact does, through your jump host or \
-                 proxy, and prints what SSH says as it goes. It signs in with nothing and changes \
-                 nothing there."
-            ),
-            first_contact(&to),
-        ),
-        Finding::NotMet { host, .. } => see(
-            format!(
-                "This meets {host} as purlis's first contact does: it saves the key {host} shows \
-                 to a new file of its own, and prints what SSH says as it goes, so you can see \
-                 why the key wasn't saved. It signs in with nothing, so a refused sign-in at the \
-                 end is expected, and it changes nothing there."
-            ),
-            first_contact(&to),
-        ),
+        Finding::NotSsh { host, port, .. } => first_contact(ssh.as_ref()).and_then(|text| {
+            see(
+                format!(
+                    "This meets {host} as purlis's first contact does, and prints what SSH says as \
+                     it goes: an SSH server on port {port} first sends a line starting SSH-. It \
+                     signs in with nothing and changes nothing there."
+                ),
+                text,
+            )
+        }),
+        Finding::NotMetThrough { host, .. } => first_contact(ssh.as_ref()).and_then(|text| {
+            see(
+                format!(
+                    "This meets {host} as purlis's first contact does, through your jump host or \
+                     proxy, and prints what SSH says as it goes, so you can see whether it stops \
+                     at the jump host, at {host}, or at saving the key. It signs in with nothing \
+                     and changes nothing there."
+                ),
+                text,
+            )
+        }),
+        Finding::NotMet { host, .. } => first_contact(ssh.as_ref()).and_then(|text| {
+            see(
+                format!(
+                    "This meets {host} as purlis's first contact does: it saves the key {host} \
+                     shows to a new file of its own, removed after, and prints what SSH says as \
+                     it goes, so you can see why the key wasn't saved. It signs in with nothing, \
+                     so a refused sign-in at the end is expected, and it changes nothing there."
+                ),
+                text,
+            )
+        }),
         Finding::SignInRefused { host } => see(
             format!(
                 "The first lists the keys your SSH agent holds, and the second adds your own key \
@@ -1802,7 +1829,7 @@ pub fn meet(docker: &crate::dockerpool::Docker, route: &Route) -> Result<Met, Fi
     let (_, settings_in) = crate::sshroute::pool::folders_for(docker)?;
     let resolved = crate::sshroute::connect::resolve(&ssh, route)?;
     crate::sshroute::connect::reachable(route, &resolved)?;
-    let key = crate::sshroute::connect::meet(&ssh, route, &settings_in)?;
+    let key = crate::sshroute::connect::meet(&ssh, route, &resolved, &settings_in)?;
     let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
     let known = crate::sshroute::connect::known_to_the_person(&resolved, home.as_deref());
     Ok(Met { key, known })
@@ -1821,7 +1848,7 @@ pub fn trust(
     let (engine_links, settings_in) = crate::sshroute::pool::folders_for(docker)?;
     let resolved = crate::sshroute::connect::resolve(&ssh, route)?;
     crate::sshroute::connect::reachable(route, &resolved)?;
-    let key = crate::sshroute::connect::meet(&ssh, route, &settings_in)?;
+    let key = crate::sshroute::connect::meet(&ssh, route, &resolved, &settings_in)?;
     if key.fingerprint() != fingerprint.trim() {
         // What was confirmed isn't what shows now: confirmed again, never trusted unseen.
         return Err(Finding::Here(format!(

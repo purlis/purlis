@@ -346,6 +346,10 @@ describe("ConnectStep", () => {
     expect(verdictsOf("not-ssh", false).slice(0, 3)).toEqual(["ok", "missing", "todo"]);
   });
 
+  it("marks no line as failed or passed when a first contact through a jump host saved no key (#6942 review)", () => {
+    expect(verdictsOf("not-met-through", false).every((one) => one === "todo")).toBe(true);
+  });
+
   it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {
     const reached = ["ok", "ok", "ok", "ok", "ok", "ok", "ok"];
     expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo"]);

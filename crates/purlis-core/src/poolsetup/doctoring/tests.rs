@@ -62,7 +62,6 @@ fn every() -> Vec<Row> {
             Finding::NotSsh {
                 host: "build-box".into(),
                 port: 22,
-                proxied: false,
                 said: "kex_exchange_identification: Connection closed by remote host".into(),
             },
             ssh,
@@ -81,10 +80,23 @@ fn every() -> Vec<Row> {
             },
             ssh,
             "not-met",
-            "purlis reached build-box but couldn't save the key that identifies it (its host \
-             key) (it said: Failed to add the host to the list of known hosts \
-             (/tmp/known_hosts)). Run the command under See what this does to watch purlis's \
-             first contact, or use Get help.",
+            "purlis reached build-box but couldn't save its host key, the key that identifies \
+             it (it said: Failed to add the host to the list of known hosts (/tmp/known_hosts)). \
+             Run the command under See what this does to watch purlis's first contact, or use \
+             Get help.",
+            ActionId::CheckAgain,
+        ),
+        row(
+            Finding::NotMetThrough {
+                host: "build-box".into(),
+                said: "channel 0: open failed: connect failed: Connection refused".into(),
+            },
+            ssh,
+            "not-met-through",
+            "purlis couldn't meet build-box through the jump host or proxy your SSH settings \
+             name for it (it said: channel 0: open failed: connect failed: Connection refused). \
+             What stopped it may be the jump host, build-box itself, or saving its key on this \
+             machine. Run the command under See what this does to see where it stops.",
             ActionId::CheckAgain,
         ),
         row(
@@ -372,10 +384,11 @@ fn variant(finding: &Finding) -> usize {
         Finding::ContextMoved { .. } => 22,
         Finding::Here(_) => 23,
         Finding::NotSsh { .. } => 24,
+        Finding::NotMetThrough { .. } => 25,
     }
 }
 
-const VARIANTS: usize = 25;
+const VARIANTS: usize = 26;
 
 fn facts(route: &str, finding: &Finding) -> Facts {
     let tls = crate::tlsroute::is_tcp(route).then(|| crate::tlsroute::Files {
@@ -1278,6 +1291,8 @@ fn only_the_findings_named_for_the_admin_go_to_the_admin() {
     }
     for cause in [
         "here",
+        "not-met",
+        "not-met-through",
         "not-a-route",
         "no-such-name",
         "sign-in-refused",
@@ -1289,41 +1304,83 @@ fn only_the_findings_named_for_the_admin_go_to_the_admin() {
     }
 }
 
-/// **Past a jump host, not SSH names the jump host** (#6823 review), and the key not saved is
-/// seen by purlis's own first contact, not a sign-in with the person's keys, which saves nothing.
+/// **Past a jump host, a first contact that saves no key claims no cause** (#6942 review): the
+/// jump host, the machine and this machine's saving of the key are all named. A key not saved is
+/// seen by purlis's own first contact, with its own arguments, not a sign-in with the person's
+/// keys, which saves nothing, and the file it saves to is removed after.
 #[test]
-fn not_ssh_through_a_jump_host_names_it_and_a_key_not_saved_is_seen_by_a_first_contact() {
-    let through = Finding::NotSsh {
+fn not_met_through_a_jump_host_claims_no_cause_and_a_key_not_saved_is_seen_by_a_first_contact() {
+    let through = Finding::NotMetThrough {
         host: "build-box".into(),
-        port: 22,
-        proxied: true,
-        said: "channel 0: open failed: connect failed: Connection refused".into(),
+        said: "me@build-box: Permission denied (publickey).".into(),
     };
-    assert_eq!(
-        super::super::connecting::said(&through),
-        "purlis couldn't reach SSH on build-box through the jump host or proxy your SSH settings \
-         name for it (it said: channel 0: open failed: connect failed: Connection refused). \
-         Check that the jump host is on and lets you through."
-    );
+    let words = super::super::connecting::said(&through);
+    assert!(!words.contains("it said"), "{words}");
+    for named in [
+        "the jump host,",
+        "build-box itself",
+        "saving its key on this machine",
+    ] {
+        assert!(words.contains(named), "{named}: {words}");
+    }
     let not_met = Finding::NotMet {
         host: "build-box".into(),
         said: "me@build-box: Permission denied (publickey).".into(),
     };
     let words = super::super::connecting::said(&not_met);
     assert!(!words.contains("it said"), "{words}");
+    for (finding, cause) in [(not_met, "not-met"), (through, "not-met-through")] {
+        let row = Row {
+            finding,
+            route: "ssh://me@build-box:2222",
+            cause,
+            words: String::new(),
+            next: ActionId::CheckAgain,
+        };
+        let see = connect_of(&row).see.unwrap();
+        for part in [
+            "known=\"$(mktemp)\"; ssh -v ",
+            "PubkeyAuthentication=no",
+            "StrictHostKeyChecking=accept-new",
+            "UserKnownHostsFile=\"$known\"",
+            "HostKeyAlias=purlis-first-contact",
+            "HashKnownHosts=no",
+            "GSSAPIAuthentication=no",
+            "HostbasedAuthentication=no",
+            "ClearAllForwardings=yes",
+            " -p 2222 -- me@build-box true; rm -f \"$known\"",
+        ] {
+            assert!(see.text.contains(part), "{cause} {part}: {}", see.text);
+        }
+        assert!(!see.text.contains("LogLevel"), "{}", see.text);
+    }
+}
+
+/// **Purlis's first contact by hand, word for word** (#6942 review): what the window's story of
+/// Connect shows for `sam@build-box`, so the two can't drift apart.
+#[test]
+fn the_first_contact_by_hand_is_purlis_s_own_word_for_word() {
     let row = Row {
-        finding: not_met,
-        route: "ssh://me@build-box",
+        finding: Finding::NotMet {
+            host: "build-box".into(),
+            said: String::new(),
+        },
+        route: "ssh://sam@build-box",
         cause: "not-met",
         words: String::new(),
         next: ActionId::CheckAgain,
     };
-    let see = connect_of(&row).see.unwrap();
-    for part in [
-        "PubkeyAuthentication=no",
-        "StrictHostKeyChecking=accept-new",
-        "UserKnownHostsFile=\"$(mktemp)\"",
-    ] {
-        assert!(see.text.contains(part), "{part}: {}", see.text);
-    }
+    assert_eq!(
+        connect_of(&row).see.unwrap().text,
+        "known=\"$(mktemp)\"; ssh -v -o GlobalKnownHostsFile=/dev/null -o KnownHostsCommand=none \
+         -o VerifyHostKeyDNS=no -o UpdateHostKeys=no -o CheckHostIP=no -o ControlMaster=no -o \
+         ControlPath=none -o BatchMode=yes -o PasswordAuthentication=no -o \
+         KbdInteractiveAuthentication=no -o ForwardAgent=no -o ForwardX11=no -o \
+         PermitLocalCommand=no -o RequestTTY=no -o RemoteCommand=none -o Tunnel=no -o \
+         ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o \
+         StrictHostKeyChecking=accept-new -o UserKnownHostsFile=\"$known\" -o \
+         HostKeyAlias=purlis-first-contact -o HashKnownHosts=no -o PubkeyAuthentication=no -o \
+         GSSAPIAuthentication=no -o HostbasedAuthentication=no -o NumberOfPasswordPrompts=0 -o \
+         ClearAllForwardings=yes -- sam@build-box true; rm -f \"$known\""
+    );
 }
