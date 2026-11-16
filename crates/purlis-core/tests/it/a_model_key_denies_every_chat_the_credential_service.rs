@@ -60,7 +60,9 @@ fn config_home(root: &Path) -> PathBuf {
 fn a_model_key(root: &Path) {
     let config = config_home(root);
     let credentials = RecordingCredentials::new(
-        Box::new(FileStore::at(purlis_core::machine::dir(&config).join(STUB_FILE))),
+        Box::new(FileStore::at(
+            purlis_core::machine::dir(&config).join(STUB_FILE),
+        )),
         Record::default(),
     );
     yourkeys::add(
@@ -126,10 +128,7 @@ fn an_index_purlis_cannot_read_counts_as_a_model_key_and_an_empty_one_does_not()
     let index = yourkeys::index_path(&config_home(&root));
     std::fs::create_dir_all(index.parent().expect("its folder")).expect("the folder");
     std::fs::write(&index, "{\"version\": 1, \"entries\": []}\n").expect("an empty index");
-    assert_eq!(
-        Denied::of(&root, &machine(Os::Linux, &root)).services,
-        []
-    );
+    assert_eq!(Denied::of(&root, &machine(Os::Linux, &root)).services, []);
     // A line this build can't read may still be a key.
     std::fs::write(
         &index,

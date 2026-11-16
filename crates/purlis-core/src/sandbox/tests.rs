@@ -2686,6 +2686,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2714,6 +2715,7 @@ fn a_path_denied_to_write_stays_readable() {
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2792,6 +2794,7 @@ fn on_macos_the_store_holds_the_credential_store_so_a_claude_code_chat_compiles(
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     claude::settings(&compiled(denied, Os::MacOs)).expect("compiles on macOS");
 }
@@ -2806,9 +2809,42 @@ fn on_linux_claude_code_cannot_hold_the_credential_store_so_the_chat_does_not_st
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
     assert_eq!(refused.class(), Some(Class::Vaults));
+}
+
+#[test]
+fn a_chat_refused_the_credential_store_for_a_model_key_is_told_of_your_keys_not_of_vaults() {
+    // D6640-T3 item 7 and the security review of T1a-72: a model key, with or without a keyring
+    // vault, is why; moving a vault's secrets is no way on, so the refusal is W132's.
+    let denied = Denied {
+        paths: vec![],
+        services: vec![Service::CredentialStore],
+        unread: None,
+        untold: None,
+        git_folder_pins: vec![],
+        model_keys: true,
+    };
+    let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
+    assert_eq!(refused.unheld, Unheld::ModelKeys(Os::Linux));
+    assert_eq!(refused.class(), Some(Class::Vaults));
+    let slots = [
+        ("lead", LEAD),
+        ("system", "Linux"),
+        ("harness", Harness::ClaudeCode.title()),
+    ];
+    let open = NotStarted::Uncompilable(refused).to_string();
+    assert_eq!(
+        open,
+        crate::window_copy::fill(crate::window_copy::line::W132_PICKER, &slots)
+    );
+    assert!(!open.contains("vault"), "{open}");
+    assert_eq!(
+        NotStarted::Uncompilable(refused).sentence(false),
+        crate::window_copy::fill(crate::window_copy::line::W132_KEYS, &slots)
+    );
 }
 
 // -------------------------------------------------------------------------------------

@@ -362,6 +362,13 @@ export const windowCopy = {
   /** W130: Refusal, New chat. */
   W130: ({ file, pool, key }: { file: string; pool: string; key: string }) =>
     `${file} on ${pool} sets \`models.${key}\`, which this version of purlis can't enforce. Chats can't start there.`,
+  /** W132: Refusal, New chat; a sandboxed chat's start. */
+  W132: {
+    picker: ({ lead, system, harness }: { lead: string; system: string; harness: string }) =>
+      `${lead}, and on ${system} purlis can't keep ${harness} chats away from the system keyring, where your model keys are, so nothing was started. Start this chat without the sandbox from the new-chat picker, or remove your model keys in Your keys.`,
+    keys: ({ lead, system, harness }: { lead: string; system: string; harness: string }) =>
+      `${lead}, and on ${system} purlis can't keep ${harness} chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.`,
+  },
 } as const;
 
 /** The systems the window runs on, as `std::env::consts::OS` names them. */

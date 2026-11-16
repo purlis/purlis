@@ -48,12 +48,26 @@ reach() {
       if [ -z "${DBUS_SESSION_BUS_ADDRESS-}" ]; then
         echo "service=denied"
         echo "why=no session bus is named"
-      elif dbus-send --session --print-reply --reply-timeout=5000 \
+      elif said=$(dbus-send --session --print-reply --reply-timeout=5000 \
           --dest=org.freedesktop.secrets /org/freedesktop/secrets \
-          org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; then
+          org.freedesktop.DBus.Peer.Ping 2>&1 >/dev/null); then
         echo "service=reachable"
       else
-        echo "service=denied"
+        # Only a refused connect to the bus reads as denied: any other failure (no answer, no
+        # Secret Service on a bus it reached, a missing dbus-send) says nothing of the sandbox,
+        # so it is an error, and a cell pinned denied fails on it.
+        case "$said" in
+          *"Failed to open connection to"*"Connection refused"* | \
+          *"Failed to open connection to"*"Permission denied"* | \
+          *"Failed to open connection to"*"Operation not permitted"* | \
+          *"Failed to open connection to"*"No such file or directory"*)
+            echo "service=denied"
+            ;;
+          *)
+            echo "service=error"
+            echo "said=$(printf '%s' "$said" | tr '\n' ' ')"
+            ;;
+        esac
       fi
       ;;
     *)
@@ -89,6 +103,7 @@ fetch() {
         case "$said" in
           *"could not be found"*) echo "item=denied"; echo "code=-25300 errSecItemNotFound" ;;
           *"User interaction is not allowed"*) echo "item=prompted"; echo "code=-25308 errSecInteractionNotAllowed" ;;
+          *"passphrase you entered is not correct"*) echo "item=prompted"; echo "code=-25293 errSecAuthFailed" ;;
           *"user canceled"* | *"User canceled"*) echo "item=prompted"; echo "code=-128 errSecUserCanceled" ;;
           *) echo "item=denied"; echo "code=exit $code"; echo "said=$said" ;;
         esac

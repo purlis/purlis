@@ -342,9 +342,7 @@ impl SocketGround {
         }
         writable.extend(super::local::granted_writes(root));
         writable.extend(super::local::grantable_folders(root));
-        let bus_held = denied
-            .services
-            .contains(&super::Service::CredentialStore);
+        let bus_held = denied.services.contains(&super::Service::CredentialStore);
         Self {
             session_bus: if bus_held {
                 session_bus(&machine.env)
@@ -444,7 +442,10 @@ pub fn session_bus(env: &crate::secrets::Env) -> Vec<PathBuf> {
             }
         }
     }
-    if let Some(runtime) = env.get("XDG_RUNTIME_DIR").filter(|dir| dir.starts_with('/')) {
+    if let Some(runtime) = env
+        .get("XDG_RUNTIME_DIR")
+        .filter(|dir| dir.starts_with('/'))
+    {
         let bus = Path::new(&runtime).join("bus");
         if !out.contains(&bus) {
             out.push(bus);

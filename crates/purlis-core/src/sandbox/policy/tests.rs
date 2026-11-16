@@ -855,6 +855,10 @@ fn refusals_that_name_the_opt_out() -> Vec<super::super::NotStarted> {
         NotStarted::Unread(named),
         NotStarted::Uncompilable(Uncompilable {
             harness: crate::harness::Harness::ClaudeCode,
+            unheld: Unheld::ModelKeys(Os::Linux),
+        }),
+        NotStarted::Uncompilable(Uncompilable {
+            harness: crate::harness::Harness::ClaudeCode,
             unheld: Unheld::Service(Service::CredentialStore, Os::Linux),
         }),
     ]
@@ -886,9 +890,16 @@ fn a_refusal_names_the_policy_and_its_owner_instead_of_an_opt_out_policy_forbids
         );
     }
     // The fix that is still the person's stays.
-    let keyring = refusals_that_name_the_opt_out()
-        .pop()
-        .expect("the keyring refusal");
+    let mut refusals = refusals_that_name_the_opt_out();
+    let keyring = refusals.pop().expect("the keyring refusal");
+    let model_keys = refusals.pop().expect("the model-key refusal");
+    assert!(
+        model_keys
+            .said(&under)
+            .contains("Remove your model keys in Your keys to start it sandboxed."),
+        "{}",
+        model_keys.said(&under)
+    );
     assert!(
         keyring
             .said(&under)

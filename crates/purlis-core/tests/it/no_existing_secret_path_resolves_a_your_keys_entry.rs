@@ -82,7 +82,11 @@ fn ctx(root: &Path) -> Ctx {
 /// what is wrong, so every path is judged before the test fails, each by its own name.
 fn refused_as_your_keys(path: &str, said: Result<String, String>) -> Option<String> {
     let said = match said {
-        Ok(answered) => return Some(format!("{path} did not refuse a your-keys entry: {answered}")),
+        Ok(answered) => {
+            return Some(format!(
+                "{path} did not refuse a your-keys entry: {answered}"
+            ));
+        }
         Err(why) => why,
     };
     NOT_THEIRS
@@ -223,7 +227,11 @@ fn no_existing_secret_path_resolves_a_your_keys_entry() {
             )
             .map(|answered| format!("{answered:?}")),
         ));
-        assert_eq!(asks.open().len(), 1, "the ask is still open, nothing linked");
+        assert_eq!(
+            asks.open().len(),
+            1,
+            "the ask is still open, nothing linked"
+        );
         unread("a Link answer", &mut misses);
 
         // The browser's secret fill: its gate before the notice, and its read after an Allow.

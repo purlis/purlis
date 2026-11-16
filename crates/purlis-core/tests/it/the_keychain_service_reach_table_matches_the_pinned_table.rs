@@ -115,7 +115,9 @@ fn pinned(os: &str) -> Vec<Row> {
         .expect("the CI table's end");
     PINNED[start..end]
         .lines()
-        .filter(|line| line.starts_with("| ") && !line.starts_with("| OS ") && !line.starts_with("| ---"))
+        .filter(|line| {
+            line.starts_with("| ") && !line.starts_with("| OS ") && !line.starts_with("| ---")
+        })
         .map(|line| {
             let cells: Vec<String> = line
                 .trim_matches('|')
@@ -164,7 +166,10 @@ fn security_server(profile: &str) -> &'static str {
     };
     // Each rule in order, by where it starts.
     let mut rules: Vec<(usize, &'static str, &str)> = Vec::new();
-    for (verb, outcome) in [("(allow mach-lookup", "reachable"), ("(deny mach-lookup", "denied")] {
+    for (verb, outcome) in [
+        ("(allow mach-lookup", "reachable"),
+        ("(deny mach-lookup", "denied"),
+    ] {
         let mut from = 0;
         while let Some(at) = profile[from..].find(verb) {
             let begin = from + at;
@@ -178,7 +183,9 @@ fn security_server(profile: &str) -> &'static str {
         let filters = body.trim_start_matches('(');
         let names_it = !filters.contains("global-name")
             || filters.contains(&format!("(global-name \"{SERVICE}\")"))
-            || prefixes(filters).iter().any(|prefix| SERVICE.starts_with(prefix));
+            || prefixes(filters)
+                .iter()
+                .any(|prefix| SERVICE.starts_with(prefix));
         if names_it {
             said = outcome;
         }
@@ -329,7 +336,8 @@ fn caller_line(caller: &str, words: &[String]) -> (String, Vec<String>) {
 /// fenced stub keyring purlis's config folder holds.
 fn a_model_key(config: &Path) -> PathBuf {
     let stub = purlis_core::machine::dir(config).join(STUB_FILE);
-    let credentials = RecordingCredentials::new(Box::new(FileStore::at(stub.clone())), Record::default());
+    let credentials =
+        RecordingCredentials::new(Box::new(FileStore::at(stub.clone())), Record::default());
     yourkeys::add(
         config,
         &credentials,
@@ -343,7 +351,12 @@ fn a_model_key(config: &Path) -> PathBuf {
 }
 
 /// A chat's place: its project, with a stub keyring in its state folder, and a temporary folder.
-fn a_project(out: &Path, level: &str, harness: &str, manifest: &str) -> (PathBuf, PathBuf, PathBuf) {
+fn a_project(
+    out: &Path,
+    level: &str,
+    harness: &str,
+    manifest: &str,
+) -> (PathBuf, PathBuf, PathBuf) {
     let root = out.join(level).join(harness).join("project");
     let tmp = out.join(level).join(harness).join("tmp");
     std::fs::create_dir_all(&root).expect("a project");
@@ -465,7 +478,13 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
         std::fs::create_dir_all(&tmp).expect("a folder");
         let stub = config_stub.display().to_string();
         let words = |w: &[&str]| w.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
-        let reach = probed(&Held::Nothing, "command", &words(&["reach"]), &tmp, &env_of(&tmp));
+        let reach = probed(
+            &Held::Nothing,
+            "command",
+            &words(&["reach"]),
+            &tmp,
+            &env_of(&tmp),
+        );
         if os != "macos" {
             assert_eq!(
                 reach.get("service").map(String::as_str),
@@ -473,9 +492,18 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
                 "outside any sandbox the keychain service must answer: {reach:?}"
             );
         }
-        let stubs = probed(&Held::Nothing, "command", &words(&["stub", &stub]), &tmp, &env_of(&tmp));
+        let stubs = probed(
+            &Held::Nothing,
+            "command",
+            &words(&["stub", &stub]),
+            &tmp,
+            &env_of(&tmp),
+        );
         assert_eq!(
-            (stubs.get("stub-read").map(String::as_str), stubs.get("stub-write").map(String::as_str)),
+            (
+                stubs.get("stub-read").map(String::as_str),
+                stubs.get("stub-write").map(String::as_str)
+            ),
             (Some("reachable"), Some("reachable")),
             "outside any sandbox the stub keyring is read and written: {stubs:?}"
         );
@@ -491,7 +519,10 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
     let harnesses: Vec<(&str, Option<Harness>)> = if windows {
         vec![("any", None)]
     } else {
-        HARNESSES.iter().map(|(name, harness)| (*name, Some(*harness))).collect()
+        HARNESSES
+            .iter()
+            .map(|(name, harness)| (*name, Some(*harness)))
+            .collect()
     };
     for (level, manifest) in &levels {
         for (name, harness) in &harnesses {
@@ -505,7 +536,11 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
                 };
                 assert_eq!(
                     applied.level().title(),
-                    if *level == "full" { "full sandbox" } else { "basic sandbox" },
+                    if *level == "full" {
+                        "full sandbox"
+                    } else {
+                        "basic sandbox"
+                    },
                     "{level} {name}"
                 );
                 the_profile(&applied, &root, &tmp)
@@ -535,7 +570,9 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
                 let held = match (&hold, &profile) {
                     (None, _) => None,
                     (Some(_), None) => Some(Held::Nothing),
-                    (Some(Held::Seatbelt(_)), Some(profile)) => Some(Held::Seatbelt(profile.clone())),
+                    (Some(Held::Seatbelt(_)), Some(profile)) => {
+                        Some(Held::Seatbelt(profile.clone()))
+                    }
                     (Some(Held::Wrapped(wrap, _)), Some(profile)) => {
                         Some(Held::Wrapped(wrap.clone(), profile.clone()))
                     }
@@ -572,7 +609,10 @@ fn the_keychain_service_reach_table_matches_the_pinned_table() {
     for (pinned, measured) in pinned.iter().zip(&measured) {
         let same_place = (&pinned.level, &pinned.harness, &pinned.caller)
             == (&measured.level, &measured.harness, &measured.caller);
-        assert!(same_place, "the pinned table's rows are in the order measured: {pinned} against {measured}");
+        assert!(
+            same_place,
+            "the pinned table's rows are in the order measured: {pinned} against {measured}"
+        );
         // Without a live run, only the cells the profile alone answers are compared.
         let compared = if live {
             pinned == measured

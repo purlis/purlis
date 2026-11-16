@@ -226,6 +226,8 @@ jobs:
           echo "::notice title=Landlock::kernel $(uname -r), Landlock ABI $abi"
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
       # purlis makes runs its chats sandboxed (ADR 0067 §1), so the start tests need them.
+      # gnome-keyring and libsecret-tools: a real Secret Service for R-772's keychain reach table
+      # (T1a-72), and `secret-tool` for its probe.
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
@@ -233,7 +235,7 @@ jobs:
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
-          packages: bubblewrap socat
+          packages: bubblewrap socat gnome-keyring libsecret-tools
       - uses: ./.github/actions/rust-toolchain
       # Only `main` saves a Rust cache; a pull request restores `main`'s and saves none.
       # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
@@ -329,12 +331,12 @@ jobs:
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # **R-772's CI half: what a chat reaches of the keychain, under the real wrap** (T1a-72). A
       # session bus of its own with a real Secret Service unlocked on it (an empty test password),
-      # so "reachable" means one answered. The step above leaves `sandbox-probe` built. Red unless
-      # the test really ran and compared every cell: it leaves a marker only then.
+      # so "reachable" means one answered; its packages come with the job's own (`linux-packages`
+      # above). The step above leaves `sandbox-probe` built. Red unless the test really ran and
+      # compared every cell: it leaves a marker only then.
       - name: R-772's keychain reach table, under purlis's wrap with a Secret Service
         if: matrix.part == 1
         run: |
-          sudo apt-get install -y --no-install-recommends gnome-keyring libsecret-tools
           rm -rf target/tests-that-really-ran
           PURLIS_TEST_SECRET_SERVICE=1 PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe dbus-run-session -- sh -c '
             printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null

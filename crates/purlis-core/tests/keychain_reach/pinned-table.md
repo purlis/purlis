@@ -103,8 +103,11 @@ never denied (ruling V90a): *Always Allow* would open the item, so it is a resid
    `<config>/purlis/model-keys/index.json`; it is not secret.
 2. On macOS, run it in a logged-in session, so a prompt the keychain draws is seen. On Linux, use
    a desktop session with the Secret Service unlocked.
-3. In a project with no keyring vault, open a chat at each level (Settings › Sandbox: full, then
-   basic) and run the probe as each caller, once for each item:
+3. In a project with no keyring vault, open a chat on each harness's profile (opencode, Codex,
+   Claude Code) at each level (Settings › Sandbox: full, then basic) and run the probe as each
+   caller, once for each item. The harness matters: on macOS a Claude Code chat's hooks and MCP
+   servers run outside any profile, where an opencode or Codex chat's run inside its sandbox, so
+   each harness has rows of its own:
    - **command**: ask the chat to run `sh <checkout>/crates/purlis-core/tests/keychain_reach/probe.sh fetch <service> <account>`
      (Windows: `powershell -NoProfile -File <checkout>\crates\purlis-core\tests\keychain_reach\probe.ps1 fetch <target>`);
    - **hook**: the same line as a `PreToolUse` hook command in the project's Claude Code
@@ -119,6 +122,7 @@ never denied (ruling V90a): *Always Allow* would open the item, so it is a resid
 | --- | --- | --- |
 | macOS | a value (exit 0) | readable |
 | macOS | a prompt drawn, `errSecInteractionNotAllowed` (-25308), or `errSecUserCanceled` (-128) | prompted |
+| macOS | `errSecAuthFailed` (-25293): a prompt drawn and answered *Deny* | prompted |
 | macOS | -25308 on a headless Mac, where no prompt can draw | prompted |
 | macOS | a sandbox refusal, or `errSecItemNotFound` (-25300) from inside the chat | denied |
 | Linux | a value (exit 0) | readable |
@@ -130,6 +134,13 @@ never denied (ruling V90a): *Always Allow* would open the item, so it is a resid
 Linux has no per-application rule, and a chat outside purlis's wrap runs as the person, so a
 Linux cell may be *readable*; the table says so where it is.
 
+**On Linux, a harness purlis doesn't wrap refuses to start sandboxed once a model key exists**
+(W132): its own sandbox can't keep a command off the session bus, where the Secret Service gives
+any process of the session every model key with no prompt, so the chat is refused rather than
+started. Today purlis wraps every harness there (Codex and opencode whole, Claude Code with its
+own sandbox off, #2037), so no chat is refused for it; a harness added without the wrap would be.
+This is a residual for the operator beside the cells below.
+
 ### The items
 
 Your keys' item is `purlis/@your-keys` (account: the entry's id). The mark's device key is
@@ -137,38 +148,86 @@ Your keys' item is `purlis/@your-keys` (account: the entry's id). The mark's dev
 `<account>.<service>` as the `keyring` crate writes it.
 
 <!-- hand-table:start -->
-| OS | Level | Caller | Item | Outcome | Error code | Run on (date, build) |
-| --- | --- | --- | --- | --- | --- | --- |
-| macos | full | command | your-keys | to record | | |
-| macos | full | command | mark-key | to record | | |
-| macos | full | hook | your-keys | to record | | |
-| macos | full | hook | mark-key | to record | | |
-| macos | full | mcp | your-keys | to record | | |
-| macos | full | mcp | mark-key | to record | | |
-| macos | floor | command | your-keys | to record | | |
-| macos | floor | command | mark-key | to record | | |
-| macos | floor | hook | your-keys | to record | | |
-| macos | floor | hook | mark-key | to record | | |
-| macos | floor | mcp | your-keys | to record | | |
-| macos | floor | mcp | mark-key | to record | | |
-| linux | full | command | your-keys | to record | | |
-| linux | full | command | mark-key | to record | | |
-| linux | full | hook | your-keys | to record | | |
-| linux | full | hook | mark-key | to record | | |
-| linux | full | mcp | your-keys | to record | | |
-| linux | full | mcp | mark-key | to record | | |
-| linux | floor | command | your-keys | to record | | |
-| linux | floor | command | mark-key | to record | | |
-| linux | floor | hook | your-keys | to record | | |
-| linux | floor | hook | mark-key | to record | | |
-| linux | floor | mcp | your-keys | to record | | |
-| linux | floor | mcp | mark-key | to record | | |
-| windows | none | command | your-keys | to record | | |
-| windows | none | command | mark-key | to record | | |
-| windows | none | hook | your-keys | to record | | |
-| windows | none | hook | mark-key | to record | | |
-| windows | none | mcp | your-keys | to record | | |
-| windows | none | mcp | mark-key | to record | | |
+| OS | Level | Harness | Caller | Item | Outcome | Error code | Run on (date, build) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| macos | full | opencode | command | your-keys | to record | | |
+| macos | full | opencode | command | mark-key | to record | | |
+| macos | full | opencode | hook | your-keys | to record | | |
+| macos | full | opencode | hook | mark-key | to record | | |
+| macos | full | opencode | mcp | your-keys | to record | | |
+| macos | full | opencode | mcp | mark-key | to record | | |
+| macos | full | codex | command | your-keys | to record | | |
+| macos | full | codex | command | mark-key | to record | | |
+| macos | full | codex | hook | your-keys | to record | | |
+| macos | full | codex | hook | mark-key | to record | | |
+| macos | full | codex | mcp | your-keys | to record | | |
+| macos | full | codex | mcp | mark-key | to record | | |
+| macos | full | claude-code | command | your-keys | to record | | |
+| macos | full | claude-code | command | mark-key | to record | | |
+| macos | full | claude-code | hook | your-keys | to record | | |
+| macos | full | claude-code | hook | mark-key | to record | | |
+| macos | full | claude-code | mcp | your-keys | to record | | |
+| macos | full | claude-code | mcp | mark-key | to record | | |
+| macos | floor | opencode | command | your-keys | to record | | |
+| macos | floor | opencode | command | mark-key | to record | | |
+| macos | floor | opencode | hook | your-keys | to record | | |
+| macos | floor | opencode | hook | mark-key | to record | | |
+| macos | floor | opencode | mcp | your-keys | to record | | |
+| macos | floor | opencode | mcp | mark-key | to record | | |
+| macos | floor | codex | command | your-keys | to record | | |
+| macos | floor | codex | command | mark-key | to record | | |
+| macos | floor | codex | hook | your-keys | to record | | |
+| macos | floor | codex | hook | mark-key | to record | | |
+| macos | floor | codex | mcp | your-keys | to record | | |
+| macos | floor | codex | mcp | mark-key | to record | | |
+| macos | floor | claude-code | command | your-keys | to record | | |
+| macos | floor | claude-code | command | mark-key | to record | | |
+| macos | floor | claude-code | hook | your-keys | to record | | |
+| macos | floor | claude-code | hook | mark-key | to record | | |
+| macos | floor | claude-code | mcp | your-keys | to record | | |
+| macos | floor | claude-code | mcp | mark-key | to record | | |
+| linux | full | opencode | command | your-keys | to record | | |
+| linux | full | opencode | command | mark-key | to record | | |
+| linux | full | opencode | hook | your-keys | to record | | |
+| linux | full | opencode | hook | mark-key | to record | | |
+| linux | full | opencode | mcp | your-keys | to record | | |
+| linux | full | opencode | mcp | mark-key | to record | | |
+| linux | full | codex | command | your-keys | to record | | |
+| linux | full | codex | command | mark-key | to record | | |
+| linux | full | codex | hook | your-keys | to record | | |
+| linux | full | codex | hook | mark-key | to record | | |
+| linux | full | codex | mcp | your-keys | to record | | |
+| linux | full | codex | mcp | mark-key | to record | | |
+| linux | full | claude-code | command | your-keys | to record | | |
+| linux | full | claude-code | command | mark-key | to record | | |
+| linux | full | claude-code | hook | your-keys | to record | | |
+| linux | full | claude-code | hook | mark-key | to record | | |
+| linux | full | claude-code | mcp | your-keys | to record | | |
+| linux | full | claude-code | mcp | mark-key | to record | | |
+| linux | floor | opencode | command | your-keys | to record | | |
+| linux | floor | opencode | command | mark-key | to record | | |
+| linux | floor | opencode | hook | your-keys | to record | | |
+| linux | floor | opencode | hook | mark-key | to record | | |
+| linux | floor | opencode | mcp | your-keys | to record | | |
+| linux | floor | opencode | mcp | mark-key | to record | | |
+| linux | floor | codex | command | your-keys | to record | | |
+| linux | floor | codex | command | mark-key | to record | | |
+| linux | floor | codex | hook | your-keys | to record | | |
+| linux | floor | codex | hook | mark-key | to record | | |
+| linux | floor | codex | mcp | your-keys | to record | | |
+| linux | floor | codex | mcp | mark-key | to record | | |
+| linux | floor | claude-code | command | your-keys | to record | | |
+| linux | floor | claude-code | command | mark-key | to record | | |
+| linux | floor | claude-code | hook | your-keys | to record | | |
+| linux | floor | claude-code | hook | mark-key | to record | | |
+| linux | floor | claude-code | mcp | your-keys | to record | | |
+| linux | floor | claude-code | mcp | mark-key | to record | | |
+| windows | none | any | command | your-keys | to record | | |
+| windows | none | any | command | mark-key | to record | | |
+| windows | none | any | hook | your-keys | to record | | |
+| windows | none | any | hook | mark-key | to record | | |
+| windows | none | any | mcp | your-keys | to record | | |
+| windows | none | any | mcp | mark-key | to record | | |
 <!-- hand-table:end -->
 
 Every *prompted* and *readable* cell, once recorded, is the residual T1a-17 posts on the epic at
