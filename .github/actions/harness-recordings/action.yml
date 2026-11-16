@@ -71,7 +71,10 @@ runs:
           homes=$(mktemp -d "$RUNNER_TEMP/homes-$harness-XXXX")
           # The test build is fenced to the trees the run makes: the homes, and the project the
           # driver lays out under `target/tmp` (CARGO_TARGET_TMPDIR).
-          if ! CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" PATH="$bin:$PATH" PURLIS_RECORD_HARNESS="$harness" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
+          # The stand-in's key, no credential: what the chat is handed by its project's
+          # `[chat_env] pass`, as a person's API key is.
+          if ! ANTHROPIC_API_KEY=stand-in-model-no-credential OPENAI_API_KEY=stand-in-model-no-credential \
+              CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" PATH="$bin:$PATH" PURLIS_RECORD_HARNESS="$harness" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
               PURLIS_RECORD_OUT="$out" PURLIS_CONFIG_HOME="$homes/config" PURLIS_DATA_HOME="$homes/data" \
               cargo test --locked -p purlis-recordings --test record -- --ignored --exact \
               records_a_harness_under_purlis_wrap_at_full --nocapture; then

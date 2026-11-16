@@ -161,6 +161,16 @@ pub fn run(args: Vec<String>) -> i32 {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos())
     );
+    // What it does in place of the real hook is decided first, so a call the harness ends
+    // while it is held says so in the one line it leaves.
+    let word = args.get(1).cloned().unwrap_or_default();
+    let forced = if std::env::var(STALL).is_ok_and(|w| w == word) && first(&out, "stall", &word) {
+        Some("stall")
+    } else if std::env::var(EXIT2).is_ok_and(|w| w == word) && first(&out, "exit2", &word) {
+        Some("exit2")
+    } else {
+        None
+    };
     let call = Line {
         id: id.clone(),
         phase: "call".to_owned(),
@@ -171,28 +181,23 @@ pub fn run(args: Vec<String>) -> i32 {
         exit: None,
         stdout: None,
         stderr: None,
-        forced: None,
+        forced: forced.map(str::to_owned),
     };
     if let Err(e) = append(&out, &call) {
         let _ = writeln!(std::io::stderr(), "purlis-recorder: {}: {e}", out.display());
         return 1;
     }
-    let word = args.get(1).cloned().unwrap_or_default();
-    let mut forced = None;
-    if std::env::var(STALL).is_ok_and(|w| w == word) && first(&out, "stall", &word) {
-        forced = Some("stall".to_owned());
+    if forced == Some("stall") {
         std::thread::sleep(HELD);
     }
-    let (exit, stdout, stderr) =
-        if std::env::var(EXIT2).is_ok_and(|w| w == word) && first(&out, "exit2", &word) {
-            forced = Some("exit2".to_owned());
-            (2, Vec::new(), format!("{EXIT2_REASON}\n").into_bytes())
-        } else {
-            match answer(&real, &args, &stdin) {
-                Ok(answered) => answered,
-                Err(e) => (1, Vec::new(), format!("purlis-recorder: {e}").into_bytes()),
-            }
-        };
+    let (exit, stdout, stderr) = if forced == Some("exit2") {
+        (2, Vec::new(), format!("{EXIT2_REASON}\n").into_bytes())
+    } else {
+        match answer(&real, &args, &stdin) {
+            Ok(answered) => answered,
+            Err(e) => (1, Vec::new(), format!("purlis-recorder: {e}").into_bytes()),
+        }
+    };
     let reply = Line {
         id,
         phase: "reply".to_owned(),
@@ -203,7 +208,7 @@ pub fn run(args: Vec<String>) -> i32 {
         exit: Some(exit),
         stdout: Some(String::from_utf8_lossy(&stdout).into_owned()),
         stderr: Some(String::from_utf8_lossy(&stderr).into_owned()),
-        forced,
+        forced: forced.map(str::to_owned),
     };
     let _ = append(&out, &reply);
     let _ = std::io::stdout().write_all(&stdout);

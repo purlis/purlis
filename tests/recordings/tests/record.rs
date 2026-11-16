@@ -109,6 +109,23 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
     )
     .expect("the manifest");
+    // The stand-in's key is this machine's, handed to the chat as a person hands an API key:
+    // by name, in the project's local `[chat_env] pass` (a profile handed a key needs no
+    // sign-in). The run sets it in its own environment (`.github/actions/harness-recordings`).
+    let key_name = match harness.as_str() {
+        "claude" => "ANTHROPIC_API_KEY",
+        _ => "OPENAI_API_KEY",
+    };
+    assert_eq!(
+        std::env::var(key_name).ok().as_deref(),
+        Some(STAND_IN_KEY),
+        "{key_name} is the stand-in's key in the run's environment"
+    );
+    fs::write(
+        root.join(purlis_core::profiles::LOCAL_FILE),
+        format!("[chat_env]\npass = [\"{key_name}\"]\n"),
+    )
+    .expect("the local settings");
     fs::create_dir_all(root.join(".purlis/vaults")).expect("the vaults");
     let denied_read = root.join(".purlis/vaults/covering.json");
     fs::write(&denied_read, "{\"covering\": \"a vault no chat reads\"}\n").expect("a vault");
@@ -293,7 +310,13 @@ fn records_a_harness_under_purlis_wrap_at_full() {
                 .any(|h| h.conversation == Conversation::Main && h.response == Some(esc_at))
         {
             std::thread::sleep(Duration::from_secs(4));
+            // OpenCode asks for Esc again before it interrupts ("esc interrupt"), measured on
+            // 1.19.5's first recording; the others interrupt on one.
             session.write(b"\x1b").expect("Esc is pressed");
+            if harness == "opencode" {
+                std::thread::sleep(Duration::from_millis(500));
+                session.write(b"\x1b").expect("Esc is pressed again");
+            }
             pressed = true;
             std::thread::sleep(Duration::from_secs(8));
             break;

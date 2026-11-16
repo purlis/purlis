@@ -126,7 +126,13 @@ impl StandIn {
         };
         let shown = project(api, &body);
         let offers = offers(api, &body);
-        let conversation = self.conversation_of(&shown);
+        // A request that offers no tool is not the chat's turn, whatever it quotes of it: a
+        // harness's title or summary of the chat, answered with a word.
+        let conversation = if offers.is_empty() {
+            Conversation::Side
+        } else {
+            self.conversation_of(&shown)
+        };
         let responses: &[Response] = match conversation {
             Conversation::Main => &self.script.responses,
             Conversation::Subagent => &self.script.subagent,

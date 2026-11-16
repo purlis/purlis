@@ -4,7 +4,8 @@
 //! **The mask** (T1.1-03 item 3): what may differ between two recordings of the same script and
 //! still be the same recording. It is a closed list, and nothing else is masked:
 //!
-//! 1. **session ids**: the value of a key in [`SESSION_KEYS`], wherever it then appears;
+//! 1. **session ids**: the value of a key in [`SESSION_KEYS`], and a value of a session id's
+//!    shape ([`SESSION_SHAPES`]: a UUID, OpenCode's `ses_…`), wherever it then appears;
 //! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], wherever it then appears;
 //! 3. **absolute paths**: each root the recording names in `roots` (its work tree, its home, its
 //!    temp folder, the harness's install), wherever a string holds it;
@@ -60,6 +61,15 @@ pub const TIME_KEYS: &[&str] = &[
 
 /// A hook call's distance from the one before it, in milliseconds.
 pub const GAP_KEY: &str = "gap_ms";
+
+/// The shapes of a session id a harness writes into text where no key names it: a sub-agent's
+/// session in a task's result, a transcript's file name.
+pub static SESSION_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ses_[0-9A-Za-z]{20,})\b",
+    )
+    .expect("a pattern")
+});
 
 static ISO_TIME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
@@ -163,10 +173,8 @@ impl Ids {
                         .as_str()
                         .filter(|id| !id.is_empty() && !is_placeholder(id))
                     {
-                        if SESSION_KEYS.contains(&key.as_str()) && !self.named.contains_key(id) {
-                            self.sessions += 1;
-                            self.named
-                                .insert(id.to_owned(), format!("<session-{}>", self.sessions));
+                        if SESSION_KEYS.contains(&key.as_str()) {
+                            self.session(id);
                         } else if TOOL_USE_KEYS.contains(&key.as_str())
                             && !self.named.contains_key(id)
                         {
@@ -179,7 +187,20 @@ impl Ids {
                 }
             }
             Value::Array(items) => items.iter().for_each(|item| self.collect(item)),
+            Value::String(text) => {
+                for found in SESSION_SHAPES.find_iter(text) {
+                    self.session(found.as_str());
+                }
+            }
             _ => {}
+        }
+    }
+
+    fn session(&mut self, id: &str) {
+        if !self.named.contains_key(id) {
+            self.sessions += 1;
+            self.named
+                .insert(id.to_owned(), format!("<session-{}>", self.sessions));
         }
     }
 
@@ -326,6 +347,15 @@ mod tests {
         assert_eq!(once["hook_calls"][0]["stdin"]["session_id"], "<session-1>");
         assert_eq!(once["hook_calls"][0]["gap_ms"], "<gap>");
         assert_eq!(once["hook_calls"][0]["stdin"]["timestamp"], "<time>");
+    }
+
+    #[test]
+    fn a_session_id_written_into_text_is_masked_where_no_key_names_it() {
+        let raw = json!({"shown": [{"text": "<task id=\"ses_e1dfb2d30ffeB0AQ9FzuJG8kmI\" state=\"completed\">"}]});
+        assert_eq!(
+            mask(&raw)["shown"][0]["text"],
+            "<task id=\"<session-1>\" state=\"completed\">"
+        );
     }
 
     #[test]
