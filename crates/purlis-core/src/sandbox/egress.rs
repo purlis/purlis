@@ -623,6 +623,10 @@ pub struct Serving {
     /// connected to whatever name resolved to one, and the resolver it looks every name up by
     /// ([`ProviderAddresses`], [`confined_addresses`]).
     pub providers: Option<Arc<ProviderAddresses>>,
+    /// **A scenario's resolver seam** (T1.1-02), a test build's alone: where this proxy looks
+    /// names up and dials, its `providers` among them ([`super::names`]). None asks the system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub names: Option<Arc<super::names::Names>>,
 }
 
 impl Serving {
@@ -644,6 +648,8 @@ impl Serving {
             confined: false,
             asking: None,
             providers: None,
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
         }
     }
 
@@ -787,6 +793,16 @@ impl Proxy {
             .copied()
             .collect();
         let limits = serving.limits;
+        // In a scenario the addresses a model is served at are looked up through the seam too.
+        #[cfg(any(test, feature = "test-support"))]
+        let providers = match (&serving.names, serving.providers) {
+            (Some(names), Some(providers)) => {
+                Some(Arc::new(providers.resolving_by(names.resolver())))
+            }
+            (_, providers) => providers,
+        };
+        #[cfg(not(any(test, feature = "test-support")))]
+        let providers = serving.providers;
         let allowed = Arc::new(Allowed {
             reach: serving.reach,
             tunnel_ports: serving.tunnel_ports,
@@ -802,7 +818,9 @@ impl Proxy {
             left_out: serving.left_out,
             confined: serving.confined,
             asking: serving.asking.clone(),
-            providers: serving.providers,
+            providers,
+            #[cfg(any(test, feature = "test-support"))]
+            names: serving.names,
             live: Live::default(),
             tally: Mutex::new(Tally::new(&serving.timings)),
             teller: Teller::default(),
@@ -1078,6 +1096,8 @@ struct Allowed {
     confined: bool,
     asking: Option<Arc<AtomicUsize>>,
     providers: Option<Arc<ProviderAddresses>>,
+    #[cfg(any(test, feature = "test-support"))]
+    names: Option<Arc<super::names::Names>>,
     /// What it carries now, for a confined extension's proxy, ended when its question is.
     live: Live,
     tally: Mutex<Tally>,
@@ -1195,7 +1215,8 @@ impl Allowed {
     /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
     /// a service left out of this chat's plan ([`Self::pinned`]); for a confined extension, never
     /// at an address a model is served at ([`confined_addresses`]); otherwise as
-    /// [`connect_held`].
+    /// [`connect_held`]. In a scenario, looked up and dialled through its resolver seam
+    /// ([`super::names`]), which decides nothing: this runs only for what was carried.
     fn connect(
         &self,
         host: &str,
@@ -1203,11 +1224,44 @@ impl Allowed {
         own: &[std::net::IpAddr],
         read: Option<&[super::hosts::Network]>,
     ) -> Connected {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(names) = &self.names {
+            use super::names::Found;
+            let answer = match names.look_up(host, port) {
+                // The one address exempt from the filter, for this exact name and port alone.
+                Found::Origin(at) => {
+                    return names
+                        .dial_origin(host, port, &at, self.patience)
+                        .map_or(Connected::Not, Connected::To);
+                }
+                Found::Scripted(answer) => answer,
+                Found::Unmapped => Vec::new(),
+            };
+            let resolve = |_: &str, _: u16| answer.clone();
+            let dial = |at: &SocketAddr, patience| names.dial(at, patience);
+            return self.connect_by(host, port, own, read, Some(&resolve), &dial);
+        }
+        self.connect_by(host, port, own, read, None, &|at, patience| {
+            TcpStream::connect_timeout(at, patience)
+        })
+    }
+
+    /// [`Self::connect`], looking `host` up by `resolve` (by default the confined proxy's
+    /// providers' resolver, or the system's) and dialling by `dial`.
+    fn connect_by(
+        &self,
+        host: &str,
+        port: u16,
+        own: &[std::net::IpAddr],
+        read: Option<&[super::hosts::Network]>,
+        resolve: Option<&LookUp<'_>>,
+        dial: &Dial<'_>,
+    ) -> Connected {
         if self.confined
             && let Some(providers) = &self.providers
         {
             let carries = |at| self.carries(host, at, read);
-            let resolve = |name: &str, port: u16| providers.resolve(name, port);
+            let by_providers = |name: &str, port: u16| providers.resolve(name, port);
             return match confined_addresses(
                 host,
                 port,
@@ -1215,24 +1269,25 @@ impl Allowed {
                 own,
                 &carries,
                 providers,
-                &resolve,
+                resolve.unwrap_or(&by_providers),
             ) {
-                Ok(reached) => connect_first(reached, self.patience),
+                Ok(reached) => connect_first_by(reached, self.patience, dial),
                 Err(refused) => refused,
             };
         }
         match self.pinned(host, port) {
-            Some(at) => {
-                TcpStream::connect_timeout(&at, self.patience).map_or(Connected::Not, Connected::To)
-            }
-            None => connect_held(
+            Some(at) => dial(&at, self.patience).map_or(Connected::Not, Connected::To),
+            None => match held_addresses(
                 host,
                 port,
                 &self.reach,
                 own,
                 &|at| self.carries(host, at, read),
-                self.patience,
-            ),
+                resolve.unwrap_or(&system_resolve),
+            ) {
+                Ok(reached) => connect_first_by(reached, self.patience, dial),
+                Err(refused) => refused,
+            },
         }
     }
 
@@ -1924,14 +1979,25 @@ pub(crate) fn connect_held(
     carries: &dyn Fn(SocketAddr) -> bool,
     patience: Duration,
 ) -> Connected {
-    let resolve = |host: &str, port: u16| {
-        (host, port)
-            .to_socket_addrs()
-            .map(Iterator::collect)
-            .unwrap_or_default()
-    };
-    connect_held_resolving(host, port, reach, own, carries, &resolve, patience)
+    connect_held_resolving(host, port, reach, own, carries, &system_resolve, patience)
 }
+
+/// **`host` on `port`, looked up by the system's resolver**: the one place a chat proxy asks it
+/// (a test build records each name asked, [`super::names::asked_the_system`]).
+pub(crate) fn system_resolve(host: &str, port: u16) -> Vec<SocketAddr> {
+    #[cfg(any(test, feature = "test-support"))]
+    super::names::asking_the_system(host);
+    (host, port)
+        .to_socket_addrs()
+        .map(Iterator::collect)
+        .unwrap_or_default()
+}
+
+/// How a name is looked up on a port: its addresses.
+type LookUp<'a> = dyn Fn(&str, u16) -> Vec<SocketAddr> + 'a;
+
+/// How a connection is made: an address, and how long it has to answer.
+type Dial<'a> = dyn Fn(&SocketAddr, Duration) -> io::Result<TcpStream> + 'a;
 
 /// Whether a confined extension's proxy connects to `at`: never an address in a private or
 /// special-use range ([`super::hosts::special_use`]).
@@ -1993,9 +2059,16 @@ fn held_addresses(
 
 /// Connects to the first of `reached` that answers within `patience`.
 fn connect_first(reached: Vec<SocketAddr>, patience: Duration) -> Connected {
+    connect_first_by(reached, patience, &|at, patience| {
+        TcpStream::connect_timeout(at, patience)
+    })
+}
+
+/// [`connect_first`], dialling by `dial`.
+fn connect_first_by(reached: Vec<SocketAddr>, patience: Duration, dial: &Dial<'_>) -> Connected {
     reached
         .into_iter()
-        .find_map(|addr| TcpStream::connect_timeout(&addr, patience).ok())
+        .find_map(|addr| dial(&addr, patience).ok())
         .map_or(Connected::Not, Connected::To)
 }
 

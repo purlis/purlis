@@ -12,10 +12,12 @@
 //!   run, marks that name real assertions, the row table).
 //! - [`judge`]: a cell's verdict under its `expected_fail` marks.
 //! - [`plan`]: the derived production-timing set and which runs take a cell.
+//! - [`net`]: the suite's local origins, direct-connection target and test CA (T1.1-02).
 
 pub mod judge;
 pub mod kinds;
 pub mod model;
+pub mod net;
 pub mod plan;
 pub mod timings;
 pub mod validate;

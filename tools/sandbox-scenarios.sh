@@ -14,17 +14,20 @@
 # second try is red. Retry-to-green is forbidden.
 #
 # `STRESS=true` runs the set 20 times under `stress-ng` on every CPU (the `stress-x20` label).
-# `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app` unset): the run
+# `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app -p purlis-scenarios`
+# unset): the run
 # names the same ones, so it reuses that build. Every run prints all it says: nothing runs out of
 # sight (Q301).
 #
-# The scenarios are a `#[cfg(test)]` module of purlis-app, `scenarios` (ticket 06). Each run writes
+# The scenarios are a `#[cfg(test)]` module of purlis-app, `scenarios` (ticket 06); the suite also
+# runs the resolver seam's and local origins' own tests (`purlis-scenarios`'s `resolver_seam`,
+# T1.1-02), which bind local ports, so they run on each OS's leg. Each run writes
 # what a red run's reader needs (event logs, transcripts, the scenario report) under
 # `target/sandbox-scenarios/`, which the workflow uploads when a run fails.
 set -euo pipefail
 
 case "${1-}" in
-  suite) filter='package(purlis-app) & test(/^scenarios::/) & not test(/^scenarios::production_timings::/)' ;;
+  suite) filter='(package(purlis-app) & test(/^scenarios::/) & not test(/^scenarios::production_timings::/)) | binary_id(purlis-scenarios::resolver_seam)' ;;
   production-timings) filter='package(purlis-app) & test(/^scenarios::production_timings::/)' ;;
   *) echo "usage: $0 suite|production-timings" >&2; exit 2 ;;
 esac
@@ -32,7 +35,7 @@ esac
 mkdir -p target/sandbox-scenarios
 # Unquoted on purpose: `--workspace`, or `-p` and a package.
 # shellcheck disable=SC2086
-once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app} --locked --profile ci --retries 0 -E "$filter"; }
+once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci --retries 0 -E "$filter"; }
 
 # Each status is returned by hand: `if runs` below turns `set -e` off inside the function.
 runs() {

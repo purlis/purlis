@@ -10,6 +10,8 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
 | `pins/<dialect>.json` | A dialect's defaults (ticket 3), in a `per_dialect` entry's shape. Checked by the same schema's `$defs/pins_file`. |
 | `schema/leg-report.schema.json` | One record per entry a leg ran (ticket 6 writes them, ticket 8 judges them). |
 | `src/` | The reader (`model`), the validator (`validate`), the verdict under marks (`judge`), and the production-timing set (`plan`). |
+| `src/net/` | The suite's network on this machine (T1.1-02): a test CA new each run and the CA bundle its clients trust, local HTTP and HTTPS origins (plain, slow, redirect, their own 403) that record every request, and a direct-connection target off the loopback. |
+| `tests/resolver_seam.rs` | purlis-core's resolver seam (`sandbox::names`, a test build's alone) with those origins, through a chat proxy and a browser's reach proxy. It binds local ports, so the suite's legs run it on Linux and macOS. |
 
 `cargo test -p purlis-scenarios` runs every cells file through its schema and the validator.
 

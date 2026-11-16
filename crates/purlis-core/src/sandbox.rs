@@ -8440,6 +8440,8 @@ pub mod kubeconfig;
 pub mod level_why;
 pub mod local;
 pub mod localport;
+#[cfg(any(test, feature = "test-support"))]
+pub mod names;
 pub mod nat64;
 pub mod opencode;
 pub mod persona;

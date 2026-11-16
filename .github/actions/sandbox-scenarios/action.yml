@@ -56,7 +56,7 @@ runs:
     - name: Build the scenarios
       shell: bash
       env:
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
       run: |
         mkdir -p app/dist
         cargo nextest run $CARGO_PACKAGES --locked --no-run
@@ -65,12 +65,12 @@ runs:
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
       if: inputs.production-timings == 'true'
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app' }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
       run: tools/sandbox-scenarios.sh production-timings
