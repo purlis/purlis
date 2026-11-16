@@ -1421,9 +1421,17 @@ fn a_socket_the_environment_names_that_is_not_the_app_is_never_believed() {
 
     let ran = worktree_add(&world, &root, &root, &env);
 
+    // Refused, never believed and never run here: the environment only ever tightens, so a
+    // socket it names that the app does not hold leaves this chat no app at all.
     assert!(!fake.heard(), "the fake was told the chat's ask");
-    assert!(err(&ran).contains(HEARD_BY_THE_APP), "{}", err(&ran));
-    assert_eq!(chats_heard(&asked), vec![3]);
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(
+        err(&ran).contains(hookwire::reach::NO_APP_ANSWERED),
+        "{}",
+        err(&ran)
+    );
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+    assert_eq!(chats_heard(&asked), Vec::<u32>::new());
 }
 
 #[test]

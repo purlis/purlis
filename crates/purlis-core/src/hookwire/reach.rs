@@ -200,9 +200,7 @@ pub fn reach_from(
     within: Duration,
 ) -> Result<Reached, Unreached> {
     let claimed = claimed_chat(env);
-    // Where the app is read, a claim goes only to the socket the environment names, where it
-    // names one: one of another plane's, or none the app holds, is no app of this chat's.
-    let mut claim_only: Option<PathBuf> = None;
+    let mut gone_why = None;
     let (knock, admitted): (Vec<PathBuf>, Admit) = match under {
         Under::NoApp => {
             return Err(match claimed {
@@ -220,13 +218,22 @@ pub fn reach_from(
                 .filter(|path| path.file_name().is_some_and(|name| name == HOOK_SOCKET))
                 .collect();
             sockets.dedup();
-            // The one the environment names first, where the app holds it: among several
-            // planes' sockets it is the one a claim is put to. It chooses nothing the app does
-            // not hold, and one the app does not hold is no app of this chat's.
+            // The one the environment names, alone, where the app holds it: the socket the app
+            // handed this chat, so no other plane's is asked. It chooses nothing the app does
+            // not hold. One the app does not hold is no app of the chat the environment names;
+            // where it names none, every socket the app holds is asked, so a socket made up
+            // never spares a chat the app's question.
             if let Some(hinted) = env(super::SOCKET_ENV).filter(|it| !it.is_empty()) {
                 let hinted = PathBuf::from(hinted);
-                sockets.sort_by_key(|socket| !same_socket(socket, &hinted));
-                claim_only = Some(hinted);
+                if sockets.iter().any(|socket| same_socket(socket, &hinted)) {
+                    sockets.retain(|socket| same_socket(socket, &hinted));
+                } else if claimed.is_some() {
+                    sockets.clear();
+                    gone_why = Some(format!(
+                        "the app this process runs under holds no socket at {}",
+                        hinted.display()
+                    ));
+                }
             }
             (sockets, Admit::Ancestors(app))
         }
@@ -245,7 +252,7 @@ pub fn reach_from(
     // A sandboxed process is a chat's, whatever its environment says.
     let a_chat_s = claimed.is_some() || admitted == Admit::Unwritable;
     let mut answered = None;
-    let mut last_why = None;
+    let mut last_why = gone_why;
     for socket in knock {
         match asked_at(&socket, &admitted, within) {
             Ok(Asked::Named(reached)) => return Ok(reached),
@@ -264,15 +271,6 @@ pub fn reach_from(
             Err(Unreached::AppGone(why)) => last_why = Some(why),
             Err(other) => return Err(other),
         }
-    }
-    if let (Some((socket, _)), Some(only)) = (&answered, &claim_only)
-        && !same_socket(socket, only)
-    {
-        answered = None;
-        last_why = Some(format!(
-            "the app this process runs under holds no socket at {}",
-            only.display()
-        ));
     }
     match (answered, claimed) {
         // The app says this process runs in none of its chats, or is older than the question:
