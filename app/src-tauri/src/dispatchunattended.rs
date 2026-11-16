@@ -217,13 +217,18 @@ fn answered(
                 })
     });
     // The core's own answer, so the window's and the command's cannot drift (#1586).
-    Ok(dispatchunattended::covers(
-        persona,
-        target,
-        &standing,
-        locks,
-        named_by_the_project,
-        runs.sandboxed,
+    // As the project's `[policy]` runs `dispatch` (Q308): off or log covers what only a grant
+    // or a sandbox stood in the way of.
+    Ok(dispatchunattended::as_the_policy_runs(
+        dispatchunattended::covers(
+            persona,
+            target,
+            &standing,
+            locks,
+            named_by_the_project,
+            runs.sandboxed,
+        ),
+        purlis_core::enforcement::mode(root, purlis_core::enforcement::Family::Dispatch),
     ))
 }
 

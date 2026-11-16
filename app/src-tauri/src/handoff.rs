@@ -361,6 +361,32 @@ pub fn answer(
                     == purlis_core::dispatchunattended::Attendance::Attended
             }),
         },
+        // How each family of refusals runs for the asking chat (Q308): the app alone verifies
+        // what the person accepted, so a hook asks it. No ticket, for the record's reason: the
+        // answer is of the project this app holds the chat in, never one the line names.
+        Ask::Policy(_) => Answer::Policy {
+            spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+        },
+        // One log line a hook hands over (Q308): written under the app's own record of the chat
+        // whose token the line carries, by its id, or as "unknown" where it has none.
+        Ask::PolicyLog(line) => {
+            if let Some(family) = purlis_core::enforcement::Family::of_key(&line.family) {
+                let chat = held
+                    .chats()
+                    .id_of(line.chat)
+                    .unwrap_or_else(|| purlis_core::enforcement::UNKNOWN_CHAT.to_owned());
+                purlis_core::enforcement::write_line(
+                    held.root(),
+                    &chat,
+                    family,
+                    &line.rule,
+                    line.host.as_deref(),
+                );
+            }
+            Answer::Policy {
+                spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+            }
+        }
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
