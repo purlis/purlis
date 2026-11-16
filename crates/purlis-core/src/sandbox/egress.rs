@@ -796,8 +796,10 @@ impl Proxy {
         // In a scenario the addresses a model is served at are looked up through the seam too.
         #[cfg(any(test, feature = "test-support"))]
         let providers = match (&serving.names, serving.providers) {
+            // DO NOT MERGE N4: the providers ask the system's resolver.
             (Some(names), Some(providers)) => {
-                Some(Arc::new(providers.resolving_by(names.resolver())))
+                let _ = (names, ProviderAddresses::resolving_by);
+                Some(providers)
             }
             (_, providers) => providers,
         };
@@ -1229,6 +1231,8 @@ impl Allowed {
             // The seam is only the resolver and the dial: looked up where production would look
             // up, in its order (never a pinned name, a name of this Mac or an address literal).
             let origin = std::cell::Cell::new(None);
+            // DO NOT MERGE N1: every name is looked up first, pinned ones included.
+            let _ = names.look_up(host, port);
             let resolve = |name: &str, port: u16| -> Vec<SocketAddr> {
                 if let Some(literal) = literal_address(name, port) {
                     return vec![literal];
@@ -1278,10 +1282,9 @@ impl Allowed {
     ) -> Connected {
         let carries = |at: SocketAddr| {
             if exempt(at) {
-                // Only the special-use filter is waived: a runner's internal networks still hold.
-                self.internal
-                    .as_ref()
-                    .is_none_or(|internal| internal.carries(host, at, read))
+                // DO NOT MERGE N3: an origin skips the internal networks too.
+                let _ = (&self.internal, read);
+                true
             } else {
                 self.carries(host, at, read)
             }
@@ -2188,6 +2191,10 @@ fn reachable_from(
 /// `host` as an address literal on `port`, which a resolver answers as itself, asking nobody.
 #[cfg(any(test, feature = "test-support"))]
 fn literal_address(host: &str, port: u16) -> Option<SocketAddr> {
+    // DO NOT MERGE N2: a literal goes to the lookup.
+    if !host.is_empty() {
+        return None;
+    }
     let bare = host
         .strip_prefix('[')
         .and_then(|inside| inside.strip_suffix(']'))
