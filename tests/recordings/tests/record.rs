@@ -364,6 +364,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let mut accepted_prompts = 0;
     let mut bypass_presses = 0u32;
     let mut harness_asks = 0u32;
+    let mut dialog_since: Option<Instant> = None;
     let settled = |word: &str| {
         recorder::read(&recorder_out).is_ok_and(|lines| {
             lines
@@ -430,6 +431,15 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             accepted_prompts += 1;
             std::thread::sleep(Duration::from_secs(2));
         }
+        // Codex 0.169 offers a newer model before the chat: a person keeping theirs takes
+        // "Use existing model".
+        if accepted_prompts < 3 && screen.contains("Use existing model") {
+            session.write(b"\x1b[B").expect("Down is pressed");
+            std::thread::sleep(Duration::from_millis(600));
+            session.write(b"\r").expect("Use existing model is chosen");
+            accepted_prompts += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        }
         // Claude Code's bypass-permissions warning defaults to "No, exit": a person who chose
         // the mode takes "Yes, I accept".
         if bypass_presses < 5
@@ -451,7 +461,21 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         // OpenCode cuts that hook off, and the recording says so (1.19.5, run 9).
         let asking =
             screen.contains("Permission required") || (asks && screen.contains("Do you want to"));
-        if harness_asks < 8 && settled("permissionrequest") && asking {
+        // In the asks pass the dialog is left until Claude Code tells its Notification hook a
+        // person is wanted, which it does only once the dialog has waited (run 43836719317
+        // answered at once and recorded none), or 20 s.
+        let asked_since = *dialog_since.get_or_insert_with(Instant::now);
+        let notified = !asks
+            || asked_since.elapsed() > Duration::from_secs(20)
+            || recorder::read(&recorder_out).is_ok_and(|lines| {
+                lines.iter().any(|l| {
+                    l.phase == "call" && l.argv.get(1).is_some_and(|w| w == "notification")
+                })
+            });
+        if !asking {
+            dialog_since = None;
+        }
+        if harness_asks < 8 && settled("permissionrequest") && asking && notified {
             session.write(b"\r").expect("Allow once is chosen");
             harness_asks += 1;
             std::thread::sleep(Duration::from_secs(2));
@@ -570,6 +594,12 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             (
                 "permission_mode".to_owned(),
                 if asks { ASKS_PERMISSION_MODE } else { PERMISSION_MODE }.to_owned(),
+            )
+        }))
+        .chain((harness == "claude").then(|| {
+            (
+                "sessionend_budget".to_owned(),
+                format!("CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS={SESSIONEND_BUDGET_MS}"),
             )
         }))
         .chain((harness_asks > 0).then(|| {
@@ -793,6 +823,9 @@ fn harness_words(harness: &str, base_url: &str, asks: bool) -> Vec<String> {
     }
 }
 
+/// The time Claude Code is told its SessionEnd hooks may take, a recording condition.
+const SESSIONEND_BUDGET_MS: &str = "10000";
+
 /// The model Codex is told it runs: one its own catalogue lists with a freeform `apply_patch`.
 const CODEX_MODEL: &str = "gpt-5.5";
 
@@ -803,6 +836,12 @@ fn model_env(harness: &str, base_url: &str, opencode_config: &Path) -> Vec<(Stri
             ("ANTHROPIC_BASE_URL", base_url.to_owned()),
             ("ANTHROPIC_API_KEY", STAND_IN_KEY.to_owned()),
             ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1".to_owned()),
+            // A recording condition: Claude Code's own budget for SessionEnd hooks cut the hook
+            // off before it had begun in one of two runs (run 43836719317).
+            (
+                "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS",
+                SESSIONEND_BUDGET_MS.to_owned(),
+            ),
         ],
         "codex" => vec![("OPENAI_API_KEY", STAND_IN_KEY.to_owned())],
         _ => vec![

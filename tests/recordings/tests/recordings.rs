@@ -470,7 +470,10 @@ fn each_recording_keeps_the_models_received_requests() {
                 "text": "<system-reminder>purlis: SessionStart context</system-reminder>\nCOVERING-SCRIPT go"}]},
             {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {}}]},
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1",
-                "is_error": true, "content": "purlis refused: the sandbox does not list refused.example.invalid"}]}
+                "is_error": true, "content": "purlis refused: the sandbox does not list refused.example.invalid"}]},
+            // Claude Code 2.1.325's SessionStart context: a system message among the messages.
+            {"role": "system", "content": [{"type": "text",
+                "text": "SessionStart hook additional context: purlis's chat context"}]}
         ]
     });
     let responses = json!({
@@ -528,6 +531,16 @@ fn each_recording_keeps_the_models_received_requests() {
             );
         }
     }
+    // And a system message among the messages, as Claude Code 2.1.325 sends a hook's context,
+    // is context the model was shown.
+    assert!(
+        project(Api::Messages, &messages)
+            .iter()
+            .any(|s| s.kind == "context"
+                && s.text == "SessionStart hook additional context: purlis's chat context"),
+        "{:#?}",
+        project(Api::Messages, &messages)
+    );
     // And each checked-in recording keeps it, masked: every prompt it was given, and a result
     // for every refused call the harness made; never what the refused read aimed at.
     let recordings = checked_in();

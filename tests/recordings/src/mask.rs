@@ -106,12 +106,22 @@ pub struct RacyOrder {
 }
 
 /// Every order the mask may put right, by name. Nothing is added without CI's evidence.
-pub const RACY_ORDERS: &[RacyOrder] = &[RacyOrder {
-    harness: "codex",
-    words: &["sessionstart", "sessionstart-skills"],
-    reason: "Codex 0.169 starts every SessionStart hook at once; these two began in both orders \
-             in the two recordings of one CI job (run 43834558626, `harness recording (codex)`)",
-}];
+pub const RACY_ORDERS: &[RacyOrder] = &[
+    RacyOrder {
+        harness: "codex",
+        words: &["sessionstart", "sessionstart-skills"],
+        reason: "Codex 0.169 starts every SessionStart hook at once; these two began in both \
+                 orders in the two recordings of one CI job (run 43834558626, \
+                 `harness recording (codex)`)",
+    },
+    RacyOrder {
+        harness: "opencode",
+        words: &["notification", "permissionrequest"],
+        reason: "OpenCode 1.19.5's shim runs both hooks of one permission ask at once; they began \
+                 notification first in run 43834558626 and permissionrequest first in run \
+                 43836719317 (`harness recording (opencode)`)",
+    },
+];
 
 /// Variables holding the harness process's id, which purlis reads as its session's.
 pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
@@ -786,5 +796,17 @@ mod tests {
             mask(&other)["hook_calls"][1]["argv"][1],
             "sessionstart-skills"
         );
+    }
+
+    #[test]
+    fn opencodes_permission_ask_pair_seen_both_ways_is_put_in_one_order() {
+        let call = |w: &str| json!({"argv": ["hook", w]});
+        let recording = |first: &str, second: &str| {
+            json!({"harness": "opencode", "hook_calls": [call("pretooluse-edit"), call(first),
+                call(second), call("pretooluse-edit")]})
+        };
+        let a = mask(&recording("permissionrequest", "notification"));
+        assert_eq!(a, mask(&recording("notification", "permissionrequest")));
+        assert_eq!(a["hook_calls"][1]["argv"][1], "notification");
     }
 }

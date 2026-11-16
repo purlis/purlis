@@ -59,6 +59,19 @@ pub fn project(api: Api, body: &Value) -> Vec<Shown> {
     match api {
         Api::Messages => {
             for message in array(body, "messages") {
+                // A system message among the chat's messages is what a hook added, not the
+                // harness's prompt (`system`, apart): Claude Code 2.1.325 sends a SessionStart
+                // hook's context so.
+                if message["role"] == "system" {
+                    push(
+                        &mut out,
+                        "context",
+                        text_of(&message["content"]),
+                        None,
+                        None,
+                    );
+                    continue;
+                }
                 if message["role"] != "user" {
                     continue;
                 }
