@@ -1,12 +1,12 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
-Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4) and Q320a (N1–N5), in the who-judges
-orchestration (`work/who-judges/decisions.md` on the plane). It also takes in the calls of the
-spec's first two Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` and
-`review-round-2.md` on the plane). Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and
-Windows seal gap is narrowed, not closed, and stays declared. The
-rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
+Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5) and Q320b
+(R2-1–R2-4), in the who-judges orchestration (`work/who-judges/decisions.md` on the plane). It
+also takes in the calls of the spec's first three Fable review rounds
+(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-3.md` on the plane).
+Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
+closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
 
 It builds on ADR 0125 (blocks off by default and opt-in per family: Q308, Q308a and Q308b) and
@@ -69,9 +69,8 @@ the session host (Q311 point 1, Q309 point 3).
   fixed things of §5 either: they are a separate step that applies whenever the level is `floor`
   or `full` (review round 2, F2-3).
 - **The `sandbox` family has one switch, its level.** `[policy] sandbox = off|floor|full` is its
-  only key, with no `off`/`log`/`enforce` of its own. At `full` and `floor` the hooks enforce the
-  `read` and `write` forbids, at `off` they log them, and `watch` uses `floor` (review round 2,
-  F2-1).
+  only key, with no `off`/`log`/`enforce` of its own; `open` stays "everything off" (review round
+  2, F2-1; Q320b R2-2). What the hooks do at each level is in the spec.
 
 **Rejected.** OPA/Rego through regorus: pre-1.0, with no allow/deny conflict model, no equivalence
 or reachability analysis, and an unfinished explanation API. A TOML evaluator of purlis's own was
@@ -100,20 +99,21 @@ rewriting every project's `policy.cedar`.
   monotonic manifest covers the whole sealed store. Moving HEAD back, committing a broken file,
   deleting the store's accepted entry or replaying an older store then loosens nothing (review
   round 1, S-B1; review round 2, S2-SF2).
-- **The anchors live outside the state folder.** A presence anchor and the manifest's high-water
-  counter live in the app-only Keychain item, and the counter is written before the manifest, so
-  a restored state folder doesn't replay. With the anchor present, a missing or older manifest
-  denies every action that touches policy-governed state until the person re-presses; with no
-  anchor, it is a fresh install and the shipped default applies (review round 2, S2-B1, S2-B2,
-  F2-2).
+- **The anchors live outside the state folder,** in an app-only keyring item (the Keychain on
+  macOS) that purlis's one-item writer refuses, keyed by the plane's real path, never the clone
+  key. With the anchor present, a missing or older manifest, or a sealed entry other than a grant
+  that is missing or fails, is the **deny state**: the chat still starts, every action the policy
+  judges is refused, and nothing is allowed until the person re-presses. With no anchor, it is a
+  fresh install and the shipped default applies (review round 2, S2-B1, S2-B2, F2-2; Q320b R2-3;
+  review round 3, SEC3-B1, SEC3-B2). On Linux and Windows the anchor is only as strong as the
+  declared seal gap (Q320b R2-4).
 - Only the session host loads, verifies and evaluates the policy. Hooks, the proxy and dispatch
   ask the host, and an action is refused if the host can't be reached (Q309 point 3). This
-  replaces ADR 0125 §3's `$PURLIS_POLICY` hand-off. The host is found from the plane and the
-  asking chat by its peer credentials, never from the environment. The plane path and the
-  expected socket are pinned at the chat's start, where the chat can't write them, and the client
-  requires the listener to be the app process that started the chat (#6995). With no host,
-  `strict` holds, and the environment may only tighten (review round 1, S-B3; review round 2,
-  S2-B3).
+  replaces ADR 0125 §3's `$PURLIS_POLICY` hand-off. The host is found from the plane, never from
+  the environment, and the client requires the listener to be the app that started the chat. With
+  no host, a chat inside a plane is refused; a process outside any plane runs the shipped default
+  under `strict`, locally (review round 1, S-B3; review round 2, S2-B3; review round 3,
+  SEC3-SF3).
 - A team changes the policy through git. Anyone, a chat included, may propose a change in a
   branch. Each machine's window shows the rule-by-rule diff, the commit and its author, and
   accepts it with one press. purlis enforces no commit review (Q309 points 5 and 6, Q313
@@ -151,6 +151,11 @@ second instance (§7; Q319 C6 as amended by Q320a N1). Any later design must kee
 - A broken file is never skipped. A broken Project, Workspace or Persona file falls back to the
   copy the person last accepted, else `strict`. A broken Organisation file reads as `strict` plus
   every lock. The start is not refused (Q310 point 7, Q309 point 7).
+
+**Hard to reverse because** every admin's delivered files, every project's `[policy.locks]` and
+every refusal's "Locked by <owner>" are written against these five levels and their precedence.
+Adding, merging or reordering a level later would change what an existing lock binds on every
+machine that holds one (review round 3, F3 nit).
 
 ### 4. Grants are the person's sealed answers
 
@@ -192,13 +197,17 @@ Two rules follow from the first, and are stated here so they aren't lost:
 - **No HEAD, no committed policy:** a plane root with no HEAD runs its accepted copy or the
   shipped default, and its working file is never read as committed (Q320a N3).
 
+**Hard to reverse because** "a project may loosen anything" (Q307 Q4) is what lets the shipped
+default allow by default and the templates be mode tables. Adding a fourth fixed thing later would
+take a power from every project that relies on loosening it, with no rule to show for it (review
+round 3, F3 nit).
+
 ### 6. A clean cut
 
 Every setting becomes a rule (`policy.cedar`), a limit (`[policy.limits]`), a sealed answer or
 data. It stays a plain setting only if it decides nothing a chat may do (Q315 point 1).
 - `[sandbox]` is gone, and `persona.md` holds no permissions.
-- There is no converter, and no release reads both the old keys and the new. Each family's old
-  reader goes in the same change that moves that family (review round 1, C-B5).
+- There is no converter, and no release reads both the old keys and the new (Q315 point 11).
 - A file that still holds a moved key reads as broken, with a Notice naming the key, its line and
   its new home. The old grant files are not carried over (Q315 points 2, 3, 5, 11 and 12; Q320).
 - Only the Organisation's `/etc/purlis/policy.json` is still read, translated in memory (Q310
@@ -257,7 +266,7 @@ the rule.
   memory. That is a declared gap, shown in Settings and doctor, full by default and narrowed with
   the opt-in (Q309 point 4, Q319 C6, Q320a N1, #6986). purlis has no Windows sandbox yet (M46,
   #565), so by default the Windows seal stops hand edits only (Q320a N4).
-- **Proposed** (the spec marks both proposed; review round 2, F2-4): the sandbox's paths are
-  compiled from the policy with Cedar's typed partial evaluation, which is experimental, behind
-  one function (#6988), and a rule the sandbox can't express is refused at load.
+- The sandbox's paths are compiled from the same policy the hooks read, behind one function
+  (#6988). How it compiles them is the spec's, and still proposed (review round 2, F2-4; trimmed
+  by review round 3, F3 nit).
 - Every existing settings file with a moved key reads as broken until a person rewrites it.
