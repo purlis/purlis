@@ -1353,6 +1353,31 @@ impl Transports for ChatsLoseAnImport {
 pub(super) const IMPORTED_LOGIN_IS_THE_PERSONS: &str = "this host's CLI login was imported into purlis, so it is the human's now, and a chat has no \
      forge credential of its own here yet";
 
+/// **An answer read as JSON, past lines a CLI wrote before it** (#6960): where the whole answer
+/// is not JSON, it is read again from its first line that opens an object or an array, once. A
+/// CLI's own warning on its standard output (glab's of a variable it renamed) then costs no
+/// read; anything else that is not JSON is still an error.
+fn past_leading_lines(out: &str) -> Result<Value, serde_json::Error> {
+    let whole = serde_json::from_str(out);
+    if whole.is_ok() {
+        return whole;
+    }
+    let mut at = 0;
+    for line in out.split_inclusive('\n') {
+        if at > 0 && line.trim_start().starts_with(['{', '[']) {
+            return serde_json::from_str(&out[at..]).or(whole);
+        }
+        at += line.len();
+    }
+    whole
+}
+
+/// An answer's first line, quoted and cut to 120 characters, for an error that says what came.
+fn first_line(out: &str) -> String {
+    let line: String = out.lines().next().unwrap_or("").chars().take(120).collect();
+    format!("{line:?}")
+}
+
 /// A forge and the transports its requests take: what both backends are built on.
 pub(super) struct Asker {
     pub(super) forge: Forge,
@@ -1398,10 +1423,18 @@ impl Asker {
                 format!("{doing} failed: {}", answer.said(kind)),
             ));
         }
-        serde_json::from_str(&answer.out).map_err(|e| {
+        past_leading_lines(&answer.out).map_err(|e| {
+            // A CLI's answer has no HTTP status: say which CLI it was (#6960).
+            let version = match answer.status {
+                None => super::cli::version(kind)
+                    .map(|version| format!(" ({version})"))
+                    .unwrap_or_default(),
+                Some(_) => String::new(),
+            };
             ForgeError::new(format!(
-                "{doing}: {} answered malformed JSON: {e}",
-                kind.cli()
+                "{doing}: {}{version} answered malformed JSON: {e}; its first line: {}",
+                kind.cli(),
+                first_line(&answer.out)
             ))
         })
     }
