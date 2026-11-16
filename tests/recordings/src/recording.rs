@@ -194,10 +194,14 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
             .map(|l| l.at_ms);
         // Begun before the hook call before it answered, whatever its event: OpenCode's shim
         // runs `notification` and `permissionrequest` for one ask at once.
+        // One the harness cut off (no reply) runs on only beside hooks of its own event.
         let at_once = group.is_none()
             && previous
                 .as_ref()
-                .is_some_and(|(_, _, replied)| replied.is_none_or(|replied| line.at_ms < replied));
+                .is_some_and(|(e, _, replied)| match replied {
+                    Some(replied) => line.at_ms < *replied,
+                    None => *e == event,
+                });
         let group = if at_once {
             calls.last().and_then(|c| c.group).or_else(|| {
                 let first = calls.len() as u32;

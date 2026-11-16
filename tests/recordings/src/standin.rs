@@ -141,6 +141,15 @@ impl StandIn {
             Conversation::Side => &[],
         };
         let answered = results_in(api, &body);
+        // A sub-agent runs beside the chat (Claude Code 2.1's agents are asynchronous): the chat's
+        // next response waits until the sub-agent's turn has ended, so the two never interleave
+        // and a recording's order is the script's.
+        if conversation == Conversation::Main && self.awaits_its_subagent(&answered) {
+            let until = Instant::now() + Duration::from_secs(60);
+            while Instant::now() < until && !self.subagent_done() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
         let next = (conversation != Conversation::Side).then(|| {
             responses
                 .iter()
@@ -195,6 +204,25 @@ impl StandIn {
             };
             encode(api, model, stream, &[], Some(words))
         }
+    }
+
+    /// Whether `answered` holds the result of the script's sub-agent call, whose sub-agent the
+    /// chat's next response waits for.
+    fn awaits_its_subagent(&self, answered: &[String]) -> bool {
+        self.script.responses.iter().enumerate().any(|(at, r)| {
+            r.calls.iter().enumerate().any(|(i, step)| {
+                step.kind == "subagent" && answered.contains(&self.id(Conversation::Main, at, i))
+            })
+        })
+    }
+
+    /// Whether the sub-agent's turn has ended: it was given its last response.
+    fn subagent_done(&self) -> bool {
+        let heard = self.heard.lock().expect("the stand-in's log");
+        heard.iter().any(|h| {
+            h.conversation == Conversation::Subagent
+                && h.response == Some(self.script.subagent.len())
+        })
     }
 
     fn conversation_of(&self, shown: &[Shown]) -> Conversation {
