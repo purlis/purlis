@@ -2358,7 +2358,9 @@ fn hello_naming(
     let record = whole(&hello)?;
     let named = hello_names(hello.get(..record)?)?;
     let wanted = host.trim_end_matches('.');
-    named.eq_ignore_ascii_case(wanted).then_some(hello)
+    // DO NOT MERGE: deliberate mutation M7 (T1.1-23), reverted next: the server name is not checked.
+    let _ = named.eq_ignore_ascii_case(wanted);
+    Some(hello)
 }
 
 /// **The server name a TLS record holding a whole ClientHello names** (RFC 8446 §4.1.2, RFC
