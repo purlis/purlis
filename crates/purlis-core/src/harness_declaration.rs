@@ -231,6 +231,21 @@ pub struct SignInFacts {
     pub plans: Vec<Plan>,
 }
 
+/// A built-in's routing facts (`[route]`, spec C-14, R-713): the only place a routing fact
+/// lives. Facts alone: the variables a route sets, the strip floor and the pin are adapter code
+/// (R-222).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RouteFacts {
+    /// The wire formats the harness speaks. None: it takes no proxied route (R-227).
+    pub formats: Vec<crate::model_provider::Format>,
+    /// The least context, in tokens, a model it is routed to must have. None: no check (read
+    /// from phase 2).
+    pub min_context: Option<u64>,
+    /// Whether it can send unsigned cloud requests to a base URL. Missing reads as no (read from
+    /// phase 3).
+    pub unsigned_cloud: bool,
+}
+
 /// One plan a subscription of a harness is signed in to (`[sign_in] plans`, #2039).
 ///
 /// **A Claude plan is never one of them, but in Claude Code's own declaration**
@@ -309,6 +324,8 @@ pub struct Declaration {
     pub levels: Levels,
     /// How its profiles sign in.
     pub sign_in: SignInFacts,
+    /// Its routing facts (`[route]`): only a built-in's may hold any.
+    pub route: RouteFacts,
     /// Where it keeps its own files.
     pub folders: Folders,
     /// How a conversation is exported and resumed, or none where the declaration says no way.
@@ -884,6 +901,8 @@ struct Raw {
     levels: Option<RawLevels>,
     /// Absent and present apart, as `levels` is: a replacement takes the built-in's.
     sign_in: Option<RawSignIn>,
+    /// Absent and present apart: only a built-in may carry it.
+    route: Option<RawRoute>,
     folders: Option<RawFolders>,
     conversation: Option<RawConversation>,
     #[serde(default)]
@@ -898,6 +917,14 @@ struct RawSignIn {
     kept_from_commands: Option<String>,
     #[serde(default)]
     plans: Vec<RawPlan>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRoute {
+    formats: Option<Vec<String>>,
+    min_context: Option<u64>,
+    unsigned_cloud: Option<bool>,
 }
 
 #[derive(serde::Deserialize, PartialEq)]
@@ -1164,6 +1191,21 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             &at,
         )?,
     };
+    // A routing fact never comes from a project or this machine (H-19): only a built-in's
+    // declaration may carry `[route]`, and a replacement routes as the built-in it replaces.
+    let route = match (origin, replaces, raw.route) {
+        (Origin::BuiltIn, _, Some(raw_route)) => route(raw_route, &at)?,
+        (_, Some(replaced), None) => replaced.route.clone(),
+        (_, _, None) => RouteFacts::default(),
+        (Origin::Project | Origin::Local, _, Some(_)) => {
+            return Err(format!(
+                "{} is a routing table, and only a harness purlis ships may carry one: where a \
+                 chat's model calls go is never a project's or this machine's to say. Remove \
+                 [route].",
+                at("[route]")
+            ));
+        }
+    };
     let folders = match (replaces, raw.folders) {
         (None, raw_folders) => folders(raw_folders.unwrap_or_default(), &env, origin, &at)?,
         (Some(replaced), None) => replaced.folders.clone(),
@@ -1205,6 +1247,7 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         terminal,
         levels,
         sign_in,
+        route,
         folders,
         conversation,
         capabilities,
@@ -1259,6 +1302,36 @@ fn kept_as_built<T: PartialEq>(
         at(table),
         replaced.title
     ))
+}
+
+/// A built-in's `[route]`: each format one purlis reads, once (spec C-14).
+fn route(raw: RawRoute, at: &dyn Fn(&str) -> String) -> Result<RouteFacts, String> {
+    let mut formats = Vec::new();
+    for word in raw.formats.unwrap_or_default() {
+        let Some(format) = crate::model_provider::Format::of_word(&word) else {
+            return Err(format!(
+                "{} holds {}, and a wire format is one of: {}. Write one of them.",
+                at("[route] formats"),
+                shown::short(&word),
+                crate::model_provider::Format::ALL
+                    .map(crate::model_provider::Format::word)
+                    .join(", ")
+            ));
+        };
+        if formats.contains(&format) {
+            return Err(format!(
+                "{} names {} twice. Remove one.",
+                at("[route] formats"),
+                format.word()
+            ));
+        }
+        formats.push(format);
+    }
+    Ok(RouteFacts {
+        formats,
+        min_context: raw.min_context,
+        unsigned_cloud: raw.unsigned_cloud.unwrap_or(false),
+    })
 }
 
 /// A declaration's `[sign_in]`, of the harness `name`: each kind one of the four words, once;
@@ -2283,3 +2356,6 @@ mod tests;
 
 #[cfg(test)]
 mod profile_facts_tests;
+
+#[cfg(test)]
+mod route_tests;

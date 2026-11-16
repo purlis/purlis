@@ -802,7 +802,9 @@ enum Handing {
 /// swaps one header cannot carry. Only where variables alone sign the harness in: Vertex signs
 /// in with a credentials file, which purlis does not write for a chat, and Codex reaches Azure
 /// through a provider set in its configuration, so both are refused in words. A key is never
-/// handed so: it reaches its harness through the key proxy ([`key_refused`] until then).
+/// handed so: it reaches its harness through the key proxy ([`key_refused`] until then), and a
+/// harness whose declaration states no wire format takes no base URL and its own sign-in only
+/// (R-257, [`crate::keyroute::own_sign_in_only`]), so no key is set in its environment instead.
 fn handing(harness: &str, credentials: &[(String, Reference)], cloud_handed: bool) -> Handing {
     let title = crate::harness_declaration::builtin(harness)
         .map_or_else(|| harness.to_owned(), |d| d.title.clone());
