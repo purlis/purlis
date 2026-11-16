@@ -9,3 +9,6 @@ share = "local"
 
 [persona]
 default = "steward"
+
+[policy]
+template = "strict"
