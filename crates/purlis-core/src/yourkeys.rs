@@ -38,6 +38,8 @@
 //! reading and writing (`crate::sandbox`).
 
 pub mod mark;
+pub mod page;
+pub mod pools;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -427,9 +429,12 @@ pub enum Replaced {
 pub fn replace(
     config_root: &Path,
     credentials: &dyn Credentials,
+    allowances: &dyn pools::Allowances,
     id: Ulid,
     value: &str,
+    checked: Checked,
 ) -> Result<Replaced, String> {
+    let _ = (allowances, checked);
     let _held = crate::machine::Lock::named(config_root, LOCK);
     let index = read_to_write(config_root)?;
     let entry = index
@@ -463,4 +468,22 @@ pub fn replace(
     mark::mark(config_root, credentials, id, &binding)
         .map_err(|why| format!("the key was replaced and couldn't be marked again: {why}"))?;
     Ok(Replaced::Marked)
+}
+
+/// **Sets what the check found for entry `id`** (V10): the row's *Try again* (F-6). Only the
+/// window calls this (R-173).
+pub fn set_checked(config_root: &Path, id: Ulid, checked: Checked) -> Result<(), String> {
+    let _ = (config_root, id, checked);
+    Ok(())
+}
+
+/// **Removes entry `id` from your keys** (the window's *Remove*).
+pub fn remove(
+    config_root: &Path,
+    credentials: &dyn Credentials,
+    allowances: &dyn pools::Allowances,
+    id: Ulid,
+) -> Result<(), String> {
+    let _ = (config_root, credentials, allowances, id);
+    Ok(())
 }

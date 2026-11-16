@@ -18,6 +18,7 @@ use purlis_core::secrets::keyring::{FileStore, STUB_FILE, Secret, Store};
 use purlis_core::yourkeys::mark::{
     self, Binding, ModelKeyError, Unmarked, origins_allowed, read_model_key, route_allowed,
 };
+use purlis_core::yourkeys::pools::NoneYet;
 use purlis_core::yourkeys::{self, Checked, Product, Replaced, SERVICE, Saved, add, replace};
 use ulid::Ulid;
 
@@ -248,8 +249,10 @@ fn a_replace_through_the_window_keeps_the_mark() {
         replace(
             here.root(),
             &here.credentials,
+            &NoneYet,
             id,
-            "synthetic-after-rotation"
+            "synthetic-after-rotation",
+            Checked::Passed,
         ),
         Ok(Replaced::Marked)
     );
@@ -281,7 +284,14 @@ fn a_value_written_by_another_path_unmarks() {
     // A Replace after it writes the value and leaves the entry unmarked: a seal is never made
     // again over a record the value no longer matches, so the person marks it again.
     assert_eq!(
-        replace(here.root(), &here.credentials, id, "synthetic-replaced"),
+        replace(
+            here.root(),
+            &here.credentials,
+            &NoneYet,
+            id,
+            "synthetic-replaced",
+            Checked::Passed,
+        ),
         Ok(Replaced::Unmarked)
     );
     assert_eq!(unmarked(here.read(id)), Unmarked::ChangedOutside);
