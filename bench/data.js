@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794781965750,
+  "lastUpdate": 1794813616653,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50274,6 +50274,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5984375,
             "unit": "ms",
             "extra": "median of 5 runs: 101.227, 102.484, 102.598, 102.892, 104.426 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "48c2d1861ccbfed87a33ae260f4225b9cff30cc3",
+          "message": "The outcome e2e hears and sees a window behind others: no frame watch and no region slide or swap in the e2e build (refs #4351) (#6935)\n\nOn the operator's Mac the window was behind others for the whole run, and WebKit then\ndraws no frame, calls the page hidden and suspends CSS animations. Two traps #6910 left:\n\n- whenDrawing (#6503, H11) owes every plane-changed read until frames come again, so the\n  running chat's skills-changed offer and the studio's Library (200 rows) never came. The\n  e2e build now watches no frames (watchTheFramesOutsideScenarioTests), so work runs at once\n  as where nothing watches them; the shipped build is unchanged.\n- The workspace switch's slide (.regions[data-slide]) and a side view's swap\n  (.region-view[data-swapped]) stayed at 0 of 260 ms and 0 of 180 ms at opacity 0: the\n  evidence's \"opacity 0 on div.regions\" that hid the Skills view. Both are drawn at once under\n  :root[data-arrivals=\"at-once\"], held by arrivals.test.ts. Region slots' own arrivals keep\n  their motion: corners, motion and project-rail specs hear them.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HEHGV0WZRKN9D61KXVGEH6\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-16T06:44:29Z",
+          "tree_id": "99ccee0b2a895aac8abcda1d3e8dccd65b5719ac",
+          "url": "https://github.com/purlis/purlis/commit/48c2d1861ccbfed87a33ae260f4225b9cff30cc3"
+        },
+        "date": 1794813610273,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5488365000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.546, 0.548, 0.549, 0.550, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2313765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.195, 16.208, 16.231, 16.304, 16.316 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.62839299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.704, 100.903, 101.628, 102.147, 102.166 ms"
           }
         ]
       }
