@@ -2329,8 +2329,6 @@ export const commands = {
 	yourKeyPoolChats: (id: string, pool: string) => typedError<number, string>(__TAURI_INVOKE("your_key_pool_chats", { id, pool })),
 	/**  **Remove** (C-23): the item, the mark, the allowances, then the line. */
 	yourKeyRemove: (id: string) => typedError<null, string>(__TAURI_INVOKE("your_key_remove", { id })),
-	/**  **Replace** on the page (R-176): the key form aimed at this entry. */
-	yourKeyReplace: (id: string, value: string) => typedError<KeySaved, string>(__TAURI_INVOKE("your_key_replace", { id, value })),
 	/**  **Mark again** (W126, U8): T1a-10's one writer of a mark, for the entry's own declaration. */
 	yourKeyMarkAgain: (id: string) => typedError<null, string>(__TAURI_INVOKE("your_key_mark_again", { id })),
 	/**  **Unlock** (W6): `true` where the key now reads, `false` where the person cancelled. */

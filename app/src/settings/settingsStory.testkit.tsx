@@ -27,11 +27,20 @@ export function LiveRow({ setting }: { setting: LiveSetting }) {
   );
 }
 
-/** `group` on its page at You, its live settings drawn by their rows, then `after`. */
-export function OnItsPage({ group, after }: { group: SettingsGroup; after?: ReactNode }) {
+/** `group` on its page at You, its live settings drawn by their rows, then `after`; in a pane
+ *  `inlineSize` px wide, the default window's tab unless a story asks for a narrower one. */
+export function OnItsPage({
+  group,
+  after,
+  inlineSize = 1040,
+}: {
+  group: SettingsGroup;
+  after?: ReactNode;
+  inlineSize?: number;
+}) {
   return (
     // The view's body, as a Settings tab is drawn in it: the side column takes its height.
-    <div className="view-body" style={{ blockSize: 720, inlineSize: 1040 }}>
+    <div className="view-body" style={{ blockSize: 720, inlineSize }}>
       <SettingsLayout
         levels={[{ id: "you", label: "You" }]}
         level="you"

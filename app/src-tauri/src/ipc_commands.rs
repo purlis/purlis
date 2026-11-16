@@ -384,7 +384,6 @@ macro_rules! app_commands {
                 yourkeyscmds::your_key_chats,
                 yourkeyscmds::your_key_pool_chats,
                 yourkeyscmds::your_key_remove,
-                yourkeyscmds::your_key_replace,
                 yourkeyscmds::your_key_mark_again,
                 yourkeyscmds::your_key_unlock,
                 yourkeyscmds::your_key_check_again,

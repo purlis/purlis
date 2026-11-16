@@ -228,22 +228,6 @@ pub async fn your_key_remove(id: String) -> Result<(), String> {
     .await
 }
 
-/// **Replace** on the page (R-176): the key form aimed at this entry.
-#[tauri::command]
-#[specta::specta]
-pub async fn your_key_replace(id: String, value: String) -> Result<KeySaved, String> {
-    blocking(move || {
-        let root = config_root()?;
-        save(
-            &root,
-            &credentials(&root),
-            &KeyTarget::ThisEntry { id },
-            &value,
-        )
-    })
-    .await
-}
-
 /// **Mark again** (W126, U8): T1a-10's one writer of a mark, for the entry's own declaration.
 #[tauri::command]
 #[specta::specta]

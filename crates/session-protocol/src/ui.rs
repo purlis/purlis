@@ -1273,7 +1273,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     "your_key_chats",
     "your_key_pool_chats",
     "your_key_remove",
-    "your_key_replace",
     "your_key_mark_again",
     "your_key_unlock",
     "your_key_check_again",

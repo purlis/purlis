@@ -948,7 +948,6 @@ export const commands = {
 	yourKeyChats: __WINDOW_ONLY_RESULT,
 	yourKeyPoolChats: __WINDOW_ONLY_RESULT,
 	yourKeyRemove: __WINDOW_ONLY_RESULT,
-	yourKeyReplace: __WINDOW_ONLY_RESULT,
 	yourKeyMarkAgain: __WINDOW_ONLY_RESULT,
 	yourKeyUnlock: __WINDOW_ONLY_RESULT,
 	yourKeyCheckAgain: __WINDOW_ONLY_RESULT,
