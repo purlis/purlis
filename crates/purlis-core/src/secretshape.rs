@@ -901,6 +901,11 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
             at = value.start() + named;
             continue;
         }
+        if let Some(placeholder) = curl_placeholder_len(text, value.start()) {
+            // A placeholder is at least five characters, so this always advances.
+            at = value.start() + placeholder;
+            continue;
+        }
         let line_end = text[value.start()..]
             .find('\n')
             .map_or(text.len(), |n| value.start() + n);
@@ -919,6 +924,40 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
         return Some((whole.start()..line_end, key.range()));
     }
     None
+}
+
+/// How many bytes of the value at `at` are a curl placeholder, or `None` when it is not one
+/// (#6962): `{{NAME}}`, with `NAME` a variable's name (`[A-Za-z_][A-Za-z0-9_]*`), holding the
+/// field alone (the text, its line or the word ends after it, or a quote or `&` closes the
+/// field), where a `--variable` on the same line names `NAME` (`--variable %NAME`,
+/// `--variable NAME=…`, `--variable NAME@…`). curl fills it in from that variable, which is
+/// how the secrets guide hands a vault's value to curl, so it holds a name and not a value.
+/// Any other `{{…}}` is read as a value.
+///
+/// A future policy key, `secrets.curl_placeholders` (default `true`), may turn this off (Q307).
+fn curl_placeholder_len(text: &str, at: usize) -> Option<usize> {
+    static PLACEHOLDER: OnceLock<Regex> = OnceLock::new();
+    let placeholder = PLACEHOLDER.get_or_init(|| {
+        Regex::new(r#"\A\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}(?:\z|[\s'"&])"#)
+            .expect("a pattern this module wrote")
+    });
+    let caps = placeholder.captures(&text[at..])?;
+    let name = caps.get(1).expect("the pattern has a name group").as_str();
+    let line_start = text[..at].rfind('\n').map_or(0, |n| n + 1);
+    let line_end = text[at..].find('\n').map_or(text.len(), |n| at + n);
+    let line = &text[line_start..line_end];
+    let named = line.match_indices("--variable").any(|(i, flag)| {
+        let rest = line[i + flag.len()..].trim_start_matches([' ', '\t']);
+        let rest = rest.strip_prefix(['\'', '"']).unwrap_or(rest);
+        let rest = rest.strip_prefix('%').unwrap_or(rest);
+        rest.strip_prefix(name).is_some_and(|after| {
+            after
+                .chars()
+                .next()
+                .is_none_or(|c| matches!(c, '=' | '@' | '\'' | '"' | ' ' | '\t'))
+        }) && line[i + flag.len()..].starts_with([' ', '\t'])
+    });
+    named.then_some(2 + name.len() + 2)
 }
 
 /// The KIND of credential `text` holds by a rule that code does not trip, or `None` — what a

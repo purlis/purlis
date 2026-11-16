@@ -122,6 +122,47 @@ fn every_pretooluse_word_that_runs_out_of_its_budget_refuses_the_call() {
     }
 }
 
+/// **A check that ran out of time says so, and to try again** (#6962, PURLIS-APP-D): on a
+/// loaded machine a short line can run out of the check's time, and that is no fault of the
+/// line's length or nesting, whose caps keep their own words.
+#[test]
+fn a_check_out_of_time_says_so_and_to_retry() {
+    let here = Here::new();
+    let (code, out, err, _) = here.answer(
+        "pretooluse",
+        &bash("grep -rn needle src", "default"),
+        &[
+            ("PURLIS_TEST_GUARD_DEADLINE_MS", "300"),
+            ("PURLIS_TEST_GUARD_STALLS", "1"),
+        ],
+    );
+    assert_eq!(code, Some(2), "{err}");
+    assert_eq!(out, "");
+    assert!(err.contains("ran out of its time limit"), "{err}");
+    assert!(err.contains("Try it again"), "{err}");
+    assert!(!err.contains("too long"), "{err}");
+    assert!(!err.contains("too deeply nested"), "{err}");
+}
+
+/// **A line over a cap keeps the cap's words** (#6962): too long, or too deeply nested, never
+/// the words for a check out of time.
+#[test]
+fn a_line_over_the_cap_still_says_too_long_or_too_deeply_nested() {
+    let here = Here::new();
+    let long = format!("echo {}", "a".repeat(200 * 1024));
+    let deep = format!("echo {}x{}", "$(echo ".repeat(200), ")".repeat(200));
+    for (cmd, words) in [(long, "too long"), (deep, "too deeply nested")] {
+        let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, "default"), &[]);
+        assert_eq!(code, Some(0), "{words}: {err}");
+        assert!(
+            out.contains("\"permissionDecision\": \"deny\""),
+            "{words}: {out}"
+        );
+        assert!(out.contains(words), "{words}: {out}");
+        assert!(!out.contains("ran out of its time limit"), "{words}: {out}");
+    }
+}
+
 #[test]
 fn a_payload_that_does_not_arrive_within_the_budget_is_refused_not_read_as_empty() {
     let here = Here::new();
