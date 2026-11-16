@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor } from "storybook/test";
+import { expect, screen, waitFor } from "storybook/test";
 import { SecretMarks } from "./SecretMarks";
-import { expectFocusInSight } from "./stories.testkit";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 const meta = {
   title: "Browser/Secret marks",
@@ -43,7 +43,9 @@ export const One: Story = {
   },
 };
 
-/** A key and a 2FA code on one site, and a key on a site on this machine. */
+/** **Several secrets are one count** (#6937): a key, a 2FA code and a key on a site on this
+ *  machine. Enter opens every key with its site and field, never a value; Escape gives the
+ *  keyboard back to the count. */
 export const Several: Story = {
   args: {
     secrets: [
@@ -53,14 +55,38 @@ export const Several: Story = {
     ],
   },
   play: async ({ canvas, userEvent }) => {
-    for (const name of [
-      "Secret dash-api-key, filled on dash.example.test",
-      "Secret dash-2fa, filled on dash.example.test",
-      "Secret dev-token, filled on http://localhost:3000",
-    ]) {
-      await userEvent.tab();
-      await expect(canvas.getByRole("img", { name })).toHaveFocus();
-      expectFocusInSight();
-    }
+    const count = canvas.getByRole("button", { name: "3 secrets" });
+    await userEvent.tab();
+    await expect(count).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const list = await screen.findByRole("dialog", { name: "Secrets purlis filled on this site" });
+    await untilFocusWithin(() => list, "Enter opens every secret filled");
+    await expect(list).toHaveTextContent("dash-2fa");
+    await expect(list).toHaveTextContent("The chat never saw the value.");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await untilFocused(() => count, "Escape gives the keyboard back to the count");
+    expectFocusInSight();
+  },
+};
+
+/** **A key longer than the room** (#6937): cut to an ellipsis inside a narrow row, whole in its
+ *  hint, so it never pushes the site or the row past the pane. */
+export const ALongKeyInANarrowRow: Story = {
+  args: { secrets: [{ ...dash, key: "STAGE_QA_S3RACE_RUNNER_KUBECONFIG_WITH_A_LONG_SUFFIX" }] },
+  decorators: [
+    (Story) => (
+      <div className="browser-head" style={{ inlineSize: 320 }}>
+        <span className="browser-chip">console.volaticloud.com</span>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvas }) => {
+    const mark = canvas.getByTestId("secret-mark");
+    const row = mark.closest(".browser-head");
+    await expect(row?.scrollWidth).toBeLessThanOrEqual(row?.clientWidth ?? 0);
+    await expect(mark.scrollWidth).toBeGreaterThan(mark.clientWidth);
   },
 };

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Globe } from "lucide-react";
+import { Bot, Globe, Hand, Lock, ShieldAlert, WifiOff } from "lucide-react";
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -32,6 +32,8 @@ import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./brows
 import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { poolOf, programsOf, secretsOf, useChatBrowsers } from "./chatBrowsers";
+import { DRIVEN } from "./ChatBrowsersShown";
+import { useProjectsBrowsers } from "./browsersGrid";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { asksMoved, useAsks } from "./asks";
 import { OneAsk } from "./BrowserAskNotice";
@@ -174,6 +176,7 @@ export function useSender(
  */
 export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
   const [driving, setDriving] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
   const [dropped, setDropped] = useState(false);
@@ -221,6 +224,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const device = onPool === undefined ? null : deviceOf(onPool, mac);
   /** The secrets purlis filled into it, marked while its page is on their site (#5119). */
   const marks = marksOn(secretsOf(chatBrowsers, kept, program), origin);
+  /** Who drives it where its agent does not, as the chats' browsers list it: purlis while it
+   *  performs a login (#2300). */
+  const listedDriver = [...[...chatBrowsers.values()].flat(), ...kept].find(
+    (one) => one.program === program,
+  )?.driver;
+  /** Its chat, by the name the project's tab gives it (#6937): who the strip says is using it. */
+  const chatName = useProjectsBrowsers()
+    .find((one) => one.plane === plane)
+    ?.tiles.find((one) => one.program === program)?.chat;
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -387,6 +399,14 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     });
   };
 
+  /** **Take control** (#6937): the browser taken over as a click on its page would, and the
+   *  keyboard on its page, so the person's next keys reach it. */
+  const takeControl = () => {
+    void takeOver().then((took) => {
+      if (took) surface.current?.focus();
+    });
+  };
+
   /** Opens the page's DevTools beside it (#2028), taking the browser over first. */
   const inspect = () => {
     void takeOver().then(async (took) => {
@@ -499,8 +519,34 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       />
     );
   const keyboard = driving ? { [CHAT_KEYBOARD]: "" } : {};
+  /** purlis performs a login in it (#2016): nobody takes it over until it hands it back. */
+  const signingIn = !driving && listedDriver === "purlis";
+  /** Who drives, as the strip says it: nothing while its runner's link is down, since nothing
+   *  reaches the page then, so there is no hint to try. */
+  const driverSaid = driving ? (
+    "You are driving this browser. The agent is paused until you press Done."
+  ) : reconnecting ? null : signingIn ? (
+    DRIVEN.purlis.said
+  ) : (
+    <>
+      {!theirs && (
+        <span className="browser-bar-who">
+          {chatName ? <strong>{chatName}</strong> : "Its chat"} is using this browser.{" "}
+        </span>
+      )}
+      <span className="browser-bar-hint">Click or type in the page to take it over.</span>
+    </>
+  );
   return (
     <div className="browser-view" data-testid="browser-view">
+      {/* **The view's first row** (#6937): on the pane head's row, keeping the room of its grip
+          and its actions (#3147). Where the page is, on which device, and the secrets purlis
+          filled there (#2024, #5119): drawn by purlis, outside the page, so a page cannot fake
+          them. */}
+      <div className="browser-head" data-testid="browser-head">
+        <BrowserChip origin={origin} device={device} />
+        <SecretMarks secrets={marks} />
+      </div>
       {(theirs || handed) && (
         <Form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
           {/* One size for the row: the box is as small as Go beside it. */}
@@ -566,21 +612,38 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           ))}
         </NoticePaneRow>
       )}
+      {/* **Who drives it, said as a sentence with the one next step** (#6937): Take control
+          while its agent does, Done while the person does, on the accent while they do (#2014). */}
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
-        {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
-            page, so a page cannot fake it. */}
-        <BrowserChip origin={origin} device={device} />
-        <SecretMarks secrets={marks} />
+        <DriverMark driving={driving} reconnecting={reconnecting} signingIn={signingIn} />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
-          {driving
-            ? "You are driving this browser. The agent is paused until you press Done."
-            : // Nothing reaches the page while its runner's link is down: no hint to try.
-              !reconnecting && "Click or type in the page to take it over."}
+          {driverSaid}
           {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
+        {!driving && !reconnecting && !signingIn && (
+          <Button
+            size="sm"
+            icon={<Hand />}
+            tooltip="Use the page yourself. The agent is paused until you press Done."
+            onPress={takeControl}
+          >
+            Take control
+          </Button>
+        )}
+        {driving && (
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Bot />}
+            tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
+            onPress={handBack}
+          >
+            Done
+          </Button>
+        )}
         <Select
           className="browser-bar-size"
           size="sm"
@@ -601,18 +664,9 @@ export function BrowserView({ plane, program }: { plane: string; program: string
             Inspect
           </Button>
         )}
-        {driving && (
-          <Button
-            size="sm"
-            variant="primary"
-            tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
-            onPress={handBack}
-          >
-            Done
-          </Button>
-        )}
       </div>
       <div
+        ref={surface}
         className={reconnecting ? "browser-surface reconnecting" : "browser-surface"}
         data-testid="browser-surface"
         tabIndex={0}
@@ -656,11 +710,53 @@ const KEEP_SAID = "Keep blocked";
  *  its pool, so its `localhost` is never taken for this machine's (#2050). */
 function BrowserChip({ origin, device }: { origin: string | null; device: string | null }) {
   const chip = addressChip(origin, device);
+  const safety = siteSafety(origin);
   return (
     <Tooltip tip={chip.whole ?? undefined}>
-      <span className="browser-chip" data-testid="browser-chip">
-        {chip.said}
+      <span className="browser-chip" data-testid="browser-chip" data-safety={safety ?? undefined}>
+        {/* Heard by its name, never part of the chip's words (#6937). */}
+        {safety === "secure" && <Lock role="img" aria-label="Secure connection" />}
+        {safety === "not-secure" && (
+          <>
+            <ShieldAlert aria-hidden="true" />
+            <span className="browser-chip-unsafe">Not secure</span>
+          </>
+        )}
+        <span className="browser-chip-said">{chip.said === "" ? "No page yet" : chip.said}</span>
       </span>
     </Tooltip>
   );
+}
+
+/** Hosts a page served over plain http is safe on: this machine's own (#6937). */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * **Whether the page's connection is secure** (#6937): `secure` over https, `not-secure` over
+ * plain http to any host but this machine's own, and `null` where there is no page on a site.
+ */
+export function siteSafety(origin: string | null): "secure" | "not-secure" | null {
+  if (origin === null) return null;
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "https:") return "secure";
+    if (url.protocol === "http:") return LOOPBACK.has(url.hostname) ? null : "not-secure";
+  } catch {
+    // Not an address: nothing to say of it.
+  }
+  return null;
+}
+
+/** The strip's mark: who drives, as an icon beside the sentence that says it. */
+function DriverMark({
+  driving,
+  reconnecting,
+  signingIn,
+}: {
+  driving: boolean;
+  reconnecting: boolean;
+  signingIn: boolean;
+}) {
+  const Mark = reconnecting ? WifiOff : driving ? Hand : signingIn ? Lock : Bot;
+  return <Mark className="browser-bar-mark" aria-hidden="true" />;
 }

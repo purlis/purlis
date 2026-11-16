@@ -12,13 +12,14 @@
  * The frame is drawn here from the theme's own colours, so the picture is the same in every run.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor } from "storybook/test";
+import { expect, screen, waitFor } from "storybook/test";
 import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { BrowserView } from "./BrowserView";
 import type { BrowserFrame } from "./bindings";
 import { forgetOrigins } from "./browserWatch";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { forgetProjectsBrowsers, tellProjectBrowsers } from "./browsersGrid";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 const PLANE = "/home/dev/plane";
 
@@ -46,9 +47,9 @@ function framed(): string {
   return drawn.toDataURL("image/jpeg", 0.9).replace(/^data:image\/jpeg;base64,/, "");
 }
 
-function Pane() {
+function Pane({ width = 900 }: { width?: number }) {
   return (
-    <div className="view-pane" style={{ inlineSize: 900, blockSize: 640 }}>
+    <div className="view-pane" style={{ inlineSize: width, blockSize: 640 }}>
       <div className="view-body">
         <BrowserView plane={PLANE} program="B1" />
       </div>
@@ -237,5 +238,158 @@ export const HandedOverByItsChat: Story = {
     expectFocusInSight();
     await expect(allow).toBeVisible();
     (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** The keys of the person's screenshot (#6937): long, and more of them than a row holds. */
+const KEYS = [
+  "STAGE_QA_S3RACE_RUNNER_KUBECONFIG",
+  "STAGE_S3_ACCESS_KEY",
+  "STAGE_S3_SECRET_KEY",
+  "DASH_ADMIN_PASSWORD",
+  "DASH_ADMIN_TOTP",
+  "GRAFANA_TOKEN",
+  "PAGERDUTY_TOKEN",
+  "SENTRY_DSN",
+  "STRIPE_TEST_KEY",
+  "VULTR_API_KEY",
+  "SLACK_BOT_TOKEN",
+  "STAGE_QA_S3RACE_RUNNER_KUBECONFIG_WITH_A_LONG_SUFFIX",
+];
+
+/** A chat's browser, steward 4's, with `keys` filled on `origin`, its agent or the person
+ *  driving it. */
+function chatsBrowser(origin: string, keys: readonly string[], personDrives = false) {
+  return () => {
+    tellProjectBrowsers({
+      plane: PLANE,
+      project: "plane",
+      tiles: [
+        {
+          plane: PLANE,
+          program: "B1",
+          own: false,
+          name: "b1",
+          chat: "steward 4",
+          workspace: "",
+          driver: null,
+          pool: null,
+        },
+      ],
+      open: () => {},
+    });
+    mockIPC((cmd, args) => {
+      if (cmd === "chat_browsers")
+        return [
+          {
+            session: 4,
+            name: "b1",
+            program: "B1",
+            unended: false,
+            pinned: false,
+            was: null,
+            login: null,
+            driver: personDrives ? "person" : null,
+            pool: null,
+            secrets: keys.map((key) => ({ key, origin, page: origin, label: "", code: false })),
+          },
+        ];
+      if (cmd === "watch_browser") {
+        frames = (args as { frames: Channel<BrowserFrame> }).frames;
+        return { view: 4, width: 1280, height: 800, person_drives: personDrives, pool: null };
+      }
+      return null;
+    });
+    return () => forgetProjectsBrowsers();
+  };
+}
+
+/** Draws a frame on `origin`, and waits until the row names it. */
+async function onPage(origin: string, host: string) {
+  await waitFor(() => expect(frames).toBeDefined());
+  frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null });
+  frames?.onmessage({ aim: "p1:1", jpeg: framed(), reconnection: null, page: null, closed: null });
+  await waitFor(() =>
+    expect(document.querySelector('[data-testid="browser-chip"]')).toHaveTextContent(host),
+  );
+}
+
+/** The header's rows fit the pane: none is wider than it, and neither is taller than two lines. */
+async function fitsThePane(canvas: { getByTestId: (id: string) => HTMLElement }) {
+  const head = canvas.getByTestId("browser-head");
+  await expect(head.scrollWidth).toBeLessThanOrEqual(head.clientWidth);
+  await expect(head.getBoundingClientRect().height).toBeLessThan(64);
+  const bar = head.parentElement?.querySelector(".browser-bar");
+  await expect(bar?.getBoundingClientRect().height ?? 0).toBeLessThan(96);
+}
+
+/**
+ * **The person's screenshot, drawn again** (#6937): steward 4 drives its browser on a secure
+ * site where purlis filled three long keys. The site, the lock and a count of the keys are the
+ * view's first row; the strip says who drives and offers Take control. The keyboard reaches the
+ * count, whose list of keys Escape closes, then Take control.
+ */
+export const ItsChatDrivesWithSecrets: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(0, 3)),
+  play: async ({ canvas, userEvent }) => {
+    await onPage("https://console.volaticloud.com", "console.volaticloud.com");
+    const count = await waitFor(() => canvas.getByRole("button", { name: "3 secrets" }));
+    await fitsThePane(canvas);
+    await expect(canvas.getByRole("status")).toHaveTextContent("steward 4 is using this browser.");
+
+    count.focus();
+    await userEvent.keyboard("{Enter}");
+    const list = await screen.findByRole("dialog", { name: "Secrets purlis filled on this site" });
+    await untilFocusWithin(() => list, "Enter opens the keys filled");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await untilFocused(() => count, "Escape gives the keyboard back to the count");
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Take control" }),
+      "Tab reaches Take control",
+    );
+    expectFocusInSight();
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/**
+ * **A narrow pane, a long host on plain http and a dozen keys** (#6937): the host is cut, Not
+ * secure stays, the keys are one count, and the strip's controls go under its sentence; nothing
+ * runs past the pane.
+ */
+export const ANarrowPane: Story = {
+  args: { width: 420 },
+  beforeEach: chatsBrowser(
+    "http://a-very-long-preview-host-for-pull-request-6910.staging.internal.example.com:8080",
+    KEYS,
+  ),
+  play: async ({ canvas }) => {
+    await onPage(
+      "http://a-very-long-preview-host-for-pull-request-6910.staging.internal.example.com:8080",
+      "Not secure",
+    );
+    await waitFor(() => canvas.getByRole("button", { name: "12 secrets" }));
+    await fitsThePane(canvas);
+  },
+};
+
+/** **The person drives** (#6937): the strip on the accent says the agent is paused, with Done. */
+export const YouDrive: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(1, 2), true),
+  play: async ({ canvas }) => {
+    await onPage("https://console.volaticloud.com", "console.volaticloud.com");
+    await waitFor(() => canvas.getByRole("button", { name: /Done/ }));
+    await expect(canvas.getByRole("status")).toHaveTextContent(
+      "You are driving this browser. The agent is paused until you press Done.",
+    );
+    await expect(
+      canvas.getByRole("img", {
+        name: "Secret STAGE_S3_ACCESS_KEY, filled on console.volaticloud.com",
+      }),
+    ).toBeVisible();
+    await fitsThePane(canvas);
   },
 };

@@ -8104,16 +8104,45 @@ nav.piece-files-head {
   background: var(--surface-sunken);
 }
 
-.browser-bar {
+/* **The view's first row** (#6937): where the page is, on which device, and the secrets purlis
+   filled there, on the pane's own fill. One line that never wraps: the site's words are cut
+   first, and several secrets are one count. In a pane it is the pane head's row (`paneFrame.css`). */
+.browser-head {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  min-block-size: var(--size-chrome);
+  padding: var(--space-2) var(--space-5);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+/* **Who drives, as a sentence with the one next step** (#6937): the sentence takes what room
+   there is and wraps rather than being cut; in a narrow pane the controls go under it. */
+.browser-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
-  border-block-end: 1px solid var(--border-subtle);
+  border-block: 1px solid var(--border-subtle);
   background: var(--surface-raised);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+}
+
+.browser-bar-mark {
+  flex: none;
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
+.browser-bar-who strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
 }
 
 /* **The address field of a browser the person opened** (#2176): above the bar, outside the
@@ -8139,9 +8168,10 @@ nav.piece-files-head {
 }
 
 .browser-bar-said {
-  flex: 1 1 auto;
+  flex: 1 1 16rem;
   min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .browser-bar-refused {
@@ -8282,25 +8312,77 @@ nav.piece-files-head {
   list-style: none;
 }
 
-/* The secrets purlis filled on the page's site (#5119): beside its chip, never shrunk. */
+/* The secrets purlis filled on the page's site (#5119): after its chip, shrunk before it is and
+   never wider than half the row, so a long key is cut, never the row (#6937). */
 .browser-secrets {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
-  gap: var(--space-1);
+  min-inline-size: 0;
+  max-inline-size: 50%;
 }
 
-/* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
-   above the page and outside the frame, so a page can never draw them. */
-.browser-chip {
-  flex: 0 1 auto;
-  min-width: 0;
-  padding-inline-end: var(--space-3);
-  border-inline-end: 1px solid var(--border-subtle);
-  color: var(--text-primary);
+.browser-secret {
+  min-inline-size: 0;
+  max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Every secret filled, each key whole, in the count's popover (#6937). */
+.browser-secrets-list {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-secrets-list > li {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.browser-secrets-key {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* **Where the page is, and on which device** (#2024): purlis's own words, first in the row
+   above the page and outside the frame, so a page can never draw them. The lock or the
+   Not secure before the host (#6937); the host is what is cut. */
+.browser-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.browser-chip > svg {
+  flex: none;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.browser-chip[data-safety="not-secure"] > svg,
+.browser-chip-unsafe {
+  flex: none;
+  color: var(--state-waiting);
+}
+
+.browser-chip-said {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* A skill's state, owners, history and uses (SK-19, #2782). */
