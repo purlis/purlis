@@ -7,12 +7,12 @@
 //! window keeps W10 as it was on a cancel, and puts W84 under it on a failure. Neither makes a
 //! run.
 
-use purlis_core::yourkeys::start::{OsUnlock, Unlock, Unlocks as _};
+use purlis_core::yourkeys::start::{self, OsUnlock, Unlocks as _};
 
 /// What *Unlock* did, as the window draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
-pub enum Unlocked {
+pub enum Unlock {
     /// The keychain unlocked: the start goes on, with no second press.
     Unlocked,
     /// The person cancelled the system's prompt: W10 stays as it was.
@@ -21,12 +21,12 @@ pub enum Unlocked {
     Failed,
 }
 
-impl From<Unlock> for Unlocked {
-    fn from(unlock: Unlock) -> Self {
+impl From<start::Unlock> for Unlock {
+    fn from(unlock: start::Unlock) -> Self {
         match unlock {
-            Unlock::Unlocked => Self::Unlocked,
-            Unlock::Cancelled => Self::Cancelled,
-            Unlock::Failed => Self::Failed,
+            start::Unlock::Unlocked => Self::Unlocked,
+            start::Unlock::Cancelled => Self::Cancelled,
+            start::Unlock::Failed => Self::Failed,
         }
     }
 }
@@ -35,9 +35,9 @@ impl From<Unlock> for Unlocked {
 /// Ask reads its entry again where it unlocked, so the start goes on with no second press.
 #[tauri::command]
 #[specta::specta]
-pub async fn unlock_your_keys() -> Result<Unlocked, String> {
+pub async fn unlock_your_keys() -> Result<Unlock, String> {
     crate::off_the_window("unlocking your keychain", move || {
-        Ok(Unlocked::from(OsUnlock.unlock()))
+        Ok(Unlock::from(OsUnlock.unlock()))
     })
     .await
 }

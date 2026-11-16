@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import type { Unlocked } from "./bindings";
+import type { Unlock } from "./bindings";
 import { Notice } from "./Notice";
 import { windowCopy } from "./windowCopy";
 
@@ -26,7 +26,7 @@ export function UnlockAsk({
 }: {
   /** Your keys' entry the start waits on: what the Ask is keyed by. */
   entry: string;
-  unlock: () => Promise<Unlocked>;
+  unlock: () => Promise<Unlock>;
   onUnlocked: () => void;
 }) {
   const [stage, setStage] = useState<Stage>("waiting");

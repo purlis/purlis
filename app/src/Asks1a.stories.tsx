@@ -9,7 +9,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import type { Shown, Unlocked } from "./bindings";
+import type { Shown, Unlock } from "./bindings";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
@@ -24,7 +24,7 @@ import { windowCopy } from "./windowCopy";
 const ENTRY = "01JA0000000000000000000000";
 
 /** How the OS's unlock answers in a story: as said, or never while the story is looked at. */
-type Answer = Unlocked | "never";
+type Answer = Unlock | "never";
 
 /** **W10 in place in New chat**, the OS's unlock answering `answer`. */
 function InNewChat({ answer }: { answer: Answer }) {
@@ -34,8 +34,8 @@ function InNewChat({ answer }: { answer: Answer }) {
         entry={ENTRY}
         unlock={() =>
           answer === "never"
-            ? new Promise<Unlocked>(() => {})
-            : Promise.resolve<Unlocked>(answer)
+            ? new Promise<Unlock>(() => {})
+            : Promise.resolve<Unlock>(answer)
         }
         onUnlocked={() => {}}
       />

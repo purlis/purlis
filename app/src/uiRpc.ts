@@ -2032,7 +2032,7 @@ export const commands = {
 	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
 	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
 	 */
-	unlockYourKeys: () => typedError<Unlocked, string>(__TAURI_INVOKE("unlock_your_keys")),
+	unlockYourKeys: () => typedError<Unlock, string>(__TAURI_INVOKE("unlock_your_keys")),
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -17479,7 +17479,7 @@ export type UndoAnswer =
 { kind: "busy"; chats: BusyChat[] };
 
 /**  What *Unlock* did, as the window draws it. */
-export type Unlocked = 
+export type Unlock = 
 /**  The keychain unlocked: the start goes on, with no second press. */
 "unlocked" | 
 /**  The person cancelled the system's prompt: W10 stays as it was. */

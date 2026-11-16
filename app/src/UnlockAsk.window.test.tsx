@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import type { Unlocked } from "./bindings";
+import type { Unlock } from "./bindings";
 import { UnlockAsk } from "./UnlockAsk";
 import { windowCopy } from "./windowCopy";
 
@@ -21,16 +21,16 @@ const ENTRY = "01JA0000000000000000000000";
 
 /** Draws the Ask, the OS's unlock answering `answer` when let go. */
 function draw() {
-  let answer: (said: Unlocked) => void = () => {};
+  let answer: (said: Unlock) => void = () => {};
   const unlock = vi.fn(
     () =>
-      new Promise<Unlocked>((done) => {
+      new Promise<Unlock>((done) => {
         answer = done;
       }),
   );
   const onUnlocked = vi.fn();
   render(<UnlockAsk entry={ENTRY} unlock={unlock} onUnlocked={onUnlocked} />);
-  return { unlock, onUnlocked, answer: (said: Unlocked) => answer(said) };
+  return { unlock, onUnlocked, answer: (said: Unlock) => answer(said) };
 }
 
 const unlockButton = () => screen.getByRole("button", { name: "Unlock" });
