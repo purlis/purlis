@@ -589,16 +589,17 @@ mod handing {
             let (profile, machine) =
                 signed_in(harness, key_sign_in(variable, "vault:providers/key"));
 
-            let why = at_start(&profile, &machine, &[]).expect_err("no key is handed");
+            let started = at_start(&profile, &machine, &[]);
 
-            assert!(why.contains("its own sign-in"), "{harness}: {why}");
-            assert!(!why.contains("waits for the key proxy"), "{harness}: {why}");
-            assert_eq!(
-                billed(&profile, &machine, &[]).as_deref(),
-                Some(TAKES_ITS_OWN_SIGN_IN_ONLY)
-                    .map(|row| format!("your key · work key · {row}"))
-                    .as_deref(),
-                "{harness}"
+            assert!(
+                started.is_err(),
+                "{harness}: the start is refused, so no key reaches its environment, but it \
+                 started handing {:?}",
+                started.ok().flatten().map(|at| at
+                    .credentials
+                    .into_iter()
+                    .map(|(variable, _)| variable)
+                    .collect::<Vec<_>>())
             );
         }
     }
