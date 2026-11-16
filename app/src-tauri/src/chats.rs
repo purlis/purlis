@@ -51,11 +51,14 @@ fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
 /// build therefore strips only by the `OP_` prefix; the declared-name strip is exercised at the
 /// session builder ([`crate::sessions`] tests pass `env_strip` directly) and in the core.
 ///
-/// A key chat of `harness` is started without what goes around its route too
-/// (`purlis_core::hoststart::started_without`, T1a-15), once T1a-17 hands its start a listener:
-/// no start here has one yet.
-fn started_without(root: &Path, harness: Option<Harness>) -> Vec<String> {
-    purlis_core::hoststart::started_without(root, harness, None)
+/// A key chat of `harness` (`key_route`) is started without what goes around its route too
+/// (`purlis_core::hoststart::started_without`, T1a-15): the same `key_route` its arming reads.
+fn started_without(
+    root: &Path,
+    harness: Option<Harness>,
+    key_route: Option<&purlis_core::keyroute::KeyRoute>,
+) -> Vec<String> {
+    purlis_core::hoststart::started_without(root, harness, key_route)
 }
 
 /// What more of this machine's environment the operator lets a chat of the project at `root`
@@ -2624,6 +2627,9 @@ impl Chats {
     /// `plugins` is the harness's own plugins the project chose for this chat
     /// (`purlis_core::start::Ready::plugins`, charter-app#274); empty for a chat on no profile.
     ///
+    /// `key_route` is the key proxy's route a key chat runs on, or none: the same value its
+    /// process's strip reads ([`started_without`], T1a-15).
+    ///
     /// `sandbox` is the sandbox the core compiled for this chat (ADR 0067), or none.
     ///
     /// `persona` is the persona the chat runs as, which a harness that can is handed the MCP
@@ -2642,6 +2648,7 @@ impl Chats {
     #[allow(clippy::too_many_arguments)]
     fn state_hooks(
         &self,
+        key_route: Option<&purlis_core::keyroute::KeyRoute>,
         harness: Option<Harness>,
         cwd: Option<&std::path::Path>,
         plugins: &purlis_core::harness_plugin::Chosen,
@@ -2652,7 +2659,7 @@ impl Chats {
         skills: &dyn std::ops::Deref<Target = purlis_core::hoststart::ChatSkills>,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
-            key_route: None,
+            key_route,
             root: &self.project,
             kit: &self.kit(harness),
             harness,
@@ -5525,10 +5532,15 @@ impl Chats {
                 ),
             }
         }
+        // A key chat's listener is handed to its start by T1a-17 (with T1a-61's key): no start
+        // here has one yet. Its arming and what its process is started without both read this
+        // one value, as `purlis_core::hoststart`'s start does, so neither is wired alone.
+        let key_route: Option<&purlis_core::keyroute::KeyRoute> = None;
         let (hooks, armed) = if on_the_runner {
             (Vec::new(), Vec::new())
         } else {
             self.state_hooks(
+                key_route,
                 harness,
                 chat.cwd.as_deref(),
                 plugins,
@@ -6173,7 +6185,7 @@ impl Chats {
                     // reaches the chat even when it is not `OP_`-prefixed (#271 review, U6). Read
                     // from the plane the chat starts in; a chat outside a plane declares none.
                     // And a key chat's launch-only route escapes (`started_without`, T1a-15).
-                    env_strip: started_without(&self.project, harness),
+                    env_strip: started_without(&self.project, harness, key_route),
                     harness,
                     // A declared harness's own namespace (#967), each variable judged as the
                     // session composes the chat's environment (#1013).

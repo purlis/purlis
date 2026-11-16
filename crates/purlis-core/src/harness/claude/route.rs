@@ -98,19 +98,177 @@ pub const STRIP_FLOOR: &[&str] = &[
     "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
 ];
 
-/// **What a key chat's process is started without** (T1a-15 fix round): the variables of the
-/// floor (R-248, through "the additions T1a-02 found", `spikes/1a-startup.md`) that Claude Code
-/// reads from its launch environment alone, so a key chat's harness never carries them, whoever
-/// passed them (`hoststart::started_without`). An unproxied chat keeps the person's value.
+/// **What a key chat's process is started without** (T1a-15 fix rounds): the variables Claude
+/// Code reads from its launch environment alone that would carry a key chat's model calls, or
+/// its run token, around the listener, so a key chat's harness never carries them, whoever
+/// passed them (`hoststart::started_without`). An unproxied chat keeps the person's value
+/// (R-252). Blanking any of them in `--settings` `env` proves nothing, so none is in
+/// [`STRIP_FLOOR`]. [`host_or_socket_names_in_neither_list`] holds every `CLAUDE_CODE_` name with
+/// `HOST` or `SOCKET` in it, and every `ANTHROPIC_` name with `SOCKET`, to this list or to
+/// [`KNOWN_HARMLESS`].
 ///
-/// **Found at build: `ANTHROPIC_UNIX_SOCKET` is not settable through `--settings` `env`.** Run on
-/// 2.1.300 with a key chat's exact `--settings` and the run token, a socket path in the launch
-/// environment sent every model call and the token to the socket, around the listener, and
-/// `"ANTHROPIC_UNIX_SOCKET": ""` in `--settings` `env` changed nothing: Claude Code reads it
-/// from the launch environment only. So it is not in [`STRIP_FLOOR`], whose members are blanked
-/// in `--settings` `env`; it is kept out of the process instead, and an empty value written there
-/// would prove nothing about it.
-pub const LAUNCH_ONLY: [&str; 1] = ["ANTHROPIC_UNIX_SOCKET"];
+/// **Measured on 2.1.300**, each with a key chat's exact `--settings` and the run token:
+///
+/// - `ANTHROPIC_UNIX_SOCKET`: a socket path sent every model call and the token to the socket,
+///   and `"ANTHROPIC_UNIX_SOCKET": ""` in `--settings` `env` changed nothing (first fix round);
+/// - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and `CLAUDE_CODE_HOST_AUTH_ENV_VAR`: either one, at
+///   any value, made Claude Code ignore `ANTHROPIC_BASE_URL` and send every call and the token
+///   to api.anthropic.com, and an empty value in `--settings` `env` did not undo it (second fix
+///   round, the reviewer's run). `claude.toml` passes `CLAUDE_*`, so both reached a key chat with
+///   no operator pass.
+///
+/// **Kept out without a measurement, failing closed**: the rest, read from 2.1.325's strings,
+/// each a host's hand on the chat's credentials, its transport or its proxy, which a key chat
+/// takes from purlis alone. One shown harmless moves to [`KNOWN_HARMLESS`] with its reason.
+pub const LAUNCH_ONLY: [&str; 13] = [
+    "ANTHROPIC_UNIX_SOCKET",
+    "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+    "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
+    // Beside the provider-managed switch in the binary; a host's gateway lineage.
+    "CLAUDE_CODE_HOST_GATEWAY_LINEAGE",
+    // Tells Claude Code its SDK host refreshes its auth.
+    "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH",
+    // Announces a file descriptor a token is read from.
+    "CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR",
+    // Sockets a remote worker and a messaging host talk to Claude Code over.
+    "CLAUDE_CODE_CCR_WORKER_SOCKET",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    // A proxy's host and how it resolves hosts, as Claude Code hands them to a proxy helper.
+    "CLAUDE_CODE_PROXY_HOST",
+    "CLAUDE_CODE_PROXY_RESOLVES_HOSTS",
+    // The proxy ports Claude Code's own sandbox hands a program inside it.
+    "CLAUDE_CODE_HOST_HTTP_PROXY_PORT",
+    "CLAUDE_CODE_HOST_SOCKS_PROXY_PORT",
+    // Marks a session the desktop app hosts; what it changes is not shown, so it is kept out.
+    "CLAUDE_CODE_HOSTED_DESKTOP",
+];
+
+/// **The `HOST` and `SOCKET` names a key chat may keep** (second fix round), each with why: read
+/// from 2.1.325's strings, beside the reviewer's measurement on 2.1.300 for
+/// `CLAUDE_CODE_HOST_CREDS_FILE`. A name the guard finds in neither this list nor
+/// [`LAUNCH_ONLY`] is a decision someone has to make, so the guard fails on it.
+///
+/// The reviewer also measured `CLAUDE_CODE_HTTP_PROXY`, `CLAUDE_CODE_API_BASE_URL`,
+/// `CLAUDE_CODE_ENVIRONMENT_KIND` and `CLAUDE_CODE_ENTRYPOINT` leaving every call on the
+/// listener; none has `HOST` or `SOCKET` in it, so the guard never asks about them.
+pub const KNOWN_HARMLESS: &[(&str, &str)] = &[
+    (
+        "CLAUDE_CODE_HOST_",
+        "a prefix Claude Code matches variable names by, not a variable",
+    ),
+    (
+        "CLAUDE_CODE_HOST_CREDS_FILE",
+        "measured on 2.1.300 by the reviewer: every call still reached the listener",
+    ),
+    (
+        "CLAUDE_CODE_HOST_AUTH_REFRESH_TIMEOUT_MS",
+        "how long a host's auth refresh may take; a key chat has no host auth \
+         (CLAUDE_CODE_HOST_AUTH_ENV_VAR is kept out)",
+    ),
+    (
+        "CLAUDE_CODE_AGENT_PROXY_GIT_HOSTS",
+        "the git hosts the agent's git proxy serves; git traffic, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_AUTOUPDATER_DISABLED_BY_HOST",
+        "turns Claude Code's own updater off",
+    ),
+    (
+        "CLAUDE_CODE_HOST_ARTIFACT_TYPE_COMMANDS",
+        "which artifact commands a host offers",
+    ),
+    (
+        "CLAUDE_CODE_HOST_GUARDS_ARTIFACTS_MCP",
+        "whether a host guards the artifacts MCP server",
+    ),
+    (
+        "CLAUDE_CODE_HOST_OWNED_CONFIG_DIR",
+        "whether a host owns saving the config file; purlis names the config folder itself",
+    ),
+    ("CLAUDE_CODE_HOST_PLATFORM", "the host's platform name"),
+    (
+        "CLAUDE_CODE_HOST_PROMPT_SUPERSEDES_RECORD",
+        "whether a host's prompt replaces a recorded one",
+    ),
+    (
+        "CLAUDE_CODE_HOST_SCHEDULED_RUN",
+        "marks a host's scheduled run, for its label",
+    ),
+    (
+        "CLAUDE_CODE_HOST_SESSION_ID",
+        "the host's id for the session",
+    ),
+    (
+        "CLAUDE_CODE_HOST_SHORT_TEMP_DIRS",
+        "where a host keeps short temporary folders",
+    ),
+    (
+        "CLAUDE_CODE_HOST_SKILL_CATALOG",
+        "which skill folders a host offers",
+    ),
+    (
+        "CLAUDE_CODE_HOST_WORKTREE",
+        "the worktree a host made for the session; where files are written",
+    ),
+    (
+        "CLAUDE_CODE_HOST_WORKTREE_FENCE",
+        "where a host lets file tools write",
+    ),
+    (
+        "CLAUDE_CODE_IDE_HOST_OVERRIDE",
+        "the host an IDE connection is reached on; a tool connection, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_MCP_APPS_HOST",
+        "the host of MCP apps; a tool connection, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_NOTIFICATIONS_HOST",
+        "where notifications are sent; no model call",
+    ),
+    (
+        "CLAUDE_CODE_PLUGIN_REMOTE_MCP_REACHABLE_HOSTS_HINT",
+        "which plugin MCP servers a launcher can reach; a tool connection, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_REMOTE_TOOLS_HOST_ALLOWS_UNATTENDED",
+        "whether a remote tools host allows unattended use; tools, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_REMOTE_TOOLS_HOST_IDLE_RELEASE_MINUTES",
+        "when a remote tools host is released when idle; tools, not model calls",
+    ),
+    (
+        "CLAUDE_CODE_WORKSPACE_HOST_PATHS",
+        "a workspace's paths as its host sees them",
+    ),
+];
+
+/// The prefix of Claude Code's own variables, whose `HOST` and `SOCKET` names the guard reads.
+pub const CLAUDE_CODE_PREFIX: &str = "CLAUDE_CODE_";
+
+/// The prefix of the Anthropic variables, whose `SOCKET` names the guard reads.
+pub const ANTHROPIC_PREFIX: &str = "ANTHROPIC_";
+
+/// The `CLAUDE_CODE_` names in `binary` with `HOST` or `SOCKET` in them, and the `ANTHROPIC_`
+/// names with `SOCKET`, in neither [`LAUNCH_ONLY`] nor [`KNOWN_HARMLESS`].
+pub fn host_or_socket_names_in_neither_list(binary: &[u8]) -> Vec<String> {
+    let claude_code = names_in(binary, CLAUDE_CODE_PREFIX)
+        .into_iter()
+        .filter(|name| name.contains("HOST") || name.contains("SOCKET"));
+    let anthropic = names_in(binary, ANTHROPIC_PREFIX)
+        .into_iter()
+        .filter(|name| name.contains("SOCKET"));
+    let mut found: Vec<String> = anthropic
+        .chain(claude_code)
+        .filter(|name| {
+            !LAUNCH_ONLY.contains(&name.as_str())
+                && !KNOWN_HARMLESS.iter().any(|(listed, _)| listed == name)
+        })
+        .collect();
+    found.sort();
+    found
+}
 
 /// **The provider switches a proxied chat blanks** (R-248, R-252, X8), each with why: every
 /// `CLAUDE_CODE_USE_` name in the pinned binary that routes a model call is here, or in
@@ -168,12 +326,6 @@ pub const KNOWN_NOT_A_ROUTE: &[(&str, &str)] = &[
         "turns on the PowerShell tool; it moves no model call",
     ),
 ];
-
-pub const KNOWN_HARMLESS: &[(&str, &str)] = &[];
-
-pub fn host_or_socket_names_in_neither_list(_binary: &[u8]) -> Vec<String> {
-    Vec::new()
-}
 
 /// The prefix of the provider switches.
 pub const SWITCH_PREFIX: &str = "CLAUDE_CODE_USE_";

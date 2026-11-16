@@ -310,7 +310,10 @@ fn the_host_and_socket_lists_are_apart_and_each_harmless_name_says_why() {
         assert!(route::LAUNCH_ONLY.contains(name), "{name} is not kept out");
     }
     for (name, why) in route::KNOWN_HARMLESS {
-        assert!(!route::LAUNCH_ONLY.contains(name), "{name} is in both lists");
+        assert!(
+            !route::LAUNCH_ONLY.contains(name),
+            "{name} is in both lists"
+        );
         assert!(!why.trim().is_empty(), "{name} says no reason");
     }
 }

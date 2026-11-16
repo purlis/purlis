@@ -439,8 +439,12 @@ fn every_host_or_socket_name_in_the_pinned_binary_is_kept_out_or_known_harmless(
         "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
         "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
     ] {
+        let prefix = [route::ANTHROPIC_PREFIX, route::CLAUDE_CODE_PREFIX]
+            .into_iter()
+            .find(|prefix| measured.starts_with(prefix))
+            .expect("a measured name has a prefix the guard reads");
         assert!(
-            route::names_in(&binary, measured).contains(measured),
+            route::names_in(&binary, prefix).contains(measured),
             "{measured} is not in the binary"
         );
     }
