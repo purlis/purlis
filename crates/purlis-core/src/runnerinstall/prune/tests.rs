@@ -91,7 +91,11 @@ impl Runner {
     }
 
     fn prune(&self, running: &str) -> Pruned {
-        prune_in(&self.config_root, running, &self.socket)
+        prune_in(
+            &self.config_root,
+            running,
+            std::slice::from_ref(&self.socket),
+        )
     }
 }
 
@@ -326,7 +330,7 @@ fn the_versions_lock_is_held_while_each_of_its_folders_and_files_is_removed() {
     let pruned = prune_with(
         &runner.config_root,
         "3.0.0",
-        &runner.socket,
+        std::slice::from_ref(&runner.socket),
         &mut |_| Ok(()),
         &mut |path| {
             let looked = std::fs::File::open(&peek).unwrap();
@@ -356,7 +360,7 @@ fn a_removal_cut_short_at_any_step_is_finished_by_the_next_prune() {
         let pruned = prune_with(
             &runner.config_root,
             "3.0.0",
-            &runner.socket,
+            std::slice::from_ref(&runner.socket),
             &mut |_| Ok(()),
             &mut |path| {
                 step += 1;
@@ -498,7 +502,7 @@ fn a_drained_versions_service_is_taken_back_first_while_its_lock_is_held() {
     let pruned = prune_with(
         &runner.config_root,
         "3.0.0",
-        &runner.socket,
+        std::slice::from_ref(&runner.socket),
         &mut |version| {
             let looked = std::fs::File::open(&peek).unwrap();
             let held = looked.try_lock_shared().is_err();
@@ -531,7 +535,7 @@ fn a_version_whose_service_could_not_be_taken_back_is_kept_whole() {
     let pruned = prune_with(
         &runner.config_root,
         "3.0.0",
-        &runner.socket,
+        std::slice::from_ref(&runner.socket),
         &mut |_| {
             Err("`systemctl --user daemon-reload` failed: Failed to connect to bus".to_owned())
         },
@@ -562,7 +566,7 @@ fn a_version_whose_host_serves_keeps_its_service() {
     let pruned = prune_with(
         &runner.config_root,
         "3.0.0",
-        &runner.socket,
+        std::slice::from_ref(&runner.socket),
         &mut |version| {
             asked.push(version.to_owned());
             Ok(())
@@ -591,4 +595,88 @@ fn without_a_runtime_folder_named_prune_looks_where_the_user_manager_keeps_its_h
         "run from cron or `sudo -u`, it looks where a supervised host listens"
     );
     assert_eq!(runtime_dir(None, &run_user.path().join("absent")), None);
+}
+
+#[test]
+fn a_version_serving_in_the_user_managers_runtime_folder_is_kept_though_the_one_named_is_empty() {
+    // Prune run with another runtime folder named (a `su` shell, a job's own) still finds a host
+    // systemd keeps, which listens in the user manager's (#6704).
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let managers = runner.socket.parent().unwrap().parent().unwrap().join("m");
+    std::fs::create_dir_all(&managers).unwrap();
+    let elsewhere = managers.join("purlisd.sock");
+    let lock = std::fs::File::create(
+        crate::hostsocket::of_version(&elsewhere, "1.0.0").with_extension("lock"),
+    )
+    .unwrap();
+    lock.try_lock().unwrap();
+    let sockets = [runner.socket.clone(), elsewhere.clone()];
+    let pruned = prune_in(&runner.config_root, "3.0.0", &sockets);
+    assert!(pruned.removed.is_empty(), "{pruned:?}");
+    assert_eq!(pruned.kept, [("1.0.0".to_owned(), Live::Serving)]);
+    assert!(runner.binary("1.0.0").exists());
+    drop(lock);
+    let pruned = prune_in(&runner.config_root, "3.0.0", &sockets);
+    assert_eq!(pruned.removed, ["1.0.0"]);
+    for left in ["lock", "sock", "link.sock"] {
+        assert!(
+            !crate::hostsocket::of_version(&elsewhere, "1.0.0")
+                .with_extension(left)
+                .exists(),
+            "its {left} in the user manager's folder went too"
+        );
+    }
+}
+
+#[test]
+fn prune_looks_in_the_runtime_folder_named_and_in_the_user_managers() {
+    let run_user = tempfile::tempdir().unwrap();
+    let ours = run_user.path().to_path_buf();
+    let other = std::ffi::OsString::from("/run/user/0");
+    assert_eq!(
+        runtimes_to_look_in(Some(&other), &ours),
+        [Some(PathBuf::from("/run/user/0")), Some(ours.clone())],
+        "another folder named: both"
+    );
+    assert_eq!(
+        runtimes_to_look_in(Some(ours.as_os_str()), &ours),
+        [Some(ours.clone())],
+        "the user manager's named: once"
+    );
+    assert_eq!(
+        runtimes_to_look_in(None, &ours),
+        [Some(ours.clone())],
+        "none named: the user manager's"
+    );
+    let absent = ours.join("absent");
+    assert_eq!(
+        runtimes_to_look_in(None, &absent),
+        [None],
+        "no user manager: the folder a host takes with none named"
+    );
+}
+
+#[test]
+fn a_version_is_old_once_a_later_one_is_installed_beside_it_with_its_binary() {
+    let runner = Runner::with(&["1.9.0", "1.10.0"]);
+    assert!(
+        newer_beside(&runner.config_root, "1.9.0"),
+        "1.10.0 is later"
+    );
+    assert!(!newer_beside(&runner.config_root, "1.10.0"), "the newest");
+    // A dev build is before its release, and its release is later.
+    let runner = Runner::with(&["2.0.0-dev.3", "2.0.0"]);
+    assert!(newer_beside(&runner.config_root, "2.0.0-dev.3"));
+    // A folder not read as a version, or a later one with no binary yet (an install cut short),
+    // makes nothing old.
+    let runner = Runner::with(&["1.0.0"]);
+    let server = crate::machine::dir(&runner.config_root).join(SERVER_DIR);
+    std::fs::create_dir_all(server.join("9.0")).unwrap();
+    std::fs::write(server.join("9.0").join(BINARY), b"x").unwrap();
+    std::fs::create_dir_all(server.join("2.0.0")).unwrap();
+    assert!(!newer_beside(&runner.config_root, "1.0.0"));
+    std::fs::write(server.join("2.0.0").join(BINARY), b"x").unwrap();
+    assert!(newer_beside(&runner.config_root, "1.0.0"));
+    // A version not read as one is never old.
+    assert!(!newer_beside(&runner.config_root, "1.0"));
 }

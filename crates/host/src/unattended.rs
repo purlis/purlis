@@ -36,6 +36,21 @@ pub const UNLINKED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// coming back, as a check does, moves no clock (#3980).
 const LINK_MAY_START_WITHIN: Duration = Duration::from_secs(60);
 
+/// **How long a runner's host kept by its machine waits, once a newer version is installed
+/// beside it and it has nothing left to run, before it stops itself** (#6704; ADR 0068 §3 as
+/// amended for #6704). A minute: a desktop that has just linked holds it off as long
+/// (`LINK_MAY_START_WITHIN`), and an old version's host has nothing else to wait for.
+pub const SUPERSEDED_IDLE_FOR: Duration = Duration::from_secs(60);
+
+/// **What tells a runner's host kept by its machine that it is the old one** (#6704): `newer`
+/// says whether a newer version is installed beside it, read from disk as it is asked. Such a
+/// host stops itself, exiting 0, which its service manager does not restart, once it has been
+/// [`SUPERSEDED_IDLE_FOR`] (or `after`) with nothing running, no link open and `newer` true.
+pub struct Superseded {
+    pub after: Duration,
+    pub newer: Box<dyn Fn() -> bool + Send + Sync>,
+}
+
 /// **What a cluster runner's host does once it has been idle** (#3980): how long it waits, and
 /// what it does before it stops serving, which is how the cluster operator hears of it.
 pub struct Idles {
@@ -107,6 +122,11 @@ impl Links {
         self.held()
             .opened
             .is_some_and(|opened| now.saturating_duration_since(opened) < within)
+    }
+
+    /// Whether no link from the desktop is open.
+    fn none_open(&self) -> bool {
+        self.held().open.is_empty()
     }
 
     /// When this host will have gone `after` without a link, while it has none.
@@ -210,6 +230,59 @@ impl Hosting {
         }
     }
 }
+
+impl Hosting {
+    /// **Resolves once this host has been the old version, with nothing to keep it, for
+    /// `after`** (#6704): all that time a newer version was installed beside it (`newer`), nothing
+    /// ran on it ([`Hosting::nothing_running`]) and no link from its desktop was open. Any of them
+    /// failing starts its clock again. What a runner's host kept by its machine serves until, so
+    /// it stops itself, its chats long drained, and the next prune finds it gone. A host with a
+    /// live chat or a link open never resolves here.
+    pub async fn until_superseded_and_idle(
+        &self,
+        after: Duration,
+        newer: impl Fn() -> bool + Send + Sync + 'static,
+    ) {
+        let newer = std::sync::Arc::new(newer);
+        let every = (after / 8).clamp(Duration::from_millis(10), Duration::from_secs(15));
+        let mut since = Instant::now();
+        loop {
+            tokio::time::sleep(every).await;
+            let now = Instant::now();
+            if !self.nothing_running() || !self.unattended_links().none_open() {
+                since = now;
+                continue;
+            }
+            let asking = std::sync::Arc::clone(&newer);
+            let superseded = tokio::task::spawn_blocking(move || asking())
+                .await
+                .unwrap_or(false);
+            if !superseded {
+                since = now;
+                continue;
+            }
+            if now.saturating_duration_since(since) < after {
+                continue;
+            }
+            // Looked at again with nothing awaited after it: a chat started, or a link opened,
+            // while the disk was read keeps this host.
+            if self.nothing_running() && self.unattended_links().none_open() {
+                crate::say(&format!(
+                    "{SUPERSEDED} ({} with nothing to run)",
+                    spelled(after)
+                ));
+                return;
+            }
+            since = now;
+        }
+    }
+}
+
+/// What a runner's old host says in its journal as it stops itself (#6704).
+pub const SUPERSEDED: &str = "a newer version of purlis is installed beside this one, and this \
+                              host has nothing left to run, so it stops: its service is not \
+                              started again until the machine restarts, and the next install \
+                              removes this version";
 
 /// `after` as the log says it: whole hours in hours, and anything else in minutes, or seconds
 /// below a minute or where it is no whole number of minutes (#3471: a pool's own time).
