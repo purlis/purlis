@@ -271,7 +271,8 @@ _Avoid_: app data (for the Machine tier as a whole), cache (for clone state), lo
 
 **Private record**:
 A part of **Project**: a file purlis keeps for itself in the Machine tier or in clone state,
-such as the extension list, an approval or a queued message. Each says which version wrote it.
+such as the extension list, an approval or a queued message. Each is read by its version, and
+one that carries none is read as its first.
 A record written by a newer purlis is never deleted or overwritten: a whole-file record is
 refused, with Update purlis and Set it aside and start fresh as its remedies, and one row of a
 record of rows is skipped and kept. Only a record marked rebuildable may be rebuilt over a newer
@@ -1514,7 +1515,9 @@ Stop all on the title bar, or `purlis stop --all`: every chat's and shell's prog
 started, in every project and window, is interrupted and ended, and no chat starts until the
 operator **re-arms** it from the title bar. It is a stop, not a close: the tabs stay, each
 reading as a chat whose program ended. A new shell still opens, so the operator can look around.
-Nothing on the command line re-arms (ADR 0071).
+Nothing on the command line re-arms (ADR 0071). A stop a newer purlis may have written, which
+this one cannot read, counts as a stop, and a re-arm in one window is followed by every window
+(ADR 0125).
 _Avoid_: panic button, pause (nothing is resumed on re-arm)
 
 **Shell**:
@@ -2023,7 +2026,7 @@ _Avoid_: state, status, trust level
 **Reach** (of an artifact):
 A part of a pinned **Artifact**'s **Code approval**: what its declared queries read, as purlis
 resolves them when it is approved: each query, whether it reads the workspace or the whole
-plane, and each parameter that widens it. A purlis or an extension that later changes what the
+project, and each parameter that widens it. A purlis or an extension that later changes what the
 same query reads asks again, saying what it now also reads and no longer reads (ADR 0125). Not
 a browser's **Reach**.
 _Avoid_: scope (alone, that is one query's), permissions, access (that is a link host's or a
