@@ -5967,6 +5967,7 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
+            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -10081,10 +10082,16 @@ fn what_its_hooks_read(
     cwd: Option<&Path>,
     sandboxed: bool,
     id: Option<&str>,
+    policy: Option<&str>,
 ) {
     purlis_core::hoststart::what_its_hooks_read(
         env,
-        &purlis_core::hoststart::Watched { cwd, sandboxed, id },
+        &purlis_core::hoststart::Watched {
+            cwd,
+            sandboxed,
+            id,
+            policy,
+        },
     );
 }
 

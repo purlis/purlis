@@ -670,12 +670,13 @@ fn the_bash_guard_refuses_by_printing_and_exits_cleanly() {
         "{said}"
     );
     assert!(
-        said.contains("no config key, environment variable or switch"),
+        said.contains("under [enforcement] in the project's committed settings"),
         "every denial carries the override note: {said}"
     );
 }
 
-/// R-021: **guard A, the leak guard, is never switchable.** What this proves: with the project's
+/// R-021: **guard A, the leak guard, is switched by nothing but the project's `[enforcement]`
+/// `secrets`** (Q308), which every template but `open` enforces. What this proves: with the project's
 /// files at their loosest (the manifest's and the machine file's sandbox keys, the harness's own
 /// settings allowing every Bash and Read call in bypass mode), on each harness, sandboxed or not,
 /// from the chat or a sub-agent, in bypass permissions, with the state folder or the plane root

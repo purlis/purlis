@@ -141,7 +141,7 @@ pub type Handler = fn(&Hook) -> Answer;
 /// The handler for the tool hook `name`, if it is one this file answers.
 pub fn handler(name: &str) -> Option<Handler> {
     Some(match name {
-        "pretooluse-read" => toolhooks::pretooluse_read,
+        "pretooluse-read" => pretooluse_read,
         "pretooluse-edit" => pretooluse_edit,
         "pretooluse-dispatch" => toolhooks::pretooluse_dispatch,
         "posttooluse" => toolhooks::posttooluse,
@@ -162,6 +162,32 @@ pub fn handler(name: &str) -> Option<Handler> {
         purlis_core::hookreg::HARNESS_DENIED => says_nothing,
         _ => return None,
     })
+}
+
+/// `pretooluse-read`: the vault-file guard on Read and Grep ([`toolhooks::pretooluse_read`]),
+/// run as the chat's `secrets` family runs (Q308a). Its other refusals (a judge's folder, a Grep
+/// that walks purlis's own state) are no family's and stay enforced.
+fn pretooluse_read(hook: &Hook) -> Answer {
+    use purlis_core::enforcement::{self, Family, Mode};
+    let answer = toolhooks::pretooluse_read(hook);
+    let Answer::Deny(verdict) = &answer else {
+        return answer;
+    };
+    if verdict.arm != Some(purlis_core::toolgate::Arm::Leak) {
+        return answer;
+    }
+    let mode =
+        enforcement::for_this_chat(&hook.root, &|name| (hook.env)(name)).mode(Family::Secrets);
+    match mode {
+        Mode::Enforce => answer,
+        Mode::Log => {
+            if let Some(chat) = (hook.env)(purlis_core::hookwire::CHAT_ID_ENV) {
+                enforcement::record(&hook.root, &chat, Family::Secrets, "A-read", None);
+            }
+            Answer::Nothing
+        }
+        Mode::Off => Answer::Nothing,
+    }
 }
 
 /// `pretooluse-edit`: the state-directory guard, and a sandboxed Claude Code chat's edit of

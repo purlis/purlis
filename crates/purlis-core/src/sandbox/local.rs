@@ -204,6 +204,11 @@ pub fn path(root: &Path) -> PathBuf {
 /// What the file holds.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct OnDisk {
+    /// What this person last accepted of the project's `[policy]` (Q308a): family key to mode,
+    /// the least each family runs at here until they press to loosen it
+    /// ([`crate::enforcement::accepted`]). Absent before the first chat start that read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    policy_accepted: Option<std::collections::BTreeMap<String, String>>,
     /// `"taken"` or `"kept-off"` once the offer is answered; absent before.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     offer: String,
@@ -1180,6 +1185,22 @@ pub fn answer_team_off(root: &Path, answer: TeamOffAnswer) -> io::Result<()> {
 /// the sandbox off, so an off that comes back is asked again.
 pub fn forget_team_off(root: &Path) -> io::Result<()> {
     change(root, |held| held.team_off = None)
+}
+
+/// What this person last accepted of the project's `[policy]` at `root` (Q308a), where they
+/// accepted anything yet.
+pub fn policy_accepted(root: &Path) -> Option<std::collections::BTreeMap<String, String>> {
+    read(root).policy_accepted
+}
+
+/// Keeps `accepted` as what this person accepted of the project's `[policy]` at `root`: at a
+/// chat start for a tightening, which needs no press, and at the window's press for a
+/// loosening. Never a chat (a sandboxed chat cannot write this file).
+pub fn accept_policy(
+    root: &Path,
+    accepted: std::collections::BTreeMap<String, String>,
+) -> io::Result<()> {
+    change(root, |held| held.policy_accepted = Some(accepted))
 }
 
 /// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.

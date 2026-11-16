@@ -621,6 +621,7 @@ fn a_chats_hooks_are_told_its_folder_and_only_a_sandboxed_chat_is_called_sandbox
         Some(Path::new("/plane/workspaces/a")),
         false,
         None,
+        None,
     );
     assert_eq!(
         of(&env, "PURLIS_SANDBOXED"),
@@ -631,7 +632,7 @@ fn a_chats_hooks_are_told_its_folder_and_only_a_sandboxed_chat_is_called_sandbox
         of(&env, "PURLIS_CHAT_DIR").as_deref(),
         Some("/plane/workspaces/a")
     );
-    what_its_hooks_read(&mut env, Some(Path::new("/plane/workspaces/a")), true, None);
+    what_its_hooks_read(&mut env, Some(Path::new("/plane/workspaces/a")), true, None, None);
     assert_eq!(of(&env, "PURLIS_SANDBOXED").as_deref(), Some("1"));
     assert_eq!(
         env.iter().filter(|(n, _)| n == "PURLIS_CHAT_DIR").count(),
@@ -656,7 +657,7 @@ fn a_chats_harness_is_told_its_id_by_the_app_and_never_by_a_profile() {
         ("CHARTER_CHAT_ULID".to_owned(), "someone-else".to_owned()),
         ("CHARTER_SANDBOXED".to_owned(), "1".to_owned()),
     ];
-    what_its_hooks_read(&mut env, None, false, Some("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    what_its_hooks_read(&mut env, None, false, Some("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"), None);
     assert_eq!(
         of(&env, purlis_core::hookwire::CHAT_ID_ENV),
         vec!["01J9ZQ3V7K8M2N4P6R8T0V2X4Z".to_owned()]
@@ -665,7 +666,7 @@ fn a_chats_harness_is_told_its_id_by_the_app_and_never_by_a_profile() {
         of(&env, purlis_core::hookwire::SANDBOXED_ENV).is_empty(),
         "a profile cannot claim it under its old name either"
     );
-    what_its_hooks_read(&mut env, None, false, None);
+    what_its_hooks_read(&mut env, None, false, None, None);
     assert!(of(&env, purlis_core::hookwire::CHAT_ID_ENV).is_empty());
 }
 

@@ -58,6 +58,7 @@
 use std::path::Path;
 
 use crate::dispatchunattended::Attendance;
+use crate::enforcement::{Family, Mode};
 use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
 use crate::harness::Harness;
@@ -67,15 +68,23 @@ use crate::{
     shellwrap,
 };
 
-/// What to do when a guard is WRONG about your case (charter#370) — `_OVERRIDE_NOTE`.
+/// What to do when a guard is WRONG about your case (charter#370, reversed by Q308) —
+/// `_OVERRIDE_NOTE`.
 ///
 /// Every denial named a remedy for the workflow the operator was supposed to be doing, and none
 /// named this. Appended by [`Verdict::said`] to every arm's sentence but those that carry the
 /// shape to retry ([`RETRY_SHAPED`]), which is why it is spelled once.
-pub const OVERRIDE_NOTE: &str = " — Wrong about this case? There is deliberately no config key, environment variable or \
-     switch that lifts a purlis denial: one purlis could read is one a committed file could \
-     flip. Run it yourself, in your own terminal — these guards bound what an AGENT does with \
-     your authority, never what you do. See `docs/hooks.md` → When a guard is wrong.";
+///
+/// **charter#370 said no switch may lift a guard's refusal**, because one purlis could read is
+/// one a committed file could flip. Ruling Q308 (2026-11-16) reverses that: each family of
+/// refusals is `off`, `log` or `enforce` by the project's committed `[enforcement]`
+/// ([`crate::enforcement`]), and an administrator's lock wins over it. What stays of #370 is that
+/// the switch is a person's: a chat's own change to that table is held as its change to
+/// `[sandbox]` is.
+pub const OVERRIDE_NOTE: &str = " — Wrong about this case? A person can set this guard's family to log or off under \
+     [enforcement] in the project's committed settings (docs/enforcement.md); a chat cannot. Or \
+     run it yourself, in your own terminal — these guards bound what an AGENT does with your \
+     authority, never what you do.";
 
 /// The arms whose refusal names the exact shape the chat retries with, so the chat fixes its own
 /// call (#3830, the operator's ruling of 2026-10-29: when an agent can fix its own call, refuse
@@ -275,6 +284,34 @@ arms! {
 }
 
 impl Arm {
+    /// **The family of purlis's refusals the arm is one of** (Q308, Q308a,
+    /// [`crate::enforcement`]), or none for an arm no family switches, which stays enforced: the
+    /// caps, which guard every arm's reading at once, and the backstops on the consent rules'
+    /// and the operator's rules' spelling, which `asks` (host, folder and socket asks) does not
+    /// cover.
+    pub fn family(self) -> Option<Family> {
+        Some(match self {
+            Arm::Caps | Arm::ConsentSpelling | Arm::RuleSpelling => return None,
+            // The leak guard keeps a vault's value out of the transcript.
+            Arm::Leak => Family::Secrets,
+            Arm::SingleCredential => Family::GuardsCredential,
+            Arm::PlaneRootBranch
+            | Arm::PlaneRootReset
+            | Arm::RootUpdate
+            | Arm::CloneUpdate
+            | Arm::ProjectGit
+            | Arm::BranchGit => Family::GuardsGit,
+            // What a forge publishes, and the prose it publishes.
+            Arm::ReleaseFloor | Arm::ForgeSubstitution => Family::GuardsRelease,
+            // A commit that skips the scan, and the text purlis's own commands write into the
+            // project, which a save carries.
+            Arm::HookSkip | Arm::CharterSubstitution => Family::GuardsSave,
+            Arm::Handoff | Arm::SubAgentDispatch | Arm::DispatchText | Arm::Rider => {
+                Family::Dispatch
+            }
+        })
+    }
+
     /// The arm whose id is `id`, or none: what the app reads off a hook's line, which comes from
     /// the chat's side of the channel.
     pub fn of_id(id: &str) -> Option<Self> {
@@ -389,22 +426,91 @@ fn release_floor(
 }
 
 /// The refusal this tool call earns, or `None` — `charter/hooks.py:pretooluse`'s eight arms in
-/// its order.
+/// its order, every one enforced: [`judged`] under `strict` (Q308).
 ///
 /// `plane` absent is `_in_a_plane()` answering no: A2, A3, A3b, A4 and A7 are skipped and A, A5
 /// and A6 still run. The module header argues that division at length.
 pub fn verdict(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
+    judged(call, plane, &|_| Mode::Enforce).refused
+}
+
+/// What the gate made of a call under a project's `[enforcement]` (Q308).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Judged {
+    /// The refusal of the first arm whose family is enforced, or none.
+    pub refused: Option<Verdict>,
+    /// What each arm whose family only logs would have refused, in the order they were asked:
+    /// the caller writes each to the chat's enforcement log, and shows nobody.
+    pub logged: Vec<Verdict>,
+}
+
+/// **[`verdict`], with each arm run as `modes` says its family runs** (Q308): an arm whose
+/// family is `off` is not asked, one whose family logs is asked and its refusal kept in
+/// [`Judged::logged`] while the arms after it are still asked, and one whose family is enforced
+/// refuses as it always has.
+///
+/// The caps are no family's, and stay enforced: a command too big to read is refused, since
+/// arms no family switches would read it.
+pub fn judged(
+    call: &Call<'_>,
+    plane: Option<&Plane<'_>>,
+    modes: &dyn Fn(Family) -> Mode,
+) -> Judged {
+    let gate = Gate {
+        modes,
+        logged: std::cell::RefCell::new(Vec::new()),
+    };
     // First of all, in front of every arm: a command too big to read in time is refused before
     // any of them parses it (#1355). Refusing is the safe direction for every arm at once.
     if let Some(why) = guardcaps::refusal(call.command) {
-        return Some(Verdict::new(Arm::Caps, guardcaps::REASON, None, why));
+        let refused = gate.refuses(Verdict::new(Arm::Caps, guardcaps::REASON, None, why));
+        return Judged {
+            refused,
+            logged: gate.logged.into_inner(),
+        };
     }
     // And a string an arm derives from the command and reads in turn is held to the same cap:
     // an arm that met one nested too deep to read whole decided nothing, so the call is refused
     // as too big to check, whatever the arms said (#1355).
-    match shellseg::too_deep_within(|| arms(call, plane)) {
-        (_, true) => Some(too_deep()),
+    let refused = match shellseg::too_deep_within(|| arms(call, plane, &gate)) {
+        (_, true) => gate.refuses(too_deep()),
         (verdict, false) => verdict,
+    };
+    Judged {
+        refused,
+        logged: gate.logged.into_inner(),
+    }
+}
+
+/// How the arms of one call are run (Q308): each by its family's mode.
+struct Gate<'a> {
+    modes: &'a dyn Fn(Family) -> Mode,
+    logged: std::cell::RefCell<Vec<Verdict>>,
+}
+
+impl Gate<'_> {
+    /// How `arm` runs: its family's mode; enforced for an arm no family switches.
+    fn mode(&self, arm: Arm) -> Mode {
+        arm.family()
+            .map_or(Mode::Enforce, |family| (self.modes)(family))
+    }
+
+    /// Whether `arm` is asked at all.
+    fn runs(&self, arm: Arm) -> bool {
+        self.mode(arm) != Mode::Off
+    }
+
+    /// `verdict` where its arm is enforced; kept for the log, and `None`, where it logs.
+    fn refuses(&self, verdict: Verdict) -> Option<Verdict> {
+        let mode = verdict.arm.map_or(Mode::Enforce, |arm| self.mode(arm));
+        match mode {
+            Mode::Enforce => Some(verdict),
+            Mode::Log => {
+                self.logged.borrow_mut().push(verdict);
+                None
+            }
+            Mode::Off => None,
+        }
     }
 }
 
@@ -421,16 +527,20 @@ pub fn too_deep() -> Verdict {
 }
 
 /// [`verdict`]'s arms, in order, on a command inside every cap.
-fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
+fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>, gate: &Gate<'_>) -> Option<Verdict> {
     let cmd = call.command;
 
     // A: a secret would leak into the conversation → hard DENY (a real safety invariant).
     // UNGATED, and that is the one arm whose gating was never in question.
-    if let Some(leak) = leakguard::leak_reason(cmd, call.cwd, call.state_dir) {
+    if gate.runs(Arm::Leak)
+        && let Some(leak) = leakguard::leak_reason(cmd, call.cwd, call.state_dir)
+    {
         // Python's `reason=leak[:70]` — the tally key is a PREFIX of the prose, which nobody
         // chose and which a tally reader already groups on.
         let reason: String = leak.chars().take(LEAK_REASON_CHARS).collect();
-        return Some(Verdict::new(Arm::Leak, reason, None, leak));
+        if let Some(refused) = gate.refuses(Verdict::new(Arm::Leak, reason, None, leak)) {
+            return Some(refused);
+        }
     }
 
     if let Some(plane) = plane {
@@ -440,33 +550,45 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
         // wants the shape as well and asking twice would walk the command line twice. The prose
         // is that function's, spelled here — which is the one thing charter#289 says must not
         // drift, so `the_golden_rules_two_answers_cannot_drift_apart` below pins the pair.
-        if let Some((shape, detail)) = credguard::single_credential_hit(cmd, plane.forges) {
-            return Some(Verdict::new(
+        if gate.runs(Arm::SingleCredential)
+            && let Some((shape, detail)) = credguard::single_credential_hit(cmd, plane.forges)
+        {
+            if let Some(refused) = gate.refuses(Verdict::new(
                 Arm::SingleCredential,
                 REASON_SINGLE_CREDENTIAL,
                 Some(shape),
                 format!("{}{detail}", credguard::SINGLE_CREDENTIAL_FIX),
-            ));
+            )) {
+                return Some(refused);
+            }
         }
         // A3: the plane root is one shared working tree — refuse a branch move in it (#157).
-        if let Some(branch) = planeroot::plane_root_branch_reason(cmd, call.cwd, plane.root) {
-            return Some(Verdict::new(
+        if gate.runs(Arm::PlaneRootBranch)
+            && let Some(branch) = planeroot::plane_root_branch_reason(cmd, call.cwd, plane.root)
+        {
+            if let Some(refused) = gate.refuses(Verdict::new(
                 Arm::PlaneRootBranch,
                 REASON_PLANE_ROOT_BRANCH,
                 None,
                 branch,
-            ));
+            )) {
+                return Some(refused);
+            }
         }
         // A3b: and refuse a `git reset` in the root that would destroy commits no remote has
         // (#401). A separate guard from A3: different prose, different remedy, and this one
         // only speaks when it has measured that something really would be lost.
-        if let Some(wipe) = planeroot::plane_root_reset_reason(cmd, call.cwd, plane.root) {
-            return Some(Verdict::new(
+        if gate.runs(Arm::PlaneRootReset)
+            && let Some(wipe) = planeroot::plane_root_reset_reason(cmd, call.cwd, plane.root)
+        {
+            if let Some(refused) = gate.refuses(Verdict::new(
                 Arm::PlaneRootReset,
                 REASON_PLANE_ROOT_RESET,
                 None,
                 wipe,
-            ));
+            )) {
+                return Some(refused);
+            }
         }
         // A3c: git that would rewrite the root's working tree from another commit, from a chat
         // whose sandbox would stop the checkout partway and leave the project half-updated
@@ -487,72 +609,92 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
             let chat_dir = plane.chat_dir();
             let root = planeroot::plane_root(plane.root);
             let line = planeroot::line_git(cmd, call.cwd, &root);
-            if let Some((sub, why)) = rootupdate::refusal_of(
-                &line.root,
-                call.cwd,
-                &root,
-                chat_dir.as_deref(),
-                &rootupdate::denied_in,
-            ) {
-                return Some(Verdict::new(
+            if gate.runs(Arm::RootUpdate)
+                && let Some((sub, why)) = rootupdate::refusal_of(
+                    &line.root,
+                    call.cwd,
+                    &root,
+                    chat_dir.as_deref(),
+                    &rootupdate::denied_in,
+                )
+            {
+                if let Some(refused) = gate.refuses(Verdict::new(
                     Arm::RootUpdate,
                     rootupdate::REASON,
                     Some(sub),
                     why,
-                ));
+                )) {
+                    return Some(refused);
+                }
             }
-            if let Some((sub, why)) = cloneupdate::refusal_of(
-                &line,
-                call.cwd,
-                &root,
-                chat_dir.as_deref(),
-                &cloneupdate::Asked,
-            ) {
-                return Some(Verdict::new(
+            if gate.runs(Arm::CloneUpdate)
+                && let Some((sub, why)) = cloneupdate::refusal_of(
+                    &line,
+                    call.cwd,
+                    &root,
+                    chat_dir.as_deref(),
+                    &cloneupdate::Asked,
+                )
+            {
+                if let Some(refused) = gate.refuses(Verdict::new(
                     Arm::CloneUpdate,
                     cloneupdate::REASON,
                     Some(sub),
                     why,
-                ));
+                )) {
+                    return Some(refused);
+                }
             }
         }
         // A4: an unattended chat may not publish (#299), by its attendance fact (R-109), and a
         // merge the hold stands for is the hold's (R-145).
-        if let Some(pub_) = release_floor(
-            cmd,
-            call.caller.harness,
-            call.caller.permission_mode,
-            plane.launched,
-        ) {
-            return Some(Verdict::new(
+        if gate.runs(Arm::ReleaseFloor)
+            && let Some(pub_) = release_floor(
+                cmd,
+                call.caller.harness,
+                call.caller.permission_mode,
+                plane.launched,
+            )
+        {
+            if let Some(refused) = gate.refuses(Verdict::new(
                 Arm::ReleaseFloor,
                 REASON_RELEASE_FLOOR,
                 None,
                 pub_,
-            ));
+            )) {
+                return Some(refused);
+            }
         }
     }
 
     // A5: a forge command that publishes prose may not carry a live command substitution
     // (#703). UNGATED, with the leak guard and for its reason: what it refuses is a fact about
     // the SHELL, not a policy this plane happens to hold.
-    if let Some((spelling, why)) = proseguard::forge_substitution_hit(cmd) {
-        return Some(Verdict::new(
+    if gate.runs(Arm::ForgeSubstitution)
+        && let Some((spelling, why)) = proseguard::forge_substitution_hit(cmd)
+    {
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::ForgeSubstitution,
             REASON_FORGE_SUBSTITUTION,
             Some(spelling.to_string()),
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A6: and the same rule on charter's OWN text-taking commands (#778). AFTER A5 so that a
     // line which is both is explained by the one that publishes to a forge.
-    if let Some((spelling, why)) = proseguard::charter_substitution_hit(cmd) {
-        return Some(Verdict::new(
+    if gate.runs(Arm::CharterSubstitution)
+        && let Some((spelling, why)) = proseguard::charter_substitution_hit(cmd)
+    {
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::CharterSubstitution,
             REASON_CHARTER_SUBSTITUTION,
             Some(spelling.to_string()),
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A7: a handoff from a helper sub-agent, or one purlis cannot read the brief of. What
     // consents to a handoff is the app's decision, as for any dispatch (#1444). GATED, unlike
@@ -560,119 +702,148 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
     // The command read once for the three backstops below (#1426): its heredocs, its
     // substitutions and the strings it hands a shell are theirs to share.
     let read = plane.map(|_| crate::heredoc::Heredocs::of(cmd));
-    if let Some(read) = &read
+    if gate.runs(Arm::Handoff)
+        && let Some(read) = &read
         && let Some((reason, why)) = handoffguard::handoff_refusal_of(read, call.caller)
     {
         // No `cmd` on this trace row, the one arm without it: a handoff's command line carries
         // its brief, and keeping every field of that line out of the tally is simpler to hold
         // than deciding which part of it is safe. Nothing here holds a command anyway.
-        return Some(Verdict::new(Arm::Handoff, reason, None, why));
+        if let Some(refused) = gate.refuses(Verdict::new(Arm::Handoff, reason, None, why)) {
+            return Some(refused);
+        }
     }
     // A7d: a dispatch from inside a sub-agent (#1436). The one fact about a dispatch only the
     // hook's payload holds; everything else about one is the app's decision. GATED, as A7 is:
     // a dispatch starts a chat in this project.
-    if plane.is_some()
+    if gate.runs(Arm::SubAgentDispatch)
+        && plane.is_some()
         && let Some((reason, why)) = crate::dispatchguard::refusal(cmd, call.caller)
     {
         // No `cmd` on this trace row, for A7's reason: the line carries a brief.
-        return Some(Verdict::new(Arm::SubAgentDispatch, reason, None, why));
+        if let Some(refused) = gate.refuses(Verdict::new(Arm::SubAgentDispatch, reason, None, why))
+        {
+            return Some(refused);
+        }
     }
     // A7e: the text a dispatch subcommand sends (a report, a follow-up, an answer, a note, a
     // question) beside a live substitution (#1456, #1463), as A7 refuses the handoff's report.
     // GATED, as A7d is.
-    if plane.is_some()
+    if gate.runs(Arm::DispatchText)
+        && plane.is_some()
         && let Some((reason, why)) = crate::dispatchguard::text_refusal(cmd)
     {
         // No `cmd` on this trace row, for A7's reason: the line carries a chat's own text.
-        return Some(Verdict::new(Arm::DispatchText, reason, None, why));
+        if let Some(refused) = gate.refuses(Verdict::new(Arm::DispatchText, reason, None, why)) {
+            return Some(refused);
+        }
     }
     // A7b: any consent-gated command spelt under a name the project's consent rules do not
     // spell, which the host would run with no prompt (RN-3, D-RN3-9; lifted per rule where the
     // project carries the purlis twin, RN-7). GATED, as A7 is: the rules it stands in for are a
     // plane's.
-    if let (Some(plane), Some(read)) = (plane, &read)
+    if gate.runs(Arm::ConsentSpelling)
+        && let (Some(plane), Some(read)) = (plane, &read)
         && let Some(why) = consentspelling::refusal_of(
             read,
             Path::new(plane.root),
             &[Path::new(plane.session_dir), Path::new(call.cwd)],
         )
     {
-        return Some(Verdict::new(
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::ConsentSpelling,
             consentspelling::REASON,
             None,
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A7c: the same backstop for the operator's own ask and deny rules (#1286): a program a rule
     // names, spelt so the host's glob would not see it. GATED, as A7b is: the rules are a
     // plane's settings.
-    if let (Some(plane), Some(read)) = (plane, &read)
+    if gate.runs(Arm::RuleSpelling)
+        && let (Some(plane), Some(read)) = (plane, &read)
         && let Some(why) = rulespelling::refusal_of(
             read,
             Path::new(plane.root),
             &[Path::new(plane.session_dir), Path::new(call.cwd)],
         )
     {
-        return Some(Verdict::new(
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::RuleSpelling,
             rulespelling::REASON,
             None,
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A8: a commit that would skip the hooks a chat's git runs charter's scan in (SQ-16, ADR
     // 0074). UNGATED: a chat commits in repositories outside any plane. charter's own, after
     // every arm the Python had, so no recorded answer moves.
-    if let Some((spelling, why)) = commitguard::hook_skip_hit(cmd, call.cwd) {
-        return Some(Verdict::new(
+    if gate.runs(Arm::HookSkip)
+        && let Some((spelling, why)) = commitguard::hook_skip_hit(cmd, call.cwd)
+    {
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::HookSkip,
             REASON_GIT_HOOK_SKIP,
             Some(spelling.to_owned()),
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A9: git on the project that would stop on one of git's lock files, from a chat the app
     // gave a sandbox, outside the project's root folder (#1345). GATED: the sandbox it explains
     // is a project's chat's. Last, so every arm that refuses one of these lines for a reason of
     // its own says it first.
-    if let Some(plane) = plane
+    if gate.runs(Arm::ProjectGit)
+        && let Some(plane) = plane
         && plane.launched.sandboxed
         && let Some(chat_dir) = plane.chat_dir()
         && let Some((sub, why)) = projectgit::refusal(cmd, call.cwd, plane.root, &chat_dir)
     {
-        return Some(Verdict::new(
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::ProjectGit,
             projectgit::REASON,
             Some(sub),
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A9b: `git add` or `git commit` in a branch folder, from a chat the app gave a sandbox,
     // which denies it the folder's record in its clone's `.git` (#3830). Refused before it runs
     // with `purlis worktree commit`, so the chat fixes its own call and the sandbox raises no
     // Notice for the person. GATED, as A9 is. purlis's own, so no recorded answer moves.
-    if let Some(plane) = plane
+    if gate.runs(Arm::BranchGit)
+        && let Some(plane) = plane
         && plane.launched.sandboxed
         && let Some((sub, why)) = branchgit::refusal(cmd, call.cwd, plane.root)
     {
-        return Some(Verdict::new(
+        if let Some(refused) = gate.refuses(Verdict::new(
             Arm::BranchGit,
             branchgit::REASON,
             Some(sub),
             why,
-        ));
+        )) {
+            return Some(refused);
+        }
     }
     // A10: a dispatch, a handoff or a commit the app makes, pre-allowed alone, that writes and
     // shares its call with another command (#3785, superseding D-1444-14's `ask`). Refused with
     // the shape to retry, so the chat corrects itself and nobody is stopped on a prompt; a
     // dispatch that only looks gets no verdict. GATED, as A7d is. Last, so every arm that
     // refuses one of these lines for a reason of its own says it first.
-    if plane.is_some()
+    if gate.runs(Arm::Rider)
+        && plane.is_some()
         && let Some((reason, why)) = crate::dispatchguard::rider_refusal(cmd, call.caller)
     {
         // No `cmd` on this trace row, for A7's reason: the line carries a brief.
-        return Some(Verdict::new(Arm::Rider, reason, None, why));
+        if let Some(refused) = gate.refuses(Verdict::new(Arm::Rider, reason, None, why)) {
+            return Some(refused);
+        }
     }
     // Everything below this line in the Python is a WRITE or the persona tool-gate's ALLOW,
     // and neither is ported. See the module header.
@@ -1702,7 +1873,7 @@ mod tests {
         assert!(out.contains("a \\u2014 b \\u2026"), "{out}");
         assert!(out.contains("purlis guard: "));
         assert!(
-            out.contains("no config key"),
+            out.contains("under [enforcement]"),
             "the override note rides along"
         );
     }
