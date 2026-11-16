@@ -1674,7 +1674,7 @@ fn settings_is_handed_every_preset_with_the_hosts_the_core_lists() {
             .map(|one| (one.word.as_str(), one.title.as_str()))
             .collect::<Vec<_>>(),
         [
-            ("model-providers", "AI providers"),
+            ("model-providers", "Model providers"),
             ("forge", "Code hosting"),
             ("toolchains", "Package registries"),
         ]

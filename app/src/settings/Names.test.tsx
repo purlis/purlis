@@ -182,7 +182,7 @@ function core() {
         case "sandbox_network":
           return {
             on: true,
-            open: [{ title: "AI providers", hosts: ["api.anthropic.com"] }],
+            open: [{ title: "Model providers", hosts: ["api.anthropic.com"] }],
             blocked: [
               {
                 target: "db.example.com:5432",

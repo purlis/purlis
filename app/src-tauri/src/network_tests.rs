@@ -61,7 +61,7 @@ fn open_hosts_name_every_host_of_each_preset_in_force_and_then_the_projects_own(
         shown.open,
         vec![
             OpenHosts {
-                title: "AI providers".to_owned(),
+                title: "Model providers".to_owned(),
                 hosts: sandbox::hosts(&[sandbox::Preset::ModelProviders], &plane, &none),
             },
             OpenHosts {

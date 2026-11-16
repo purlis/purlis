@@ -35,7 +35,7 @@ const PLANE = "/home/dev/plane";
 
 const AI: SandboxPreset = {
   word: "model-providers",
-  title: "AI providers",
+  title: "Model providers",
   hosts: ["api.anthropic.com", "api.openai.com"],
   widens_caches: false,
 };
@@ -66,18 +66,18 @@ describe("the sentence at the top", () => {
   const caches = `${changes} and in the project's package caches`;
   it.each<[string, readonly SandboxPreset[], string]>([
     ["none", [], `${changes}, and reach no host on the internet.`],
-    ["AI providers", [AI], `${changes}, and reach AI providers.`],
+    ["model providers", [AI], `${changes}, and reach model providers.`],
     ["code hosting", [CODE], `${changes}, and reach code hosting.`],
     ["package registries", [PACKAGES], `${caches}, and reach package registries.`],
     [
-      "AI providers and code hosting",
+      "model providers and code hosting",
       [AI, CODE],
-      `${changes}, and reach AI providers and code hosting.`,
+      `${changes}, and reach model providers and code hosting.`,
     ],
     [
-      "AI providers and package registries",
+      "model providers and package registries",
       [AI, PACKAGES],
-      `${caches}, and reach AI providers and package registries.`,
+      `${caches}, and reach model providers and package registries.`,
     ],
     [
       "code hosting and package registries",
@@ -87,7 +87,7 @@ describe("the sentence at the top", () => {
     [
       "every preset",
       PRESETS,
-      `${caches}, and reach AI providers, code hosting and package registries.`,
+      `${caches}, and reach model providers, code hosting and package registries.`,
     ],
   ])("says what a chat can do with %s on", (_, presets, said) => {
     expect(whatAChatCanDo({ ...ON, presets })).toBe(said);
@@ -103,7 +103,7 @@ describe("the sentence at the top", () => {
         certificateService: true,
       }),
     ).toBe(
-      "A chat here can change files in the folder it works in, and reach AI providers, 2 project hosts, 1 host of yours and the system's certificate service.",
+      "A chat here can change files in the folder it works in, and reach model providers, 2 project hosts, 1 host of yours and the system's certificate service.",
     );
     expect(whatAChatCanDo({ ...ON, presets: [], projectHosts: 1, yourHosts: 2 })).toBe(
       "A chat here can change files in the folder it works in, and reach 1 project host and 2 hosts of yours.",
@@ -306,7 +306,7 @@ describe("Settings › Project › Sandbox", () => {
 
     await waitFor(() =>
       expect(page).toHaveTextContent(
-        "A chat here can change files in the folder it works in and in the project's package caches, and reach AI providers, code hosting and package registries.",
+        "A chat here can change files in the folder it works in and in the project's package caches, and reach model providers, code hosting and package registries.",
       ),
     );
 
@@ -321,7 +321,7 @@ describe("Settings › Project › Sandbox", () => {
     ]);
     await waitFor(() =>
       expect(page).toHaveTextContent(
-        "A chat here can change files in the folder it works in, and reach AI providers and code hosting.",
+        "A chat here can change files in the folder it works in, and reach model providers and code hosting.",
       ),
     );
   });
@@ -333,7 +333,7 @@ describe("Settings › Project › Sandbox", () => {
     const page = await atSandbox();
     const access = await within(page).findByRole("group", { name: "Internet access" });
 
-    expect(within(access).getByRole("checkbox", { name: "AI providers" })).not.toBeChecked();
+    expect(within(access).getByRole("checkbox", { name: "Model providers" })).not.toBeChecked();
     expect(within(access).getByRole("checkbox", { name: "Code hosting" })).toBeChecked();
     expect(within(access).getByRole("checkbox", { name: "Package registries" })).not.toBeChecked();
 
@@ -830,7 +830,7 @@ describe("Settings › Project › Sandbox", () => {
 
     await waitFor(() =>
       expect(page).toHaveTextContent(
-        "A chat here can change files in the folder it works in, in the project's package caches and in 1 folder you allowed on this machine, and reach AI providers, code hosting, package registries and 1 project host.",
+        "A chat here can change files in the folder it works in, in the project's package caches and in 1 folder you allowed on this machine, and reach model providers, code hosting, package registries and 1 project host.",
       ),
     );
   });
@@ -955,13 +955,13 @@ describe("values an administrator's policy locks (#1343)", () => {
     const page = await atSandbox();
 
     const access = await within(page).findByRole("group", { name: "Internet access" });
-    expect(access).toHaveTextContent(`AI providers is on. ${LOCKED}`);
+    expect(access).toHaveTextContent(`Model providers is on. ${LOCKED}`);
     expect(within(page).queryByRole("checkbox")).toBeNull();
     expect(within(access).queryByRole("button")).toBeNull();
     // The strictest wins in the sentence too: only what policy allows is reached.
     await waitFor(() =>
       expect(page).toHaveTextContent(
-        "A chat here can change files in the folder it works in, and reach AI providers.",
+        "A chat here can change files in the folder it works in, and reach model providers.",
       ),
     );
     expect(sent).toEqual([]);
@@ -994,7 +994,7 @@ describe("values an administrator's policy locks (#1343)", () => {
     // The page says what a chat here reaches, as for any sandboxed project.
     await waitFor(() =>
       expect(page).toHaveTextContent(
-        "A chat here can change files in the folder it works in and in the project's package caches, and reach AI providers, code hosting and package registries.",
+        "A chat here can change files in the folder it works in and in the project's package caches, and reach model providers, code hosting and package registries.",
       ),
     );
     expect(page).not.toHaveTextContent("Chats here run without a sandbox");

@@ -12,6 +12,7 @@ import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { windowCopy } from "../windowCopy";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
@@ -24,7 +25,7 @@ const PLANE = "/home/dev/plane";
 const NETWORK: SandboxNetwork = {
   on: true,
   open: [
-    { title: "AI providers", hosts: ["api.anthropic.com", "api.openai.com"] },
+    { title: "Model providers", hosts: ["api.anthropic.com", "api.openai.com"] },
     { title: "This project's hosts", hosts: ["registry.internal"] },
   ],
   blocked: [
@@ -188,7 +189,7 @@ describe("the Network page", () => {
   it("names every host of each preset in force, then the project's own", async () => {
     core();
     render(<Row id="open" />);
-    const ai = await screen.findByRole("list", { name: "AI providers" });
+    const ai = await screen.findByRole("list", { name: "Model providers" });
     expect(
       within(ai)
         .getAllByRole("listitem")
@@ -197,6 +198,20 @@ describe("the Network page", () => {
     expect(screen.getByRole("list", { name: "This project's hosts" })).toHaveTextContent(
       "registry.internal",
     );
+  });
+
+  it("says a chat on a key needs no host here: its calls go through the key proxy (R-411, W79)", async () => {
+    core();
+    render(<Row id="open" />);
+    await screen.findByRole("list", { name: "Model providers" });
+    expect(screen.getByText(windowCopy.W79)).toBeVisible();
+  });
+
+  it("says nothing of the key proxy where chats run without a sandbox", async () => {
+    core({ ...NETWORK, on: false });
+    render(<Row id="open" />);
+    await screen.findByText("Chats here run without a sandbox, so they can reach any host.");
+    expect(screen.queryByText(windowCopy.W79)).toBeNull();
   });
 
   it("says a project without the sandbox reaches any host", async () => {

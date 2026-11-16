@@ -2329,8 +2329,15 @@ fn each_preset_has_the_name_settings_shows_it_by() {
     let titles: Vec<&str> = Preset::ALL.iter().map(|preset| preset.title()).collect();
     assert_eq!(
         titles,
-        ["AI providers", "Code hosting", "Package registries"]
+        ["Model providers", "Code hosting", "Package registries"]
     );
+}
+
+#[test]
+fn the_model_providers_preset_is_shown_as_model_providers() {
+    // R-019, R-661: the window names the `model-providers` preset as the Settings group in the
+    // same area does (design §2.3).
+    assert_eq!(Preset::ModelProviders.title(), "Model providers");
 }
 
 #[test]
