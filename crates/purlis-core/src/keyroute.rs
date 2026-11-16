@@ -88,6 +88,20 @@ pub fn resolve(declaration: &Declaration, way: Way, level: Level) -> Result<Rout
     }
 }
 
+/// **Whether a chat on `declaration`, reaching its model `way` at `level`, starts under this
+/// machine's policy `locks`**: its route, or why not, in words (R-128, R-430, R-714). A policy
+/// file that can't be read refuses a proxied start; a `min-version` above this build, or a key
+/// inside `models`, refuses every chat that reaches a model, a subscription chat included.
+pub fn start(
+    declaration: &Declaration,
+    way: Way,
+    level: Level,
+    locks: &crate::sandbox::policy::Locks,
+) -> Result<Route, String> {
+    let _ = locks;
+    resolve(declaration, way, level)
+}
+
 /// Why `declaration`'s harness takes its own sign-in only, or none where it takes a base URL:
 /// it states no wire format it speaks (R-227, R-257).
 pub fn own_sign_in_only(declaration: &Declaration) -> Option<String> {

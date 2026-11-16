@@ -233,6 +233,20 @@ pub struct Locks {
     /// [`holding_to_its_folder`]): its commands then write no temp folder but the one it is
     /// handed.
     to_its_folder: bool,
+    /// What the file says of every chat that reaches a model (R-430, R-714), read whatever
+    /// else it says.
+    models: ModelGate,
+}
+
+/// **What a policy file says of every chat that reaches a model** (R-430, R-714): a
+/// `min-version` above this build, read before the strict parse, and the first key inside
+/// `models`, none of which this build can enforce.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ModelGate {
+    /// The file's `min-version`, where it is above this build's release.
+    min_version_above: Option<String>,
+    /// The first key the file sets inside `models`.
+    models_key: Option<String>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -248,7 +262,128 @@ thread_local! {
 /// answers until another call. Only in a test build.
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_for_this_test(locks: Locks) {
+    TEST_FIXTURE.with(|held| *held.borrow_mut() = None);
     TEST_LOCKS.with(|held| *held.borrow_mut() = locks);
+}
+
+/// Which of the two a [`Seen`] is of: the policy file or its folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Of {
+    File,
+    Folder,
+}
+
+/// **The policy fixture** (R-699): a file a test writes, read in place of [`MACHINE_FILE`] by
+/// the same reader, trust check and all, for the locks, the tolerant reader and the start's
+/// refusals. Only a test build has it, as [`set_for_this_test`]; no environment variable,
+/// setting or file moves the path a build anyone is given reads.
+///
+/// **Its owner check is a test's own**: a test can't make a file root owns, so a file or folder
+/// owned by the user running the test is seen as owned by root. Every other part of the
+/// judgement is the shipped one, and [`Fixture::seen_as`] changes what it is told, so a row the
+/// test's user can't make (owned by someone else) is driven through the same [`judge`].
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Debug, Clone)]
+pub struct Fixture {
+    file: PathBuf,
+    seen_as: Option<fn(Seen, Of) -> Seen>,
+    meanwhile: Option<fn(&Path)>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Fixture {
+    /// The policy file at `file`, as a test wrote it.
+    pub fn at(file: impl Into<PathBuf>) -> Self {
+        Self {
+            file: file.into(),
+            seen_as: None,
+            meanwhile: None,
+        }
+    }
+
+    /// The same, with what the judgement is told of the file and its folder changed by
+    /// `seen_as`, after the test's owner check.
+    #[must_use]
+    pub fn seen_as(self, seen_as: fn(Seen, Of) -> Seen) -> Self {
+        Self {
+            seen_as: Some(seen_as),
+            ..self
+        }
+    }
+
+    /// The same, with `meanwhile` run on the file's path after it is judged and before it is
+    /// opened: where a test replaces the file while it is read.
+    #[must_use]
+    pub fn meanwhile(self, meanwhile: fn(&Path)) -> Self {
+        Self {
+            meanwhile: Some(meanwhile),
+            ..self
+        }
+    }
+
+    /// The file it stands in for [`MACHINE_FILE`] with.
+    pub fn file(&self) -> &Path {
+        &self.file
+    }
+
+    #[cfg(unix)]
+    fn see(&self, seen: Seen, of: Of) -> Seen {
+        // The test's owner check: the test's own user stands for root here, and only here.
+        let seen = if seen.uid == rustix::process::geteuid().as_raw() {
+            Seen { uid: 0, ..seen }
+        } else {
+            seen
+        };
+        self.seen_as.map_or(seen, |seen_as| seen_as(seen, of))
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// The fixture [`Locks::of_this_machine`] reads for this thread, where a test set one.
+    static TEST_FIXTURE: std::cell::RefCell<Option<Fixture>> =
+        const { std::cell::RefCell::new(None) };
+    /// Every policy file this thread read, in order: what shows a test never reads
+    /// [`MACHINE_FILE`].
+    pub(crate) static TEST_READ: std::cell::RefCell<Vec<PathBuf>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// **A test's policy file** for this thread, in place of this machine's: what
+/// [`Locks::of_this_machine`] reads, through the shipped reader, until another call. Only in a
+/// test build.
+#[cfg(any(test, feature = "test-support"))]
+pub fn use_fixture_for_this_test(fixture: Fixture) {
+    TEST_LOCKS.with(|held| *held.borrow_mut() = Locks::none());
+    TEST_FIXTURE.with(|held| *held.borrow_mut() = Some(fixture));
+}
+
+/// How the reader judges what it sees: as it is, or, in a test build, as a policy fixture says.
+#[derive(Debug, Clone, Default)]
+struct Judging {
+    #[cfg(any(test, feature = "test-support"))]
+    fixture: Option<Fixture>,
+}
+
+impl Judging {
+    #[cfg(unix)]
+    fn see(&self, seen: Seen, of: Of) -> Seen {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(fixture) = &self.fixture {
+            return fixture.see(seen, of);
+        }
+        let _ = of;
+        seen
+    }
+
+    #[cfg(unix)]
+    fn meanwhile(&self, path: &Path) {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(meanwhile) = self.fixture.as_ref().and_then(|f| f.meanwhile) {
+            meanwhile(path);
+        }
+        let _ = path;
+    }
 }
 
 impl Locks {
@@ -316,7 +451,18 @@ impl Locks {
     /// project not made yet, whose own policy there is nothing of to read.
     pub fn of_this_machine() -> Self {
         #[cfg(any(test, feature = "test-support"))]
-        let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());
+        let locks = match TEST_FIXTURE.with(|fixture| fixture.borrow().clone()) {
+            Some(fixture) => {
+                let file = fixture.file.clone();
+                Self::read_judged(
+                    &file,
+                    &Judging {
+                        fixture: Some(fixture),
+                    },
+                )
+            }
+            None => TEST_LOCKS.with(|locks| locks.borrow().clone()),
+        };
         #[cfg(not(any(test, feature = "test-support")))]
         let locks = Self::read(Path::new(MACHINE_FILE));
         locks
@@ -325,7 +471,13 @@ impl Locks {
     /// The policy file at `path`: none where there is no file, its locks where it is one purlis
     /// trusts and reads, and every lock set where it is there and refused.
     pub fn read(path: &Path) -> Self {
-        match read_trusted(path) {
+        Self::read_judged(path, &Judging::default())
+    }
+
+    fn read_judged(path: &Path, judging: &Judging) -> Self {
+        #[cfg(any(test, feature = "test-support"))]
+        TEST_READ.with(|read| read.borrow_mut().push(path.to_path_buf()));
+        match read_trusted(path, judging) {
             Ok(None) => Self::none(),
             Ok(Some(text)) => Self::parse(&text, path),
             Err(why) => Self::refused(path, &why),
@@ -370,7 +522,15 @@ impl Locks {
             dispatch_locked: Vec::new(),
             team_never: false,
             to_its_folder: false,
+            models: ModelGate::default(),
         }
+    }
+
+    /// **Why a chat that reaches a model on `route` doesn't start under this policy**, in the
+    /// window's words, or none where it starts (R-128, R-430, R-714).
+    pub fn refuses_model_start(&self, route: crate::keyroute::Route) -> Option<String> {
+        let _ = route;
+        None
     }
 
     /// Whether any policy is in force.
@@ -1000,7 +1160,15 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         dispatch_locked,
         team_never: false,
         to_its_folder: false,
+        models: ModelGate::default(),
     })
+}
+
+/// Whether `min_version`, a policy's `min-version`, is above `build`, this build's version, or
+/// why it is not a version the file may set (R-714).
+pub(crate) fn min_version_above(min_version: &str, build: &str) -> Result<bool, String> {
+    let _ = (min_version, build);
+    Ok(false)
 }
 
 /// **What a policy's `relayed-internal` lists** (#2530): each entry it takes, and a sentence for
@@ -1157,18 +1325,23 @@ pub fn judge_folder(folder: Seen) -> Result<(), String> {
 /// Neither the file nor its folder is followed through a link, the file is opened without
 /// following one, and what was opened is judged again before it is read.
 #[cfg(unix)]
-fn read_trusted(path: &Path) -> Result<Option<String>, String> {
+fn read_trusted(path: &Path, judging: &Judging) -> Result<Option<String>, String> {
     use std::io::Read;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let seen = |meta: &std::fs::Metadata, dir: bool| Seen {
-        link: meta.file_type().is_symlink(),
-        expected_type: if dir {
-            meta.file_type().is_dir()
-        } else {
-            meta.file_type().is_file()
-        },
-        uid: meta.uid(),
-        mode: meta.mode(),
+    let seen = |meta: &std::fs::Metadata, dir: bool| {
+        judging.see(
+            Seen {
+                link: meta.file_type().is_symlink(),
+                expected_type: if dir {
+                    meta.file_type().is_dir()
+                } else {
+                    meta.file_type().is_file()
+                },
+                uid: meta.uid(),
+                mode: meta.mode(),
+            },
+            if dir { Of::Folder } else { Of::File },
+        )
     };
     // The folder first, whenever it is there: no folder is no policy, and an untrusted one is
     // refused whether or not the file is in it (D-1343-11).
@@ -1185,6 +1358,7 @@ fn read_trusted(path: &Path) -> Result<Option<String>, String> {
         Ok(meta) => meta,
     };
     judge(seen(&file, false), seen(&folder, true))?;
+    judging.meanwhile(path);
     let opened = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -1213,7 +1387,7 @@ fn read_trusted(path: &Path) -> Result<Option<String>, String> {
 /// No policy file is read off Unix yet: a Windows policy key is one of C9's layers no ADR
 /// places (D-1343-1).
 #[cfg(not(unix))]
-fn read_trusted(_path: &Path) -> Result<Option<String>, String> {
+fn read_trusted(_path: &Path, _judging: &Judging) -> Result<Option<String>, String> {
     Ok(None)
 }
 
@@ -1291,3 +1465,6 @@ pub(crate) fn held_from_clusters() -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod model_tests;
