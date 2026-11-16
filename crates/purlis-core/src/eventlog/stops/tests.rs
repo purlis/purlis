@@ -445,3 +445,19 @@ fn a_stops_tool_name_is_written_as_one_short_line() {
     assert!(written.ends_with("..."), "{written}");
     assert!(!written.contains('\n'), "{written}");
 }
+
+/// **Phase 1a's two Ask groups** (T1a-61, U12): a model key's Ask and a pool's key allowance,
+/// beside who-judges' seven, each written as its closed word.
+#[test]
+fn ask_group_has_model_key_and_pool_allow() {
+    for (group, word) in [
+        (AskGroup::ModelKey, "model_key"),
+        (AskGroup::PoolAllow, "pool_allow"),
+    ] {
+        assert_eq!(serde_json::to_value(group).unwrap(), serde_json::json!(word));
+        assert_eq!(
+            serde_json::from_value::<AskGroup>(serde_json::json!(word)).unwrap(),
+            group
+        );
+    }
+}

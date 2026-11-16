@@ -270,6 +270,7 @@ mod the_repo_list_puts_projects_first;
 mod the_runner_tests_have_an_in_memory_link_and_a_stand_in_pool;
 mod the_session_host_log_is_capped_and_keeps_older_files;
 mod the_shell_is_read_the_way_python_reads_it;
+mod the_start_reads_the_key_once;
 mod the_window_asks_its_forge_with_the_purlis_sign_in;
 mod this_machine_forgets_and_revokes;
 mod unrecorded_clones_raise_one_ask;

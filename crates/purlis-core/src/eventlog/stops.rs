@@ -307,6 +307,10 @@ pub enum AskGroup {
     LoopPause,
     Budget,
     HookGiveUp,
+    #[serde(rename = "modelkey")]
+    ModelKey,
+    #[serde(rename = "poolallow")]
+    PoolAllow,
 }
 
 impl AskGroup {

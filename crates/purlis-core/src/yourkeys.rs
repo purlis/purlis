@@ -38,6 +38,7 @@
 //! reading and writing (`crate::sandbox`).
 
 pub mod mark;
+pub mod start;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
