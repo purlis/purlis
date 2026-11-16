@@ -338,6 +338,10 @@ describe("ConnectStep", () => {
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
   });
 
+  it("marks the machine as answering, and its key as the line that failed, when ssh recorded no key", () => {
+    expect(verdictsOf("not-met", false).slice(0, 3)).toEqual(["ok", "ok", "missing"]);
+  });
+
   it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {
     const reached = ["ok", "ok", "ok", "ok", "ok", "ok", "ok"];
     expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo"]);

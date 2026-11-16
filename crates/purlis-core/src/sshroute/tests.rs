@@ -117,7 +117,7 @@ fn the_forward_trusts_the_pinned_key_alone_under_the_pools_alias() {
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
     assert_eq!(
         option(&args, "UserKnownHostsFile"),
-        Some("/data/docker-settings/run-x/known_hosts")
+        Some("\"/data/docker-settings/run-x/known_hosts\"")
     );
     assert_eq!(option(&args, "GlobalKnownHostsFile"), Some("/dev/null"));
     assert_eq!(option(&args, "KnownHostsCommand"), Some("none"));
@@ -200,11 +200,11 @@ fn a_route_with_no_socket_yet_opens_no_forward() {
 #[test]
 fn a_first_contact_learns_the_key_and_signs_in_with_nothing() {
     let route = Route::parse("ssh://me@box").unwrap();
-    let args = contact_args(&route, Path::new("/run/known_hosts"));
+    let args = contact_args(&route, Path::new("/run/known_hosts")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("accept-new"));
     assert_eq!(
         option(&args, "UserKnownHostsFile"),
-        Some("/run/known_hosts")
+        Some("\"/run/known_hosts\"")
     );
     assert_eq!(option(&args, "PubkeyAuthentication"), Some("no"));
     // A system's ssh_config may hash names (Debian's and Ubuntu's do): the key is found by its
@@ -227,11 +227,11 @@ fn the_key_a_first_contact_met_is_read_from_what_ssh_wrote() {
 #[test]
 fn the_probe_runs_pinned_and_checks_only_the_socket_a_route_names() {
     let found = Route::parse("ssh://me@box").unwrap();
-    let args = probe_args(&found, "build", Path::new("/k"));
+    let args = probe_args(&found, "build", Path::new("/k")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
     assert_eq!(args.last().unwrap(), PROBE);
     let named = Route::parse("ssh://me@box/run/podman/podman.sock").unwrap();
-    let args = probe_args(&named, "build", Path::new("/k"));
+    let args = probe_args(&named, "build", Path::new("/k")).unwrap();
     assert!(
         args.last()
             .unwrap()
@@ -303,9 +303,9 @@ fn the_forward_takes_no_command_tunnel_or_forward_clearing_from_the_persons_sett
 fn a_sign_in_a_probe_and_a_first_contact_forward_nothing_and_run_only_their_command() {
     let route = Route::parse("ssh://me@box").unwrap();
     for args in [
-        sign_in_args(&route, "build", Path::new("/k")),
-        probe_args(&route, "build", Path::new("/k")),
-        contact_args(&route, Path::new("/scratch")),
+        sign_in_args(&route, "build", Path::new("/k")).unwrap(),
+        probe_args(&route, "build", Path::new("/k")).unwrap(),
+        contact_args(&route, Path::new("/scratch")).unwrap(),
     ] {
         assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
         assert_eq!(option(&args, "RemoteCommand"), Some("none"));
@@ -429,7 +429,7 @@ fn the_forward_check_asks_sshd_for_one_channel_to_the_engines_socket_pinned_and_
     let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
     let args = forward_check_args(&route, "build", Path::new("/k")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
-    assert_eq!(option(&args, "UserKnownHostsFile"), Some("/k"));
+    assert_eq!(option(&args, "UserKnownHostsFile"), Some("\"/k\""));
     assert_eq!(option(&args, "ExitOnForwardFailure"), Some("yes"));
     assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
     let w = args.iter().position(|arg| arg == "-W").unwrap();
@@ -461,10 +461,10 @@ fn a_routes_key_file_is_handed_to_every_ssh_it_runs() {
     let known = Path::new("/k/known_hosts");
     for args in [
         forward_args(&route, "p", known, Path::new("/l/docker.sock")).unwrap(),
-        sign_in_args(&route, "p", known),
-        probe_args(&route, "p", known),
+        sign_in_args(&route, "p", known).unwrap(),
+        probe_args(&route, "p", known).unwrap(),
         forward_check_args(&route, "p", known).unwrap(),
-        contact_args(&route, Path::new("/k/scratch")),
+        contact_args(&route, Path::new("/k/scratch")).unwrap(),
         connect::settings_args(&route),
     ] {
         assert_eq!(
@@ -755,6 +755,94 @@ fn a_forward_is_taken_as_refused_only_where_the_channel_fails_and_the_probe_hold
                 connect::Finding::ForwardingRefused { .. }
             ),
             refused
+        );
+    }
+}
+
+/// What this machine's own ssh makes of `args` (`ssh -G`, with no settings file of the person's
+/// read): `<key> <value>` lines, the key in lower case. Nothing is contacted.
+fn read_by_ssh(args: &[String]) -> String {
+    let ssh = ssh_here().expect("the system's ssh");
+    let out = crate::forklock::output(
+        std::process::Command::new(ssh)
+            .args(["-G", "-F", "/dev/null"])
+            .args(args),
+    )
+    .expect("ssh runs");
+    assert!(out.status.success(), "ssh -G refused {args:?}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The value of `key` in what ssh read, where it read one.
+fn read_as<'a>(read: &'a str, key: &str) -> Option<&'a str> {
+    read.lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))
+}
+
+/// A run folder under `~/Library/Application Support` (macOS), with a `%` token ssh expands in
+/// its name too. `ssh -G` prints a list of files joined by one space, so the two spaces in
+/// `run  100` show whether ssh read one file or split the path into several.
+const SPACED: &str = "/Users/me/Library/Application Support/purlis/run  100%h/known_hosts";
+
+#[test]
+fn a_first_contacts_known_hosts_whose_path_has_a_space_is_one_file_to_ssh() {
+    let route = Route::parse("ssh://me@box").unwrap();
+    let args = contact_args(&route, Path::new(SPACED)).unwrap();
+    assert_eq!(
+        read_as(&read_by_ssh(&args), "userknownhostsfile"),
+        Some(SPACED)
+    );
+}
+
+#[test]
+fn a_pinned_known_hosts_whose_path_has_a_space_is_one_file_to_ssh() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let known = Path::new(SPACED);
+    for args in [
+        sign_in_args(&route, "build", known).unwrap(),
+        probe_args(&route, "build", known).unwrap(),
+        forward_check_args(&route, "build", known).unwrap(),
+        forward_args(&route, "build", known, Path::new("/s")).unwrap(),
+    ] {
+        let read = read_by_ssh(&args);
+        assert_eq!(
+            read_as(&read, "userknownhostsfile"),
+            Some(SPACED),
+            "{args:?}"
+        );
+        assert_eq!(read_as(&read, "hostkeyalias"), Some("purlis-pool-build"));
+    }
+}
+
+#[test]
+fn a_forwards_socket_whose_path_has_a_space_or_a_percent_is_bound_where_it_is_named() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let local = "/Users/me/Library/Application Support/purlis/links  100%h/docker.sock";
+    let args = forward_args(&route, "build", Path::new("/k"), Path::new(local)).unwrap();
+    assert_eq!(
+        read_as(&read_by_ssh(&args), "localforward"),
+        Some(format!("{local} /var/run/docker.sock").as_str())
+    );
+}
+
+#[test]
+fn a_known_hosts_path_ssh_cannot_be_handed_as_one_file_is_refused() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    for path in [
+        "/data/a\"b/known_hosts",
+        "/data/a\\b/known_hosts",
+        "/data/a\nb/known_hosts",
+        "/data/${HOME}/known_hosts",
+    ] {
+        let why = contact_args(&route, Path::new(path)).unwrap_err();
+        assert!(why.contains("ssh"), "{why}");
+        assert!(
+            sign_in_args(&route, "build", Path::new(path)).is_err(),
+            "{path:?}"
+        );
+        assert!(
+            forward_args(&route, "build", Path::new("/k"), Path::new(path)).is_err(),
+            "{path:?}"
         );
     }
 }
