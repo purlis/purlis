@@ -39,7 +39,7 @@ function key(more: Partial<YourKeyRow> = {}): YourKeyRow {
 const never = () => new Promise<never>(() => undefined);
 
 /** What a failing command answers. */
-const fails = (error: string) => () => Promise.reject(new Error(error));
+const fails = (error: string) => () => Promise.reject(error);
 
 type Core = Record<string, (args: Record<string, unknown>) => unknown>;
 
@@ -211,7 +211,7 @@ export const YourKeysStopSendingFailed: Story = {
     await userEvent.click(within(asked).getByRole("button", { name: windowCopy.W125 }));
     await expect(
       await canvas.findByText(
-        windowCopy.W129({ pool: "gpu", error: "Error: the allowance store is locked" }),
+        windowCopy.W129({ pool: "gpu", error: "the allowance store is locked" }),
       ),
     ).toBeVisible();
   },
@@ -246,15 +246,13 @@ export const YourKeysListUnreadable: Story = {
       let asked = 0;
       return {
         your_keys: () =>
-          asked++ === 0 ? Promise.reject(new Error("the index is not your keys' index")) : never(),
+          asked++ === 0 ? Promise.reject("the index is not your keys' index") : never(),
       };
     },
   },
   play: async ({ canvas, userEvent }) => {
     await expect(
-      await canvas.findByText(
-        windowCopy.W115({ error: "Error: the index is not your keys' index" }),
-      ),
+      await canvas.findByText(windowCopy.W115({ error: "the index is not your keys' index" })),
     ).toBeVisible();
     await press(canvas.getByRole("button", { name: "Try again" }), "Try again", userEvent);
     await expect(await canvas.findByText("Reading…")).toBeVisible();
@@ -415,9 +413,7 @@ export const YourKeysMarkAgainFailed: Story = {
       userEvent,
     );
     await expect(
-      await canvas.findByText(
-        windowCopy.W128({ error: "Error: the marks' device key couldn't be kept" }),
-      ),
+      await canvas.findByText(windowCopy.W128({ error: "the marks' device key couldn't be kept" })),
     ).toBeVisible();
     await expect(canvas.getByText(windowCopy.W60)).toBeVisible();
   },
@@ -477,7 +473,7 @@ export const YourKeysRemoveFailed: Story = {
     await untilSettled(asked);
     await userEvent.click(within(asked).getByRole("button", { name: "Remove" }));
     await expect(
-      await canvas.findByText(windowCopy.W114({ error: "Error: your keychain didn't delete it" })),
+      await canvas.findByText(windowCopy.W114({ error: "your keychain didn't delete it" })),
     ).toBeVisible();
     await expect(canvas.getByText("Anthropic")).toBeVisible();
   },
@@ -517,7 +513,7 @@ export const YourKeysReplaceFailed: Story = {
   play: async ({ canvas, userEvent }) => {
     await replaceWith(canvas, userEvent);
     await expect(
-      await canvas.findByText(windowCopy.W88({ error: "Error: your keychain refused the write" })),
+      await canvas.findByText(windowCopy.W88({ error: "your keychain refused the write" })),
     ).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Try again" })).toBeVisible();
   },

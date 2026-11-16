@@ -74,6 +74,8 @@ import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
+import { OnItsPage } from "../settings/settingsStory.testkit";
+import { yourKeysGroup } from "../settings/yourKeys";
 import { StopKeepingTaskScreens } from "../settings/taskScreens";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
@@ -1280,6 +1282,34 @@ const DIALOGS: Opened[] = [
       render(<SentReports ids={{ id: "sent", labelledBy: "sent-label" }} />);
       fireEvent.click(await screen.findByRole("row", { name: /purlis panicked/ }));
       await screen.findByRole("dialog", { name: "purlis panicked at src/plane.rs:12:5" });
+    },
+  },
+  {
+    name: "removing a key from your keys",
+    file: "settings/yourKeys.tsx",
+    open: async () => {
+      mockIPC((cmd) =>
+        cmd === "your_keys"
+          ? [
+              {
+                id: "01JD6Y8ZQK3V4T5N6P7R8S9TAB",
+                product: "Anthropic",
+                origins: ["https://api.anthropic.com"],
+                approval: "off",
+                checked: "passed",
+                state: "marked",
+                profiles: [],
+                chats: [],
+                pools: [],
+              },
+            ]
+          : cmd === "your_key_chats"
+            ? 1
+            : null,
+      );
+      render(<OnItsPage group={yourKeysGroup()} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Remove the key for Anthropic" }));
+      await screen.findByRole("alertdialog", { name: "Remove the key for Anthropic?" });
     },
   },
   {

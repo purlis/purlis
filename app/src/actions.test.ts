@@ -826,6 +826,7 @@ describe("the one list of actions", () => {
       "Your settings: Pools",
       "Your settings: Accounts",
       "Your settings: Profiles",
+      "Your settings: Your keys",
       "Your settings: Previews",
     ]);
     const hands = doing();
@@ -2921,8 +2922,9 @@ describe("the palette at fifty chats", () => {
     // this pane…, each of the fifty panes' own row. 1433 since #6306: Keep task screens. 1435
     // since #6031: Skill sources and Recorded skill acts, the project's two groups of an org's
     // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
-    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed.
-    expect(offers).toHaveLength(1486);
+    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed. 1488 since
+    // T1a-11: Your settings: Your keys, and its one setting's row.
+    expect(offers).toHaveLength(1488);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

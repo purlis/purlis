@@ -96,14 +96,12 @@ describe("the page lists what core answers", () => {
   it("says why the list can't be read, with Try again", async () => {
     let fail = true;
     answers.your_keys = () => {
-      if (fail) throw new Error("the index is not your keys' index");
+      if (fail) return Promise.reject("the index is not your keys' index");
       return [row("01A")];
     };
     page();
     expect(
-      await screen.findByText(
-        windowCopy.W115({ error: "Error: the index is not your keys' index" }),
-      ),
+      await screen.findByText(windowCopy.W115({ error: "the index is not your keys' index" })),
     ).toBeInTheDocument();
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -161,7 +159,7 @@ describe("Remove…", () => {
     rows = [row("01A")];
     answers.your_key_chats = () => 1;
     answers.your_key_remove = () => {
-      throw new Error("your keychain didn't delete it");
+      return Promise.reject("your keychain didn't delete it");
     };
     page();
     await userEvent.click(
@@ -171,7 +169,7 @@ describe("Remove…", () => {
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Remove" }),
     );
     expect(
-      await screen.findByText(windowCopy.W114({ error: "Error: your keychain didn't delete it" })),
+      await screen.findByText(windowCopy.W114({ error: "your keychain didn't delete it" })),
     ).toBeInTheDocument();
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
   });
@@ -202,7 +200,7 @@ describe("Stop sending", () => {
     rows = [row("01A", { pools: ["gpu"] })];
     answers.your_key_pool_chats = () => 0;
     answers.your_key_stop_sending = () => {
-      throw new Error("the allowance store is locked");
+      return Promise.reject("the allowance store is locked");
     };
     page();
     await userEvent.click(await screen.findByRole("button", { name: "Stop sending to gpu" }));
@@ -211,7 +209,7 @@ describe("Stop sending", () => {
     );
     expect(
       await screen.findByText(
-        windowCopy.W129({ pool: "gpu", error: "Error: the allowance store is locked" }),
+        windowCopy.W129({ pool: "gpu", error: "the allowance store is locked" }),
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop sending to gpu" })).toBeInTheDocument();
