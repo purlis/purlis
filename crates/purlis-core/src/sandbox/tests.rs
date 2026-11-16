@@ -247,14 +247,20 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
             root.join(".charter/vaults"),
             root.join(".charter/fingerprint.key"),
             root.join(".charter/vault-links.json"),
+            // A fenced build's stub keyring (R-772, T1a-72).
+            root.join(".charter/keyring-stub.json"),
             // Every spelling of the state folder, there or not.
             root.join(".purlis/vaults"),
             root.join(".purlis/fingerprint.key"),
             root.join(".purlis/vault-links.json"),
+            root.join(".purlis/keyring-stub.json"),
             root.join("secrets/dev.json"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/op"),
             std::path::PathBuf::from("/nonexistent-home/op/.op"),
             std::path::PathBuf::from("/nonexistent-home/op/.vault-token"),
+            // And beside the config home's stores, under each spelling of its folder.
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/keyring-stub.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/keyring-stub.json"),
         ]
     );
 }
@@ -1954,11 +1960,23 @@ fn no_chat_reads_or_writes_your_keys_index() {
 /// the whole `model-keys` folder. The device key's keychain item is T1a-72's table's to assert.
 #[test]
 fn a_chat_cannot_read_the_marks_folder() {
-    for os in [Os::MacOs, Os::Linux] {
-        let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
-        let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
-        let marks = seal.parent().expect("a folder").to_path_buf();
-        assert!(marks.ends_with("model-keys/marks"), "{}", marks.display());
+    let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
+    let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
+    assert!(
+        seal.parent()
+            .is_some_and(|marks| marks.ends_with("model-keys/marks")),
+        "{}",
+        seal.display()
+    );
+    let spelled = crate::machine::dirs_spelled(&config);
+    assert!(spelled.len() > 1, "both spellings: {spelled:?}");
+    for (os, home) in [Os::MacOs, Os::Linux]
+        .into_iter()
+        .flat_map(|os| spelled.iter().map(move |home| (os, home)))
+    {
+        let marks = home
+            .join(crate::yourkeys::DIR)
+            .join(crate::yourkeys::mark::DIR);
         let (_plane, denied) = denied_with(None, os);
         let both = paths(&denied, Class::HumanPowers, Access::ReadWrite);
         let folder = both.iter().find(|denied| marks.starts_with(denied));
@@ -2680,6 +2698,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2708,6 +2727,7 @@ fn a_path_denied_to_write_stays_readable() {
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2786,6 +2806,7 @@ fn on_macos_the_store_holds_the_credential_store_so_a_claude_code_chat_compiles(
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     claude::settings(&compiled(denied, Os::MacOs)).expect("compiles on macOS");
 }
@@ -2800,9 +2821,42 @@ fn on_linux_claude_code_cannot_hold_the_credential_store_so_the_chat_does_not_st
         unread: None,
         untold: None,
         git_folder_pins: vec![],
+        model_keys: false,
     };
     let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
     assert_eq!(refused.class(), Some(Class::Vaults));
+}
+
+#[test]
+fn a_chat_refused_the_credential_store_for_a_model_key_is_told_of_your_keys_not_of_vaults() {
+    // D6640-T3 item 7 and the security review of T1a-72: a model key, with or without a keyring
+    // vault, is why; moving a vault's secrets is no way on, so the refusal is W132's.
+    let denied = Denied {
+        paths: vec![],
+        services: vec![Service::CredentialStore],
+        unread: None,
+        untold: None,
+        git_folder_pins: vec![],
+        model_keys: true,
+    };
+    let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
+    assert_eq!(refused.unheld, Unheld::ModelKeys(Os::Linux));
+    assert_eq!(refused.class(), Some(Class::Vaults));
+    let slots = [
+        ("lead", LEAD),
+        ("system", "Linux"),
+        ("harness", Harness::ClaudeCode.title()),
+    ];
+    let open = NotStarted::Uncompilable(refused).to_string();
+    assert_eq!(
+        open,
+        crate::window_copy::fill(crate::window_copy::line::W132_PICKER, &slots)
+    );
+    assert!(!open.contains("vault"), "{open}");
+    assert_eq!(
+        NotStarted::Uncompilable(refused).sentence(false),
+        crate::window_copy::fill(crate::window_copy::line::W132_KEYS, &slots)
+    );
 }
 
 // -------------------------------------------------------------------------------------
@@ -9311,5 +9365,31 @@ fn the_tls_pool_files_a_restart_ask_compares_are_named_and_real_but_never_purlis
             .iter()
             .any(|it| it.path == crate::dockercontext::kept_tls_dir(config.path())),
         "the copies' folder is held from every chat whatever the pools name"
+    );
+}
+
+/// R-038: the `model-providers` preset stays for every chat purlis doesn't proxy, so opencode
+/// on its own OpenRouter key, passed through the person's own settings, keeps reaching it.
+#[test]
+fn an_unproxied_chat_keeps_the_model_providers_preset() {
+    use crate::keyroute::{Level, Route, Way};
+    let opencode = crate::harness_declaration::of(Harness::Opencode);
+    assert_eq!(
+        crate::keyroute::resolve(opencode, Way::OwnSettingsKey, Level::One),
+        Ok(Route::OwnSignIn),
+        "its own key is not proxied"
+    );
+    let plane = plane_saying("[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n");
+
+    let applied =
+        compiled_anyway(Harness::Opencode, plane.path(), &machine(Os::MacOs)).expect("compiles");
+
+    let reached = reached(&applied);
+    for host in Preset::ModelProviders.own_hosts() {
+        assert!(reached.iter().any(|it| it == host), "{host}: {reached:?}");
+    }
+    assert!(
+        reached.iter().any(|it| it == "openrouter.ai"),
+        "{reached:?}"
     );
 }

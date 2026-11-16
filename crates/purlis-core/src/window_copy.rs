@@ -139,6 +139,8 @@ pub mod line {
     pub const W81_PROXY_REFUSED: &str = "The outbound proxy refused the connection.";
     pub const W81_NO_ANSWER: &str = "<host> didn't answer within <n> seconds.";
     pub const W81_RESET: &str = "<host> reset the connection.";
+    pub const W81_UNSUPPORTED_PROXY: &str =
+        "purlis can't use the outbound proxy's <scheme> scheme.";
     /// W82: Refusal, printed by Claude Code when it gives up (the cap's 429).
     pub const W82: &str = "purlis: this chat has 64 model calls running at once.";
     /// W83: Refusal, printed by Claude Code when it gives up (the body-wait 429).
@@ -188,6 +190,9 @@ pub mod line {
     pub const W130: &str = "<file> on <pool> sets `models.<key>`, which this version of purlis can't enforce. Chats can't start there.";
     /// W131: Refusal, the turn's end.
     pub const W131: &str = "purlis: <file> on <pool> sets `models.<key>`, which this version of purlis can't enforce, so this request was blocked.";
+    /// W132: Refusal, New chat; a sandboxed chat's start.
+    pub const W132_PICKER: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Start this chat without the sandbox from the new-chat picker, or remove your model keys in Your keys.";
+    pub const W132_KEYS: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.";
 }
 
 /// The systems purlis runs on, for the table's first two rules.

@@ -54,6 +54,18 @@ use crate::secrets::keyring::{Held, Presence, Secret};
 /// The keychain service every entry's item is under; the account is the entry's id.
 pub const SERVICE: &str = "purlis/@your-keys";
 
+/// Your keys as a vault name: what a command, a tool, a fill or a runner would hand over to reach
+/// an entry. Never a vault ([`crate::secrets::registry::name_ok`] refuses it).
+pub const AS_A_VAULT: &str = "@your-keys";
+
+/// Whether `name` names your keys, as [`AS_A_VAULT`] or as [`SERVICE`], ignoring case and the
+/// spaces around it: what every existing secret path refuses (T1a-72, R-772,
+/// [`crate::secrets::registry::your_keys_refusal`]).
+pub fn named_by(name: &str) -> bool {
+    let name = name.trim();
+    name.eq_ignore_ascii_case(AS_A_VAULT) || name.eq_ignore_ascii_case(SERVICE)
+}
+
 /// The folder of the model keys' stores, in purlis's directory of the config home.
 pub const DIR: &str = "model-keys";
 
@@ -255,6 +267,16 @@ fn write(config_root: &Path, index: &Index) -> Result<(), String> {
     let dir = crate::machine::private_dir(config_root).map_err(|e| fail(&e))?;
     crate::profiletrust::private_dir(&dir.join(DIR)).map_err(|e| fail(&e))?;
     crate::machine::write_beside(config_root, &at, text.as_bytes()).map_err(|e| fail(&e))
+}
+
+/// **Whether your keys may hold a model key** under the config home `config_root`: any line in
+/// the index, one this build reads or not, or an index purlis cannot read. What every chat's
+/// sandbox counts as a keyring vault, so the system's credential service is denied to each chat
+/// whenever a model key exists (decisions.md D6640-T3 item 7). A missing index holds none.
+pub fn may_hold_a_key(config_root: &Path) -> bool {
+    read(config_root).map_or(true, |index| {
+        !index.entries.is_empty() || !index.unread.is_empty()
+    })
 }
 
 /// The index under its lock, refused where it can't be read or a newer purlis wrote it.

@@ -1677,6 +1677,10 @@ pub struct Denied {
     /// harness's start (`applied_of`), and empty in [`Denied::of`]: a compiler that holds a
     /// `.git` by itself already (a wrap's [`Reach::Itself`]) does not read it.
     pub git_folder_pins: Vec<PathBuf>,
+    /// **Whether a model key in your keys is among why the credential service is denied**
+    /// (decisions.md D6640-T3 item 7): a chat refused for it is told of your keys, not of a
+    /// keyring vault's secrets it could move ([`Unheld::ModelKeys`]).
+    pub model_keys: bool,
 }
 
 /// The clone's git folder, for a chat in a branch folder purlis cut (`cwd`): written by the app
@@ -1817,6 +1821,7 @@ impl Denied {
         let KeptList {
             mut paths,
             keyring,
+            model_keys,
             untold,
             ..
         } = kept_by_purlis(root, machine);
@@ -2021,6 +2026,7 @@ impl Denied {
             unread,
             untold,
             git_folder_pins: Vec::new(),
+            model_keys,
         }
     }
 }
@@ -2180,6 +2186,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         crate::secrets::links::path(&ctx),
         Access::ReadWrite,
     );
+    // The keyring a fenced build keeps in a file (every test build's, `secrets::keyring`): no
+    // chat reads or writes it, so a test of what a chat reaches of the keyring is never answered
+    // by a stub line (R-772, T1a-72).
+    deny(
+        Class::Vaults,
+        ctx.state.join(crate::secrets::keyring::STUB_FILE),
+        Access::ReadWrite,
+    );
     // …and under EVERY spelling of the state folder, there or not, as its other records are
     // below (RN-2a): which folder holds the vaults is decided by which are there.
     // The folder in use is one of the spellings unless `$PURLIS_HOME` moved it: named once.
@@ -2187,12 +2201,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         ctx.vaults_dir(),
         crate::secrets::fingerprint::key_path(&ctx),
         crate::secrets::links::path(&ctx),
+        ctx.state.join(crate::secrets::keyring::STUB_FILE),
     ];
     for state in crate::names::STATE_DIR.spellings() {
         for kept in [
             "vaults",
             crate::secrets::fingerprint::KEY_FILE,
             crate::secrets::links::FILE,
+            crate::secrets::keyring::STUB_FILE,
         ] {
             let path = root.join(state).join(kept);
             if !in_use.contains(&path) {
@@ -2618,6 +2634,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::yourkeys::DIR),
                 Access::ReadWrite,
             );
+            // The keyring a fenced build keeps beside the config home's stores (R-772, T1a-72).
+            deny(
+                Class::Vaults,
+                home.join(crate::secrets::keyring::STUB_FILE),
+                Access::ReadWrite,
+            );
         }
         // The files each pool over Docker's TLS API names (#6267): its CA, which a chat could
         // otherwise swap, and its client certificate and a key kept where it is, which would
@@ -2791,11 +2813,22 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             }
         }
     }
+    // A model key in your keys counts as a keyring vault (decisions.md D6640-T3 item 7): the
+    // credential service is denied to every chat whenever one exists, so no chat asks the Secret
+    // Service for a model key on a session bus a person allowed it.
+    let model_keys = crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    )
+    .is_some_and(|config_root| crate::yourkeys::may_hold_a_key(&config_root));
+    keyring |= model_keys;
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
         paths,
         keyring,
+        model_keys,
         untold: unresolved,
         notes,
     }
@@ -3001,8 +3034,11 @@ fn forge_folders_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
 /// What [`kept_by_purlis`] answers.
 struct KeptList {
     paths: Vec<Denial>,
-    /// Whether a vault here keeps its secrets in the credential store.
+    /// Whether a vault here keeps its secrets in the credential store, or a model key may be in
+    /// your keys.
     keyring: bool,
+    /// Whether a model key may be in your keys ([`Denied::model_keys`]).
+    model_keys: bool,
     untold: Option<Untold>,
     notes: Vec<KeptNote>,
 }
@@ -4410,6 +4446,11 @@ impl Compiled {
             Service::CredentialStore => self.os != Os::MacOs && !wrapped_on_linux,
         });
         match unheld {
+            // Your keys is why, whatever vaults there are: moving a vault's secrets is no way on.
+            Some(Service::CredentialStore) if self.denied.model_keys => Err(Uncompilable {
+                harness,
+                unheld: Unheld::ModelKeys(self.os),
+            }),
             Some(service) => Err(Uncompilable {
                 harness,
                 unheld: Unheld::Service(*service, self.os),
@@ -4586,6 +4627,10 @@ pub enum Unheld {
     /// A class held by a service that neither the store nor the harness's sandbox holds on
     /// this system.
     Service(Service, Os),
+    /// The credential service, denied because a model key may be in your keys (D6640-T3 item
+    /// 7), which neither the store nor the harness's sandbox holds on this system: the Secret
+    /// Service gives any process of the session every model key, with no prompt.
+    ModelKeys(Os),
     /// The harness has no sandbox of its own, and charter cannot wrap it on this system yet,
     /// so no class can be held.
     Wrap(Os),
@@ -4596,6 +4641,7 @@ impl Uncompilable {
     pub fn class(self) -> Option<Class> {
         match self.unheld {
             Unheld::Service(service, _) => Some(service.class()),
+            Unheld::ModelKeys(_) => Some(Service::CredentialStore.class()),
             Unheld::Wrap(_) => None,
         }
     }
@@ -7140,6 +7186,28 @@ impl NotStarted {
                 // Ruling V90c: never a dead end. The new-chat picker offers the opt-out beside
                 // it; a resumed or relaunched chat has no opt-out, so moving the secrets is its
                 // way on.
+                // W132: your keys, which no vault move empties (T1a-72).
+                Unheld::ModelKeys(os) => {
+                    use crate::window_copy::{fill, line};
+                    fill(
+                        if opt_out {
+                            line::W132_PICKER
+                        } else {
+                            line::W132_KEYS
+                        },
+                        &[
+                            ("lead", lead),
+                            (
+                                "system",
+                                match os {
+                                    Os::Linux => "Linux",
+                                    Os::MacOs | Os::Windows | Os::Other => "this system",
+                                },
+                            ),
+                            ("harness", it.harness.title()),
+                        ],
+                    )
+                }
                 Unheld::Service(Service::CredentialStore, os) => format!(
                     "{lead}, and {} purlis cannot keep {} {} \
                      chat away from the system keyring, where this project's keyring vaults \

@@ -1268,6 +1268,10 @@ impl Asks {
         into_too: bool,
         to: &super::links::Target,
     ) -> Result<(), String> {
+        // A link never reads your keys (T1a-72).
+        if let Some(why) = super::registry::your_keys_refusal(&to.vault) {
+            return Err(why);
+        }
         let persona = self
             .inner()
             .open
@@ -1769,6 +1773,14 @@ pub fn raised_within(
 ) -> Result<Said, String> {
     if line.chat != chat.chat {
         return Err(format!("this line is not chat {}'s", chat.chat));
+    }
+    // Your keys is never asked into, whatever key the line names (T1a-72).
+    if let Some(why) = line
+        .vault
+        .as_deref()
+        .and_then(super::registry::your_keys_refusal)
+    {
+        return Err(why);
     }
     if !super::needs::is_key(&line.key) {
         return Err(not_a_key(&line.key));

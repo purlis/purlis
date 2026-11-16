@@ -41,6 +41,7 @@ impl Told {
                     thread.id(),
                 ));
             }),
+            arrived: Arc::new(|| {}),
         }
     }
 }
