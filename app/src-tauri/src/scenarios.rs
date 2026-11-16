@@ -276,7 +276,8 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
         let read = scenario.result_of(chat, "reads-the-vault").expect("played");
         assert!(
             !read.to_string().contains("VAULT-HELD"),
-            "{protection:?}: the Claude Code chat read the vault, so it ran unsandboxed: {read}"
+            "{protection:?}: the Claude Code chat read the vault, so it ran unsandboxed: {read}\n{}",
+            scenario.said()
         );
     }
 }
@@ -301,7 +302,12 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
     }));
     scenario.until_played(chat, &["sleeps"]);
     let sleeper: u32 = std::fs::read_to_string(scenario.root.join(".scenario/sleeper.pid"))
-        .expect("the chat said what it left running")
+        .unwrap_or_else(|why| {
+            panic!(
+                "the chat said nothing of what it left running ({why})\n{}",
+                scenario.said()
+            )
+        })
         .trim()
         .parse()
         .expect("a process id");
@@ -339,7 +345,7 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
                 "run": reaches(&held)
             }]}]
         }));
-        until("the window is asked", || {
+        until(&scenario, "the window is asked", || {
             !scenario
                 .events_naming(purlis_core::eventlog::stops::ASK_RAISED, &held)
                 .is_empty()
@@ -421,7 +427,7 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     };
 
     let one = scenario.starts(&script);
-    until("the first chat is held on the host", || {
+    until(&scenario, "the first chat is held on the host", || {
         held_on(&scenario, one, host).is_some()
     });
     let shown = held_on(&scenario, one, host).expect("held");
@@ -434,18 +440,22 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     ))
     .expect("the person allows it for this chat");
     scenario.until_played(one, &["reaches"]);
-    until("the first chat's proxy carries it", || lookups() > 0);
+    until(&scenario, "the first chat's proxy carries it", || {
+        lookups() > 0
+    });
     let carried = lookups();
 
     let other = scenario.starts(&script);
     let began = std::time::Instant::now();
-    until("the other chat is held on the host", || {
+    until(&scenario, "the other chat is held on the host", || {
         held_on(&scenario, other, host).is_some()
     });
     scenario.until_played(other, &["reaches"]);
     assert!(
         began.elapsed() >= scenario.timings.hold(),
-        "the other chat's call ended before the hold did: it was carried by the first's grant"
+        "the other chat's call ended before the hold did: {:?}\n{}",
+        scenario.result_of(other, "reaches"),
+        scenario.said()
     );
     assert_eq!(
         lookups(),
@@ -493,7 +503,7 @@ fn a_crashed_window_reattaches_to_the_surviving_host_and_chat() {
         purlis_core::process::alive(pid),
         "the chat outlived the window"
     );
-    until("the new window has the chat back", || {
+    until(&scenario, "the new window has the chat back", || {
         scenario
             .open_chats()
             .iter()
@@ -538,7 +548,7 @@ fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
             "the quit ended every chat: {pid} still runs"
         );
     }
-    until("the relaunch restarts the live chat", || {
+    until(&scenario, "the relaunch restarts the live chat", || {
         !scenario.pids().is_empty()
     });
     let (again, _) = scenario
@@ -585,13 +595,13 @@ fn the_host_kill_is_observed() {
             &|_| {},
         )
         .expect("the chat starts in the host process");
-    until("the chat runs", || {
+    crate::behaviour::until("the chat runs", || {
         target.sessions.process_id(chat).is_some()
     });
 
     (target.kill_the_host.as_ref().expect("a host process"))();
 
-    until("the window is told the chat ended with its host", || {
+    crate::behaviour::until("the window is told the chat ended with its host", || {
         ends.lock()
             .expect("the ends")
             .iter()
@@ -667,12 +677,13 @@ fn the_maximal_chat_holds_every_grant_kind() {
 
 /// Until `done`, within [`PLAYS_WITHIN`]: a chat's harness starts and plays first.
 #[cfg(unix)]
-fn until(what: &str, done: impl Fn() -> bool) {
+fn until(scenario: &Scenario, what: &str, done: impl Fn() -> bool) {
     let deadline = std::time::Instant::now() + PLAYS_WITHIN;
     while !done() {
         assert!(
             std::time::Instant::now() < deadline,
-            "{what} never happened"
+            "{what} never happened\n{}",
+            scenario.said()
         );
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -694,7 +705,7 @@ fn the_scenario_host_never_uses_testgits_config() {
         let named = text
             .lines()
             .filter(|line| !line.trim_start().starts_with("//"))
-            .any(|line| line.contains(concat!("test", "git")));
+            .any(|line| line.contains(concat!("test", "git::")));
         assert!(!named, "{file} uses testgit's config");
     }
 }

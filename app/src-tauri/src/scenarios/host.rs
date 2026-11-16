@@ -24,6 +24,7 @@
 //! elsewhere returns with the reason printed: the OS wrap does not nest inside a sandboxed task.
 
 use std::ffi::OsString;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -58,7 +59,7 @@ pub(crate) fn on_ci() -> bool {
 /// **Why a scenario did not run**: a failure on CI, a printed reason elsewhere (`None`).
 pub(crate) fn cannot_run<T>(why: &str) -> Option<T> {
     assert!(!on_ci(), "the scenario cannot run on CI: {why}");
-    eprintln!("skipped: {why}");
+    let _ = writeln!(std::io::stderr(), "skipped: {why}");
     None
 }
 
@@ -266,7 +267,7 @@ impl Homes {
         let said = purlis_core::testrun::rerun_steered(&[&test], &env);
         if said.contains("skipped: ") {
             for line in said.lines().filter(|l| l.starts_with("skipped: ")) {
-                eprintln!("{line}");
+                let _ = writeln!(std::io::stderr(), "{line}");
             }
         }
         homes.nothing_left();
@@ -551,6 +552,8 @@ pub(crate) struct Scenario {
     window: Option<Window>,
     /// Each chat it started.
     chats: Mutex<Vec<u32>>,
+    /// How each chat was launched, as the window composed it: what a red run's reader needs.
+    launched: Mutex<Vec<String>>,
     /// The profile its chats start on, made once.
     profiled: std::sync::Once,
     /// Processes a test says the scenario started besides its chats.
@@ -641,6 +644,7 @@ impl Scenario {
             hosting: Some(hosting),
             window: Some(window),
             chats: Mutex::default(),
+            launched: Mutex::default(),
             profiled: std::sync::Once::new(),
             also: Mutex::default(),
             began,
@@ -795,12 +799,33 @@ impl Scenario {
         let chat = purlis_core::reopen::Chat {
             program: ready.program.clone(),
             cwd: ready.cwd.clone(),
-            name,
+            name: name.clone(),
             resume: ready.session.clone(),
             profile: Some(self.profile()),
             persona: self.persona.clone(),
             ..Default::default()
         };
+        let launched = format!(
+            "{name}: {} {:?}, sandbox {:?}, wrapped by {:?}, form {:?}",
+            ready.program,
+            ready.args,
+            ready
+                .sandbox
+                .as_ref()
+                .map(purlis_core::sandbox::Applied::level),
+            ready
+                .sandbox
+                .as_ref()
+                .and_then(purlis_core::sandbox::Applied::wrap_program),
+            ready
+                .sandbox
+                .as_ref()
+                .map(|applied| format!("{:?}", applied.form())
+                    .chars()
+                    .take(60)
+                    .collect::<String>()),
+        );
+        self.launched.lock().expect("launched").push(launched);
         let held = self.held();
         let id = held
             .chats()
@@ -811,6 +836,20 @@ impl Scenario {
             self.types(id, prompt);
         }
         id
+    }
+
+    /// **What a red run's reader needs**: how each chat was launched, the chats open now, the
+    /// kinds of event the log holds, and the transcript.
+    pub(crate) fn said(&self) -> String {
+        let kinds: Vec<String> = self.events().into_iter().map(|event| event.kind).collect();
+        format!(
+            "launched: {:#?}\nopen now: {:?}\nconfinements: {:?}\nevents: {kinds:?}\n\
+             transcript: {:#?}",
+            self.launched.lock().expect("launched"),
+            self.open_chats(),
+            self.confines.started(),
+            self.transcript()
+        )
     }
 
     /// The sandbox-only profile its chats start on: one per dialect, as a person signs one in.
@@ -869,8 +908,8 @@ impl Scenario {
         while !steps.iter().all(|step| self.result_of(id, step).is_some()) {
             assert!(
                 std::time::Instant::now() < deadline,
-                "chat {id} played none of {steps:?} in time; the transcript: {:#?}",
-                self.transcript()
+                "chat {id} played none of {steps:?} in time\n{}",
+                self.said()
             );
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -1042,7 +1081,7 @@ fn a_window(
         &connection,
     );
     let app = tauri::test::mock_builder()
-        .build(tauri::generate_context!(test = true))
+        .build(tauri_context!(test = true))
         .expect("the app builds on the mock runtime");
     tauri::Manager::manage(&app, planes);
     Window {
