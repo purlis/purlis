@@ -154,21 +154,58 @@ keyed by the W-number of the any-model spec's Window copy table; never typed by 
 
 Phase 1a's window copy is a table of lines by W-number, `app/src/windowCopy.table.md`, held in
 one copy module (`app/src/windowCopy.ts` in the window, `purlis_core::window_copy` in core): code
-takes a line from the module and never types it. The lines below are written here by the change
-that first draws them, with where each stands; each keeps the rules above.
+takes a line from the module and never types it. The lines below are the table's words, with
+where each stands and its ways out: every line the design or an operator's answer wrote (U21),
+and each drafted line once the change that first draws it lands. Each keeps the rules above, and
+`app/src/windowCopy.test.ts` holds them to the table.
 
 | # | Line | Where |
 |---|---|---|
+| W1 | *Paste your Anthropic key* | J0's form, the key form |
+| W2 | *Use the key you already have* (the one wording in 1a; the indefinite form returns in 1b) | J0's form, the key form, *Copy to your keys* |
+| W3 | `claude-anthropic` | J0's form (pre-filled name) |
+| W4 | *No keys yet* | Your keys (empty state), with *Add a key…* |
+| W5 | through `counted`: *2 chats use this key. Their next request is blocked, and the conversation is kept.* · *1 chat uses this key. Its next request is blocked, and the conversation is kept.* · *No chats use this key.* | Your keys (Remove's confirmation), with *Remove*, *Cancel* |
 | W10 | *Your keychain is locked. Unlock it to start this chat.* | The Ask, with *Unlock*: in place in New chat, or in Needs you for an unattended chat |
+| W11 | *purlis: your Anthropic key was removed. Add it again, then send your prompt again.* | The turn's end |
+| W15 | *Anthropic refused your key. Replace it, or start a new chat. Don't use `/login` here.* (on `authentication_error`) | Inbox, with *Replace the key…*, *Start a new chat* |
+| W22 | *This chat runs on your Anthropic key. Signing in to a Claude plan here does nothing.* | The pane's band (once per run), with *Resume* |
+| W23 | *Claude Code <version> didn't use the route purlis set* | The pane's band, with *End chat* |
+| W24 | *This project's Claude Code settings name another route. This chat uses purlis's.* | Card, chat details (said once) |
+| W26 | *purlis: <lock> now blocks this.* | The turn's end |
+| W26b | *<lock> blocks <choice>. Nothing else can start this chat until the policy allows it.* | New chat, the start |
+| W27 | *Only an Anthropic key works in this version* | The card, the start |
+| W28 | *This profile's Anthropic key is in the vault <name>. Copy it to your keys to use it in any project?* | Card, Needs you, with *Copy to your keys*, *Paste it again* |
+| W30 | *Your Anthropic key will be sent to pool <name> for its chats.* | Above the footer; Needs you (the pool key allowance), with *Send key to pool <name>* |
+| W32 | *purlis sends a key only to a runner marked as yours. <pool> isn't marked.* | New chat (unavailable card), with the pool's switch |
+| W33 | *Pool <name> runs an older purlis, so a key can't be sent there yet.* | The *Runs on* row, with *Update pool <name>…* |
+| W37 | *Metered*, *Reported by Claude Code*, *Not reported*, *Price unknown*, *Estimated*, *No calls yet*, *Spend not fully reported* | Harness card tab (spend words) |
+| W45 | *Send your prompt again.* | Inbox, under W20, W16, W17, W38; after *Try again* or an answered Ask it is an Update in the same place until the next call or a dismiss (a Notice line), with Dismiss |
+| W47 | *Pool <name> · Needs an update* | The *Runs on* row, with *Update pool <name>…* |
+| W48 | *Running chats keep going on the old runner* | Under W47 |
+| W49 | *Updating…* | The *Runs on* row (busy) |
+| W50 | *<pool> can't be reached. The chat there keeps this key until it ends or the link returns. To stop it now, revoke the key at Anthropic.* | Your keys (drawn with W5's confirmation), with Dismiss |
+| W51 | *Locked by policy, set by <who> in <file>.* | The card |
+| W53 | *routed by your administrator's Claude Code settings* | The card, chat details |
+| W58 | *as of <time>* | Harness card tab (spend line suffix) |
+| W79 | *Calls to model providers go through purlis's key proxy and show here as this chat's.* | The Network page |
 | W84 | *purlis couldn't unlock your keychain.* | Under W10, after a failed unlock; *Unlock* tries again |
 | W94 | *about a model key* | The Chat log, completing *Asked you …* for a model key's Ask |
 | W95 | *about sending a key to a pool* | The Chat log, completing *Asked you …* for a pool key allowance |
+| W102 | *Signs in with* | Add profile's form |
 | W122 | *a model key* | The Chat log, completing *Allowed …* for a model key's Ask |
+| W124 | *Send key to pool <name>* | New chat's footer (a button) |
+| W125 | *Stop sending* | Your keys (a button) |
+| W126 | *Mark again* | Needs you, Your keys (a button) |
+| W127 | *Save anyway* | The key forms (a button) |
 
 - **W10 says what is true and what to do** in two sentences, and its one way out is the verb it
   names, *Unlock*. It does not blame the reader for the lock.
 - **W84 says what failed from purlis's side**, with no stock phrase, and stands under W10, whose
   *Unlock* is what to do. A cancelled unlock says nothing: W10 stays as it was.
+- **W79 stands under the Open hosts**, on the Network page while the sandbox is on: a chat on a
+  key reaches its model provider through purlis's key proxy, so it needs no host there, and its
+  calls show there as that chat's.
 - **W94, W95 and W122 are fragments** that complete the Chat log's sentence, in lowercase, as the
   log's other groups are.
 

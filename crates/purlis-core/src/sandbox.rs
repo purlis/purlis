@@ -237,7 +237,7 @@ impl Preset {
     /// The name the window shows it by (`CONTEXT.md`, **Internet access**, #1340).
     pub fn title(self) -> &'static str {
         match self {
-            Self::ModelProviders => "AI providers",
+            Self::ModelProviders => "Model providers",
             Self::Forge => "Code hosting",
             Self::Toolchains => "Package registries",
         }

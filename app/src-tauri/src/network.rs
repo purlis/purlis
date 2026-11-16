@@ -267,7 +267,7 @@ pub(crate) fn record_settings_host(
 /// One group of **Open hosts**: a preset's, or the project's own.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct OpenHosts {
-    /// The preset's name in the window ("AI providers"), or "This project's hosts".
+    /// The preset's name in the window ("Model providers"), or "This project's hosts".
     pub title: String,
     /// Each host, spelled out.
     pub hosts: Vec<String>,

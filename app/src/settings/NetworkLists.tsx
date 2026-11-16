@@ -17,6 +17,7 @@ import { Notice } from "../Notice";
 import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
+import { windowCopy } from "../windowCopy";
 import { Choice, Field, type RowIds } from "./components";
 import { Button } from "../ui/button/Button";
 
@@ -119,6 +120,9 @@ export function OpenHostsList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
           </div>
         ))
       )}
+      {/* A chat on a key needs no host here (R-411, T1a-19): its model calls go through the key
+          proxy, and what it blocks is listed as that chat's. */}
+      {network?.on === true && <p className="ui-text-secondary">{windowCopy.W79}</p>}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
     </div>
   );

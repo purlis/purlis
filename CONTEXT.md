@@ -385,9 +385,11 @@ _Avoid_: Runners view, fleet, machines (for the view)
 Data that says how to start one harness, how to name and resume its sessions, which levels it
 offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
 folder variables, whether their credentials can be kept from the harness's commands, and how a
-conversation moves. The ones for Claude Code, Codex and opencode ship with purlis; a project may
-declare more, which each machine approves before they run, and never replaces a built-in's
-(ADR 0073).
+conversation moves. The ones purlis ships with adapter code (Claude Code, Codex and opencode,
+and those that join them) also say which wire formats the harness speaks; how one launch is
+routed is the adapter's. A project may declare more, which each machine approves before they
+run, which never replace a built-in's, and which run on their own sign-in only (ADR 0073,
+amended for #6578).
 _Avoid_: harness definition, harness config (that is the harness's own), profile (that is one
 identity of the harness the declaration describes)
 
@@ -413,11 +415,36 @@ _Avoid_: model config, model settings
 
 **Model source**:
 How a chat reaches its model: its **profile**'s sign-in kind. A `subscription` signed in through
-the harness's own flow, an `api-key` or `cloud` credentials the person keeps in a vault and the
-profile names by reference, or a `local` model. None of them passes through purlis's servers. A
-subscription's sign-in is the harness's, kept in the profile's folder, and purlis never reads,
-copies, stores or relays it (ADR 0087, ADR 0095).
+the harness's own flow, an `api-key` from **your keys**, which the **key proxy** uses for the
+harness, `cloud` credentials, which no chat starts on yet, or a `local` model. None of them
+passes through purlis's servers. A subscription's sign-in is the harness's, kept in the
+profile's folder, and purlis never reads, copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
+
+**Route** (of a run):
+What one run's model calls are bound to at its start: a **profile**, a **model provider
+declaration**, exactly as it stood at the start, and the endpoint whose format is the harness's.
+The run keeps it to its end; another route is another run (ADR 0087, amended for #6578).
+_Avoid_: route (unqualified, for a way of reaching a model; that is the sign-in kind), path,
+connection
+
+**Key proxy**:
+The listener in `purlisd` that a chat's harness sends its model calls to, one per chat: it
+checks the run's token, refuses what its contract doesn't allow, puts the credential in, and
+passes every body through unchanged. On a runner it is the runner host's own (ADR 0087 §7,
+amended for #6578).
+_Avoid_: proxy (unqualified; the egress proxy is ADR 0067's per-chat proxy for a sandboxed
+chat's connections), gateway, passthrough
+
+**Your keys**:
+The one list on this machine of the person's model keys: each a value in the system keychain. It
+is the only place a model key is read from, and only the **key proxy** uses it, for any project or
+persona. It is not a **Vault**: it has no name, no persona grant and no reference a project can
+write, and no chat, command or extension is handed anything from it. Each key carries a mark that
+binds it to one **model provider declaration** and its origins; only the window marks a key, and a
+key written any other way loses its mark. The window shows it as *Your keys*, under You › Models
+(ADR 0087, amended for #6578).
+_Avoid_: vault (for it; that is a **Vault**), key store, keyring (that is where its values are kept)
 
 **Profile**:
 A harness as the person runs it on a device, under a name: the harness, its settings, its
@@ -435,10 +462,10 @@ sign-in leaves in its folder), user data, persistent browser
 
 **Sign-in kind**:
 How a **Profile** signs in to its model: a **subscription** through the harness's own flow,
-which the harness keeps and purlis never holds; an **API key** or **cloud** credentials from
-the person's vault; or a **local** model, with nothing to sign in. A harness declaration lists
-the kinds it supports (ADR 0073). Not a forge's sign-in, which is a **Forge account** and never
-reaches a chat.
+which the harness keeps and purlis never holds; an **API key** from **your keys**; **cloud**
+credentials, which no chat starts on yet; or a **local** model, with nothing to sign in. A
+harness declaration lists the kinds it supports (ADR 0073). Not a forge's sign-in, which is a
+**Forge account** and never reaches a chat.
 _Avoid_: login (unqualified), auth method, account (that is who a model is billed to)
 
 **Session host** (`purlisd`):
@@ -667,6 +694,14 @@ was away is asked about afresh. It adds to ownership, never stands in for it (AD
 2026-10-26).
 _Avoid_: grant (that is an app runner's vault entry), owned (that is the device), Always (it lasts
 one run)
+
+**Pool key allowance**:
+The person's answer that lets one key of **your keys** be sent to one **pool**'s chats, pressed as
+*Send key to pool <name>*, and taken back with *Stop sending* in Your keys. Each chat there is
+sent the key for its run, and only to a runner marked as the person's own (ADR 0078, amended for
+#6578).
+_Avoid_: grant (that is a runner's **Grant**), approval (that is a key's approval setting),
+allowance (unqualified)
 
 **Editor protocol**:
 The part of the session host's public protocol an editor integration speaks: find which chat or
@@ -1379,8 +1414,9 @@ Everything that blocks until the person decides is an ask, whatever its source: 
 prompt of a chat or a task, a dispatch grant, a run grant, a host a chat's sandbox refused, a
 sandbox consent, a prompt waiting in a harness's own terminal, a chat waiting on the person's
 reply, a chat's browser that needs the person (**The browser needs you**), a budget reached, a
-suspected loop. One that stops a chat or a `purlis` command is a **Blocking ask** (ADR 0121).
-Each is derived from the
+suspected loop. An ask may be keyed by what is missing, a key or a **pool key allowance**, not by
+a chat, and may be raised after the turn ends. One that stops a chat or a `purlis` command is a
+**Blocking ask** (ADR 0121). Each is derived from the
 source that waits, keeps no record of its own beyond whether it has been seen, and is gone once
 its source stops waiting, except that an ask that timed out stays answerable (ADR 0121).
 Each names its chain (the session first, the chat that asked last) and the path that answers it,
@@ -1840,10 +1876,11 @@ and Revert (ADR 0067 §2).
 _Avoid_: escalation, unsandboxed write, proxy write
 
 **Internet access**:
-Which hosts a sandboxed chat can reach: readable presets ("AI providers", "Code hosting",
+Which hosts a sandboxed chat can reach: readable presets ("Model providers", "Code hosting",
 "Package registries"), each listing its hosts, plus the project's own hosts and your personal
 ones. The project's choice is committed and every teammate follows it; a host nothing allows is
-blocked and shown (ADR 0067 §1, §3).
+blocked and shown. A chat on a key needs no host here: its model calls go through the **key
+proxy** (ADR 0067 §1, §3, amended for #6578).
 _Avoid_: hosts it may reach, egress (in UI text), allowlist (that is the commit scan's), network
 policy
 

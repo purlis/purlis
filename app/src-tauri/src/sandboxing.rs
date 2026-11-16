@@ -453,7 +453,7 @@ impl From<sandbox::Besides> for SandboxBesides {
 pub struct SandboxPreset {
     /// The word the committed file names it by: `model-providers`.
     pub word: String,
-    /// Its name in the window: `AI providers`.
+    /// Its name in the window: `Model providers`.
     pub title: String,
     /// The hosts it lets a chat in this project reach: its own, and for code hosting the
     /// project's forges' too.

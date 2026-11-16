@@ -113,7 +113,7 @@ function listed(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** A preset's name inside a sentence: "Code hosting" as "code hosting", "AI providers" kept. */
+/** A preset's name inside a sentence: "Code hosting" as "code hosting", "Model providers" as "model providers". */
 function midSentence(title: string): string {
   return /^[A-Z][a-z]/.test(title) ? title[0].toLowerCase() + title.slice(1) : title;
 }

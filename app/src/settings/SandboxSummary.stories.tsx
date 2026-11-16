@@ -66,6 +66,5 @@ export const SandboxPageSummaryNamesModelProviders: Story = {
         "A chat here can change files in the folder it works in, and reach model providers and code hosting.",
       ),
     ).toBeVisible();
-    await expect(canvas.queryByText(/AI providers/)).toBeNull();
   },
 };

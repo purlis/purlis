@@ -13067,7 +13067,7 @@ export type OpenChat = {
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
 export type OpenHosts = {
-	/**  The preset's name in the window ("AI providers"), or "This project's hosts". */
+	/**  The preset's name in the window ("Model providers"), or "This project's hosts". */
 	title: string,
 	/**  Each host, spelled out. */
 	hosts: string[],
@@ -17072,7 +17072,7 @@ export type SandboxPolicy = {
 export type SandboxPreset = {
 	/**  The word the committed file names it by: `model-providers`. */
 	word: string,
-	/**  Its name in the window: `AI providers`. */
+	/**  Its name in the window: `Model providers`. */
 	title: string,
 	/**
 	 *  The hosts it lets a chat in this project reach: its own, and for code hosting the
