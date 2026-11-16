@@ -342,6 +342,27 @@ fn mark_again(root: &Path, credentials: &dyn Credentials, id: Ulid) -> Result<()
     mark::mark(root, credentials, id, &binding_of(&entry.entry.product)?)
 }
 
+/// **Replace, sealed** (X1): the new value under `id`, marked, and its pool key allowances
+/// sealed to it. Core's Replace reseals them itself where the old mark verified; where it comes
+/// back unmarked (the item was gone, or changed outside purlis), the entry is marked again here
+/// and its allowances resealed after, so a rotated key keeps its pools either way.
+fn replace_sealed(
+    root: &Path,
+    credentials: &dyn Credentials,
+    allowances: &dyn pools::Allowances,
+    id: Ulid,
+    value: &str,
+    checked: Checked,
+) -> Result<(), String> {
+    if yourkeys::replace(root, credentials, allowances, id, value, checked)? == Replaced::Unmarked {
+        mark_again(root, credentials, id)?;
+        allowances.reseal(id).map_err(|why| {
+            format!("the key was replaced and its pools couldn't be sealed to it again: {why}")
+        })?;
+    }
+    Ok(())
+}
+
 /// The key form's save, aimed at `target` (V7). Save order (C-23): the index line, the item, the
 /// mark, then the profile; a failed step after the item takes out what this save wrote.
 fn save(
@@ -362,10 +383,7 @@ fn save(
         let id = id_of(id)?;
         if listed.iter().any(|l| l.entry.id == id) {
             // The same id, its new value, marked: a rotated key keeps its pools (X1).
-            let replaced = yourkeys::replace(root, credentials, allowances, id, value, checked)?;
-            if replaced == Replaced::Unmarked {
-                mark_again(root, credentials, id)?;
-            }
+            replace_sealed(root, credentials, allowances, id, value, checked)?;
             return Ok(KeySaved::Saved { id: id.to_string() });
         }
         // Aimed at a missing entry while another key is held: only *Use the key you already
@@ -412,11 +430,7 @@ fn replace_held(
     profile: Option<&str>,
 ) -> Result<KeySaved, String> {
     let checked = check_at_save(&Secret::new(value.to_owned()));
-    if yourkeys::replace(root, credentials, allowances, held, value, checked)?
-        == Replaced::Unmarked
-    {
-        mark_again(root, credentials, held)?;
-    }
+    replace_sealed(root, credentials, allowances, held, value, checked)?;
     if let Some(name) = profile {
         purlis_core::profilestore::key_into(root, name, held)?;
     }
