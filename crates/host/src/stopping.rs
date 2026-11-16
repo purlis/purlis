@@ -14,6 +14,10 @@
 //!
 //! The handlers are installed as [`told_to_stop`] is called, before the host says it is ready, so
 //! a signal sent the moment it serves is heard and never ends the process by default.
+//!
+//! A second Ctrl-C, once the host has heard a stop, ends it at once ([`FORCED`]), as a person at
+//! a terminal expects while it waits up to `ENDS_WITHIN` for each chat's end: whatever was not
+//! yet ended is left in the host record, and the next host settles it as ended by its crash.
 
 use tokio::signal::unix::{SignalKind, signal};
 
@@ -21,9 +25,18 @@ use tokio::signal::unix::{SignalKind, signal};
 /// name: `told to stop (SIGTERM); every program ends …`.
 pub const TOLD_TO_STOP: &str = "every program ends as at a quit, and the host exits";
 
+/// What the host says as a second Ctrl-C ends it at once.
+pub const FORCED: &str = "told to stop again (SIGINT); the host exits now, and the next host \
+                          settles each chat not yet ended as ended by its crash";
+
+/// The status a host ended by a second Ctrl-C exits with: 128 + `SIGINT`, as a shell reports a
+/// program its interrupt ended.
+pub const FORCED_EXIT: i32 = 130;
+
 /// Resolves once this process is sent `SIGTERM` or `SIGINT`, saying [`TOLD_TO_STOP`] as it does.
-/// Both are handled from this call on, for the rest of the process's life: neither ends it any
-/// more. Called inside a Tokio runtime.
+/// Both are handled from this call on, for the rest of the process's life: a `SIGTERM` never ends
+/// it any more, and a `SIGINT` after the first stop ends it at once, with [`FORCED_EXIT`]. Called
+/// inside a Tokio runtime.
 pub fn told_to_stop() -> std::io::Result<impl Future<Output = ()> + Send + use<>> {
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -33,5 +46,11 @@ pub fn told_to_stop() -> std::io::Result<impl Future<Output = ()> + Send + use<>
             _ = interrupt.recv() => "SIGINT",
         };
         crate::say(&format!("told to stop ({by}); {TOLD_TO_STOP}"));
+        tokio::spawn(async move {
+            if interrupt.recv().await.is_some() {
+                crate::say(FORCED);
+                std::process::exit(FORCED_EXIT);
+            }
+        });
     })
 }

@@ -5,7 +5,7 @@ at a stop or a shutdown, and the next host settle each chat from the host record
 crash. The record was right, but a planned restart read as a crash in every chat's history. It
 left hearing `SIGTERM` as a quit for later. This note takes that up. §3, the amendment for #724
 and the rest of D-724-8 stay as accepted. Each item was **decided in implementation, to be
-confirmed** (D-6700-1 to D-6700-5).
+confirmed** (D-6700-1 to D-6700-6).
 
 1. **`purlis serve` hears `SIGTERM` as a quit, and `SIGINT` too.** systemd sends `SIGTERM` at a
    stop, `purlis serve --remove` and a shutdown, and launchd sends it at a bootout; a person at a
@@ -64,4 +64,20 @@ confirmed** (D-6700-1 to D-6700-5).
    settles it as ended by a crash, which is true, rather than nobody settling it at all. From
    the moment `end_all` begins, the host starts nothing: a start that lands then is refused, so
    none is written to the record after it is emptied, nor left running past the host.
+   This holds when `end_all` runs more than once. A window's quit ends every program, and the
+   host ends them all again as it stops serving; on the login item (FD-17) the window's breaker
+   may also send `SIGTERM` while the quit is still waiting. A later call finds no program left.
+   So the host keeps every end that any call took and has not yet seen written, and every call
+   waits for all of them and counts them, emptying the record only when none is left. A second
+   call never empties what the first left for the next host.
    *D-6700-5.*
+6. **A second Ctrl-C ends the host at once.** Once the host has heard a stop, by either signal,
+   a further `SIGINT` makes it exit straight away with status 130 (128 + `SIGINT`), saying so on
+   standard error (`purlis_host::FORCED`, `FORCED_EXIT`). It does not wait up to `ENDS_WITHIN`
+   for each chat's end. A person at a terminal expects this, and the host leaves nothing untrue:
+   each chat not yet ended stays in the host record, and the next host settles it as ended by
+   its crash, as after a `SIGKILL`. A second `SIGTERM` is still only heard, because neither
+   systemd nor launchd sends one to hurry a stop: each sends `SIGKILL` once its timeout passes.
+   *Rejected:* swallowing every later `SIGINT` for the rest of the process's life. That leaves a
+   person no way to stop a host that is waiting, other than `kill -9` from another terminal.
+   *D-6700-6.*

@@ -16,7 +16,7 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_host::standin::StandIns;
 use purlis_host::{
@@ -134,4 +134,71 @@ async fn sigterm_ends_each_program_as_a_quit_and_leaves_the_next_host_nothing_to
         "nothing is left to settle as a crash"
     );
     assert!(next.left.lock().unwrap().is_empty());
+}
+
+/// Set in the copy of this test binary that [`a_second_ctrl_c_ends_the_host_at_once`] runs.
+const THE_HOST: &str = "PURLIS_HOST_TEST_HEARS_A_SECOND_CTRL_C";
+
+/// A person at a terminal presses Ctrl-C again while the host waits for each chat's end: the
+/// host exits at once, with 130, rather than swallowing it (#6700, ADR 0068 §3 as amended for
+/// #6700). It runs this test binary again, as the host, because the exit ends its process.
+#[test]
+fn a_second_ctrl_c_ends_the_host_at_once() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    if std::env::var_os(THE_HOST).is_some() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let told = purlis_host::told_to_stop().expect("SIGINT is handled");
+            println!("ready");
+            told.await;
+            println!("told");
+            // Longer than any wait for the chats' ends: only the second Ctrl-C ends it sooner.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        return;
+    }
+    let mut host = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "a_host_told_to_stop_by_sigterm_hears_it_as_a_quit::a_second_ctrl_c_ends_the_host_at_once",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(THE_HOST, "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the host starts");
+    let pid = nix::unistd::Pid::from_raw(i32::try_from(host.id()).unwrap());
+    let mut said = BufReader::new(host.stdout.take().unwrap()).lines();
+    // The test harness says the test's name on the line before the host's first word.
+    let mut until = |line: &str| {
+        for heard in said.by_ref() {
+            if heard.unwrap().trim_end().ends_with(line) {
+                return;
+            }
+        }
+        panic!("the host never said {line:?}");
+    };
+    until("ready");
+    nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGINT).unwrap();
+    until("told");
+    let began = Instant::now();
+    nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGINT).unwrap();
+    let ended = host.wait().unwrap();
+
+    assert_eq!(
+        ended.code(),
+        Some(purlis_host::FORCED_EXIT),
+        "the second Ctrl-C ended the host as forced: {ended:?}"
+    );
+    assert!(
+        began.elapsed() < Duration::from_secs(5),
+        "at once, not after its wait"
+    );
 }

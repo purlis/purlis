@@ -136,7 +136,7 @@ pub use serving::{
     Listing, Pairing, Place, SigningIn, Unpairing, Window, answers, serve, serve_answering,
 };
 #[cfg(unix)]
-pub use stopping::{TOLD_TO_STOP, told_to_stop};
+pub use stopping::{FORCED, FORCED_EXIT, TOLD_TO_STOP, told_to_stop};
 #[cfg(unix)]
 pub use unattended::{Idles, UNLINKED_FOR};
 

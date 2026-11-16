@@ -249,3 +249,57 @@ async fn a_start_that_lands_as_the_host_ends_every_program_is_refused() {
         "nothing it refused is left in the host record to settle as a crash"
     );
 }
+
+#[tokio::test]
+async fn a_second_ending_after_a_quit_leaves_what_the_first_left_for_the_next_host() {
+    let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    // Longer than both endings together give every program: neither end is kept in time.
+    let kept = Slow::taking(3 * ENDS_WITHIN);
+    let (hosting, runs, desktop) = two_chats(folder.path(), project.path(), kept).await;
+    reaped_once_stopped(the_stand_ins(&runs));
+
+    // The window quits, and then the host ends every program again as it stops serving.
+    desktop.quit().await.expect("the quit is answered");
+    let ending = hosting.clone();
+    tokio::task::spawn_blocking(move || ending.end_all())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        settled_by_the_next_host(folder.path()),
+        2,
+        "the second ending, finding no program, still leaves each end the first never kept"
+    );
+}
+
+#[tokio::test]
+async fn an_ending_begun_while_another_waits_leaves_what_neither_kept_for_the_next_host() {
+    let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let kept = Slow::taking(3 * ENDS_WITHIN);
+    let (hosting, runs, _desktop) = two_chats(folder.path(), project.path(), kept).await;
+    reaped_once_stopped(the_stand_ins(&runs));
+
+    // A quit's ending, and a SIGTERM's while the first still waits for the ends.
+    let first = {
+        let ending = hosting.clone();
+        tokio::task::spawn_blocking(move || ending.end_all())
+    };
+    let until = Instant::now() + Duration::from_secs(5);
+    while !the_stand_ins(&runs)
+        .iter()
+        .all(|program| program.seen().stopped)
+    {
+        assert!(Instant::now() < until, "the host told each program to stop");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let ending = hosting.clone();
+    tokio::task::spawn_blocking(move || ending.end_all())
+        .await
+        .unwrap();
+    assert_eq!(
+        settled_by_the_next_host(folder.path()),
+        2,
+        "the second ending empties nothing while the first's ends are unkept"
+    );
+    first.await.unwrap();
+}

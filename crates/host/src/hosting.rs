@@ -680,6 +680,11 @@ struct State {
     /// starts, so none is listed after the host has ended them all, nor written to its record
     /// after it is emptied.
     ending_all: bool,
+    /// Each end [`Hosting::end_all`] took a program for and has not seen kept, from every call
+    /// of it (#6700): a window's quit ends every program, and the host ends them again as it
+    /// stops serving, or at a `SIGTERM` while the quit still waits. A later call finds no
+    /// program left, so it counts these, and empties the host record only once none is left.
+    ends_unkept: Vec<Arc<AtomicBool>>,
     /// The processes of programs closed or ended by the host, kept for the admission check for
     /// as long as the host runs: a process a program started may outlive it in its session, in
     /// a group of its own the close did not reach, and is still inside that chat. Keeping a
@@ -4870,8 +4875,10 @@ impl Hosting {
     ///
     /// The host record is emptied only where every chat's end was kept in time (#6700): one
     /// still being written when the time runs out, or never told, is left in it, so the next
-    /// host settles that chat as the crash it is rather than nobody settling it at all. Each
-    /// whose end was kept took itself out of the record as it was.
+    /// host settles that chat as the crash it is rather than nobody settling it at all. That
+    /// holds across calls: a call that finds no program left (the host stopping serving after
+    /// a window's quit, or a `SIGTERM` while a quit still waits) waits for, and counts, the ends
+    /// an earlier call took and has not seen kept, and empties nothing while any is left.
     pub fn end_all(&self) {
         let deadline = Instant::now() + ENDS_WITHIN;
         // Saving first: nothing starts a save of a project whose chats are being ended.
@@ -4895,6 +4902,9 @@ impl Hosting {
                 .collect();
             let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
             state.closed.extend(processes);
+            state
+                .ends_unkept
+                .extend(hosted.iter().filter_map(|hosted| hosted.end_kept.clone()));
             let confinements: Vec<Arc<dyn Confining>> = state
                 .confinements
                 .drain()
@@ -4902,10 +4912,6 @@ impl Hosting {
                 .collect();
             (hosted, confinements)
         };
-        let ends: Vec<Arc<AtomicBool>> = hosted
-            .iter()
-            .filter_map(|hosted| hosted.end_kept.clone())
-            .collect();
         stop_together(
             hosted.into_iter().map(|hosted| hosted.running).collect(),
             deadline,
@@ -4914,18 +4920,24 @@ impl Hosting {
         drop(confinements);
         // Each chat's end is written on a thread of its own once its program is reaped: the
         // host waits for it, as its process ending would end that thread mid-write (#6700).
-        let unkept = |ends: &[Arc<AtomicBool>]| {
-            ends.iter()
-                .filter(|kept| !kept.load(Ordering::Acquire))
-                .count()
+        // Every call waits for every end any call took, its own and an earlier one's alike.
+        let unkept = || {
+            let mut state = self.state();
+            state
+                .ends_unkept
+                .retain(|kept| !kept.load(Ordering::Acquire));
+            state.ends_unkept.len()
         };
-        while unkept(&ends) > 0 && Instant::now() < deadline {
+        while unkept() > 0 && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
         let Some(host_record) = &self.inner.host_record else {
             return;
         };
-        match unkept(&ends) {
+        // No end is added once the first call has begun (no program starts), and a kept end
+        // stays kept, so none left now means none is ever written to the record after it is
+        // emptied, whichever call empties it.
+        match unkept() {
             // Every program was ended as the host stopped, and its end told: there is nothing
             // for the next host to settle (#2007).
             0 => host_record.empty(),
