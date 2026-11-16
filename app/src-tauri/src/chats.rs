@@ -2648,6 +2648,7 @@ impl Chats {
         skills: &dyn std::ops::Deref<Target = purlis_core::hoststart::ChatSkills>,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
+            key_route: None,
             root: &self.project,
             kit: &self.kit(harness),
             harness,

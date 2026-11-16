@@ -1485,6 +1485,7 @@ fn an_outcome_chat_has_no_shell() {
             true,
             no_shell,
             &(None, None),
+            None,
         );
         serde_json::from_str::<serde_json::Value>(&text).expect("JSON")
     };

@@ -20,10 +20,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 use purlis_core::harness::claude::route;
 use purlis_core::keyroute::{KeyRoute, Listener};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Where the pinned `claude` program is, as CI hands it.
 const PINNED: &str = "PURLIS_CLAUDE_CODE";
@@ -50,7 +50,7 @@ fn pinned(test: &str) -> Option<PathBuf> {
             !required,
             "{test}: {REQUIRED} is set and {PINNED} is not, so this real-binary test would skip"
         );
-        eprintln!("{test}: skipped, {PINNED} is not set (a local run only)");
+        println!("{test}: skipped, {PINNED} is not set (a local run only)");
         return None;
     };
     let path = PathBuf::from(path);
@@ -155,7 +155,8 @@ fn save_a_login(config: &Path) {
 /// Runs `command` until it ends or [`PATIENCE`] passes, and ends it then.
 fn run_bounded(mut command: Command) -> std::process::ExitStatus {
     command.stdin(Stdio::null());
-    let mut child = purlis_core::forklock::spawn(&mut command).expect("the pinned Claude Code starts");
+    let mut child =
+        purlis_core::forklock::spawn(&mut command).expect("the pinned Claude Code starts");
     let began = Instant::now();
     loop {
         if let Some(status) = child.try_wait().expect("it can be waited on") {
@@ -176,9 +177,7 @@ fn a_key_chat_never_falls_back_to_a_saved_login() {
     let Some(claude) = pinned("a_key_chat_never_falls_back_to_a_saved_login") else {
         return;
     };
-    let version = Command::new(&claude)
-        .arg("--version")
-        .output()
+    let version = purlis_core::forklock::output(Command::new(&claude).arg("--version"))
         .expect("it answers its version");
     assert_eq!(
         String::from_utf8_lossy(&version.stdout).trim(),
@@ -226,9 +225,7 @@ fn a_key_chat_never_falls_back_to_a_saved_login() {
 
     let status = run_bounded(command);
 
-    let requests = rt
-        .block_on(server.received_requests())
-        .unwrap_or_default();
+    let requests = rt.block_on(server.received_requests()).unwrap_or_default();
     assert!(
         requests
             .iter()
@@ -255,7 +252,10 @@ fn a_key_chat_never_falls_back_to_a_saved_login() {
         }
         for (name, value) in &request.headers {
             let value = String::from_utf8_lossy(value.as_bytes());
-            assert!(!value.contains(&saved_login()), "{said} carried the login in {name}");
+            assert!(
+                !value.contains(&saved_login()),
+                "{said} carried the login in {name}"
+            );
             assert!(
                 !value.contains(CLAUDE_AI_PREFIX),
                 "{said} carried a claude.ai credential in {name}"

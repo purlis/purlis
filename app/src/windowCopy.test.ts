@@ -143,7 +143,7 @@ describe("the copy module (T1a-75)", () => {
   it("reads the whole table", () => {
     // A reading that lost rows would pass by having fewer to hold.
     expect(rows.length).toBeGreaterThanOrEqual(135);
-    expect(rows.at(-1)?.w).toBe("W132");
+    expect(rows.at(-1)?.w).toBe("W134");
   });
 
   it("every_w_string_is_in_the_copy_module", () => {

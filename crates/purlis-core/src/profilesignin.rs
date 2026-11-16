@@ -620,7 +620,7 @@ fn billed_in(
     if kept.check(&profile.kind).is_err() {
         return Some(format!("{said} · {CANNOT_SIGN_IN_AS_KEPT}"));
     }
-    if let Some(line) = key_refused(kept) {
+    if let Some(line) = key_refused(kept, seen.declaration) {
         return Some(format!("{said} · {line}"));
     }
     let credentials = references(kept);
@@ -634,18 +634,32 @@ fn billed_in(
 }
 
 /// **Why a chat on a checked `api-key` sign-in does not start yet**, in the copy module's words:
-/// one that names a declaration until the route exists (W117, until T1a-17), and an old record,
-/// its key in a vault, until *Copy to your keys* exists (W118, until T1a-39). `None` for any
-/// other kind.
-fn key_refused(kept: &SignIn) -> Option<&'static str> {
+/// one that names a declaration on a `harness` a key can't reach, as the route resolver says it
+/// (W134, T1a-15), and on one it can until the route exists (W117, until T1a-17); and an old
+/// record, its key in a vault, until *Copy to your keys* exists (W118, until T1a-39). `None` for
+/// any other kind.
+fn key_refused(kept: &SignIn, harness: &crate::harness_declaration::Declaration) -> Option<String> {
     use crate::window_copy::line::{W117, W118};
-    (kept.kind() == Some(SignInKind::ApiKey)).then(|| {
-        if kept.rest.contains_key(DECLARATION) {
-            W117
-        } else {
-            W118
-        }
-    })
+    if kept.kind() != Some(SignInKind::ApiKey) {
+        return None;
+    }
+    if !kept.rest.contains_key(DECLARATION) {
+        return Some(W118.to_owned());
+    }
+    // The route resolver first (T1a-15): a harness a key can't reach is refused in its own words
+    // (R-227). A start here arms the terminal, at level 2 where the harness takes hooks and 1
+    // where it doesn't; level 3 starts elsewhere, and is refused there through the same
+    // [`crate::keyroute::at_start`] (R-225).
+    let level = if harness.levels.hooks {
+        crate::keyroute::Level::Two
+    } else {
+        crate::keyroute::Level::One
+    };
+    match crate::keyroute::resolve(harness, crate::keyroute::Way::YourKey, level) {
+        Err(why) => Some(why),
+        // A route it can take still waits on T1a-17, which hands the start its listener.
+        Ok(_) => Some(W117.to_owned()),
+    }
 }
 
 /// What a row says where its credentials go into the harness's environment (ADR 0087 §7).
@@ -753,7 +767,7 @@ fn at_start_in(
             crate::shown::short(&profile.name)
         )
     })?;
-    if let Some(line) = key_refused(kept) {
+    if let Some(line) = key_refused(kept, seen.declaration) {
         return Err(format!(
             "profile '{}': {line} Nothing was started.",
             crate::shown::short(&profile.name)

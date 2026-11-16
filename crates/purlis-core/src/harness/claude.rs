@@ -46,6 +46,14 @@ impl HarnessAdapter for ClaudeCode {
     /// nothing but what [`project::KEPT`] names** (ADR 0067 as amended 2026-10-15). Otherwise it
     /// is started on the person's settings and purlis's alone (`--setting-sources user`), and
     /// the project's deny and ask rules ride on `--settings` instead ([`project`]).
+    ///
+    /// **A key chat's route is pinned in the same `--settings`** (T1a-15, [`route`]): merged into
+    /// its one `env` object beside the listing limit, with the base URL, the strip floor blanked,
+    /// the seven provider switches blanked, the loopback bypass, and one model slot,
+    /// `ANTHROPIC_DEFAULT_HAIKU_MODEL`, the provider's background model, which outranks the
+    /// person's own value for it and shows as a pinned Haiku row in `/model`. `ANTHROPIC_MODEL`
+    /// and every other slot are left to the person. The run's token alone goes in the
+    /// environment, as `ANTHROPIC_AUTH_TOKEN`.
     fn arm_under(
         &self,
         kit: Kit<'_>,
@@ -147,6 +155,7 @@ impl HarnessAdapter for ClaudeCode {
                         // An outcome eval's chat has no shell unless its skill asked for one (#4476).
                         kit.writes_its_piece && !kit.runs_a_shell,
                         &own_of(kit, cwd),
+                        kit.key_route,
                     ),
                 ]),
             ]
@@ -175,6 +184,12 @@ impl HarnessAdapter for ClaudeCode {
                     linked.display().to_string(),
                 )
             }))
+            // A key chat's token, in its environment alone (R-066, R-256): every other variable
+            // of its route rides in `--settings` ([`route`]).
+            .chain(
+                kit.key_route
+                    .map(|key_route| (route::TOKEN.to_owned(), key_route.token().to_owned())),
+            )
             .collect(),
             cannot_report: Vec::new(),
         }
@@ -728,6 +743,7 @@ fn settings(
     graded: bool,
     no_shell: bool,
     own: &(Option<String>, Option<String>),
+    key_route: Option<&crate::keyroute::KeyRoute>,
 ) -> String {
     let mut settings = serde_json::Map::new();
     // What purlis hands this chat first: a Try it's scratch chat's every plugin off. A session
@@ -781,10 +797,20 @@ fn settings(
     // **The limit on its skill listing, for this session alone** (#4610). Measured on 2.1.316: in
     // `env` here it set the limit (23,456), ignored the window, and beat
     // `skillListingBudgetFraction`. Documented in `env-vars.md`; the variable has no settings key.
-    settings.insert(
-        "env".to_owned(),
-        serde_json::json!({ LISTING_LIMIT_ENV: listing_limit.to_string() }),
+    //
+    // **And a key chat's route, merged into the same object** (T1a-15, R-232, R-289): its base
+    // URL, its background model's slot, the strip floor blanked and the loopback bypass
+    // ([`route`]). One `env`, never a second, and the listing limit stands beside it (H-15). A
+    // chat with no route has none of it written (R-252).
+    let mut env = serde_json::Map::new();
+    env.insert(
+        LISTING_LIMIT_ENV.to_owned(),
+        listing_limit.to_string().into(),
     );
+    if let Some(key_route) = key_route {
+        env.extend(route::settings_env(key_route));
+    }
+    settings.insert("env".to_owned(), serde_json::Value::Object(env));
     // **Only where nothing else fills it.** The key is one value and the flag is the last
     // writer, so arming it where the operator has their own would stop theirs running
     // ([`crate::footerclaim`], measured on 2.1.280). Where charter does not arm it, the chat
@@ -980,6 +1006,7 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         false,
         false,
         &(None, None),
+        None,
     )
 }
 

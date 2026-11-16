@@ -59,17 +59,100 @@ pub const BYPASS: [&str; 2] = ["NO_PROXY", "no_proxy"];
 /// `ANTHROPIC_GOOGLE_CLOUD_*` members are the five T1a-02 listed from the pinned binary (spec
 /// C-40), which [`google_cloud_names_not_in_the_floor`] holds the pin to. The token's own
 /// variable is never in it.
-pub const STRIP_FLOOR: &[&str] = &[];
+pub const STRIP_FLOOR: &[&str] = &[
+    BASE_URL,
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_BEDROCK_BASE_URL",
+    "ANTHROPIC_VERTEX_BASE_URL",
+    "ANTHROPIC_FOUNDRY_BASE_URL",
+    "ANTHROPIC_FOUNDRY_API_KEY",
+    "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+    "ANTHROPIC_FOUNDRY_RESOURCE",
+    "ANTHROPIC_AWS_BASE_URL",
+    "ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+    "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+    "CLAUDE_CODE_USE_GATEWAY",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_BETAS",
+    "CLAUDE_CODE_EXTRA_BODY",
+    "ANTHROPIC_AWS_API_KEY",
+    "ANTHROPIC_AWS_WORKSPACE_ID",
+    "ANTHROPIC_GOOGLE_CLOUD_AUTH",
+    "ANTHROPIC_GOOGLE_CLOUD_BASE_URL",
+    "ANTHROPIC_GOOGLE_CLOUD_LOCATION",
+    "ANTHROPIC_GOOGLE_CLOUD_PROJECT",
+    "ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID",
+    "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
+];
 
 /// **The provider switches a proxied chat blanks** (R-248, R-252, X8), each with why: every
 /// `CLAUDE_CODE_USE_` name in the pinned binary that routes a model call is here, or in
 /// [`KNOWN_NOT_A_ROUTE`] ([`switches_in_neither_list`]).
-pub const BLANKED_SWITCHES: [(&str, &str); 7] = [("", ""); 7];
+pub const BLANKED_SWITCHES: [(&str, &str); 7] = [
+    (
+        "CLAUDE_CODE_USE_BEDROCK",
+        "sends model calls to Amazon Bedrock instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_VERTEX",
+        "sends model calls to Google Vertex AI instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "sends model calls to Microsoft Foundry instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_MANTLE",
+        "sends model calls to Bedrock's Mantle endpoint instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+        "sends model calls to Claude Platform on AWS instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+        "sends model calls to Claude Models on Google Cloud instead of the base URL",
+    ),
+    (
+        "CLAUDE_CODE_USE_GATEWAY",
+        "beside a base URL and a token, runs the session in Claude apps gateway mode, with its \
+         own default model (2.1.325, X8)",
+    ),
+];
 
 /// **The `CLAUDE_CODE_USE_` names in the pinned binary that route no model call** (X8), each
 /// with why, as read from its strings at 2.1.300. A name in neither list is a decision someone
 /// has to make, so the guard fails on it.
-pub const KNOWN_NOT_A_ROUTE: &[(&str, &str)] = &[];
+pub const KNOWN_NOT_A_ROUTE: &[(&str, &str)] = &[
+    (
+        "CLAUDE_CODE_USE_CCR_V2",
+        "the transport of a remote session Claude Code's own server spawns; it moves no model call",
+    ),
+    (
+        "CLAUDE_CODE_USE_COWORK_PLUGINS",
+        "where plugins are read from; a source of plugins, not of model calls",
+    ),
+    (
+        "CLAUDE_CODE_USE_NATIVE_FILE_SEARCH",
+        "which file search the tools use; it moves no model call",
+    ),
+    (
+        "CLAUDE_CODE_USE_POWERSHELL_TOOL",
+        "turns on the PowerShell tool; it moves no model call",
+    ),
+];
 
 /// The prefix of the provider switches.
 pub const SWITCH_PREFIX: &str = "CLAUDE_CODE_USE_";
@@ -80,28 +163,70 @@ pub const GOOGLE_CLOUD_PREFIX: &str = "ANTHROPIC_GOOGLE_CLOUD_";
 /// **What a proxied chat's `--settings` `env` carries** for `route`, besides what the adapter
 /// writes there for every chat: the route's variables, never the token.
 pub fn settings_env(route: &KeyRoute) -> serde_json::Map<String, serde_json::Value> {
-    let _ = route;
-    serde_json::Map::new()
+    let mut env: serde_json::Map<String, serde_json::Value> = STRIP_FLOOR
+        .iter()
+        .map(|name| ((*name).to_owned(), "".into()))
+        .collect();
+    env.insert(BASE_URL.to_owned(), route.base_url().into());
+    if let Some(model) = route.background_model() {
+        env.insert(BACKGROUND_SLOT.to_owned(), model.into());
+    }
+    for (name, theirs) in BYPASS.into_iter().zip(route.bypass()) {
+        env.insert(name.to_owned(), with_loopback(theirs).into());
+    }
+    env
+}
+
+/// The person's bypass `theirs` with [`LOOPBACK`] added, where it doesn't name it already.
+fn with_loopback(theirs: Option<&str>) -> String {
+    match theirs.map(str::trim).filter(|theirs| !theirs.is_empty()) {
+        None => LOOPBACK.to_owned(),
+        Some(theirs) if theirs.split(',').any(|host| host.trim() == LOOPBACK) => theirs.to_owned(),
+        Some(theirs) => format!("{theirs},{LOOPBACK}"),
+    }
 }
 
 /// Each environment variable name in `binary` that starts with `prefix`: the prefix, then
 /// capitals, digits and `_`, standing alone (no name character before it).
 pub fn names_in(binary: &[u8], prefix: &str) -> BTreeSet<String> {
-    let _ = (binary, prefix);
-    BTreeSet::new()
+    let named = |byte: u8| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_';
+    memchr::memmem::find_iter(binary, prefix.as_bytes())
+        .filter(|&at| {
+            at == 0 || {
+                let before = binary[at - 1];
+                !(named(before) || before.is_ascii_lowercase())
+            }
+        })
+        .filter_map(|at| {
+            let rest = &binary[at + prefix.len()..];
+            let tail = rest.iter().take_while(|byte| named(**byte)).count();
+            (tail > 0).then(|| {
+                String::from_utf8_lossy(&binary[at..at + prefix.len() + tail]).into_owned()
+            })
+        })
+        .collect()
 }
 
 /// The `ANTHROPIC_GOOGLE_CLOUD_` names in `binary` the floor doesn't list.
 pub fn google_cloud_names_not_in_the_floor(binary: &[u8]) -> Vec<String> {
-    let _ = binary;
-    Vec::new()
+    names_in(binary, GOOGLE_CLOUD_PREFIX)
+        .into_iter()
+        .filter(|name| !STRIP_FLOOR.contains(&name.as_str()))
+        .collect()
 }
 
 /// The `CLAUDE_CODE_USE_` names in `binary` in neither [`BLANKED_SWITCHES`] nor
 /// [`KNOWN_NOT_A_ROUTE`].
 pub fn switches_in_neither_list(binary: &[u8]) -> Vec<String> {
-    let _ = binary;
-    Vec::new()
+    names_in(binary, SWITCH_PREFIX)
+        .into_iter()
+        .filter(|name| {
+            !BLANKED_SWITCHES
+                .iter()
+                .chain(KNOWN_NOT_A_ROUTE)
+                .any(|(listed, _)| listed == name)
+        })
+        .collect()
 }
 
 #[cfg(test)]

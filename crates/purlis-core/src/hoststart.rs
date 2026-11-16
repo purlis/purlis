@@ -974,6 +974,9 @@ pub fn compose_ready(
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
     let armed = armed(&Arming {
+        // A key chat's listener is handed to its start by T1a-17 (with T1a-61's key): until then
+        // a key profile's start is refused before it gets here (W117).
+        key_route: None,
         root,
         kit,
         harness: ready.harness,
@@ -1526,6 +1529,10 @@ pub struct Arming<'a> {
     /// a sandboxed chat whose harness cannot carry the arming, needs the arming built from it. A
     /// [`std::cell::LazyCell`] over the read is what a start passes.
     pub skills: &'a dyn std::ops::Deref<Target = ChatSkills>,
+    /// **A key chat's route** (T1a-15): the run's listener as its start resolved it
+    /// ([`crate::keyroute::at_start`]), which its adapter pins the harness to. `None` for every
+    /// chat the key proxy doesn't carry.
+    pub key_route: Option<&'a crate::keyroute::KeyRoute>,
 }
 
 /// **What arms a chat's harness** for this session alone: the arguments and the variables its
@@ -1543,6 +1550,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         env,
         graded,
         skills,
+        key_route,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -1641,7 +1649,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         own,
         laid_out: linked.as_deref(),
-        key_route: None,
+        key_route,
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {

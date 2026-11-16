@@ -3,7 +3,8 @@
 
 //! **A key chat's token reaches its harness in the process environment alone** (T1a-15, R-066):
 //! a Claude Code chat on a key route is armed as its start arms it, its `--settings` put in its
-//! file under `chat-settings` where it is too long for a word, and `crates/fake-harness` is
+//! file under `chat-settings` where it is too long for a word (`hoststart::settings_in_a_file`),
+//! and `crates/fake-harness` is
 //! started in Claude Code's place with those words and that environment, in the chat's run
 //! folder. It records what reached it. The token is in its environment as
 //! `ANTHROPIC_AUTH_TOKEN`, and in none of its argv, the run folder or the `chat-settings` folder.
@@ -22,17 +23,15 @@ fn fake_harness() -> PathBuf {
     let dir = purlis_core::testrun::bin_dir().expect("a test build");
     let beside = dir.join(format!("fake-harness{}", std::env::consts::EXE_SUFFIX));
     if !beside.is_file() {
-        let status = Command::new(env!("CARGO"))
-            .args([
-                "build",
-                "--quiet",
-                "-p",
-                "fake-harness",
-                "--bin",
-                "fake-harness",
-            ])
-            .status()
-            .expect("cargo runs");
+        let status = purlis_core::forklock::status(Command::new(env!("CARGO")).args([
+            "build",
+            "--quiet",
+            "-p",
+            "fake-harness",
+            "--bin",
+            "fake-harness",
+        ]))
+        .expect("cargo runs");
         assert!(status.success(), "fake-harness did not build: {status}");
     }
     beside
@@ -106,14 +105,15 @@ fn adapter_writes_the_token_only_into_the_process_environment() {
     .expect("its settings are kept as a start keeps them");
     let record = records.path().join("record.json");
 
-    let status = Command::new(fake_harness())
-        .args(&args)
-        .env_clear()
-        .envs(env.iter().map(|(name, value)| (name, value)))
-        .env("FAKE_HARNESS_RECORD", &record)
-        .current_dir(run.path())
-        .status()
-        .expect("the fake harness runs");
+    let status = purlis_core::forklock::status(
+        Command::new(fake_harness())
+            .args(&args)
+            .env_clear()
+            .envs(env.iter().map(|(name, value)| (name, value)))
+            .env("FAKE_HARNESS_RECORD", &record)
+            .current_dir(run.path()),
+    )
+    .expect("the fake harness runs");
 
     assert!(status.success(), "{status}");
     let said: serde_json::Value =
@@ -146,12 +146,17 @@ fn adapter_writes_the_token_only_into_the_process_environment() {
             );
         }
     }
-    // The settings it reached were the key route's, so the scan above read what was handed.
-    let settings = every_file(&chat_settings);
+    // The settings it reached were the key route's, so the scans above read what was handed: in
+    // its one `--settings` word, or in the file under `chat-settings` a long one is kept in.
+    let base_url = "http://127.0.0.1:47321";
+    let in_a_word = argv
+        .iter()
+        .any(|arg| arg.as_str().unwrap_or_default().contains(base_url));
+    let in_a_file = every_file(&chat_settings)
+        .iter()
+        .any(|(_, bytes)| holds(bytes, base_url));
     assert!(
-        settings
-            .iter()
-            .any(|(_, bytes)| holds(bytes, "http://127.0.0.1:47321")),
-        "the route's settings were kept in chat-settings: {settings:?}"
+        in_a_word || in_a_file,
+        "the route's settings reached it: {argv:?}"
     );
 }

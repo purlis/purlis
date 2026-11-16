@@ -200,7 +200,10 @@ fn adapter_writes_the_route_into_settings_env() {
 /// R-232: a person's bypass that already names the loopback is kept as it is.
 #[test]
 fn adapter_writes_the_persons_bypass_once() {
-    let route = route_in(&[("NO_PROXY", "127.0.0.1"), ("no_proxy", "localhost, 127.0.0.1")]);
+    let route = route_in(&[
+        ("NO_PROXY", "127.0.0.1"),
+        ("no_proxy", "localhost, 127.0.0.1"),
+    ]);
     let env = settings_env_of(&armed(Some(&route)).0);
 
     assert_eq!(env["NO_PROXY"], "127.0.0.1");
@@ -226,7 +229,9 @@ fn adapter_never_writes_anthropic_model() {
             !args
                 .iter()
                 .enumerate()
-                .filter(|(at, _)| args.get(at.wrapping_sub(1)).is_none_or(|f| f != "--settings"))
+                .filter(|(at, _)| args
+                    .get(at.wrapping_sub(1))
+                    .is_none_or(|f| f != "--settings"))
                 .any(|(_, arg)| arg.contains(slot)),
             "{slot} in argv"
         );
@@ -301,7 +306,10 @@ fn the_blanked_switches_are_the_seven_and_each_says_why() {
     }
     for (name, _) in KNOWN_NOT_A_ROUTE {
         assert!(!blanked.contains(name), "{name} is in both lists");
-        assert!(!STRIP_FLOOR.contains(name), "{name} routes nothing, and is blanked");
+        assert!(
+            !STRIP_FLOOR.contains(name),
+            "{name} routes nothing, and is blanked"
+        );
     }
 }
 
@@ -388,10 +396,7 @@ fn adapter_keeps_an_unproxied_chats_cloud_switch() {
     assert!(!settings.contains_key("CLAUDE_CODE_USE_BEDROCK"));
     for name in STRIP_FLOOR.iter().chain(&[TOKEN, BACKGROUND_SLOT]) {
         assert!(!settings.contains_key(*name), "{name} written unproxied");
-        assert!(
-            !env.iter().any(|(n, _)| n == name),
-            "{name} set unproxied"
-        );
+        assert!(!env.iter().any(|(n, _)| n == name), "{name} set unproxied");
     }
     assert_eq!(
         settings.keys().collect::<Vec<_>>(),
