@@ -26,8 +26,15 @@ with the `fuzzing` feature, which only the fuzz crate turns on.
 For a URL, the proxy must read the host the client meant, or refuse the request. The reference is
 the `url` crate, which implements the WHATWG URL Standard that Node implements, and the heads curl
 and Node really send: `fuzz/clients/record.mjs` points both at a listener for each URL in
-`fuzz/clients/urls.txt` (userinfo, a final dot, punycode, IP encodings, delimiters). Node's plain
+`fuzz/clients/urls.txt` (userinfo, a final dot, punycode, IP encodings, delimiters), a listener of
+its own for each client and URL, so a head is never filed under another's request. Node's plain
 requests are committed as seeds; CI records curl and Node fresh on its runner every run.
+
+A fresh recording fails, rather than being passed over, when a head's request line names another
+host than its URL, or when a client recorded nothing at all. The one known exception is named in
+`record.mjs`: curl reads `http://example.com\@evil.test/` as userinfo and the host `evil.test`,
+where WHATWG reads the backslash as a slash. The proxy judges the host curl dials, so it is no
+disagreement of the proxy's.
 
 What it found, and what became of each:
 
@@ -44,11 +51,31 @@ What it found, and what became of each:
   `allows_on`, which the proxy's decision asks, refuses it, and no listed entry is one, since
   `hosts::Host::parse` refuses it (found by `fuzz_host_pattern`).
 - **Not a fault, in the target:** a URL and a recorded head that name different hosts, which the
-  fuzzer makes by changing one half of a pair; the target reads such a pair as no recording.
+  fuzzer makes by changing one half of a pair; the target reads such a pair as no recording. A
+  real recording never is one: `record.mjs` fails on it.
 - **Not a disagreement:** an IPv6 address in another spelling (`::0` for `::`): the proxy's
   decision reads an address as an address, so the target compares them so.
 - **Not a disagreement:** a URL the proxy refuses (a host with a character WHATWG allows but no
   DNS name has, such as `a!b.example`). Refusing is not reading another host.
+
+## Each target seen red
+
+A target is trusted once it has failed for the right reason. Four failed on the parser before
+the fixes above: `fuzz_proxy_request_head` and `fuzz_browser_reach_request_head` (they judged
+`1.2.3.4<tab>.github.com`), `fuzz_connect_authority` (an unbracketed `::1`) and the differential
+target (`127.1`, which curl and Node mean as `127.0.0.1`). The other four are shown red by a
+recorded mutation, a patch in `fuzz/mutations/<target>.patch` that breaks the rule the target
+guards:
+
+| Target | Mutation | Red on |
+| --- | --- | --- |
+| `fuzz_socks_handshake` | The SOCKS name check before T1.1-47 (any printable bytes) | Replaying the seeds: `at-name` (`evil.test@x.example.com`), `hex-name` (`0x7f.1`), `decimal-name`, `upper-hex-name`, `empty-label` (`a..b`) |
+| `fuzz_host_pattern` | `allows` lets `*.suffix` match any host ending in `suffix` | Under 60 s of fuzzing: `"o"` allowed under `*.` (kept as the seed `wildcard-suffix-mutant`) |
+| `fuzz_hook_stdin` | A turn's last message is cut one character past what was asked | At once: a 1-byte message where 0 was asked (kept as the seed `cut-mutant`) |
+| `fuzz_door_host_origin` | The door takes any `Origin` | Replaying the seeds: `foreign-origin` (`http://evil.test`) |
+
+To see one red again: `git apply fuzz/mutations/<target>.patch` (from the repository root),
+build, run the target as below, and `git apply -R` the patch.
 
 ## Running
 
