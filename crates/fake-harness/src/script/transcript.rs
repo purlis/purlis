@@ -6,8 +6,8 @@
 //! real harness's requests (`purlis_recordings::projection::Shown`): `kind` (`user_text`,
 //! `context` or `tool_result`), `text` as the harness frames it, and a tool result's
 //! `tool_use_id` and `is_error`. Beside those, what the line came from: a prompt's `typed`, a
-//! tool result's `stdout`, `stderr` and `exit`, the `hook` whose context or refusal it carries,
-//! and a refusal's `reason`.
+//! tool result's `stdout`, `stderr` and `exit`, the errno of a native call the OS refused
+//! (`os_error`), the `hook` whose context or refusal it carries, and a refusal's `reason`.
 //!
 //! Its file is `--transcript <file>`, or `$FAKE_HARNESS_TRANSCRIPT`; with neither it is not
 //! written.
@@ -82,6 +82,9 @@ impl Transcript {
             line.insert("stderr".to_owned(), ran.stderr.clone().into());
             line.insert("exit".to_owned(), ran.exit.map_or(Value::Null, Value::from));
         }
+        if let Some(os_error) = &result.os_error {
+            line.insert("os_error".to_owned(), os_error.clone().into());
+        }
         if let Some(refusal) = &result.refused_by {
             line.insert("hook".to_owned(), refusal.word.clone().into());
             line.insert("reason".to_owned(), refusal.reason.clone().into());
@@ -119,4 +122,6 @@ pub struct ToolResult {
     pub is_error: Option<bool>,
     pub ran: Option<Ran>,
     pub refused_by: Option<super::hooks::Refusal>,
+    /// What the OS said of a native call it refused (`EACCES`), beside what the model is shown.
+    pub os_error: Option<String>,
 }

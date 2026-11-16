@@ -14,6 +14,11 @@
 //!   refusal stops the call, a hook past its timeout is killed and the call goes on.
 //! - **Claude Code's `permissions.deny`** in the `--settings` it was started with hold its
 //!   native tools before any hook and any I/O ([`rules`]).
+//! - **The harness's own ask** is asked as the harness asks it, and answered on the keyboard:
+//!   Claude Code's for a write or an edit in its `default` permission mode, as its `asks`
+//!   recording shows it (`PermissionRequest`, then once the dialog has waited `Notification`);
+//!   Codex's for a command the model asks to run escalated; OpenCode's for a file outside the
+//!   chat's folder.
 //! - **The model transcript** ([`transcript`]) is everything the model would be shown.
 //! - **A relaunch** with the dialect's resume argument continues at the next turn, from a
 //!   cursor in `$FAKE_HARNESS_STATE` kept by session id ([`chat::Cursor`]).
@@ -67,6 +72,7 @@ fn run(argv: &[String]) -> Result<u8, String> {
             serde_json::json!({
                 "dialect": dialect.name(),
                 "fires": routes::fires(dialect),
+                "never_fired": routes::never_fired(dialect),
                 "routes": routes,
             })
         );

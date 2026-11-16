@@ -760,7 +760,16 @@ fn fires_heard(dialect: &str, script: &Value, words: &[String], keys: &[Keys]) {
         dialect,
         &[("CHARTER_HOOK_BINARY", "/opt/purlis/bin/purlis")],
     );
-    let heard = played.events();
+    // Each hook heard, by the event its payload names, else by the event its word is armed on
+    // (OpenCode's shim hands its permission hook OpenCode's own ask).
+    let mut heard = played.events();
+    for word in played.words() {
+        for route in listed["routes"].as_array().expect("routes") {
+            if route["word"] == word {
+                heard.insert(route["event"].as_str().expect("an event").to_owned());
+            }
+        }
+    }
     for event in listed["fires"].as_array().expect("fires") {
         let event = event.as_str().expect("an event");
         assert!(
@@ -801,12 +810,19 @@ fn every_event_the_fake_lists_as_fired_is_fired_in_a_scripted_run() {
             },
         ],
     );
-    // Codex: a call that ends well, and the end of its session.
+    // Codex: a call that ends well, one the model asks to run escalated, which Codex asks
+    // about, and the end of its session.
     fires_heard(
         "codex",
-        &covering_like(json!([{"step": "ok", "tool": "bash", "run": "true"}])),
+        &covering_like(json!([
+            {"step": "ok", "tool": "bash", "run": "true"},
+            {"step": "escalated", "tool": "exec_command", "input": {"cmd": "true", "sandbox_permissions": "require_escalated", "justification": "j"}},
+        ])),
         &first_message("codex", "go"),
-        &[],
+        &[Keys {
+            once_heard: Some("permissionrequest"),
+            bytes: "\r".to_owned(),
+        }],
     );
     // OpenCode: a call, and an edit of a file outside the chat's folder, which it asks about.
     fires_heard(

@@ -13,9 +13,10 @@
 //! - **OpenCode:** the shim's table, [`purlis_core::opencode::TOOLS`], its default guard and its
 //!   session hooks, with each word's timeout from the registry, as `opencode::shim` writes them.
 //!
-//! [`FIRES`] is what the fake knows how to fire, per dialect. A hook armed on an event the fake
-//! does not fire is a test's failure (`the_fake_harness_routes_come_from_purlis_core_for_every_dialect`):
-//! purlis-core gaining a hook the fake does not follow.
+//! [`FIRES`] is what the fake fires, per dialect, and [`NEVER_FIRED`] what it cannot, with why.
+//! A hook armed on an event in neither is a test's failure
+//! (`the_fake_harness_routes_come_from_purlis_core_for_every_dialect`): purlis-core gaining a
+//! hook the fake does not follow.
 
 use std::path::{Path, PathBuf};
 
@@ -42,7 +43,9 @@ pub struct Route {
     pub tool: Option<String>,
 }
 
-/// The events the fake fires, per dialect. A hook armed on another is never run.
+/// The events the fake fires, per dialect. A hook armed on another is never run. Each is fired
+/// in a scripted run (`every_event_the_fake_lists_as_fired_is_fired_in_a_scripted_run`), so
+/// none is listed that the fake does not fire.
 pub const FIRES: [(Dialect, &[&str]); 3] = [
     (
         Dialect::Claude,
@@ -70,7 +73,6 @@ pub const FIRES: [(Dialect, &[&str]); 3] = [
             "PreToolUse",
             "PostToolUse",
             "Stop",
-            "SubagentStop",
             "SessionEnd",
             "PermissionRequest",
         ],
@@ -88,6 +90,22 @@ pub const FIRES: [(Dialect, &[&str]); 3] = [
         ],
     ),
 ];
+
+/// The events purlis-core arms a dialect on that the fake cannot fire, and why: a hook armed on
+/// one is never run, and the routes test holds every other armed event to [`FIRES`].
+pub const NEVER_FIRED: [(Dialect, &str, &str); 1] = [(
+    Dialect::Codex,
+    "SubagentStop",
+    "Codex 0.169 offers the model no sub-agent tool (its recording, 0.169.0), so no sub-agent of its ends",
+)];
+
+pub fn never_fired(dialect: Dialect) -> serde_json::Map<String, Value> {
+    NEVER_FIRED
+        .iter()
+        .filter(|(d, _, _)| *d == dialect)
+        .map(|(_, event, why)| ((*event).to_owned(), Value::from(*why)))
+        .collect()
+}
 
 pub fn fires(dialect: Dialect) -> &'static [&'static str] {
     FIRES

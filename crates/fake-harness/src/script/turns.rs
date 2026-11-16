@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The turn script** `--script` plays: each turn a prompt and the calls the model asks for in
-//! it, `{tool, input, run?, parallel?, background?, subagent?}`.
+//! it, `{tool, input, run?, parallel?, background?, subagent?, harness_denies?}`, and a turn's
+//! `says` and `fails`.
 //!
 //! It reads the turn scripts T1.1-03 writes beside each recording (`tests/recordings`,
 //! `turns.json`), whose `tool` is the harness's own name for it, and a script written once for
@@ -47,6 +48,10 @@ pub struct Turn {
     /// What the model says as the turn ends, where a harness hands it to a hook.
     #[serde(default)]
     pub says: Option<String>,
+    /// The kind of API error that ends the turn, as Claude Code names it in its `StopFailure`
+    /// (`rate_limit`, `server_error`, ...), which it fires in place of the turn's `Stop`.
+    #[serde(default)]
+    pub fails: Option<String>,
 }
 
 // `subagent` marks the call T1.1-03's turn script saw start one; the tool says so too.
@@ -82,6 +87,10 @@ pub struct Call {
     /// fours.
     #[serde(default)]
     pub tokens: Option<u64>,
+    /// Why Claude Code's own check refuses the call (its auto mode's classifier, which a stand-in
+    /// cannot run): the reason its `PermissionDenied` is told, and the model shown.
+    #[serde(default)]
+    pub harness_denies: Option<String>,
 }
 
 /// The kinds of call a script written once for every dialect names.
