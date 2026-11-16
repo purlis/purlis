@@ -31,9 +31,15 @@ PermissionRequest and Notification are recorded.
 
 Recordings are made on Linux only, by CI: `.github/workflows/harness-recordings.yml` records each
 harness twice on a pull request into `phase-1-proven`, fails unless the two runs wrote the same
-files, and uploads `harness-recording-<harness>`. Take
-the files from that run's artifact into `recorded/`, read their diff, and say in the pull request
-which contract moved and why. Never edit a recording by hand.
+files and each is the one checked in for the pinned version, byte for byte, and uploads
+`harness-recording-<harness>`. A pull request that moves a recording is red until it checks in
+what its run recorded: take the files from that run's artifact into `recorded/`, read their
+diff, and say in the pull request which contract moved and why. Never edit a recording by hand.
+
+Claude Code is ended with its own `/exit`, and its covering recording's SessionEnd says
+`prompt_input_exit`. With the script's background shell still running, Claude Code answers
+`/exit` with "Background work is running"; the driver takes its default, "Exit and stop tasks",
+and the recording's header says so (`conditions.exit`).
 
 A change to the mask is applied to what is checked in with
 `cargo run -p purlis-recordings --bin recording-remask -- tests/recordings/recorded/*/*/recording.json`,

@@ -98,6 +98,9 @@ pub const TIME_KEYS: &[&str] = &[
 /// `created` name other things too.
 pub const TIME_SHAPED_KEYS: &[&str] = &["time", "created"];
 
+/// Whether a run of hook calls is one event's, given the call just before it and the run.
+pub type OneEvent = fn(Option<&Value>, &[Value]) -> bool;
+
 /// A run of hook calls a harness begins in either order, which the mask puts in one.
 #[derive(Debug, Clone, Copy)]
 pub struct RacyOrder {
@@ -109,6 +112,10 @@ pub struct RacyOrder {
     /// Text one call of the run must hold for the entry to apply, so it puts right only the run
     /// it names and never the same words elsewhere; any run of the words when `None`.
     pub when: Option<&'static str>,
+    /// What makes the run's calls one event's, given the call just before the run and the run:
+    /// a run that fails it (two events' calls that happen to sit together) keeps the order it
+    /// began in. Any run of the words when `None`.
+    pub one: Option<OneEvent>,
 }
 
 /// Every order the mask may put right, by name. Nothing is added without CI's evidence.
@@ -126,14 +133,16 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
                  43834558626, -notes and sessionstart and -quoted and -skills in run \
                  43859227733 (`harness recording (codex)`)",
         when: None,
+        one: None,
     },
     RacyOrder {
         harness: "opencode",
         words: &["notification", "permissionrequest"],
         reason: "OpenCode 1.19.5's shim runs both hooks of one permission ask at once; they began \
                  notification first in run 43834558626 and permissionrequest first in run \
-                 43836719317 (`harness recording (opencode)`)",
+                 43836719317 (`harness recording (opencode)`). Only the two of one ask",
         when: None,
+        one: Some(one_opencode_ask),
     },
     RacyOrder {
         harness: "opencode",
@@ -143,8 +152,44 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
                  PostToolUse first in run 43861652433 (`harness recording (opencode)`). Only \
                  that run: a turn that ends normally keeps its PostToolUse, then Stop",
         when: Some("User aborted the command"),
+        one: None,
     },
 ];
+
+/// Whether `run` is OpenCode's Notification and PermissionRequest of one permission ask: the
+/// notification names the permission the request asks for, in the request's session, and the
+/// request is for the file of the PreToolUse just before them, the call that asked.
+fn one_opencode_ask(before: Option<&Value>, run: &[Value]) -> bool {
+    let of = |word: &str| {
+        run.iter()
+            .find(|c| c["argv"][1] == word)
+            .map(|c| &c["stdin"])
+    };
+    let (Some(notification), Some(request), Some(before)) =
+        (of("notification"), of("permissionrequest"), before)
+    else {
+        return false;
+    };
+    let named = request["permission"].as_str().is_some_and(|permission| {
+        notification["message"]
+            .as_str()
+            .is_some_and(|m| m.ends_with(&format!(" {permission}")))
+    });
+    let same_session = notification["session_id"].is_string()
+        && notification["session_id"] == request["sessionID"];
+    let asked_by = |at: &str| {
+        let tool = &before["stdin"]["tool_input"];
+        before["stdin"]["hook_event_name"] == "PreToolUse"
+            && ["filePath", "file_path", "path"]
+                .iter()
+                .any(|key| tool[*key].as_str() == Some(at))
+    };
+    named
+        && same_session
+        && request["metadata"]["filepath"]
+            .as_str()
+            .is_some_and(asked_by)
+}
 
 /// A hook call whose reply a harness cuts off or lets come back as it exits, seen both ways in CI.
 #[derive(Debug, Clone, Copy)]
@@ -592,7 +637,9 @@ fn racy_order(calls: &mut [Value], racy: &RacyOrder) {
             calls[at..end]
                 .iter()
                 .any(|c| c["stdin"].to_string().contains(text))
-        });
+        }) && racy
+            .one
+            .is_none_or(|one| one(at.checked_sub(1).map(|b| &calls[b]), &calls[at..end]));
         if end - at > 1 && named {
             calls[at..end].sort_by_key(|call| place(call));
         }
@@ -794,6 +841,7 @@ mod tests {
             words: &["a", "b"],
             reason: "test",
             when: None,
+            one: None,
         };
         let call = |w: &str| json!({"argv": ["hook", w]});
         let mut calls = vec![
@@ -897,14 +945,63 @@ mod tests {
 
     #[test]
     fn opencodes_permission_ask_pair_seen_both_ways_is_put_in_one_order() {
-        let call = |w: &str| json!({"argv": ["hook", w]});
-        let recording = |first: &str, second: &str| {
-            json!({"harness": "opencode", "hook_calls": [call("pretooluse-edit"), call(first),
-                call(second), call("pretooluse-edit")]})
+        let asks = |file: &str| {
+            json!({"argv": ["hook", "pretooluse-edit"], "stdin": {"hook_event_name": "PreToolUse",
+                "session_id": "ses_7f3a91c2", "tool_input": {"filePath": file}}})
         };
-        let a = mask(&recording("permissionrequest", "notification"));
-        assert_eq!(a, mask(&recording("notification", "permissionrequest")));
+        let notification = |permission: &str| {
+            json!({"argv": ["hook", "notification"], "stdin": {"hook_event_name": "Notification",
+                "session_id": "ses_7f3a91c2", "message": format!("opencode asks permission to use {permission}")}})
+        };
+        let request = |file: &str| {
+            json!({"argv": ["hook", "permissionrequest"], "stdin": {"sessionID": "ses_7f3a91c2",
+                "permission": "external_directory", "metadata": {"filepath": file}}})
+        };
+        let recording = |calls: Vec<Value>| json!({"harness": "opencode", "hook_calls": calls});
+        let words = |masked: &Value| -> Vec<String> {
+            masked["hook_calls"]
+                .as_array()
+                .expect("calls")
+                .iter()
+                .map(|c| c["argv"][1].as_str().expect("a word").to_owned())
+                .collect()
+        };
+        let a = mask(&recording(vec![
+            asks("/o/a"),
+            request("/o/a"),
+            notification("external_directory"),
+            asks("/o/b"),
+        ]));
+        assert_eq!(
+            a,
+            mask(&recording(vec![
+                asks("/o/a"),
+                notification("external_directory"),
+                request("/o/a"),
+                asks("/o/b"),
+            ]))
+        );
         assert_eq!(a["hook_calls"][1]["argv"][1], "notification");
+        // Two calls of different asks that sit together keep the order they began in: a
+        // request for another call's file, or a notification of another permission.
+        let other_file = mask(&recording(vec![
+            asks("/o/b"),
+            request("/o/a"),
+            notification("external_directory"),
+        ]));
+        assert_eq!(
+            words(&other_file),
+            ["pretooluse-edit", "permissionrequest", "notification"]
+        );
+        let other_permission = mask(&recording(vec![
+            asks("/o/a"),
+            request("/o/a"),
+            notification("bash"),
+        ]));
+        assert_eq!(
+            words(&other_permission),
+            ["pretooluse-edit", "permissionrequest", "notification"]
+        );
     }
 
     #[test]

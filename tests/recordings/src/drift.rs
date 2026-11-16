@@ -17,7 +17,7 @@
 //! id or its target. Each recording is split into its refused calls, compared step by step, and
 //! the rest, compared place by place.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -208,52 +208,158 @@ pub fn refused_part(recording: &Value, step: &str) -> Value {
     split(recording, &BTreeSet::from([step.to_owned()])).0[step].clone()
 }
 
+/// A refused step's claim on what a recording heard: its name, its model calls, their tool-use
+/// ids and their targets.
+type Claim<'a> = (&'a String, Vec<Value>, Vec<String>, Vec<String>);
+
 fn split(recording: &Value, steps: &BTreeSet<String>) -> (Value, Value) {
-    let mut rest = recording.clone();
-    let mut refused = serde_json::Map::new();
-    for step in steps {
-        let calls: Vec<Value> = calls_of(recording)
-            .filter(|call| call["step"] == step.as_str())
-            .cloned()
-            .collect();
-        let ids: Vec<&str> = calls
+    // Each step's tool-use ids and targets.
+    let claims: Vec<Claim> = steps
+        .iter()
+        .map(|step| {
+            let calls: Vec<Value> = calls_of(recording)
+                .filter(|call| call["step"] == step.as_str())
+                .cloned()
+                .collect();
+            let ids: Vec<String> = calls
+                .iter()
+                .filter_map(|c| c["tool_use_id"].as_str().map(str::to_owned))
+                .collect();
+            let aims: Vec<String> = calls.iter().flat_map(|c| targets(&c["input"])).collect();
+            (step, calls, ids, aims)
+        })
+        .collect();
+    // The step an item belongs to: the one whose tool-use id it carries, or else the one whose
+    // target it holds most of (the refused curl's whole command over the refused fetch's bare
+    // URL, which the command holds too), never the one that sorts first.
+    let owner = |id: Option<&str>, text: &str| -> Option<String> {
+        if let Some(id) = id
+            && let Some((step, ..)) = claims
+                .iter()
+                .find(|(_, _, ids, _)| ids.iter().any(|i| i == id))
+        {
+            return Some((*step).clone());
+        }
+        claims
             .iter()
-            .filter_map(|c| c["tool_use_id"].as_str())
-            .collect();
-        let aims: Vec<String> = calls.iter().flat_map(|c| targets(&c["input"])).collect();
-        let aimed = |text: &str| aims.iter().any(|aim| text.contains(aim.as_str()));
-        let hook = |call: &Value| {
-            let stdin = &call["stdin"];
-            let input = stdin.get("tool_input").unwrap_or(stdin);
-            aimed(&input.to_string())
-                || crate::recording::tool_use_id(stdin).is_some_and(|id| ids.contains(&id.as_str()))
-        };
-        let shown = |item: &Value| {
-            item["tool_use_id"]
-                .as_str()
-                .is_some_and(|id| ids.contains(&id))
-                || item["text"].as_str().is_some_and(aimed)
-        };
-        let take = |list: &mut Value, keep: &dyn Fn(&Value) -> bool| -> Vec<Value> {
-            let Some(items) = list.as_array_mut() else {
-                return Vec::new();
-            };
-            let (taken, left): (Vec<Value>, Vec<Value>) =
-                items.drain(..).partition(|item| keep(item));
+            .filter_map(|(step, _, _, aims)| {
+                aims.iter()
+                    .filter(|aim| text.contains(aim.as_str()))
+                    .map(String::len)
+                    .max()
+                    .map(|len| (len, *step))
+            })
+            .max_by_key(|(len, _)| *len)
+            .map(|(_, step)| step.clone())
+    };
+    let hook_owner = |call: &Value| {
+        let stdin = &call["stdin"];
+        let input = stdin.get("tool_input").unwrap_or(stdin);
+        owner(
+            crate::recording::tool_use_id(stdin).as_deref(),
+            &input.to_string(),
+        )
+    };
+    let shown_owner = |item: &Value| {
+        owner(
+            item["tool_use_id"].as_str(),
+            item["text"].as_str().unwrap_or_default(),
+        )
+    };
+    let mut rest = recording.clone();
+    let take = |list: &mut Value, owner: &dyn Fn(&Value) -> Option<String>| {
+        let mut taken: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        if let Some(items) = list.as_array_mut() {
+            let mut left = Vec::new();
+            for item in items.drain(..) {
+                match owner(&item) {
+                    Some(step) => taken.entry(step).or_default().push(item),
+                    None => left.push(item),
+                }
+            }
             *items = left;
-            taken
-        };
-        let hook_calls = take(&mut rest["hook_calls"], &hook);
-        let shown_items = take(&mut rest["shown"], &shown);
-        for asked in rest["model"].as_array_mut().into_iter().flatten() {
-            take(&mut asked["calls"], &|call: &Value| {
-                call["step"] == step.as_str()
+        }
+        taken
+    };
+    let mut hook_calls = take(&mut rest["hook_calls"], &hook_owner);
+    let mut shown_items = take(&mut rest["shown"], &shown_owner);
+    for asked in rest["model"].as_array_mut().into_iter().flatten() {
+        if let Some(calls) = asked["calls"].as_array_mut() {
+            calls.retain(|call| {
+                !call["step"]
+                    .as_str()
+                    .is_some_and(|step| steps.contains(step))
             });
         }
-        refused.insert(
-            step.clone(),
-            serde_json::json!({"model": calls, "hook_calls": hook_calls, "shown": shown_items}),
-        );
     }
+    let refused = claims
+        .into_iter()
+        .map(|(step, calls, ..)| {
+            (
+                step.clone(),
+                serde_json::json!({
+                    "model": calls,
+                    "hook_calls": hook_calls.remove(step).unwrap_or_default(),
+                    "shown": shown_items.remove(step).unwrap_or_default(),
+                }),
+            )
+        })
+        .collect();
     (Value::Object(refused), rest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A refused fetch of a URL, and a refused curl of the same URL: OpenCode's hooks carry no
+    /// tool-use id, so each hook call is found by its target alone.
+    fn two_refused_calls_at_one_url(fetch: &str, curl: &str) -> Value {
+        let url = "http://127.0.0.1:9/";
+        json!({
+            "model": [
+                {"calls": [{"step": fetch, "tool": "webfetch", "input": {"url": url}, "tool_use_id": "<tool-use-1>"}]},
+                {"calls": [{"step": curl, "tool": "bash", "input": {"command": format!("curl -sS -m 10 {url}")}, "tool_use_id": "<tool-use-2>"}]}
+            ],
+            "hook_calls": [
+                {"argv": ["hook", "pretooluse"], "stdin": {"tool_input": {"url": url}}},
+                {"argv": ["hook", "pretooluse"], "stdin": {"tool_input": {"command": format!("curl -sS -m 10 {url}")}}}
+            ],
+            "shown": []
+        })
+    }
+
+    #[test]
+    fn a_hook_call_goes_to_the_refused_step_whose_target_it_holds_most_of_whatever_their_names() {
+        // Whichever of the two steps sorts first, the curl's hook call is the curl's and the
+        // fetch's is the fetch's.
+        for (fetch, curl) in [
+            ("refused-a-web", "refused-z-net"),
+            ("refused-z-web", "refused-a-net"),
+        ] {
+            let recording = two_refused_calls_at_one_url(fetch, curl);
+            let steps: BTreeSet<String> = [fetch.to_owned(), curl.to_owned()].into();
+            let (refused, rest) = split(&recording, &steps);
+            assert_eq!(rest["hook_calls"], json!([]), "{fetch}, {curl}");
+            let commands = |step: &str| -> Vec<Value> {
+                refused[step]["hook_calls"]
+                    .as_array()
+                    .expect("its hook calls")
+                    .iter()
+                    .map(|c| c["stdin"]["tool_input"].clone())
+                    .collect()
+            };
+            assert_eq!(
+                commands(fetch),
+                vec![json!({"url": "http://127.0.0.1:9/"})],
+                "{fetch}"
+            );
+            assert_eq!(
+                commands(curl),
+                vec![json!({"command": "curl -sS -m 10 http://127.0.0.1:9/"})],
+                "{curl}"
+            );
+        }
+    }
 }

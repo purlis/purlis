@@ -76,11 +76,18 @@ pub struct Answer {
     pub body: Vec<u8>,
 }
 
+/// Whether something the stand-in waits on outside itself has happened.
+pub type Settled = Box<dyn Fn() -> bool + Send + Sync>;
+
 /// The stand-in for one harness and one script.
 pub struct StandIn {
     pub harness: String,
     pub script: Script,
     pub heard: Mutex<Vec<Heard>>,
+    /// Whether the sub-agent's closing hooks have answered, as the recording's driver hears
+    /// them: the chat's next response after the sub-agent call waits for it too, so the
+    /// sub-agent's hooks never interleave with the next call's. Always, when not set.
+    pub subagent_settled: Mutex<Option<Settled>>,
 }
 
 /// A tool a request offers: its name and whether it is a free-form (`custom`) tool.
@@ -96,6 +103,7 @@ impl StandIn {
             harness: harness.to_owned(),
             script,
             heard: Mutex::new(Vec::new()),
+            subagent_settled: Mutex::new(None),
         }
     }
 
@@ -152,11 +160,12 @@ impl StandIn {
         };
         let answered = results_in(api, &body);
         // A sub-agent runs beside the chat (Claude Code 2.1's agents are asynchronous): the chat's
-        // next response waits until the sub-agent's turn has ended, so the two never interleave
-        // and a recording's order is the script's.
+        // next response waits until the sub-agent's turn has ended and its closing hooks have
+        // answered (Claude Code's SubagentStop), so the two never interleave and a recording's
+        // order is the script's.
         if conversation == Conversation::Main && self.awaits_its_subagent(&answered) {
             let until = Instant::now() + Duration::from_secs(60);
-            while Instant::now() < until && !self.subagent_done() {
+            while Instant::now() < until && !(self.subagent_done() && self.subagent_hooks_done()) {
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
@@ -276,6 +285,15 @@ impl StandIn {
                         && answered.contains(&self.id(Conversation::Main, at, i))
                 })
             })
+    }
+
+    /// Whether the sub-agent's closing hooks have answered, when the driver said how to tell.
+    fn subagent_hooks_done(&self) -> bool {
+        self.subagent_settled
+            .lock()
+            .expect("the stand-in's gate")
+            .as_ref()
+            .is_none_or(|settled| settled())
     }
 
     /// Whether the sub-agent's turn has ended: it was given its last response.
@@ -904,5 +922,78 @@ fn read_chunked(reader: &mut impl BufRead) -> std::io::Result<Vec<u8>> {
         reader.read_exact(&mut chunk)?;
         chunk.truncate(size);
         body.extend(chunk);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn script() -> Script {
+        serde_json::from_value(json!({
+            "name": "t",
+            "prompt": "MAIN-PROMPT",
+            "responses": [
+                {"calls": [{"step": "subagent", "kind": "subagent", "prompt": "SUB-PROMPT"}]},
+                {"calls": [{"step": "after", "kind": "bash", "command": "echo after"}]}
+            ],
+            "subagent": [{"calls": [{"step": "sub-bash", "kind": "bash", "command": "echo sub"}]}]
+        }))
+        .expect("a script")
+    }
+
+    /// A Messages request: the user's text and the results of `results`, offering Bash.
+    fn request(text: &str, results: &[&str]) -> Vec<u8> {
+        let mut content = vec![json!({"type": "text", "text": text})];
+        content.extend(
+            results
+                .iter()
+                .map(|id| json!({"type": "tool_result", "tool_use_id": id, "content": "done"})),
+        );
+        serde_json::to_vec(&json!({
+            "model": "m",
+            "tools": [{"name": "Bash"}, {"name": "Agent"}],
+            "messages": [{"role": "user", "content": content}]
+        }))
+        .expect("JSON")
+    }
+
+    #[test]
+    fn the_chats_next_response_waits_for_the_subagents_closing_hooks() {
+        let stand_in = Arc::new(StandIn::new("claude", script()));
+        let hooks_done = Arc::new(AtomicBool::new(false));
+        {
+            let hooks_done = Arc::clone(&hooks_done);
+            *stand_in.subagent_settled.lock().expect("the gate") =
+                Some(Box::new(move || hooks_done.load(Ordering::SeqCst)));
+        }
+        // The chat asks for its sub-agent; the sub-agent makes its call and ends its turn.
+        stand_in.answer("POST", "/v1/messages", &request("MAIN-PROMPT", &[]));
+        stand_in.answer("POST", "/v1/messages", &request("SUB-PROMPT", &[]));
+        stand_in.answer(
+            "POST",
+            "/v1/messages",
+            &request("SUB-PROMPT", &[&stand_in.id(Conversation::Subagent, 0, 0)]),
+        );
+        // The chat's next request, with the sub-agent call's result: held until its hooks answer.
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let stand_in = Arc::clone(&stand_in);
+            let body = request("MAIN-PROMPT", &[&stand_in.id(Conversation::Main, 0, 0)]);
+            std::thread::spawn(move || {
+                let _ = tx.send(stand_in.answer("POST", "/v1/messages", &body));
+            });
+        }
+        assert!(
+            rx.recv_timeout(Duration::from_millis(700)).is_err(),
+            "the chat's next call was given before the sub-agent's closing hooks answered"
+        );
+        hooks_done.store(true, Ordering::SeqCst);
+        let answer = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("given once they answered");
+        assert!(String::from_utf8_lossy(&answer.body).contains("echo after"));
     }
 }

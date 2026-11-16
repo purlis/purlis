@@ -11,7 +11,9 @@
 #
 # - `record` (a pull request): a harness that did not install, build or record is red. With
 #   `twice: "true"` each is recorded a second time, into `target/recordings-again/`, and the two
-#   must be the same file byte for byte, or the run is red: a recording is deterministic.
+#   must be the same file byte for byte, or the run is red: a recording is deterministic. Each
+#   file recorded must also be the one checked in for the pinned version, byte for byte, or the
+#   run is red: a pull request that moves a recording checks in what its run recorded.
 # - `drift` (the nightly's ordinary entry): the same, and each fresh recording is diffed against
 #   the one checked in for the pinned version (`harness-drift --mode drift`); drift opens or
 #   comments on a `harness-drift` issue. A refused call that changed is left to `escape`.
@@ -98,6 +100,16 @@ runs:
             status=1
           fi
         }
+        # The version $1's file in tests/fixtures/harness-versions pins, read as
+        # tools/harness-install.sh reads it: the folder its checked-in recordings are in.
+        pinned_version() {
+          local pins=tests/fixtures/harness-versions
+          case "$1" in
+            claude) sed 's/ .*//' "$pins/claude.txt" ;;
+            codex) sed 's/^codex-cli //' "$pins/codex.txt" ;;
+            opencode) cat "$pins/opencode.txt" ;;
+          esac
+        }
         # One recording of $1's script $2 into $3.
         record() {
           local homes
@@ -145,18 +157,31 @@ runs:
               fi
             done
           fi
+          pinned="tests/recordings/recorded/$harness/$(pinned_version "$harness")"
+          if [ "$MODE" = record ] && [ "$AT" = pinned ]; then
+            # What this run recorded is what is checked in, byte for byte.
+            for file in "$out/$harness"/*/*.json; do
+              [ -e "$file" ] || { failed "$harness recorded nothing to compare"; break; }
+              if [ "$(basename "$(dirname "$file")")" != "$(basename "$pinned")" ]; then
+                failed "$harness recorded version $(basename "$(dirname "$file")"), not the pinned $(basename "$pinned")"
+              elif diff -u "$pinned/$(basename "$file")" "$file"; then
+                echo "$harness: $(basename "$file") is the one checked in"
+              else
+                failed "$harness: $(basename "$file") differs from the one checked in: check in this run's harness-recording-$harness artifact, and say which contract moved"
+              fi
+            done
+          fi
           if [ "$harness" = codex ] && [ "$MODE" = record ]; then
             PURLIS_CODEX="$bin/codex" cargo test --locked -p purlis-recordings --test recordings -- --ignored \
               --exact codex_runs_a_covering_script_against_the_responses_stand_in --nocapture || failed "Codex did not run the covering script against the Responses stand-in"
           fi
           if [ "$MODE" != record ]; then
-            pinned=$(ls -d tests/recordings/recorded/"$harness"/*/ 2>/dev/null | head -1)
             fresh=$(ls -d "$out/$harness"/*/ 2>/dev/null | head -1)
-            if [ -z "$pinned" ] || [ -z "$fresh" ]; then
+            if [ ! -d "$pinned" ] || [ -z "$fresh" ]; then
               failed "no recording of $harness to compare"
             fi
             for file in ${fresh:+"$fresh"/*recording.json}; do
-              [ -n "$pinned" ] || break
+              [ -d "$pinned" ] || break
               cargo run --locked -q -p purlis-recordings --bin harness-drift -- \
                 "$pinned/$(basename "$file")" "$file" "$AT" --mode "$MODE"
               case $? in
