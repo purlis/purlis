@@ -132,8 +132,9 @@ rewriting every project's `policy.cedar`.
   `start` is refused, and nothing is allowed until the person re-presses (review round 2, S2-B1,
   S2-B2, F2-2; Q320b R2-3; review round 3, SEC3-B1, SEC3-B2; review round 4, F4 nit). The deny
   state only adds refusals: `start` is still judged by the Organisation, the committed HEAD, the
-  person's local tighten-only file and the shipped default, so a forbid on `start` still applies
-  (review round 5, SEC5-SF2; Q320d). A seal key
+  person's local tighten-only file with the accepted floor's sealed local tightenings, and the
+  shipped default, so a forbid on `start` still applies (review round 5, SEC5-SF2; Q320d; review
+  round 8). A seal key
   left locked on an anchored plane (a cancelled Windows Hello, a wrong Linux password) is the deny
   state too; the shipped default applies only on a fresh install (review round 5, FB5-B1).
 - **A plane has a stable id, and the machine keeps a registry of anchored planes.** The plane id
