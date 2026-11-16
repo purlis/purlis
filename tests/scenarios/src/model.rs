@@ -172,6 +172,22 @@ pub struct PinsFile {
     pub dialect: Dialect,
     #[serde(default)]
     pub shows: BTreeMap<String, Vec<Expect>>,
+    /// The recording these defaults were drawn from, and the facts it shows that no event names
+    /// (ticket 3).
+    #[serde(default)]
+    pub recorded: Option<Recorded>,
+}
+
+/// Where a pins file's defaults were drawn from (ticket 3).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Recorded {
+    pub from: String,
+    pub facts: BTreeMap<String, String>,
+    /// Each event the dialect shows nothing of where purlis needs it, by its kind in `shows`: a
+    /// known gap, with its issue.
+    #[serde(default)]
+    pub gaps: BTreeMap<String, String>,
 }
 
 /// **A step**: what the chat is made to do, what the scripted person does, and what must and
