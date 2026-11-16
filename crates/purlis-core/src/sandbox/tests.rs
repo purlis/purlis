@@ -1955,6 +1955,36 @@ fn no_chat_reads_or_writes_your_keys_index() {
     }
 }
 
+/// **No chat reads or writes the model-key marks** (T1a-10, R-174, C-23): each entry's mark is
+/// under `model-keys/marks`, so a chat's sandbox denies it both ways, on every OS, as it denies
+/// the whole `model-keys` folder. The device key's keychain item is T1a-72's table's to assert.
+#[test]
+fn a_chat_cannot_read_the_marks_folder() {
+    for os in [Os::MacOs, Os::Linux] {
+        let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
+        let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
+        let marks = seal.parent().expect("a folder").to_path_buf();
+        assert!(marks.ends_with("model-keys/marks"), "{}", marks.display());
+        let (_plane, denied) = denied_with(None, os);
+        let both = paths(&denied, Class::HumanPowers, Access::ReadWrite);
+        let folder = both.iter().find(|denied| marks.starts_with(denied));
+        assert!(folder.is_some(), "{os:?}: {} in {both:?}", marks.display());
+        if os == Os::MacOs {
+            let named = super::real(folder.expect("checked")).display().to_string();
+            let settings = claude::settings(&compiled(denied, os)).expect("compiles");
+            for key in ["denyRead", "denyWrite"] {
+                assert!(
+                    settings.sandbox["filesystem"][key]
+                        .as_array()
+                        .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+                    "{key}: {}",
+                    settings.sandbox["filesystem"][key]
+                );
+            }
+        }
+    }
+}
+
 /// **On a runner, a chat reads no other profile's folder** (#2049): a runner keeps each of its
 /// desktop's profiles under its own `<data>/profiles`, each with its sign-in, and its chats are
 /// held by the Linux sandbox, which denies the whole folder as on any machine.

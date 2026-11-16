@@ -19,9 +19,22 @@ publish = false
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
 # hyper's own HTTP/1 server connection is the parser (D6640-C2 §1): no framing parser of its own.
 hyper = { version = "1.12", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.21", features = ["tokio"] }
+# `client-proxy-system`: the outbound proxy is hyper-util's own matcher, `Matcher::from_system()`,
+# reading the proxy variables of this process's environment and then the OS's proxy settings, no
+# PAC file (T1a-60, C-16).
+hyper-util = { version = "0.1.21", features = ["client-proxy", "client-proxy-system", "tokio"] }
 http-body-util = "0.1"
 bytes = "1"
+# How an upstream is reached (T1a-60): purlis-core's `Outbound` connects, and its
+# `upstream::trust` client verifies against the OS trust store (R-056), one path for both
+# binaries; and the window's copy for what a failure names (W81).
+purlis-core.workspace = true
+# TLS to the upstream on that client config: the rustls purlis-core links, on `ring`, and
+# tokio-rustls with no provider of its own.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26", default-features = false }
+# The Messages error shape a failure is answered in, its `purlis:` message escaped as JSON.
+serde_json.workspace = true
 # The run's 256-bit token, from the operating system's generator: the version
 # purlis-session-protocol already links.
 getrandom = "0.4"
@@ -30,7 +43,6 @@ subtle = "2.6"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }
-serde_json.workspace = true
 
 [[test]]
 name = "it"
