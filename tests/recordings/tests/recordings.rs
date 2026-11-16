@@ -36,6 +36,10 @@ fn hook_call(dir: &Path, word: &str, stdin: &str, extra: &[(&str, &str)]) -> (i3
         .env("PURLIS_CHAT_TOKEN", "a-fresh-token-every-chat")
         .env("PURLIS_HOOK_SOCKET", dir.join(".purlis/app/hooks.sock"))
         .env("UNRELATED_MACHINE_VARIABLE", "kept out")
+        // The run's own, under purlis's other spelling too: never a chat's.
+        .env("CHARTER_RECORDER_OUT", "kept out")
+        .env("PURLIS_RECORD_HARNESS", "kept out")
+        .env("CHARTER_PLANE_FENCE", "kept out")
         .envs(extra.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -94,6 +98,13 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
     assert_eq!(calls[0].env["PURLIS_CHAT_TOKEN"], recorder::NOT_RECORDED);
     assert!(!calls[0].env.contains_key("UNRELATED_MACHINE_VARIABLE"));
     assert!(!calls[0].env.contains_key(recorder::REAL));
+    for name in [
+        "CHARTER_RECORDER_OUT",
+        "PURLIS_RECORD_HARNESS",
+        "CHARTER_PLANE_FENCE",
+    ] {
+        assert!(!calls[0].env.contains_key(name), "{name} is the run's own");
+    }
     assert_eq!(calls[0].reply.as_ref().expect("a reply").exit, 0);
     assert!(calls[0].gap_ms.is_null());
     assert!(calls[1].gap_ms.is_u64());

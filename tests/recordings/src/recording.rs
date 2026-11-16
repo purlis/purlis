@@ -167,7 +167,19 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
                 stderr: l.stderr.clone().unwrap_or_default(),
             });
         let stdin = as_json(line.stdin.as_deref().unwrap_or_default());
-        let group = tool_use_id(&stdin).and_then(|id| groups.get(id.as_str()).copied());
+        // By the call's id where the hook is handed one; else by its input, which OpenCode's
+        // shim hands on as the model asked for it.
+        let group = tool_use_id(&stdin)
+            .and_then(|id| groups.get(id.as_str()).copied())
+            .or_else(|| {
+                let input = stdin.get("tool_input")?;
+                model.iter().enumerate().find_map(|(at, asked)| {
+                    (asked.parallel
+                        && asked.calls.len() > 1
+                        && asked.calls.iter().any(|call| &call.input == input))
+                    .then_some(at as u32 + 1)
+                })
+            });
         calls.push(HookCall {
             argv: line.argv.clone(),
             stdin,

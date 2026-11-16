@@ -86,10 +86,7 @@ const CREDENTIALS: &[&str] = &["_TOKEN", "_KEY", "_SECRET", "_PASSWORD"];
 /// credential by its name alone ([`NOT_RECORDED`]).
 pub fn kept(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String, String> {
     env.into_iter()
-        .filter(|(name, _)| {
-            KEPT.iter().any(|prefix| name.starts_with(prefix))
-                && ![REAL, OUT, STALL, EXIT2].contains(&name.as_str())
-        })
+        .filter(|(name, _)| KEPT.iter().any(|prefix| name.starts_with(prefix)) && !the_runs(name))
         .map(|(name, value)| {
             if CREDENTIALS.iter().any(|end| name.ends_with(end)) {
                 (name, NOT_RECORDED.to_owned())
@@ -98,6 +95,16 @@ pub fn kept(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String,
             }
         })
         .collect()
+}
+
+/// Whether `name` is the recording run's own, under either of purlis's spellings (a chat is
+/// handed each product variable under both, V93k): the recorder's and the driver's variables,
+/// and the test build's fence. None of them is a person's chat's.
+fn the_runs(name: &str) -> bool {
+    let bare = name
+        .strip_prefix("PURLIS_")
+        .or_else(|| name.strip_prefix("CHARTER_"));
+    bare.is_some_and(|bare| bare.starts_with("RECORD") || bare == "PLANE_FENCE")
 }
 
 /// Every line of the recorder's file at `path`, in the order they were written.
