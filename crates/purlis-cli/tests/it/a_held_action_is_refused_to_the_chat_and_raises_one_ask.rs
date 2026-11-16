@@ -382,7 +382,12 @@ fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
     assert!(reason.contains("restart purlis"), "{reason}");
     assert!(reason.contains("update the purlis plugin"), "{reason}");
     assert!(!reason.contains(hookwire::UNKNOWN_LINE), "{reason}");
-    assert!(!reason.contains('`'), "names a command: {reason}");
+    // The refusal's own words, before the note every guard's refusal ends with.
+    let own = reason
+        .split(purlis_core::toolgate::OVERRIDE_NOTE)
+        .next()
+        .unwrap_or(&reason);
+    assert!(!own.contains('`'), "names a command: {own}");
     assert!(
         reason.contains("A yes in this chat merges nothing"),
         "{reason}"

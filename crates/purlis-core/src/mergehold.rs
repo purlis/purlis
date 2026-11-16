@@ -309,7 +309,7 @@ fn merge_of(toks: &[String]) -> Option<Merge> {
     }
     let verbs: &[&str] = match base.as_str() {
         "gh" => &["merge"],
-        "glab" => &["accept"], // MUTATION (#6960): reverted in the next commit
+        "glab" => &["merge", "accept"],
         _ => return None,
     };
     let noun = if base == "gh" { "pr" } else { "mr" };
