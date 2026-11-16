@@ -493,7 +493,13 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         let _ = session.write(b"/exit");
         std::thread::sleep(Duration::from_millis(800));
         let _ = session.write(b"\r");
-        let _ = session.wait(Duration::from_secs(15));
+        if !matches!(session.wait(Duration::from_secs(15)), Ok(Some(_))) {
+            // What Claude Code shows when /exit did not end it, for the run's reader.
+            let _ = fs::write(
+                evidence.join("screen-after-exit.txt"),
+                session.screen().lines.join("\n"),
+            );
+        }
     }
     for _ in 0..3 {
         if matches!(session.wait(Duration::from_millis(100)), Ok(Some(_))) {
