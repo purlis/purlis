@@ -264,6 +264,7 @@ fn play(given: &Given) -> Played {
             ("FAKE_HARNESS_PLACES", places.to_string()),
         ]
         .into_iter()
+        .chain(stand_in_conditions(&dialect))
         .chain(given.forced.iter().filter_map(|(k, v)| match k.as_str() {
             "stall" => Some((recorder::STALL, v.clone())),
             "exit2" => Some((recorder::EXIT2, v.clone())),
@@ -520,14 +521,11 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
             ))
         })
         .collect();
-    let mut model = checked.model.clone();
-    for asked in &mut model {
-        for call in &mut asked.calls {
-            if let Some(id) = by_step.get(&call.step) {
-                call.tool_use_id.clone_from(id);
-            }
-        }
-    }
+    // Each call's id the fake's, by its step, a sub-agent's own calls among them.
+    let mut model_json = serde_json::to_value(&checked.model).expect("JSON");
+    with_fake_ids(&mut model_json, &by_step);
+    let model: Vec<purlis_recordings::recording::Asked> =
+        serde_json::from_value(model_json).expect("the model, with the fake's ids");
     let mut shown = Vec::new();
     purlis_recordings::projection::extend_once(
         &mut shown,
@@ -550,7 +548,12 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
         ..checked.clone()
     };
     let fresh = recording::masked(&fake);
-    let want = serde_json::to_value(&checked).expect("JSON");
+    let mut want = serde_json::to_value(&checked).expect("JSON");
+    let mut fresh = fresh;
+    for recording in [&mut want, &mut fresh] {
+        without_rig_variables(recording);
+    }
+    without_harness_reminders(&mut want);
     let mut differences = Vec::new();
     for part in ["hook_calls", "shown"] {
         for d in purlis_recordings::mask::differences(&want[part], &fresh[part]) {
@@ -687,6 +690,86 @@ fn an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap() {
         );
     }
     assert!(!text.is_empty(), "purlis's server answered nothing");
+}
+
+/// What every recording was made under that points a harness at its stand-in model
+/// (`tests/recordings/tests/record.rs`, `model_env`): conditions, not behaviour, so the fake is
+/// started under them too. It calls no model; no value here is a credential.
+fn stand_in_conditions(dialect: &str) -> Vec<(&'static str, String)> {
+    const KEY: &str = "stand-in-model-no-credential";
+    match dialect {
+        "claude" => vec![
+            ("ANTHROPIC_BASE_URL", "http://127.0.0.1:9".to_owned()),
+            ("ANTHROPIC_API_KEY", KEY.to_owned()),
+            ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1".to_owned()),
+            (
+                "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS",
+                "10000".to_owned(),
+            ),
+        ],
+        "codex" => vec![("OPENAI_API_KEY", KEY.to_owned())],
+        _ => vec![
+            ("OPENAI_API_KEY", KEY.to_owned()),
+            ("OPENCODE_CONFIG", "/dev/null".to_owned()),
+            ("OPENCODE_DISABLE_AUTOUPDATE", "1".to_owned()),
+        ],
+    }
+}
+
+/// The variables each test rig sets for its own run, and nothing a harness or purlis sets: the
+/// recording driver's (`PURLIS_RECORD_*`, under both prefixes) and this driver's
+/// (`FAKE_HARNESS_*`). Left out of every hook call's environment on both sides.
+const RIG_VARIABLES: [&str; 3] = ["PURLIS_RECORD_", "CHARTER_RECORD_", "FAKE_HARNESS_"];
+
+fn without_rig_variables(recording: &mut Value) {
+    for call in recording["hook_calls"].as_array_mut().into_iter().flatten() {
+        if let Some(env) = call["env"].as_object_mut() {
+            env.retain(|name, _| !RIG_VARIABLES.iter().any(|p| name.starts_with(p)));
+        }
+    }
+}
+
+/// Claude Code's own reminders, which T1.1-03's projection keeps as `context` though no hook of
+/// purlis's said them: its attribution line, its time-based "you have been quiet" nudge, and
+/// its listings of deferred tools and agent types. A closed list, by how each begins.
+const HARNESS_REMINDERS: [&str; 4] = [
+    "Attribution for git commits and pull requests",
+    "The user hasn't heard from you in a while",
+    "The following deferred tools are now available",
+    "Available agent types for the Agent tool",
+];
+
+fn without_harness_reminders(recording: &mut Value) {
+    if let Some(shown) = recording["shown"].as_array_mut() {
+        shown.retain(|s| {
+            s["kind"] != "context"
+                || !HARNESS_REMINDERS
+                    .iter()
+                    .any(|r| s["text"].as_str().is_some_and(|t| t.starts_with(r)))
+        });
+    }
+}
+
+/// Each call with a `step` takes the fake's id for that step, at any depth.
+fn with_fake_ids(value: &mut Value, by_step: &BTreeMap<String, String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(id) = map
+                .get("step")
+                .and_then(Value::as_str)
+                .and_then(|step| by_step.get(step))
+                .cloned()
+                && map.contains_key("tool_use_id")
+            {
+                map.insert("tool_use_id".to_owned(), Value::String(id));
+            }
+            for v in map.values_mut() {
+                with_fake_ids(v, by_step);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(|v| with_fake_ids(v, by_step)),
+        _ => {}
+    }
 }
 
 /// The pinned version of the dialect, which `--version` answers with.

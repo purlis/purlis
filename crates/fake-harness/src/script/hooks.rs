@@ -29,8 +29,9 @@ pub struct Fired {
 /// How a hook's command is started.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spawn<'a> {
-    /// `/bin/sh -c <command>`.
-    Shell,
+    /// `<shell> -c <command>`: Claude Code's `/bin/sh`, Codex's `bash` (which sets `SHLVL` and
+    /// `_` in the hook's environment, as Codex 0.169.0's recording shows).
+    Shell(&'a str),
     /// `<binary> hook <word>`, as OpenCode's shim spawns it.
     Direct(&'a Path),
 }
@@ -80,14 +81,16 @@ fn start(
     cwd: &Path,
 ) -> Started {
     let mut command = match spawn {
-        Spawn::Shell => {
-            let mut c = Command::new("/bin/sh");
+        Spawn::Shell(shell) => {
+            let mut c = Command::new(shell);
             c.args(["-c", &route.command]);
             c
         }
         Spawn::Direct(binary) => {
             let mut c = Command::new(binary);
             c.args(["hook", &route.word]);
+            // Bun hands a child the environment it was given, without the `PWD` a shell sets.
+            c.env_remove("PWD");
             c
         }
     };

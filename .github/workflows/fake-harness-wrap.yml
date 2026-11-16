@@ -66,6 +66,8 @@ jobs:
           out="$PWD/target/fake-wrap"
           mkdir -p "$out"
           status=0
+          # The run's folder is named as the recording driver names its own, so an absolute path
+          # in what a command printed is as long as it was there: Codex counts its tokens.
           for test in the_fake_harness_reproduces_each_recorded_harness_session \
                       a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_script \
                       an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap; do
@@ -76,7 +78,7 @@ jobs:
               FAKE_WRAP_RECORDER="$PWD/target/debug/purlis-recorder" \
               FAKE_HARNESS_BIN="$PWD/target/debug/fake-harness" \
               FAKE_HARNESS_SCRIPT="$PWD/tests/recordings/recorded/$DIALECT/$version/turns.json" \
-              FAKE_WRAP_OUT="$out" FAKE_WRAP_BASE="$RUNNER_TEMP/fake-wrap" \
+              FAKE_WRAP_OUT="$out" FAKE_WRAP_BASE="$RUNNER_TEMP/recording-$DIALECT-covering" \
               PURLIS_CONFIG_HOME="$homes/config-$test" PURLIS_DATA_HOME="$homes/data-$test" \
               cargo test --locked -p fake-harness --test under_the_wrap -- --ignored --exact "$test" --nocapture \
               || { echo "::error::$DIALECT: $test failed"; status=1; }

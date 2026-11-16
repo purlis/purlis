@@ -49,8 +49,12 @@ pub struct Chat {
     interrupted: AtomicBool,
     /// Lines typed while a turn ran: the prompts of the turns after it.
     queued: Mutex<Vec<String>>,
-    /// Claude Code's task notifications waiting for the next request.
-    notices: Mutex<Vec<String>>,
+    /// Claude Code's task notifications, each with whether a response has passed since it was
+    /// raised: it is submitted after the call that follows the sub-agent's end.
+    notices: Mutex<Vec<(String, bool)>>,
+    /// What the session's start said, waiting to be shown with the first prompt (Claude Code,
+    /// after it; OpenCode, inside it).
+    start_contexts: Mutex<Vec<String>>,
     /// Claude Code's background tasks, as its hooks are told them.
     background: Mutex<Vec<Value>>,
 }
@@ -137,6 +141,7 @@ impl Chat {
             interrupted: AtomicBool::new(false),
             queued: Mutex::new(Vec::new()),
             notices: Mutex::new(Vec::new()),
+            start_contexts: Mutex::new(Vec::new()),
             background: Mutex::new(Vec::new()),
         })
     }
@@ -231,12 +236,30 @@ impl Chat {
         let fired = self.fire("SessionStart", None, json!({"source": source}), None);
         for f in &fired {
             if let Some(mut context) = f.context() {
-                if self.dialect == Dialect::Codex {
-                    context = cut(&context, purlis_core::harness::codex::HOOK_OUTPUT_CUT);
+                match self.dialect {
+                    Dialect::Codex => {
+                        context = cut(&context, purlis_core::harness::codex::HOOK_OUTPUT_CUT);
+                        self.transcript.context(&context, Some(&f.word));
+                    }
+                    // Claude Code shows it after the first prompt, saying whose it is; OpenCode's
+                    // shim puts it on the first prompt.
+                    Dialect::Claude | Dialect::Opencode => self
+                        .start_contexts
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push(context),
                 }
-                self.transcript.context(&context, Some(&f.word));
             }
         }
+    }
+
+    fn take_start_contexts(&self) -> Vec<String> {
+        std::mem::take(
+            &mut *self
+                .start_contexts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     fn session_end(&self) {
@@ -267,7 +290,9 @@ impl Chat {
         match self.dialect {
             // OpenCode's shim rides what the hooks say on the prompt, as one more text part.
             Dialect::Opencode => {
-                let notes = contexts.join("\n\n");
+                let mut notes = self.take_start_contexts();
+                notes.extend(contexts);
+                let notes = notes.join("\n\n");
                 let text = if notes.is_empty() {
                     prompt.to_owned()
                 } else {
@@ -280,6 +305,12 @@ impl Chat {
                     self.transcript.context(c, Some("userpromptsubmit"));
                 }
                 self.transcript.user_text(prompt, typed);
+                for c in self.take_start_contexts() {
+                    self.transcript.context(
+                        &format!("SessionStart hook additional context: {c}"),
+                        Some("sessionstart"),
+                    );
+                }
             }
         }
         for response in Call::responses(&turn.calls) {
@@ -287,14 +318,24 @@ impl Chat {
                 break;
             }
             self.response(&response, None);
-            self.deliver_notices();
+            self.deliver_notices(false);
         }
         let interrupted = self.interrupted.load(Ordering::SeqCst);
+        if !interrupted {
+            self.deliver_notices(true);
+        }
         if !interrupted || self.dialect == Dialect::Opencode {
             let mut stop = Map::new();
             stop.insert("stop_hook_active".to_owned(), false.into());
             if let Some(says) = &turn.says {
                 stop.insert("last_assistant_message".to_owned(), says.clone().into());
+            }
+            if self.dialect == Dialect::Claude {
+                stop.insert(
+                    "background_tasks".to_owned(),
+                    Value::Array(self.lock_background().clone()),
+                );
+                stop.insert("session_crons".to_owned(), json!([]));
             }
             let fired = self.fire("Stop", None, Value::Object(stop), None);
             for f in &fired {
@@ -305,17 +346,22 @@ impl Chat {
         }
     }
 
-    /// Claude Code's task notifications, each sent as a prompt of its own.
-    fn deliver_notices(&self) {
-        let notices: Vec<String> = std::mem::take(
-            &mut *self
+    /// Claude Code's task notifications, each submitted as a prompt of its own once one more
+    /// response has passed since its sub-agent ended, as Claude Code 2.1.325 submits it; at the
+    /// turn's end, every one still waiting (`all`).
+    fn deliver_notices(&self, all: bool) {
+        let ready: Vec<String> = {
+            let mut notices = self
                 .notices
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        for notice in notices {
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (ready, waiting): (Vec<_>, Vec<_>) =
+                notices.drain(..).partition(|(_, ripe)| *ripe || all);
+            *notices = waiting.into_iter().map(|(n, _)| (n, true)).collect();
+            ready.into_iter().map(|(n, _)| n).collect()
+        };
+        for notice in ready {
             self.fire("UserPromptSubmit", None, json!({"prompt": notice}), None);
-            self.transcript.user_text(&notice, false);
         }
     }
 
@@ -394,7 +440,11 @@ impl Chat {
         let fired = self.fire(
             "PreToolUse",
             Some(&checked.tool),
-            json!({"tool_name": hook_tool, "tool_input": hook_input, "tool_use_id": checked.id}),
+            if self.dialect == Dialect::Opencode {
+                json!({"tool_name": hook_tool, "tool_input": hook_input})
+            } else {
+                json!({"tool_name": hook_tool, "tool_input": hook_input, "tool_use_id": checked.id})
+            },
             agent,
         );
         if let Some(refusal) = self.refusal(&fired, "PreToolUse") {
@@ -744,6 +794,11 @@ impl Chat {
     fn after(&self, c: &Checked, outcome: Outcome, agent: Option<&Agent>) {
         let (hook_tool, hook_input) = self.dialect.hook_tool(&c.tool, &c.input);
         let framed = self.frame(c, &outcome);
+        // OpenCode goes idle as Esc aborts the command, before the command's own end is heard
+        // (1.19.5: Stop, then the aborted call's PostToolUse, then Stop again).
+        if outcome == Outcome::Interrupted && self.dialect == Dialect::Opencode {
+            self.fire("Stop", None, json!({}), None);
+        }
         if let Some((event, field, value)) = &framed.post {
             let mut payload = json!({"tool_name": hook_tool, "tool_input": hook_input});
             payload[*field] = value.clone();
@@ -981,25 +1036,32 @@ impl Chat {
                     f.is_error = self.error_flag(true);
                 }
             },
-            (_, Outcome::Web(result)) => match result {
-                Ok(status) => {
-                    f.text = status.clone();
-                    f.is_error = self.error_flag(false);
+            (_, Outcome::Web(result)) => {
+                let url = match &c.action {
+                    Action::Web(url) => url.clone(),
+                    _ => String::new(),
+                };
+                match (d, result) {
+                    (Dialect::Opencode, Ok(code)) if !(200..300).contains(code) => {
+                        f.text = format!("StatusCode: non 2xx status code ({code} GET {url})");
+                    }
+                    (Dialect::Opencode, Err(_)) => {
+                        f.text = format!("Transport error (GET {url})");
+                    }
+                    (_, Ok(code)) if (200..300).contains(code) => {
+                        f.text = format!("{code} GET {url}");
+                        f.is_error = self.error_flag(false);
+                    }
+                    (_, Ok(code)) => {
+                        f.text = format!("Request failed with status code {code}");
+                        f.is_error = self.error_flag(true);
+                    }
+                    (_, Err(e)) => {
+                        f.text = e.clone();
+                        f.is_error = self.error_flag(true);
+                    }
                 }
-                Err(_) if d == Dialect::Opencode => {
-                    f.text = format!(
-                        "Transport error (GET {})",
-                        match &c.action {
-                            Action::Web(url) => url.as_str(),
-                            _ => "",
-                        }
-                    );
-                }
-                Err(e) => {
-                    f.text = e.clone();
-                    f.is_error = self.error_flag(true);
-                }
-            },
+            }
             (_, Outcome::Mcp(result)) => match result {
                 Ok(answered) => {
                     f.text = answered.text.clone();
@@ -1114,14 +1176,14 @@ impl Chat {
                 self.notices
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(format!(
+                    .push((format!(
                         "<task-notification>\n<task-id>{agent_id}</task-id>\n<tool-use-id>{}</tool-use-id>\n<output-file>{}</output-file>\n<status>completed</status>\n<summary>Agent \"{description}\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>{says}</result>\n<usage><subagent_tokens>{}</subagent_tokens><tool_uses>{}</tool_uses><duration_ms>{}</duration_ms></usage>\n</task-notification>",
                         c.id,
                         file.display(),
                         says.len().div_ceil(4),
                         call.calls.len(),
                         started.elapsed().as_millis()
-                    ));
+                    ), false));
             }
             Dialect::Opencode => {
                 let child = self.dialect.new_session_id();
@@ -1199,7 +1261,8 @@ impl Chat {
         let env = self.env(event, agent);
         let spawn = match self.dialect {
             Dialect::Opencode => Spawn::Direct(&self.binary),
-            _ => Spawn::Shell,
+            Dialect::Codex => Spawn::Shell(shell_program()),
+            Dialect::Claude => Spawn::Shell("/bin/sh"),
         };
         hooks::run_all(&routes, spawn, &payload, &env, &self.cwd)
     }
@@ -1224,7 +1287,6 @@ impl Chat {
     fn payload(&self, event: &str, fields: Value, agent: Option<&Agent>) -> Value {
         let mut p = Map::new();
         let turn = self.turn_id.lock().ok().and_then(|t| t.clone());
-        let tool_event = matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure");
         match self.dialect {
             Dialect::Claude => {
                 p.insert("session_id".into(), self.session_id.clone().into());
@@ -1256,7 +1318,7 @@ impl Chat {
                     p.insert("agent_id".into(), agent.id.clone().into());
                     p.insert("agent_type".into(), agent.kind.clone().into());
                 }
-                if tool_event || event == "SubagentStop" {
+                if claude_effort(event) {
                     p.insert("effort".into(), json!({"level": "medium"}));
                 }
                 p.insert("hook_event_name".into(), event.into());
@@ -1310,7 +1372,7 @@ impl Chat {
     }
 
     /// The variables a hook is run with beside the fake's own: what the harness adds.
-    fn env(&self, event: &str, agent: Option<&Agent>) -> Vec<(String, String)> {
+    fn env(&self, event: &str, _agent: Option<&Agent>) -> Vec<(String, String)> {
         let mut env: Vec<(String, String)> = Vec::new();
         let pid = std::process::id().to_string();
         match self.dialect {
@@ -1347,17 +1409,35 @@ impl Chat {
                         dir.join("sessionstart-hook-0.sh").display().to_string(),
                     ));
                 }
-                if matches!(
-                    event,
-                    "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "SubagentStop"
-                ) || agent.is_some()
-                {
+                if claude_effort(event) {
                     env.push(("CLAUDE_EFFORT".to_owned(), "medium".to_owned()));
                 }
+                // What Claude Code sets for every hook it runs, measured on 2.1.325.
+                env.extend(
+                    [
+                        ("AI_AGENT", "claude-code"),
+                        ("COREPACK_ENABLE_AUTO_PIN", "0"),
+                        ("NoDefaultCurrentDirectoryInExePath", "1"),
+                        ("COLUMNS", "160"),
+                        ("LINES", "50"),
+                    ]
+                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
+                );
+                // And the `env` of the `--settings` it was started with, as it applies it.
+                env.extend(self.settings_env());
             }
             Dialect::Codex => {}
             Dialect::Opencode => {
                 env.extend([
+                    ("AGENT".to_owned(), "1".to_owned()),
+                    (
+                        "npm_config_user_agent".to_owned(),
+                        format!(
+                            "bun/1 npm/? node/? {} {}",
+                            std::env::consts::OS,
+                            std::env::consts::ARCH
+                        ),
+                    ),
                     ("OPENCODE".to_owned(), "1".to_owned()),
                     ("OPENCODE_PID".to_owned(), pid),
                     ("PURLIS_SESSION_ID".to_owned(), self.session_id.clone()),
@@ -1366,6 +1446,27 @@ impl Chat {
             }
         }
         env
+    }
+
+    /// The `env` of Claude Code's `--settings`.
+    fn settings_env(&self) -> Vec<(String, String)> {
+        let Some(settings) = self.launch.settings.as_deref() else {
+            return Vec::new();
+        };
+        let text = if settings.trim_start().starts_with('{') {
+            settings.to_owned()
+        } else {
+            std::fs::read_to_string(settings).unwrap_or_default()
+        };
+        serde_json::from_str::<Value>(&text)
+            .ok()
+            .and_then(|v| v.get("env").and_then(Value::as_object).cloned())
+            .map(|env| {
+                env.into_iter()
+                    .filter_map(|(k, v)| Some((k, v.as_str()?.to_owned())))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The context Codex sends as the user's first message.
@@ -1396,7 +1497,7 @@ enum Outcome {
     Background { id: String, file: PathBuf },
     File(Result<String, (std::io::Error, String)>),
     Read(Result<String, (std::io::Error, String)>),
-    Web(Result<String, String>),
+    Web(Result<u16, String>),
     Mcp(Result<mcp_call::Answered, String>),
     Interrupted,
     Unknown,
@@ -1426,29 +1527,37 @@ impl Framed {
     }
 }
 
-/// A web fetch's dial: through the proxy the wrap names (`HTTPS_PROXY`), as a `CONNECT`, or
-/// straight to the host. What came back, or why nothing did.
-fn dial(url: &str) -> Result<String, String> {
+/// Whether Claude Code hands this event's hooks its effort: every one but the session's start
+/// and end and a prompt's submission (2.1.325).
+fn claude_effort(event: &str) -> bool {
+    !matches!(event, "SessionStart" | "SessionEnd" | "UserPromptSubmit")
+}
+
+/// A web fetch, as a fetch in the harness's own process makes it: a plain `http://` URL is a
+/// `GET` sent to the proxy the wrap names (`HTTP_PROXY`), an `https://` one a `CONNECT` to it
+/// (`HTTPS_PROXY`), or either straight to the host where none is named. The status that came
+/// back, or why none did.
+fn dial(url: &str) -> Result<u16, String> {
     use std::io::{BufRead, BufReader, Write};
+    let plain = url.starts_with("http://");
     let rest = url.split_once("://").map_or(url, |(_, r)| r);
     let host = rest.split('/').next().unwrap_or_default();
     let target = if host.contains(':') {
         host.to_owned()
-    } else if url.starts_with("http://") {
+    } else if plain {
         format!("{host}:80")
     } else {
         format!("{host}:443")
     };
-    let proxy = [
-        "HTTPS_PROXY",
-        "https_proxy",
-        "HTTP_PROXY",
-        "http_proxy",
-        "ALL_PROXY",
-    ]
-    .iter()
-    .find_map(|k| std::env::var(k).ok())
-    .filter(|p| !p.is_empty());
+    let names: &[&str] = if plain {
+        &["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]
+    } else {
+        &["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+    };
+    let proxy = names
+        .iter()
+        .find_map(|k| std::env::var(k).ok())
+        .filter(|p| !p.is_empty());
     let connect_to = |addr: &str| {
         use std::net::ToSocketAddrs;
         let addr = addr
@@ -1459,32 +1568,41 @@ fn dial(url: &str) -> Result<String, String> {
         std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(10))
             .map_err(|e| format!("cannot connect to {addr}: {e}"))
     };
-    match proxy {
+    let (mut stream, request) = match &proxy {
         Some(proxy) => {
             let addr = proxy
                 .split_once("://")
                 .map_or(proxy.as_str(), |(_, r)| r)
                 .trim_end_matches('/')
                 .to_owned();
-            let mut stream = connect_to(&addr)?;
-            write!(
-                stream,
-                "CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"
-            )
-            .map_err(|e| e.to_string())?;
-            let mut line = String::new();
-            BufReader::new(stream)
-                .read_line(&mut line)
-                .map_err(|e| e.to_string())?;
-            let line = line.trim().to_owned();
-            if line.split_whitespace().nth(1) == Some("200") {
-                Ok(line)
+            let request = if plain {
+                format!("GET {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
             } else {
-                Err(format!("Request failed: {line}"))
-            }
+                format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n")
+            };
+            (connect_to(&addr)?, request)
         }
-        None => connect_to(&target).map(|_| format!("connected to {target}")),
-    }
+        None if plain => {
+            let path = rest.find('/').map_or("/", |at| &rest[at..]);
+            (
+                connect_to(&target)?,
+                format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+            )
+        }
+        // No TLS is spoken: a dial that connects is all an `https://` fetch is held to here.
+        None => return connect_to(&target).map(|_| 200),
+    };
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    BufReader::new(stream)
+        .read_line(&mut line)
+        .map_err(|e| e.to_string())?;
+    line.split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .ok_or_else(|| format!("no HTTP answer: {:?}", line.trim()))
 }
 
 /// An I/O error as Node's `fs` says it, as Claude Code passes it on.
