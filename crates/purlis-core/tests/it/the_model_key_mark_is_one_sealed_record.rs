@@ -364,7 +364,14 @@ fn a_value_shaped_as_a_sealed_body_does_not_fingerprint_as_its_seal() {
     // fingerprint must not be that record's seal, or a mark of such a value would forge it.
     let shaped = format!("purlis/model-key-mark/1\n{body}");
     assert_eq!(
-        replace(here.root(), &here.credentials, a, &shaped),
+        replace(
+            here.root(),
+            &here.credentials,
+            &NoneYet,
+            a,
+            &shaped,
+            Checked::Passed,
+        ),
         Ok(Replaced::Marked)
     );
     let resealed = std::fs::read_to_string(here.seal(a)).unwrap();
