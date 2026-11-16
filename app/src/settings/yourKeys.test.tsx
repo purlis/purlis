@@ -304,6 +304,38 @@ describe("the key form", () => {
   });
 });
 
+describe("Add a key…", () => {
+  it("aims the form at the missing entry a profile points at, and at a new entry otherwise", async () => {
+    // F-8: a profile on an orphaned line. Add a key… writes under that entry's id, so it is
+    // never offered W9's Replace it? for a key that is missing.
+    rows = [
+      row("01OTHER", { state: "missing" }),
+      row("01GONE", { state: "missing", profiles: ["claude-anthropic"] }),
+    ];
+    answers.your_key_save = (args) => ({
+      kind: "saved",
+      id: (args.target as { id?: string }).id ?? "01NEW",
+    });
+    page();
+    await userEvent.click(await screen.findByRole("button", { name: "Add a key…" }));
+    await userEvent.type(screen.getByLabelText(windowCopy.W1), "synthetic-value");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(called("your_key_save")).toHaveLength(1));
+    expect(called("your_key_save")[0].args.target).toEqual({ kind: "this-entry", id: "01GONE" });
+    cleanup();
+
+    // No profile points at a missing entry: a new one.
+    rows = [row("01OTHER", { state: "missing" }), row("01A")];
+    sent = [];
+    page();
+    await userEvent.click(await screen.findByRole("button", { name: "Add a key…" }));
+    await userEvent.type(screen.getByLabelText(windowCopy.W1), "synthetic-value");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(called("your_key_save")).toHaveLength(1));
+    expect(called("your_key_save")[0].args.target).toEqual({ kind: "new-entry" });
+  });
+});
+
 describe("the window", () => {
   it("has no Unmark control for a model key: no command, and none on a row in any state", async () => {
     const bindings = readFileSync(join(process.cwd(), "src", "bindings.ts"), "utf8");
