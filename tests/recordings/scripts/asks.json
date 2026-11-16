@@ -1,0 +1,7 @@
+{
+  "name": "asks",
+  "prompt": "ASKS-SCRIPT: make the call the stand-in asks for, once it is allowed.",
+  "responses": [
+    {"calls": [{"step": "asked-write", "kind": "write", "path": "{work}/asked.txt", "content": "asked"}]}
+  ]
+}
