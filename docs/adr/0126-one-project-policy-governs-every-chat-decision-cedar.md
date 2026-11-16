@@ -1,9 +1,11 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
-Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), in the who-judges orchestration
-(`work/who-judges/decisions.md` on the plane). It also takes in the calls of the spec's first
-Fable review round (`work/who-judges/tickets/m75-policy/review-round-1.md` on the plane). The
+Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4) and Q320a (N1–N5), in the who-judges
+orchestration (`work/who-judges/decisions.md` on the plane). It also takes in the calls of the
+spec's first two Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` and
+`review-round-2.md` on the plane). Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and
+Windows seal gap is narrowed, not closed, and stays declared. The
 rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
 
@@ -63,7 +65,13 @@ the session host (Q311 point 1, Q309 point 3).
   family's mode. The action stays in its own family for everything else (Q319 C4, Q319a O3).
 - **The escape denies are not in any family.** The process and service denies that keep a chat
   inside its OS wrap belong to the sandbox level (`floor` or `full`), so no family's mode, and so
-  no template's "everything logs", lifts them (review round 1, S-B2).
+  no template's "everything logs", lifts them (review round 1, S-B2). They are not among the
+  fixed things of §5 either: they are a separate step that applies whenever the level is `floor`
+  or `full` (review round 2, F2-3).
+- **The `sandbox` family has one switch, its level.** `[policy] sandbox = off|floor|full` is its
+  only key, with no `off`/`log`/`enforce` of its own. At `full` and `floor` the hooks enforce the
+  `read` and `write` forbids, at `off` they log them, and `watch` uses `floor` (review round 2,
+  F2-1).
 
 **Rejected.** OPA/Rego through regorus: pre-1.0, with no allow/deny conflict model, no equivalence
 or reachability analysis, and an unfinished explanation API. A TOML evaluator of purlis's own was
@@ -77,30 +85,45 @@ rewriting every project's `policy.cedar`.
 ### 2. The policy in force
 
 - The project's rules live in one committed `policy.cedar` beside the project file at the plane
-  root. They are read as committed at the plane root's HEAD, never from a branch folder (Q309
-  point 1).
+  root. They are read as committed at the plane root's HEAD, never from a branch folder and never
+  from the working file (Q309 point 1). With no HEAD there is no committed policy: the accepted
+  copy, or else the shipped default, applies (Q320a N3).
 - The text the person last accepted on this machine is kept **sealed**. Every decision is the
   stricter (deny > ask > allow) of the committed policy and the accepted policy, and "stricter"
-  covers all the policy's data: scopes, modes, limits, sets, locks and tool declarations. So a
-  tightening applies at once, and a loosening waits for the person's **loosening press**. The
-  shipped default stands in until the first acceptance (Q309 point 2; review round 1, S-B8).
-- **Tightenings ratchet.** The app seals every tightening it sees into the accepted floor, and a
-  sealed, monotonic manifest covers the whole sealed store. Moving HEAD back, committing a broken
-  file, deleting the store's accepted entry or replaying an older store then loosens nothing, and
-  a missing or older manifest reads as `strict` (review round 1, S-B1).
+  covers all the policy's data: scopes, modes, limits, locks and the scan-allow data. Named sets
+  and tool declarations are never merged across the two: each evaluation uses its own side's, and
+  a tool whose command differs runs the accepted one. So a tightening applies at once, and a
+  loosening waits for the person's **loosening press**. The shipped default stands in until the
+  first acceptance (Q309 point 2; review round 1, S-B8; review round 2, S2-SF1).
+- **Tightenings ratchet.** The app seals every tightening it sees into the accepted floor, which
+  is the conjunction of every committed version seen since the last press, and a sealed,
+  monotonic manifest covers the whole sealed store. Moving HEAD back, committing a broken file,
+  deleting the store's accepted entry or replaying an older store then loosens nothing (review
+  round 1, S-B1; review round 2, S2-SF2).
+- **The anchors live outside the state folder.** A presence anchor and the manifest's high-water
+  counter live in the app-only Keychain item, and the counter is written before the manifest, so
+  a restored state folder doesn't replay. With the anchor present, a missing or older manifest
+  denies every action that touches policy-governed state until the person re-presses; with no
+  anchor, it is a fresh install and the shipped default applies (review round 2, S2-B1, S2-B2,
+  F2-2).
 - Only the session host loads, verifies and evaluates the policy. Hooks, the proxy and dispatch
   ask the host, and an action is refused if the host can't be reached (Q309 point 3). This
   replaces ADR 0125 §3's `$PURLIS_POLICY` hand-off. The host is found from the plane and the
-  asking chat by its peer credentials, never from the environment. With no host, `strict` holds,
-  and the environment may only tighten (review round 1, S-B3).
+  asking chat by its peer credentials, never from the environment. The plane path and the
+  expected socket are pinned at the chat's start, where the chat can't write them, and the client
+  requires the listener to be the app process that started the chat (#6995). With no host,
+  `strict` holds, and the environment may only tighten (review round 1, S-B3; review round 2,
+  S2-B3).
 - A team changes the policy through git. Anyone, a chat included, may propose a change in a
   branch. Each machine's window shows the rule-by-rule diff, the commit and its author, and
   accepts it with one press. purlis enforces no commit review (Q309 points 5 and 6, Q313
   point 2).
 
 **Hard to reverse because** the seal, the press, "stricter of two" and the ratchet are what make
-Q307 Q4 hold: **a chat can never change the policy that governs it**. It holds fully on macOS,
-and on Linux and Windows with the seal opt-in on (§7, Q319 C6). Any later design must keep that.
+Q307 Q4 hold: **a chat can never change the policy that governs it**. It holds fully on macOS.
+On Linux and Windows it holds with a declared gap: the full gap by default, and with the seal
+opt-in on a narrowed gap, since a same-user process can still read the app's memory or start a
+second instance (§7; Q319 C6 as amended by Q320a N1). Any later design must keep that.
 
 ### 3. Levels and locks
 
@@ -153,12 +176,21 @@ gives.
 Only three things (Q308b, Q314 point 16):
 
 1. **A chat can't change its own policy.** This includes that a chat never answers an ask or
-   makes a grant. It holds fully on macOS, or with the seal opt-in on (§7).
+   makes a grant, and that a seal request from a chat is refused. It holds fully on macOS; on
+   Linux and Windows it holds with the declared seal gap, narrowed but not closed by the opt-in
+   (§7; Q320a N1).
 2. The **kill switch**, the person's emergency stop.
 3. The **grader bundles**: a skill can't grade itself.
 
 Everything else is a rule, a limit, a sealed answer or data, and a project may loosen anything
-(Q307 Q4).
+(Q307 Q4). The escape denies are not a fourth fixed thing; they belong to the sandbox level (§1).
+
+Two rules follow from the first, and are stated here so they aren't lost:
+- **A dispatched chat is never looser than its asker:** each decision is also made for every
+  asker up its chain, with that asker's nevers and You-level rules, and the strictest wins
+  (Q308a, Q308b; review round 1, S7; review round 2).
+- **No HEAD, no committed policy:** a plane root with no HEAD runs its accepted copy or the
+  shipped default, and its working file is never read as committed (Q320a N3).
 
 ### 6. A clean cut
 
@@ -183,9 +215,12 @@ a gap affects a family it enforces; the shipped default has none (Q319 C1, amend
 host-brokered credential, the sandbox or the proxy) is such a gap too (review round 1, S-B4).
 
 The seal is one such gap. On Linux and Windows no standard store binds a key to an unpackaged
-app (#6986), so by default the seal stops hand edits and sandboxed chats only, and the gap is
-declared. Two opt-ins close it: "Confirm with Windows Hello each time purlis starts" on Windows,
-and "Ask for a password each time purlis starts" on Linux (Q319 C6).
+app (#6986), so by default the seal stops hand edits and sandboxed chats only (on Windows, which
+has no purlis sandbox yet, hand edits only), and the gap is declared. Two opt-ins **narrow** it:
+"Confirm with Windows Hello each time purlis starts" on Windows, preferring a non-exportable
+Hello signing key, and "Ask for a password each time purlis starts" on Linux (Q319 C6). They
+don't close it: a same-user process can still read the app's memory or start a second instance,
+so with an opt-in on the gap stays declared, as a narrowed gap (Q320a N1, N4).
 
 **Hard to reverse because** the gap cells, Settings and doctor all assert "declared, and started":
 refusing by default later would stop chats that start today, on every project that hasn't written
@@ -204,8 +239,9 @@ the rule.
 - **ADR 0124:** §3's "Project recommends" row and item 3, the wording of §4.1 and §4.6, and §9's
   "timed exception where it exists" (Q312 point 3), as an amendment file under `docs/adr/0124/`.
 - **Rulings rather than records:** Q307 Q5's "the start is refused" (Q319 C1); Q311 point 8's
-  family `off` "skips the family's rules" (Q319 C2); and Q315 point 5's "nothing is carried
-  over", for nevers (Q320). ADR 0126 states the amended reading.
+  family `off` "skips the family's rules" (Q319 C2); Q315 point 5's "nothing is carried over",
+  for nevers (Q320); and Q319 C6, as amended by Q320a N1 (with an opt-in on, the seal gap is
+  narrowed, not closed, and stays declared). ADR 0126 states the amended reading.
 - **CONTEXT.md:** "Policy" widens to the whole statement; "admin lock" becomes **Lock**; **Level**
   gains Organisation and You, with You at the bottom and tighten-only (the M75 spec lists every
   entry).
@@ -216,11 +252,12 @@ the rule.
   `purlis policy why` answers for one action without running it.
 - Enforcement is proved equal to the policy against an independent Cedar oracle, and each known
   harness gap is asserted as declared (Q317, Q319 C1).
-- On Linux and Windows, unless the person turns on the seal opt-in, an unsandboxed program
-  running as the same user can read the seal key. That is a declared gap, shown in Settings and
-  doctor (Q309 point 4, Q319 C6, #6986). purlis has no Windows sandbox yet (M46, #565), so on
-  Windows the seal stops hand edits only, until the opt-in is on.
-- The sandbox's paths are compiled from the policy with Cedar's typed partial evaluation, which
-  is experimental, behind one function (#6988). A rule the sandbox can't express is refused at
-  load.
+- On Linux and Windows an unsandboxed program running as the same user can read the seal key
+  unless the person turns on the seal opt-in, and even with it on can still read the app's
+  memory. That is a declared gap, shown in Settings and doctor, full by default and narrowed with
+  the opt-in (Q309 point 4, Q319 C6, Q320a N1, #6986). purlis has no Windows sandbox yet (M46,
+  #565), so by default the Windows seal stops hand edits only (Q320a N4).
+- **Proposed** (the spec marks both proposed; review round 2, F2-4): the sandbox's paths are
+  compiled from the policy with Cedar's typed partial evaluation, which is experimental, behind
+  one function (#6988), and a rule the sandbox can't express is refused at load.
 - Every existing settings file with a moved key reads as broken until a person rewrites it.
