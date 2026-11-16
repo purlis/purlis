@@ -28,16 +28,32 @@
 //! Its folder is denied to every chat's writes as well
 //! ([`super::Denied::of`], [`super::Class::HumanPowers`]). A file that is there and fails any
 //! of that, a folder that is there and fails it with or without the file in it ([`judge_folder`],
-//! D-1343-11), a file that does not parse, or one that says anything this version does not
-//! know, is **refused, and refused closed** (D-1343-3): every lock but the presets is set,
-//! because purlis cannot tell what the administrator meant, and the window says why and names
-//! the file.
+//! D-1343-11), a file that does not parse or says one key twice in an object at any depth, or
+//! one that says anything this version does not know outside `models`, is **refused, and refused
+//! closed** (D-1343-3): every lock but the presets is set, because purlis cannot tell what the
+//! administrator meant, and the window says why and names the file. A refused file also refuses
+//! every chat that would start through the key proxy, naming the file and why (R-128, W64); a
+//! chat on its harness's own sign-in still starts.
+//!
+//! **The order** (V15, R-714): the trust check ([`judge`], [`judge_folder`]), then a JSON parse,
+//! then `min-version` from the top level alone, then the strict parse. So a `min-version` in a
+//! file anyone could write is never read, and one above this build refuses every chat that
+//! reaches a model even where the strict parse refuses the rest of the file.
+//!
+//! **Off Unix no policy file is read**, so `min-version` and `models` are not enforced there
+//! either: a stated gap, closed with the Windows policy work.
+//!
+//! **In a test build** a policy fixture ([`Fixture`]) stands in for [`MACHINE_FILE`], read by
+//! this same reader (R-699). Only a test build has it; nothing a build anyone is given reads
+//! moves the file.
 //!
 //! # What it can lock
 //!
 //! ```json
 //! {
 //!   "owner": "Platform team <platform@example.com>",
+//!   "min-version": "0.6.0",
+//!   "models": {},
 //!   "sandbox": {
 //!     "presets": ["model-providers", "forge"],
 //!     "hosts": ["*.corp.example.com", "api.example.com"],
@@ -68,6 +84,14 @@
 //!
 //! - `owner`: who set it, as Settings and a Notice name them. Absent, it is "this machine's
 //!   administrator".
+//! - `min-version`: the oldest purlis that may start a chat that reaches a model (R-714),
+//!   `MAJOR.MINOR.PATCH` with an optional pre-release, which compares below its release, against
+//!   this build's release (a dev build's base version). Above this build, every such chat is
+//!   refused naming it (W36), a subscription chat included. Any other value refuses the file.
+//! - `models`: model policy, in this one file with no store of its own (R-428, R-617). Unknown
+//!   keys are tolerated here alone (R-429); this version enforces none, so any key here refuses
+//!   every chat that reaches a model, naming it (W66, R-430), and the sandbox locks stay as the
+//!   file states them. A `models` that is not an object refuses the file.
 //! - `presets`: the Internet access presets a project may turn on; any other is off.
 //! - `hosts`: the hosts a project (its own and its forges'), you, a persona or a chat's grant
 //!   may add; any other is refused. A preset's fixed list is the `presets` lock's. A `*.domain` entry allows every name under it; an entry without a port allows
@@ -486,8 +510,23 @@ impl Locks {
 
     /// The policy `text`, read from `file`: its locks, or every lock where it says anything
     /// this version does not take.
+    ///
+    /// **In this order** (V15): a JSON parse that refuses a key said twice at any depth, then
+    /// `min-version`, read from the top level alone, then the strict parse. So a `min-version`
+    /// above this build refuses every chat that reaches a model even in a file the strict parse
+    /// refuses, and one in a file the trust check refused ([`Self::read`]) is never read.
     pub fn parse(text: &str, file: &Path) -> Self {
-        parsed(text, file).unwrap_or_else(|why| Self::refused(file, &why))
+        let top = match json(text) {
+            Ok(top) => top,
+            Err(why) => return Self::refused(file, &why),
+        };
+        let min_version_above = match min_version(&top) {
+            Ok(above) => above,
+            Err(why) => return Self::refused(file, &why),
+        };
+        let mut locks = parsed(&top, file).unwrap_or_else(|why| Self::refused(file, &why));
+        locks.models.min_version_above = min_version_above;
+        locks
     }
 
     /// Every lock set, for a file refused for `why`: purlis cannot tell what it meant. The
@@ -528,9 +567,24 @@ impl Locks {
 
     /// **Why a chat that reaches a model on `route` doesn't start under this policy**, in the
     /// window's words, or none where it starts (R-128, R-430, R-714).
+    ///
+    /// - A `min-version` above this build refuses every one, whatever else the file says (W36).
+    /// - A file refused for any cause refuses a start through the key proxy, naming the file and
+    ///   its cause (W64); a chat on the harness's own sign-in is unaffected.
+    /// - A key inside `models` refuses every one, naming the key (W66): this build enforces none.
     pub fn refuses_model_start(&self, route: crate::keyroute::Route) -> Option<String> {
-        let _ = route;
-        None
+        use crate::window_copy::{fill, line};
+        let file = self.file()?.display().to_string();
+        if let Some(version) = &self.models.min_version_above {
+            return Some(fill(line::W36, &[("file", &file), ("version", version)]));
+        }
+        if route.starts_a_listener()
+            && let Some(why) = self.refused_because()
+        {
+            return Some(fill(line::W64, &[("file", &file), ("error", why)]));
+        }
+        let key = self.models.models_key.as_deref()?;
+        Some(fill(line::W66, &[("file", &file), ("key", key)]))
     }
 
     /// Whether any policy is in force.
@@ -1014,17 +1068,117 @@ const KEYS: [&str; 16] = [
     "relayed-internal",
 ];
 
-/// `text` as a policy read from `file`, or why it is refused.
-fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
-    let top: serde_json::Value =
-        serde_json::from_str(text).map_err(|_| "it is not JSON".to_owned())?;
+/// The keys a policy file's top level may hold.
+const TOP_KEYS: [&str; 5] = ["owner", "sandbox", "dispatch", "min-version", "models"];
+
+/// **This build's version**, which a policy's `min-version` is compared with.
+const BUILD: &str = env!("CARGO_PKG_VERSION");
+
+/// `text` as JSON, or why it is refused: a key said twice in one object, at any depth, is
+/// found while the text is walked, before the `Value` is built (which would keep the last).
+fn json(text: &str) -> Result<serde_json::Value, String> {
+    use serde::de::DeserializeSeed;
+    let twice = std::cell::RefCell::new(None);
+    let walked = NoKeyTwice(&twice).deserialize(&mut serde_json::Deserializer::from_str(text));
+    if let Some(key) = twice.into_inner() {
+        return Err(format!("it says \"{}\" twice", clip(&key)));
+    }
+    walked
+        .ok()
+        .and_then(|()| serde_json::from_str(text).ok())
+        .ok_or_else(|| "it is not JSON".to_owned())
+}
+
+/// A walk of JSON that keeps nothing and stops at the first key an object says twice, which it
+/// keeps.
+#[derive(Clone, Copy)]
+struct NoKeyTwice<'a>(&'a std::cell::RefCell<Option<String>>);
+
+impl<'de> serde::de::DeserializeSeed<'de> for NoKeyTwice<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, from: D) -> Result<(), D::Error> {
+        from.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for NoKeyTwice<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("JSON")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut items: A) -> Result<(), A::Error> {
+        while items.next_element_seed(self)?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut entries: A) -> Result<(), A::Error> {
+        let mut keys = std::collections::HashSet::new();
+        while let Some(key) = entries.next_key::<String>()? {
+            if !keys.insert(key.clone()) {
+                *self.0.borrow_mut() = Some(key);
+                return Err(serde::de::Error::custom("a key said twice"));
+            }
+            entries.next_value_seed(self)?;
+        }
+        Ok(())
+    }
+}
+
+/// **The file's `min-version`, where it is above this build** (R-714), read from the top level
+/// alone and before the strict parse; or why the file is refused, for a value that is not a
+/// version.
+fn min_version(top: &serde_json::Value) -> Result<Option<String>, String> {
+    match top.get("min-version") {
+        None => Ok(None),
+        Some(serde_json::Value::String(said)) => {
+            Ok(min_version_above(said, BUILD)?.then(|| clip(said)))
+        }
+        Some(other) => Err(not_a_version(&other.to_string())),
+    }
+}
+
+/// Why a `min-version` of `said` refuses the file.
+fn not_a_version(said: &str) -> String {
+    format!(
+        "its \"min-version\", {}, is not a version written MAJOR.MINOR.PATCH, such as 0.6.0 or \
+         0.6.0-rc.1",
+        clip(said)
+    )
+}
+
+/// `top`, a policy's JSON read from `file`, as locks, or why it is refused.
+fn parsed(top: &serde_json::Value, file: &Path) -> Result<Locks, String> {
     let top = top
         .as_object()
         .ok_or_else(|| "it is not a JSON object".to_owned())?;
-    if let Some(key) = top
-        .keys()
-        .find(|key| !["owner", "sandbox", "dispatch"].contains(&key.as_str()))
-    {
+    if let Some(key) = top.keys().find(|key| !TOP_KEYS.contains(&key.as_str())) {
         return Err(format!(
             "it says \"{}\", which purlis does not know",
             clip(key)
@@ -1036,6 +1190,12 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
             Some(crate::shown::one_line(owner.trim(), MOST_OWNER_CHARS)).filter(|o| !o.is_empty())
         }
         Some(_) => return Err("its \"owner\" is not text".to_owned()),
+    };
+    // Every key inside `models` is tolerated, and none can be enforced before 5b (R-429, R-430).
+    let models_key = match top.get("models") {
+        None => None,
+        Some(serde_json::Value::Object(models)) => models.keys().next().map(|key| clip(key)),
+        Some(_) => return Err("its \"models\" is not an object".to_owned()),
     };
     let empty = serde_json::Map::new();
     let sandbox = match top.get("sandbox") {
@@ -1160,15 +1320,27 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         dispatch_locked,
         team_never: false,
         to_its_folder: false,
-        models: ModelGate::default(),
+        models: ModelGate {
+            min_version_above: None,
+            models_key,
+        },
     })
 }
 
 /// Whether `min_version`, a policy's `min-version`, is above `build`, this build's version, or
 /// why it is not a version the file may set (R-714).
+///
+/// `min_version` is `MAJOR.MINOR.PATCH` with an optional pre-release, which compares below its
+/// release; nothing else (`2`, `0.6`, `v0.6.0`, build metadata) is taken. A dev build, such as
+/// `0.6.0-dev.3`, compares its release, `0.6.0`.
 pub(crate) fn min_version_above(min_version: &str, build: &str) -> Result<bool, String> {
-    let _ = (min_version, build);
-    Ok(false)
+    let wanted = semver::Version::parse(min_version)
+        .ok()
+        .filter(|version| version.build.is_empty())
+        .ok_or_else(|| not_a_version(&format!("\"{min_version}\"")))?;
+    let build = semver::Version::parse(build)
+        .map_err(|err| format!("this build's version, {build}, can't be read: {err}"))?;
+    Ok(wanted > semver::Version::new(build.major, build.minor, build.patch))
 }
 
 /// **What a policy's `relayed-internal` lists** (#2530): each entry it takes, and a sentence for
@@ -1377,7 +1549,10 @@ fn read_trusted(path: &Path, judging: &Judging) -> Result<Option<String>, String
         .read_to_end(&mut bytes)
         .map_err(|err| format!("it cannot be read: {err}"))?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MOST_BYTES {
-        return Err("it is larger than purlis reads".to_owned());
+        return Err(format!(
+            "it is larger than {} KiB, the most purlis reads",
+            MOST_BYTES / 1024
+        ));
     }
     String::from_utf8(bytes)
         .map(Some)

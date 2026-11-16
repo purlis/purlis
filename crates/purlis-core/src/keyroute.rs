@@ -98,8 +98,11 @@ pub fn start(
     level: Level,
     locks: &crate::sandbox::policy::Locks,
 ) -> Result<Route, String> {
-    let _ = locks;
-    resolve(declaration, way, level)
+    let route = resolve(declaration, way, level)?;
+    match locks.refuses_model_start(route) {
+        Some(why) => Err(why),
+        None => Ok(route),
+    }
 }
 
 /// Why `declaration`'s harness takes its own sign-in only, or none where it takes a base URL:
