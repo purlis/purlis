@@ -375,6 +375,22 @@ describe("taking a browser over from its view (#2014)", () => {
     ).toEqual(["pressed", "released"]);
   });
 
+  it("takes the browser over on Take control, with the keyboard on its page, and offers Done in its place (#6937)", async () => {
+    const host = await drawn();
+    const take = screen.getByRole("button", { name: "Take control" });
+    take.focus();
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(host.asked("take_over_browser")).toEqual([{ program: "B1" }]));
+    await waitFor(() => expect(screen.getByTestId("browser-surface")).toHaveFocus());
+    expect(barSaid()).toHaveTextContent("You are driving this browser.");
+    expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+    // The keys typed next reach the page.
+    await userEvent.keyboard("a");
+    await waitFor(() => expect(host.asked("browser_input").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: /Done/ })).toBeInTheDocument();
+  });
+
   it("takes the browser over with a key, and Done hands it back", async () => {
     const host = await drawn();
 
@@ -1065,5 +1081,125 @@ describe("a chat's browser handed to the person goes where they send it (#6290)"
     await waitFor(() => expect(host.asked("asks_waiting").length).toBeGreaterThan(0));
     await new Promise((settled) => setTimeout(settled, 50));
     expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
+  });
+});
+
+describe("the view's header (#6937)", () => {
+  /** A chat's browser, as the chats' browsers list it. */
+  const listed = (more: Record<string, unknown> = {}) => ({
+    session: 3,
+    name: "b1",
+    program: "B1",
+    unended: false,
+    pinned: false,
+    was: null,
+    login: null,
+    driver: null,
+    pool: null,
+    secrets: [],
+    ...more,
+  });
+
+  async function drawn(chat: string | null = "steward 4") {
+    const { BrowserView } = await import("./BrowserView");
+    const { ProjectShownProvider } = await import("./projectShown");
+    const { tellProjectBrowsers } = await import("./browsersGrid");
+    tellProjectBrowsers({
+      plane: PLANE,
+      project: "plane",
+      tiles: [
+        {
+          plane: PLANE,
+          program: "B1",
+          own: false,
+          name: "b1",
+          chat,
+          workspace: "",
+          driver: null,
+          pool: null,
+        },
+      ],
+      open: () => {},
+    });
+    const host = core();
+    render(
+      <ProjectShownProvider value={true}>
+        <BrowserView plane={PLANE} program="B1" />
+      </ProjectShownProvider>,
+    );
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==");
+    return host;
+  }
+
+  afterEach(async () => (await import("./browsersGrid")).forgetProjectsBrowsers());
+
+  it("is the view's first row, before the address field and the strip", async () => {
+    besides.chat_browsers = () => [listed()];
+    await drawn();
+    const view = screen.getByTestId("browser-view");
+    expect(view.firstElementChild).toBe(screen.getByTestId("browser-head"));
+    expect(within(screen.getByTestId("browser-head")).getByTestId("browser-chip")).toBeVisible();
+  });
+
+  it("names the chat that is using the browser, and how to take it over", async () => {
+    besides.chat_browsers = () => [listed()];
+    await drawn();
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent(
+        "steward 4 is using this browser. Click or type in the page to take it over.",
+      ),
+    );
+  });
+
+  it("says its chat plainly where the project kept no name of it", async () => {
+    besides.chat_browsers = () => [listed()];
+    await drawn(null);
+    await waitFor(() => expect(barSaid()).toHaveTextContent("Its chat is using this browser."));
+  });
+
+  it("says purlis is signing in, and offers no take-over while it does", async () => {
+    besides.chat_browsers = () => [listed({ driver: "purlis" })];
+    await drawn();
+    await waitFor(() => expect(barSaid()).toHaveTextContent("purlis is signing in"));
+    expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+  });
+
+  it("marks an https page secure, plain http elsewhere Not secure, and this machine's own neither", async () => {
+    besides.chat_browsers = () => [listed()];
+    const host = await drawn();
+    const chip = () => screen.getByTestId("browser-chip");
+
+    host.page("https://dash.example.test");
+    await waitFor(() =>
+      expect(within(chip()).getByRole("img", { name: "Secure connection" })).toBeInTheDocument(),
+    );
+    expect(chip()).not.toHaveTextContent("Not secure");
+
+    host.page("http://preview.example.test:8080");
+    await waitFor(() => expect(chip()).toHaveTextContent(/^Not securepreview\.example\.test:8080/));
+    expect(within(chip()).queryByRole("img", { name: "Secure connection" })).toBeNull();
+
+    host.page("http://localhost:5173");
+    await waitFor(() => expect(chip()).toHaveTextContent(/^localhost:5173/));
+    expect(chip()).not.toHaveTextContent("Not secure");
+  });
+
+  it("draws a dozen long secrets as one count beside the site, which stays named", async () => {
+    const secrets = Array.from({ length: 12 }, (_, at) => ({
+      key: `STAGE_QA_S3RACE_RUNNER_KUBECONFIG_${at}`,
+      origin: "https://console.example.test",
+      page: "https://console.example.test",
+      label: "",
+      code: false,
+    }));
+    besides.chat_browsers = () => [listed({ secrets })];
+    const host = await drawn();
+    host.page("https://console.example.test");
+
+    const head = screen.getByTestId("browser-head");
+    expect(await within(head).findByRole("button", { name: "12 secrets" })).toBeInTheDocument();
+    expect(within(head).queryAllByTestId("secret-mark")).toHaveLength(0);
+    expect(within(head).getByTestId("browser-chip")).toHaveTextContent("console.example.test");
   });
 });

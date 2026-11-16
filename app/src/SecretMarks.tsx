@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { SecretFilled } from "./bindings";
+import { KeyRound } from "lucide-react";
 import { Badge } from "./ui/badge/Badge";
+import { Button } from "./ui/button/Button";
+import { PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** A site as a mark says it: its host, and the scheme where it isn't https. */
@@ -38,29 +41,68 @@ export function marksOn(
     : secrets.filter((one) => one.origin === origin || one.page === origin);
 }
 
+/** What the count of several marks says: how many, as digits, with the plural agreeing. */
+export function secretsCounted(count: number): string {
+  return count === 1 ? "1 secret" : `${count} secrets`;
+}
+
 /**
  * **Where purlis filled a vault secret into the page a browser's view shows** (#5119, SF-8):
- * "secret: <key>" beside the page's site, one mark a key, while the page is on the site it went
- * to. Drawn by purlis in the view's bar, outside the page, as the site's chip is (#2024), so a
- * page can neither fake a mark nor move one off its field. Each names the key and the site,
- * never a value, and its hint says which field the page labels.
+ * beside the page's site, while the page is on the site it went to. Drawn by purlis in the view's
+ * first row, outside the page, as the site is (#2024), so a page can neither fake a mark nor move
+ * one off its field. Each names the key and the site, never a value, and its hint says which
+ * field the page labels.
+ *
+ * **One mark, or a count** (#6937): one secret is "secret: <key>", cut to an ellipsis where the
+ * key is long. Several are one button, "3 secrets", that opens the list of them, each key whole
+ * with what its hint says, so a row of long keys never pushes the site or the row past the pane.
  */
 export function SecretMarks({ secrets }: { secrets: readonly SecretFilled[] }) {
   if (secrets.length === 0) return null;
   return (
     <span className="browser-secrets" role="group" aria-label="Secrets purlis filled on this site">
-      {secrets.map((one) => (
-        <Tooltip key={`${one.key} ${one.origin} ${one.page}`} tip={secretMarkSaid(one)}>
-          <Badge
-            variant="accent"
-            role="img"
-            aria-label={secretMarkName(one)}
-            data-testid="secret-mark"
+      {secrets.length === 1 ? (
+        <OneMark one={secrets[0]} />
+      ) : (
+        <PopoverTrigger>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<KeyRound />}
+            tooltip="Names only: purlis never shows a value."
+            data-testid="secret-marks"
           >
-            secret: {one.key}
-          </Badge>
-        </Tooltip>
-      ))}
+            {secretsCounted(secrets.length)}
+          </Button>
+          <PopoverDialog aria-label="Secrets purlis filled on this site">
+            <ul className="browser-secrets-list">
+              {secrets.map((one) => (
+                <li key={`${one.key} ${one.origin} ${one.page}`} data-testid="secret-mark">
+                  <span className="browser-secrets-key">{one.key}</span>
+                  <span className="ui-text-secondary">{secretMarkSaid(one)}</span>
+                </li>
+              ))}
+            </ul>
+          </PopoverDialog>
+        </PopoverTrigger>
+      )}
     </span>
+  );
+}
+
+/** One secret's mark: its key, its hint saying the field and the site. */
+function OneMark({ one }: { one: SecretFilled }) {
+  return (
+    <Tooltip tip={secretMarkSaid(one)}>
+      <Badge
+        variant="accent"
+        role="img"
+        aria-label={secretMarkName(one)}
+        data-testid="secret-mark"
+        className="browser-secret"
+      >
+        secret: {one.key}
+      </Badge>
+    </Tooltip>
   );
 }
