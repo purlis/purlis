@@ -99,6 +99,11 @@ fn strings(value: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The variables Codex hands every MCP server it starts, whatever its `env_vars` say.
+const CODEX_DEFAULT_ENV: [&str; 10] = [
+    "HOME", "LOGNAME", "PATH", "SHELL", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ",
+];
+
 /// What a `tools/call` came back with: its text, and whether the server called it an error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Answered {
@@ -117,10 +122,8 @@ pub fn call(
     command.args(&server.args);
     if let Some(only) = &server.only {
         command.env_clear();
-        for name in only
-            .iter()
-            .chain(["PATH", "HOME"].map(str::to_owned).iter())
-        {
+        // Beside the names it is given, the ones Codex always hands a server it starts.
+        for name in only.iter().map(String::as_str).chain(CODEX_DEFAULT_ENV) {
             if let Ok(value) = std::env::var(name) {
                 command.env(name, value);
             }

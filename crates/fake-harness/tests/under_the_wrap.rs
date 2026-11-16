@@ -73,6 +73,8 @@ impl Beside for Host {
 
 /// One chat of the fake, played to its end.
 struct Played {
+    /// The run's folder, kept until the test is done with what is in it.
+    _base: tempfile::TempDir,
     dialect: String,
     lines: Vec<recorder::Line>,
     transcript: Vec<Value>,
@@ -88,6 +90,8 @@ struct Given {
     forced: BTreeMap<String, String>,
     /// The step whose call is interrupted with Esc, once its guard was heard.
     esc_step: Option<String>,
+    /// Whether the hooks and the MCP server run T1.1-03's recorder (`true`) or purlis itself.
+    recorded: bool,
 }
 
 fn play(given: &Given) -> Played {
@@ -128,7 +132,11 @@ fn play(given: &Given) -> Played {
     let profile_config = made.record.folders.config.clone();
     let plugin = repo().join("app/src-tauri/plugin");
     let kit = Kit {
-        binary: Some(recorder_bin.clone()),
+        binary: Some(if given.recorded {
+            recorder_bin.clone()
+        } else {
+            purlis.clone()
+        }),
         plugin: Some(plugin.clone()),
         git_hooks: None,
         skill_sets: None,
@@ -289,8 +297,12 @@ fn play(given: &Given) -> Played {
     let _ = session.wait(Duration::from_secs(10));
     session.end();
 
-    let lines = recorder::read(&recorder_out)
-        .unwrap_or_else(|e| panic!("the recorder wrote nothing ({e}); the screen:\n{screen}"));
+    let lines = if given.recorded {
+        recorder::read(&recorder_out)
+            .unwrap_or_else(|e| panic!("the recorder wrote nothing ({e}); the screen:\n{screen}"))
+    } else {
+        Vec::new()
+    };
     let mut roots = BTreeMap::new();
     let mut root_of = |name: &str, path: &Path| {
         roots.insert(name.to_owned(), path.display().to_string());
@@ -314,6 +326,7 @@ fn play(given: &Given) -> Played {
         root_of("home", Path::new(&home));
     }
     let played = Played {
+        _base: base,
         dialect,
         lines,
         transcript: read_jsonl(&transcript),
@@ -431,6 +444,7 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
         script: turns,
         forced: checked.forced.clone(),
         esc_step,
+        recorded: true,
     });
 
     // The fake's recording: its hook calls as the recorder wrote them, grouped by the parallel
@@ -516,6 +530,7 @@ fn a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_scr
         script,
         forced: BTreeMap::new(),
         esc_step: None,
+        recorded: true,
     });
     // ESCAPE if either happened (Q301): never pinned, filed as a p0.
     assert!(
@@ -588,6 +603,9 @@ fn an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap() {
         script,
         forced: BTreeMap::new(),
         esc_step: None,
+        // purlis itself, as a person's chat has it: the recorder's own variable is not among
+        // those a harness hands its MCP server.
+        recorded: false,
     });
     let result = played
         .transcript
