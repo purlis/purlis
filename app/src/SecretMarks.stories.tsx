@@ -87,6 +87,10 @@ export const ALongKeyInANarrowRow: Story = {
     const mark = canvas.getByTestId("secret-mark");
     const row = mark.closest(".browser-head");
     await expect(row?.scrollWidth).toBeLessThanOrEqual(row?.clientWidth ?? 0);
-    await expect(mark.scrollWidth).toBeGreaterThan(mark.clientWidth);
+    // The chip shrinks within its group, and its words, in a box of their own, are what is cut.
+    const group = mark.parentElement?.getBoundingClientRect();
+    await expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(group?.right ?? 0);
+    const said = mark.querySelector<HTMLElement>(".browser-secret-said");
+    await expect(said?.scrollWidth ?? 0).toBeGreaterThan(said?.clientWidth ?? 0);
   },
 };
