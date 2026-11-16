@@ -1,0 +1,2108 @@
+{
+  "harness": "opencode",
+  "version": "1.19.5",
+  "level": "full",
+  "os": "linux",
+  "script": "covering",
+  "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+  "forced": {
+    "esc": "pressed",
+    "exit2": "pretooluse",
+    "harness_asks": "allowed once, 2 times",
+    "stall": "sessionstart"
+  },
+  "shown": [
+    {
+      "kind": "user_text",
+      "text": "COVERING-SCRIPT: make each call the stand-in asks for, in order."
+    },
+    {
+      "kind": "tool_result",
+      "text": "purlis-recorder: refused with exit 2 for the recording",
+      "tool_use_id": "<tool-use-1>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "covered\n",
+      "tool_use_id": "<tool-use-2>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "curl: (56) CONNECT tunnel failed, response 403\n",
+      "tool_use_id": "<tool-use-3>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "/bin/bash: line 1: <outside>/by-bash.txt: Permission denied\n",
+      "tool_use_id": "<tool-use-4>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "PermissionDenied: FileSystem.writeFile (<outside>/by-write.txt)",
+      "tool_use_id": "<tool-use-5>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "PermissionDenied: FileSystem.writeFile (<outside>/existing.txt)",
+      "tool_use_id": "<tool-use-6>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "purlis guard: reads a vault/secret file directly (would print plaintext). Use `purlis … secret exec --env NAME=<key> -- <cmd>`, or `--file ENVVAR=<key>` for a tool that needs a path — and do not read a materialised copy back either: no guard covers a path you chose. — Wrong about this case? There is deliberately no config key, environment variable or switch that lifts a purlis denial: one purlis could read is one a committed file could flip. Run it yourself, in your own terminal — these guards bound what an AGENT does with your authority, never what you do. See `docs/hooks.md` → When a guard is wrong.",
+      "tool_use_id": "<tool-use-7>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Transport error (GET https://refused.example.invalid/)",
+      "tool_use_id": "<tool-use-8>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "two\n",
+      "tool_use_id": "<tool-use-10>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "one\n",
+      "tool_use_id": "<tool-use-9>"
+    },
+    {
+      "kind": "user_text",
+      "text": "SUBAGENT-COVERING: make the one call the stand-in asks for."
+    },
+    {
+      "kind": "tool_result",
+      "text": "from-subagent\n",
+      "tool_use_id": "<tool-use-14>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "<task id=\"<session-1>\" state=\"completed\">\n<task_result>\nCovering script done.\n</task_result>\n</task>",
+      "tool_use_id": "<tool-use-11>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "failing\n",
+      "tool_use_id": "<tool-use-12>"
+    }
+  ],
+  "hook_calls": [
+    {
+      "argv": [
+        "hook",
+        "sessionstart"
+      ],
+      "stdin": {
+        "hook_event_name": "SessionStart",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "source": "startup"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": null,
+      "forced": "stall"
+    },
+    {
+      "argv": [
+        "hook",
+        "userpromptsubmit"
+      ],
+      "stdin": {
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order."
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo exit-two",
+          "description": "exit2-bash"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "purlis-recorder: refused with exit 2 for the recording\n"
+      },
+      "forced": "exit2"
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "description": "bash"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "description": "bash"
+        },
+        "tool_response": "covered\n",
+        "exit_code": 0
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "curl -sS -m 10 https://refused.example.invalid/",
+          "description": "refused-bash-net"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "curl -sS -m 10 https://refused.example.invalid/",
+          "description": "refused-bash-net"
+        },
+        "tool_response": {
+          "stderr": "curl: (56) CONNECT tunnel failed, response 403\n",
+          "mixed": true
+        },
+        "exit_code": 56
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo by-bash > <outside>/by-bash.txt",
+          "description": "refused-bash-write"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo by-bash > <outside>/by-bash.txt",
+          "description": "refused-bash-write"
+        },
+        "tool_response": {
+          "stderr": "/bin/bash: line 1: <outside>/by-bash.txt: Permission denied\n",
+          "mixed": true
+        },
+        "exit_code": 1
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-edit"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Write",
+        "tool_input": {
+          "filePath": "<outside>/by-write.txt",
+          "content": "by-write"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "notification"
+      ],
+      "stdin": {
+        "hook_event_name": "Notification",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "notification_type": "permission_prompt",
+        "message": "opencode asks permission to use external_directory"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10011,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "permissionrequest"
+      ],
+      "stdin": {
+        "id": "<tool-use-15>",
+        "sessionID": "<session-2>",
+        "permission": "external_directory",
+        "patterns": [
+          "<outside>/*"
+        ],
+        "metadata": {
+          "filepath": "<outside>/by-write.txt",
+          "parentDir": "<outside>"
+        },
+        "always": [
+          "<outside>/*"
+        ],
+        "tool": {
+          "messageID": "<tool-use-16>",
+          "callID": "<tool-use-5>"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10011,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-edit"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Edit",
+        "tool_input": {
+          "filePath": "<outside>/existing.txt",
+          "oldString": "before",
+          "newString": "after"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "notification"
+      ],
+      "stdin": {
+        "hook_event_name": "Notification",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "notification_type": "permission_prompt",
+        "message": "opencode asks permission to use external_directory"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10014,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "permissionrequest"
+      ],
+      "stdin": {
+        "id": "<tool-use-17>",
+        "sessionID": "<session-2>",
+        "permission": "external_directory",
+        "patterns": [
+          "<outside>/*"
+        ],
+        "metadata": {
+          "filepath": "<outside>/existing.txt",
+          "parentDir": "<outside>"
+        },
+        "always": [
+          "<outside>/*"
+        ],
+        "tool": {
+          "messageID": "<tool-use-18>",
+          "callID": "<tool-use-6>"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10014,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-read"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Read",
+        "tool_input": {
+          "filePath": "<work>/.purlis/vaults/covering.json"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "purlis guard: reads a vault/secret file directly (would print plaintext). Use `purlis … secret exec --env NAME=<key> -- <cmd>`, or `--file ENVVAR=<key>` for a tool that needs a path — and do not read a materialised copy back either: no guard covers a path you chose. — Wrong about this case? There is deliberately no config key, environment variable or switch that lifts a purlis denial: one purlis could read is one a committed file could flip. Run it yourself, in your own terminal — these guards bound what an AGENT does with your authority, never what you do. See `docs/hooks.md` → When a guard is wrong."
+          }
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "WebFetch",
+        "tool_input": {
+          "url": "https://refused.example.invalid/",
+          "format": "text"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo one",
+          "description": "parallel-one"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo two",
+          "description": "parallel-two"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo one",
+          "description": "parallel-one"
+        },
+        "tool_response": "one\n",
+        "exit_code": 0
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo two",
+          "description": "parallel-two"
+        },
+        "tool_response": "two\n",
+        "exit_code": 0
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-dispatch"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Task",
+        "tool_input": {
+          "description": "subagent",
+          "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+          "subagent_type": "general"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo from-subagent",
+          "description": "subagent-bash"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo from-subagent",
+          "description": "subagent-bash"
+        },
+        "tool_response": "from-subagent\n",
+        "exit_code": 0
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-dispatch"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Task",
+        "tool_input": {
+          "description": "subagent",
+          "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+          "subagent_type": "general"
+        },
+        "tool_response": {
+          "output": "<task id=\"<session-1>\" state=\"completed\">\n<task_result>\nCovering script done.\n</task_result>\n</task>"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo failing >&2; exit 2",
+          "description": "failing-bash"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo failing >&2; exit 2",
+          "description": "failing-bash"
+        },
+        "tool_response": {
+          "stderr": "failing\n",
+          "mixed": true
+        },
+        "exit_code": 2
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "python3 -c \"import time; time.sleep(120)\"",
+          "description": "esc"
+        }
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "hook_event_name": "PostToolUse",
+        "session_id": "<session-2>",
+        "cwd": "<work>",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "python3 -c \"import time; time.sleep(120)\"",
+          "description": "esc"
+        },
+        "tool_response": "(no output)\n\n<shell_metadata>\nUser aborted the command\n</shell_metadata>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10029,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "stop"
+      ],
+      "stdin": {
+        "hook_event_name": "Stop",
+        "session_id": "<session-2>",
+        "cwd": "<work>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "group": 10029,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "stop"
+      ],
+      "stdin": {
+        "hook_event_name": "Stop",
+        "session_id": "<session-2>",
+        "cwd": "<work>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "opencode",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "<session-2>",
+        "OPENCODE": "1",
+        "OPENCODE_CONFIG": "<base>/opencode-stand-in.json",
+        "OPENCODE_CONFIG_CONTENT": "{\"plugin\":[[\"file://<plugin>/opencode/purlis.ts\",{\"skills\":\"<plugin>/skills\"}]],\"mcp\":{\"purlis\":{\"type\":\"local\",\"command\":[\"<purlis>/purlis-recorder\",\"mcp\"],\"enabled\":true}},\"snapshot\":false,\"permission\":{\"purlis_dispatch\":\"allow\",\"purlis_dispatch_report\":\"allow\",\"purlis_dispatch_tell\":\"allow\",\"purlis_dispatch_answer\":\"allow\",\"purlis_dispatch_pass_on\":\"allow\",\"purlis_dispatch_cancel\":\"allow\",\"purlis_dispatch_close\":\"allow\",\"purlis_dispatch_note\":\"allow\",\"purlis_dispatch_ask\":\"allow\",\"purlis_dispatch_list\":\"allow\",\"purlis_dispatch_read\":\"allow\",\"purlis_dispatch_wait\":\"allow\"}}",
+        "OPENCODE_DISABLE_AUTOUPDATE": "1",
+        "OPENCODE_PID": "<session-pid>",
+        "OPENCODE_PURE": "0",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "opencode",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "<session-2>"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ],
+  "model": [
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "exit2-bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo exit-two",
+            "description": "exit2-bash"
+          },
+          "tool_use_id": "<tool-use-1>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+            "description": "bash"
+          },
+          "tool_use_id": "<tool-use-2>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-bash-net",
+          "tool": "bash",
+          "input": {
+            "command": "curl -sS -m 10 https://refused.example.invalid/",
+            "description": "refused-bash-net"
+          },
+          "tool_use_id": "<tool-use-3>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-bash-write",
+          "tool": "bash",
+          "input": {
+            "command": "echo by-bash > <outside>/by-bash.txt",
+            "description": "refused-bash-write"
+          },
+          "tool_use_id": "<tool-use-4>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-write",
+          "tool": "write",
+          "input": {
+            "filePath": "<outside>/by-write.txt",
+            "content": "by-write"
+          },
+          "tool_use_id": "<tool-use-5>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-edit",
+          "tool": "edit",
+          "input": {
+            "filePath": "<outside>/existing.txt",
+            "oldString": "before",
+            "newString": "after"
+          },
+          "tool_use_id": "<tool-use-6>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-read",
+          "tool": "read",
+          "input": {
+            "filePath": "<work>/.purlis/vaults/covering.json"
+          },
+          "tool_use_id": "<tool-use-7>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-web",
+          "tool": "webfetch",
+          "input": {
+            "url": "https://refused.example.invalid/",
+            "format": "text"
+          },
+          "tool_use_id": "<tool-use-8>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "parallel-one",
+          "tool": "bash",
+          "input": {
+            "command": "echo one",
+            "description": "parallel-one"
+          },
+          "tool_use_id": "<tool-use-9>"
+        },
+        {
+          "step": "parallel-two",
+          "tool": "bash",
+          "input": {
+            "command": "echo two",
+            "description": "parallel-two"
+          },
+          "tool_use_id": "<tool-use-10>"
+        }
+      ],
+      "parallel": true
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "subagent",
+          "tool": "task",
+          "input": {
+            "description": "subagent",
+            "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+            "subagent_type": "general"
+          },
+          "tool_use_id": "<tool-use-11>",
+          "subagent": true
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "failing-bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo failing >&2; exit 2",
+            "description": "failing-bash"
+          },
+          "tool_use_id": "<tool-use-12>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "esc",
+          "tool": "bash",
+          "input": {
+            "command": "python3 -c \"import time; time.sleep(120)\"",
+            "description": "esc"
+          },
+          "tool_use_id": "<tool-use-13>"
+        }
+      ]
+    }
+  ]
+}
