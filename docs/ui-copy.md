@@ -137,6 +137,28 @@ empty state and error copy follow it.
 - **An `aria-label` says what the visible label says**, and an icon-only control's label is the
   verb it would have had as text: *Close find*, *Next match*.
 
+## Lines by W-number
+
+Phase 1a's window copy is a table of lines by W-number, `app/src/windowCopy.table.md`, held in
+one copy module (`app/src/windowCopy.ts` in the window, `purlis_core::window_copy` in core): code
+takes a line from the module and never types it. The lines below are written here by the change
+that first draws them, with where each stands; each keeps the rules above.
+
+| # | Line | Where |
+|---|---|---|
+| W10 | *Your keychain is locked. Unlock it to start this chat.* | The Ask, with *Unlock*: in place in New chat, or in Needs you for an unattended chat |
+| W84 | *purlis couldn't unlock your keychain.* | Under W10, after a failed unlock; *Unlock* tries again |
+| W94 | *about a model key* | The Chat log, completing *Asked you …* for a model key's Ask |
+| W95 | *about sending a key to a pool* | The Chat log, completing *Asked you …* for a pool key allowance |
+| W122 | *a model key* | The Chat log, completing *Allowed …* for a model key's Ask |
+
+- **W10 says what is true and what to do** in two sentences, and its one way out is the verb it
+  names, *Unlock*. It does not blame the reader for the lock.
+- **W84 says what failed from purlis's side**, with no stock phrase, and stands under W10, whose
+  *Unlock* is what to do. A cancelled unlock says nothing: W10 stays as it was.
+- **W94, W95 and W122 are fragments** that complete the Chat log's sentence, in lowercase, as the
+  log's other groups are.
+
 ## What the build checks
 
 `app/src/copy.test.ts` reads every string in `app/src` (`uiStrings.ts` finds them with
