@@ -529,6 +529,8 @@ pub(crate) struct Scenario {
     pub confines: Arc<Confines>,
     pub kit: Kit,
     pub homes: Homes,
+    /// Where the host keeps the device's event log for this scenario.
+    pub log: PathBuf,
     pub root: PathBuf,
     pub plane: PlaneId,
     /// The session host, its own code, while it runs.
@@ -582,8 +584,9 @@ impl Scenario {
         };
         crate::sandboxing::scenarios_wrap_with(&kit.binary);
         let began = std::time::Instant::now();
-        // The `args` digests are reproducible: the key is there before the host opens its log.
-        purlis_core::eventlog::ArgsKey::open(&homes.data).expect("the args key");
+        // The device's event log, a folder of this scenario's own: one before it in the same test
+        // may still be letting go of its own. The `args` digests are reproducible: the key is
+        // there before the host opens its log.
         let timings = Timings::scaled(SCALE);
         let names = Names::new();
         let confines = Confines::new(timings, Arc::clone(&names));
@@ -594,6 +597,14 @@ impl Scenario {
             .expect("a project's folder");
         std::fs::create_dir_all(&root).expect("the project");
         let root = root.canonicalize().expect("the project");
+        let log = homes.data.join(format!(
+            "log-{}",
+            root.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&log).expect("the event log's folder");
+        purlis_core::eventlog::ArgsKey::open(&log).expect("the args key");
         std::fs::write(
             root.join(purlis_core::plane::MANIFEST),
             format!("{}{policy}", protection.manifest()),
@@ -611,9 +622,10 @@ impl Scenario {
             .enable_all()
             .build()
             .expect("a runtime");
-        let hosting = a_host(&runtime, homes, &kit, &confines);
+        let hosting = a_host(&runtime, &log, homes, &kit, &confines);
         let window = a_window(&runtime, &hosting, homes, &kit, timings);
         let plane = window.planes().open(&root);
+        reopened(&window, &plane, &root);
         Some(Scenario {
             protection,
             persona: persona.map(str::to_owned),
@@ -624,6 +636,7 @@ impl Scenario {
             confines,
             kit,
             homes: homes.clone(),
+            log,
             root,
             plane,
             hosting: Some(hosting),
@@ -657,11 +670,7 @@ impl Scenario {
         let window = a_window(runtime, hosting, &self.homes, &self.kit, self.timings);
         self.plane = window.planes().open(&self.root);
         self.window = Some(window);
-        self.held().reopen(
-            SIZE,
-            purlis_core::reopen::read_or_refusal(&self.root),
-            purlis_core::reopen::Choice::ReopenAll,
-        );
+        reopened(self.window(), &self.plane, &self.root);
     }
 
     /// **`restart: quit`, a person's quit and relaunch** (T1.1-06; `sessionhost.rs`): the window
@@ -675,16 +684,12 @@ impl Scenario {
         drop(window);
         self.hosting.take();
         let runtime = self.runtime.as_ref().expect("the runtime");
-        let hosting = a_host(runtime, &self.homes, &self.kit, &self.confines);
+        let hosting = a_host(runtime, &self.log, &self.homes, &self.kit, &self.confines);
         let window = a_window(runtime, &hosting, &self.homes, &self.kit, self.timings);
         self.plane = window.planes().open(&self.root);
         self.hosting = Some(hosting);
         self.window = Some(window);
-        self.held().reopen(
-            SIZE,
-            purlis_core::reopen::read_or_refusal(&self.root),
-            purlis_core::reopen::Choice::ReopenAll,
-        );
+        reopened(self.window(), &self.plane, &self.root);
     }
 
     /// The window's `Planes`, as the app manages them.
@@ -737,13 +742,15 @@ impl Scenario {
     ) -> u32 {
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
-            purlis_core::profilestore::create_sandbox_only(
+            // Once per machine: a scenario before this one in the same test made it already.
+            if let Err(why) = purlis_core::profilestore::create_sandbox_only(
                 &homes,
                 &self.profile(),
                 self.dialect.word(),
                 1,
-            )
-            .expect("the sandbox-only profile is made");
+            ) {
+                assert!(why.contains("already has a profile"), "the profile: {why}");
+            }
         });
         let number = self.chats.lock().expect("chats").len() + 1;
         let at = self.script(&format!("chat-{number}"), script);
@@ -844,7 +851,7 @@ impl Scenario {
 
     /// Every event in the device's event log, which the host writes in the data home.
     pub(crate) fn events(&self) -> Vec<purlis_core::eventlog::Event> {
-        purlis_core::eventlog::read(&self.homes.data).unwrap_or_default()
+        purlis_core::eventlog::read(&self.log).unwrap_or_default()
     }
 
     /// How many events of `kind` the log holds.
@@ -1010,16 +1017,32 @@ impl Window {
     }
 }
 
+/// **The window reopens the project, as the app does at every open**: the record's chats are put
+/// back (none, the first time), and from then on the project's reopen record is written, which
+/// a window holds back until it has reopened (`Held::begin_reopen`).
+fn reopened(window: &Window, plane: &PlaneId, root: &Path) {
+    window
+        .planes()
+        .held(plane)
+        .expect("the project is held")
+        .reopen(
+            SIZE,
+            purlis_core::reopen::read_or_refusal(root),
+            purlis_core::reopen::Choice::ReopenAll,
+        );
+}
+
 /// **The session host, as the window's binary composes it**, on `runtime`: the shipped kit, the
 /// scenario's own `Confine`, its kill switch in the host's folder and the event log in the data
 /// home.
 fn a_host(
     runtime: &tokio::runtime::Runtime,
+    log: &Path,
     homes: &Homes,
     kit: &Kit,
     confines: &Arc<Confines>,
 ) -> purlis_host::Hosting {
-    let (folder, data) = (homes.host.clone(), homes.data.clone());
+    let (folder, data) = (homes.host.clone(), log.to_path_buf());
     let composes = crate::sessionhost::Composes(kit.for_the_host());
     let confine = ConfinesInTheScenario(Arc::clone(confines));
     runtime
