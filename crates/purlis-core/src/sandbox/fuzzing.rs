@@ -7,7 +7,7 @@
 //! in purlis calls it.
 
 use std::io;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::egress::{self, Request, SocksClient};
 
@@ -95,7 +95,8 @@ pub fn socks_handshake(bytes: &[u8]) -> Socks {
         read: 0,
         answered: Vec::new(),
     };
-    let request = egress::socks_request(&mut client, Instant::now() + Duration::from_secs(60));
+    // The bytes are all in memory, so nothing waits on the deadline: `fill` never reads it.
+    let request = egress::socks_request(&mut client, Instant::now());
     Socks {
         request,
         answered: client.answered,

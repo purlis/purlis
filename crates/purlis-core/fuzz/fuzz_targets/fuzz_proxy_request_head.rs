@@ -21,6 +21,18 @@ fn sent_as_a_host(host: &str) -> bool {
                 .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b)))
 }
 
+/// A `Host` value's name and port, as a client writes one: an IPv6 address's colons are inside
+/// its brackets, so its port is only after them.
+fn name_and_port(named: &str) -> (&str, Option<&str>) {
+    if let Some((inside, after)) = named.strip_prefix('[').and_then(|it| it.split_once(']')) {
+        return (inside, after.strip_prefix(':'));
+    }
+    match named.rsplit_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (named, None),
+    }
+}
+
 fuzz_target!(|stream: &[u8]| {
     let Some(head) = head_of(stream) else {
         return;
@@ -65,10 +77,7 @@ fuzz_target!(|stream: &[u8]| {
         // Past the Host check, the Host names the host judged: what the server is asked for is
         // what was allowed.
         let named = read.host_header.as_deref().unwrap_or_default();
-        let name = named
-            .rsplit_once(':')
-            .filter(|(name, _)| !name.ends_with(']') || name.starts_with('['))
-            .map_or(named, |(name, _)| name);
+        let (name, _) = name_and_port(named);
         let plain = |it: &str| {
             it.trim_start_matches('[')
                 .trim_end_matches(']')

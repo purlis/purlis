@@ -12,6 +12,18 @@ use libfuzzer_sys::fuzz_target;
 use purlis_core::sandbox::browser_reach::Site;
 use purlis_core::sandbox::fuzzing::{head_of, host_header_agrees, proxy_request_head};
 
+/// A `Host` value's name and port, as a client writes one: an IPv6 address's colons are inside
+/// its brackets, so its port is only after them.
+fn name_and_port(named: &str) -> (&str, Option<&str>) {
+    if let Some((inside, after)) = named.strip_prefix('[').and_then(|it| it.split_once(']')) {
+        return (inside, after.strip_prefix(':'));
+    }
+    match named.rsplit_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (named, None),
+    }
+}
+
 fuzz_target!(|stream: &[u8]| {
     let Some(head) = head_of(stream) else {
         return;
@@ -24,12 +36,8 @@ fuzz_target!(|stream: &[u8]| {
     }
     let site = Site::of(&read.host, read.port);
     if let Some(named) = &read.host_header {
-        let (name, port) = match named.rsplit_once(':') {
-            Some((name, port)) if !name.ends_with(']') || name.starts_with('[') => {
-                (name, port.parse().unwrap_or(80))
-            }
-            _ => (named.as_str(), 80),
-        };
+        let (name, port) = name_and_port(named);
+        let port = port.and_then(|it| it.parse().ok()).unwrap_or(80);
         assert_eq!(Site::of(name, port), site, "{head:?}");
     }
     // The site judged is one a site's spelling reads back to.
