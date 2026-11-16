@@ -8167,8 +8167,11 @@ nav.piece-files-head {
   min-width: 0;
 }
 
+/* **While the person drives, the strip is on the accent's wash** (#6937): the one state they
+   must not misread, told by its ground as well as its words, with the accent's edge under it. */
 .browser-bar[data-driving="person"] {
   color: var(--text-primary);
+  background: var(--accent-wash);
   box-shadow: inset 0 -2px 0 var(--accent-base);
 }
 

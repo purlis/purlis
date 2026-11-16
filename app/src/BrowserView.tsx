@@ -177,6 +177,11 @@ export function useSender(
 export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const surface = useRef<HTMLDivElement>(null);
+  /** Take control, which the keyboard lands on once Done hands the browser back. */
+  const takeControlButton = useRef<HTMLButtonElement>(null);
+  /** Whether the hand-back under way was Done's: Done goes as it answers, so the keyboard
+   *  would fall to the window's body were it not put on Take control (#6937). */
+  const backFromDone = useRef(false);
   const [driving, setDriving] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
   const [dropped, setDropped] = useState(false);
@@ -287,18 +292,30 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   }, [program, drivingNow]);
 
   // After every key already typed: none of them is lost to the hand-back.
-  const handBack = useCallback(() => {
-    after(async () => {
-      const back = await commands.handBackBrowser(program);
-      if (back.status === "error") {
-        setSaid(back.error);
-        return;
-      }
-      setSaid(undefined);
-      setDropped(false);
-      drivingNow(false);
-    });
-  }, [after, program, drivingNow]);
+  const handBack = useCallback(
+    (fromDone = false) => {
+      after(async () => {
+        const back = await commands.handBackBrowser(program);
+        if (back.status === "error") {
+          setSaid(back.error);
+          return;
+        }
+        backFromDone.current = fromDone;
+        setSaid(undefined);
+        setDropped(false);
+        drivingNow(false);
+      });
+    },
+    [after, program, drivingNow],
+  );
+
+  // Done is gone once it has handed the browser back: the keyboard goes to Take control in its
+  // place, or to the page where nobody may take it over now.
+  useEffect(() => {
+    if (driving || !backFromDone.current) return;
+    backFromDone.current = false;
+    (takeControlButton.current ?? surface.current)?.focus();
+  }, [driving]);
 
   // While the person drives, the palette's pass-through key, pressed again, reaches the page.
   useEffect(() => {
@@ -527,13 +544,14 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     "You are driving this browser. The agent is paused until you press Done."
   ) : reconnecting ? null : signingIn ? (
     DRIVEN.purlis.said
+  ) : theirs ? (
+    // One the person opened has no agent to take it from (#6937): the page is theirs to use.
+    <span className="browser-bar-hint">Click or type in the page to use it.</span>
   ) : (
     <>
-      {!theirs && (
-        <span className="browser-bar-who">
-          {chatName ? <strong>{chatName}</strong> : "Its chat"} is using this browser.{" "}
-        </span>
-      )}
+      <span className="browser-bar-who">
+        {chatName ? <strong>{chatName}</strong> : "A chat"} is using this browser.{" "}
+      </span>
       <span className="browser-bar-hint">Click or type in the page to take it over.</span>
     </>
   );
@@ -615,7 +633,12 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       {/* **Who drives it, said as a sentence with the one next step** (#6937): Take control
           while its agent does, Done while the person does, on the accent while they do (#2014). */}
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
-        <DriverMark driving={driving} reconnecting={reconnecting} signingIn={signingIn} />
+        <DriverMark
+          driving={driving}
+          reconnecting={reconnecting}
+          signingIn={signingIn}
+          theirs={theirs}
+        />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
@@ -625,6 +648,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         </p>
         {!driving && !reconnecting && !signingIn && (
           <Button
+            ref={takeControlButton}
             size="sm"
             icon={<Hand />}
             tooltip="Use the page yourself. The agent is paused until you press Done."
@@ -639,7 +663,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
             variant="primary"
             icon={<Bot />}
             tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
-            onPress={handBack}
+            onPress={() => handBack(true)}
           >
             Done
           </Button>
@@ -752,11 +776,14 @@ function DriverMark({
   driving,
   reconnecting,
   signingIn,
+  theirs,
 }: {
   driving: boolean;
   reconnecting: boolean;
   signingIn: boolean;
+  /** One the person opened: no agent drives it, so no agent's mark (#6937). */
+  theirs: boolean;
 }) {
-  const Mark = reconnecting ? WifiOff : driving ? Hand : signingIn ? Lock : Bot;
+  const Mark = reconnecting ? WifiOff : driving ? Hand : signingIn ? Lock : theirs ? Globe : Bot;
   return <Mark className="browser-bar-mark" aria-hidden="true" />;
 }

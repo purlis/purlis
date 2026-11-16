@@ -19,7 +19,12 @@ import { BrowserView } from "./BrowserView";
 import type { BrowserFrame } from "./bindings";
 import { forgetOrigins } from "./browserWatch";
 import { forgetProjectsBrowsers, tellProjectBrowsers } from "./browsersGrid";
+import type { Offer } from "./actions";
+import { PaneActions, PaneActionsOf, PaneHead } from "./LayoutPanes";
+import { paneLinesOf } from "./paneHead";
+import { RECONNECTING_SAID } from "./reconnecting";
 import { expectFocusInSight, untilFocusWithin, untilFocused } from "./stories.testkit";
+import { ViewMark, ViewPane } from "./Views";
 
 const PLANE = "/home/dev/plane";
 
@@ -52,6 +57,72 @@ function Pane({ width = 900 }: { width?: number }) {
     <div className="view-pane" style={{ inlineSize: width, blockSize: 640 }}>
       <div className="view-body">
         <BrowserView plane={PLANE} program="B1" />
+      </div>
+    </div>
+  );
+}
+
+/** The browser's view, as the window draws it in one side of a split (#6937): its pane frame,
+ *  the pane head's grip and actions over the view's first row, and the view's own body. */
+const BROWSER_VIEW = { from: null, view: "browser", key: "B1" } as const;
+
+/** A view's pane's three controls, as the catalogue offers them. */
+const PANE_ROWS: Offer[] = [
+  {
+    id: "pane.split.right",
+    title: "Split right",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "row" },
+  },
+  {
+    id: "pane.split.down",
+    title: "Split down",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "column" },
+  },
+  {
+    id: "pane.close",
+    title: "Close this view",
+    available: true,
+    reason: "",
+    does: { verb: "closePane" },
+  },
+];
+
+function InAPane({ width }: { width: number }) {
+  return (
+    // A pane's size is its layout's (`container-type: size`), so the story gives it one.
+    <div className="pane-frame pane-viewed" style={{ inlineSize: width, blockSize: 640 }}>
+      <PaneActionsOf.Provider value={paneLinesOf("view", width, { alone: false }).actions}>
+        <PaneHead
+          lead={
+            <span className="pane-view-grip">
+              <ViewMark view={BROWSER_VIEW} />
+            </span>
+          }
+          doing={
+            <PaneActions
+              pane={1}
+              offerFor={(id) => PANE_ROWS.find((offer) => offer.id === id)}
+              closeOf={() => PANE_ROWS[2]}
+              onPaneDoes={() => undefined}
+            />
+          }
+        />
+      </PaneActionsOf.Provider>
+      <div className="pane view focused">
+        <ViewPane
+          plane={PLANE}
+          view={BROWSER_VIEW}
+          title="Browser"
+          waits={false}
+          offered={[]}
+          onOpenView={() => undefined}
+          onAsk={() => undefined}
+          onVaultChanged={() => undefined}
+        />
       </div>
     </div>
   );
@@ -314,9 +385,29 @@ async function onPage(origin: string, host: string) {
   );
 }
 
-/** The header's rows fit the pane: none is wider than it, and neither is taller than two lines. */
+/** The header's rows fit the pane: none is wider than it, and neither is taller than two lines.
+ *  In a pane frame, nothing of the first row is under the pane head's grip or its actions. */
 async function fitsThePane(canvas: { getByTestId: (id: string) => HTMLElement }) {
   const head = canvas.getByTestId("browser-head");
+  const frame = head.closest(".pane-frame");
+  if (frame !== null) {
+    const kept = [
+      frame.querySelector(".pane-head > .pane-view-grip"),
+      frame.querySelector(".pane-head .pane-actions"),
+    ].flatMap((one) => (one === null ? [] : [one.getBoundingClientRect()]));
+    await expect(kept, "the pane head's grip and its actions are drawn").toHaveLength(2);
+    for (const part of head.children) {
+      const box = part.getBoundingClientRect();
+      if (box.width === 0) continue;
+      for (const under of kept) {
+        const overlaps = box.left < under.right && box.right > under.left;
+        await expect(
+          overlaps && box.top < under.bottom && box.bottom > under.top,
+          `${part.className} is clear of the pane head's controls`,
+        ).toBe(false);
+      }
+    }
+  }
   // What each part of the row took, said where the row runs past the pane.
   const parts = [...head.querySelectorAll<HTMLElement>("*")]
     .filter((one) => one.getBoundingClientRect().right > head.getBoundingClientRect().right)
@@ -404,5 +495,90 @@ export const YouDrive: Story = {
       }),
     ).toBeVisible();
     await fitsThePane(canvas);
+  },
+};
+
+/**
+ * **In a real pane, 420px wide** (#6937): one side of a split, as the window draws it. The view's
+ * first row is the pane head's row, so the site and the count of keys sit between the pane's
+ * grip and its three controls, under neither, and nothing runs past the pane.
+ */
+export const InANarrowSplitPane: Story = {
+  render: () => <InAPane width={420} />,
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(0, 3)),
+  play: async ({ canvas }) => {
+    await onPage("https://console.volaticloud.com", "console.volaticloud.com");
+    const count = await waitFor(() => canvas.getByRole("button", { name: "3 secrets" }));
+    await fitsThePane(canvas);
+    await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+    await expect(canvas.getByRole("button", { name: "Split right" })).toBeVisible();
+  },
+};
+
+/**
+ * **In a real pane, 420px wide, with one long key** (#6937): one secret keeps its chip, cut
+ * with an ellipsis before it reaches the pane's controls.
+ */
+export const InANarrowSplitPaneWithOneKey: Story = {
+  render: () => <InAPane width={420} />,
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(-1)),
+  play: async ({ canvas }) => {
+    await onPage("https://console.volaticloud.com", "console.volaticloud.com");
+    await waitFor(() => canvas.getByTestId("secret-mark"));
+    await fitsThePane(canvas);
+  },
+};
+
+/**
+ * **Everything the strip has to say at once, in a narrow pane** (#6937): its runner's link is
+ * down, a key the person typed was dropped and the core refused another. Each is said in the
+ * strip, which wraps under its sentence rather than running past the pane.
+ */
+export const ANarrowPaneSayingEverything: Story = {
+  args: { width: 420 },
+  beforeEach: () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "chat_browsers") return [];
+      if (cmd === "watch_browser") {
+        frames = (args as { frames: Channel<BrowserFrame> }).frames;
+        return { view: 4, width: 1280, height: 800, person_drives: true, pool: "build-pool" };
+      }
+      if (cmd === "browser_input") {
+        const { input } = args as { input: { kind: string; action: string } };
+        // The key's press reaches a page that moved on; its release is refused.
+        if (input.kind === "key" && input.action === "down") return { outcome: "missed" };
+        return { outcome: "refused", why: "The browser's runner did not take the key." };
+      }
+      return null;
+    });
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(frames).toBeDefined());
+    frames?.onmessage({
+      aim: "p1:1",
+      jpeg: framed(),
+      reconnection: null,
+      page: null,
+      closed: null,
+    });
+    await waitFor(() => canvas.getByRole("button", { name: /Done/ }));
+    const status = canvas.getByRole("status");
+
+    canvas.getByTestId("browser-surface").focus();
+    await userEvent.keyboard("a");
+    await waitFor(() => expect(status).toHaveTextContent("The page changed before"));
+    await waitFor(() => expect(status).toHaveTextContent("did not take the key"));
+    frames?.onmessage({
+      aim: "",
+      jpeg: "",
+      reconnection: "reconnecting",
+      page: null,
+      closed: null,
+    });
+    await waitFor(() => expect(status).toHaveTextContent(RECONNECTING_SAID));
+    await expect(status).toHaveTextContent("The page changed before");
+    await expect(status).toHaveTextContent("did not take the key");
+    await fitsThePane(canvas);
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };

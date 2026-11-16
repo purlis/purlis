@@ -252,7 +252,7 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
     host.send("/9j/AQ==");
 
     await waitFor(() =>
-      expect(barSaid()).toHaveTextContent("Click or type in the page to take it over."),
+      expect(barSaid()).toHaveTextContent("Click or type in the page to use it."),
     );
     expect(barSaid()).not.toHaveTextContent("Reconnecting…");
     expect(within(surface).queryByText("Reconnecting…")).toBeNull();
@@ -332,7 +332,7 @@ describe("taking a browser over from its view (#2014)", () => {
 
   it("takes the browser over with a click, which then reaches the page where it was aimed", async () => {
     const host = await drawn();
-    expect(barSaid()).toHaveTextContent("Click or type in the page to take it over.");
+    expect(barSaid()).toHaveTextContent("Click or type in the page to use it.");
 
     fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
       clientX: 640,
@@ -411,7 +411,7 @@ describe("taking a browser over from its view (#2014)", () => {
 
     await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
     await waitFor(() =>
-      expect(barSaid()).toHaveTextContent("Click or type in the page to take it over."),
+      expect(barSaid()).toHaveTextContent("Click or type in the page to use it."),
     );
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
   });
@@ -1152,10 +1152,36 @@ describe("the view's header (#6937)", () => {
     );
   });
 
-  it("says its chat plainly where the project kept no name of it", async () => {
+  it("says a chat plainly where the project kept no name of it", async () => {
     besides.chat_browsers = () => [listed()];
     await drawn(null);
-    await waitFor(() => expect(barSaid()).toHaveTextContent("Its chat is using this browser."));
+    await waitFor(() => expect(barSaid()).toHaveTextContent("A chat is using this browser."));
+  });
+
+  it("Done by keyboard puts focus on Take control", async () => {
+    besides.chat_browsers = () => [listed()];
+    const host = await drawn();
+    const take = await screen.findByRole("button", { name: "Take control" });
+    take.focus();
+    await userEvent.keyboard("{Enter}");
+    const done = await screen.findByRole("button", { name: /Done/ });
+
+    done.focus();
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take control" })).toHaveFocus());
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("says nothing of an agent on a browser the person opened", async () => {
+    besides.chat_browsers = () => [];
+    await drawn(null);
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent("Click or type in the page to use it."),
+    );
+    expect(barSaid()).not.toHaveTextContent("take it over");
+    expect(barSaid()).not.toHaveTextContent("using this browser");
   });
 
   it("says purlis is signing in, and offers no take-over while it does", async () => {
