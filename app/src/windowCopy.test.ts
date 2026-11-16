@@ -259,3 +259,69 @@ describe("counted rows", () => {
     expect(vi.mocked(counted).mock.calls).toEqual([[2, "chat", "chats"]]);
   });
 });
+
+/**
+ * **`docs/ui-copy.md` carries the table's design-sourced lines word for word** (U21, T1a-19): the
+ * rows whose Source is the design or a U-answer, and every other line it lists, each in the
+ * table's words, so the window's style guide and the spec agree. A drafted line reaches it with
+ * the ticket that draws it.
+ */
+describe("the copy guide's lines by W-number", () => {
+  const GUIDE = readFileSync(resolve(ROOT, "docs/ui-copy.md"), "utf8");
+  const DESIGN = [
+    "W1",
+    "W2",
+    "W3",
+    "W4",
+    "W5",
+    "W11",
+    "W15",
+    "W22",
+    "W23",
+    "W24",
+    "W26",
+    "W26b",
+    "W27",
+    "W28",
+    "W30",
+    "W32",
+    "W33",
+    "W37",
+    "W45",
+    "W47",
+    "W48",
+    "W49",
+    "W50",
+    "W51",
+    "W53",
+    "W58",
+    "W102",
+    "W124",
+    "W125",
+    "W126",
+    "W127",
+  ];
+  /** The guide's rows, by W-number: its line cell, as written. */
+  const guide = new Map(
+    GUIDE.split("\n")
+      .filter((line) => /^\| W\d+[a-z]? \|/.test(line))
+      .map((line) => {
+        const cells = line
+          .slice(2, -2)
+          .split(/(?<!\\)\|/)
+          .map((cell) => cell.trim());
+        return [cells[0], cells[1].replace(/\\\|/g, "|")] as const;
+      }),
+  );
+  const table = new Map(rowsOf(TABLE).map((row) => [row.w, row]));
+
+  it.each(DESIGN)("lists %s, the design's line", (w) => {
+    expect(guide.has(w)).toBe(true);
+  });
+
+  it.each([...guide.keys()])("writes %s in the table's words", (w) => {
+    const row = table.get(w);
+    expect(row).toBeDefined();
+    for (const form of formsOf(row?.string ?? "")) expect(guide.get(w)).toContain(form);
+  });
+});

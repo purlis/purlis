@@ -18,6 +18,9 @@ test("an entry is read from its head to the next entry, across its paragraphs", 
   const text = "## A\n\n**One** (of a thing):\nFirst.\n\nSecond.\n_Avoid_: x\n\n**Two**:\nThird.\n";
   assert.equal(entry(text, "One"), "**One** (of a thing):\nFirst.\n\nSecond.\n_Avoid_: x");
   assert.equal(entry(text, "Three"), null);
+  // An issue number wrapped to the start of a line is not a heading.
+  const wrapped = "**One**:\nAmended for\n#6578).\n_Avoid_: x\n\n### Next\n";
+  assert.equal(entry(wrapped, "One"), "**One**:\nAmended for\n#6578).\n_Avoid_: x");
 });
 
 test("an entry that reads 1a's words wrapped differently passes, and one word off fails", () => {

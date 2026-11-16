@@ -107,7 +107,7 @@ export function entry(text, term) {
   );
   if (start === -1) return null;
   let end = start + 1;
-  while (end < lines.length && !HEAD.test(lines[end]) && !lines[end].startsWith("#")) end += 1;
+  while (end < lines.length && !HEAD.test(lines[end]) && !/^#+ /.test(lines[end])) end += 1;
   return lines.slice(start, end).join("\n").trim();
 }
 
