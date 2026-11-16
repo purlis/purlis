@@ -2359,3 +2359,6 @@ mod profile_facts_tests;
 
 #[cfg(test)]
 mod route_tests;
+
+#[cfg(test)]
+mod only_built_ins_route_tests;
