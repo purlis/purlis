@@ -387,7 +387,11 @@ async function onPage(origin: string, host: string) {
 
 /** The header's rows fit the pane: none is wider than it, and neither is taller than two lines.
  *  In a pane frame, nothing of the first row is under the pane head's grip or its actions. */
-async function fitsThePane(canvas: { getByTestId: (id: string) => HTMLElement }) {
+async function fitsThePane(
+  canvas: { getByTestId: (id: string) => HTMLElement },
+  /** The strip's tallest: two lines and its controls, unless a story has it say more. */
+  barAtMost = 96,
+) {
   const head = canvas.getByTestId("browser-head");
   const frame = head.closest(".pane-frame");
   if (frame !== null) {
@@ -419,8 +423,11 @@ async function fitsThePane(canvas: { getByTestId: (id: string) => HTMLElement })
     head.clientWidth,
   );
   await expect(head.getBoundingClientRect().height).toBeLessThan(64);
-  const bar = head.parentElement?.querySelector(".browser-bar");
-  await expect(bar?.getBoundingClientRect().height ?? 0).toBeLessThan(96);
+  const bar = head.parentElement?.querySelector<HTMLElement>(".browser-bar");
+  await expect(bar?.getBoundingClientRect().height ?? 0).toBeLessThan(barAtMost);
+  // The strip wraps rather than cutting its words or running past the pane.
+  await expect(bar?.scrollWidth ?? 0).toBeLessThanOrEqual(bar?.clientWidth ?? 0);
+  await expect(bar?.scrollHeight ?? 0).toBeLessThanOrEqual(bar?.clientHeight ?? 0);
 }
 
 /**
@@ -578,7 +585,8 @@ export const ANarrowPaneSayingEverything: Story = {
     await waitFor(() => expect(status).toHaveTextContent(RECONNECTING_SAID));
     await expect(status).toHaveTextContent("The page changed before");
     await expect(status).toHaveTextContent("did not take the key");
-    await fitsThePane(canvas);
+    // Three things said at once wrap to more lines than one, every word of them whole.
+    await fitsThePane(canvas, 160);
     (document.activeElement as HTMLElement | null)?.blur();
   },
 };
