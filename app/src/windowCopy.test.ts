@@ -7,7 +7,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { copyFaults, refusedWord, retiredTerms } from "./copy";
-import { counted } from "./dispatches";
 import { onPool, onThisOs, windowCopy } from "./windowCopy";
 
 // `counted` as it is, watched: W5's and W123's counts go through it (`counted_rows_use_counted`).
@@ -235,7 +234,13 @@ describe("the table-wide rules, each a function of the module", () => {
 });
 
 describe("counted rows", () => {
-  it("counted_rows_use_counted", () => {
+  it("counted_rows_use_counted", async () => {
+    // test-setup.ts reaches `windowCopy` (through `tabs` and `chatLog`) before this file's mock
+    // applies, so the module imported above holds the real `counted`. A fresh graph loads both
+    // after the mock, and the watched `counted` is the one W5 and W123 call.
+    vi.resetModules();
+    const { counted } = await import("./dispatches");
+    const { windowCopy } = await import("./windowCopy");
     const said = (count: number) => windowCopy.W123({ count, pool: "gpu" });
     vi.mocked(counted).mockClear();
     expect(said(2)).toBe(
