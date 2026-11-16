@@ -115,7 +115,9 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     }
     fs::write(
         root.join("purlis.toml"),
-        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
+        // No host at all: the stand-in is reached by its granted loopback port, and every other
+        // host, a real vendor's above all, is refused by the chat's proxy.
+        "[sandbox]\nmode = \"on\"\negress = []\n",
     )
     .expect("the manifest");
     // The stand-in's key is this machine's, handed to the chat as a person hands an API key:

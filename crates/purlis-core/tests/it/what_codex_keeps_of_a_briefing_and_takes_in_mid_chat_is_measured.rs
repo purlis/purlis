@@ -245,6 +245,11 @@ impl Here {
             .current_dir(self.work())
             .env("CODEX_HOME", self.home())
             .env("HOME", &self.root)
+            // Only its loopback provider: every other host, any call Codex makes of its own (an
+            // update check, its model catalogue, its telemetry), goes to a proxy that refuses it.
+            .env("HTTPS_PROXY", "http://127.0.0.1:9")
+            .env("HTTP_PROXY", "http://127.0.0.1:9")
+            .env("ALL_PROXY", "http://127.0.0.1:9")
             .env("NO_PROXY", "127.0.0.1,localhost")
             .env("no_proxy", "127.0.0.1,localhost")
             .stdin(Stdio::null());
