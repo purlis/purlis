@@ -2613,6 +2613,14 @@ pub fn fill_value(
         return Ok(None);
     };
     goes_into_a_page(asker, &value, vault, key)?;
+    // It goes to the chat's browser and not its terminal, but it is the chat's all the same, so
+    // the chat's kept screen never keeps it either (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key),
+        value.expose(),
+    );
     Ok(Some(value))
 }
 
@@ -2685,9 +2693,15 @@ pub fn fill_code(
     let seed = super::totp::Seed::parse(value.expose())
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
-    Ok(Some(purlis_session_protocol::browsing::Secret::new(
-        seed.code_now(),
-    )))
+    let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
+    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
+        code.expose(),
+    );
+    Ok(Some(code))
 }
 
 /// What a vault is read through for chat `asker`: the app's record of the chat.

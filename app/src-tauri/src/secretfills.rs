@@ -1013,27 +1013,12 @@ impl From<String> for Unread {
 
 /// **What `asked` fills, read for the chat now**: the value, or the code its seed makes (#5118),
 /// worked out here as it is filled, so the seed stays. `None` where the vault holds no such key.
-///
-/// The value goes to the chat's browser and not its terminal, but it is the chat's all the same,
-/// so the chat's kept screen never keeps it either (#6309).
 fn read_now(asker: &brokered::Asker, asked: &FillAsked) -> Result<Option<Secret>, String> {
-    let read = if asked.code {
+    if asked.code {
         brokered::fill_code(asker, &asked.vault, &asked.key)
     } else {
         brokered::fill_value(asker, &asked.vault, &asked.key)
-    };
-    if let Ok(Some(secret)) = &read {
-        // A code is made for now from its seed: a launch after a crash cannot know it.
-        let entry = purlis_core::secrets::handedto::Entry::new(&asked.vault, &asked.key).in_form(
-            if asked.code {
-                purlis_core::secrets::handedto::Form::Unrepeatable
-            } else {
-                purlis_core::secrets::handedto::Form::AsRead
-            },
-        );
-        purlis_core::secrets::handedto::remember(&asker.root, asker.chat, &entry, secret.expose());
     }
-    read
 }
 
 /// **No value is read for a browser the person has taken over** (#5119, SF-10), which they may

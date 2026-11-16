@@ -5997,6 +5997,58 @@ fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
     );
 }
 
+/// #6309: a value filled into a chat's page is the chat's, so its kept screen masks it, under
+/// its entry's name.
+#[test]
+fn a_value_filled_into_a_chat_s_page_masks_its_kept_screen() {
+    let tmp = project();
+    let chat = Asker {
+        confines: None,
+        ..asker(tmp.path(), Some("devops"))
+    };
+    fill_value(&chat, "team", "TOKEN").expect("read");
+
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &format!("{TOKEN}!"), &|_| None)
+            .as_deref(),
+        Some("‹secret: TOKEN›!")
+    );
+}
+
+/// #6309: a code filled into a chat's page masks its kept screen too, and, made once, leaves a
+/// launch after a crash nothing to mask it with, so that screen is not kept.
+#[test]
+fn a_code_filled_into_a_chat_s_page_masks_its_kept_screen_and_after_a_crash_it_is_not_kept() {
+    let tmp = project();
+    // The seed every authenticator's documentation shows: no account's.
+    std::fs::write(
+        tmp.path().join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN, "SEED": "JBSWY3DPEHPK3PXP"}).to_string(),
+    )
+    .unwrap();
+    let chat = Asker {
+        confines: None,
+        ..asker(tmp.path(), Some("devops"))
+    };
+    let code = fill_code(&chat, "team", "SEED")
+        .expect("read")
+        .expect("held");
+    let shown = format!("code {}", code.expose());
+
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &shown, &|_| None).as_deref(),
+        Some("code ‹secret: SEED›")
+    );
+    super::super::handedto::as_a_crash_leaves_it(tmp.path(), 7);
+    let seed = |_: &super::super::handedto::Entry| {
+        Some(zeroize::Zeroizing::new("JBSWY3DPEHPK3PXP".to_owned()))
+    };
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &shown, &seed),
+        None
+    );
+}
+
 // ----------------------------------------------------------------------------------------
 // a keyring read where the chat's environment carries no sandbox mark
 

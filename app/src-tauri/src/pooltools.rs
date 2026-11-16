@@ -665,6 +665,17 @@ pub fn answered(
     let values = (waiting.read)(&checked.persona, &checked.tool)?;
     // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
     as_shown()?;
+    // Whatever the run prints of them, the chat's kept screen never keeps one (#6309). A token
+    // minted with the entry is made once: a launch after a crash cannot know it.
+    let form = match checked.tool.mint {
+        Some(_) => purlis_core::secrets::handedto::Form::Unrepeatable,
+        None => purlis_core::secrets::handedto::Form::AsRead,
+    };
+    for (key, value) in &values {
+        let entry = purlis_core::secrets::handedto::Entry::new(&checked.tool.vault, key)
+            .in_form(form.clone());
+        purlis_core::secrets::handedto::remember(gate.root, ask.chat, &entry, value);
+    }
     Ok(Approved {
         handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
         checked,
@@ -757,21 +768,6 @@ pub fn run_on_its_runner(
         }),
         None => read(&ctx, persona, tool),
     };
-    let read = |persona: &str, tool: &Tool| {
-        let values = read_or_mint(persona, tool);
-        // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
-        // A token minted with the entry is made once: a launch after a crash cannot know it.
-        let form = match tool.mint {
-            Some(_) => purlis_core::secrets::handedto::Form::Unrepeatable,
-            None => purlis_core::secrets::handedto::Form::AsRead,
-        };
-        for (key, value) in values.iter().flatten() {
-            let entry =
-                purlis_core::secrets::handedto::Entry::new(&tool.vault, key).in_form(form.clone());
-            purlis_core::secrets::handedto::remember(root, session, &entry, value);
-        }
-        values
-    };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
     let reached = crate::hooks::reached_over_the_link();
@@ -811,7 +807,7 @@ pub fn run_on_its_runner(
             tools: held.pool_tools(),
             gone: &gone,
             moved: &moved,
-            read: &read,
+            read: &read_or_mint,
             within: A_HANDED_LINE_WAITS_AT_MOST,
             now: crate::sandboxing::now_secs(),
         },

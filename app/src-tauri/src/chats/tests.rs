@@ -8115,12 +8115,23 @@ fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_n
         ..a_claude_ready()
     };
 
-    chats
+    let session = chats
         .start_ready(&chat("/bin/sh", "dev 1", None), &ready, SIZE)
         .expect("it starts");
 
     let opening = host.openings().pop().expect("opened");
     assert_eq!(opening.handed.names(), ["AWS_ACCESS_KEY_ID"]);
+    assert_eq!(
+        purlis_core::secrets::handedto::masked_for(
+            &root,
+            session,
+            "id the-aws-id-for-this-test",
+            &|_| None
+        )
+        .as_deref(),
+        Some("id ‹secret: id›"),
+        "its kept screen masks it, under its entry's name (#6309)"
+    );
     assert_eq!(
         purlis_core::profilesignin::handed_onto(Vec::new(), &opening.handed),
         [(
