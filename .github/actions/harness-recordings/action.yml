@@ -1,0 +1,179 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **Recordings of the real harnesses on this Linux runner** (M74.1, T1.1-03): each harness, at
+# its pinned version or at its latest release, runs the covering script under purlis's wrap at
+# Full against the stand-in model (`tests/recordings`), and Claude Code runs its `asks` pass as
+# well. Each recording and turn script is written under `target/recordings/<harness>/<version>/`,
+# with what a reader of the run needs under `target/recordings/evidence/`; the caller uploads them.
+#
+# `mode` says what the run is for, and so what may turn it red:
+#
+# - `record` (a pull request): a harness that did not install, build or record is red. With
+#   `twice: "true"` each is recorded a second time, into `target/recordings-again/`, and the two
+#   must be the same file byte for byte, or the run is red: a recording is deterministic.
+# - `drift` (the nightly's ordinary entry): the same, and each fresh recording is diffed against
+#   the one checked in for the pinned version (`harness-drift --mode drift`); drift opens or
+#   comments on a `harness-drift` issue. A refused call that changed is left to `escape`.
+# - `escape` (the nightly's `kind: escape` entry, whose red the scheduler files as a public
+#   `area:security`, `priority:p0` issue, Q301): red only on an escape, a refused action that
+#   happened (the driver's `escaped.txt`) or a refused call whose recording changed
+#   (`harness-drift --mode escape`). An install, build or recording that failed is only a
+#   warning here: the `drift` entry of the same night is red on it, as an ordinary failure.
+#
+# No credential is used and no model is called: the model is the stand-in on a loopback port.
+name: Harness recordings
+description: Records each harness's covering script under purlis's wrap against the stand-in model.
+inputs:
+  harnesses:
+    description: The harnesses to record, space-separated.
+    required: false
+    default: "claude codex opencode"
+  at:
+    description: "pinned (the version files' versions) or latest (each harness's latest release)."
+    required: false
+    default: pinned
+  mode:
+    description: "record, drift or escape (above)."
+    required: false
+    default: record
+  twice:
+    description: "true to record each harness twice and fail unless the two are the same (record mode)."
+    required: false
+    default: "false"
+  github-token:
+    description: The token drift issues are opened with, in drift mode.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    # In escape mode a step that fails before the recording is not an escape: it goes on, and the
+    # recording is skipped with a warning.
+    - name: The sandbox's programs
+      id: packages
+      continue-on-error: ${{ inputs.mode == 'escape' }}
+      uses: ./.github/actions/linux-packages
+      with:
+        packages: bubblewrap socat
+    - id: toolchain
+      continue-on-error: ${{ inputs.mode == 'escape' }}
+      uses: ./.github/actions/rust-toolchain
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      continue-on-error: ${{ inputs.mode == 'escape' }}
+      with:
+        shared-key: rust
+        save-if: false
+    - name: Build purlis and the recording driver
+      id: build
+      if: steps.packages.outcome == 'success' && steps.toolchain.outcome == 'success'
+      continue-on-error: ${{ inputs.mode == 'escape' }}
+      shell: bash
+      run: |
+        cargo build --locked -p purlis-cli --bin purlis
+        cargo test --locked -p purlis-recordings --no-run
+    - name: Record each harness
+      if: steps.build.outcome == 'success'
+      shell: bash
+      env:
+        HARNESSES: ${{ inputs.harnesses }}
+        AT: ${{ inputs.at }}
+        MODE: ${{ inputs.mode }}
+        TWICE: ${{ inputs.twice }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        # Ubuntu 23.10 and later let only a program an AppArmor profile names make a user
+        # namespace; the harnesses' own helpers have none, so the runner allows them, as a
+        # machine without that rule does.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        status=0
+        escaped=0
+        # An ordinary failure: red, but in escape mode only a warning (the drift entry is red).
+        failed() {
+          if [ "$MODE" = escape ]; then
+            echo "::warning::$1 (not an escape; the night's drift entry is red on it)"
+          else
+            echo "::error::$1"
+            status=1
+          fi
+        }
+        # One recording of $1's script $2 into $3.
+        record() {
+          local homes
+          homes=$(mktemp -d "$RUNNER_TEMP/homes-$1-$2-XXXX")
+          # The test build is fenced to the trees the run makes: the homes, and the project the
+          # driver lays out under `target/tmp` (CARGO_TARGET_TMPDIR).
+          # The stand-in's key, no credential: what the chat is handed by its project's
+          # `[chat_env] pass`, as a person's API key is.
+          ANTHROPIC_API_KEY=stand-in-model-no-credential OPENAI_API_KEY=stand-in-model-no-credential \
+            CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" PATH="$bin:$PATH" \
+            PURLIS_RECORD_HARNESS="$1" PURLIS_RECORD_SCRIPT="$2" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
+            PURLIS_RECORD_OUT="$3" PURLIS_RECORD_BASE="$RUNNER_TEMP/recording-$1-$2" \
+            PURLIS_CONFIG_HOME="$homes/config" PURLIS_DATA_HOME="$homes/data" \
+            cargo test --locked -p purlis-recordings --test record -- --ignored --exact \
+            records_a_harness_under_purlis_wrap_at_full --nocapture
+        }
+        out="$PWD/target/recordings"
+        again="$PWD/target/recordings-again"
+        mkdir -p "$out" "$again"
+        for harness in $HARNESSES; do
+          echo "::group::$harness at its $AT version"
+          if ! bin=$(tools/harness-install.sh "$harness" "$AT"); then
+            failed "$harness at its $AT version did not install"
+            echo "::endgroup::"
+            continue
+          fi
+          scripts=covering
+          [ "$harness" = claude ] && scripts="covering asks"
+          for script in $scripts; do
+            record "$harness" "$script" "$out" || failed "$harness at its $AT version did not record its $script script"
+            [ -f "$out/evidence/$harness/$script/escaped.txt" ] && escaped=1
+            if [ "$TWICE" = true ]; then
+              record "$harness" "$script" "$again" || failed "$harness did not record its $script script a second time"
+              [ -f "$again/evidence/$harness/$script/escaped.txt" ] && escaped=1
+            fi
+          done
+          if [ "$TWICE" = true ]; then
+            # The two runs are the same recording, byte for byte.
+            for file in "$out/$harness"/*/*.json; do
+              other="$again/$harness/$(basename "$(dirname "$file")")/$(basename "$file")"
+              if diff -u "$file" "$other"; then
+                echo "$harness: $(basename "$file") is the same in both runs"
+              else
+                failed "$harness: $(basename "$file") differs between two runs of the same script"
+              fi
+            done
+          fi
+          if [ "$harness" = codex ] && [ "$MODE" = record ]; then
+            PURLIS_CODEX="$bin/codex" cargo test --locked -p purlis-recordings --test recordings -- --ignored \
+              --exact codex_runs_a_covering_script_against_the_responses_stand_in --nocapture || failed "Codex did not run the covering script against the Responses stand-in"
+          fi
+          if [ "$MODE" != record ]; then
+            pinned=$(ls -d tests/recordings/recorded/"$harness"/*/ 2>/dev/null | head -1)
+            fresh=$(ls -d "$out/$harness"/*/ 2>/dev/null | head -1)
+            if [ -z "$pinned" ] || [ -z "$fresh" ]; then
+              failed "no recording of $harness to compare"
+            fi
+            for file in ${fresh:+"$fresh"/*recording.json}; do
+              [ -n "$pinned" ] || break
+              cargo run --locked -q -p purlis-recordings --bin harness-drift -- \
+                "$pinned/$(basename "$file")" "$file" "$AT" --mode "$MODE"
+              case $? in
+                0) ;;
+                1) escaped=1 ;;
+                *) failed "$harness: $(basename "$file") could not be compared" ;;
+              esac
+            done
+          fi
+          echo "::endgroup::"
+        done
+        if [ "$escaped" = 1 ]; then
+          echo "::error::a refused action happened, or a refused call's recording changed: an escape (Q301)"
+          exit 1
+        fi
+        exit "$status"
+    - name: The setup failed
+      if: inputs.mode == 'escape' && steps.build.outcome != 'success'
+      shell: bash
+      run: echo "::warning::the runner's programs, the toolchain or the build failed (not an escape; the night's drift entry is red on it)"

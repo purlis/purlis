@@ -1,0 +1,2365 @@
+{
+  "harness": "claude",
+  "version": "2.1.325",
+  "level": "full",
+  "os": "linux",
+  "script": "covering",
+  "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+  "forced": {
+    "esc": "pressed",
+    "exit2": "pretooluse",
+    "permission_mode": "bypassPermissions",
+    "stall": "sessionstart"
+  },
+  "shown": [
+    {
+      "kind": "context",
+      "text": "Attribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+    },
+    {
+      "kind": "user_text",
+      "text": "COVERING-SCRIPT: make each call the stand-in asks for, in order."
+    },
+    {
+      "kind": "tool_result",
+      "text": "PreToolUse:Bash hook error: [\"${CHARTER_HOOK_BINARY}\" hook pretooluse]: purlis-recorder: refused with exit 2 for the recording\n\nThis hook comes from the purlis@inline plugin.",
+      "tool_use_id": "<tool-use-1>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "covered",
+      "tool_use_id": "<tool-use-2>",
+      "is_error": false
+    },
+    {
+      "kind": "tool_result",
+      "text": "Exit code 56\ncurl: (56) CONNECT tunnel failed, response 403",
+      "tool_use_id": "<tool-use-3>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "Exit code 1\n/bin/bash: line 1: <outside>/by-bash.txt: Permission denied",
+      "tool_use_id": "<tool-use-4>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "EACCES: permission denied, open '<outside>/by-write.txt.tmp.<pid>.<suffix>'",
+      "tool_use_id": "<tool-use-5>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "EACCES: permission denied, open '<outside>/existing.txt.tmp.<pid>.<suffix>'",
+      "tool_use_id": "<tool-use-6>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "<tool_use_error>File is in a directory that is denied by your permission settings.</tool_use_error>",
+      "tool_use_id": "<tool-use-7>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "<tool_use_error>Error: No such tool available: WebFetch. WebFetch is disabled for this session, in subagents as well as here.</tool_use_error>",
+      "tool_use_id": "<tool-use-8>",
+      "is_error": true
+    },
+    {
+      "kind": "tool_result",
+      "text": "two",
+      "tool_use_id": "<tool-use-10>",
+      "is_error": false
+    },
+    {
+      "kind": "tool_result",
+      "text": "one",
+      "tool_use_id": "<tool-use-9>",
+      "is_error": false
+    },
+    {
+      "kind": "tool_result",
+      "text": "Command running in background with ID: <tool-use-task-1>. Output is being written to: <chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-1>.output. You will be notified when it completes — do not poll that file or sleep while waiting. Read the file only if the user asks for progress, or if you need a line it prints before you can go on, such as a server's ready line or port.",
+      "tool_use_id": "<tool-use-11>",
+      "is_error": false
+    },
+    {
+      "kind": "user_text",
+      "text": "SUBAGENT-COVERING: make the one call the stand-in asks for."
+    },
+    {
+      "kind": "tool_result",
+      "text": "from-subagent",
+      "tool_use_id": "<tool-use-15>",
+      "is_error": false
+    },
+    {
+      "kind": "tool_result",
+      "text": "Async agent launched successfully. (This tool result is internal metadata — never quote or paste any part of it, including the agentId below, into a user-facing reply.)\nagentId: <tool-use-task-2> (internal ID - do not mention to user. Use SendMessage with to: '<tool-use-task-2>', summary: '<5-10 word recap>' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes. You know nothing about its results until that notification arrives — do not report, assume, or predict them; continue other work or respond to the user in the meantime.\nDo not duplicate this agent's work — avoid working with the same files or topics it is using.\noutput_file: <chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-2>.output\nDo NOT Read or tail this file via the shell tool — it is the full subagent JSONL transcript and reading it will overflow your context. If the user asks for progress, say the agent is still running; you'll get a completion notification.",
+      "tool_use_id": "<tool-use-12>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Exit code 2\nfailing",
+      "tool_use_id": "<tool-use-13>",
+      "is_error": true
+    }
+  ],
+  "hook_calls": [
+    {
+      "argv": [
+        "hook",
+        "sessionstart"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-opus-5-5",
+        "session_title": "chat 1"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_ENV_FILE": "<profile>/session-env/<session-1>/sessionstart-hook-0.sh",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": null,
+      "forced": "stall"
+    },
+    {
+      "argv": [
+        "hook",
+        "userpromptsubmit"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+        "session_title": "chat 1"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo exit-two",
+          "description": "exit2-bash"
+        },
+        "tool_use_id": "<tool-use-1>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "purlis-recorder: refused with exit 2 for the recording\n"
+      },
+      "forced": "exit2"
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "description": "bash"
+        },
+        "tool_use_id": "<tool-use-2>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "description": "bash"
+        },
+        "tool_response": {
+          "stdout": "covered",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false
+        },
+        "tool_use_id": "<tool-use-2>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "curl -sS -m 10 https://refused.example.invalid/",
+          "description": "refused-bash-net"
+        },
+        "tool_use_id": "<tool-use-3>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttoolusefailure-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "curl -sS -m 10 https://refused.example.invalid/",
+          "description": "refused-bash-net"
+        },
+        "tool_use_id": "<tool-use-3>",
+        "error": "Exit code 56\ncurl: (56) CONNECT tunnel failed, response 403",
+        "is_interrupt": false,
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo by-bash > <outside>/by-bash.txt",
+          "description": "refused-bash-write"
+        },
+        "tool_use_id": "<tool-use-4>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttoolusefailure-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo by-bash > <outside>/by-bash.txt",
+          "description": "refused-bash-write"
+        },
+        "tool_use_id": "<tool-use-4>",
+        "error": "Exit code 1\n/bin/bash: line 1: <outside>/by-bash.txt: Permission denied",
+        "is_interrupt": false,
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-edit"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "<outside>/by-write.txt",
+          "content": "by-write"
+        },
+        "tool_use_id": "<tool-use-5>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-edit"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "<outside>/existing.txt",
+          "old_string": "before",
+          "new_string": "after",
+          "replace_all": false
+        },
+        "tool_use_id": "<tool-use-6>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo one",
+          "description": "parallel-one"
+        },
+        "tool_use_id": "<tool-use-9>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo two",
+          "description": "parallel-two"
+        },
+        "tool_use_id": "<tool-use-10>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo one",
+          "description": "parallel-one"
+        },
+        "tool_response": {
+          "stdout": "one",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false
+        },
+        "tool_use_id": "<tool-use-9>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo two",
+          "description": "parallel-two"
+        },
+        "tool_response": {
+          "stdout": "two",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false
+        },
+        "tool_use_id": "<tool-use-10>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "group": 9,
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "sleep 90; echo background",
+          "description": "background",
+          "run_in_background": true
+        },
+        "tool_use_id": "<tool-use-11>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "sleep 90; echo background",
+          "description": "background",
+          "run_in_background": true
+        },
+        "tool_response": {
+          "stdout": "",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false,
+          "backgroundTaskId": "<tool-use-task-1>"
+        },
+        "tool_use_id": "<tool-use-11>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse-dispatch"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": {
+          "description": "subagent",
+          "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+          "subagent_type": "general-purpose"
+        },
+        "tool_use_id": "<tool-use-12>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-dispatch"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Agent",
+        "tool_input": {
+          "description": "subagent",
+          "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+          "subagent_type": "general-purpose"
+        },
+        "tool_response": {
+          "isAsync": true,
+          "status": "async_launched",
+          "agentId": "<tool-use-task-2>",
+          "description": "subagent",
+          "resolvedModel": "claude-opus-5-5",
+          "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+          "outputFile": "<chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-2>.output",
+          "canReadOutputFile": true,
+          "canContinueAgent": true
+        },
+        "tool_use_id": "<tool-use-12>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "agent_id": "<tool-use-task-2>",
+        "agent_type": "general-purpose",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo from-subagent",
+          "description": "subagent-bash"
+        },
+        "tool_use_id": "<tool-use-15>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttooluse-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "agent_id": "<tool-use-task-2>",
+        "agent_type": "general-purpose",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo from-subagent",
+          "description": "subagent-bash"
+        },
+        "tool_response": {
+          "stdout": "from-subagent",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false
+        },
+        "tool_use_id": "<tool-use-15>",
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "subagentstop"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "agent_id": "<tool-use-task-2>",
+        "agent_type": "general-purpose",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "SubagentStop",
+        "stop_hook_active": false,
+        "agent_transcript_path": "<profile>/projects/<work-dashed>/<session-1>/subagents/agent-<tool-use-task-2>.jsonl",
+        "last_assistant_message": "Covering script done.",
+        "background_tasks": [
+          {
+            "id": "<tool-use-task-1>",
+            "type": "shell",
+            "status": "running",
+            "description": "background",
+            "command": "sleep 90; echo background"
+          },
+          {
+            "id": "<tool-use-task-2>",
+            "type": "subagent",
+            "status": "running",
+            "description": "subagent",
+            "agent_type": "general-purpose"
+          }
+        ],
+        "session_crons": []
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo failing >&2; exit 2",
+          "description": "failing-bash"
+        },
+        "tool_use_id": "<tool-use-13>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "posttoolusefailure-blocked"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo failing >&2; exit 2",
+          "description": "failing-bash"
+        },
+        "tool_use_id": "<tool-use-13>",
+        "error": "Exit code 2\nfailing",
+        "is_interrupt": false,
+        "duration_ms": "<time>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "userpromptsubmit"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "<task-notification>\n<task-id><tool-use-task-2></task-id>\n<tool-use-id><tool-use-12></tool-use-id>\n<output-file><chat-tmp>/claude-1001/<work-dashed>/<session-1>/tasks/<tool-use-task-2>.output</output-file>\n<status>completed</status>\n<summary>Agent \"subagent\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>Covering script done.</result>\n<usage><subagent_tokens>23</subagent_tokens><tool_uses>1</tool_uses><duration_ms><time></duration_ms></usage>\n</task-notification>",
+        "session_title": "chat 1"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "pretooluse"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-2>",
+        "permission_mode": "bypassPermissions",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "python3 -c \"import time; time.sleep(120)\"",
+          "description": "esc"
+        },
+        "tool_use_id": "<tool-use-14>"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_EFFORT": "medium",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "argv": [
+        "hook",
+        "sessionend"
+      ],
+      "stdin": {
+        "session_id": "<session-1>",
+        "transcript_path": "<profile>/projects/<work-dashed>/<session-1>.jsonl",
+        "cwd": "<work>",
+        "prompt_id": "<session-3>",
+        "hook_event_name": "SessionEnd",
+        "reason": "other"
+      },
+      "env": {
+        "CHARTER_CHAT": "1",
+        "CHARTER_CHAT_DIR": "<work>",
+        "CHARTER_CHAT_TOKEN": "<credential: not recorded>",
+        "CHARTER_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "CHARTER_CHAT_WRAPPED": "1",
+        "CHARTER_CONFIG_HOME": "<config-home>",
+        "CHARTER_DATA_HOME": "<data-home>",
+        "CHARTER_HARNESS": "claude-code",
+        "CHARTER_HARNESS_PROFILE": "work",
+        "CHARTER_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "CHARTER_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "CHARTER_PLANE_ROOT_SESSION": "1",
+        "CHARTER_ROOT": "<work>",
+        "CHARTER_SANDBOXED": "1",
+        "CHARTER_SESSION_ID": "1",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ATTENDED": "1",
+        "CLAUDE_CODE_SESSION_ID": "<session-1>",
+        "CLAUDE_CODE_TMPDIR": "<chat-tmp>",
+        "CLAUDE_CONFIG_DIR": "<profile>",
+        "CLAUDE_PID": "<session-pid>",
+        "CLAUDE_PLUGIN_DATA": "<profile>/plugins/data/purlis-inline",
+        "CLAUDE_PLUGIN_ROOT": "<plugin>",
+        "CLAUDE_PROJECT_DIR": "<work>",
+        "PURLIS_CHAT": "1",
+        "PURLIS_CHAT_DIR": "<work>",
+        "PURLIS_CHAT_TOKEN": "<credential: not recorded>",
+        "PURLIS_CHAT_ULID": "01JRECORDINGCHAT0000000000",
+        "PURLIS_CHAT_WRAPPED": "1",
+        "PURLIS_CONFIG_HOME": "<config-home>",
+        "PURLIS_DATA_HOME": "<data-home>",
+        "PURLIS_HARNESS": "claude-code",
+        "PURLIS_HARNESS_PROFILE": "work",
+        "PURLIS_HOOK_BINARY": "<purlis>/purlis-recorder",
+        "PURLIS_HOOK_SOCKET": "<work>/.purlis/app/hooks.sock",
+        "PURLIS_PLANE_ROOT_SESSION": "1",
+        "PURLIS_ROOT": "<work>",
+        "PURLIS_SANDBOXED": "1",
+        "PURLIS_SESSION_ID": "1"
+      },
+      "gap_ms": "<gap>",
+      "reply": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ],
+  "model": [
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "exit2-bash",
+          "tool": "Bash",
+          "input": {
+            "command": "echo exit-two",
+            "description": "exit2-bash"
+          },
+          "tool_use_id": "<tool-use-1>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "bash",
+          "tool": "Bash",
+          "input": {
+            "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+            "description": "bash"
+          },
+          "tool_use_id": "<tool-use-2>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-bash-net",
+          "tool": "Bash",
+          "input": {
+            "command": "curl -sS -m 10 https://refused.example.invalid/",
+            "description": "refused-bash-net"
+          },
+          "tool_use_id": "<tool-use-3>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-bash-write",
+          "tool": "Bash",
+          "input": {
+            "command": "echo by-bash > <outside>/by-bash.txt",
+            "description": "refused-bash-write"
+          },
+          "tool_use_id": "<tool-use-4>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-write",
+          "tool": "Write",
+          "input": {
+            "file_path": "<outside>/by-write.txt",
+            "content": "by-write"
+          },
+          "tool_use_id": "<tool-use-5>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-edit",
+          "tool": "Edit",
+          "input": {
+            "file_path": "<outside>/existing.txt",
+            "old_string": "before",
+            "new_string": "after"
+          },
+          "tool_use_id": "<tool-use-6>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-read",
+          "tool": "Read",
+          "input": {
+            "file_path": "<work>/.purlis/vaults/covering.json"
+          },
+          "tool_use_id": "<tool-use-7>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "refused-web",
+          "tool": "WebFetch",
+          "input": {
+            "url": "https://refused.example.invalid/",
+            "prompt": "Say what the page says."
+          },
+          "tool_use_id": "<tool-use-8>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "parallel-one",
+          "tool": "Bash",
+          "input": {
+            "command": "echo one",
+            "description": "parallel-one"
+          },
+          "tool_use_id": "<tool-use-9>"
+        },
+        {
+          "step": "parallel-two",
+          "tool": "Bash",
+          "input": {
+            "command": "echo two",
+            "description": "parallel-two"
+          },
+          "tool_use_id": "<tool-use-10>"
+        }
+      ],
+      "parallel": true
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "background",
+          "tool": "Bash",
+          "input": {
+            "command": "sleep 90; echo background",
+            "description": "background",
+            "run_in_background": true
+          },
+          "tool_use_id": "<tool-use-11>",
+          "background": true
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "subagent",
+          "tool": "Agent",
+          "input": {
+            "description": "subagent",
+            "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+            "subagent_type": "general-purpose"
+          },
+          "tool_use_id": "<tool-use-12>",
+          "subagent": true
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "failing-bash",
+          "tool": "Bash",
+          "input": {
+            "command": "echo failing >&2; exit 2",
+            "description": "failing-bash"
+          },
+          "tool_use_id": "<tool-use-13>"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "calls": [
+        {
+          "step": "esc",
+          "tool": "Bash",
+          "input": {
+            "command": "python3 -c \"import time; time.sleep(120)\"",
+            "description": "esc"
+          },
+          "tool_use_id": "<tool-use-14>"
+        }
+      ]
+    }
+  ]
+}

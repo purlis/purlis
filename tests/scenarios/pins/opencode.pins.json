@@ -1,0 +1,33 @@
+{
+  "$schema": "../schema/cells.schema.json#/$defs/pins_file",
+  "dialect": "opencode",
+  "shows": {
+    "hook.posttoolusefailure-blocked": [
+      {
+        "kind": "hook.posttooluse-blocked"
+      }
+    ],
+    "hook.subagentstop": [
+      {
+        "kind": "hook.posttooluse-dispatch"
+      }
+    ],
+    "hook.sessionend": [],
+    "hook.permissiondenied": []
+  },
+  "recorded": {
+    "from": "tests/recordings/recorded/opencode/1.19.5/recording.json",
+    "facts": {
+      "failed_command": "A command that exits non-zero is heard as PostToolUse (posttooluse-blocked) with exit_code and the output; OpenCode's shim has no PostToolUseFailure.",
+      "native_write": "A write or edit outside the project first raises OpenCode's own ask (\"Permission required: Access external directory\"), heard as notification and permissionrequest. Allowed once, the wrap refuses it and the model is shown \"PermissionDenied: FileSystem.writeFile (<path>)\"; no PostToolUse follows.",
+      "native_read": "A read of a vault file is denied by purlis's pretooluse-read hook, and its reason reaches the model as the tool's error, word for word.",
+      "web_fetch": "webfetch is heard as PreToolUse (tool_name WebFetch); the proxy refuses an unlisted host and the model is shown \"Transport error (GET <url>)\". No PostToolUse follows.",
+      "hook_exit_2": "A PreToolUse hook's exit 2 blocks the call, and its standard error is what the model is shown.",
+      "subagent": "A task call is heard as pretooluse-dispatch, then the sub-agent's own hooks, then posttooluse-dispatch; no SubagentStop fires.",
+      "esc": "Esc is pressed twice to interrupt (the first shows \"esc interrupt\"); Stop fires, then the command's PostToolUse with \"User aborted the command\".",
+      "session_end": "No SessionEnd hook fires as the chat ends.",
+      "title_request": "OpenCode asks the model for the chat's title in a request that offers no tools; it is no turn of the chat.",
+      "command_timeout": "Not measured: the covering script runs no command past a timeout."
+    }
+  }
+}

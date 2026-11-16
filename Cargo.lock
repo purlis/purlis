@@ -6754,6 +6754,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "purlis-recordings"
+version = "0.5.2"
+dependencies = [
+ "purlis-core",
+ "purlis-session-protocol",
+ "regex",
+ "serde",
+ "serde_json",
+ "stand-in",
+ "tempfile",
+]
+
+[[package]]
 name = "purlis-same-user"
 version = "0.5.2"
 dependencies = [
