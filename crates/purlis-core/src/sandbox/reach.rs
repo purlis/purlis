@@ -221,13 +221,16 @@ impl Eq for Withdrawn {}
 impl Reach {
     /// `listed`: each entry a host as [`super::egress::allows_on`] reads one, put in the order
     /// the layers decide (Open, Persona, then Allowed for this project on this machine, then
-    /// for this chat), each layer's entries as written.
+    /// for this chat), each layer's entries as written. A host listed as an Open host and taken
+    /// live for the project decides as an Open host, whichever order they came in (T1.1-23): the
+    /// order a list is written in never changes a decision.
     pub fn of(mut listed: Vec<(String, By)>) -> Self {
         listed.sort_by_key(|(_, by)| match by {
-            By::Open | By::Project => 0,
-            By::Persona => 1,
-            By::You => 2,
-            By::Chat => 3,
+            By::Open => 0,
+            By::Project => 1,
+            By::Persona => 2,
+            By::You => 3,
+            By::Chat => 4,
         });
         Self {
             listed,
