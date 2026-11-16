@@ -199,8 +199,9 @@ fn the_seal_holds_an_hmac_of_the_value_never_the_value() {
         }
     }
 
-    // Its fingerprint is the value's HMAC under the device key.
+    // Its fingerprint is the value's HMAC under the device key, behind its own prefix.
     let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(&here.device_key()).unwrap();
+    mac.update(b"purlis/model-key-value/1\n");
     mac.update(value.as_bytes());
     let expected = hex(&mac.finalize().into_bytes());
     let body: serde_json::Value =
@@ -310,11 +311,11 @@ fn a_seal_copied_to_another_entry_fails() {
 }
 
 #[test]
-fn a_linked_entry_cannot_be_marked() {
+fn a_line_of_a_kind_this_build_cant_read_cannot_be_marked() {
     let here = Here::new();
-    let held = here.added_for(Product::anthropic(), "synthetic-held-value");
-    // A line that reads its value from another entry: not one 1a writes, and never marked.
-    let linked = Ulid::generate();
+    here.added_for(Product::anthropic(), "synthetic-held-value");
+    // A line of a kind 1a never writes: your keys hold only keychain entries, so it is unread.
+    let unread = Ulid::generate();
     let at = yourkeys::index_path(here.root());
     let mut index: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&at).unwrap()).unwrap();
@@ -322,22 +323,47 @@ fn a_linked_entry_cannot_be_marked() {
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({
-            "id": linked.to_string(),
-            "kind": "link",
-            "target": held.to_string(),
+            "id": unread.to_string(),
+            "kind": "unheard-of",
             "product": { "from": "built-in", "id": "anthropic" },
             "approval": "off",
             "checked": "passed",
         }));
     std::fs::write(&at, serde_json::to_vec_pretty(&index).unwrap()).unwrap();
 
-    let said = mark::mark(here.root(), &here.credentials, linked, &anthropic())
-        .expect_err("a linked entry was marked");
-    assert!(
-        said.contains("linked") && said.contains(&held.to_string()),
-        "the refusal doesn't say the entry is linked, or to what: {said}"
+    let said = mark::mark(here.root(), &here.credentials, unread, &anthropic())
+        .expect_err("a line this build can't read was marked");
+    assert_eq!(
+        said, "this purlis can't read this key's line in your keys, so it didn't mark it",
+        "the refusal doesn't say the line can't be read"
     );
-    assert!(!here.seal(linked).exists(), "a seal was written");
+    assert!(!here.seal(unread).exists(), "a seal was written");
+}
+
+#[test]
+fn a_value_shaped_as_a_sealed_body_does_not_fingerprint_as_its_seal() {
+    let here = Here::new();
+    let a = here.marked("synthetic-first-value");
+    let sealed = std::fs::read_to_string(here.seal(a)).unwrap();
+    let (body, seal) = sealed
+        .strip_suffix('\n')
+        .and_then(|lines| lines.split_once('\n'))
+        .expect("a record and its seal");
+
+    // A value that is the seal's input for entry a's record, re-sealed through the window: its
+    // fingerprint must not be that record's seal, or a mark of such a value would forge it.
+    let shaped = format!("purlis/model-key-mark/1\n{body}");
+    assert_eq!(
+        replace(here.root(), &here.credentials, a, &shaped),
+        Ok(Replaced::Marked)
+    );
+    let resealed = std::fs::read_to_string(here.seal(a)).unwrap();
+    let now: serde_json::Value =
+        serde_json::from_str(resealed.lines().next().expect("a body line")).unwrap();
+    assert_ne!(
+        now["fingerprint"], seal,
+        "a value's fingerprint is a record's seal"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

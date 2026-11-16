@@ -5,12 +5,14 @@
 #   harness         a harness purlis ships: claude, codex, opencode
 #   provider        a model provider declaration's id
 #   model           optional: a model pattern
-#   format          the wire format the pair speaks, one the provider serves
 #   grade           optional, only where it overrides the rule: blocked, native, supported, degraded
 #   losses          what the pair loses, each a word; the window's words for one are window copy
 #   source          required: "measured on <YYYY-MM-DD>, <harness version>" or "reported: <link>"
-#   asks_for_usage  a Chat Completions pair (format = "openai-chat") only, and required there
+#   asks_for_usage  a Chat Completions pair only, and required there
 #
+# An entry names no wire format: the pair's is the first of the harness's `[route] formats`
+# (`harness_declaration/<name>.toml`) that the provider serves, and a pair sharing none is
+# refused.
 # A harness's last tested version is its declaration's `tested` field
 # (`harness_declaration/<name>.toml`), never restated here.
 
@@ -19,7 +21,6 @@
 [[entry]]
 harness = "claude"
 provider = "anthropic"
-format = "anthropic-messages"
 losses = [
   # Background tasks run on the main model unless the `haiku` variable names one.
   "background-on-main-model-unless-haiku",

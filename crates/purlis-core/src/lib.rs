@@ -154,6 +154,7 @@ pub mod inboxupdates;
 pub mod instructions;
 pub mod inventory;
 pub(crate) mod keptscreen;
+pub mod keyroute;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;

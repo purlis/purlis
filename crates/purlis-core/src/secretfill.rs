@@ -30,6 +30,10 @@ pub fn judged(
     vault: &str,
     key: &str,
 ) -> Result<Option<String>, String> {
+    // Your keys is never filled into a page (T1a-72).
+    if let Some(why) = crate::secrets::registry::your_keys_refusal(vault) {
+        return Err(why);
+    }
     if !crate::loginask::plain(vault) {
         return Err("give `vault` the name of a vault".to_owned());
     }

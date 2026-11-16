@@ -14,16 +14,16 @@
 //! - **What the seal covers** (R-175, U7): the entry's id and its kind (what it resolves
 //!   through; a 1b reference's target joins with that kind), the declaration's `{ "from", "id" }`,
 //!   the origin set, and a **fingerprint** of the value: HMAC-SHA256 of the value under the device
-//!   key. Never the value itself. The record is one line of JSON and one line of the seal,
-//!   HMAC-SHA256 of that line's exact bytes under the device key, so a changed byte anywhere
-//!   unmarks the entry.
+//!   key, behind a prefix of its own so it never equals a seal. Never the value itself. The record
+//!   is one line of JSON and one line of the seal, HMAC-SHA256 of that line's exact bytes under
+//!   the device key, so a changed byte anywhere unmarks the entry.
 //! - **How it changes** (R-176): [`mark`] is the one writer (R-620), called by the window's
 //!   command for the key form (and later *Mark again* and the re-bind Ask) and by
 //!   [`super::replace`], which seals again over the new value's fingerprint so a rotated key keeps
 //!   its mark. A value written by any other path leaves the old fingerprint in the seal, so the
 //!   entry reads [`Unmarked::ChangedOutside`] and the next start asks to mark it again (W13,
-//!   T1a-27). A linked entry is refused in words: the mark is the person's word about a value
-//!   they hold.
+//!   T1a-27). A line of a kind this build doesn't read is refused in words; your keys hold only
+//!   keychain entries in 1a.
 //! - **How it is used** (R-177, R-179, R-182): [`read_model_key`] is the only way an entry is
 //!   read as a model key; an unmarked entry is refused and no other source is tried. The binding
 //!   it returns is compared at every connect by [`route_allowed`]: the same declaration (a key
@@ -67,8 +67,10 @@ const VERSION: u64 = 1;
 /// The most a record may be.
 const MOST_BYTES: u64 = 16 * 1024;
 
-/// What the seal's input starts with, so a seal is never the fingerprint of some value.
+/// What the seal's input starts with, and what a value's fingerprint input starts with: two
+/// domains, so a seal over a record is never the fingerprint of some value, and the reverse.
 const SEALED_AS: &[u8] = b"purlis/model-key-mark/1\n";
+const FINGERPRINTED_AS: &[u8] = b"purlis/model-key-value/1\n";
 
 /// Where entry `id`'s mark is under the config home `config_root`.
 pub fn path(config_root: &Path, id: Ulid) -> PathBuf {
@@ -166,9 +168,9 @@ fn hmac_hex(key: &[u8], parts: &[&[u8]]) -> String {
     crate::extension::hex(&mac.finalize().into_bytes())
 }
 
-/// The value's keyed fingerprint: its HMAC under the device key.
+/// The value's keyed fingerprint: its HMAC under the device key, behind its own prefix.
 fn fingerprint(key: &[u8], value: &str) -> String {
-    hmac_hex(key, &[value.as_bytes()])
+    hmac_hex(key, &[FINGERPRINTED_AS, value.as_bytes()])
 }
 
 /// The device key's keychain service on this device.
@@ -292,28 +294,17 @@ fn seal_into(
         .map_err(|e| fail(&e))
 }
 
-/// The refusal for marking `id`, which no line this build reads holds: a linked line names the
-/// entry to mark instead, and a line of another kind is not one purlis marks.
+/// The refusal for marking `id`, which no line this build reads holds: a line of a kind it
+/// doesn't read is not one purlis marks.
 fn refusal_for_unread(unread: &[Value], id: Ulid) -> String {
     let wanted = id.to_string();
-    let Some(line) = unread
+    if unread
         .iter()
-        .find(|line| line.get("id").and_then(Value::as_str) == Some(wanted.as_str()))
-    else {
-        return ReadError::NotInYourKeys.to_string();
-    };
-    match line.get("kind").and_then(Value::as_str) {
-        Some("link") => {
-            let to = line
-                .get("target")
-                .and_then(Value::as_str)
-                .unwrap_or("another entry");
-            format!(
-                "this key is linked to {to} in your keys, so purlis didn't mark it. Mark that \
-                 entry in its own row"
-            )
-        }
-        _ => "this purlis can't read this key's line in your keys, so it didn't mark it".to_owned(),
+        .any(|line| line.get("id").and_then(Value::as_str) == Some(wanted.as_str()))
+    {
+        "this purlis can't read this key's line in your keys, so it didn't mark it".to_owned()
+    } else {
+        ReadError::NotInYourKeys.to_string()
     }
 }
 

@@ -37,6 +37,10 @@ kinds = ["subscription", "api-key", "cloud"]
 # config folder to the commands its Bash tool runs and to its Read and Edit tools.
 kept_from_commands = "no: on macOS, on a runner and on a Linux profile for sandboxed chats only, purlis cannot keep Claude Code's sign-in from the commands it runs"
 
+[route]
+# The wire format it speaks, so a key from your keys reaches it through the key proxy (spec C-14).
+formats = ["anthropic-messages"]
+
 [folders]
 # Its settings, its sign-in and its conversations.
 config_env = "CLAUDE_CONFIG_DIR"
