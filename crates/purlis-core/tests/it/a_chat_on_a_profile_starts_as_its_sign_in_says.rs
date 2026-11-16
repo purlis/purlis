@@ -160,7 +160,8 @@ fn a_chat_on_a_key_profile_waits_for_the_key_proxy_and_starts_nothing() {
 
     let why = start::ready(&start_on("work", plane.path()), plane.path()).unwrap_err();
 
-    assert!(why.contains("proxy"), "{why}");
+    // An old record (`credentials`, no declaration) is refused with W118 until T1a-39 copies it.
+    assert!(why.contains(purlis_core::window_copy::line::W118), "{why}");
     assert!(why.contains("Nothing was started"), "{why}");
 }
 

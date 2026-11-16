@@ -293,6 +293,32 @@ pub fn create_sandbox_only(
     make(homes, name, kind, Making::SANDBOX_ONLY, now)
 }
 
+/// **Makes the keyless key profile `name` of the harness `kind`** (T1a-12, R-555), its settings
+/// imported from `machine`'s as any profile's are, signing in with a key for the declaration
+/// `product` and naming no entry in your keys yet: its card is `unavailable: key missing` until
+/// [`super::key_into`] writes one. Which harness and declaration may be named in this version is
+/// the caller's to refuse; a sign-in its harness cannot take is refused here, and leaves nothing
+/// behind.
+pub fn create_keyless(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    machine: &MachineSettings,
+    product: &crate::yourkeys::Product,
+    now: u64,
+) -> Result<Made, String> {
+    let sign_in = crate::profilesignin::SignIn::declaring(product);
+    sign_in.check(kind)?;
+    make_signed_in(
+        homes,
+        name,
+        kind,
+        Making::imported_from(machine),
+        now,
+        Some(sign_in),
+    )
+}
+
 /// How a profile is made: where its settings are imported from, whether it is for sandboxed
 /// chats only, and whether it may take a built-in's name.
 pub(super) struct Making<'a> {
@@ -325,6 +351,18 @@ pub(super) fn make(
     making: Making<'_>,
     now: u64,
 ) -> Result<Made, String> {
+    make_signed_in(homes, name, kind, making, now, None)
+}
+
+/// [`make`], its record signing in as `sign_in` where there is one, in the same write.
+fn make_signed_in(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    making: Making<'_>,
+    now: u64,
+    sign_in: Option<crate::profilesignin::SignIn>,
+) -> Result<Made, String> {
     if !crate::profiles::name_ok(name) {
         return Err(format!(
             "'{}' cannot be a profile's name: use letters, digits, '-' and '_', starting with a \
@@ -340,8 +378,15 @@ pub(super) fn make(
     }
     let folder = homes.folder_of(name);
     let mut made_folder = false;
-    let answer = super::update(&homes.config_root, |store| {
-        make_in(store, homes, name, kind, &making, now, &mut made_folder)
+    let answer = super::update(&homes.config_root, |store| -> Result<Made, String> {
+        let mut made = make_in(store, homes, name, kind, &making, now, &mut made_folder)?;
+        if let Some(sign_in) = sign_in
+            && let Some(pushed) = store.profiles.last_mut()
+        {
+            pushed.sign_in = Some(sign_in.clone());
+            made.record.sign_in = Some(sign_in);
+        }
+        Ok(made)
     });
     match answer {
         Ok(Ok(made)) => Ok(made),
