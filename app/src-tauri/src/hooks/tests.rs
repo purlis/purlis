@@ -3768,3 +3768,44 @@ fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
     assert_eq!(kind, "secret_ask.raised");
     assert_eq!(open, Some(1));
 }
+
+/// Q321 (ADR 0067 §5 class 6): a refused read of the person's own credential says that a forge
+/// token comes through purlis's vault, never the vault's own sentence; a vault's read still
+/// says the vault's.
+#[test]
+fn a_refused_read_of_a_credential_says_the_credentials_way_out() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    let block = Block {
+        operation: Operation::Read,
+        kind: Kind::Home,
+        ours: false,
+    };
+    for credential in [".ssh/id_ed25519", ".config/gh/hosts.yml", ".netrc"] {
+        let path = home.join(credential).display().to_string();
+        assert_eq!(
+            offered_to(project.path(), &block, Some(&path), false),
+            (
+                BlockOffer::Brokered,
+                None,
+                Some(grant::brokered_route(Class::Credentials).to_owned())
+            ),
+            "{credential}"
+        );
+    }
+    assert_eq!(
+        offered_to(
+            project.path(),
+            &block,
+            Some("/p/.purlis/vaults/ops.json"),
+            false
+        ),
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::brokered_route(Class::Vaults).to_owned())
+        )
+    );
+}

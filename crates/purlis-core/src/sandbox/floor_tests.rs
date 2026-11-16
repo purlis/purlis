@@ -416,8 +416,13 @@ fn the_homes_docker_folders_are_never_written_by_a_chat_and_a_projects_own_docke
             !writes(&profile, &kept.join("docker")),
             "{harness:?}: where the link leads is writable"
         );
+        // Docker's registry logins are a credential (ADR 0067 §5 class 6, Q321): neither read
+        // nor written, so no chat logs in there or names a helper a later `docker` runs.
+        assert!(
+            !writes(&profile, &home.join(".docker/config.json")),
+            "{harness:?}: Docker's logins are writable"
+        );
         for still in [
-            home.join(".docker/config.json"),
             home.join(".docker/buildx/activity/default"),
             root.join(".docker/compose.yaml"),
             root.join(".docker/bin/build.sh"),
@@ -500,12 +505,14 @@ fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entr
                 "{harness:?}: {not} is writable"
             );
         }
-        for still in [
-            ".docker/config.json",
-            ".Docker/config.json",
-            ".docker/buildx/activity/default",
-            ".rd/other",
-        ] {
+        // Docker's registry logins, under either spelling: a credential (Q321).
+        for not in [".docker/config.json", ".Docker/config.json"] {
+            assert!(
+                !writes(&profile, &home.join(not)),
+                "{harness:?}: {not} is writable"
+            );
+        }
+        for still in [".docker/buildx/activity/default", ".rd/other"] {
             assert!(
                 writes(&profile, &home.join(still)),
                 "{harness:?}: {still} is not writable"
@@ -1960,6 +1967,9 @@ fn a_name_lifted_for_a_claude_code_chat_goes_whole_and_alone() {
         unreachable!();
     };
     for rules in [settings.sandbox.to_string(), settings.deny.join("\n")] {
+        // gh's token stays denied inside the lifted folder: a grant lifts no class (Q321).
+        let rules = rules.replace(".config/gh/hosts.yml", "");
+        let rules = rules.replace(&claude::either_case(".config/gh/hosts.yml"), "");
         assert!(!rules.contains(".config/gh"), "{rules}");
         assert!(
             !rules.contains(&claude::either_case(".config/gh")),

@@ -99,6 +99,12 @@ fn cases(root: &Path, home: &Path) -> Vec<Case> {
                 Some(home.join(".config/charter").display().to_string()),
                 None,
             ),
+            // The person's own credentials, in the home: no folder target, as above.
+            Class::Credentials => (
+                refused(Operation::Read, Kind::Home),
+                Some(home.join(".ssh/id_ed25519").display().to_string()),
+                None,
+            ),
             // On a runner, the git internals the runner operates on, in the project.
             Class::RunnerInternals => (
                 refused(Operation::Write, Kind::System),

@@ -521,6 +521,12 @@ pub fn brokered_route(class: Class) -> &'static str {
             "That holds what only a person approves, so it is never a chat's to write. Make the \
              change yourself, in the window or your own terminal."
         }
+        Class::Credentials => {
+            "That is one of your own credentials, which no sandboxed chat reads, so plain gh \
+             or git over https that relies on it stops working here. Give the chat a forge \
+             token through purlis's vault, push through the app, or allow your SSH agent for \
+             this chat."
+        }
         Class::LaterCode => {
             "A later program loads code or settings from that, outside any sandbox, so no chat \
              ever writes it. Make the change yourself, in your own editor or terminal."
