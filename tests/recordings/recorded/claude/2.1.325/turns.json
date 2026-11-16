@@ -149,7 +149,8 @@
               "response": 1
             }
           ],
-          "says": "Covering script done."
+          "says": "Covering script done.",
+          "tokens": 23
         },
         {
           "step": "failing-bash",
