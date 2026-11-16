@@ -24,6 +24,9 @@ use hyper::{HeaderMap, Request};
 use hyper_util::rt::TokioIo;
 use purlis_core::model_provider::{self, Format, built_ins};
 use purlis_core::model_route;
+use purlis_core::seam::{self, Kind, RecordingCredentials, RecordingFiles, Target};
+use purlis_core::secrets::keyring::{FileStore, STUB_FILE, Secret};
+use purlis_core::yourkeys::{self, mark, start};
 use purlis_core::upstream::{Direct, TestReach, trust};
 use purlis_host::standin::StandIns;
 use purlis_host::{
@@ -36,6 +39,7 @@ use purlis_session_protocol::link;
 use purlis_session_protocol::session::{self, Answer, Client, Command, Events};
 use purlis_terminal::session::Spec;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
+use ulid::Ulid;
 
 /// How long a test waits on the key proxy or the host before it fails.
 pub const PATIENCE: Duration = Duration::from_secs(10);
@@ -96,8 +100,82 @@ pub fn anthropic() -> model_route::Route {
 pub struct Sources {
     declaration: Mutex<String>,
     served_at: HashMap<String, u16>,
+    your_keys: YourKeys,
     pub declaration_reads: AtomicUsize,
+    /// How many times the entry's item had been read when the last start's read ended.
     pub key_reads: AtomicUsize,
+}
+
+/// **Your keys, on a machine of the test's own**: a config home with the stand-in key added
+/// through the window's write and marked for the Anthropic built-in, on the fenced stub keyring
+/// behind the recording vault seam (T1a-69), so each read of its item is counted.
+struct YourKeys {
+    config: tempfile::TempDir,
+    record: seam::Record,
+    credentials: RecordingCredentials,
+    entry: Ulid,
+}
+
+impl YourKeys {
+    fn new() -> YourKeys {
+        let config = tempfile::tempdir().expect("a config home");
+        let record = seam::Record::default();
+        let credentials = RecordingCredentials::new(
+            Box::new(FileStore::at(config.path().join(STUB_FILE))),
+            record.clone(),
+        );
+        let entry = match yourkeys::add(
+            config.path(),
+            &credentials,
+            yourkeys::Product::anthropic(),
+            yourkeys::Checked::Passed,
+            STAND_IN_KEY,
+        ) {
+            Ok(yourkeys::Saved::Added(entry)) => entry,
+            other => panic!("the stand-in key was not added: {other:?}"),
+        };
+        let declaration = built_ins()
+            .iter()
+            .find(|declaration| declaration.id == "anthropic")
+            .expect("the Anthropic built-in ships");
+        mark::mark(
+            config.path(),
+            &credentials,
+            entry,
+            &mark::Binding::of(declaration),
+        )
+        .unwrap_or_else(|why| panic!("the stand-in key was not marked: {why}"));
+        record.clear();
+        YourKeys {
+            config,
+            record,
+            credentials,
+            entry,
+        }
+    }
+
+    /// The start's one read, through core.
+    fn read(&self) -> String {
+        let files = RecordingFiles::new(self.record.clone());
+        match start::read_once(self.config.path(), &files, &self.credentials, self.entry) {
+            start::Read::Key(value, _) => Secret::into_inner(value),
+            start::Read::Locked(_) => panic!("the stub keychain is never locked"),
+            start::Read::Refused(why) => panic!("the start was refused: {why}"),
+        }
+    }
+
+    /// How many times the entry's item has been read.
+    fn reads(&self) -> usize {
+        let item = Target::Entry {
+            service: yourkeys::SERVICE.to_owned(),
+            account: self.entry.to_string(),
+        };
+        self.record
+            .ops()
+            .iter()
+            .filter(|op| op.kind == Kind::CredentialRead && op.target == item)
+            .count()
+    }
 }
 
 impl Sources {
@@ -110,6 +188,7 @@ impl Sources {
                 .iter()
                 .map(|(origin, port)| ((*origin).to_owned(), *port))
                 .collect(),
+            your_keys: YourKeys::new(),
             declaration_reads: AtomicUsize::new(0),
             key_reads: AtomicUsize::new(0),
         })
@@ -127,6 +206,11 @@ impl Sources {
         *self.declaration.lock().unwrap() = Sources::text(base);
     }
 
+    /// How many times your keys' entry has been read, by the recording vault seam.
+    pub fn your_keys_reads(&self) -> usize {
+        self.your_keys.reads()
+    }
+
     /// The route a start resolves: the declaration read once, bound, and the key read once.
     fn route(&self) -> Route {
         self.declaration_reads.fetch_add(1, Ordering::SeqCst);
@@ -135,11 +219,13 @@ impl Sources {
             .expect("the store holds a declaration");
         let bound = model_route::Route::bind("mine", &declaration, Format::AnthropicMessages)
             .expect("a Messages endpoint");
-        self.key_reads.fetch_add(1, Ordering::SeqCst);
+        let key = self.your_keys.read();
+        self.key_reads
+            .store(self.your_keys.reads(), Ordering::SeqCst);
         Route {
             origin: Origin::http("127.0.0.1", self.served_at[bound.base.origin()]),
             bound,
-            key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+            key: Key::XApiKey(key),
         }
     }
 }

@@ -48,6 +48,7 @@ mod no_startup_call_carries_the_credential;
 pub mod outbound_proxy;
 pub mod start_path;
 pub mod startup;
+mod the_key_is_read_once_at_start;
 mod the_listener_is_bound_to_ipv4_loopback_only;
 mod the_startup_with_an_http_proxy_configured_skips_api_hello_and_still_starts;
 mod the_system_proxy_is_used_as_a_connect_tunnel;
