@@ -288,7 +288,34 @@ pub struct Painted {
     /// The address of the document the page has loaded, as the engine records it (#2300): what
     /// the host cuts to the origin a browser view's chip names.
     pub address: String,
+    /// Its title as `browser_pages` lists it, with what purlis keeps out of it taken out
+    /// (#6938).
+    pub title: String,
+    /// Where its load stands (#6938).
+    pub load: PageLoad,
+    /// The image; empty where only what the page is changed, with no new image (#6938).
     pub jpeg: Vec<u8>,
+}
+
+/// **Where a page's load stands** (#6938), as the engine tells of it: loading its document,
+/// loaded, failed with the engine's reason (`net::ERR_NAME_NOT_RESOLVED`, empty where it gave
+/// none), or its renderer crashed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PageLoad {
+    Loading,
+    #[default]
+    Loaded,
+    Failed(String),
+    Crashed,
+}
+
+/// **A step through the page's history the person takes** (#6938).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Back,
+    Forward,
+    Reload,
+    Stop,
 }
 
 /// What the person's mouse did.
@@ -350,13 +377,17 @@ pub enum PersonInput {
         key_code: u32,
         modifiers: Modifiers,
     },
+    /// Back, Forward, Reload or Stop, pressed in the strip purlis draws above the page (#6938).
+    Navigate { aim: Aim, step: Step },
 }
 
 impl PersonInput {
     /// What the event was aimed at.
     pub fn aim(&self) -> &Aim {
         match self {
-            PersonInput::Mouse { aim, .. } | PersonInput::Key { aim, .. } => aim,
+            PersonInput::Mouse { aim, .. }
+            | PersonInput::Key { aim, .. }
+            | PersonInput::Navigate { aim, .. } => aim,
         }
     }
 }
@@ -888,6 +919,9 @@ pub enum Refusal {
     NotAKey(String),
     #[error("the page has no earlier address to go back to")]
     NoEarlierPage,
+    /// The person's Forward found no later address (#6938).
+    #[error("the page has no later address to go forward to")]
+    NoLaterPage,
     #[error("the earlier address is not a web address, so the browser does not go back to it")]
     EarlierNotWeb,
     /// The earlier address carries a value purlis keeps out (#5117): going back would send it
