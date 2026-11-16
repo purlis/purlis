@@ -816,6 +816,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "bounds what a runner says it armed a chat with, which a window holds (#4218)",
     ),
     (
+        "crates/session-protocol/src/session.rs",
+        "MOST_FILE_READ",
+        Security,
+        "bounds what a runner chat's file makes the runner read and this machine hold (#6387)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_FILE_PIECE",
+        Security,
+        "keeps one piece of a runner's file inside a control frame (#6387)",
+    ),
+    (
         "app/src-tauri/src/hostedsessions.rs",
         "MOST_SKILL_LINES_HELD",
         Internal,
