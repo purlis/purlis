@@ -380,8 +380,12 @@ export const ANarrowPane: Story = {
       "http://a-very-long-preview-host-for-pull-request-6910.staging.internal.example.com:8080",
       "Not secure",
     );
-    await waitFor(() => canvas.getByRole("button", { name: "12 secrets" }));
+    const count = await waitFor(() => canvas.getByRole("button", { name: "12 secrets" }));
     await fitsThePane(canvas);
+    // The site is cut before the count is: the count is whole.
+    await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+    const head = canvas.getByTestId("browser-head").getBoundingClientRect();
+    await expect(count.getBoundingClientRect().right).toBeLessThanOrEqual(head.right);
   },
 };
 

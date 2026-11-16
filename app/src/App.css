@@ -8317,8 +8317,9 @@ nav.piece-files-head {
   list-style: none;
 }
 
-/* The secrets purlis filled on the page's site (#5119): after its chip, shrunk before it is and
-   never wider than half the row, so a long key is cut, never the row (#6937). */
+/* The secrets purlis filled on the page's site (#5119): after its chip, shrunk only once the
+   site is cut as far as it goes, and never wider than half the row, so a long key is cut,
+   never the row (#6937). */
 .browser-secrets {
   display: flex;
   flex: 0 1 auto;
@@ -8362,7 +8363,8 @@ nav.piece-files-head {
    Not secure before the host (#6937); the host is what is cut. */
 .browser-chip {
   display: inline-flex;
-  flex: 0 1 auto;
+  /* The site gives up its room before the secrets' count does: it is cut first. */
+  flex: 0 100 auto;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
