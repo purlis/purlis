@@ -7,8 +7,9 @@ recorder in place of `purlis`.
 
 **What every covering recording is made under: Full sandbox, harness prompts bypassed
 (bypassPermissions / OpenCode ask allowed once).** Each recording says so in its header
-(`conditions.summary`, with Claude Code's `conditions.permission_mode`), and so does its turn
-script: the fake harness reproduces a recording under these conditions, never takes them for what
+(`conditions.summary`, with Claude Code's `conditions.permission_mode` and
+`conditions.sessionend_budget`, the 10 s its SessionEnd hooks are given so one is never cut off
+before it begins), and so does its turn script: the fake harness reproduces a recording under these conditions, never takes them for what
 the harness does. Claude Code's harness prompts are kept in one more pass, `asks`
 (`asks-recording.json`): permission mode `default`, each of its prompts allowed once, so its
 PermissionRequest and Notification are recorded.
