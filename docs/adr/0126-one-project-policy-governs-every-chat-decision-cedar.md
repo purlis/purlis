@@ -3,8 +3,8 @@
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
 Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5) and Q320b
 (R2-1–R2-4), in the who-judges orchestration (`work/who-judges/decisions.md` on the plane). It
-also takes in the calls of the spec's first four Fable review rounds
-(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-4.md` on the plane).
+also takes in the calls of the spec's first five Fable review rounds
+(`work/who-judges/tickets/m75-policy/review-round-1.md` to `review-round-5.md` on the plane).
 Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
 closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
@@ -86,10 +86,20 @@ rewriting every project's `policy.cedar`.
 - The project's rules live in one committed `policy.cedar` beside the project file at the plane
   root. They are read as committed at the plane root's HEAD, never from a branch folder and never
   from the working file (Q309 point 1). With no HEAD there is no committed policy: the accepted
-  copy, or else the shipped default, applies (Q320a N3).
+  copy, or else the shipped default, applies (Q320a N3). The HEAD read, and the press's author
+  check, read history as written: no replace objects (`GIT_NO_REPLACE_OBJECTS=1`), no grafts, and
+  no repo config key that changes what is read. The press calls the author unverified whenever
+  the repo holds a replace ref (review round 5, SEC5-SF1).
+- **Every input a rule can read is sealed or committed** (review round 5, SEC5-B1). The device
+  name that `context.machine` reads is sealed in the keyring item's registry and changes only by
+  a press in the window; every other entity attribute a rule can name (a vault's tags, a path's
+  owning workspace) is read at HEAD and falls under "stricter of two"; a rule that names an
+  attribute neither sealed nor committed is refused at load. A plain file such as `machine.json`,
+  which a chat at the sandbox level `off` can edit, decides nothing.
 - The text the person last accepted on this machine is kept **sealed**. Every decision is the
   stricter (deny > ask > allow) of the committed policy and the accepted policy, and "stricter"
-  covers all the policy's data: scopes, modes, limits, locks and the scan-allow data. Named sets
+  covers all the policy's data: scopes, modes, limits, locks, the scan-allow data and the entity
+  attributes rules read. Named sets
   and tool declarations are never merged across the two: each evaluation uses its own side's, and
   a tool whose command differs runs the accepted one. So a tightening applies at once, and a
   loosening waits for the person's **loosening press**. The shipped default stands in until the
@@ -106,16 +116,24 @@ rewriting every project's `policy.cedar`.
   key. With the anchor present, a missing or older manifest, or a sealed entry other than a grant
   that is missing or fails, is the **deny state**: the chat still starts, every action but
   `start` is refused, and nothing is allowed until the person re-presses (review round 2, S2-B1,
-  S2-B2, F2-2; Q320b R2-3; review round 3, SEC3-B1, SEC3-B2; review round 4, F4 nit).
+  S2-B2, F2-2; Q320b R2-3; review round 3, SEC3-B1, SEC3-B2; review round 4, F4 nit). The deny
+  state only adds refusals: `start` is still judged by the Organisation, the committed HEAD and
+  the shipped default, so a forbid on `start` still applies (review round 5, SEC5-SF2). A seal key
+  left locked on an anchored plane (a cancelled Windows Hello, a wrong Linux password) is the deny
+  state too; the shipped default applies only on a fresh install (review round 5, FB5-B1).
 - **A plane has a stable id, and the machine keeps a registry of anchored planes.** The plane id
   is kept in the plane's sealed manifest. The keyring item holds a sealed, machine-level registry
-  of each anchored plane's id, real path and the path as opened. A plane whose id is anchored but
+  of each anchored plane's id, real path and the path as opened, written when the app first
+  opens the plane, so a process inside a plane with nothing sealed yet is never plane-less
+  (review round 5, SEC5 nit). A plane whose id is anchored but
   is seen at another path, an anchored path with no matching manifest, and a sealed store with no
   anchor are each the deny state, so moving a plane never reads as a fresh install. Only no anchor
   and no store is a fresh install, where the shipped default applies. The sandbox holds the plane
   root against rename where it can; where it can't, that is a declared gap (review round 4,
   SEC4-B1).
-- **The Everywhere nevers have their own manifest, anchor and counter** in the same keyring item.
+- **The Everywhere nevers have their own manifest, anchor and counter** in the same keyring item,
+  and that anchor counts its nevers, so a re-press can say what was lost (review round 5, SEC5
+  nit).
   If that manifest is missing or older, every plane is in the deny state (review round 4,
   SEC4-B2). On Linux and Windows every anchor is only as strong as the declared seal gap (Q320b
   R2-4).
@@ -243,7 +261,9 @@ has no purlis sandbox yet, hand edits only), and the gap is declared. Two opt-in
 "Confirm with Windows Hello each time purlis starts" on Windows, preferring a non-exportable
 Hello signing key, and "Ask for a password each time purlis starts" on Linux (Q319 C6). They
 don't close it: a same-user process can still read the app's memory or start a second instance,
-so with an opt-in on the gap stays declared, as a narrowed gap (Q320a N1, N4).
+so with an opt-in on the gap stays declared, as a narrowed gap (Q320a N1, N4). With an opt-in
+on, a cancelled confirmation or a wrong password leaves the key locked, which on an anchored plane
+is the deny state (§2), never the shipped default (review round 5, FB5-B1).
 
 **Hard to reverse because** the gap cells, Settings and doctor all assert "declared, and started":
 refusing by default later would stop chats that start today, on every project that hasn't written
