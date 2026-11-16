@@ -1721,7 +1721,11 @@ fn a_hook_no_app_answers_refuses_as_strict_whatever_the_project_says() {
     for env in [
         &[][..],
         &[("PURLIS_HOOK_SOCKET", gone), ("PURLIS_CHAT", "7")][..],
-        &[("PURLIS_POLICY", all_off), ("PURLIS_ROOT", "/tmp")][..],
+        &[
+            ("PURLIS_POLICY", all_off),
+            ("PURLIS_ROOT", "/tmp"),
+            ("CHARTER_ROOT", "/tmp"),
+        ][..],
     ] {
         let (code, out, err) = guard(plane.path(), &bash("git commit --no-verify -m x"), env);
         assert_eq!(code, 0, "{err}");

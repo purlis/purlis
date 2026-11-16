@@ -6743,7 +6743,7 @@ down rather than read off the code.
   as purlis last wrote it.
 - **Presence marker** (the review of #6992, S4): each time the app writes the file it keeps
   the [seal](#the-seals-key--the-keyring-item-purlis-seal) of its text in the keyring, under
-  the seal's service, account `dispatch-nevers:<clone key>` (**Tier:** Keyring). **A file
+  the seal's service, account `dispatch-nevers:<anchor>`, a Keyring item. **A file
   deleted or edited by anything but the app reads as unread**, as above, so a chat that runs
   without a sandbox cannot say "no nevers" by removing them, under any `[policy]`. A file the
   app never wrote is no nevers, and the first read in the app of one it never sealed seals it as
