@@ -53,13 +53,94 @@ pub fn mask(name: &str) -> String {
     format!("‹secret: {name}›")
 }
 
-/// One secret handed to a chat, as it is known: its entry's name, and its length and digest.
+/// One secret handed to a chat, as it is known: its entry's name, and its length, its digest
+/// and its print ([`Print`]).
 #[derive(Clone)]
 pub struct Known {
     name: String,
     length: usize,
     digest: Digest,
+    print: u64,
 }
+
+/// **A rolling hash of a run of bytes** (Rabin–Karp, modulo the Mersenne prime 2⁶¹−1), under a
+/// base drawn from the process's key: what [`masked`] slides along a screen to find the few
+/// windows worth a digest, one step a byte, so the cost of a screen is its length times the
+/// number of lengths looked for, and not that times the lengths themselves. A print says no more
+/// of a value than its digest does, to anyone without the key.
+#[derive(Clone, Copy)]
+struct Print {
+    base: u64,
+}
+
+impl Print {
+    const MODULUS: u64 = (1 << 61) - 1;
+
+    /// The process's: `None` where no key could be made for it.
+    fn of_the_process() -> Option<Self> {
+        let digest = seen::digest(seen::keyed()?, b"purlis: the base a kept screen is printed by");
+        let drawn = u64::from_le_bytes(digest[..8].try_into().ok()?);
+        Some(Self {
+            base: drawn % (Self::MODULUS - 2) + 2,
+        })
+    }
+
+    /// `a` times `b`, each below the modulus: the product, under 2¹²², reduced as a Mersenne
+    /// prime allows, its bits above the 61st added to those below.
+    fn times(a: u64, b: u64) -> u64 {
+        let product = u128::from(a) * u128::from(b);
+        // Both halves are under 2⁶¹: the one by the mask, the other as the product's top.
+        let (low, high) = (
+            (product as u64) & Self::MODULUS,
+            (product >> 61) as u64,
+        );
+        Self::plus(low, high)
+    }
+
+    /// `a` plus `b`, each below the modulus.
+    fn plus(a: u64, b: u64) -> u64 {
+        let sum = a + b;
+        if sum >= Self::MODULUS {
+            sum - Self::MODULUS
+        } else {
+            sum
+        }
+    }
+
+    /// `bytes`' print: each byte counted as one more than its value, so a run of zero bytes is
+    /// not the empty run.
+    fn of(self, bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0, |print, &byte| {
+            Self::plus(Self::times(print, self.base), u64::from(byte) + 1)
+        })
+    }
+
+    /// The print of every run of `length` bytes of `text`, by where it starts.
+    fn rolled(self, text: &[u8], length: usize) -> impl Iterator<Item = u64> + '_ {
+        let first = (length > 0 && length <= text.len()).then(|| self.of(&text[..length]));
+        // What the byte leaving a window had counted for: the base to the power `length - 1`.
+        let top = (1..length).fold(1, |power, _| Self::times(power, self.base));
+        let mut print = first.unwrap_or_default();
+        let windows = first.map_or(0, |_| text.len() - length + 1);
+        (0..windows).map(move |start| {
+            if start > 0 {
+                let gone = Self::times(u64::from(text[start - 1]) + 1, top);
+                let kept = Self::plus(print, Self::MODULUS - gone);
+                print = Self::plus(
+                    Self::times(kept, self.base),
+                    u64::from(text[start + length - 1]) + 1,
+                );
+            }
+            print
+        })
+    }
+}
+
+/// **The most window steps one screen is looked at with** ([`masked`]): its length times the
+/// number of lengths looked for. A screen it would take more is not maskable, so it is not kept
+/// (never kept unmasked): 4 MiB, the most a kept screen holds, against 64 lengths, which three
+/// dozen values of several lines each come to.
+pub const MATCH_STEPS_AT_MOST: usize = 4 * 1024 * 1024 * 64;
 
 impl Known {
     /// `value`, handed as `name`, as it is known: as written and with the white space around it
@@ -70,6 +151,7 @@ impl Known {
     /// made for the process.
     pub fn of(name: &str, value: &str) -> Option<Vec<Self>> {
         let keyed = seen::keyed()?;
+        let printed = Print::of_the_process()?;
         let trimmed = value.trim();
         let mut forms: Vec<zeroize::Zeroizing<String>> = [value, trimmed]
             .into_iter()
@@ -101,6 +183,7 @@ impl Known {
                 name: name.to_owned(),
                 length: bytes.len(),
                 digest,
+                print: printed.of(bytes),
             });
         }
         Some(known)
@@ -437,7 +520,8 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> 
 }
 
 /// **`screen` with each of `known` it shows replaced by its [`mask`]**, the sequences that draw
-/// it left as they were. `None` where no key could be made for the process to look with.
+/// it left as they were. `None` where no key could be made for the process to look with, and
+/// where looking would take more than [`MATCH_STEPS_AT_MOST`].
 ///
 /// A string sequence's payload (a window title, a link's address) is text a reader may be
 /// shown too, so it is looked in as text, and a value there is masked in it.
@@ -460,10 +544,18 @@ pub fn masked(screen: &str, known: &[Known]) -> Option<String> {
     for one in known {
         by_length.entry(one.length).or_default().push(one);
     }
+    if shown.len().saturating_mul(by_length.len()) > MATCH_STEPS_AT_MOST {
+        return None;
+    }
+    let printed = Print::of_the_process()?;
     let mut found: Vec<(Range<usize>, &str)> = Vec::new();
     for (length, of_it) in &by_length {
-        for (start, run) in shown.windows(*length).enumerate() {
-            let digest = seen::digest(keyed, run);
+        let prints: std::collections::HashSet<u64> = of_it.iter().map(|one| one.print).collect();
+        for (start, print) in printed.rolled(&shown, *length).enumerate() {
+            if !prints.contains(&print) {
+                continue;
+            }
+            let digest = seen::digest(keyed, &shown[start..start + length]);
             for one in of_it.iter().filter(|one| one.digest == digest) {
                 found.push((start..start + length, one.name.as_str()));
             }

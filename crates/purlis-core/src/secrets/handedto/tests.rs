@@ -387,3 +387,28 @@ fn an_entry_linked_into_a_vault_that_may_ask_the_person_is_not_read_again() {
     assert_eq!(asks_nobody(&ctx, &Entry::new("team", "own")), Some(true));
     assert_eq!(asks_nobody(&ctx, &Entry::new("shared", "k")), Some(false));
 }
+
+#[test]
+fn a_print_rolled_along_a_text_is_the_print_of_each_window_taken_alone() {
+    let printed = Print::of_the_process().expect("a key for the process");
+    let text = b"\x00\xffFAKE-ROLLING-0025 and on\x00";
+
+    for length in [1, 4, 9, text.len()] {
+        let rolled: Vec<u64> = printed.rolled(text, length).collect();
+        let alone: Vec<u64> = text.windows(length).map(|run| printed.of(run)).collect();
+        assert_eq!(rolled, alone, "windows of {length}");
+    }
+    assert_eq!(printed.rolled(text, text.len() + 1).count(), 0);
+}
+
+#[test]
+fn a_screen_that_would_take_too_long_to_look_at_is_not_maskable() {
+    let mut many = Vec::new();
+    for length in 0..65 {
+        many.extend(known("k", &"F".repeat(4 + length)));
+    }
+    let screen = "x".repeat(MATCH_STEPS_AT_MOST / 64);
+
+    assert_eq!(masked(&screen, &many), None);
+    assert!(masked("a screen of any length less", &many).is_some());
+}
