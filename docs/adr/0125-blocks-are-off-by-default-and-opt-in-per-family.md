@@ -37,7 +37,7 @@ the template sets through the existing `[sandbox]` mode: `[policy]` has no `sand
 A project picks a template and overrides single families under `[policy]` in its committed
 settings file (`docs/plane-format.md`).
 
-| Template | Families | Sandbox |
+| Template | Families | Sandbox (decided; wired in the follow-up — today `[sandbox]` decides) |
 |---|---|---|
 | `open` | everything off | off |
 | `watch` (**the default**) | everything logs; `secrets`, `vaults` and `guards.credential` enforced | floor |
@@ -52,15 +52,20 @@ mode is `enforce`, and the window says which.
 
 - The setting is read from the plane root's committed file only; a branch folder's file is never
   asked, and the local settings file can only tighten.
-- It is resolved once, at a chat's start, and handed to the chat's hooks in `$PURLIS_POLICY`,
-  which the app sets after anything a profile set and no chat inherits.
+- It is read at the plane root's `HEAD`, and **only the app resolves it**: a hook, a git hook or
+  `purlis secret exec` asks the app over the hook socket and runs every family enforced where the
+  app does not answer (the review of #6992). No folder or variable a chat names is read for it.
 - **A loosening waits for the person's press** in the window. What this person accepted is kept
   on this machine **sealed** with a key only the app reads (Q308b): an HMAC under a keyring item
   outside purlis's own prefixes, which the app's one-item writer refuses, so no other program can
   forge it. An acceptance whose seal does not hold counts as none. A tightening needs no press and
   applies at once.
-- A hook takes the stricter of what its chat started with, what the plane root's file says now
-  and what the person accepted: nothing a chat puts in its own environment loosens anything.
+- The press is bound to the digest of the committed text the window showed, and applies from
+  the press. Every tightening the app sees is kept as accepted.
+- What the person accepted is anchored in the keychain by the plane's real path, written before
+  the record. With an anchor, a record missing, edited or older denies every family and every
+  dispatch across personas until the person presses again; with none, it is a fresh install.
+  The nevers file carries the same anchor, so deleting it says nothing.
 - A chat's change to `[policy]`, by a write or by a commit, is held as its change to `[sandbox]`
   is.
 
@@ -108,9 +113,6 @@ policy", the kill switch and a grader's lock bundles stay outside the policy.
   picks `hold`, `team` or `strict`. Vault values stay masked and credentials stay out of commits.
 - Every existing test that proves a refusal sets `strict` explicitly; M74.1's matrix runs with
   `strict`.
-- The enforcement log is best effort: a hook inside purlis's wrap (Codex, OpenCode) cannot write
-  it, and a refusal the app judges for a chat it knows only by number is let through under `log`
-  with no line.
-- A harness hook trusts `$PURLIS_POLICY` as the start resolved it, at the trust the hook's other
-  launch variables have; a nested harness a chat starts from its own shell could name its own.
-  Q309 moves evaluation into the session host, asked over the hook socket.
+- The enforcement log is written by the app alone; a hook hands its line over the hook socket.
+- The floor's refusal of programs that would run outside the wrap, and the git arms that exist
+  because of the wrap (A3c, A3d, A9, A9b), are the sandbox's and hold whenever a wrap is applied.

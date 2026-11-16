@@ -32,6 +32,9 @@ pub struct PolicyState {
     pub refused: Vec<String>,
     /// Whether this machine keeps an acceptance whose seal does not hold, which counts as none.
     pub unsealed: bool,
+    /// The digest of the committed text this was read from: what Accept names, so a press on a
+    /// file that changed since it was shown accepts nothing.
+    pub digest: String,
 }
 
 fn state_of(root: &std::path::Path) -> PolicyState {
@@ -48,6 +51,7 @@ fn state_of(root: &std::path::Path) -> PolicyState {
             .collect(),
         refused: standing.refused,
         unsealed: standing.unsealed,
+        digest: standing.digest,
     }
 }
 
@@ -67,18 +71,20 @@ pub async fn project_policy_state(
     crate::off_the_window(READING_POLICY, move || Ok(state_of(&root))).await
 }
 
-/// **Your press: accept the project's `[policy]` as its committed file says it now**, looser
-/// where it is looser, from each chat's next start. Sealed on this machine by the app; refused
-/// where it cannot be sealed. The window's alone.
+/// **Your press: accept the project's `[policy]` as its committed file said it when it was
+/// shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
+/// machine by the app; refused where it cannot be sealed, or where the file changed since it was
+/// shown. The window's alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_project_policy(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
+    shown: String,
 ) -> Result<PolicyState, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window(READING_POLICY, move || {
-        enforcement::press(&root).map_err(|why| {
+        enforcement::press(&root, &shown).map_err(|why| {
             format!("purlis could not keep your acceptance on this machine: {why}")
         })?;
         Ok(state_of(&root))

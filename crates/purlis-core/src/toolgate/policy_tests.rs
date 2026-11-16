@@ -168,3 +168,34 @@ fn every_arm_has_a_family_and_the_shape_arms_hold_under_open_until_wired() {
     let judged = judged(&call, None, &|family| open.mode(family));
     assert_eq!(judged.refused.and_then(|v| v.arm), Some(Arm::Caps));
 }
+
+#[test]
+fn the_arms_that_exist_because_of_the_wrap_hold_under_every_template() {
+    // The review of #6992, S5: git the sandbox would stop partway, or that a sandboxed chat
+    // cannot finish, is refused whenever that wrap is applied, so the root is never left
+    // half-updated, whatever the project's `[policy]` says.
+    for template in crate::enforcement::Template::ALL {
+        let resolved = crate::enforcement::Resolved::of(
+            &crate::enforcement::Settings::from_text(Some(&format!(
+                "[policy]\ntemplate = \"{}\"\nguards.git = \"off\"\n",
+                template.word()
+            ))),
+            &crate::sandbox::policy::Locks::none(),
+        );
+        for arm in [
+            Arm::RootUpdate,
+            Arm::CloneUpdate,
+            Arm::ProjectGit,
+            Arm::BranchGit,
+        ] {
+            let family = arm.family().expect("a family");
+            assert_eq!(
+                resolved.mode(family),
+                Mode::Enforce,
+                "{} {}",
+                template.word(),
+                arm.id()
+            );
+        }
+    }
+}

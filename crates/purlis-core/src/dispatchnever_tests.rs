@@ -263,9 +263,9 @@ fn a_write_refuses_a_record_it_could_not_read_and_leaves_its_bytes() {
         let folder = state.file_name().expect("a name").to_string_lossy();
         let said = format!(
             "purlis could not read the list of pairs you said never to \
-             ({folder}/app/dispatch-never.json in this project), so it changed nothing there \
-             and no dispatch grant counts until it reads. Fix that file, or delete it to say \
-             never to nothing."
+             ({folder}/app/dispatch-never.json in this project), or it was changed or removed \
+             by something other than purlis's app, so it changed nothing there and no dispatch \
+             grant counts until it reads. Restore that file as purlis last wrote it."
         );
         assert_eq!(
             add(root, "qa", "prod").expect_err("refused").to_string(),
@@ -308,14 +308,18 @@ fn a_record_that_is_a_link_or_a_folder_is_not_read_and_not_written_through() {
 }
 
 #[test]
-fn deleting_the_record_is_how_a_person_says_never_to_nothing() {
+fn deleting_the_record_behind_the_apps_back_never_says_never_to_nothing() {
+    // Before the review of #6992 (S4), deleting the record said never to nothing. A chat that
+    // runs without a sandbox could do the same, so a record the app sealed and that is gone
+    // now reads as unread: every dispatch across personas is refused until the person restores
+    // it.
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
     crate::sandbox::local::grant_dispatch(root, "steward", "devops").expect("kept");
     by_hand(&path(root), "not json");
     assert_eq!(asked(&InForce::read(root, Vec::new())), Covers::Unread);
     std::fs::remove_file(path(root)).expect("deleted");
-    assert_eq!(asked(&InForce::read(root, Vec::new())), Covers::Covered);
+    assert_eq!(asked(&InForce::read(root, Vec::new())), Covers::Unread);
 }
 
 // ---- what an earlier build left in the other record ---------------------------------------------
@@ -417,6 +421,48 @@ fn nevers_that_cannot_be_moved_into_a_record_that_does_not_read_are_not_lost() {
             .expect("read")
             .contains("dispatch_never")
     );
+    // Mended by deleting it by hand, behind the app's back: still unread (the review of #6992,
+    // S4), and the pairs the earlier build left are still kept for when it reads again.
     std::fs::remove_file(path(root)).expect("mended");
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(
+        std::fs::read_to_string(&record)
+            .expect("read")
+            .contains("dispatch_never")
+    );
+}
+
+/// **The nevers file carries a presence marker the app seals** (the review of #6992, S4): a file
+/// deleted or edited by anything but the app reads as unread, which refuses every dispatch
+/// across personas, so a chat cannot say "no nevers" by removing them. One nobody ever wrote is
+/// no nevers.
+#[test]
+fn a_nevers_file_deleted_or_edited_behind_the_apps_back_reads_as_unread() {
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    assert_eq!(read(root), Nevers::Read(Vec::new()), "nobody wrote one");
+    add(root, "steward", "devops").unwrap();
     assert_eq!(read(root), Nevers::Read(one("steward", "devops")));
+    // Edited behind the app's back.
+    let as_written = std::fs::read_to_string(path(root)).unwrap();
+    std::fs::write(path(root), as_written.replace("devops", "qa")).unwrap();
+    assert_eq!(read(root), Nevers::Unread);
+    // Deleted behind its back, and the app writes nothing over it.
+    std::fs::remove_file(path(root)).unwrap();
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(add(root, "steward", "qa").is_err());
+    // Restored as the app wrote it: read again.
+    std::fs::write(path(root), &as_written).unwrap();
+    assert_eq!(read(root), Nevers::Read(one("steward", "devops")));
+    std::fs::remove_file(path(root)).unwrap();
+    assert_eq!(
+        covers(
+            Some("steward"),
+            "devops",
+            &InForce::read(root, Vec::new()),
+            &Locks::none()
+        ),
+        Covers::Unread
+    );
 }

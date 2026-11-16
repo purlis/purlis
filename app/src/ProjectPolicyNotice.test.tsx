@@ -21,12 +21,13 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-const QUIET: PolicyState = { waiting: [], refused: [], unsealed: false };
+const QUIET: PolicyState = { waiting: [], refused: [], unsealed: false, digest: "d1" };
 
 const LOOSENED: PolicyState = {
   waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
   refused: [],
   unsealed: false,
+  digest: "d1",
 };
 
 function core(state: PolicyState, after: PolicyState = QUIET) {
@@ -53,7 +54,9 @@ describe("the project's policy (Q308a)", () => {
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
     await waitFor(() => expect(screen.getByText(/guards\.merge from enforce to log/)).toBeTruthy());
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-    await waitFor(() => expect(asked("accept_project_policy")).toEqual([{ plane: PLANE }]));
+    await waitFor(() =>
+      expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]),
+    );
     await waitFor(() => expect(screen.queryByText(/guards\.merge from/)).toBeNull());
   });
 
@@ -78,13 +81,16 @@ describe("the project's policy (Q308a)", () => {
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });
 
-  it("says an acceptance whose seal does not hold counts as none", async () => {
-    core({ ...QUIET, unsealed: true });
+  it("says an acceptance that does not hold enforces everything, and offers the press again", async () => {
+    const asked = core({ ...QUIET, unsealed: true, digest: "d2" });
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
     await waitFor(() =>
-      expect(screen.getByText(/does not hold, so it counts as none/)).toBeTruthy(),
+      expect(screen.getByText(/does not hold, so every family is enforced/)).toBeTruthy(),
     );
-    // Never a bulk re-seal: with nothing waiting, there is nothing to accept.
-    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    // The press accepts the committed file as it was shown, never what was kept before.
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() =>
+      expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d2" }]),
+    );
   });
 });

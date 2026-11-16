@@ -2521,41 +2521,37 @@ fn later_code_names_moved_by_xdg_folders_are_held_where_they_moved() {
     }
 }
 
-/// **The floor's refusal of programs follows the `processes` family** (Q308a): enforced, the wrap
-/// refuses `launchctl`, `osascript`, `open`, cron and Apple Events; off, it does not; and `log`
-/// lifts it as `off` does, since a kernel's refusal cannot log and allow. A loosening holds only
-/// once the person pressed.
+/// **The floor's refusal of programs holds under every `[policy]`** (the review of #6992, B1): a
+/// program launchd, Launch Services or cron runs is outside the wrap, where a chat could read the
+/// vaults and write the project's settings, so the floor refuses `launchctl`, `osascript`,
+/// `open`, cron and Apple Events whatever the template and the `processes` family say, a
+/// pressed `open` included.
 #[test]
-fn the_floors_refusal_of_programs_follows_the_processes_family() {
+fn the_floors_refusal_of_programs_holds_under_every_policy() {
     let _home = super::local::OwnConfigHome::new();
     let bin = tempfile::tempdir().expect("a bin");
     let machine = machine_with(bin.path());
-    for (mode, refused) in [("enforce", true), ("off", false), ("log", false)] {
+    for policy in [
+        "[policy]\ntemplate = \"strict\"\n",
+        "",
+        "[policy]\ntemplate = \"watch\"\nprocesses = \"off\"\n",
+        "[policy]\ntemplate = \"open\"\n",
+    ] {
         let (_dir, root) = project();
-        std::fs::write(
-            root.join("charter.toml"),
-            format!("schema = 1\n[policy]\ntemplate = \"strict\"\nprocesses = \"{mode}\"\n"),
-        )
-        .expect("charter.toml");
-        // The first start accepts strict; the person's press accepts the family's mode.
+        std::fs::write(root.join("charter.toml"), format!("schema = 1\n{policy}"))
+            .expect("charter.toml");
         crate::enforcement::at_start(&root);
-        crate::enforcement::press(&root).expect("pressed");
+        crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
         for harness in [Harness::Codex, Harness::Opencode] {
             let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
-            assert_eq!(
-                profile.contains("(literal \"/usr/bin/osascript\")"),
-                refused,
-                "{mode} {harness:?}"
-            );
-            assert_eq!(
-                profile.contains("(deny lsopen)"),
-                refused,
-                "{mode} {harness:?}"
-            );
-            // Sockets and this machine's ports are the ports family's, held either way.
             assert!(
-                profile.contains("(deny network-outbound (remote unix-socket))"),
-                "{mode} {harness:?}"
+                profile.contains("(literal \"/usr/bin/osascript\")"),
+                "{policy:?} {harness:?}"
+            );
+            assert!(profile.contains("(deny lsopen)"), "{policy:?} {harness:?}");
+            assert!(
+                profile.contains("(deny job-creation)"),
+                "{policy:?} {harness:?}"
             );
         }
     }

@@ -1702,3 +1702,29 @@ fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_o
     );
     assert_eq!(decision(&String::from_utf8_lossy(&out.stdout)), None);
 }
+
+/// **A hook the app does not answer runs every family enforced** (the review of #6992, B2 and
+/// B3): a project whose committed `[policy]` says `open` still has its hook skip refused when no
+/// app answers this hook — its environment scrubbed of the hook socket, or naming one nothing
+/// listens on — and neither the folder nor a variable it names loosens anything.
+#[test]
+fn a_hook_no_app_answers_refuses_as_strict_whatever_the_project_says() {
+    let plane = tempfile::tempdir().expect("a directory");
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("the marker");
+    let gone = plane.path().join("nobody-listens.sock");
+    let gone = gone.to_str().expect("a path");
+    let all_off = "guards.save=off,guards.git=off,secrets=off";
+    for env in [
+        &[][..],
+        &[("PURLIS_HOOK_SOCKET", gone), ("PURLIS_CHAT", "7")][..],
+        &[("PURLIS_POLICY", all_off), ("PURLIS_ROOT", "/tmp")][..],
+    ] {
+        let (code, out, err) = guard(plane.path(), &bash("git commit --no-verify -m x"), env);
+        assert_eq!(code, 0, "{err}");
+        assert!(decision(&out).is_some(), "refused under {env:?}: {out:?}");
+    }
+}

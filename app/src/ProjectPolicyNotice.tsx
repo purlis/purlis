@@ -15,7 +15,7 @@ export const mayAcceptPolicy = (): boolean => inTheWindow(commands, "acceptProje
 
 /** What Accept means, after the families that wait. */
 export const POLICY_ACCEPT_MEANS =
-  "Accept, and your chats here run that way from their next start. Until you do, they keep what you accepted before.";
+  "Accept, and your chats here run that way from now on. Until you do, they keep what you accepted before.";
 
 /** The families that wait, one clause each: "guards.merge from enforce to log". */
 export const waitingSaid = (state: PolicyState): string =>
@@ -66,7 +66,7 @@ export function ProjectPolicyNotice({
     setBusy(true);
     setSaid(undefined);
     void commands
-      .acceptProjectPolicy(plane)
+      .acceptProjectPolicy(plane, state.digest)
       .then((done) => {
         if (done.status !== "ok") {
           setSaid(done.error);
@@ -89,7 +89,7 @@ export function ProjectPolicyNotice({
       >
         <p>
           {state.refused.map((one) => inertly(one)).join(". ")}. Fix the project's settings file;
-          until then each of these is enforced.
+          until then every family is enforced.
         </p>
       </Notice>
     ) : null;
@@ -100,7 +100,7 @@ export function ProjectPolicyNotice({
   const body = (
     <p>
       {state.unsealed &&
-        "The policy this machine kept as accepted does not hold, so it counts as none. "}
+        "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again. "}
       {state.waiting.length > 0 &&
         `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}
@@ -110,7 +110,7 @@ export function ProjectPolicyNotice({
   return (
     <>
       {refused}
-      {canAccept && state.waiting.length > 0 ? (
+      {canAccept && (state.waiting.length > 0 || state.unsealed) ? (
         <Notice
           cause="policy-loosened"
           label="The project's policy"

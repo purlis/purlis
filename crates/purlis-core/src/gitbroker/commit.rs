@@ -1348,7 +1348,7 @@ fn scanned(top: &Path, message: &str, queue: &mut Option<String>) -> Result<(), 
         &mut scan.refused,
         &root,
         None,
-        &crate::enforcement::for_this_chat(&root, &|_| None),
+        &crate::enforcement::in_force(&root),
     );
     if scan.changes_the_allowlist {
         return Err(

@@ -762,11 +762,12 @@ export const commands = {
 	 */
 	projectPolicyState: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("project_policy_state", { plane })),
 	/**
-	 *  **Your press: accept the project's `[policy]` as its committed file says it now**, looser
-	 *  where it is looser, from each chat's next start. Sealed on this machine by the app; refused
-	 *  where it cannot be sealed. The window's alone.
+	 *  **Your press: accept the project's `[policy]` as its committed file said it when it was
+	 *  shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
+	 *  machine by the app; refused where it cannot be sealed, or where the file changed since it was
+	 *  shown. The window's alone.
 	 */
-	acceptProjectPolicy: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane })),
+	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -14123,6 +14124,11 @@ export type PolicyState = {
 	refused: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
+	/**
+	 *  The digest of the committed text this was read from: what Accept names, so a press on a
+	 *  file that changed since it was shown accepts nothing.
+	 */
+	digest: string,
 };
 
 /**  One family the project now runs looser than you accepted. */

@@ -1748,14 +1748,16 @@ of that name at that level replaces it.
   held as its change to `[sandbox]` is: the sandbox denies a chat writing the file, its commit
   of it is refused, and its brokered write is refused.
 - **Read by:** `purlis_core::enforcement::Settings::read`, with a real TOML parser.
-  **Resolved once, at a chat's start** (`enforcement::at_start`) and handed to its hooks in
-  `$PURLIS_POLICY`, which the app sets after anything a profile set and no chat inherits.
-  **A loosening waits for the person's press**: a start never resolves anything looser than
-  what this person last accepted
-  ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane), `policy_accepted`); a
-  tightening is accepted as the start reads it. A hook takes the stricter of what its chat
-  started with, what the file says now, and what the person accepted, so a tightening applies
-  at once and nothing a chat puts in its own environment loosens anything.
+  **Read at the plane root's `HEAD`**: a change not committed yet is not the project's.
+  **Only the app resolves it** (`enforcement::in_force`): the stricter of what the committed file
+  says now and what this person last accepted
+  ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane), `policy_accepted`). A
+  hook, a git hook or `purlis secret exec` asks the app over the hook socket, and **runs every
+  family enforced where the app does not answer**; no folder or variable a chat names is read
+  for it. **A loosening waits for the person's press**, bound to the digest of the committed
+  text the window showed, and applies from the press; a tightening applies at once, and a
+  chat's start keeps it as accepted. `$PURLIS_POLICY`, the start's resolution, can only
+  tighten.
   **A value it cannot read never loosens anything**: a template that is not one of the five is
   `strict`, a mode that is not one of the three is `enforce` for its family, and a key that is
   no family is not read; each is said in one sentence.
@@ -1765,11 +1767,11 @@ of that name at that level replaces it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. |
+| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. The sandbox level each template names is decided and wired in a later release; today `[sandbox]` decides it. |
 | `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. **Not switchable yet**: enforced. |
 | `ports` | as `network` | the template's | local sockets, listening and connect ports. **Not switchable yet**: enforced. |
-| `processes` | as `network` | the template's | the floor's refusal of `launchctl`, `osascript`, `open`, cron and Apple Events. A kernel's refusal cannot log, so `log` lifts it as `off` does. The full sandbox keeps its own. |
-| `guards.git` | as `network` | the template's | the Bash guard's git arms: the plane root's branch, reset and update (A3, A3b, A3c, A3d), a project's lock files (A9), a branch folder's `git add`/`commit` (A9b), and git in a branch folder another chat holds (A11). |
+| `processes` | as `network` | the template's | **Not switchable yet**: enforced. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
+| `guards.git` | as `network` | the template's | the Bash guard's git arms: a branch move and a destroying reset in the plane root (A3, A3b), and git in a branch folder another chat holds (A11). The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
 | `guards.merge` | as `network` | the template's | the merge hold: a chat's merge is refused and handed to the person. Under `log` nobody is asked. |
 | `guards.release` | as `network` | the template's | the release floor (A4), and a live substitution in a forge's prose (A5). |
 | `guards.save` | as `network` | the template's | personal data in what a chat commits and pushes, a commit that skips the hooks (A8), and a live substitution in purlis's own text (A6). |
@@ -4767,10 +4769,13 @@ write into this folder cannot make its own text arrive as the person's.
 
 ### The seal's key — the keyring item `purlis-seal`
 - **What:** the random key purlis's app seals the answers this machine keeps with (rulings Q308b
-  and Q309): an HMAC-SHA256 over the answer's kind, the clone's key and its text. The first is
-  `policy_accepted` ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)).
-- **Format:** one generic password, service `purlis-seal`, account `answers`: 32 random bytes as
-  64 hex digits.
+  and Q309): an HMAC-SHA256 over the answer's kind, the plane's anchor (a digest of its real
+  path) and its text. And, beside it, each answer's **anchor**: the newest seal the app made of
+  it, so an answer removed or put back from before reads as broken. The answers are
+  `policy_accepted` ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)) and the
+  [nevers file](#appdispatch-neverjson).
+- **Format:** generic passwords under the service `purlis-seal`: the key at account `answers`,
+  32 random bytes as 64 hex digits; each anchor at account `<kind>:<anchor>`, the seal in hex.
 - **Status:** **internal** — **purlis only**.
 - **Tier:** Keyring — device-bound; never synced, never backed up. Lost, every sealed answer
   counts as none, and the shipped default stands until the person accepts again.
@@ -4810,10 +4815,14 @@ write into this folder cannot make its own text arrive as the person's.
   [`[policy]`](#policy--which-of-purliss-refusals-run) (rulings Q308a, Q308b): family key to
   mode, the least each family runs at here until you press to loosen it; a chat start keeps a
   tightening in it, and only the window's Accept keeps a loosening. `policy_seal` is its
-  [seal](#the-seals-key--the-keyring-item-purlis-seal), bound to this clone: an acceptance whose
-  seal does not hold, or one this process cannot verify, counts as none, the shipped default
-  (`watch`) stands, and the window says so. It is never re-sealed in bulk; only Accept on the
-  committed file as it stands replaces it.
+  [seal](#the-seals-key--the-keyring-item-purlis-seal), over `policy_counter` (one past the last
+  on every acceptance) and the pairs. **The app anchors the newest seal in the keyring before it
+  writes the record**, keyed by the plane's real path, never the clone key (a `.git` copied aside
+  and back makes a new clone key). With no anchor this is a fresh install and the shipped default
+  (`watch`) stands. **With an anchor, a record that is missing, edited, older, or under a clone
+  key that has none is broken**: every family is enforced, every dispatch across personas is
+  refused, and the window offers Accept on the committed file as it stands. It is never re-sealed
+  in bulk.
 - **`every-project.json`**, in the same folder: what you allowed **for every project on this
   machine** (the operator's ruling of 2026-10-13): `sockets` (local sockets, each as the kernel
   names it), `services` (system services, each by its whole name) and `granted` (when each was
@@ -6730,8 +6739,15 @@ down rather than read off the code.
   tab, the Notice says the list could not be read, and an Allow starts that one dispatch; a
   chat nobody is at is refused. A link, a folder or a file that cannot be read is the same. **A
   write never replaces what it could not read**: Never for this pair and Lift are refused with
-  a sentence, and the bytes stay as they are. Mending it is the person's: fix the file, or
-  delete it, which says never to nothing. No file is no nevers.
+  a sentence, and the bytes stay as they are. Mending it is the person's: restore the file
+  as purlis last wrote it.
+- **Presence marker** (the review of #6992, S4): each time the app writes the file it keeps
+  the [seal](#the-seals-key--the-keyring-item-purlis-seal) of its text in the keyring, under
+  the seal's service, account `dispatch-nevers:<clone key>` (**Tier:** Keyring). **A file
+  deleted or edited by anything but the app reads as unread**, as above, so a chat that runs
+  without a sandbox cannot say "no nevers" by removing them, under any `[policy]`. A file the
+  app never wrote is no nevers, and the first read in the app of one it never sealed seals it as
+  it stands. Only the app verifies it.
 - **Keys:** `never` — a list of `{"asking": persona, "target": persona}`. Each is matched
   exactly as it is spelled and is never dropped for its spelling: one whose names are no
   persona's refuses nothing real, and a `"*"` in one is not a pattern. An entry that is not two
@@ -7682,13 +7698,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   is about one. **Never a command, a path, a URL or a value.** `<chat>` is the chat's own id (its
   ULID, ADR 0066), as the app started its harness with it (`$PURLIS_CHAT_ULID`). A harness the
   app did not start has none, and writes nothing.
-- **Status:** **internal** — **purlis only**. Written by `purlis hook` and the git hooks for the
-  guards and the scan, and by `purlis secret exec` for masking. Best effort: a line that cannot
-  be written changes no outcome. **Out of a chat's reach**: the folder is in the app's own
-  (`app/`), which every harness's compiled sandbox denies a chat writing; a chat with no sandbox
-  runs as the person and can write it. A hook held whole inside purlis's wrap (Codex, opencode)
-  cannot write it either. A refusal the app judges for a chat it knows by number alone (a
-  brokered commit, a brokered `secret exec`) is let through under `log` with no line.
+- **Status:** **internal** — **purlis only**. **Written by the app alone**: a hook, a git hook
+  or `purlis secret exec` hands its line to the app over the hook socket, which writes it under
+  its own record of the chat; a line with no chat it can name is written as chat `unknown`.
+  Best effort: a line that cannot be written changes no outcome. **Out of a chat's reach**: the
+  folder is in the app's own (`app/`), which every harness's compiled sandbox denies a chat
+  writing; a chat with no sandbox runs as the person and can write it.
 - **Tier:** Clone state, transient — what a chat was let do past a rule; lost, nothing is
   allowed or refused differently.
 - **Written by:** `purlis_core::enforcement::record`.

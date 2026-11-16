@@ -140,7 +140,7 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     };
     // How each family of refusals runs for this chat (Q308, Q308a): as its start resolved the
     // project's `[policy]`, made stricter by what the project says now.
-    let policy = purlis_core::enforcement::for_this_chat(&root, &purlis_core::envvar::var);
+    let policy = purlis_core::enforcement::in_force(&root);
     let chat = purlis_core::enforcement::this_chat();
     let judged = toolgate::judged(&call, plane.as_ref(), &|family| policy.mode(family));
     for logged in &judged.logged {
@@ -199,9 +199,8 @@ fn log_verdict(root: &Path, chat: Option<&str>, family: Family, verdict: &toolga
         Some(arm) => arm.id(),
         None => &verdict.reason,
     };
-    if let Some(chat) = chat {
-        purlis_core::enforcement::record(root, chat, family, rule, None);
-    }
+    let chat = chat.unwrap_or(purlis_core::enforcement::UNKNOWN_CHAT);
+    purlis_core::enforcement::record(root, chat, family, rule, None);
 }
 
 /// How long the guard waits for the app to say whether this chat is attended (R-109): the app

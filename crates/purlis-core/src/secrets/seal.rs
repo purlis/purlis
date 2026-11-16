@@ -127,6 +127,54 @@ pub fn holds(seal: &str, kind: &str, clone: &str, text: &str) -> bool {
 }
 
 #[cfg(test)]
+thread_local! {
+    /// A test's keyring of kept seals: account to seal.
+    static TEST_KEPT: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// The keyring account a kept seal of `kind` for the clone keyed `clone` is under.
+fn kept_account(kind: &str, clone: &str) -> String {
+    format!("{kind}:{clone}")
+}
+
+/// **Keeps the seal of `text` in the keyring**, an item only the app makes (the review of #6992,
+/// S4): a presence marker, so an answer's file that is deleted or edited where the app did not
+/// write it is told from one that was never written. `false` where this process cannot seal.
+pub fn keep(kind: &str, clone: &str, text: &str) -> bool {
+    let Some(seal) = sealed(kind, clone, text) else {
+        return false;
+    };
+    let account = kept_account(kind, clone);
+    #[cfg(test)]
+    {
+        TEST_KEPT.with(|kept| kept.borrow_mut().insert(account, seal));
+        true
+    }
+    #[cfg(not(test))]
+    {
+        super::keyhold::make_own(SERVICE, &account, &seal).is_ok()
+    }
+}
+
+/// **Whether the seal kept for `kind` and `clone` holds for `text`**: `None` where none was ever
+/// kept, or this process cannot verify (only the app can); `Some(false)` where one was kept and
+/// `text` is not what it sealed, or the keyring cannot be read.
+pub fn kept_holds(kind: &str, clone: &str, text: &str) -> Option<bool> {
+    key()?;
+    let account = kept_account(kind, clone);
+    #[cfg(test)]
+    let seal = TEST_KEPT.with(|kept| kept.borrow().get(&account).cloned())?;
+    #[cfg(not(test))]
+    let seal = match ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()) {
+        Ok(seal) => seal,
+        Err(::keyring::Error::NoEntry) => return None,
+        Err(_) => return Some(false),
+    };
+    Some(holds(&seal, kind, clone, text))
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -10835,6 +10835,11 @@ export type PolicyState = {
 	refused: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
+	/**
+	 *  The digest of the committed text this was read from: what Accept names, so a press on a
+	 *  file that changed since it was shown accepts nothing.
+	 */
+	digest: string,
 };
 
 /**  One family the project now runs looser than you accepted. */

@@ -22,7 +22,7 @@ guards.release = "log"     # one family, apart from the template
 
 ## Templates
 
-| Template | What runs | Sandbox |
+| Template | What runs | Sandbox (wired in a later release; today `[sandbox]` decides) |
 |---|---|---|
 | `open` | nothing | none |
 | `watch` (the default) | everything logs; `secrets`, `vaults` and `guards.credential` are enforced | the floor |
@@ -32,18 +32,21 @@ guards.release = "log"     # one family, apart from the template
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
-the git, merge, release, save and credential guards, `secrets`, `processes`, `dispatch` (a pair
+the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
 nothing covers starts with no grant) and `asks` (a host is answered Allow) switch; every other
 family is a key already and stays enforced until it is wired. Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
 
 ## Who can change it
 
+- **Only a committed change counts**: the file is read as it stands at the plane root's `HEAD`.
 - **A tightening applies at once**, to every chat, from its next tool call.
 - **A loosening waits for your press.** The window names each family the project now runs looser
-  than you accepted, with **Accept**. Until you press it, your chats keep what you accepted
-  before. What you accepted is kept on this machine, sealed by purlis's app; a chat can neither
-  press Accept nor write it.
+  than you accepted, with **Accept**, which accepts exactly the text it showed you. Until you
+  press it, your chats keep what you accepted before. What you accepted is kept on this machine,
+  sealed by purlis's app; a chat can neither press Accept nor write it.
+- **Only the app decides.** A hook or a command a chat runs asks the app, and refuses as `strict`
+  does where the app does not answer.
 - **A chat cannot change `[policy]`.** Its write of the settings file is refused, and so is its
   commit of a change to the table. A branch folder's copy of the file is never read.
 - **Your local settings file can only make a family stricter.**

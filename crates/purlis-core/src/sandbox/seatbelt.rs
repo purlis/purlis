@@ -89,9 +89,6 @@ pub struct Own {
     pub after: Vec<String>,
     /// At the floor, the held folders a person let this chat write ([`floor_planted_rules_but`]).
     pub lifted: Vec<PathBuf>,
-    /// At the floor, whether programs are let out ([`super::Widened::processes_lifted`]):
-    /// [`FLOOR_PROCESSES`] is then left out.
-    pub processes_lifted: bool,
 }
 
 /// `text` as an SBPL string, or [`CONTROL`].
@@ -364,7 +361,6 @@ pub const TRUST: &str = "(allow mach-lookup (global-name \"com.apple.trustd.agen
 /// (D-1337-7, R1).
 pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str> {
     own.lifted.extend(widened.lifted.iter().cloned());
-    own.processes_lifted |= widened.processes_lifted;
     if let Some(caches) = &widened.caches {
         for tree in &caches.trees {
             own.allow.push(format!("(subpath {})", quote(tree)?));
@@ -667,10 +663,11 @@ pub fn floor_profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     let mut out = String::from(FLOOR_BASE);
-    // The `processes` family (Q308a): left out where the project's `[policy]` does not enforce it.
-    if !own.processes_lifted {
-        out.push_str(FLOOR_PROCESSES);
-    }
+    // Nothing started outside the profile, whatever the project's `[policy]` says: a program
+    // launchd, Launch Services or cron runs is outside every wrap, where a chat could read the
+    // vaults and write the project's settings (the review of #6992, B1). Part of the floor, not
+    // of the `processes` family.
+    out.push_str(FLOOR_PROCESSES);
     out.push_str(FLOOR_HELD);
     out.push_str(&terminal_rules());
     let mut line = |text: String| {
@@ -885,8 +882,8 @@ fn vault_rules(ops: &str) -> Result<Vec<String>, &'static str> {
     Ok(rules)
 }
 
-/// What the floor holds of programs ([`floor_profile`]): nothing started outside the profile.
-/// The `processes` family (Q308a): left out where the project's `[policy]` does not enforce it.
+/// What the floor holds of programs ([`floor_profile`]): nothing started outside the profile,
+/// whatever the project's `[policy]` says, since a program started there runs outside the wrap.
 pub const FLOOR_PROCESSES: &str = "(deny appleevent-send)
 (deny lsopen)
 (deny job-creation)

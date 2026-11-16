@@ -97,7 +97,29 @@ fn a_family_overrides_its_template_and_the_guards_are_dotted_keys() {
 }
 
 #[test]
-fn a_bad_value_means_enforce_and_is_said() {
+fn a_bad_value_means_strict_and_is_said() {
+    for text in [
+        "[policy]\ntemplate = \"open\"\nnetwork = \"maybe\"\n",
+        "[policy]\ntemplate = \"open\"\nwifi = \"off\"\n",
+        "[policy]\ntemplate = \"lenient\"\n",
+        "[policy\nthis is not toml",
+    ] {
+        let settings = said(text);
+        assert_eq!(settings.template, Template::Strict, "{text:?}");
+        for family in Family::ALL {
+            assert_eq!(
+                settings.mode(family),
+                Mode::Enforce,
+                "{text:?} {}",
+                family.key()
+            );
+        }
+        assert!(!settings.refused.is_empty(), "{text:?}");
+    }
+}
+
+#[test]
+fn a_bad_value_is_said_one_sentence_each() {
     let settings = said("[policy]\ntemplate = \"lenient\"\nnetwork = \"maybe\"\nwifi = \"off\"\n");
     assert_eq!(settings.template, Template::Strict);
     assert_eq!(settings.mode(Family::Network), Mode::Enforce);
@@ -247,7 +269,7 @@ fn a_loosening_waits_for_the_persons_press_and_a_tightening_does_not() {
                 && *now == Mode::Off)
     );
     // The person presses: the next start runs open.
-    press(root.path()).expect("the press is kept");
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
     assert_eq!(at_start(root.path()).mode(Family::GuardsGit), Mode::Off);
     assert!(waiting(root.path()).is_empty());
 }
@@ -261,63 +283,110 @@ fn before_any_press_a_project_runs_no_looser_than_watch() {
     assert_eq!(resolved.mode(Family::Secrets), Mode::Enforce);
 }
 
-#[test]
-fn a_hook_takes_the_stricter_of_its_start_and_the_file_now() {
-    let _home = OwnConfigHome::new();
-    let root = plane("[policy]\ntemplate = \"watch\"\n", None);
-    let started = at_start(root.path()).spelled();
-    let env = |name: &str| (name == ENV).then(|| started.clone());
-    assert_eq!(
-        for_this_chat(root.path(), &env).mode(Family::GuardsGit),
-        Mode::Log
-    );
-    // Tightened mid-chat: at once.
-    std::fs::write(
-        root.path().join("charter.toml"),
-        "[policy]\ntemplate = \"strict\"\n",
-    )
-    .expect("the committed file");
-    assert_eq!(
-        for_this_chat(root.path(), &env).mode(Family::GuardsGit),
-        Mode::Enforce
-    );
+/// Every family enforced.
+fn strict() -> Resolved {
+    Resolved::all(Mode::Enforce)
 }
 
 #[test]
-fn a_branch_folders_file_never_loosens_what_the_chat_started_with() {
+fn a_process_that_is_not_the_app_and_has_no_answer_runs_strict() {
+    // The review of #6992, B2: no seal key in this thread, no answer from the app.
     let _home = OwnConfigHome::new();
-    let root = plane("[policy]\ntemplate = \"strict\"\n", None);
-    let started = at_start(root.path()).spelled();
-    // A branch folder of the plane carries its own committed file, saying open.
-    let branch = plane("[policy]\ntemplate = \"open\"\n", None);
-    let env = |name: &str| (name == ENV).then(|| started.clone());
-    for family in Family::ALL {
-        assert_eq!(
-            for_this_chat(branch.path(), &env).mode(family),
-            Mode::Enforce,
-            "{}",
-            family.key()
-        );
-    }
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("pressed in the app");
+    crate::secrets::seal::set_for_this_test(None);
+    set_in_the_app_for_this_test(false);
+    let resolved = in_force(root.path());
+    set_in_the_app_for_this_test(true);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(resolved, strict());
 }
 
 #[test]
-fn a_chats_own_environment_never_loosens_what_the_person_accepted() {
+fn a_process_that_is_not_the_app_takes_the_apps_answer_and_never_the_folder_it_names() {
+    let _home = OwnConfigHome::new();
+    // The folder a process might name as its plane says strict; the app answered watch, and
+    // its answer is all there is: the folder is never read.
+    let named = plane("[policy]\ntemplate = \"strict\"\n", None);
+    let watch = Resolved::of(&Settings::default(), &Locks::none());
+    crate::secrets::seal::set_for_this_test(None);
+    set_in_the_app_for_this_test(false);
+    answered_by_the_app(Some(watch.clone()));
+    let resolved = in_force(named.path());
+    set_in_the_app_for_this_test(true);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(resolved, watch);
+    assert_eq!(resolved.mode(Family::GuardsGit), Mode::Log);
+}
+
+#[test]
+fn in_the_app_a_press_reaches_every_chat_at_once() {
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"strict\"\n", None);
     at_start(root.path());
-    // The project loosens to open, unpressed; the chat's own command names everything off.
     std::fs::write(
         root.path().join("charter.toml"),
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("the committed file");
-    let all_off = Resolved::all(Mode::Off).spelled();
-    let env = |name: &str| (name == ENV).then(|| all_off.clone());
+    // Loosened in the file, not pressed: still strict, and a tightening is never waited for.
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Enforce);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+}
+
+#[test]
+fn a_press_on_a_file_that_changed_since_it_was_shown_accepts_nothing() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"hold\"\n", None);
+    at_start(root.path());
+    let shown = digest_of(root.path());
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("changed after it was shown");
+    assert!(press(root.path(), &shown).is_err());
     assert_eq!(
-        for_this_chat(root.path(), &env).mode(Family::GuardsGit),
+        accepted(root.path()).mode(Family::GuardsMerge),
         Mode::Enforce
     );
+}
+
+#[test]
+fn the_committed_file_is_read_at_head_not_as_the_working_tree_has_it() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"strict\"\n", None);
+    let git = |args: &[&str]| {
+        let mut git = std::process::Command::new("git");
+        git.arg("-C")
+            .arg(root.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+        let ran = crate::forklock::output(&mut git).expect("git runs");
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    };
+    git(&["init", "-q"]);
+    git(&["add", "charter.toml"]);
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "p",
+    ]);
+    // Loosened in the working tree, never committed: not the project's.
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("the working tree");
+    assert_eq!(Settings::read(root.path()).template, Template::Strict);
 }
 
 #[test]
@@ -422,7 +491,7 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
             crate::secrets::masked_of(root.path(), Some(CHAT), &values),
             values.as_slice()
         );
-        press(root.path()).expect("the press is kept");
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
         assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
@@ -433,7 +502,7 @@ fn an_acceptance_whose_seal_does_not_hold_counts_as_none() {
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     at_start(root.path());
-    press(root.path()).expect("the press is kept");
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
     assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Off);
     // Something other than the app writes an acceptance of its own beside the seal.
     let file = crate::sandbox::local::path(root.path());
@@ -442,9 +511,9 @@ fn an_acceptance_whose_seal_does_not_hold_counts_as_none() {
     doc["policy_accepted"]["guards.release"] = serde_json::json!("enforce");
     std::fs::write(&file, doc.to_string()).expect("written");
     assert!(crate::sandbox::local::policy_unsealed(root.path()));
-    // No acceptance: the shipped default stands until the person presses again.
-    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Log);
-    assert_eq!(at_start(root.path()).mode(Family::GuardsGit), Mode::Log);
+    // One was kept, and this is not it: strict until the person presses again.
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Enforce);
+    assert_eq!(at_start(root.path()).mode(Family::GuardsGit), Mode::Enforce);
 }
 
 #[test]
@@ -452,8 +521,215 @@ fn a_process_that_cannot_seal_cannot_accept_a_loosening() {
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     crate::secrets::seal::set_for_this_test(None);
-    let pressed = press(root.path());
+    let pressed = press(root.path(), &digest_of(root.path()));
     crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
     assert!(pressed.is_err());
     assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Log);
+}
+
+/// The machine file's text, and a way to put it back.
+fn machine_file(root: &Path) -> std::path::PathBuf {
+    crate::sandbox::local::path(root)
+}
+
+#[test]
+fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
+    // The review of #6992's M75 round, B1: deleting the sealed record never drops a forbid.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    let file = machine_file(root.path());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("kept")).expect("JSON");
+    let object = doc.as_object_mut().expect("an object");
+    object.remove("policy_accepted");
+    object.remove("policy_seal");
+    std::fs::write(&file, doc.to_string()).expect("written");
+    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+}
+
+#[test]
+fn an_older_sealed_acceptance_put_back_reads_as_strict() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed open");
+    let file = machine_file(root.path());
+    let open_copy = std::fs::read_to_string(&file).expect("kept");
+    // The project tightens; the app keeps that as accepted.
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("tightened");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Enforce);
+    // Something puts back the older, sealed, looser copy, and loosens the file again.
+    std::fs::write(&file, open_copy).expect("replayed");
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("loosened");
+    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+}
+
+#[test]
+fn a_tightening_the_app_saw_holds_when_the_committed_file_goes_back() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"watch\"\n", None);
+    assert_eq!(in_force(root.path()).mode(Family::GuardsMerge), Mode::Log);
+    // Tightened, seen once by the app (no chat start in between)...
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"hold\"\n",
+    )
+    .expect("tightened");
+    assert_eq!(
+        in_force(root.path()).mode(Family::GuardsMerge),
+        Mode::Enforce
+    );
+    // ...then rolled back: the forbid stays until the person presses.
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"watch\"\n",
+    )
+    .expect("rolled back");
+    assert_eq!(
+        in_force(root.path()).mode(Family::GuardsMerge),
+        Mode::Enforce
+    );
+}
+
+#[test]
+fn with_no_anchor_a_fresh_install_runs_the_shipped_default() {
+    // The M75 review, round 2: no keyring anchor and no record is a fresh install.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    assert_eq!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Never
+    );
+    assert_eq!(
+        accepted(root.path()),
+        Resolved::of(&Settings::default(), &Locks::none())
+    );
+}
+
+#[test]
+fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
+    // The M75 review, round 2: the anchor in the keyring is the newest the app has seen, so a
+    // machine file restored whole from before a tightening is older than it.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"watch\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("watch accepted");
+    let file = machine_file(root.path());
+    let before = std::fs::read_to_string(&file).expect("kept at watch");
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("tightened");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Enforce);
+    std::fs::write(&file, before).expect("restored from before");
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"watch\"\n",
+    )
+    .expect("loosened");
+    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+}
+
+/// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
+fn a_dispatch_across_personas(root: &Path) -> crate::dispatchgrant::Covers {
+    crate::dispatchgrant::covers(
+        Some("steward"),
+        "devops",
+        &crate::dispatchgrant::InForce::read(root, Vec::new()),
+        &Locks::none(),
+    )
+}
+
+#[test]
+fn a_record_removed_under_its_anchor_refuses_every_dispatch_across_personas() {
+    // The M75 review (instruction 63): `strict` alone would drop the forbids and nevers the lost
+    // record carried, so a dispatch to another persona is refused until the person presses.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert!(!broken(root.path()));
+    let file = machine_file(root.path());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("kept")).expect("JSON");
+    let object = doc.as_object_mut().expect("an object");
+    object.remove("policy_accepted");
+    object.remove("policy_seal");
+    std::fs::write(&file, doc.to_string()).expect("written");
+    assert!(broken(root.path()));
+    assert_eq!(
+        a_dispatch_across_personas(root.path()),
+        crate::dispatchgrant::Covers::Unread
+    );
+    // The press, on the committed file as it stands, mends it.
+    press(root.path(), &digest_of(root.path())).expect("pressed again");
+    assert!(!broken(root.path()));
+    assert_ne!(
+        a_dispatch_across_personas(root.path()),
+        crate::dispatchgrant::Covers::Unread
+    );
+}
+
+#[test]
+fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
+    // The M75 review, round 3: the clone key carries the identity of `.git`, so copying it aside
+    // and back makes a new one. The anchor is keyed by the plane's real path, so the record that
+    // clone key lacks is a record gone, not a fresh install.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    let git = |args: &[&str]| {
+        let mut git = std::process::Command::new("git");
+        git.current_dir(root.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+        let ran = crate::forklock::output(&mut git).expect("git runs");
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    };
+    git(&["init", "-q"]);
+    git(&["add", "charter.toml"]);
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "p",
+    ]);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    let before = crate::sandbox::local::clone_key(root.path());
+    let dot_git = root.path().join(".git");
+    let copy = root.path().join("g");
+    let mut cp = std::process::Command::new("cp");
+    cp.arg("-R").arg(&dot_git).arg(&copy);
+    assert!(
+        crate::forklock::output(&mut cp)
+            .expect("cp runs")
+            .status
+            .success()
+    );
+    std::fs::rename(&dot_git, root.path().join("old")).expect("aside");
+    std::fs::rename(&copy, &dot_git).expect("back");
+    assert_ne!(
+        crate::sandbox::local::clone_key(root.path()),
+        before,
+        "a new clone key"
+    );
+    assert!(broken(root.path()));
+    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(
+        a_dispatch_across_personas(root.path()),
+        crate::dispatchgrant::Covers::Unread
+    );
 }

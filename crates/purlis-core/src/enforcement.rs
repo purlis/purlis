@@ -33,9 +33,9 @@
 //!   writes). A tightening is accepted as the start reads it; a loosening waits for the person's
 //!   press in the window ([`press`]). Before the first start the accepted is the shipped
 //!   default, `watch`, which the upgrade announces once.
-//! - A hook takes the stricter of what its chat started with, what the plane root's file says
-//!   now, and what this person accepted ([`for_this_chat`]): a tightening applies at once, a
-//!   loosening never mid-chat, and nothing a chat puts in its own environment loosens anything.
+//! - **Only the app resolves it** ([`in_force`]): a hook, a git hook or `purlis secret exec`
+//!   asks the app over the hook socket, and runs `strict` where the app does not answer.
+//!   Nothing a chat puts in its own environment, and no folder it names, loosens anything.
 //!
 //! **A value purlis cannot read never loosens anything**: an unknown template is `strict`, an
 //! unknown mode is `enforce` for its family, and each is said ([`Settings::refused`]) for the
@@ -219,6 +219,9 @@ impl Family {
     ///   is answered Allow; a lock and the person's nevers and Keep blocked hold in every mode;
     /// - `network` and `ports`: the egress proxy's refusal is its live ask, and a port or socket
     ///   is a sandbox grant, both held with the above;
+    /// - `processes`: the wrap's refusal of programs that would run outside it (`launchctl`,
+    ///   `osascript`, `open`, cron, Apple Events) is part of the sandbox, kept whenever a wrap is
+    ///   applied (the review of #6992); what the family may lift beyond that is the follow-up's;
     /// - `skills`: every skills refusal a chat meets is a hand-over to the person (a draft, a
     ///   proposal) or the org's `[skill_policy]` on an install only the window makes, so which
     ///   of them the family switches needs a ruling;
@@ -228,8 +231,7 @@ impl Family {
     pub fn switchable(self) -> bool {
         matches!(
             self,
-            Family::Processes
-                | Family::Dispatch
+            Family::Dispatch
                 | Family::Asks
                 | Family::GuardsGit
                 | Family::GuardsMerge
@@ -395,10 +397,32 @@ impl Settings {
     /// What `text`, a settings file, says; the default where it is `None`, holds no `[policy]`,
     /// or is not TOML (that file's own reader says why).
     pub fn from_text(text: Option<&str>) -> Self {
-        let Some(table) = text
-            .and_then(|text| text.parse::<toml::Table>().ok())
-            .and_then(|top| top.get(TABLE).cloned())
-        else {
+        let mut said = Self::read_text(text);
+        // **Any value purlis cannot read means `strict`**, with the sentence for the Notice (the
+        // review of #6992, S6): a file that is not TOML, a key that is no family, a mode or a
+        // template that is none.
+        if !said.refused.is_empty() {
+            said.template = Template::Strict;
+            said.template_said = true;
+            said.overrides.clear();
+        }
+        said
+    }
+
+    fn read_text(text: Option<&str>) -> Self {
+        let Some(text) = text else {
+            return Self::default();
+        };
+        let Ok(top) = text.parse::<toml::Table>() else {
+            return Self {
+                refused: vec![
+                    "the project's settings file is not TOML, so every family is enforced"
+                        .to_owned(),
+                ],
+                ..Self::default()
+            };
+        };
+        let Some(table) = top.get(TABLE).cloned() else {
             return Self::default();
         };
         let mut said = Self::default();
@@ -476,12 +500,13 @@ impl Settings {
         }
     }
 
-    /// **The plane at `root`'s `[policy]`**: its committed file's, made stricter where the local
-    /// file is stricter, and never looser for anything the local file says (Q308a). `root` is
-    /// the plane root; a branch folder's own file is never asked.
+    /// **The plane at `root`'s `[policy]`**: its committed file's as it stands at the plane
+    /// root's `HEAD` ([`committed_text`], Q309 point 1), made stricter where the local file is
+    /// stricter, and never looser for anything the local file says (Q308a). `root` is the plane
+    /// root; a branch folder's own file is never asked.
     pub fn read(root: &Path) -> Self {
         use crate::settings::{Which, layer_text};
-        let mut project = Self::from_text(layer_text(root, Which::Shared).text());
+        let mut project = Self::from_text(committed_text(root).as_deref());
         let local = Self::from_text(layer_text(root, Which::Local).text());
         for family in Family::ALL {
             // Only what the local file says: a family it is silent on is the project's.
@@ -507,6 +532,34 @@ impl Settings {
             .copied()
             .unwrap_or_else(|| self.template.mode(family))
     }
+}
+
+/// How long reading the committed file at `HEAD` may take.
+const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **The plane root's committed settings file as it stands at `HEAD`** (Q309 point 1): a
+/// change not committed yet is not the project's. Where the plane is no git repository, the
+/// file as it stands is all there is. `None` where there is no such file.
+pub fn committed_text(root: &Path) -> Option<String> {
+    use crate::settings::{Which, layer_text};
+    let git = |args: &[&str]| {
+        crate::worktree::git::run(root, args, GIT_WAIT)
+            .ok()
+            .filter(crate::worktree::git::Run::ok)
+    };
+    if git(&["rev-parse", "--verify", "--quiet", "HEAD"]).is_none() {
+        return layer_text(root, Which::Shared).text().map(str::to_owned);
+    }
+    let file = Which::Shared.file_at(root);
+    git(&["show", &format!("HEAD:./{file}")]).map(|run| run.out)
+}
+
+/// **The digest of what the press accepts** (the review of #6992, S2): of the committed text the
+/// window showed, so a press refuses a file that changed since.
+pub fn digest_of(root: &Path) -> String {
+    use sha2::Digest;
+    let text = committed_text(root).unwrap_or_default();
+    crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
 }
 
 /// How every family runs for one chat: what [`at_start`] resolved.
@@ -625,23 +678,44 @@ pub fn committed(root: &Path) -> Resolved {
 }
 
 /// **What this person last accepted** for the project at `root`: the shipped default, `watch`,
-/// before anything was kept (the upgrade announces it once).
+/// where nothing was ever kept (the upgrade announces it once); **`strict`** where one was kept
+/// and what is here now is not it (the review of #6992): removed, edited, an older copy put back,
+/// or a process that cannot verify it.
 pub fn accepted(root: &Path) -> Resolved {
-    crate::sandbox::local::policy_accepted(root)
-        .map(|kept| Resolved::of_kept(&kept))
-        .unwrap_or_else(|| {
+    use crate::sandbox::local::PolicyAccepted;
+    match crate::sandbox::local::policy_accepted_record(root) {
+        PolicyAccepted::Held(kept) => Resolved::of_kept(&kept),
+        PolicyAccepted::Never => {
             Resolved::of(&Settings::default(), &crate::sandbox::policy::Locks::none())
-        })
+        }
+        PolicyAccepted::Broken => Resolved::all(Mode::Enforce),
+    }
 }
 
-/// **How a chat starting in the project at `root` runs** (Q308a): the stricter of what the
-/// project says now and what this person last accepted, and kept as accepted, so a tightening
-/// holds until the person presses to loosen it. Best effort: an acceptance that cannot be kept
-/// changes nothing this start resolves.
+/// **Whether what this person accepted was kept and is not here now** (the M75 review): removed,
+/// edited, an older copy put back, or a `.git` moved so the clone looks new. Then every family is
+/// enforced, every dispatch across personas is refused, and the window offers the press again.
+/// Only the app can tell.
+pub fn broken(root: &Path) -> bool {
+    in_the_app()
+        && crate::sandbox::local::policy_accepted_record(root)
+            == crate::sandbox::local::PolicyAccepted::Broken
+}
+
+/// **How a chat starting in the project at `root` runs** (Q308a): [`in_force`], which in the app
+/// keeps every tightening it sees as accepted.
 pub fn at_start(root: &Path) -> Resolved {
-    let resolved = committed(root).stricter(&accepted(root));
-    if crate::sandbox::local::policy_accepted(root).map(|kept| Resolved::of_kept(&kept))
-        != Some(resolved.clone())
+    in_force(root)
+}
+
+/// **The app's view**: the stricter of what the project says now and what this person accepted,
+/// and **kept as accepted wherever it is stricter**, so a tightening holds until the person
+/// presses to loosen it, through a rolled-back `HEAD` or a broken file alike. Best effort: an
+/// acceptance that cannot be kept changes nothing this answers.
+fn resolved_in_the_app(root: &Path) -> Resolved {
+    let accepted = accepted(root);
+    let resolved = committed(root).stricter(&accepted);
+    if resolved != accepted
         && let Err(why) = crate::sandbox::local::accept_policy(root, resolved.as_kept())
     {
         tracing::warn!("purlis: the accepted policy was not kept ({why})");
@@ -660,7 +734,13 @@ pub fn waiting(root: &Path) -> Vec<(Family, Mode, Mode)> {
 /// it is looser, sealed by the app. Never a chat's: no sandboxed chat writes the file it is kept
 /// in, and only the app can seal it. One press, on the committed file as it stands; never a
 /// re-seal of an acceptance something else wrote.
-pub fn press(root: &Path) -> std::io::Result<()> {
+pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
+    if digest_of(root) != shown {
+        return Err(std::io::Error::other(
+            "the project's policy changed since it was shown, so nothing was accepted; look at \
+             it again",
+        ));
+    }
     crate::sandbox::local::accept_policy(root, committed(root).as_kept())
 }
 
@@ -674,6 +754,8 @@ pub struct Standing {
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
     pub unsealed: bool,
+    /// The digest of the committed text this was read from, which the press must name.
+    pub digest: String,
 }
 
 /// [`Standing`] for the project at `root`.
@@ -682,25 +764,103 @@ pub fn standing(root: &Path) -> Standing {
         waiting: waiting(root),
         refused: Settings::read(root).refused,
         unsealed: crate::sandbox::local::policy_unsealed(root),
+        digest: digest_of(root),
     }
 }
 
-/// **How `family` runs for the chat this process serves**, from a hook: the stricter of what its
-/// chat started with ([`ENV`], read through `env`), what the plane at `root` says now, and what
-/// this person accepted. A tightening applies at once; a loosening waits for a press and the
-/// next start. [`ENV`] can only ever tighten: a git hook runs under the environment the chat's
-/// own command gave it, so it is never trusted to loosen.
-pub fn for_this_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Resolved {
-    let now = committed(root).stricter(&accepted(root));
-    match env(ENV).filter(|said| !said.is_empty()) {
-        Some(started) => Resolved::parse(&started).stricter(&now),
-        None => now,
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for "this process is purlis's app": true unless the test says not.
+    static IN_THE_APP: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    /// A test's stand-in for what the app answered this process ([`answered_by_the_app`]).
+    static ANSWERED: std::cell::RefCell<Option<Resolved>> = const { std::cell::RefCell::new(None) };
+}
+
+/// **A test's process is not the app** (or is again) for this thread.
+#[cfg(test)]
+pub(crate) fn set_in_the_app_for_this_test(in_the_app: bool) {
+    IN_THE_APP.with(|held| held.set(in_the_app));
+    ANSWERED.with(|held| *held.borrow_mut() = None);
+}
+
+#[cfg(not(test))]
+static ANSWERED: std::sync::Mutex<Option<Option<Resolved>>> = std::sync::Mutex::new(None);
+
+/// How a process that is not the app asks the app for its chat's policy ([`ask_with`]).
+pub type Asker = fn() -> Option<Resolved>;
+
+static ASKER: std::sync::OnceLock<Asker> = std::sync::OnceLock::new();
+
+/// **How this process asks the app for its chat's policy** (the CLI's, over the hook socket):
+/// asked once, the first time a family's mode is needed. Where none is set, or the app does not
+/// answer, every family is enforced.
+pub fn ask_with(asker: Asker) {
+    let _ = ASKER.set(asker);
+}
+
+/// Whether this process is purlis's app: the one process that can verify what the person
+/// accepted ([`crate::secrets::seal`]).
+pub fn in_the_app() -> bool {
+    #[cfg(test)]
+    {
+        IN_THE_APP.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        crate::secrets::keyhold::is_the_app()
     }
 }
 
-/// [`for_this_chat`], with the process's own environment, for one family.
+/// **What the app answered this process about its chat's policy** ([`crate::hookwire::Ask::Policy`]),
+/// kept for the process's life: a hook, a git hook or `purlis secret exec` asks once, first.
+/// `None` where nobody answered, which leaves every family enforced.
+pub fn answered_by_the_app(resolved: Option<Resolved>) {
+    #[cfg(test)]
+    ANSWERED.with(|held| *held.borrow_mut() = resolved);
+    #[cfg(not(test))]
+    if let Ok(mut held) = ANSWERED.lock() {
+        *held = Some(resolved);
+    }
+}
+
+fn answered() -> Option<Resolved> {
+    #[cfg(test)]
+    {
+        ANSWERED.with(|held| held.borrow().clone())
+    }
+    #[cfg(not(test))]
+    {
+        let Ok(mut held) = ANSWERED.lock() else {
+            return None;
+        };
+        held.get_or_insert_with(|| ASKER.get().and_then(|ask| ask()))
+            .clone()
+    }
+}
+
+/// **How every family runs here, for the project at `root`** (Q308a, and the review of #6992):
+///
+/// - **In the app**, which alone can verify what the person accepted: the stricter of what the
+///   plane root's committed file says now and what this person accepted. A press reaches every
+///   chat at once, through the app's answers.
+/// - **Anywhere else** (a hook, a git hook, `purlis secret exec`): what the app answered this
+///   process ([`answered_by_the_app`]), or **`strict`** where it did not answer. `root` is never
+///   read there: a process a chat starts can name any folder as its plane, so nothing it names
+///   can loosen anything. [`ENV`], the start's resolution, can only tighten.
+pub fn in_force(root: &Path) -> Resolved {
+    if in_the_app() {
+        return resolved_in_the_app(root);
+    }
+    let asked = answered().unwrap_or_else(|| Resolved::all(Mode::Enforce));
+    match crate::envvar::var(ENV).filter(|said| !said.is_empty()) {
+        Some(started) => asked.stricter(&Resolved::parse(&started)),
+        None => asked,
+    }
+}
+
+/// [`in_force`], for one family.
 pub fn mode(root: &Path, family: Family) -> Mode {
-    for_this_chat(root, &crate::envvar::var).mode(family)
+    in_force(root).mode(family)
 }
 
 /// **What a choke point does with a refusal of `family`** under `mode`: `Some(refusal)` where it
@@ -718,9 +878,7 @@ pub fn judged<T>(
     match mode {
         Mode::Enforce => Some(refusal),
         Mode::Log => {
-            if let Some(chat) = chat {
-                record(root, chat, family, rule, host);
-            }
+            record(root, chat.unwrap_or(UNKNOWN_CHAT), family, rule, host);
             None
         }
         Mode::Off => None,
@@ -761,10 +919,36 @@ pub struct Logged {
 /// The most of a rule id or a host a log line keeps, in characters.
 const MOST_CHARS: usize = 200;
 
-/// **Append one quiet line to chat `chat`'s enforcement log**: `family`'s `rule` would have
-/// refused, about `host` where there is one. Best effort: a log that cannot be written changes no
-/// outcome, and is said once to the process's own log. Never a Notice and never an ask.
+/// What a log line names as its chat where the process was not told which (Q308 review, S3).
+pub const UNKNOWN_CHAT: &str = "unknown";
+
+/// Where a process that is not the app sends its log lines: the app, over the hook socket
+/// ([`crate::hookwire::Ask::PolicyLog`]), since a process inside the wrap cannot write the log.
+pub type Sink = Box<dyn Fn(Family, &str, Option<&str>) + Send + Sync>;
+
+static SINK: std::sync::OnceLock<Sink> = std::sync::OnceLock::new();
+
+/// **Send this process's log lines to `sink`** (the CLI's hand-over to the app). Once.
+pub fn log_to(sink: Sink) {
+    let _ = SINK.set(sink);
+}
+
+/// **One quiet line for chat `chat`'s enforcement log**: `family`'s `rule` would have refused,
+/// about `host` where there is one. Written by the app; any other process hands it to the app
+/// ([`log_to`]), and keeps nothing where it cannot. Best effort: a line that cannot be written
+/// changes no outcome. Never a Notice and never an ask.
 pub fn record(root: &Path, chat: &str, family: Family, rule: &str, host: Option<&str>) {
+    if !in_the_app() {
+        if let Some(sink) = SINK.get() {
+            sink(family, rule, host);
+        }
+        return;
+    }
+    write_line(root, chat, family, rule, host);
+}
+
+/// The app's write of one log line ([`record`]).
+pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Option<&str>) {
     let Some(path) = log_file(root, chat) else {
         return;
     };

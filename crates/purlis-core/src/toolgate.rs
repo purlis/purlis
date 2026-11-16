@@ -295,12 +295,13 @@ impl Arm {
             // The leak guard keeps a vault's value out of the transcript.
             Arm::Leak => Family::Secrets,
             Arm::SingleCredential => Family::GuardsCredential,
-            Arm::PlaneRootBranch
-            | Arm::PlaneRootReset
-            | Arm::RootUpdate
-            | Arm::CloneUpdate
-            | Arm::ProjectGit
-            | Arm::BranchGit => Family::GuardsGit,
+            Arm::PlaneRootBranch | Arm::PlaneRootReset => Family::GuardsGit,
+            // Consequences of the wrap: git the chat's sandbox would stop partway, or that a
+            // sandboxed chat cannot finish. Kept whenever that wrap is applied, so the root is
+            // never left half-updated (the review of #6992, S5).
+            Arm::RootUpdate | Arm::CloneUpdate | Arm::ProjectGit | Arm::BranchGit => {
+                Family::Sandbox
+            }
             // What a forge publishes, and the prose it publishes.
             Arm::ReleaseFloor | Arm::ForgeSubstitution => Family::GuardsRelease,
             // A commit that skips the scan, and the text purlis's own commands write into the

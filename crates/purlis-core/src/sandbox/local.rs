@@ -213,6 +213,10 @@ struct OnDisk {
     /// an acceptance whose seal does not hold counts as none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     policy_seal: Option<String>,
+    /// How many acceptances this clone has kept: in the sealed text, so an older sealed copy put
+    /// back does not match the keyring's copy of the latest seal.
+    #[serde(default)]
+    policy_counter: u64,
     /// `"taken"` or `"kept-off"` once the offer is answered; absent before.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     offer: String,
@@ -1194,54 +1198,112 @@ pub fn forget_team_off(root: &Path) -> io::Result<()> {
 /// The kind an accepted policy is sealed as.
 const POLICY_KIND: &str = "policy-accepted";
 
-/// An accepted policy as its seal covers it: `family=mode` pairs in key order.
-fn policy_text(accepted: &std::collections::BTreeMap<String, String>) -> String {
-    accepted
+/// An accepted policy as its seal covers it: its counter, then `family=mode` pairs in key
+/// order.
+fn policy_text(counter: u64, accepted: &std::collections::BTreeMap<String, String>) -> String {
+    let pairs = accepted
         .iter()
         .map(|(family, mode)| format!("{family}={mode}"))
         .collect::<Vec<_>>()
-        .join(",")
+        .join(",");
+    format!("{counter};{pairs}")
 }
 
-/// What this person last accepted of the project's `[policy]` at `root` (Q308a), where they
-/// accepted anything yet **and its seal holds** for this clone (Q308b): one this process cannot
-/// verify, or whose seal does not hold, counts as no acceptance ([`policy_unsealed`]).
+/// **What the keyring anchors a plane's sealed answers by**: a digest of its real path alone
+/// (the M75 review, round 3). Never the clone key, which carries the identity of `.git`: a chat
+/// that copies `.git` aside and back would get a new clone key, no anchor, and read as a fresh
+/// install. Under the same path, a clone key with no record is a record gone.
+pub fn anchor_key(root: &Path) -> String {
+    use sha2::Digest;
+    let real = super::real(root);
+    let mut key = crate::extension::hex(&sha2::Sha256::digest(real.as_os_str().as_encoded_bytes()));
+    key.truncate(32);
+    key
+}
+
+/// **What this machine keeps of the person's acceptance of the project's `[policy]`** (Q308a,
+/// Q308b, and the review of #6992).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyAccepted {
+    /// Nothing was ever kept for this clone: the shipped default stands.
+    Never,
+    /// What they accepted, its seal holding, and the keyring's copy of the seal too.
+    Held(std::collections::BTreeMap<String, String>),
+    /// One was kept, and what is here now is not it: gone, edited, an older copy put back, or a
+    /// process that cannot verify it. Read as `strict` until the person accepts again.
+    Broken,
+}
+
+/// **This person's acceptance of the project's `[policy]` at `root`.** The file's own seal must
+/// hold, and so must the copy of that seal the app keeps in the keyring
+/// ([`crate::secrets::seal::keep`]): an older sealed record put back (its counter is behind) or
+/// one removed reads as [`PolicyAccepted::Broken`] wherever the keyring remembers one was kept.
+pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
+    let held = read(root);
+    let clone = anchor_key(root);
+    let sealed = match (&held.policy_accepted, &held.policy_seal) {
+        (Some(accepted), Some(seal)) => {
+            let text = policy_text(held.policy_counter, accepted);
+            crate::secrets::seal::holds(seal, POLICY_KIND, &clone, &text).then_some(text)
+        }
+        _ => None,
+    };
+    let kept = sealed.as_deref().map_or_else(
+        || crate::secrets::seal::kept_holds(POLICY_KIND, &clone, ""),
+        |text| crate::secrets::seal::kept_holds(POLICY_KIND, &clone, text),
+    );
+    match (sealed, kept, held.policy_accepted) {
+        // Sealed, and the keyring keeps this very one (or never kept any: the first, from
+        // before the keyring's copy).
+        (Some(_), Some(true) | None, Some(accepted)) => PolicyAccepted::Held(accepted),
+        // Nothing here, and the keyring never kept one either.
+        (None, None, None) => PolicyAccepted::Never,
+        _ => PolicyAccepted::Broken,
+    }
+}
+
+/// [`policy_accepted_record`]'s held acceptance, where there is one.
 pub fn policy_accepted(root: &Path) -> Option<std::collections::BTreeMap<String, String>> {
-    let held = read(root);
-    let accepted = held.policy_accepted?;
-    let seal = held.policy_seal?;
-    crate::secrets::seal::holds(
-        &seal,
-        POLICY_KIND,
-        &clone_key(root),
-        &policy_text(&accepted),
-    )
-    .then_some(accepted)
+    match policy_accepted_record(root) {
+        PolicyAccepted::Held(accepted) => Some(accepted),
+        PolicyAccepted::Never | PolicyAccepted::Broken => None,
+    }
 }
 
-/// **Whether an acceptance is kept for `root` that does not hold** (Q308b): edited by hand,
-/// copied from another clone, or written by something other than the app. What a Notice says;
-/// it is never re-sealed in bulk, only replaced by the person's press.
+/// **Whether an acceptance was kept for `root` that does not hold now** (Q308b): edited, removed,
+/// copied from another clone, an older copy put back, or written by something other than the
+/// app. What a Notice says; never re-sealed in bulk, only replaced by the person's press.
 pub fn policy_unsealed(root: &Path) -> bool {
-    let held = read(root);
-    held.policy_accepted.is_some() && policy_accepted(root).is_none()
+    policy_accepted_record(root) == PolicyAccepted::Broken
 }
 
-/// Keeps `accepted` as what this person accepted of the project's `[policy]` at `root`, sealed:
-/// at a chat start for a tightening, which needs no press, and at the window's press for a
-/// loosening. Refused where this process cannot seal (it is not the app), so nothing is kept
-/// that would not hold. Never a chat (a sandboxed chat cannot write this file).
+/// Keeps `accepted` as what this person accepted of the project's `[policy]` at `root`, sealed,
+/// its counter one past the last, and the seal's copy kept in the keyring: at a chat start or any
+/// read in the app for a tightening, which needs no press, and at the window's press for a
+/// loosening. Refused where this process cannot seal (it is not the app), so nothing is kept that
+/// would not hold. Never a chat (a sandboxed chat cannot write this file).
 pub fn accept_policy(
     root: &Path,
     accepted: std::collections::BTreeMap<String, String>,
 ) -> io::Result<()> {
-    let seal = crate::secrets::seal::sealed(POLICY_KIND, &clone_key(root), &policy_text(&accepted))
-        .ok_or_else(|| {
-            io::Error::other("only purlis's app can accept a policy, and it could not seal it")
-        })?;
+    let clone = anchor_key(root);
+    let counter = read(root).policy_counter + 1;
+    let text = policy_text(counter, &accepted);
+    let seal = crate::secrets::seal::sealed(POLICY_KIND, &clone, &text).ok_or_else(|| {
+        io::Error::other("only purlis's app can accept a policy, and it could not seal it")
+    })?;
+    // The anchor first (the M75 review, round 2): the newest the app has seen is in the keyring
+    // before the record says it, so a record that does not reach it, or one restored from
+    // before, reads as strict.
+    if !crate::secrets::seal::keep(POLICY_KIND, &clone, &text) {
+        return Err(io::Error::other(
+            "purlis could not keep the acceptance's seal in the keyring, so nothing was accepted",
+        ));
+    }
     change(root, |held| {
         held.policy_accepted = Some(accepted);
         held.policy_seal = Some(seal);
+        held.policy_counter = counter;
     })
 }
 

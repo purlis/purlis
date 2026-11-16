@@ -77,10 +77,10 @@ pub fn run(name: &str, args: &[String]) -> ExitCode {
 
 /// **What the scan refused, as the project's `[policy]` runs each finding's family** (Q308a):
 /// `guards.credential` for a credential, `guards.save` for personal data, read for the chat these
-/// hooks run in ([`purlis_core::enforcement::for_this_chat`]).
+/// hooks run in, as the app answers it ([`purlis_core::enforcement::in_force`]).
 fn under_policy(refused: &mut Vec<diffscan::Finding>, repo: &Path) {
     let root = purlis_core::plane::resolve(repo).unwrap_or_else(|_| repo.to_path_buf());
-    let policy = purlis_core::enforcement::for_this_chat(&root, &purlis_core::envvar::var);
+    let policy = purlis_core::enforcement::in_force(&root);
     let chat = purlis_core::enforcement::this_chat();
     diffscan::under_policy(refused, &root, chat.as_deref(), &policy);
 }
