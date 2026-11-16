@@ -2833,6 +2833,17 @@ fn read_login(
     if let (Some(user), Some(user_key)) = (&user, user_key) {
         goes_into_a_page(asker, user, vault, user_key)?;
     }
+    // Filled into the chat's page, they are the chat's, as a fill's are, so its kept screen
+    // never keeps one either (#6309).
+    let handed = user_key
+        .zip(user.as_ref())
+        .into_iter()
+        .chain([(pass_key, &password)]);
+    for (key, value) in handed {
+        let entry = super::handedto::Entry::new(vault, key);
+        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
+            .map_err(|why| not_named_said(&why))?;
+    }
     Ok((
         LogIn {
             address: login.url.clone(),

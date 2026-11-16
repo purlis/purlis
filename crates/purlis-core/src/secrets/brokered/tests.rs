@@ -4197,6 +4197,17 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
         Some("qa-person")
     );
     assert!(!format!("{login:?}").contains(TOKEN));
+    // #6309: and, filled into the chat's page, they mask its kept screen.
+    assert_eq!(
+        super::super::handedto::masked_for(
+            project.path(),
+            7,
+            &format!("qa-person {TOKEN}"),
+            &|_| None
+        )
+        .as_deref(),
+        Some("‹secret: NAME› ‹secret: TOKEN›")
+    );
 }
 
 /// A private key is filled on no page, however its login came to be declared (#4595).
