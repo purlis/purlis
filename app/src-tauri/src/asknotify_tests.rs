@@ -40,6 +40,7 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 

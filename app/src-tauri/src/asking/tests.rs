@@ -3280,6 +3280,7 @@ fn asked(session: u32, ask: &str) -> Shown {
         secret: None,
         run: None,
         fill: None,
+        names: None,
     }
 }
 
@@ -4058,4 +4059,28 @@ fn pool_setups_ready_ask_is_one_in_its_own_project_and_gone_once_answered() {
 
     admin::forget(config.path()).unwrap();
     assert!(pool_setup_ready(project.path(), config.path()).is_none());
+}
+
+/// **Your keys locked at a start** (W10, T1a-61, R-510): the chat's Ask says W10, offers
+/// Unlock alone, is keyed by the entry, and is answered by the OS's unlock for that entry.
+#[test]
+fn a_locked_keychain_at_a_start_is_the_chats_ask_with_unlock() {
+    let entry = "01JA0000000000000000000000";
+    let shown = model_key_locked(7, entry, vec!["steward 7".to_owned()]);
+    assert_eq!(shown.session, 7);
+    assert_eq!(shown.source, AskSource::ModelKeyLocked);
+    assert_eq!(shown.ask, format!("model-key-locked:{entry}"));
+    assert_eq!(shown.says, purlis_core::window_copy::line::W10);
+    assert_eq!(ids(&shown), [UNLOCK]);
+    assert_eq!(shown.options[0].label, "Unlock");
+    assert_eq!(
+        shown.answer,
+        AnswerPath::UnlockYourKeys {
+            entry: entry.to_owned()
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(shown.source).unwrap(),
+        serde_json::json!("model-key-locked")
+    );
 }

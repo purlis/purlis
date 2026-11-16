@@ -211,6 +211,11 @@ pub struct Shown {
     /// ask that is never offered a rule nor cooled off.
     #[specta(optional)]
     pub rule: Option<RuleShown>,
+    /// **The chats a no-chat Ask names** (T1a-61, phase 1a's model key Asks): the chats it
+    /// stopped, or a profile's chats. The window marks each one's tab while the Ask stands.
+    /// Absent on every other ask.
+    #[specta(optional)]
+    pub names: Option<Vec<u32>>,
 }
 
 /// **An ask's request, and the rule it offers** (#6010).
@@ -758,6 +763,22 @@ pub enum AskSource {
     /// **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
     /// the install couldn't, and Pool setup goes on. Said once, about no chat.
     PoolSetup,
+    /// **Your keys locked at a start** (W10, T1a-61, R-510): the start's one read found the
+    /// keychain locked. *Unlock* runs the OS's unlock, and the start goes on. On its chat's pane:
+    /// in place in New chat while the person is there, in Needs you when the chat is unattended.
+    ModelKeyLocked,
+    /// **A key removed from your keys, mid-run or at a start** (W12, raised by T1a-27): keyed by
+    /// the entry, naming the chats it stopped.
+    ModelKeyMissing,
+    /// **A key written by another path, so unmarked** (W13, *Mark again*, raised by T1a-27):
+    /// keyed by the entry, naming its chats.
+    ModelKeyUnmarked,
+    /// **An old profile's key, to copy to your keys** (W28, raised by T1a-39): keyed by the
+    /// profile, naming the profile's chats.
+    ModelKeyCopy,
+    /// **The pool key allowance at an unattended start** (W30, raised by T1a-53): keyed by the
+    /// entry and the pool, on its chat's pane.
+    PoolKeyAllowance,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -892,6 +913,13 @@ pub enum AnswerPath {
     TrustClones {
         clones: Vec<crate::clonevouch::CloneToVouch>,
     },
+    /// `unlock_your_keys` for *Unlock*, the OS's unlock of the keychain, for the start waiting on
+    /// your keys' `entry` (T1a-61, R-510): where it unlocks, the start reads it again and goes on.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "raised by the start, whose wiring is T1a-17's")
+    )]
+    UnlockYourKeys { entry: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1060,6 +1088,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1500,6 +1529,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -1552,6 +1582,7 @@ pub fn sandbox_host(
             rule: None,
             secret: None,
             run: None,
+            names: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -1596,6 +1627,7 @@ pub fn sandbox_host(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1669,6 +1701,7 @@ pub fn sandbox_write(
             rule: None,
             secret: None,
             run: None,
+            names: None,
         });
     }
     Some(Shown {
@@ -1703,6 +1736,7 @@ pub fn sandbox_write(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1777,6 +1811,7 @@ pub fn sandbox_runner(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1862,6 +1897,7 @@ pub fn sandbox_port(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1944,6 +1980,7 @@ pub fn sandbox_local(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -1993,6 +2030,7 @@ pub fn terminal(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2023,6 +2061,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2062,6 +2101,7 @@ pub fn task_question(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2129,6 +2169,7 @@ pub fn workspace_removal(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2213,6 +2254,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2269,6 +2311,7 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2344,6 +2387,7 @@ pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Sh
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2506,6 +2550,7 @@ pub fn browser_posture(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2583,6 +2628,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2684,6 +2730,7 @@ pub fn secret_fill(
             vault_too: wait.vault_too,
             code: wait.code,
         }),
+        names: None,
     }
 }
 
@@ -2812,6 +2859,7 @@ pub fn browser_login(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2894,6 +2942,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -2972,6 +3021,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3061,6 +3111,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         secret: None,
         fill: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3227,6 +3278,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
             remember,
         }),
         run: None,
+        names: None,
     }
 }
 
@@ -3451,6 +3503,7 @@ pub fn run_grant(
                 vault: None,
             }),
         }),
+        names: None,
     }
 }
 
@@ -3537,6 +3590,7 @@ pub fn browser_sites(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3691,6 +3745,7 @@ pub fn proposed_change(
             timed_out: None,
             risk: None,
             rule: None,
+            names: None,
         };
     }
     let path = &one.path;
@@ -3777,6 +3832,7 @@ pub fn proposed_change(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3813,6 +3869,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3878,6 +3935,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -3945,6 +4003,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -4012,6 +4071,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -4094,6 +4154,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -4133,6 +4194,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 
@@ -4257,6 +4319,7 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
 }
 
@@ -4311,7 +4374,54 @@ pub fn pool_setup_ready(root: &std::path::Path, config: &std::path::Path) -> Opt
         rule: None,
         secret: None,
         run: None,
+        names: None,
     })
+}
+
+/// The option id of W10's *Unlock*.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "raised by the start, whose wiring is T1a-17's")
+)]
+pub const UNLOCK: &str = "unlock";
+
+/// **Your keys locked at a start, as its Ask** (W10, T1a-61, R-510, R-592): chat `session`'s
+/// start read the keychain locked, so the chat waits on *Unlock*, keyed by your keys' `entry`
+/// (`purlis_core::yourkeys::start::Locked::entry`). Drawn on its chat's pane, in place in New chat while
+/// the person is there, and in Needs you when the chat is unattended. `chain` is who asks, from
+/// the app's own record.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "raised by the start, whose wiring is T1a-17's")
+)]
+pub fn model_key_locked(session: u32, entry: &str, chain: Vec<String>) -> Shown {
+    Shown {
+        session,
+        ask: format!("model-key-locked:{entry}"),
+        says: purlis_core::window_copy::line::W10.to_owned(),
+        options: vec![refuses(UNLOCK, "Unlock")],
+        source: AskSource::ModelKeyLocked,
+        chain,
+        answer: AnswerPath::UnlockYourKeys {
+            entry: entry.to_owned(),
+        },
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+        names: None,
+    }
 }
 
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.

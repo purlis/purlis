@@ -132,6 +132,7 @@ mod freshkept;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedkeyproxy;
+mod keychainunlock;
 #[cfg(unix)]
 mod hostedsessions;
 mod hostfailing;

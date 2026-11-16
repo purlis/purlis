@@ -122,6 +122,7 @@ pub fn paused(session: u32, paused: &Paused, chain: Vec<String>, blocks: Option<
         // Nor does it carry a risk (ADR 0121 decision 8, #6011): going on is not a push, a
         // host or a write outside the project.
         risk: None,
+        names: None,
     }
 }
 

@@ -691,6 +691,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_ask_admin,
                 poolsetuptab::pool_setup_get_help,
                 poolsetuptab::pool_setup_stop_waiting,
+                keychainunlock::unlock_your_keys,
                 poolsetuptab::pool_setup_name,
                 poolsetuptab::pool_setup_pool,
                 poolsetuptab::pool_setup_add,

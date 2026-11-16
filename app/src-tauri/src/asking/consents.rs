@@ -83,6 +83,7 @@ fn of_no_chat(
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 

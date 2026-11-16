@@ -46,6 +46,7 @@ fn expiring(session: u32, key: &str, left: u32) -> Shown {
         rule: None,
         secret: None,
         run: None,
+        names: None,
     }
 }
 

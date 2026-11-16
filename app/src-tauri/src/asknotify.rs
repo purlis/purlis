@@ -1171,6 +1171,11 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::MergeHold => "Asks you to merge a request",
         AskSource::TrustClone => "Asks you to trust a clone",
         AskSource::TrustClones => "Asks you to trust clones purlis did not clone",
+        AskSource::ModelKeyLocked => "Asks you to unlock your keychain",
+        AskSource::ModelKeyMissing => "A model key is missing from your keys",
+        AskSource::ModelKeyUnmarked => "Asks you to mark a model key again",
+        AskSource::ModelKeyCopy => "Asks you to copy a profile's key to your keys",
+        AskSource::PoolKeyAllowance => "Asks to send a model key to a pool",
     }
 }
 

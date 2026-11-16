@@ -4429,6 +4429,11 @@ export const commands = {
 	 *  answered.
 	 */
 	poolSetupStopWaiting: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_stop_waiting")),
+	/**
+	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
+	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
+	 */
+	unlockYourKeys: () => typedError<Unlocked, string>(__TAURI_INVOKE("unlock_your_keys")),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -6548,6 +6553,11 @@ export type AnswerPath =
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
 { via: "trust-clones"; clones: CloneToVouch[] } | 
+/**
+ *  `unlock_your_keys` for *Unlock*, the OS's unlock of the keychain, for the start waiting on
+ *  your keys' `entry` (T1a-61, R-510): where it unlocks, the start reads it again and goes on.
+ */
+{ via: "unlock-your-keys"; entry: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -7058,7 +7068,33 @@ export type AskSource =
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
-"pool-setup";
+"pool-setup" | 
+/**
+ *  **Your keys locked at a start** (W10, T1a-61, R-510): the start's one read found the
+ *  keychain locked. *Unlock* runs the OS's unlock, and the start goes on. On its chat's pane:
+ *  in place in New chat while the person is there, in Needs you when the chat is unattended.
+ */
+"model-key-locked" | 
+/**
+ *  **A key removed from your keys, mid-run or at a start** (W12, raised by T1a-27): keyed by
+ *  the entry, naming the chats it stopped.
+ */
+"model-key-missing" | 
+/**
+ *  **A key written by another path, so unmarked** (W13, *Mark again*, raised by T1a-27):
+ *  keyed by the entry, naming its chats.
+ */
+"model-key-unmarked" | 
+/**
+ *  **An old profile's key, to copy to your keys** (W28, raised by T1a-39): keyed by the
+ *  profile, naming the profile's chats.
+ */
+"model-key-copy" | 
+/**
+ *  **The pool key allowance at an unattended start** (W30, raised by T1a-53): keyed by the
+ *  entry and the pool, on its chat's pane.
+ */
+"pool-key-allowance";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -17995,6 +18031,12 @@ export type Shown = {
 	 *  ask that is never offered a rule nor cooled off.
 	 */
 	rule?: RuleShown | null,
+	/**
+	 *  **The chats a no-chat Ask names** (T1a-61, phase 1a's model key Asks): the chats it
+	 *  stopped, or a profile's chats. The window marks each one's tab while the Ask stands.
+	 *  Absent on every other ask.
+	 */
+	names?: number[] | null,
 };
 
 /**
@@ -20713,6 +20755,15 @@ export type UndoAnswer =
 { kind: "undone"; unrecorded: string | null; unmarked: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and an undo waits until they are. */
 { kind: "busy"; chats: BusyChat[] };
+
+/**  What *Unlock* did, as the window draws it. */
+export type Unlocked = 
+/**  The keychain unlocked: the start goes on, with no second press. */
+"unlocked" | 
+/**  The person cancelled the system's prompt: W10 stays as it was. */
+"cancelled" | 
+/**  The unlock failed: W84 under W10. */
+"failed";
 
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,
