@@ -15,7 +15,9 @@
 //!   [`AskGroup::ModelKey`], keyed by the entry ([`Locked`]). *Unlock* runs the OS's unlock
 //!   ([`Unlocks`]) and, where it unlocks, the start reads again and goes on, with no second press.
 //!   A cancelled unlock leaves the Ask as it was; a failed one leaves it with W84 under it. Neither
-//!   makes a run.
+//!   makes a run. Where the unlock succeeds and the read is still refused (an item whose access
+//!   list doesn't trust this build looks locked), the start is refused, and *Unlock* is not
+//!   offered again.
 
 use std::path::Path;
 
@@ -81,8 +83,12 @@ impl Locked {
             Unlock::Failed => Unlocking::Failed(self),
             Unlock::Unlocked => match read_once(config_root, files, credentials, self.entry) {
                 Read::Key(value, binding) => Unlocking::Read(value, binding),
-                // Unlocked and locked again, or never unlocked as it said: a failed unlock.
-                Read::Locked(locked) => Unlocking::Failed(locked),
+                // The keychain unlocked and still refuses the read. macOS refuses with the same
+                // code where the item's access list doesn't trust this build (after a re-sign, or
+                // a dev build), and no safe call in the crates in use tells a locked keychain
+                // from that. Another *Unlock* would succeed and be refused again, so the start is
+                // refused instead of asking again.
+                Read::Locked(_) => Unlocking::Refused(ModelKeyError::Read(ReadError::Locked)),
                 Read::Refused(why) => Unlocking::Refused(why),
             },
         }
@@ -112,7 +118,8 @@ pub enum Unlocking {
     Cancelled(Locked),
     /// The unlock failed: the Ask stands with W84 under it, and no run is made.
     Failed(Locked),
-    /// The keychain unlocked and the start is refused for another reason.
+    /// The keychain unlocked and the start is refused: for another reason, or because the read
+    /// is still refused as locked ([`ReadError::Locked`]), which another *Unlock* can't lift.
     Refused(ModelKeyError),
 }
 
