@@ -422,6 +422,15 @@ async function fitsThePane(
   await expect(head.scrollWidth, `the row's parts past it: ${parts}`).toBeLessThanOrEqual(
     head.clientWidth,
   );
+  // Nothing runs into the row's padding at its end, where the row would clip it: a scroll width
+  // counts that padding as room.
+  const end = head.getBoundingClientRect().right - parseFloat(getComputedStyle(head).paddingRight);
+  for (const part of head.children) {
+    await expect(
+      part.getBoundingClientRect().right,
+      `${part.className} ends inside the row`,
+    ).toBeLessThanOrEqual(end + 0.5);
+  }
   await expect(head.getBoundingClientRect().height).toBeLessThan(64);
   const bar = head.parentElement?.querySelector<HTMLElement>(".browser-bar");
   await expect(bar?.getBoundingClientRect().height ?? 0).toBeLessThan(barAtMost);
