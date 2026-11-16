@@ -19,16 +19,23 @@
 //! - **Keep blocked** dominates every Allow given before it, on its chat's board, for each target
 //!   it covers, until a later Allow covers that target: the later answer wins (D2). It lives in
 //!   the chat's memory alone. Its persistence, as a sealed Never that holds in every mode, is
-//!   ticket 73's and M75's (Q308b, Q314.12).
-//! - **Special-use addresses** are the ones `hosts::refused_address` refuses, in every spelling
-//!   (D3). A private range is never carried for a chat unless it is listed (it is asked about),
-//!   and is refused for a confined extension (`hosts::special_use`).
-//! - **The decided host is the host looked up and dialled** by both kinds of proxy, and the TLS
-//!   server name only for a confined extension's proxy (D4): a chat's proxy does not read SNI,
-//!   a declared known gap, #6996.
+//!   ticket 73's and M75's (Q308b, Q314.12). It dominates only where the board is asked: a
+//!   connection `Reach::decide` answers `Ask` (`egress.rs`, `Allowed::asked`), never one a
+//!   listed host already carries. And the board keeps the last 64 alone (`MOST_KEPT`,
+//!   `asks.rs`): a 65th Keep blocked evicts the oldest, which then dominates nothing.
+//! - **Special-use addresses** are refused in every spelling (D3): this machine, `0/8`,
+//!   link-local, multicast, broadcast and the cloud metadata addresses, as itself or carried in
+//!   an IPv6 address, written out in this file (`special_use_address`) apart from the code it
+//!   checks. A private-range literal is never carried for a chat unless listed, and is refused
+//!   for a confined extension (`hosts::special_use`). A listed name may resolve to a private
+//!   address: an internal host the project listed.
+//! - **The decided host is the host looked up and dialled** by both kinds of proxy, through
+//!   `CONNECT` and SOCKS alike, and the TLS server name only for a confined extension's proxy
+//!   (D4): a chat's proxy does not read SNI, a declared known gap, #6996.
 //!
 //! Each property runs at least 10 000 cases (more with `PROPTEST_CASES`, as the nightly entry
-//! `property-tests` sets), from a fresh seed each run.
+//! `property-tests` sets), from a fresh seed each run. The proxy law opens real connections, so
+//! it runs at most [`MOST_CONNECTIONS`] cases whatever `PROPTEST_CASES` says.
 
 use std::collections::BTreeSet;
 use std::io::{Read, Write};
@@ -60,6 +67,10 @@ fn config() -> Config {
         ..default
     }
 }
+
+/// The most cases the proxy law runs: each is a real connection, and the nightly's 100 000
+/// would make it the night's slowest entry for little more than 20 000 find.
+const MOST_CONNECTIONS: u32 = 20_000;
 
 // ---------------------------------------------------------------------------------------------
 // What the properties are made of.
@@ -545,11 +556,78 @@ fn literal(spelled: &str) -> Option<IpAddr> {
         .ok()
 }
 
-fn special_use_address() -> impl Strategy<Value = IpAddr> {
+/// An address a chat never reaches: refused as itself, or an IPv6 address carrying one.
+fn special_use_addresses() -> impl Strategy<Value = IpAddr> {
     prop_oneof![
-        refused_v4().prop_map(IpAddr::V4),
-        refused_v6().prop_map(IpAddr::V6),
+        2 => refused_v4().prop_map(IpAddr::V4),
+        2 => refused_v6().prop_map(IpAddr::V6),
+        1 => (refused_v4(), any::<proptest::sample::Index>())
+            .prop_map(|(ip, which)| IpAddr::V6(*which.get(&carrying(ip)))),
     ]
+}
+
+/// **The oracle: whether a chat must never reach `ip`**, written from the RFCs and the cloud
+/// providers' documentation rather than from `hosts.rs`, so a regression there is a failed
+/// case, not a discarded one. `own` is this machine's interface addresses.
+fn special_use_address(ip: IpAddr, own: &[IpAddr]) -> bool {
+    fn v4(ip: Ipv4Addr) -> bool {
+        let [a, b, ..] = ip.octets();
+        a == 127 // loopback, RFC 1122
+            || a == 0 // this network, RFC 791
+            || (a == 169 && b == 254) // link-local, RFC 3927
+            || (224..=239).contains(&a) // multicast, RFC 5771
+            || ip == Ipv4Addr::new(255, 255, 255, 255) // limited broadcast, RFC 919
+            || [
+                Ipv4Addr::new(100, 100, 100, 200), // Alibaba Cloud's metadata
+                Ipv4Addr::new(168, 63, 129, 16),   // Azure's wire server
+                Ipv4Addr::new(192, 0, 0, 192),     // Oracle Cloud's metadata
+            ]
+            .contains(&ip)
+    }
+    /// The IPv4 address each form an IPv6 address carries one in holds.
+    fn carried(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
+        let s = ip.segments();
+        let of = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
+        let mut out = Vec::new();
+        match s {
+            // Mapped (RFC 4291 §2.5.5.2), SIIT (RFC 6145), NAT64 (RFC 6052).
+            [0, 0, 0, 0, 0, 0xffff, hi, lo]
+            | [0, 0, 0, 0, 0xffff, 0, hi, lo]
+            | [0x64, 0xff9b, 0, 0, 0, 0, hi, lo] => out.push(of(hi, lo)),
+            // IPv4-compatible (RFC 4291 §2.5.5.1), but `::` and `::1`.
+            [0, 0, 0, 0, 0, 0, hi, lo] if (hi, lo) > (0, 1) => out.push(of(hi, lo)),
+            // 6to4 (RFC 3056).
+            [0x2002, hi, lo, ..] => out.push(of(hi, lo)),
+            _ => {}
+        }
+        // Teredo (RFC 4380): the server's address, and the client's with every bit flipped.
+        if (s[0], s[1]) == (0x2001, 0) {
+            out.push(of(s[2], s[3]));
+            out.push(of(!s[6], !s[7]));
+        }
+        // ISATAP (RFC 5214): behind a `0:5efe` or `200:5efe` interface identifier.
+        if (s[4] == 0 || s[4] == 0x200) && s[5] == 0x5efe {
+            out.push(of(s[6], s[7]));
+        }
+        out
+    }
+    if own.contains(&ip) {
+        return true;
+    }
+    match ip {
+        IpAddr::V4(ip) => v4(ip),
+        IpAddr::V6(ip) => {
+            let [first, second, ..] = ip.segments();
+            ip == Ipv6Addr::LOCALHOST
+                || ip == Ipv6Addr::UNSPECIFIED
+                || (first & 0xffc0) == 0xfe80 // link-local, RFC 4291
+                || (first & 0xff00) == 0xff00 // multicast, RFC 4291
+                || (first, second) == (0xfd00, 0x0ec2) // AWS's metadata, fd00:ec2::/32
+                || carried(ip)
+                    .into_iter()
+                    .any(|one| v4(one) || own.contains(&IpAddr::V4(one)))
+        }
+    }
 }
 
 proptest! {
@@ -559,11 +637,11 @@ proptest! {
     /// about, unless that exact address and port is listed: dotted, decimal, octal, hex, short,
     /// mapped and every IPv6 form that carries it, bracketed, upper case, with a final dot or a
     /// zone. The same holds of this machine's own addresses, by a name of this Mac, and of what
-    /// a name resolves to. A private address is asked about for a chat unless listed, never
-    /// carried, and is special-use for a confined extension in every form that carries it.
+    /// a name resolves to. A private-range literal is never carried for a chat unless listed,
+    /// and is special-use for a confined extension in every form that carries it.
     fn every_encoding_of_a_special_use_address_is_refused_law(
         (address, any_address) in prop_oneof![
-            3 => special_use_address().prop_map(|ip| (ip, false)),
+            3 => special_use_addresses().prop_map(|ip| (ip, false)),
             1 => any::<IpAddr>().prop_map(|ip| (ip, true)),
         ],
         own_is_it in any::<bool>(),
@@ -577,7 +655,10 @@ proptest! {
     ) {
         // The address is refused as itself, or is this machine's own.
         let own: Vec<IpAddr> = if own_is_it || any_address { vec![address] } else { vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7))] };
-        prop_assume!(refused_address(address, &own));
+        // Every address generated is one the oracle says a chat never reaches, and the code
+        // refuses each: a regression on any of them fails the case, never discards it.
+        prop_assert!(special_use_address(address, &own), "{address} with {own:?}: not special-use, by the oracle");
+        prop_assert!(refused_address(address, &own), "{address} with {own:?}: special-use, yet not refused");
         let mut entries = listed.clone();
         // The same address on another port is never this one.
         if other_port != port {
@@ -614,7 +695,8 @@ proptest! {
             prop_assert!(!matches!(decision, Decision::Ask), "{name}: {decision:?}");
         }
 
-        // A private address: asked about for a chat, never carried, unless listed.
+        // A private-range literal is never carried for a chat unless listed. (A listed name may
+        // resolve to a private address: an internal host the project listed.)
         let unlisted = Reach::of(listed);
         for spelled in spellings_v4(private) {
             let decision = unlisted.decide(&spelled, port, &defaults, &[]);
@@ -656,12 +738,17 @@ fn recased(text: &str, flips: &[bool]) -> String {
         .collect()
 }
 
-/// A host built to sit near a listed name: before it, after it, glued to it with no dot.
+/// A host built to sit near a listed name: before it, after it, glued to it with no dot, with
+/// empty labels, and with what a URL or a C string reads apart (`/`, `@`, `%`, NUL) or a
+/// non-ASCII letter just before it.
 fn near(name: String) -> impl Strategy<Value = String> {
     (
-        "[a-z.-]{0,6}",
+        prop_oneof![
+            3 => "[a-z.-]{0,6}",
+            1 => "[a-z.]{0,3}[/@%\\x00\u{e9}\u{131}\u{212a}][a-z.]{0,3}",
+        ],
         "[a-z.-]{0,4}",
-        proptest::sample::select(vec!["", ".", "-"]),
+        proptest::sample::select(vec!["", ".", "-", ".."]),
         any::<bool>(),
     )
         .prop_map(move |(before, after, glue, dot)| {
@@ -674,10 +761,11 @@ proptest! {
     #![proptest_config(config())]
 
     /// **A listed host matches only at a label boundary, in any case.** `*.S` matches a name
-    /// only where it ends in the whole labels of `S` with at least one label before them, and
-    /// matches every such well-formed name; a name without a wildcard matches only itself; an
-    /// address literal never matches a wildcard. Changing the case of either side changes
-    /// nothing, and neither does a final dot on the host.
+    /// only where it ends in the whole labels of `S` with at least one label before them, none
+    /// of them empty (`..a.a` is not under `*.a.a`), and matches every such well-formed name; a
+    /// name without a wildcard matches only itself; an address literal never matches a
+    /// wildcard. Changing the case of either side changes nothing, and neither does a final dot
+    /// on the host.
     fn the_hosts_matcher_respects_label_boundaries_law(
         (suffix, host) in domain().prop_flat_map(|suffix| (Just(suffix.clone()), near(suffix))),
         wildcard in any::<bool>(),
@@ -690,11 +778,14 @@ proptest! {
         let bare = host.strip_suffix('.').unwrap_or(&host).to_ascii_lowercase();
         let (theirs, mine) = (labels(&bare), labels(&suffix));
         let ends_in_whole_labels = theirs.len() > mine.len() && theirs[theirs.len() - mine.len()..] == mine[..];
+        let no_empty_label = theirs.iter().all(|label| !label.is_empty());
         if wildcard {
             if matched {
                 prop_assert!(ends_in_whole_labels, "{entry} matched {host} across a label");
+                prop_assert!(no_empty_label, "{entry} matched {host}, which has an empty label");
             }
-            let well_formed = theirs.iter().all(|label| !label.is_empty());
+            let well_formed = no_empty_label
+                && theirs.iter().all(|label| label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'));
             if ends_in_whole_labels && well_formed {
                 prop_assert!(matched, "{entry} missed {host}");
             }
@@ -717,6 +808,17 @@ proptest! {
 fn the_hosts_matcher_respects_label_boundaries() {
     purlis_core::unsteered!();
     the_hosts_matcher_respects_label_boundaries_law();
+}
+
+/// The regression case the label law found (T1.1-23): a wildcard matched a name with an empty
+/// label before its suffix, so `*.a.a` let `..a.a` on.
+#[test]
+fn a_wildcard_never_matches_a_name_with_an_empty_label() {
+    purlis_core::unsteered!();
+    for host in ["..a.a", "x..a.a", "..x.a.a", "...a.a"] {
+        assert!(!allows(&["*.a.a".to_owned()], host), "{host}");
+    }
+    assert!(allows(&["*.a.a".to_owned()], "x.y.a.a"));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1062,18 +1164,24 @@ fn allow_once_is_consumed_exactly_once_under_interleaving() {
 // 8. The decided host, the dialled host and the server name.
 // ---------------------------------------------------------------------------------------------
 
-/// A TLS 1.3 ClientHello in one record, naming `server` (RFC 8446 §4.1.2, RFC 6066 §3).
-fn client_hello(server: &str) -> Vec<u8> {
-    let name = server.as_bytes();
+/// A TLS 1.3 ClientHello in one record, naming `server` where there is one (RFC 8446 §4.1.2,
+/// RFC 6066 §3), and offering TLS 1.3 alone in either case.
+fn client_hello(server: Option<&str>) -> Vec<u8> {
     let len = |n: usize| u16::try_from(n).unwrap().to_be_bytes();
-    let mut sni = Vec::new();
-    sni.extend(len(name.len() + 3));
-    sni.push(0);
-    sni.extend(len(name.len()));
-    sni.extend(name);
-    let mut extensions = vec![0, 0];
-    extensions.extend(len(sni.len()));
-    extensions.extend(sni);
+    let mut extensions = Vec::new();
+    if let Some(server) = server {
+        let name = server.as_bytes();
+        let mut sni = Vec::new();
+        sni.extend(len(name.len() + 3));
+        sni.push(0);
+        sni.extend(len(name.len()));
+        sni.extend(name);
+        extensions.extend([0, 0]);
+        extensions.extend(len(sni.len()));
+        extensions.extend(sni);
+    }
+    // supported_versions: TLS 1.3.
+    extensions.extend([0, 0x2b, 0, 3, 2, 3, 4]);
     let mut hello = vec![3, 3];
     hello.extend([7u8; 32]);
     hello.push(0);
@@ -1088,6 +1196,86 @@ fn client_hello(server: &str) -> Vec<u8> {
     record.extend(len(handshake.len()));
     record.extend(handshake);
     record
+}
+
+/// What a tunnel's client sends once the proxy carries it.
+#[derive(Debug, Clone)]
+enum Payload {
+    /// A ClientHello whole in one record, naming a server or none.
+    Hello(Option<&'static str>),
+    /// The same, arriving in two writes, split inside the record.
+    Split(&'static str, usize),
+    /// A ClientHello naming the server, its handshake fragmented across two TLS records.
+    Fragmented(&'static str, usize),
+    /// Bytes that are no TLS handshake at all.
+    NotTls(Vec<u8>),
+}
+
+impl Payload {
+    /// The bytes, in the writes they are sent in.
+    fn writes(&self) -> Vec<Vec<u8>> {
+        match self {
+            Self::Hello(server) => vec![client_hello(*server)],
+            Self::Split(server, at) => {
+                let hello = client_hello(Some(server));
+                let at = 1 + at % (hello.len() - 1);
+                vec![hello[..at].to_vec(), hello[at..].to_vec()]
+            }
+            Self::Fragmented(server, at) => {
+                let handshake = client_hello(Some(server))[5..].to_vec();
+                let at = 1 + at % (handshake.len() - 1);
+                let record = |fragment: &[u8]| {
+                    let mut record = vec![0x16, 3, 1];
+                    record.extend(u16::try_from(fragment.len()).unwrap().to_be_bytes());
+                    record.extend(fragment);
+                    record
+                };
+                vec![[record(&handshake[..at]), record(&handshake[at..])].concat()]
+            }
+            Self::NotTls(bytes) => vec![bytes.clone()],
+        }
+    }
+
+    /// The server a whole first record names, where it names one.
+    fn whole_naming(&self) -> Option<&'static str> {
+        match self {
+            Self::Hello(server) => *server,
+            Self::Split(server, _) => Some(server),
+            Self::Fragmented(..) | Self::NotTls(_) => None,
+        }
+    }
+
+    /// The server the bytes name at all, in whatever records.
+    fn naming(&self) -> Option<&'static str> {
+        match self {
+            Self::Fragmented(server, _) => Some(server),
+            other => other.whole_naming(),
+        }
+    }
+}
+
+/// What a client sends a tunnel to `host`: mostly a hello naming it, else naming another,
+/// naming none, split, fragmented, or no TLS at all.
+fn payload(host: &'static str) -> impl Strategy<Value = Payload> {
+    let server = move || {
+        prop_oneof![
+            2 => Just(host),
+            1 => proptest::sample::select(ASKED.to_vec()),
+        ]
+    };
+    prop_oneof![
+        4 => server().prop_map(|one| Payload::Hello(Some(one))),
+        1 => Just(Payload::Hello(None)),
+        1 => (server(), any::<usize>()).prop_map(|(one, at)| Payload::Split(one, at)),
+        1 => (server(), any::<usize>()).prop_map(|(one, at)| Payload::Fragmented(one, at)),
+        1 => prop_oneof![
+            Just(b"GET / HTTP/1.1\r\nHost: a.test\r\n\r\n".to_vec()),
+            Just(b"SSH-2.0-OpenSSH_9.9\r\n".to_vec()),
+            proptest::collection::vec(any::<u8>(), 0..64)
+                .prop_filter("no handshake", |bytes| bytes.first() != Some(&0x16)),
+        ]
+        .prop_map(Payload::NotTls),
+    ]
 }
 
 /// One local origin every carried name is mapped to: each connection's bytes, whole, once it
@@ -1137,26 +1325,64 @@ const ASKED: [&str; 7] = [
     "a.test.",
 ];
 
-/// The response head a proxy answers a `CONNECT` with, and the stream after it.
-fn connect(proxy: u16, host: &str) -> (String, TcpStream) {
-    let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy)).expect("the proxy");
+/// How a client asks a chat's proxy for a tunnel.
+#[derive(Debug, Clone, Copy)]
+enum Way {
+    /// HTTP `CONNECT`, on the proxy's port.
+    Connect,
+    /// SOCKS5 `CONNECT` with a domain name, on its SOCKS port (`egress.rs`, `serve_socks`).
+    Socks,
+}
+
+/// What a proxy answered a tunnel to `host` on 443: whether it said it carries it, what it said,
+/// and the stream after it.
+fn tunnel(under: &Under, way: Way, host: &str) -> (bool, String, TcpStream) {
+    let port = match way {
+        Way::Connect => under.proxy.port(),
+        Way::Socks => under.proxy.socks_port(),
+    };
+    let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("the proxy");
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
-    write!(
-        stream,
-        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
-    )
-    .unwrap();
-    let mut head = Vec::new();
-    let mut byte = [0u8; 1];
-    while !head.ends_with(b"\r\n\r\n") {
-        match stream.read(&mut byte) {
-            Ok(1) => head.push(byte[0]),
-            _ => break,
+    match way {
+        Way::Connect => {
+            write!(
+                stream,
+                "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+            )
+            .unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") {
+                match stream.read(&mut byte) {
+                    Ok(1) => head.push(byte[0]),
+                    _ => break,
+                }
+            }
+            let head = String::from_utf8_lossy(&head).into_owned();
+            (head.starts_with("HTTP/1.1 200"), head, stream)
+        }
+        Way::Socks => {
+            // The greeting, offering no authentication; then, once it is chosen, the request.
+            let _ = stream.write_all(&[5, 1, 0]);
+            let mut chosen = [0u8; 2];
+            if stream.read_exact(&mut chosen).is_err() || chosen != [5, 0] {
+                return (false, format!("greeting answered {chosen:?}"), stream);
+            }
+            let mut request = vec![5, 1, 0, 3, u8::try_from(host.len()).unwrap()];
+            request.extend(host.as_bytes());
+            request.extend(443u16.to_be_bytes());
+            let _ = stream.write_all(&request);
+            let mut reply = [0u8; 10];
+            let read = stream.read_exact(&mut reply);
+            (
+                read.is_ok() && reply[1] == 0,
+                format!("{read:?} {reply:?}"),
+                stream,
+            )
         }
     }
-    (String::from_utf8_lossy(&head).into_owned(), stream)
 }
 
 /// One proxy under the law, with what it was started on.
@@ -1215,37 +1441,40 @@ fn spelled(name: &str) -> String {
     name.strip_suffix('.').unwrap_or(name).to_ascii_lowercase()
 }
 
+/// **The decided host is the host looked up, dialled and reached, and, for a confined
+/// extension, the server its ClientHello names.** Through `CONNECT` and SOCKS, a tunnel to a host
+/// the reach does not carry is refused before anything is looked up or dialled; one it carries
+/// looks up, dials and reaches that host and nothing else. A confined extension's proxy carries
+/// only a ClientHello whole in its first record that names the host (none naming another, none
+/// naming none, none fragmented, nothing that is no TLS), and carries no SOCKS request at all.
 #[test]
 fn the_decided_host_is_the_dialled_host_and_the_sni() {
     purlis_core::unsteered!();
     let (at, bytes) = origin();
     let proxies = [under(false, at), under(true, at)];
     let reach = Reach::open(LISTED.iter().map(|one| (*one).to_owned()).collect());
-    let mut runner = proptest::test_runner::TestRunner::new(config());
+    let mut config = config();
+    config.cases = config.cases.min(MOST_CONNECTIONS);
+    let mut runner = proptest::test_runner::TestRunner::new(config);
     let strategy = (
         0..proxies.len(),
-        proptest::sample::select(ASKED.to_vec()),
-        prop_oneof![
-            2 => Just(None),
-            1 => proptest::sample::select(ASKED.to_vec()).prop_map(Some),
-        ],
+        proptest::sample::select(vec![Way::Connect, Way::Socks]),
+        proptest::sample::select(ASKED.to_vec()).prop_flat_map(|host| (Just(host), payload(host))),
     );
     runner
-        .run(&strategy, |(which, host, server)| {
+        .run(&strategy, |(which, way, (host, payload))| {
             let under = &proxies[which];
-            let server = server.unwrap_or(host);
             let (lookups, dials, hits) = (
                 looked_up(&under.names).len(),
                 under.names.dials().len(),
                 under.names.origin_hits().len(),
             );
             let decided = reach.decide(host, 443, &TUNNEL_PORTS, &[]);
-            let (head, mut stream) = connect(under.proxy.port(), host);
-            if !decided.carries() {
-                prop_assert!(
-                    !head.starts_with("HTTP/1.1 200"),
-                    "{host} not listed, yet {head}"
-                );
+            let (carried, said, mut stream) = tunnel(under, way, host);
+            // A confined extension's proxy carries no SOCKS request, whatever it names.
+            let refused = !decided.carries() || (under.confined && matches!(way, Way::Socks));
+            if refused {
+                prop_assert!(!carried, "{host} by {way:?} carried: {said}");
                 prop_assert_eq!(
                     looked_up(&under.names).len(),
                     lookups,
@@ -1255,9 +1484,15 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
                 prop_assert_eq!(under.names.dials().len(), dials);
                 return Ok(());
             }
-            prop_assert!(head.starts_with("HTTP/1.1 200"), "{host}: {head}");
-            let hello = client_hello(server);
-            stream.write_all(&hello).unwrap();
+            prop_assert!(carried, "{host} by {way:?}: {said}");
+            let writes = payload.writes();
+            for (index, one) in writes.iter().enumerate() {
+                if index > 0 {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                let _ = stream.write_all(one);
+                let _ = stream.flush();
+            }
             let _ = stream.shutdown(Shutdown::Write);
             let mut rest = Vec::new();
             let _ = stream.read_to_end(&mut rest);
@@ -1272,13 +1507,23 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
                 under.names.origin_hits()[hits..].to_vec(),
                 vec![(spelled(host), 443)]
             );
-            // The server name: a confined proxy carries the hello only where it names the host.
-            let names_it = spelled(server) == spelled(host);
-            if under.confined && !names_it {
-                prop_assert!(got.is_empty(), "{host} carried a hello naming {server}");
-            } else {
-                prop_assert_eq!(got, hello, "{} naming {}", host, server);
+            let sent = writes.concat();
+            let names =
+                |server: Option<&str>| server.is_some_and(|one| spelled(one) == spelled(host));
+            if under.confined {
+                // Only a whole first record naming the host is carried, and then unchanged.
+                if names(payload.whole_naming()) {
+                    prop_assert_eq!(got, sent, "{} with {:?}", host, payload);
+                } else {
+                    prop_assert!(got.is_empty(), "{host} carried {payload:?}");
+                }
+            } else if names(payload.naming()) {
+                // A chat's proxy is a byte tunnel: what names the host arrives unchanged.
+                prop_assert_eq!(got, sent, "{} with {:?}", host, payload);
             }
+            // Otherwise nothing is asserted: a chat's proxy does not read SNI, so a hello naming
+            // another server (domain fronting), naming none, or no TLS at all is carried to the
+            // decided host as it is. A declared known gap, #6996: no law bakes it in.
             Ok(())
         })
         .unwrap();

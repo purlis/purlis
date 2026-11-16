@@ -152,9 +152,12 @@ pub fn allows(listed: &[String], host: &str) -> bool {
         match listed.strip_prefix("*.") {
             // A wildcard names names, never an address literal (#1341).
             Some(_) if host.parse::<std::net::IpAddr>().is_ok() => false,
+            // At least one label before the suffix's, and none of them empty: `..a.a` is not
+            // under `*.a.a` (T1.1-23).
             Some(suffix) => host
                 .strip_suffix(suffix)
-                .is_some_and(|head| head.len() > 1 && head.ends_with('.')),
+                .and_then(|head| head.strip_suffix('.'))
+                .is_some_and(|labels| labels.split('.').all(|label| !label.is_empty())),
             None => host == listed,
         }
     })
