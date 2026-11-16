@@ -306,6 +306,13 @@ pub struct SocketGround {
     pub writable: Vec<PathBuf>,
     /// The names a harness's own temp root starts with in a system temp folder (`claude-`).
     pub harness_temp: Vec<String>,
+    /// **Where the session bus is**, while the credential service is denied (a keyring vault, or
+    /// a model key in your keys, D6640-T3 item 7): the Secret Service answers any process on that
+    /// bus, so no grant names a socket of it ([`session_bus`]), nor systemd's runtime folder's
+    /// `bus` for any user (`/run/user/<uid>/bus`). Empty otherwise.
+    pub session_bus: Vec<PathBuf>,
+    /// Whether the credential service is denied, and so the session bus with it.
+    pub bus_held: bool,
 }
 
 impl SocketGround {
@@ -335,7 +342,16 @@ impl SocketGround {
         }
         writable.extend(super::local::granted_writes(root));
         writable.extend(super::local::grantable_folders(root));
+        let bus_held = denied
+            .services
+            .contains(&super::Service::CredentialStore);
         Self {
+            session_bus: if bus_held {
+                session_bus(&machine.env)
+            } else {
+                Vec::new()
+            },
+            bus_held,
             denied: ground.denied,
             writable,
             harness_temp: ground
@@ -348,6 +364,16 @@ impl SocketGround {
 
     /// Why a socket at `resolved` may not be granted here, or none.
     fn refuses(&self, resolved: &Path) -> Option<Refused> {
+        let runtime_bus = resolved
+            .strip_prefix("/run/user")
+            .is_ok_and(|rest| rest.components().count() == 2 && rest.ends_with("bus"));
+        if self.bus_held
+            && (runtime_bus || self.session_bus.iter().any(|bus| resolved.starts_with(bus)))
+        {
+            return Some(Refused::Never(
+                super::grant::brokered_route(super::Class::Vaults).to_owned(),
+            ));
+        }
         if let Some(denial) = self.denied.iter().find(|denial| {
             let held = |path: &Path| match denial.reach {
                 super::Reach::AndBelow => resolved.starts_with(path),
@@ -389,6 +415,42 @@ impl SocketGround {
             )
         })
     }
+}
+
+/// **Where the session bus is**, from `env`: each `unix:path=` the bus's address names, each
+/// `unix:dir=` and `unix:tmpdir=` folder a bus makes its socket in, and the runtime folder's
+/// `bus` (`$XDG_RUNTIME_DIR/bus`). The address a restarted app kept aside counts too
+/// ([`crate::chatenv::SESSION_BUS_KEPT`]). Only paths: an abstract socket is never a grant.
+pub fn session_bus(env: &crate::secrets::Env) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for name in [
+        crate::chatenv::SESSION_BUS,
+        crate::chatenv::SESSION_BUS_KEPT,
+    ] {
+        let Some(address) = env.get(name) else {
+            continue;
+        };
+        for one in address.split(';') {
+            let Some(keys) = one.strip_prefix("unix:") else {
+                continue;
+            };
+            for key in keys.split(',') {
+                if let Some(("path" | "dir" | "tmpdir", value)) = key.split_once('=') {
+                    let path = PathBuf::from(value);
+                    if path.is_absolute() && !out.contains(&path) {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(runtime) = env.get("XDG_RUNTIME_DIR").filter(|dir| dir.starts_with('/')) {
+        let bus = Path::new(&runtime).join("bus");
+        if !out.contains(&bus) {
+            out.push(bus);
+        }
+    }
+    out
 }
 
 /// **The local sockets of the system's name lookup** (#2657): Linux's

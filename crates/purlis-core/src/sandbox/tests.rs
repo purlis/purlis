@@ -247,14 +247,20 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
             root.join(".charter/vaults"),
             root.join(".charter/fingerprint.key"),
             root.join(".charter/vault-links.json"),
+            // A fenced build's stub keyring (R-772, T1a-72).
+            root.join(".charter/keyring-stub.json"),
             // Every spelling of the state folder, there or not.
             root.join(".purlis/vaults"),
             root.join(".purlis/fingerprint.key"),
             root.join(".purlis/vault-links.json"),
+            root.join(".purlis/keyring-stub.json"),
             root.join("secrets/dev.json"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/op"),
             std::path::PathBuf::from("/nonexistent-home/op/.op"),
             std::path::PathBuf::from("/nonexistent-home/op/.vault-token"),
+            // And beside the config home's stores, under each spelling of its folder.
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/keyring-stub.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/keyring-stub.json"),
         ]
     );
 }

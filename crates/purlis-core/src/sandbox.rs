@@ -2180,6 +2180,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         crate::secrets::links::path(&ctx),
         Access::ReadWrite,
     );
+    // The keyring a fenced build keeps in a file (every test build's, `secrets::keyring`): no
+    // chat reads or writes it, so a test of what a chat reaches of the keyring is never answered
+    // by a stub line (R-772, T1a-72).
+    deny(
+        Class::Vaults,
+        ctx.state.join(crate::secrets::keyring::STUB_FILE),
+        Access::ReadWrite,
+    );
     // …and under EVERY spelling of the state folder, there or not, as its other records are
     // below (RN-2a): which folder holds the vaults is decided by which are there.
     // The folder in use is one of the spellings unless `$PURLIS_HOME` moved it: named once.
@@ -2187,12 +2195,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         ctx.vaults_dir(),
         crate::secrets::fingerprint::key_path(&ctx),
         crate::secrets::links::path(&ctx),
+        ctx.state.join(crate::secrets::keyring::STUB_FILE),
     ];
     for state in crate::names::STATE_DIR.spellings() {
         for kept in [
             "vaults",
             crate::secrets::fingerprint::KEY_FILE,
             crate::secrets::links::FILE,
+            crate::secrets::keyring::STUB_FILE,
         ] {
             let path = root.join(state).join(kept);
             if !in_use.contains(&path) {
@@ -2618,6 +2628,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::yourkeys::DIR),
                 Access::ReadWrite,
             );
+            // The keyring a fenced build keeps beside the config home's stores (R-772, T1a-72).
+            deny(
+                Class::Vaults,
+                home.join(crate::secrets::keyring::STUB_FILE),
+                Access::ReadWrite,
+            );
         }
         // The files each pool over Docker's TLS API names (#6267): its CA, which a chat could
         // otherwise swap, and its client certificate and a key kept where it is, which would
@@ -2790,6 +2806,16 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 denial.any_case = true;
             }
         }
+    }
+    // A model key in your keys counts as a keyring vault (decisions.md D6640-T3 item 7): the
+    // credential service is denied to every chat whenever one exists, so no chat asks the Secret
+    // Service for a model key on a session bus a person allowed it.
+    if let Some(config_root) = crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    ) {
+        keyring |= crate::yourkeys::may_hold_a_key(&config_root);
     }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();

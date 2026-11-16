@@ -179,6 +179,8 @@ fn a_kept_socket_swapped_for_a_link_reshaped_or_where_a_chat_writes_is_not_compi
         writable: vec![at.join("project")],
         // This fixture may itself sit in a harness's temp root: that rule has its own test.
         harness_temp: Vec::new(),
+        session_bus: Vec::new(),
+        bus_held: false,
     };
     let kept = [
         at.join("real/a.sock"),
@@ -207,6 +209,8 @@ fn a_socket_where_a_chat_may_write_is_refused_with_why() {
         denied: Vec::new(),
         writable: vec![PathBuf::from("/Users/op/plane")],
         harness_temp: vec!["claude-".to_owned()],
+        session_bus: Vec::new(),
+        bus_held: false,
     };
     for path in [
         "/Users/op/plane/workspaces/alpha/app.sock",

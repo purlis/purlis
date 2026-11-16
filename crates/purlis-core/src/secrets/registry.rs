@@ -41,8 +41,26 @@ pub fn name_ok(name: &str) -> bool {
         && !name.contains("..")
 }
 
-/// The refusal for a vault name [`name_ok`] rejects.
+/// **Why `name` is refused where it names your keys** (T1a-72, R-772): by the name a command
+/// would hand over for it or by its keychain service ([`crate::yourkeys::named_by`]). Your keys
+/// holds the model keys `yourkeys::read_key` alone reads, so every existing secret path (`secret
+/// exec`, `secret_ask` and its Link answer, the browser's secret fill, a tool value sent to a
+/// runner) refuses it in these words, naming it as not theirs. `None` for any other name.
+pub fn your_keys_refusal(name: &str) -> Option<String> {
+    crate::yourkeys::named_by(name).then(|| {
+        format!(
+            "'{}' is your keys: the model keys purlis alone reads, for its key proxy. No \
+             command, tool, fill or runner reads from it.",
+            crate::personas::one_line(name.trim())
+        )
+    })
+}
+
+/// The refusal for a vault name [`name_ok`] rejects: [`your_keys_refusal`]'s for your keys.
 pub fn name_refusal(name: &str) -> String {
+    if let Some(why) = your_keys_refusal(name) {
+        return why;
+    }
     format!(
         "'{}' is not a vault name purlis accepts: letters, digits, '.', '_' and '-', starting \
          with a letter or digit, and never '..'.",
