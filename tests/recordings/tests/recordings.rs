@@ -564,6 +564,8 @@ fn codex_runs_a_covering_script_against_the_responses_stand_in() {
             "-c",
             "model_providers.standin.wire_api=\"responses\"",
             "-c",
+            "features.apply_patch_freeform=true",
+            "-c",
             "model_providers.standin.request_max_retries=0",
             "-c",
             "model_providers.standin.stream_max_retries=0",

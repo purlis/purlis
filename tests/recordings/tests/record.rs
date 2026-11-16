@@ -297,7 +297,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let started = Instant::now();
     let mut pressed = false;
     let mut accepted_prompts = 0;
-    let mut bypass_accepted = false;
+    let mut bypass_presses = 0u32;
     let mut harness_asks = 0u32;
     loop {
         assert!(
@@ -342,12 +342,15 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         }
         // Claude Code's bypass-permissions warning defaults to "No, exit": a person who chose
         // the mode takes "Yes, I accept".
-        if !bypass_accepted
+        if bypass_presses < 5
             && screen.contains("Bypass Permissions mode")
             && screen.contains("Yes, I accept")
         {
-            session.write(b"\x1b[B\r").expect("Yes, I accept is chosen");
-            bypass_accepted = true;
+            std::thread::sleep(Duration::from_secs(1));
+            session.write(b"\x1b[B").expect("Down is pressed");
+            std::thread::sleep(Duration::from_millis(600));
+            session.write(b"\r").expect("Yes, I accept is chosen");
+            bypass_presses += 1;
             std::thread::sleep(Duration::from_secs(2));
         }
         // A harness's own permission ask during the turn (OpenCode's "Permission required" for
@@ -517,6 +520,15 @@ fn prepare_harness(
             value["hasCompletedOnboarding"] = true.into();
             value["theme"] = "dark".into();
             value["bypassPermissionsModeAccepted"] = true.into();
+            // And in the profile's own settings, where 2.1 reads that the person accepted it.
+            let settings = profile_config.join("settings.json");
+            let mut own: serde_json::Value = fs::read_to_string(&settings)
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            own["skipDangerousModePermissionPrompt"] = true.into();
+            fs::create_dir_all(profile_config).expect("the profile's folder");
+            write_json(&settings, &own);
             value["customApiKeyResponses"] =
                 serde_json::json!({"approved": [tail], "rejected": []});
             value["projects"][root.display().to_string()] =
@@ -566,6 +578,8 @@ fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
             "model_providers.standin.name=\"stand-in\"".to_owned(),
             format!("model_providers.standin.base_url=\"{base_url}/v1\""),
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
+            // Its freeform apply_patch, which a custom provider's model is otherwise not offered.
+            "features.apply_patch_freeform=true".to_owned(),
             "model_providers.standin.request_max_retries=0".to_owned(),
             "model_providers.standin.stream_max_retries=0".to_owned(),
         ]
