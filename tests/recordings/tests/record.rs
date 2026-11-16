@@ -46,6 +46,9 @@ const STAND_IN_KEY: &str = "stand-in-model-no-credential";
 const STALL: &str = "sessionstart";
 const EXIT2: &str = "pretooluse";
 
+/// The permission mode a Claude Code recording runs in ([`harness_words`]).
+const PERMISSION_MODE: &str = "bypassPermissions";
+
 fn var(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
 }
@@ -96,7 +99,13 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let version = version_of(&harness, &program);
 
     // Outside the system's temp folders, which a chat at Full may write.
-    let base = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).expect("a folder");
+    // Outside any git work tree, or a harness reads the repo's state into its prompt: the
+    // run's own folder where it names one (`PURLIS_RECORD_BASE`).
+    let base_in = std::env::var_os("PURLIS_RECORD_BASE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_TARGET_TMPDIR")));
+    fs::create_dir_all(&base_in).expect("the run's folder");
+    let base = tempfile::tempdir_in(&base_in).expect("a folder");
     let base_path = base.path().canonicalize().expect("the folder");
     let root = base_path.join("project");
     let outside = base_path.join("outside");
@@ -383,6 +392,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         forced: [("stall", STALL), ("exit2", EXIT2)]
             .into_iter()
             .chain(pressed.then_some(("esc", "pressed")))
+            .chain((harness == "claude").then_some(("permission_mode", PERMISSION_MODE)))
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
             .collect(),
         roots,
@@ -512,6 +522,11 @@ fn prepare_harness(
 /// The words a harness is started with to reach the stand-in, beside purlis's own.
 fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
     match harness {
+        // Claude Code's default, auto mode, checks each call on Anthropic's servers, which a
+        // stand-in model is not: it stops the turn to ask (2.1.325's first recording). The
+        // recording runs without its prompts instead; its deny rules and purlis's hooks hold
+        // as they do in every mode.
+        "claude" => vec!["--permission-mode".to_owned(), PERMISSION_MODE.to_owned()],
         "codex" => [
             "model_provider=\"standin\"".to_owned(),
             "model=\"stand-in\"".to_owned(),
@@ -554,6 +569,9 @@ fn asks_to_go_on(screen: &str) -> bool {
         "press enter",
         "enter to confirm",
         "yes, proceed",
+        // Codex 0.169's "Folder access" for a folder purlis marks untrusted.
+        "open restricted",
+        "enter continue",
     ]
     .iter()
     .any(|ask| screen.contains(ask))
