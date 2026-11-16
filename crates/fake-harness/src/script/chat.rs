@@ -26,6 +26,9 @@ use super::turns::{Call, Script, Turn};
 /// What Claude Code's covering recording ran in, and what it reports where nothing says.
 const CLAUDE_PERMISSION_MODE: &str = "default";
 
+/// The variable OpenCode's shim names the session in, under each of its names.
+const SESSION_ID_ENV: &str = "PURLIS_SESSION_ID";
+
 /// How long an MCP tool call is waited on.
 const MCP_PATIENCE: Duration = Duration::from_secs(60);
 
@@ -643,8 +646,7 @@ impl Chat {
             .stderr(Stdio::piped());
         if self.dialect == Dialect::Opencode {
             // The shim's `shell.env`: the session, in every shell a tool opens.
-            cmd.env("PURLIS_SESSION_ID", &self.session_id)
-                .env("CHARTER_SESSION_ID", &self.session_id);
+            purlis_core::envvar::set_on(&mut cmd, SESSION_ID_ENV, &self.session_id);
         }
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
@@ -1441,9 +1443,13 @@ impl Chat {
                     ),
                     ("OPENCODE".to_owned(), "1".to_owned()),
                     ("OPENCODE_PID".to_owned(), pid),
-                    ("PURLIS_SESSION_ID".to_owned(), self.session_id.clone()),
-                    ("CHARTER_SESSION_ID".to_owned(), self.session_id.clone()),
                 ]);
+                // The session, under each of its names, as the shim hands every hook it.
+                env.extend(
+                    purlis_core::envvar::spellings(SESSION_ID_ENV)
+                        .into_iter()
+                        .map(|name| (name, self.session_id.clone())),
+                );
             }
         }
         env
