@@ -426,6 +426,25 @@ fn a_plain_request_whose_host_header_names_another_host_is_refused() {
 }
 
 #[test]
+fn a_host_header_naming_an_ipv6_address_in_brackets_is_its_targets_host() {
+    // `http://[::1]/` is sent with `Host: [::1]`: its last colon is inside the brackets.
+    for (named, host, port, same) in [
+        ("[::1]", "::1", 80, true),
+        ("[::1]:8080", "::1", 8080, true),
+        ("[::1]:8080", "::1", 80, false),
+        ("[::1]", "::2", 80, false),
+        ("[::1]x", "::1", 80, false),
+        ("[::1", "::1", 80, false),
+        ("::1", "::1", 80, false),
+        ("Example.com.:8080", "example.com", 8080, true),
+        ("example.com", "example.com", 80, true),
+        ("example.com", "example.com", 8080, false),
+    ] {
+        assert_eq!(super::same_host(named, host, port), same, "{named:?}");
+    }
+}
+
+#[test]
 fn a_plain_request_carries_its_body_and_nothing_after_it() {
     let (listener, port) = an_echo_server();
     let upstream = std::thread::spawn(move || {
