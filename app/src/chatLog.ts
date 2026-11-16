@@ -5,6 +5,7 @@ import type { ChatLogRow, ChatLogSummary, StartProtection } from "./bindings";
 import { HARNESSES } from "./settings/harnesses";
 import { LEVEL_SAID } from "./settings/levels";
 import type { ViewRef } from "./tabs";
+import { windowCopy } from "./windowCopy";
 
 /**
  * **A chat's Chat log in the window** (R-224, R-225, R-310, T1-27; ADR 0124 decision 11): the
@@ -169,6 +170,9 @@ const ASK_SAID: Readonly<Record<string, string>> = {
   loop_pause: "whether to keep going after a loop",
   budget: "whether to go past a budget",
   hook_give_up: "about a hook that gave up",
+  // Phase 1a's two groups (T1a-61, U12).
+  model_key: windowCopy.W94,
+  pool_allow: windowCopy.W95,
 };
 
 /** The groups whose Allow lets the chat go on, and whose refusal stops it. */
@@ -180,6 +184,7 @@ const GOES_ON = new Set(["loop_pause", "budget"]);
  */
 const ALLOWED_SAID: Readonly<Record<string, string>> = {
   budget: "Let it go on past its budget",
+  model_key: `Allowed ${windowCopy.W122}`,
 };
 
 /** Who answered, as an ask's row says it. */

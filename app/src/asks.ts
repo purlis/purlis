@@ -55,6 +55,7 @@ import {
   SIGNING_WAITING_CHANGED,
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
+import { windowCopy } from "./windowCopy";
 import { asDrawn, asNamed } from "./projectExpects";
 import { concerns, followPlaneChanged, SETTINGS } from "./planeChanged";
 
@@ -936,6 +937,17 @@ export async function answerTaken(
         if (option !== "trust-all") break;
         const refused = await trustEach(plane, path.clones);
         return refused === undefined ? { status: "ok" } : { status: "error", error: refused };
+      }
+      case "unlock-your-keys": {
+        // Your keys locked at a start (T1a-61, W10): Unlock runs the OS's unlock. Where it
+        // unlocks, the start reads its key again and goes on; a cancel leaves the Ask as it was,
+        // answering nothing; a failure leaves it with W84 under it.
+        if (option !== "unlock") break;
+        const unlocked = await commands.unlockYourKeys();
+        if (unlocked.status === "error") return unlocked;
+        if (unlocked.data === "failed") return { status: "error", error: windowCopy.W84 };
+        if (unlocked.data === "cancelled") opened = true;
+        return { status: "ok" };
       }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

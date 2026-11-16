@@ -120,6 +120,10 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "looping",
   // A merge its chat's hook held (T1-39, R-114): Merge and Don't merge, on its pane too.
   "merge-hold",
+  // Your keys locked at a start (T1a-61, W10), and the pool key allowance at an unattended
+  // start (T1a-53, W30): their chat's, on its pane.
+  "model-key-locked",
+  "pool-key-allowance",
 ]);
 
 /**

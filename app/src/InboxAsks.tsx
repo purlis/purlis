@@ -306,6 +306,8 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // is on the row, as Q181 has it.
   "trust-clone",
   "trust-clones",
+  // Your keys locked at a start (T1a-61, W10): Unlock on the row.
+  "model-key-locked",
 ]);
 
 /** The option id only a block loop's pause offers: its lead, Tell it to stop trying (`pauses.rs`). */
@@ -552,6 +554,11 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
   "trust-clones": "Asks you to trust clones purlis did not clone",
+  "model-key-locked": "Asks you to unlock your keychain",
+  "model-key-missing": "A model key is missing from your keys",
+  "model-key-unmarked": "Asks you to mark a model key again",
+  "model-key-copy": "Asks you to copy a profile's key to your keys",
+  "pool-key-allowance": "Asks to send a model key to a pool",
 };
 
 /** Why a task's question reached the person, as its row says it. */

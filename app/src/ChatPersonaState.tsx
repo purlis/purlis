@@ -17,6 +17,7 @@ import {
 } from "./chatState";
 import { PersonaMark } from "./PersonaMark";
 import { shownState, urgentOf, type RowFacts, type Shown } from "./shownState";
+import { namedByAnAsk } from "./askNames";
 import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
 import { NONE_BELOW, tasksAtWorkOf, type TasksBelow } from "./sessionTasks";
 import { standingOf, type QuestionStanding } from "./taskQuestions";
@@ -62,9 +63,12 @@ export function useShownState({
   const below = useTasksBelow(session);
   // Its question, where the asks registry says it stands (#4564): never a copy of its own.
   const question = useQuestionStanding(session);
+  // A no-chat model key Ask that names it marks its tab (T1a-61).
+  const named = namedByAnAsk(useQuestionsHere()?.asks, session);
   return useChatsSelect(
     useChatsHere(),
-    (states) => shownFrom(states, below, question, { session, shell, report, outcome, harness }),
+    (states) =>
+      shownFrom(states, below, question, { session, shell, report, outcome, harness }, named),
     sameShown,
   );
 }
@@ -76,10 +80,11 @@ function shownFrom(
   below: TasksBelow,
   question: QuestionStanding | undefined,
   { session, shell, report = null, outcome = null, harness }: ShownOf,
+  named = false,
 ): Shown | undefined {
   return shownState({
     board: markOf(states, session, shell),
-    needsYou: asksThePerson(states, session) || question?.level === "needs-you",
+    needsYou: asksThePerson(states, session) || question?.level === "needs-you" || named,
     failuresUnseen: failuresUnseenOf(states, session),
     failedUnseen: failedUnseen(states, session),
     task:
@@ -115,6 +120,7 @@ export function useUrgentChat(chats: readonly ShownOf[]): number | undefined {
             below.get(one.session) ?? NONE_BELOW,
             standingOf(questions, one.session),
             one,
+            namedByAnAsk(questions?.asks, one.session),
           )?.mark,
       )?.session,
   );
