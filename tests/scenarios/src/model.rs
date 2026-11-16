@@ -127,6 +127,11 @@ pub struct Cell {
     /// The ruling that keeps this cell to the nightly production run (today Q300's M-NET-25).
     #[serde(default)]
     pub production_nightly_only: Option<String>,
+    /// **The `[policy]` template its chats start under** (Q308): `open`, `watch`, `team` or
+    /// `strict`. None is `strict`, today's purlis, which every cell runs under unless it names
+    /// another (T1.1-06).
+    #[serde(default)]
+    pub template: Option<String>,
     pub steps: Vec<Step>,
 }
 

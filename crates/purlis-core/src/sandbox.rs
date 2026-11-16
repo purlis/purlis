@@ -5349,6 +5349,8 @@ impl Applied {
                     reached,
                     asks,
                     timings: timings::Timings::production(),
+                    #[cfg(any(test, feature = "test-support"))]
+                    names: None,
                 })
             })
             .transpose()
@@ -5401,6 +5403,8 @@ impl Applied {
                 reached,
                 asks: None,
                 timings: timings::Timings::production(),
+                #[cfg(any(test, feature = "test-support"))]
+                names: None,
             },
         )
     }

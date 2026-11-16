@@ -222,6 +222,41 @@ impl Names {
     }
 }
 
+/// The seam the `purlis secret exec` tunnels of this process dial through, while a scenario holds
+/// [`TunnelsThrough`] ([`Names::carry_tunnels`], T1.1-06).
+static TUNNELS: Mutex<Option<Arc<Names>>> = Mutex::new(None);
+
+/// **While held, every `purlis secret exec` tunnel this process opens looks its target up and
+/// dials it through one scenario's [`Names`]** (T1.1-06): a tunnel is opened by the vault broker
+/// deep inside a brokered run, which a scenario reaches only through the run's own request, so
+/// the seam is held for the process rather than handed down. Dropping it lets go, and later
+/// tunnels ask the system again.
+#[must_use = "the tunnels dial through the seam only while this is held"]
+pub struct TunnelsThrough(());
+
+impl Drop for TunnelsThrough {
+    fn drop(&mut self) {
+        *TUNNELS.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
+impl Names {
+    /// **Every `purlis secret exec` tunnel this process opens dials through these names** while
+    /// the answer is held ([`TunnelsThrough`]).
+    pub fn carry_tunnels(self: &Arc<Self>) -> TunnelsThrough {
+        *TUNNELS.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(self));
+        TunnelsThrough(())
+    }
+}
+
+/// The seam a tunnel opened now dials through, if a scenario holds one.
+pub(crate) fn tunnels() -> Option<Arc<Names>> {
+    TUNNELS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
 /// The most names [`ASKED_THE_SYSTEM`] keeps: the newest, each once. A test asks about a name it
 /// made unique, just after asking, so a bound this size never loses one it looks for.
 const ASKED_KEPT: usize = 4096;

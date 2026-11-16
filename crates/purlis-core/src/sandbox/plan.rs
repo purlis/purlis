@@ -75,6 +75,10 @@ pub struct Telling {
     /// The one value every timer of the confinement waits by (T1.1-01): its proxy's, and its
     /// board's where [`Hearing::here`] made it.
     pub timings: Timings,
+    /// **A scenario's resolver seam** (T1.1-06), a test build's alone: where the proxy looks
+    /// names up and dials ([`super::names`]). None asks the system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub names: Option<Arc<super::names::Names>>,
 }
 
 impl Default for Telling {
@@ -84,6 +88,8 @@ impl Default for Telling {
             reached: None,
             asks: None,
             timings: Timings::production(),
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
         }
     }
 }
@@ -151,6 +157,8 @@ impl Hearing {
             reached: self.reached,
             asks: self.asks.map(|asking| asking.board(&timings)),
             timings,
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
         }
     }
 }
@@ -317,6 +325,8 @@ impl Plan {
             refusals: telling.refusals,
             reached: telling.reached,
             asks: telling.asks,
+            #[cfg(any(test, feature = "test-support"))]
+            names: telling.names,
             ..egress::Serving::of(reach, &telling.timings)
         }
     }

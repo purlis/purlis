@@ -13,7 +13,6 @@
 //! hosts wherever it runs. Each binary hands it to its host through the host crate's `Confine`
 //! seam, which links no core.
 
-use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -79,6 +78,57 @@ pub fn start(
     askable: Askable,
     timings: &Timings,
 ) -> Result<Hosted, String> {
+    starting(
+        project_path,
+        confine,
+        planned,
+        alone,
+        tell,
+        askable,
+        timings,
+        #[cfg(any(test, feature = "test-support"))]
+        None,
+    )
+}
+
+/// **[`start`], its proxy looking names up and dialling through a scenario's resolver seam**
+/// (T1.1-06), a test build's alone: what the scenario host's own `Confine` starts each chat's
+/// confinement with, so the session host's proxies are counted as the window's are.
+#[cfg(any(test, feature = "test-support"))]
+#[allow(clippy::too_many_arguments)]
+pub fn start_through(
+    project_path: &Path,
+    confine: &session::Confine,
+    planned: Planned,
+    alone: &[u16],
+    tell: Tell,
+    askable: Askable,
+    timings: &Timings,
+    names: Arc<super::names::Names>,
+) -> Result<Hosted, String> {
+    starting(
+        project_path,
+        confine,
+        planned,
+        alone,
+        tell,
+        askable,
+        timings,
+        Some(names),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn starting(
+    project_path: &Path,
+    confine: &session::Confine,
+    planned: Planned,
+    alone: &[u16],
+    tell: Tell,
+    askable: Askable,
+    timings: &Timings,
+    #[cfg(any(test, feature = "test-support"))] names: Option<Arc<super::names::Names>>,
+) -> Result<Hosted, String> {
     let planned_as = Plan::from_wire(&confine.plan)?;
     let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
     let root = project_path.to_path_buf();
@@ -139,6 +189,8 @@ pub fn start(
         )),
         asks: board.clone(),
         timings: *timings,
+        #[cfg(any(test, feature = "test-support"))]
+        names,
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
@@ -160,11 +212,13 @@ pub fn start(
 /// machine, the runner** (#2445, [`Plan::fits`]), or why not, in a sentence. Refused where the
 /// runner's own addresses cannot be read: it could not tell them from another's.
 pub fn fits_here(project_path: &Path, wired: &session::ConfinePlan) -> Result<(), String> {
+    // Through the one place purlis asks the system's resolver, so a test build records every
+    // name a plan's fit looked up (`sandbox::names::asked_the_system`, T1.1-06).
     let resolve = |name: &str, port: u16| {
-        (name, port)
-            .to_socket_addrs()
-            .map(|found| found.map(|at| at.ip()).collect())
-            .unwrap_or_default()
+        egress::system_resolve(name, port)
+            .into_iter()
+            .map(|at| at.ip())
+            .collect()
     };
     fits_with(
         project_path,
@@ -343,6 +397,12 @@ fn next_changed(board: Option<&Asks>, change: &ReachChange) -> Option<Result<Vec
 }
 
 impl Hosted {
+    /// How long its board holds a connection while the person is asked (T1.1-06): `None` where
+    /// its proxy asks nobody.
+    pub fn holds_asks_for(&self) -> Option<std::time::Duration> {
+        self.board.as_ref().map(|board| board.holds_for())
+    }
+
     /// Where it is: its proxy's ports and the folders beside it. The id is the host's to fill.
     pub fn confined(&self) -> Confined {
         let placed = self.confinement.placed();
