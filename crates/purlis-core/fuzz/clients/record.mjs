@@ -49,22 +49,31 @@ function headOn(socket) {
   });
 }
 
-/** A proxy that records one head each connection, and answers nothing. */
-async function listener() {
-  const heads = [];
-  const server = net.createServer((socket) => heads.push(headOn(socket)));
+/**
+ * The head one client sends for one URL: a listener of its own on 127.0.0.1, given to `send` as
+ * the proxy, which takes the first connection's head and answers nothing. A listener per client
+ * per URL, so a head is never filed under another client's or another URL's request. The head is
+ * kept however the client ends: it errors when the listener closes on it, after sending it.
+ * Null when it sent none in time (it refused the URL).
+ */
+async function headSent(send) {
+  const sockets = new Set();
+  let first = null;
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    first ??= headOn(socket);
+  });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  return {
-    proxy: `http://127.0.0.1:${server.address().port}`,
-    async next() {
-      while (heads.length === 0) await new Promise((r) => setTimeout(r, 10));
-      return heads.shift();
-    },
-    close: () => server.close(),
-  };
+  await send(`http://127.0.0.1:${server.address().port}`);
+  const deadline = Date.now() + 500;
+  while (first === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  const head = first === null ? null : await first;
+  for (const socket of sockets) socket.destroy();
+  server.close();
+  return head || null;
 }
 
 function curl(url, proxy) {
@@ -85,12 +94,13 @@ function node(url, proxy) {
         proxyEnv: secure ? { HTTPS_PROXY: proxy } : { HTTP_PROXY: proxy },
       });
       const req = (secure ? https : http).request(url, { agent, timeout: 3000 });
-      req.on("error", () => resolve(false));
+      // Ended either way: the listener closes on the head it read, so this errors.
+      req.on("error", () => resolve());
       req.on("timeout", () => req.destroy());
-      req.on("close", () => resolve(true));
+      req.on("close", () => resolve());
       req.end();
     } catch {
-      resolve(false);
+      resolve();
     }
   });
 }
@@ -157,14 +167,10 @@ async function main([out, flag]) {
       if (url.startsWith("http:")) write("node", n, url, await nodeInProcess(url));
     }
   } else {
-    const proxy = await listener();
     for (const [n, url] of urls.entries()) {
-      // A client that refuses the URL sends nothing; the listener then has nothing to give.
-      if (await node(url, proxy.proxy)) write("node", n, url, await proxy.next());
-      await curl(url, proxy.proxy);
-      write("curl", n, url, await Promise.race([proxy.next(), new Promise((r) => setTimeout(r, 500, null))]));
+      write("node", n, url, await headSent((proxy) => node(url, proxy)));
+      write("curl", n, url, await headSent((proxy) => curl(url, proxy)));
     }
-    proxy.close();
   }
   console.log(
     `recorded ${written.node + written.curl} heads (node ${written.node}, curl ${written.curl}) ` +
