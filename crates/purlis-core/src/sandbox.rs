@@ -315,6 +315,10 @@ pub struct Policy {
     /// would make itself ([`OWN_TERMINAL_ONLY`]). **Off unless the file says `true`**: the key
     /// only ever narrows.
     pub own_terminal_only: bool,
+    /// `compile-cache`: the project's shared compile cache ([`compile_cache`], Q324). **Off
+    /// unless the file says `"sccache"`**: the future policy key `sandbox.compile-cache`, whose
+    /// default is `"none"` (Q307 Q6).
+    pub compile_cache: compile_cache::CompileCache,
     /// Each persona's own grants: `[sandbox.personas.<name>]` in the committed file (#1362).
     pub personas: std::collections::BTreeMap<String, persona::Grants>,
 }
@@ -328,6 +332,7 @@ impl Policy {
             hosts: Vec::new(),
             certificate_checks: true,
             own_terminal_only: false,
+            compile_cache: compile_cache::CompileCache::None,
             personas: std::collections::BTreeMap::new(),
         }
     }
@@ -624,6 +629,8 @@ pub enum Refusal {
     CertificateChecksNotABool,
     /// `own-terminal-only` that is not `true` or `false`: read as `true`, the narrow value.
     OwnTerminalOnlyNotABool,
+    /// `compile-cache` that is not `"none"` or `"sccache"`, as written: read as `"none"`.
+    CompileCacheUnknown(String),
     /// A `policy` that is not `"never"` or `"local"`: read as `"never"`.
     PolicyUnknown,
     /// Something in `personas` that grants nothing ([`persona::read`]), as one sentence with
@@ -701,6 +708,14 @@ impl fmt::Display for Refusal {
                 "{TABLE}.{OWN_TERMINAL_ONLY} in {FILE} is not true or false; chats keep to their \
                  own terminal until it is"
             ),
+            Self::CompileCacheUnknown(written) => write!(
+                f,
+                "{TABLE}.{} in {FILE} is {written}, which is not \"{}\" or \"{}\"; chats build \
+                 with no compile cache until it is one",
+                compile_cache::KEY,
+                compile_cache::NONE,
+                compile_cache::SCCACHE
+            ),
             Self::PolicyUnknown => write!(
                 f,
                 "{TABLE}.{} in {FILE} is not \"never\" or \"local\", so it is read as \
@@ -731,6 +746,7 @@ impl Refusal {
             Self::BrowserSitesNotAList | Self::BrowserSite(..) => at(browser_sites::KEY),
             Self::CertificateChecksNotABool => at(CERTIFICATE_CHECKS),
             Self::OwnTerminalOnlyNotABool => at(OWN_TERMINAL_ONLY),
+            Self::CompileCacheUnknown(_) => at(compile_cache::KEY),
             Self::PolicyUnknown => at(team::KEY),
             Self::Persona(said) => said.key.clone().unwrap_or_else(|| at(persona::KEY)),
             Self::ForgeHost(..) => vec!["forge".to_owned()],
@@ -838,6 +854,7 @@ impl Said {
                 && key != browser_sites::KEY
                 && key != CERTIFICATE_CHECKS
                 && key != OWN_TERMINAL_ONLY
+                && key != compile_cache::KEY
                 && key != persona::KEY
                 && key != services::EXPECTS
                 && key != team::KEY
@@ -909,6 +926,21 @@ impl Said {
                 true
             }
         };
+        // Off unless the file says `"sccache"`: what cannot be read is refused and read as
+        // `"none"`, the narrow value.
+        let compile_cache = match table.get(compile_cache::KEY) {
+            None => compile_cache::CompileCache::None,
+            Some(value) => match value
+                .as_str()
+                .and_then(compile_cache::CompileCache::of_word)
+            {
+                Some(asked) => asked,
+                None => {
+                    refused.push(Refusal::CompileCacheUnknown(value.to_string()));
+                    compile_cache::CompileCache::None
+                }
+            },
+        };
         let (personas, not) = persona::keyed(table.get(persona::KEY), FILE, known);
         refused.extend(not.into_iter().map(Refusal::Persona));
         // The forge preset lets a project's `[[forge]]` hosts through, but not one the sandbox
@@ -925,6 +957,7 @@ impl Said {
             hosts,
             certificate_checks,
             own_terminal_only,
+            compile_cache,
             personas,
         };
         let (policy, unset) = if on {
@@ -4030,7 +4063,11 @@ impl Widened {
                 .iter()
                 .any(|preset| preset.widens_caches())
                 .then(|| caches::home_of(machine, root, denied))
-                .flatten(),
+                .flatten()
+                .map(|home| match policy.compile_cache {
+                    compile_cache::CompileCache::Sccache => home.with_sccache(machine, root),
+                    compile_cache::CompileCache::None => home,
+                }),
             // On unless the project's file says `false` (R1): nothing a person grants, and
             // nothing a committed file can widen, since `true` is what an absent key means.
             // Policy has its say in [`Self::and_granted`].
@@ -5173,6 +5210,16 @@ impl Applied {
             line.env
                 .retain(|(key, _)| !caches.env.iter().any(|(set, _)| set == key));
             line.env.extend(caches.env.iter().cloned());
+            // The project's compile cache (Q324), where this chat's sandbox grants its server's
+            // socket: never otherwise, so a chat whose server could not listen builds as before.
+            if let (Some(sccache), Some(socket)) =
+                (&caches.sccache, compile_cache_socket(&self.form, at))
+            {
+                let gained = sccache.env(&socket);
+                line.env
+                    .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
+                line.env.extend(gained);
+            }
         }
         // The persona's tools (#1407): their shims first on the chat's `PATH`.
         if let Some(resolved) = &self.tools {
@@ -5695,6 +5742,21 @@ fn doors_to(folder: &Path, ports: &[u16]) -> std::io::Result<(Vec<door::Door>, V
         }
     }
     Ok((doors, unserved))
+}
+
+/// **Where a chat's sccache server listens** ([`compile_cache::socket_in`]), for a chat whose
+/// sandbox puts its builds through the project's compile cache: a Claude Code chat on macOS,
+/// with a temp folder of its own. `None` for every other chat, which gets no wrapper.
+pub fn compile_cache_socket(form: &Form, at: &At<'_>) -> Option<PathBuf> {
+    let Form::ClaudeCode(settings) = form else {
+        return None;
+    };
+    if !settings.compile_cache {
+        return None;
+    }
+    at.confinement
+        .and_then(Confinement::tmp)
+        .map(compile_cache::socket_in)
 }
 
 /// **Where a confinement is**: its proxy's two ports, and the folders beside it. What the
@@ -8426,6 +8488,7 @@ pub mod caches;
 pub mod claude;
 pub mod claude_wrap;
 pub mod codex;
+pub mod compile_cache;
 pub mod confined;
 pub mod door;
 pub mod egress;

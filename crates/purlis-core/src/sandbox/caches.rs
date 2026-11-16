@@ -154,9 +154,31 @@ pub struct CacheHome {
     /// [`crate::leftovers::HOME_NOTE`] says, so the home can be removed once the project is
     /// gone (#1364). Empty where it is not known, and then no note is written.
     pub project: PathBuf,
+    /// The project's compile cache, where its `[sandbox]` turns it on and this machine has an
+    /// sccache a chat may be handed ([`super::compile_cache`]). Its folder is one of
+    /// [`Self::trees`].
+    pub sccache: Option<super::compile_cache::Sccache>,
 }
 
 impl CacheHome {
+    /// This home with the project at `root`'s compile cache on `machine` ([`super::compile_cache`]):
+    /// the sccache a chat may be handed, and its folder among the trees a chat writes. As it was
+    /// where the machine has no such sccache.
+    #[must_use]
+    pub fn with_sccache(mut self, machine: &Machine, root: &Path) -> Self {
+        use super::compile_cache;
+        let writable = compile_cache::writable_for(machine, root, &self.root);
+        let Some(program) = compile_cache::find(machine, &writable) else {
+            return self;
+        };
+        let dir = self.root.join(compile_cache::DIR);
+        if !self.trees.contains(&dir) {
+            self.trees.push(dir.clone());
+        }
+        self.sccache = Some(compile_cache::Sccache { program, dir });
+        self
+    }
+
     /// Every folder purlis makes before the chat starts, outermost first.
     pub fn folders(&self) -> Vec<PathBuf> {
         let mut out = vec![self.root.clone()];
@@ -367,6 +389,7 @@ pub fn home_of(machine: &Machine, root: &Path, denied: &Denied) -> Option<CacheH
         gradle_properties: gradle_properties(&person_gradle_properties(machine)),
         // As [`super::Homes::project_key`] names the home for it.
         project: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+        sccache: None,
     };
     home.trees
         .splice(0..0, CARGO_TREES.iter().map(|tree| cargo.join(tree)));

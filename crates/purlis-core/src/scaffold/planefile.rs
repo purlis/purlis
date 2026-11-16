@@ -342,6 +342,7 @@ mod tests {
                 certificate_checks: true,
                 personas: Default::default(),
                 own_terminal_only: false,
+                compile_cache: Default::default(),
             })
         );
         assert!(said.refused.is_empty(), "{:?}", said.refused);

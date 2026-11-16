@@ -1460,6 +1460,7 @@ fn an_outcome_chat_has_no_shell() {
             sandbox: serde_json::json!({"enabled": enabled}),
             deny: Vec::new(),
             made_folders: Vec::new(),
+            compile_cache: false,
         };
         let text = settings(
             std::path::Path::new("/bin/purlis"),
@@ -1617,6 +1618,7 @@ fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
         sandbox: serde_json::json!({"enabled": true}),
         deny: Vec::new(),
         made_folders: Vec::new(),
+        compile_cache: false,
     };
     let text = armed_settings_for_tests(&sandbox);
     let settings: serde_json::Value = serde_json::from_str(&text).expect("JSON");

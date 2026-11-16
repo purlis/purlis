@@ -566,6 +566,7 @@ impl HarnessAdapter for ClaudeCode {
                         compiled,
                         at.hook_socket,
                         at.confinement.map(crate::sandbox::Confinement::proxy_ports),
+                        crate::sandbox::compile_cache_socket(form, at).as_deref(),
                     )?,
                     words.charters,
                 ]
@@ -650,6 +651,10 @@ fn wrapped_line(
 /// purlis's proxy on `ports` where the chat has them (#1665,
 /// [`crate::sandbox::claude::Settings::through`]); or as it is with neither.
 ///
+/// Where `compiled` puts the chat's builds through the project's compile cache, its sccache
+/// server's socket at `served` is allowed besides
+/// ([`crate::sandbox::claude::Settings::serving_compile_cache`]).
+///
 /// **Fail closed.** A `--settings` that is missing, is not JSON, or does not carry `compiled`
 /// as [`ClaudeCode::arm_under`] wrote it refuses the chat: neither the socket nor the ports are
 /// ever added to a sandbox this adapter did not compile.
@@ -658,8 +663,9 @@ pub(crate) fn reporting_on(
     compiled: &crate::sandbox::claude::Settings,
     socket: Option<&std::path::Path>,
     ports: Option<[u16; 2]>,
+    served: Option<&std::path::Path>,
 ) -> Result<Vec<String>, String> {
-    if socket.is_none() && ports.is_none() {
+    if socket.is_none() && ports.is_none() && served.is_none() {
         return Ok(armed);
     }
     let not_carried = || {
@@ -693,6 +699,9 @@ pub(crate) fn reporting_on(
     let mut reporting = compiled.reporting_on(socket);
     if let Some(ports) = ports {
         reporting = reporting.through(ports);
+    }
+    if let Some(served) = served {
+        reporting = reporting.serving_compile_cache(served);
     }
     deny.extend(
         reporting.deny[compiled.deny.len()..]

@@ -17,6 +17,7 @@ fn default_policy() -> Option<Policy> {
         certificate_checks: true,
         personas: Default::default(),
         own_terminal_only: false,
+        compile_cache: Default::default(),
     })
 }
 
@@ -98,6 +99,7 @@ fn a_plane_names_its_egress_by_preset_and_an_unknown_preset_is_refused() {
             certificate_checks: true,
             personas: Default::default(),
             own_terminal_only: false,
+            compile_cache: Default::default(),
         })
     );
     assert_eq!(
@@ -123,6 +125,7 @@ fn an_empty_egress_list_is_the_strictest_answer_and_is_kept() {
             certificate_checks: true,
             personas: Default::default(),
             own_terminal_only: false,
+            compile_cache: Default::default(),
         })
     );
 }
@@ -5360,6 +5363,7 @@ fn policy_of(presets: &[Preset], certificate_checks: bool) -> Policy {
         certificate_checks,
         personas: Default::default(),
         own_terminal_only: false,
+        compile_cache: Default::default(),
     }
 }
 
@@ -9248,5 +9252,304 @@ fn the_tls_pool_files_a_restart_ask_compares_are_named_and_real_but_never_purlis
             .iter()
             .any(|it| it.path == crate::dockercontext::kept_tls_dir(config.path())),
         "the copies' folder is held from every chat whatever the pools name"
+    );
+}
+
+// -------------------------------------------------------------------------------------
+// A project's shared compile cache (Q324, #6388, #3560): sccache, only where the project's
+// file declares it, only the resolved program, and only its own folder and socket
+// -------------------------------------------------------------------------------------
+
+/// A folder outside every temp folder a chat may write, beside this test's own program, holding
+/// an executable file at `name` (`bin/sccache`, say).
+fn program_outside_temp(name: &str) -> (tempfile::TempDir, StdPathBuf) {
+    let beside = std::env::current_exe()
+        .expect("this test's program")
+        .parent()
+        .expect("its folder")
+        .to_path_buf();
+    let dir = tempfile::Builder::new()
+        .prefix("compile-cache-")
+        .tempdir_in(beside)
+        .expect("a folder");
+    let program = dir.path().join(name);
+    std::fs::create_dir_all(program.parent().expect("a folder")).expect("its folder");
+    std::fs::write(&program, "#!/bin/sh\n").expect("a program");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+            .expect("runnable");
+    }
+    (dir, program)
+}
+
+/// The project's cache home `applied` hands a chat, as compiled.
+fn caches_of(applied: &Applied) -> Option<caches::CacheHome> {
+    applied.caches.as_deref().cloned()
+}
+
+fn compile_cache_policy(on: bool) -> Policy {
+    Policy {
+        compile_cache: if on {
+            compile_cache::CompileCache::Sccache
+        } else {
+            compile_cache::CompileCache::None
+        },
+        ..policy_of(&[Preset::Toolchains], true)
+    }
+}
+
+/// A project builds with no compile cache unless its file says `compile-cache = "sccache"`:
+/// the future policy key `sandbox.compile-cache`, whose default is `"none"`. What cannot be read
+/// is refused and read as `"none"`.
+#[test]
+fn the_compile_cache_is_off_unless_the_projects_file_declares_sccache() {
+    assert_eq!(
+        Policy::defaults().compile_cache,
+        compile_cache::CompileCache::None
+    );
+    let absent = said("[sandbox]\nmode = \"on\"\n");
+    assert_eq!(
+        absent.policy.map(|policy| policy.compile_cache),
+        Some(compile_cache::CompileCache::None)
+    );
+    let on = said("[sandbox]\nmode = \"on\"\ncompile-cache = \"sccache\"\n");
+    assert_eq!(
+        on.policy.map(|policy| policy.compile_cache),
+        Some(compile_cache::CompileCache::Sccache)
+    );
+    assert!(on.refused.is_empty(), "{:?}", on.refused);
+    let none = said("[sandbox]\nmode = \"on\"\ncompile-cache = \"none\"\n");
+    assert_eq!(
+        none.policy.map(|policy| policy.compile_cache),
+        Some(compile_cache::CompileCache::None)
+    );
+    assert!(none.refused.is_empty(), "{:?}", none.refused);
+    let other = said("[sandbox]\nmode = \"on\"\ncompile-cache = \"/usr/local/bin/wrap\"\n");
+    assert_eq!(
+        other.policy.map(|policy| policy.compile_cache),
+        Some(compile_cache::CompileCache::None)
+    );
+    assert_eq!(
+        other.refused,
+        [Refusal::CompileCacheUnknown(
+            "\"/usr/local/bin/wrap\"".to_owned()
+        )]
+    );
+    assert_eq!(
+        other.refused[0].to_string(),
+        "sandbox.compile-cache in charter.toml is \"/usr/local/bin/wrap\", which is not \"none\" \
+         or \"sccache\"; chats build with no compile cache until it is one"
+    );
+    assert_eq!(other.refused[0].key(), ["sandbox", "compile-cache"]);
+}
+
+/// The wrapper is kept only where the project declares the compile cache: then the chat's
+/// cache home holds the resolved sccache and Claude Code's settings carry it; without the key,
+/// neither, on the same machine with the same sccache on its `PATH`.
+#[test]
+fn the_wrapper_is_kept_only_where_the_project_declares_the_compile_cache() {
+    let (_dir, sccache) = program_outside_temp("bin/sccache");
+    let path = format!(
+        "{}:/usr/bin:/bin",
+        sccache.parent().expect("its folder").display()
+    );
+    let machine = mac_with(&[("PATH", &path)]);
+    let home = cache_home(&machine, StdPath::new(PROJECT));
+    let caches = caches_of;
+
+    let on = compiled_for(
+        Harness::ClaudeCode,
+        &compile_cache_policy(true),
+        StdPath::new(PROJECT),
+        &machine,
+    );
+    assert_eq!(
+        caches(&on).and_then(|caches| caches.sccache),
+        Some(compile_cache::Sccache {
+            program: sccache.canonicalize().expect("real"),
+            dir: home.join("sccache"),
+        })
+    );
+    match on.form() {
+        Form::ClaudeCode(settings) => assert!(settings.compile_cache),
+        other => panic!("not Claude Code's: {other:?}"),
+    }
+
+    let off = compiled_for(
+        Harness::ClaudeCode,
+        &compile_cache_policy(false),
+        StdPath::new(PROJECT),
+        &machine,
+    );
+    assert_eq!(caches(&off).and_then(|caches| caches.sccache), None);
+    match off.form() {
+        Form::ClaudeCode(settings) => assert!(!settings.compile_cache),
+        other => panic!("not Claude Code's: {other:?}"),
+    }
+    // The person's own `rustc-wrapper` is never what a chat is handed, declared or not.
+    assert!(
+        !caches(&on)
+            .expect("caches")
+            .cargo_config
+            .contains("rustc-wrapper")
+    );
+}
+
+/// A chat can never point its builds' wrapper at a program of its choosing: only a real file
+/// named `sccache`, outside every folder a chat may write, is taken.
+#[test]
+fn a_wrapper_that_is_not_the_resolved_sccache_is_refused() {
+    let (_dir, sccache) = program_outside_temp("bin/sccache");
+    let real = sccache.canonicalize().expect("real");
+    assert_eq!(compile_cache::resolved(&sccache, &[]), Some(real.clone()));
+    // Any other program, whatever folder it is in.
+    let (_other, wrapper) = program_outside_temp("bin/rustc-wrap");
+    assert_eq!(compile_cache::resolved(&wrapper, &[]), None);
+    // A link named sccache to another program is that program.
+    let linked = wrapper.with_file_name("sccache");
+    std::os::unix::fs::symlink(&wrapper, &linked).expect("a link");
+    assert_eq!(compile_cache::resolved(&linked, &[]), None);
+    // An sccache where a chat may write, by its path or by its real file's.
+    let folder = sccache.parent().expect("its folder").to_path_buf();
+    assert_eq!(
+        compile_cache::resolved(&sccache, std::slice::from_ref(&folder)),
+        None
+    );
+    let through = _other.path().join("through");
+    std::os::unix::fs::symlink(&folder, &through).expect("a link");
+    assert_eq!(
+        compile_cache::resolved(&through.join("sccache"), &[folder]),
+        None
+    );
+    // A relative name, and nothing there.
+    assert_eq!(
+        compile_cache::resolved(StdPath::new("bin/sccache"), &[]),
+        None
+    );
+    assert_eq!(
+        compile_cache::resolved(&_other.path().join("bin/missing"), &[]),
+        None
+    );
+    // And a machine whose `PATH` finds only an sccache in the project gets no wrapper.
+    let project = tempfile::tempdir().expect("a project");
+    let bin = project.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("its bin");
+    std::fs::copy(&sccache, bin.join("sccache")).expect("an sccache in the project");
+    let machine = mac_with(&[("PATH", &format!("{}:/usr/bin:/bin", bin.display()))]);
+    let applied = compiled_for(
+        Harness::ClaudeCode,
+        &compile_cache_policy(true),
+        project.path(),
+        &machine,
+    );
+    assert_eq!(caches_of(&applied).and_then(|caches| caches.sccache), None);
+}
+
+/// The cache's folder is the one more place a chat writes, in the project's cache home, pinned
+/// as the others are; and its server's socket in its own temp folder is the one more socket it
+/// may bind and reach. Nothing else changes: no loopback port, no other path.
+#[test]
+fn the_compile_cache_folder_and_socket_are_writable_and_nothing_else_is() {
+    let (_dir, sccache) = program_outside_temp("bin/sccache");
+    let path = format!(
+        "{}:/usr/bin:/bin",
+        sccache.parent().expect("its folder").display()
+    );
+    let machine = mac_with(&[("PATH", &path)]);
+    let home = cache_home(&machine, StdPath::new(PROJECT));
+    let compiled = |on: bool| {
+        compiled_for(
+            Harness::ClaudeCode,
+            &compile_cache_policy(on),
+            StdPath::new(PROJECT),
+            &machine,
+        )
+    };
+    let (on, off) = (compiled(true), compiled(false));
+
+    let mut more = on.writable();
+    for path in off.writable() {
+        let at = more
+            .iter()
+            .position(|one| *one == path)
+            .expect("still writable");
+        more.remove(at);
+    }
+    assert_eq!(more, [home.join("sccache")]);
+
+    let listed = |applied: &Applied, key: &str| -> Vec<serde_json::Value> {
+        claude_sandbox(applied)["filesystem"][key]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let gained = |key: &str| -> Vec<serde_json::Value> {
+        let before = listed(&off, key);
+        listed(&on, key)
+            .into_iter()
+            .filter(|one| !before.contains(one))
+            .collect()
+    };
+    let folder = home.join("sccache").display().to_string();
+    assert_eq!(gained("allowWrite"), [serde_json::json!(folder)]);
+    assert_eq!(
+        gained("denyWrite"),
+        [serde_json::json!(format!("{folder}/.git"))]
+    );
+    assert_eq!(
+        claude_sandbox(&on)["network"],
+        claude_sandbox(&off)["network"]
+    );
+
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let socket = compile_cache::socket_in(tmp.path());
+    let settings = |applied: &Applied| match applied.form() {
+        Form::ClaudeCode(settings) => settings.clone(),
+        other => panic!("not Claude Code's: {other:?}"),
+    };
+    let served = settings(&on).serving_compile_cache(&socket);
+    let mut sockets: Vec<serde_json::Value> = vec![serde_json::json!(socket.display().to_string())];
+    let real = real(&socket);
+    if real != socket {
+        sockets.push(serde_json::json!(real.display().to_string()));
+    }
+    assert_eq!(
+        served.sandbox["network"]["allowUnixSockets"],
+        serde_json::json!(sockets)
+    );
+    assert_eq!(
+        served.sandbox["network"]["allowLocalBinding"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        served.sandbox["filesystem"],
+        settings(&on).sandbox["filesystem"]
+    );
+    assert_eq!(served.deny, settings(&on).deny);
+    // Where the project declares nothing, no socket is added.
+    assert_eq!(
+        settings(&off).serving_compile_cache(&socket),
+        settings(&off)
+    );
+
+    // And what the chat is handed points its builds there, and nowhere else.
+    let sccache = caches_of(&on)
+        .and_then(|caches| caches.sccache)
+        .expect("on");
+    assert_eq!(
+        sccache.env(&socket),
+        [
+            (
+                "RUSTC_WRAPPER".to_owned(),
+                sccache.program.display().to_string()
+            ),
+            ("SCCACHE_DIR".to_owned(), folder.clone()),
+            (
+                "SCCACHE_SERVER_UDS".to_owned(),
+                socket.display().to_string()
+            ),
+        ]
     );
 }
