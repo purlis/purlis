@@ -11,16 +11,16 @@
 //! ([`Asks::allow`], [`Asks::keep_blocked`]), and nothing a connection carries is ever read as
 //! an answer.
 //!
-//! - **Held, then allowed.** A held connection waits up to [`HOLD`]. An Allow at any scope wakes
+//! - **Held, then allowed.** A held connection waits up to its [`Timings::hold`]. An Allow at any scope wakes
 //!   it, and it is carried as an Allowed host at that scope.
-//! - **Held, then timed out.** Nobody answered within [`HOLD`]: the connection is refused as it
+//! - **Held, then timed out.** Nobody answered within its [`Timings::hold`]: the connection is refused as it
 //!   was before purlis asked live, and the timeout is told ([`Heard::TimedOut`]). The chat waits
 //!   on it no longer, so the app withdraws its ask and writes it as a block (R-290, Q154); a
 //!   later connection to it is asked about again. An Allow that comes anyway applies at once,
 //!   and answers the hosts that gave up, so the app tells the chat, in fixed words, to retry.
 //! - **Given up.** The chat moved on from a held connection ([`Asks::give_up`], R-290, Q240):
 //!   it ends now as a timeout does, told the same way, so one path writes its block.
-//! - **Grouped.** New hosts one chat reaches within [`GROUP`] of the first are one ask
+//! - **Grouped.** New hosts one chat reaches within [`Timings::group`] of the first are one ask
 //!   ([`Heard::Asked`]): told together once the window has passed, each host and port named
 //!   whole as the proxy heard it, never a wildcard, so the person answers once.
 //! - **Keep blocked** refuses what is held on that host now and what comes after, until an Allow.
@@ -36,8 +36,8 @@
 //! - **Bounded.** At most [`MOST_HELD`] connections are held at once; one more is refused at
 //!   once, as before, and not asked about ([`Answer::Busy`]).
 //! - **Held open while the person is Quiet** (ADR 0121 decision 13, #6007). While the window
-//!   says so ([`Asks::hold_open`]), a held connection past its [`HOLD`] waits on, up to
-//!   [`MOST_HELD_OPEN`] in all; once it says no more, one past its hold times out at once, as
+//!   says so ([`Asks::hold_open`]), a held connection past its hold waits on, up to
+//!   [`Timings::quiet_hold`] in all; once it says no more, one past its hold times out at once, as
 //!   any timed-out one does. The program's own connect timeout
 //!   and its harness's command timeout still bound it: purlis holds, it cannot make them wait.
 //! - **Nobody to ask.** Where no Notice can be raised ([`Asks::asking_while`]: the project's
@@ -50,16 +50,7 @@ use std::time::{Duration, Instant};
 use super::egress::{allows_on, host_and_port};
 use super::hosts::Host;
 use super::reach::By;
-
-/// How long a held connection waits for the person: about a minute (N-6).
-pub const HOLD: Duration = Duration::from_secs(60);
-
-/// The most a connection is held while held open past its hold (#6007): what keeps a Quiet
-/// that lasts all afternoon from holding a connection all afternoon.
-pub const MOST_HELD_OPEN: Duration = Duration::from_secs(15 * 60);
-
-/// How close together new hosts from one chat must come to be one ask (N-10).
-pub const GROUP: Duration = Duration::from_secs(2);
+use super::timings::Timings;
 
 /// The most connections one chat's board holds at once.
 pub const MOST_HELD: usize = 16;
@@ -156,7 +147,7 @@ pub struct Asks {
     tell: Tell,
     hold: Duration,
     group: Duration,
-    /// The most a connection is held while held open ([`MOST_HELD_OPEN`]).
+    /// The most a connection is held while held open ([`Timings::quiet_hold`]).
     most_open: Duration,
     known: Option<Known>,
     askable: Option<Askable>,
@@ -178,26 +169,39 @@ impl std::fmt::Debug for Asks {
 }
 
 impl Asks {
-    /// A board that tells `tell`, holding for [`HOLD`] and grouping over [`GROUP`].
-    pub fn new(tell: Tell) -> Self {
-        Self::timed(tell, HOLD, GROUP)
-    }
-
-    /// A board that holds for `hold` and groups over `group`.
-    pub fn timed(tell: Tell, hold: Duration, group: Duration) -> Self {
+    /// A board that tells `tell`, holding, grouping and holding open as `timings` say
+    /// ([`Timings::hold`], [`Timings::group`], [`Timings::quiet_hold`]).
+    pub fn new(tell: Tell, timings: &Timings) -> Self {
         Self {
             state: Mutex::default(),
             changed: Condvar::new(),
             tell,
-            hold,
-            group,
-            most_open: MOST_HELD_OPEN,
+            hold: timings.hold(),
+            group: timings.group(),
+            most_open: timings.quiet_hold(),
             known: None,
             askable: None,
         }
     }
 
-    /// This board, holding a connection open at most `most` in all ([`MOST_HELD_OPEN`]).
+    /// How long a connection it holds waits for the person ([`Timings::hold`]).
+    pub fn holds_for(&self) -> Duration {
+        self.hold
+    }
+
+    /// A board that holds for `hold` and groups over `group`, for a unit test of the board.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn timed(tell: Tell, hold: Duration, group: Duration) -> Self {
+        Self {
+            hold,
+            group,
+            ..Self::new(tell, &Timings::production())
+        }
+    }
+
+    /// This board, holding a connection open at most `most` in all, for a unit test of the
+    /// board.
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn held_open_at_most(self, most: Duration) -> Self {
         Self {
@@ -262,7 +266,7 @@ impl Asks {
         allowed_in(&self.state(), host, port, defaults)
     }
 
-    /// **Holds a connection to `host` on `port`** until the person answers or [`HOLD`] passes:
+    /// **Holds a connection to `host` on `port`** until the person answers or its hold passes:
     /// what the proxy asks of a connection nothing lists. A host listed without a port is
     /// carried on `defaults`. Answered at once where a live Allow or Keep blocked already
     /// covers it, or where the board is full.

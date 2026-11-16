@@ -4716,7 +4716,10 @@ impl Beside {
                 crate::sandbox::Confinement::serving(crate::sandbox::egress::Serving {
                     refusals,
                     reached,
-                    ..crate::sandbox::egress::Serving::of(confines.decides())
+                    ..crate::sandbox::egress::Serving::of(
+                        confines.decides(),
+                        &crate::sandbox::timings::Timings::production(),
+                    )
                 })
                 .and_then(|confinement| {
                     let tmp = confinement

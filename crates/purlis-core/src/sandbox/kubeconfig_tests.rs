@@ -167,8 +167,11 @@ fn every_context_is_listed_with_its_server_and_whether_purlis_can_point_at_it() 
 #[test]
 fn the_copy_is_kept_in_the_chats_own_folder_for_as_long_as_it_runs() {
     use crate::sandbox::{Confinement, egress, reach::Reach};
-    let mut confinement =
-        Confinement::proxy_only(egress::Serving::of(Reach::default())).expect("a confinement");
+    let mut confinement = Confinement::proxy_only(egress::Serving::of(
+        Reach::default(),
+        &crate::sandbox::timings::Timings::production(),
+    ))
+    .expect("a confinement");
     let path = confinement
         .keep_own(super::FILE, "{\"kind\": \"Config\"}")
         .expect("kept");

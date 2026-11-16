@@ -1,0 +1,42 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **One entry of the nightly list** (M74.1, T1.1-09). Main's scheduler (`nightly-branch.yml` on
+# main) checks out the branch and runs each entry of `.github/nightly-on-<branch>.txt` through
+# this action, on the entry's runner. An entry's steps live here, on the branch, so a ticket adds
+# its nightly without touching main. A composite action cannot read `secrets`: an entry that needs
+# one takes it as an input, which main's workflow passes.
+#
+# A name this action does not know fails, so a typo in the list is a red night, not a silent one.
+name: Nightly entry
+description: Runs one entry of the nightly list on this runner.
+inputs:
+  entry:
+    description: The entry's name, as the list writes it.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: An entry this action knows
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "fuzz-parsers"]'), inputs.entry) }}
+      shell: bash
+      env:
+        ENTRY: ${{ inputs.entry }}
+      run: |
+        echo "::error::$ENTRY is not an entry .github/actions/nightly knows"
+        exit 1
+    # The sandbox scenarios, on Linux or macOS (ticket 54 fills the nightly's ×3 and shuffle).
+    - if: inputs.entry == 'sandbox-scenarios'
+      uses: ./.github/actions/sandbox-scenarios
+    # The existing macOS sandbox test targets against the branch, failing on red.
+    - if: inputs.entry == 'existing-macos-sandbox-tests'
+      uses: ./.github/actions/macos-sandbox-tests
+      with:
+        purlis-app: "true"
+    # The parsers' fuzz targets, each fuzzed from its committed seeds for five minutes (T1.1-47,
+    # `docs/fuzzing.md`). A crash is a public issue; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301).
+    - if: inputs.entry == 'fuzz-parsers'
+      uses: ./.github/actions/fuzz-parsers
+      with:
+        seconds: "300"

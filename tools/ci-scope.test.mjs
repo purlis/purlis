@@ -511,6 +511,8 @@ const WALK_ONLY_CODE = {
   "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
     "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/five_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/it/no_sandbox_duration_lives_outside_timings.rs":
+    "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
   "crates/purlis-core/tests/it/only_the_updater_and_report_name_charters_own_address.rs":
     "shipped Rust",
