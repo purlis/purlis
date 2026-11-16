@@ -74,6 +74,7 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -102,6 +103,7 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -142,6 +144,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
             Kit {
                 skills: None,
                 laid_out: None,
+                key_route: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -248,6 +251,7 @@ fn denied_in(cwd: &std::path::Path, graded: bool, judging: bool) -> Vec<serde_js
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -281,6 +285,7 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -320,6 +325,7 @@ fn armed_as(
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: Some(crate::harness::As {
@@ -487,6 +493,7 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -577,6 +584,7 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -760,6 +768,7 @@ fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: Some(crate::harness::As {
@@ -868,6 +877,7 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1370,6 +1380,7 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
             Kit {
                 skills: None,
                 laid_out: None,
+                key_route: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1415,6 +1426,7 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1473,6 +1485,7 @@ fn an_outcome_chat_has_no_shell() {
             true,
             no_shell,
             &(None, None),
+            None,
         );
         serde_json::from_str::<serde_json::Value>(&text).expect("JSON")
     };
@@ -1510,6 +1523,7 @@ fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
             Kit {
                 skills: None,
                 laid_out: None,
+                key_route: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1583,6 +1597,7 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1640,6 +1655,7 @@ fn listing_limit_handed_beside(
         Kit {
             skills,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1864,6 +1880,7 @@ fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
             Kit {
                 skills: None,
                 laid_out: None,
+                key_route: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,

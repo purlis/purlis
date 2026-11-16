@@ -66,22 +66,17 @@ impl Route {
 }
 
 /// The route a chat on `declaration`, reaching its model `way`, takes at `level`, or why a key
-/// from your keys can't reach it, in words.
+/// from your keys can't reach it, in words: the copy module's W133 and W134.
 pub fn resolve(declaration: &Declaration, way: Way, level: Level) -> Result<Route, String> {
+    use crate::window_copy::{fill, line};
     match way {
         Way::Subscription | Way::HarnessStoredKey | Way::OwnSettingsKey => Ok(Route::OwnSignIn),
         Way::YourKey => {
             let Some(&format) = declaration.route.formats.first() else {
-                let why = own_sign_in_only(declaration).unwrap_or_default();
-                return Err(format!("{why}. A key from your keys can't reach it."));
+                return Err(own_sign_in_only(declaration).unwrap_or_default());
             };
             if level == Level::Three {
-                return Err(format!(
-                    "A key from your keys runs {} at levels 1 and 2 only, and this chat starts it \
-                     at level 3, over ACP, which purlis has not measured with the key proxy yet. \
-                     Start it at level 1 or 2.",
-                    declaration.title
-                ));
+                return Err(fill(line::W133, &[("harness", &declaration.title)]));
             }
             Ok(Route::Proxied { format })
         }
@@ -106,15 +101,107 @@ pub fn start(
 }
 
 /// Why `declaration`'s harness takes its own sign-in only, or none where it takes a base URL:
-/// it states no wire format it speaks (R-227, R-257).
+/// it states no wire format it speaks (R-227, R-257). The copy module's W134.
 pub fn own_sign_in_only(declaration: &Declaration) -> Option<String> {
-    declaration.route.formats.is_empty().then(|| {
-        format!(
-            "{} states no wire format it speaks, so it takes no base URL from purlis and signs in \
-             with its own sign-in only",
-            declaration.title
-        )
-    })
+    use crate::window_copy::{fill, line};
+    declaration
+        .route
+        .formats
+        .is_empty()
+        .then(|| fill(line::W134, &[("harness", &declaration.title)]))
+}
+
+/// **A run's listener, as its start was handed it** (T1a-15): its port on `127.0.0.1` and the
+/// run's token. The token never shows in `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Listener {
+    pub port: u16,
+    pub token: String,
+}
+
+impl std::fmt::Debug for Listener {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Listener")
+            .field("port", &self.port)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
+/// **The route resolver at a chat's start** (T1a-15, with T1a-17): the route `declaration` takes
+/// for `way` at `level`, and for a proxied one the listener `listen` starts for the run. The
+/// unproxied ways start none: `listen` is never called for them (R-036), nor for a start refused
+/// in words (R-225, R-227).
+pub fn at_start(
+    declaration: &Declaration,
+    way: Way,
+    level: Level,
+    listen: impl FnOnce() -> Result<Listener, String>,
+) -> Result<Option<Listener>, String> {
+    match resolve(declaration, way, level)? {
+        Route::OwnSignIn => Ok(None),
+        Route::Proxied { .. } => listen().map(Some),
+    }
+}
+
+/// **What a proxied chat's adapter is handed** (T1a-15, R-232): the run's listener, the
+/// background model of the provider it reaches (`[models] background`, R-293), and the person's
+/// own loopback bypass, `NO_PROXY` and `no_proxy` as the chat's environment holds them, which the
+/// adapter keeps and adds `127.0.0.1` to. Which variables carry each is the adapter's, never this
+/// module's (R-222). The token never shows in `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct KeyRoute {
+    listener: Listener,
+    background_model: Option<String>,
+    no_proxy: Option<String>,
+    no_proxy_lower: Option<String>,
+}
+
+impl KeyRoute {
+    /// The route through `listener`, with `background_model` and the person's bypass read from
+    /// `env`, the environment the chat starts with.
+    pub fn new(
+        listener: Listener,
+        background_model: Option<&str>,
+        env: impl Fn(&str) -> Option<String>,
+    ) -> KeyRoute {
+        KeyRoute {
+            listener,
+            background_model: background_model.map(str::to_owned),
+            no_proxy: env("NO_PROXY"),
+            no_proxy_lower: env("no_proxy"),
+        }
+    }
+
+    /// The listener's URL, on `127.0.0.1` (never `localhost`, which a bypass of `127.0.0.1`
+    /// doesn't cover, T1a-02).
+    pub fn base_url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.listener.port)
+    }
+
+    /// The run's token: what the harness alone is handed, in its process environment (R-066).
+    pub fn token(&self) -> &str {
+        &self.listener.token
+    }
+
+    /// The model for the background slot, where the provider names one.
+    pub fn background_model(&self) -> Option<&str> {
+        self.background_model.as_deref()
+    }
+
+    /// The person's own `NO_PROXY`, then `no_proxy`, as the chat's environment holds them.
+    pub fn bypass(&self) -> [Option<&str>; 2] {
+        [self.no_proxy.as_deref(), self.no_proxy_lower.as_deref()]
+    }
+}
+
+impl std::fmt::Debug for KeyRoute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyRoute")
+            .field("listener", &self.listener)
+            .field("background_model", &self.background_model)
+            .finish_non_exhaustive()
+    }
 }
 
 /// **The wire format a pair speaks**: the first of `declaration`'s `[route] formats` that

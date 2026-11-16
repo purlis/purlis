@@ -375,6 +375,31 @@ jobs:
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo nextest run --workspace --locked --profile ci --no-capture \
             -E 'package(purlis-core) & binary(it) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
+      # **Claude Code, real binary, on Linux** (T1a-15): the `real_claude_code` module, by name, against
+      # the version purlis supports, this runner's build of it from npm with no install scripts
+      # run. `tools/tests-ran.sh` fails the step when the module ran no test, and
+      # `PURLIS_REAL_BINARY_REQUIRED=1` turns a test that would skip into a failure. A stand-in
+      # model on a loopback port answers it: no model is called, and no credential is used.
+      - name: Claude Code, real binary, on Linux
+        if: matrix.part == 3
+        run: |
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@anthropic-ai/claude-code-linux-$arch"
+          mkdir -p "$RUNNER_TEMP/claude-code-real"
+          cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code-real/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code-real/package-lock.json")
+          if [ "$locked" != "$version" ]; then
+            echo "::error file=tests/fixtures/harness-versions/claude-code/package-lock.json::the lockfile holds $package $locked and claude.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/claude-code-real" && npm ci --ignore-scripts --no-audit --no-fund)
+          PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code-real/node_modules/$package/claude" PURLIS_REAL_BINARY_REQUIRED=1 \
+            tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- real_claude_code:: --nocapture
       # **Codex, measured** (#5841, #3002): what the real Codex keeps of a `SessionStart` hook's
       # output and of its own skills catalogue, and what it takes in mid-chat, printed on
       # `measured:` lines for ADR 0102's and ADR 0099's amendments of 2026-11-09. The version
@@ -1996,6 +2021,31 @@ jobs:
           (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
+      # **Claude Code, real binary, on macOS** (T1a-15): the `real_claude_code` module, by name, against
+      # the version purlis supports, this runner's build of it from npm with no install scripts
+      # run. `tools/tests-ran.sh` fails the step when the module ran no test, and
+      # `PURLIS_REAL_BINARY_REQUIRED=1` turns a test that would skip into a failure. A stand-in
+      # model on a loopback port answers it: no model is called, and no credential is used.
+      - name: Claude Code, real binary, on macOS
+        if: runner.os == 'macOS' && matrix.sandbox
+        run: |
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@anthropic-ai/claude-code-darwin-$arch"
+          mkdir -p "$RUNNER_TEMP/claude-code-real"
+          cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code-real/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code-real/package-lock.json")
+          if [ "$locked" != "$version" ]; then
+            echo "::error file=tests/fixtures/harness-versions/claude-code/package-lock.json::the lockfile holds $package $locked and claude.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/claude-code-real" && npm ci --ignore-scripts --no-audit --no-fund)
+          PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code-real/node_modules/$package/claude" PURLIS_REAL_BINARY_REQUIRED=1 \
+            tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- real_claude_code:: --nocapture
       # **The runner's `purlis`, for Pool setup's run** (#4985): built alone, before the app's
       # build, so it is purlis as a runner runs it. The app's build compiles the core with its
       # `fenced` feature (a test build that refuses every plane outside the run's own), and its

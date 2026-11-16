@@ -165,3 +165,94 @@ fn the_pair_format_is_the_first_of_the_harness_formats_the_provider_serves() {
         "a harness stating no format pairs with nothing"
     );
 }
+
+/// A listener a start would be handed, counting how often it was asked for one.
+fn listening(asked: &std::cell::Cell<usize>) -> impl FnOnce() -> Result<Listener, String> + '_ {
+    move || {
+        asked.set(asked.get() + 1);
+        Ok(Listener {
+            port: 47_000,
+            token: "a-run-token".to_owned(),
+        })
+    }
+}
+
+/// R-036, at the start: the three unproxied ways start no listener, at any level.
+#[test]
+fn at_the_start_the_unproxied_ways_start_no_listener() {
+    for way in [
+        Way::Subscription,
+        Way::HarnessStoredKey,
+        Way::OwnSettingsKey,
+    ] {
+        for level in [Level::One, Level::Two, Level::Three] {
+            let asked = std::cell::Cell::new(0);
+
+            let listener = at_start(claude(), way, level, listening(&asked));
+
+            assert_eq!(listener, Ok(None), "{way:?} at {level:?}");
+            assert_eq!(asked.get(), 0, "{way:?} at {level:?} started a listener");
+        }
+    }
+}
+
+/// R-225, at the start: a key from your keys at level 3 is refused in W133's words, and no
+/// listener is started; at levels 1 and 2 one is.
+#[test]
+fn at_the_start_a_key_at_level_three_is_refused_in_the_copy_modules_words() {
+    let asked = std::cell::Cell::new(0);
+
+    let refused = at_start(claude(), Way::YourKey, Level::Three, listening(&asked));
+
+    assert_eq!(
+        refused,
+        Err(crate::window_copy::fill(
+            crate::window_copy::line::W133,
+            &[("harness", "Claude Code")]
+        ))
+    );
+    assert_eq!(asked.get(), 0);
+    for level in [Level::One, Level::Two] {
+        let listener = at_start(claude(), Way::YourKey, level, listening(&asked))
+            .expect("a key chat starts at levels 1 and 2");
+        assert_eq!(listener.map(|l| l.port), Some(47_000), "{level:?}");
+    }
+    assert_eq!(asked.get(), 2);
+}
+
+/// R-227, at the start: a key on a harness that states no wire format is refused in W134's
+/// words, and no listener is started.
+#[test]
+fn at_the_start_a_key_on_a_harness_with_no_formats_is_refused_in_the_copy_modules_words() {
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let declaration = declaration::of(harness);
+        let asked = std::cell::Cell::new(0);
+
+        let refused = at_start(declaration, Way::YourKey, Level::Two, listening(&asked));
+
+        assert_eq!(
+            refused,
+            Err(crate::window_copy::fill(
+                crate::window_copy::line::W134,
+                &[("harness", &declaration.title)]
+            )),
+            "{harness:?}"
+        );
+        assert_eq!(asked.get(), 0, "{harness:?}");
+    }
+}
+
+/// The token never shows in a listener's or a route's `Debug`.
+#[test]
+fn a_listener_and_a_route_never_show_the_token() {
+    let listener = Listener {
+        port: 47_000,
+        token: "a-run-token".to_owned(),
+    };
+    let route = KeyRoute::new(listener.clone(), Some("claude-haiku"), |_| None);
+
+    assert!(!format!("{listener:?}").contains("a-run-token"));
+    assert!(!format!("{route:?}").contains("a-run-token"));
+    assert_eq!(route.token(), "a-run-token");
+    assert_eq!(route.base_url(), "http://127.0.0.1:47000");
+}

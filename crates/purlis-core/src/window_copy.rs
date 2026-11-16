@@ -193,6 +193,10 @@ pub mod line {
     /// W132: Refusal, New chat; a sandboxed chat's start.
     pub const W132_PICKER: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Start this chat without the sandbox from the new-chat picker, or remove your model keys in Your keys.";
     pub const W132_KEYS: &str = "<lead>, and on <system> purlis can't keep <harness> chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.";
+    /// W133: Refusal, New chat.
+    pub const W133: &str = "A key from your keys runs <harness> at levels 1 and 2 only, and this chat starts it at level 3, over ACP, which purlis hasn't measured with the key proxy yet. Start it at level 1 or 2.";
+    /// W134: Refusal, New chat.
+    pub const W134: &str = "<harness> states no wire format it speaks, so it takes no base URL from purlis and signs in with its own sign-in only. A key from your keys can't reach it.";
 }
 
 /// The systems purlis runs on, for the table's first two rules.

@@ -40,6 +40,7 @@ fn a_sandbox_compiled_for_one_harness_arms_no_chat_of_any_other() {
     let kit = Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
@@ -323,6 +324,7 @@ fn kit(binary: &str) -> Kit<'_> {
     Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         binary: std::path::Path::new(binary),
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,
@@ -888,6 +890,7 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
     let no_plugin = Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         plugin: None,
         ..kit("/bin/charter")
     };
@@ -1451,6 +1454,7 @@ fn without_the_bundled_plugin_a_claude_code_chat_is_armed_with_nothing() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: None,
             persona: None,
@@ -1890,6 +1894,7 @@ fn opencode_hooks(binary: &str) -> (tempfile::TempDir, StateHooks) {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new(binary),
             plugin: Some(plugin.path()),
             persona: None,
@@ -1958,6 +1963,7 @@ fn a_codex_chat_is_started_with_the_skills_its_briefing_lists() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -1985,6 +1991,7 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
     let kit = Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
@@ -2009,6 +2016,7 @@ fn an_opencode_chat_is_told_the_bundles_skills_and_the_set_s_folder_through_the_
         Kit {
             skills: None,
             laid_out: Some(folder),
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -2042,6 +2050,7 @@ fn without_the_shim_an_opencode_chat_is_armed_with_nothing() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(plugin.path()),
             persona: None,
@@ -2101,8 +2110,9 @@ mod matrix;
 /// R-294 (T1a-33): purlis never sets Claude Code's fast-mode skip variable. Behind a base URL
 /// that isn't Anthropic's `/fast` is off, and the table lists that loss rather than turning
 /// the check off. Neither what the adapter puts in the chat's environment nor its `--settings`
-/// `env` carries it, unsandboxed or sandboxed. Seen red by a deliberate mutation: the variable
-/// added to the adapter's `--settings` `env`.
+/// `env` carries it, unsandboxed or sandboxed, for a chat with no route or a key chat's
+/// (T1a-15). Seen red by a deliberate mutation: the variable added to the adapter's `--settings`
+/// `env`, and (T1a-15) to the route's variables alone.
 #[test]
 fn no_generated_env_carries_the_fast_mode_skip_variable() {
     const SKIP: &str = "CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK";
@@ -2110,9 +2120,27 @@ fn no_generated_env_carries_the_fast_mode_skip_variable() {
     let applied = applied.expect("a Claude Code sandbox");
     let cwd = plane.path().join("w");
     std::fs::create_dir_all(&cwd).expect("a workspace");
-    for sandbox in [None, Some(&applied)] {
+    // And a key chat's, whose start hands the adapter its route (T1a-15): the full environment
+    // the harness is started with, the route's variables and the token among it.
+    let route = crate::keyroute::KeyRoute::new(
+        crate::keyroute::Listener {
+            port: 47_000,
+            token: "a-run-token".to_owned(),
+        },
+        Some("claude-haiku"),
+        |_| None,
+    );
+    for (sandbox, key_route) in [
+        (None, None),
+        (Some(&applied), None),
+        (None, Some(&route)),
+        (Some(&applied), Some(&route)),
+    ] {
         let StateHooks::ThisSessionOnly { args, env, .. } = Harness::ClaudeCode.state_hooks(
-            kit("/bin/charter"),
+            Kit {
+                key_route,
+                ..kit("/bin/charter")
+            },
             Some(&cwd),
             &crate::harness_plugin::Chosen::new(),
             sandbox,
@@ -2133,8 +2161,9 @@ fn no_generated_env_carries_the_fast_mode_skip_variable() {
             .collect();
         assert!(
             named.is_empty(),
-            "sandboxed: {}: {SKIP} is set",
-            sandbox.is_some()
+            "sandboxed: {}, routed: {}: {SKIP} is set",
+            sandbox.is_some(),
+            key_route.is_some()
         );
     }
 }

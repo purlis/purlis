@@ -852,6 +852,32 @@ mod declaration {
         assert!(!source.contains("#822"));
     }
 
+    /// R-227 at the start (T1a-15): a key profile on a harness that states no wire format is
+    /// refused in the route resolver's words, W134, never told to wait for the route (W117).
+    #[test]
+    fn a_key_profile_on_a_harness_with_no_formats_is_refused_in_the_resolvers_words() {
+        for (harness, title) in [("codex", "Codex"), ("opencode", "opencode")] {
+            let record = MachineProfile {
+                harness: harness.to_owned(),
+                sign_in: Some(new_shape(anthropic(), Some("01JD6Y8ZQK3V4T5N6P7R8S9TAB"))),
+                ..record_named("work")
+            };
+            let on = Profile {
+                kind: harness.to_owned(),
+                harness: harness.to_owned(),
+                command: vec![harness.to_owned()],
+                ..profile("work")
+            };
+
+            let why = at_start(&on, &[record], &[]).unwrap_err();
+
+            let line =
+                crate::window_copy::fill(crate::window_copy::line::W134, &[("harness", title)]);
+            assert!(why.contains(&line), "{harness}: {why}");
+            assert!(!why.contains(W117), "{harness}: {why}");
+        }
+    }
+
     #[test]
     fn an_old_record_is_refused_in_words_until_the_copy_exists() {
         let record = MachineProfile {

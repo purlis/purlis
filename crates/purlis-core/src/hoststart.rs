@@ -973,7 +973,12 @@ pub fn compose_ready(
         .plugins_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
+    // A key chat's listener is handed to its start by T1a-17 (with T1a-61's key): until then a
+    // key profile's start is refused before it gets here (W117). Its arming and what its process
+    // is started without both read this one value.
+    let key_route: Option<&crate::keyroute::KeyRoute> = None;
     let armed = armed(&Arming {
+        key_route,
         root,
         kit,
         harness: ready.harness,
@@ -1124,7 +1129,7 @@ pub fn compose_ready(
         args,
         cwd: Some(cwd.display().to_string()),
         set: env,
-        strip: declared_identity_vars(root),
+        strip: started_without(root, ready.harness, key_route),
         pass: crate::chatenv::read(root),
         declared: ready
             .declared
@@ -1526,6 +1531,10 @@ pub struct Arming<'a> {
     /// a sandboxed chat whose harness cannot carry the arming, needs the arming built from it. A
     /// [`std::cell::LazyCell`] over the read is what a start passes.
     pub skills: &'a dyn std::ops::Deref<Target = ChatSkills>,
+    /// **A key chat's route** (T1a-15): the run's listener as its start resolved it
+    /// ([`crate::keyroute::at_start`]), which its adapter pins the harness to. `None` for every
+    /// chat the key proxy doesn't carry.
+    pub key_route: Option<&'a crate::keyroute::KeyRoute>,
 }
 
 /// **What arms a chat's harness** for this session alone: the arguments and the variables its
@@ -1543,6 +1552,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         env,
         graded,
         skills,
+        key_route,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -1641,6 +1651,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         own,
         laid_out: linked.as_deref(),
+        key_route,
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {
@@ -1748,6 +1759,30 @@ pub fn what_its_hooks_read(env: &mut Vec<(String, String)>, watched: &Watched<'_
     if let Some(id) = watched.id {
         env.push((ours[2].to_owned(), id.to_owned()));
     }
+}
+
+/// **What a chat is started without, whoever passed it** (the chat's `strip`,
+/// [`crate::chatenv::Starting::strip`]): every identity variable a vault of the project at `root`
+/// declares ([`declared_identity_vars`]), and, for a chat the key proxy carries (`key_route`),
+/// what its harness reads from its launch environment alone that would carry its calls around
+/// the route ([`Harness::kept_out_of_a_key_chat`], T1a-15). An unproxied chat keeps those.
+pub fn started_without(
+    root: &Path,
+    harness: Option<Harness>,
+    key_route: Option<&crate::keyroute::KeyRoute>,
+) -> Vec<String> {
+    let mut without = declared_identity_vars(root);
+    if key_route.is_some()
+        && let Some(harness) = harness
+    {
+        without.extend(
+            harness
+                .kept_out_of_a_key_chat()
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
+    }
+    without
 }
 
 /// Every identity variable a vault of the project at `root` declares, both halves of each

@@ -679,6 +679,7 @@ fn charters_hooks() -> Vec<String> {
         crate::harness::Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: Path::new("/Applications/charter.app/Contents/MacOS/charter"),
             plugin: None,
             persona: None,

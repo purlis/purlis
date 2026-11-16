@@ -55,6 +55,7 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(bundle.path()),
             persona: None,
@@ -130,6 +131,7 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
         Kit {
             skills: None,
             laid_out: None,
+            key_route: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(bundle.path()),
             persona: None,
@@ -178,6 +180,7 @@ fn an_opencode_chat_is_handed_the_bundles_skills_and_nothing_else_it_has_no_fold
             Kit {
                 skills: None,
                 laid_out,
+                key_route: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,

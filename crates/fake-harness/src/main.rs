@@ -195,7 +195,42 @@ struct Args {
     project: Option<PathBuf>,
 }
 
+/// **Where the harness records what it was started with** (T1a-15): with this set, it writes its
+/// argv, its environment and its working folder to the file it names, as one JSON object, and
+/// ends, whatever its words are. So a test can start it with the words a real harness is handed
+/// and assert on what reached it.
+const RECORD_ENV: &str = "FAKE_HARNESS_RECORD";
+
+/// What [`RECORD_ENV`] writes: `{"argv": [...], "env": {...}, "cwd": "..."}`.
+fn record(to: &std::ffi::OsStr) -> Result<(), String> {
+    let argv: Vec<String> = std::env::args_os()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let env: serde_json::Map<String, serde_json::Value> = std::env::vars_os()
+        .map(|(name, value)| {
+            (
+                name.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned().into(),
+            )
+        })
+        .collect();
+    let cwd = std::env::current_dir()
+        .map(|dir| dir.display().to_string())
+        .unwrap_or_default();
+    let said = serde_json::json!({ "argv": argv, "env": env, "cwd": cwd });
+    std::fs::write(to, said.to_string()).map_err(|why| why.to_string())
+}
+
 fn main() -> ExitCode {
+    if let Some(to) = std::env::var_os(RECORD_ENV) {
+        return match record(&to) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("fake-harness: {message}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = Args::parse();
     match run(&args) {
         Ok(()) => ExitCode::from(args.exit_code),

@@ -235,6 +235,16 @@ impl Harness {
         &self.declared().env
     }
 
+    /// The variables a key chat of this harness is started without, whoever passed them: the
+    /// ones it reads from its launch environment alone that would carry its model calls around
+    /// the key proxy (T1a-15, [`claude::route::LAUNCH_ONLY`]). None for a harness that has none.
+    pub fn kept_out_of_a_key_chat(self) -> &'static [&'static str] {
+        match self {
+            Harness::ClaudeCode => &claude::route::LAUNCH_ONLY,
+            _ => &[],
+        }
+    }
+
     /// Whether charter chooses this harness's session id and hands it over at the start, so
     /// the link exists before the harness does.
     ///
@@ -365,6 +375,10 @@ pub struct Kit<'a> {
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
     /// out none: a harness that needs the folder is then handed none of what it holds.
     pub laid_out: Option<&'a std::path::Path>,
+    /// **A key chat's route** (T1a-15): the run's listener, as its start resolved it
+    /// ([`crate::keyroute::at_start`]), which the adapter pins the harness to. `None` for every
+    /// chat the key proxy doesn't carry, whose harness is armed as it always was (R-252).
+    pub key_route: Option<&'a crate::keyroute::KeyRoute>,
 }
 
 /// The persona a chat runs as, and the project that defines it.

@@ -50,6 +50,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
     let kit = Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         binary: Path::new("/bin/purlis"),
         plugin: Some(&plugin),
         persona: None,
@@ -368,6 +369,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
     let sets = kit.skill_sets.clone().unwrap();
     // The host arms a Claude Code chat as the window would, with the Skill studio on.
     let (args, env) = crate::hoststart::armed(&crate::hoststart::Arming {
+        key_route: None,
         root: &plane,
         kit: &kit,
         harness: Some(Harness::ClaudeCode),
@@ -1734,6 +1736,7 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
     let env = vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
     let armed_in = |cwd: &Path| {
         crate::hoststart::armed(&crate::hoststart::Arming {
+            key_route: None,
             root: &plane,
             kit: &kit,
             harness: Some(Harness::ClaudeCode),
@@ -1782,6 +1785,7 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
     let arm = verbs::drafts::lay_out_arm(&plane, Some(&copy)).unwrap();
     let armed = |cwd: &Path, graded: bool, harness: Harness| {
         crate::hoststart::armed(&crate::hoststart::Arming {
+            key_route: None,
             root: &plane,
             kit: &kit,
             harness: Some(harness),
@@ -1841,6 +1845,7 @@ fn a_start_armed_refuses_reads_no_skills_and_one_it_arms_reads_them_once() {
             )
         });
         crate::hoststart::armed(&crate::hoststart::Arming {
+            key_route: None,
             root: &plane,
             kit: &kit,
             harness: Some(Harness::ClaudeCode),
