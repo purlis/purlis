@@ -4063,11 +4063,7 @@ impl Widened {
                 .iter()
                 .any(|preset| preset.widens_caches())
                 .then(|| caches::home_of(machine, root, denied))
-                .flatten()
-                .map(|home| match policy.compile_cache {
-                    compile_cache::CompileCache::Sccache => home.with_sccache(machine, root),
-                    compile_cache::CompileCache::None => home,
-                }),
+                .flatten(),
             // On unless the project's file says `false` (R1): nothing a person grants, and
             // nothing a committed file can widen, since `true` is what an absent key means.
             // Policy has its say in [`Self::and_granted`].
@@ -4569,11 +4565,19 @@ impl Compiled {
         // Ports to listen on (#2019), at the scopes policy leaves open: each one a named local
         // port of the chat's reach too, so its browser opens the server it started.
         let listens = granted_listens(root, chat, &locks);
-        let widened = widened.and_listens(
+        let mut widened = widened.and_listens(
             &listens.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
             &locks,
         );
         ports.extend(listens);
+        // The project's compile cache (Q324): a folder of the chat's persona at the full
+        // sandbox, where its file declares one.
+        if policy.compile_cache == compile_cache::CompileCache::Sccache {
+            widened.caches = widened
+                .caches
+                .take()
+                .map(|home| home.with_compile_cache(machine, Level::Full, persona));
+        }
         // The chat's proxy carries a client that does use it to exactly those ports of this
         // machine, at the layer that granted each.
         for (port, by) in &ports {
@@ -5210,16 +5214,6 @@ impl Applied {
             line.env
                 .retain(|(key, _)| !caches.env.iter().any(|(set, _)| set == key));
             line.env.extend(caches.env.iter().cloned());
-            // The project's compile cache (Q324), where this chat's sandbox grants its server's
-            // socket: never otherwise, so a chat whose server could not listen builds as before.
-            if let (Some(sccache), Some(socket)) =
-                (&caches.sccache, compile_cache_socket(&self.form, at))
-            {
-                let gained = sccache.env(&socket);
-                line.env
-                    .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
-                line.env.extend(gained);
-            }
         }
         // The persona's tools (#1407): their shims first on the chat's `PATH`.
         if let Some(resolved) = &self.tools {
@@ -5237,7 +5231,10 @@ impl Applied {
                 .iter()
                 .find(|(key, _)| key == tools::FIRST_ON_PATH)
                 .map(|(_, dir)| PathBuf::from(dir));
-            match route.write_claude_env(tools_first.as_deref()) {
+            // The project's compile cache (Q324), for the chat's sandboxed commands alone: in
+            // this file, never on the harness's own line ([`compile_cache`]).
+            let compile_cache = self.compile_cache_script(at);
+            match route.write_claude_env(tools_first.as_deref(), compile_cache.as_deref()) {
                 Ok(file) => {
                     line.env.retain(|(key, _)| key != tools::CLAUDE_ENV_FILE);
                     line.env.push((
@@ -5251,6 +5248,35 @@ impl Applied {
             }
         }
         Ok(line)
+    }
+
+    /// **What the file Claude Code reads before each command says for the project's compile
+    /// cache** ([`compile_cache::script`]), for a chat whose sandbox grants its server's socket
+    /// ([`compile_cache_socket`]) and whose machine has an sccache it may be handed, found and
+    /// judged now, at this start, against every folder the chat's compiled sandbox lets it
+    /// write ([`Self::chat_writes`]). `None` otherwise: the chat builds as before.
+    pub fn compile_cache_script(&self, at: &At<'_>) -> Option<String> {
+        let declared = self.caches.as_ref()?.sccache.as_ref()?;
+        let socket = compile_cache_socket(&self.form, at)?;
+        let program = declared.program(&self.chat_writes(at))?;
+        Some(compile_cache::script(&program, declared, &socket))
+    }
+
+    /// **Every folder a chat opened `at` may write**, as its compiled sandbox says: what a
+    /// brokered run of it judges a program's place by
+    /// ([`crate::secrets::brokered::chat_writes`]), with the project, the chat's own folder and
+    /// its temp folders besides. A program in one is never one purlis hands the chat.
+    pub fn chat_writes(&self, at: &At<'_>) -> Vec<PathBuf> {
+        let mut out = crate::secrets::brokered::confined_writes(&self.confines, at.cwd);
+        out.push(self.root.clone());
+        out.extend(self.writable());
+        out.extend(program::temp_roots(&[]));
+        out.extend(
+            at.confinement
+                .and_then(Confinement::tmp)
+                .map(Path::to_path_buf),
+        );
+        out
     }
 
     /// What that harness is handed for a chat in `cwd`: [`Self::form`], with the manifests in

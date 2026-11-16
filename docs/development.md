@@ -55,7 +55,8 @@ running after it, so on a machine doing other work it names that work too. CI ru
 `compile-cache = "sccache"` under `[sandbox]` (Q324). Each branch folder still has its own
 `target/`, but a crate another chat of the project compiled comes from the cache in the project's
 cache home, not from rustc again. It needs an sccache on your `PATH` that serves on a unix socket
-(`SCCACHE_SERVER_UDS`; `brew install sccache`). `[sandbox].compile-cache` in [`plane-format.md`](plane-format.md) says
+(`SCCACHE_SERVER_UDS`) and that nobody can write: `brew install sccache` gives one, and a
+`cargo install`ed one needs `chmod a-w`. `[sandbox].compile-cache` in [`plane-format.md`](plane-format.md) says
 what a chat may then reach. `sccache --show-stats`, run in such a chat, shows its hits.
 
 purlis's website and docs, with the link check and the check that every page in `docs/` is in the

@@ -365,6 +365,39 @@ fn the_line_names_the_chat_s_own_ports_beside_its_hook_socket() {
     );
 }
 
+/// The compile cache's socket alone, with no hook socket and no ports, is still never added to
+/// a sandbox the adapter did not compile; carried in one it did, it is the one socket added.
+#[test]
+fn the_compile_cache_socket_is_never_added_to_a_sandbox_the_adapter_did_not_compile() {
+    use crate::harness::claude::reporting_on;
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    let settings = claude::Settings {
+        compile_cache: true,
+        ..claude::settings(&compiled).expect("compiles")
+    };
+    let socket = root.path().join("claude-501/sccache.sock");
+    for armed in [
+        Vec::new(),
+        vec!["--settings".to_owned(), "not json".to_owned()],
+        vec![
+            "--settings".to_owned(),
+            r#"{"sandbox":{"enabled":false}}"#.to_owned(),
+        ],
+    ] {
+        let why =
+            reporting_on(armed.clone(), &settings, None, None, Some(&socket)).expect_err("refused");
+        assert!(why.contains("nothing was started"), "{armed:?}: {why}");
+    }
+    let line =
+        reporting_on(armed_with(&settings), &settings, None, None, Some(&socket)).expect("starts");
+    assert_eq!(
+        settings_in(&line)["sandbox"],
+        settings.serving_compile_cache(&socket).sandbox
+    );
+    assert_ne!(settings_in(&line)["sandbox"], settings.sandbox);
+}
+
 #[test]
 fn ports_are_never_added_to_a_sandbox_the_adapter_did_not_compile() {
     use crate::harness::claude::reporting_on;

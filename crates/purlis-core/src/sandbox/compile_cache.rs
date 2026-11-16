@@ -9,36 +9,50 @@
 //! **Off unless the file says so.** The key is the future policy key `sandbox.compile-cache`
 //! (Q307 Q6), whose default is `"none"`: no wrapper, and nothing added to what a chat writes.
 //!
-//! **Only the resolved sccache** ([`resolved`]). purlis never copies a `rustc-wrapper` from the
-//! person's cargo config ([`super::caches::cargo_config`]). The one wrapper a chat is handed is
-//! the `sccache` the person's `PATH` finds, as its real file, named `sccache`, outside every
-//! folder a chat may write. A project whose machine has none gets no wrapper, and its chats build
-//! as before.
+//! **Only the resolved sccache, judged again at every start** ([`resolved`]). purlis never copies
+//! a `rustc-wrapper` from the person's cargo config ([`super::caches::cargo_config`]). The one
+//! wrapper a chat is handed is the `sccache` the person's `PATH` finds, as its real file, named
+//! `sccache`, outside every folder the chat's compiled sandbox lets it write, and neither it nor
+//! its folder writable by anyone but its owner, an owner that may not write it unless that is
+//! root. A machine with none gets no wrapper, and its chats build as before.
 //!
-//! **One cache folder, in the project's cache home** ([`DIR`]): written by that project's
-//! sandboxed chats and no one else, as its package caches are (D-1337-6). Compiled objects are
-//! code a later build links, so the cache is never shared with another project or with the
-//! person's own builds. The folder is one of the home's trees, so it is made and pinned by purlis
-//! like the others, a `.git` at its top is denied, and a link planted for it is taken out. It
-//! gives no write anywhere else.
+//! **Only the chat's sandboxed commands are pointed at it, never its harness** ([`script`]).
+//! The variables go in the file Claude Code reads before each of its Bash commands
+//! (`CLAUDE_ENV_FILE`), which its sandbox runs, and never in the harness's own environment. A
+//! program the harness starts outside its sandbox (a hook, a language server) never learns the
+//! socket, so it never starts an sccache server there that the chat's commands would then reach,
+//! and through which they would run a compiler outside the sandbox. The server a chat reaches is
+//! one its own commands started, inside its sandbox. The same file drops every other `SCCACHE_*`
+//! variable the chat inherited, and points `SCCACHE_CONF` at an empty file purlis writes
+//! ([`CONF`]), so a chat never reaches the person's team cache (a bucket, redis, memcached) nor a
+//! distributed-compile scheduler: its cache is the local folder alone.
+//!
+//! **A cache folder per persona and level, in the project's cache home** ([`folder`]): written by
+//! that project's sandboxed chats running as that persona at that level, and by no other chat.
+//! Compiled objects are code a later build links, so a chat of a narrow persona never writes an
+//! object a chat of a wider persona, or of a looser level, links. The trust boundary that stays is
+//! within one folder: every chat of one project, one persona and one level shares what it builds,
+//! as its package caches are shared (D-1337-6). The folders are trees of the cache home, so each
+//! is made and pinned by purlis like the others, a `.git` at its top is denied, and a link planted
+//! for it is taken out. They give no write anywhere else.
 //!
 //! **A server of the chat's own, on a socket in the chat's own temp folder** ([`socket_in`]).
 //! sccache's client hands each compile to a server, which runs the compiler. The default server
 //! listens on loopback port 4226, where any program of this Mac may answer, the person's own
 //! unsandboxed sccache among them. A chat that reached that one would have its compiles run
 //! outside its sandbox. So purlis points the client at a unix socket in the chat's own temp folder
-//! (`SCCACHE_SERVER_UDS`), and lets the chat bind and connect to that one
-//! path. The chat starts its own server there, inside its own sandbox. No loopback port is opened,
-//! and no chat reaches another chat's server.
+//! (`SCCACHE_SERVER_UDS`), and lets the chat bind and connect to that one path. No loopback port is
+//! opened, and no chat reaches another chat's server.
 //!
-//! **Where purlis can grant it.** A Claude Code chat on macOS, whose sandbox grants a socket by
-//! path (`network.allowUnixSockets`). Elsewhere the chat gets no wrapper, a declared gap: Claude
-//! Code's sandbox on Linux reaches no unix socket, and a wrapped harness's profile does not name
-//! the socket yet.
+//! **Where purlis can grant it.** A Claude Code chat on macOS at the full sandbox, whose sandbox
+//! grants a socket by path (`network.allowUnixSockets`) and which reads the file before each
+//! command. Elsewhere the chat gets no wrapper, a declared gap: Claude Code's sandbox on Linux
+//! reaches no unix socket, a wrapped harness's profile does not name the socket yet, and the
+//! floor has no package caches.
 
 use std::path::{Path, PathBuf};
 
-use super::Machine;
+use super::{Level, Machine};
 
 /// The `[sandbox]` key that turns a project's compile cache on.
 pub const KEY: &str = "compile-cache";
@@ -50,8 +64,16 @@ pub const SCCACHE: &str = "sccache";
 /// The value [`KEY`] has where the file says nothing: the default.
 pub const NONE: &str = "none";
 
-/// The cache's folder in the project's cache home ([`super::caches::CacheHome`]).
+/// The cache's folder in the project's cache home ([`super::caches::CacheHome`]), holding a
+/// folder per level, and in each a folder per persona ([`folder`]).
 pub const DIR: &str = "sccache";
+
+/// The empty sccache config purlis writes at the top of the cache home, where no chat writes,
+/// and points every chat's sccache at.
+pub const CONF: &str = "sccache.conf";
+
+/// The persona folder of a chat that runs as no persona: no persona's name begins with `_`.
+pub const NO_PERSONA: &str = "_none";
 
 /// The name of the server's socket in the chat's own temp folder.
 pub const SOCKET: &str = "sccache.sock";
@@ -83,28 +105,62 @@ impl CompileCache {
     }
 }
 
-/// A project's sccache, resolved for its chats: the program and the cache folder.
+/// A project's compile cache, as compiled for one chat: its folder, its config, and where its
+/// program is looked for at the chat's start ([`Declared::program`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Sccache {
-    /// The real file of the `sccache` program, outside every folder a chat may write.
-    pub program: PathBuf,
-    /// The cache folder in the project's cache home.
+pub struct Declared {
+    /// The cache folder of the chat's persona at its level ([`folder`]).
     pub dir: PathBuf,
+    /// The folders purlis makes between the cache home and [`Self::dir`], outermost first.
+    pub above: Vec<PathBuf>,
+    /// The empty config purlis writes at the top of the cache home ([`CONF`]).
+    pub conf: PathBuf,
+    /// Where the person's `PATH` looks for programs, as the chat was compiled.
+    pub search: Vec<PathBuf>,
 }
 
-impl Sccache {
-    /// What points a chat's builds at this cache, with its server on `socket`: cargo's wrapper,
-    /// sccache's folder, and the server's socket.
-    pub fn env(&self, socket: &Path) -> Vec<(String, String)> {
-        [
-            ("RUSTC_WRAPPER", self.program.as_path()),
-            ("SCCACHE_DIR", self.dir.as_path()),
-            ("SCCACHE_SERVER_UDS", socket),
-        ]
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value.display().to_string()))
-        .collect()
+impl Declared {
+    /// The compile cache of the project whose cache home is `home`, for a chat at `level` running
+    /// as `persona`, on `machine`. `None` where the persona's name is not one a folder may have.
+    pub fn of(home: &Path, machine: &Machine, level: Level, persona: Option<&str>) -> Option<Self> {
+        let dir = folder(home, level, persona)?;
+        let top = home.join(DIR);
+        Some(Self {
+            above: vec![top.clone(), top.join(level_word(level))],
+            dir,
+            conf: home.join(CONF),
+            search: crate::programs::search_dirs_from(
+                machine.env.get("PATH").as_deref().map(std::ffi::OsStr::new),
+                machine.home.as_deref(),
+            ),
+        })
     }
+
+    /// The sccache a chat that may write `writable` is handed as it starts: found again, and
+    /// judged again ([`resolved`]), at every start. `None` where there is none it may be handed.
+    pub fn program(&self, writable: &[PathBuf]) -> Option<PathBuf> {
+        resolved(&crate::programs::find(SCCACHE, &self.search)?, writable)
+    }
+}
+
+/// The level's folder name in [`DIR`].
+fn level_word(level: Level) -> &'static str {
+    match level {
+        Level::Full => "full",
+        Level::Floor => "floor",
+    }
+}
+
+/// The cache folder of a chat at `level` running as `persona` in the cache home `home`:
+/// `sccache/<level>/<persona>`, [`NO_PERSONA`] for a chat of none. `None` where `persona` is not
+/// a name purlis could have minted ([`crate::personas::valid_name`]).
+pub fn folder(home: &Path, level: Level, persona: Option<&str>) -> Option<PathBuf> {
+    let persona = match persona {
+        None => NO_PERSONA,
+        Some(name) if crate::personas::valid_name(name) => name,
+        Some(_) => return None,
+    };
+    Some(home.join(DIR).join(level_word(level)).join(persona))
 }
 
 /// Where a chat's sccache server listens: in the folder Claude Code roots the chat's commands'
@@ -115,21 +171,11 @@ pub fn socket_in(tmp: &Path) -> PathBuf {
         .join(SOCKET)
 }
 
-/// The `sccache` a chat on `machine` may be handed, where none of `writable` holds it: the first
-/// on the person's `PATH`, as its real file. `None` where there is none, or where the one found
-/// is not one a chat may run as its wrapper ([`resolved`]).
-pub fn find(machine: &Machine, writable: &[PathBuf]) -> Option<PathBuf> {
-    let dirs = crate::programs::search_dirs_from(
-        machine.env.get("PATH").as_deref().map(std::ffi::OsStr::new),
-        machine.home.as_deref(),
-    );
-    resolved(&crate::programs::find(SCCACHE, &dirs)?, writable)
-}
-
-/// `found` as the wrapper a chat may be handed, or `None`: it must be absolute, its real file
-/// must be a file named `sccache`, and neither it nor its real file may lie in any of
-/// `writable`, the folders a chat may write. A chat must never point its builds' wrapper at a
-/// program of its own, nor at one it could change.
+/// `found` as the wrapper a chat may be handed, or `None`. It must be absolute; its real file
+/// must be a file named `sccache`; neither it nor its real file may lie in any of `writable`, the
+/// folders a chat may write; and its real file and that file's folder must be owned as a
+/// program's are ([`owned_as_a_program`]). A chat must never point its builds' wrapper at a
+/// program of its own, nor at one it, or anyone but its owner, could change.
 pub fn resolved(found: &Path, writable: &[PathBuf]) -> Option<PathBuf> {
     if !found.is_absolute() {
         return None;
@@ -143,19 +189,57 @@ pub fn resolved(found: &Path, writable: &[PathBuf]) -> Option<PathBuf> {
             path.starts_with(dir) || dir.canonicalize().is_ok_and(|dir| path.starts_with(dir))
         })
     };
-    (!inside(found) && !inside(&real)).then_some(real)
+    if inside(found) || inside(&real) || !owned_as_a_program(&real) {
+        return None;
+    }
+    Some(real)
 }
 
-/// The folders a chat in the project at `root` may write, as far as the wrapper's check asks:
-/// the project, its cache home, the temp folders, and every folder a person let its chats write.
-pub fn writable_for(machine: &Machine, root: &Path, cache_home: &Path) -> Vec<PathBuf> {
-    let env: Vec<(String, String)> = machine
-        .env
-        .get("TMPDIR")
-        .map(|tmp| vec![("TMPDIR".to_owned(), tmp)])
-        .unwrap_or_default();
-    let mut out = vec![root.to_path_buf(), cache_home.to_path_buf()];
-    out.extend(super::program::temp_roots(&env));
-    out.extend(super::local::granted_writes(root));
-    out
+/// Whether the program at `real`, a real file, is owned as one a chat may be handed: neither it
+/// nor its folder writable by its group or by others, its folder owned by root or by this user,
+/// and the file itself writable by nobody (as Homebrew installs one) or owned by root. One
+/// `cargo install` left writable by its owner is not taken until `chmod a-w` makes it so.
+#[cfg(unix)]
+pub fn owned_as_a_program(real: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let me = rustix::process::getuid().as_raw();
+    let Some(folder) = real.parent() else {
+        return false;
+    };
+    let (Ok(file), Ok(folder)) = (std::fs::metadata(real), std::fs::metadata(folder)) else {
+        return false;
+    };
+    file.mode() & 0o022 == 0
+        && folder.mode() & 0o022 == 0
+        && (folder.uid() == 0 || folder.uid() == me)
+        && (file.uid() == 0 || (file.uid() == me && file.mode() & 0o200 == 0))
+}
+
+/// Off unix no program is owned as one: no wrapper is handed there.
+#[cfg(not(unix))]
+pub fn owned_as_a_program(_real: &Path) -> bool {
+    false
+}
+
+/// What the file Claude Code reads before each of the chat's commands says for the compile
+/// cache: every `SCCACHE_*` variable the command inherited dropped, then the wrapper `program`,
+/// the cache's folder, its config and the chat's own server's `socket` set. Read by the chat's
+/// sandboxed commands alone, never by its harness ([`self`]).
+pub fn script(program: &Path, declared: &Declared, socket: &Path) -> String {
+    let quoted = |path: &Path| super::tunnel::sh_quoted(&path.display().to_string());
+    format!(
+        "# The project's compile cache (Q324): rustc through sccache, its server this chat's own.\n\
+         for purlis_sccache_var in $(env | sed -n 's/^\\(SCCACHE_[A-Za-z0-9_]*\\)=.*/\\1/p'); do \
+         unset \"$purlis_sccache_var\"; done\n\
+         unset purlis_sccache_var\n\
+         RUSTC_WRAPPER={}\n\
+         SCCACHE_DIR={}\n\
+         SCCACHE_CONF={}\n\
+         SCCACHE_SERVER_UDS={}\n\
+         export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CONF SCCACHE_SERVER_UDS\n",
+        quoted(program),
+        quoted(&declared.dir),
+        quoted(&declared.conf),
+        quoted(socket),
+    )
 }
