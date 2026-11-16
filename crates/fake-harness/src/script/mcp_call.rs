@@ -176,7 +176,10 @@ pub fn call(
             .map_err(|e| e.to_string())?;
         send(
             json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-                "name": tool, "arguments": arguments
+                // MUTATION (reverted in the next commit): the call the old test made, which purlis's
+                // server answers with an error.
+                "name": if tool.is_empty() { tool } else { "browser_navigate" },
+                "arguments": if tool.is_empty() { arguments.clone() } else { json!({"url": "http://127.0.0.1:9/"}) }
             }}),
         )
         .map_err(|e| e.to_string())?;
