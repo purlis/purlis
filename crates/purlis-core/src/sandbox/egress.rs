@@ -1881,7 +1881,8 @@ fn authority_of(authority: &str, default: Option<u16>) -> Option<(String, u16)> 
 }
 
 /// **Whether `host` is a name or an IPv4 address as a URL client sends one**: a dotted IPv4
-/// address, or a name of letters, digits, `-`, `.` and `_` that does not end in a number. A name
+/// address, or a name of labels of letters, digits, `-` and `_`, none empty, with one final dot
+/// at most, that does not end in a number. A name
 /// that does is an IPv4 address in another notation to curl, to Node and to the resolver
 /// (`0x7f.1`, `2130706433`: WHATWG's "ends in a number"), and any other byte is one no URL's host
 /// is sent with (`1.2.3.4<tab>.github.com`, `evil.test@x.example.com`), so neither is read as a
@@ -1891,11 +1892,12 @@ pub(super) fn sent_as_a_name(host: &str) -> bool {
         return true;
     }
     let name = host.strip_suffix('.').unwrap_or(host);
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b))
-        && !super::hosts::ends_in_a_number(name)
+    name.split('.').all(|label| {
+        !label.is_empty()
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    }) && !super::hosts::ends_in_a_number(&name.to_ascii_lowercase())
 }
 
 /// What a connect came to.

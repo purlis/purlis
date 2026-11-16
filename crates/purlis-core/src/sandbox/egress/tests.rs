@@ -1873,6 +1873,11 @@ fn a_host_no_url_client_sends_is_refused_before_it_is_judged() {
         "GET http://evil.test#.github.com/ HTTP/1.1\r\nHost: evil.test#.github.com\r\n\r\n",
         "GET http://evil.test\\.github.com/ HTTP/1.1\r\nHost: evil.test\\.github.com\r\n\r\n",
         "GET http://[evil.test]/ HTTP/1.1\r\nHost: [evil.test]\r\n\r\n",
+        // An empty label: `a..` was judged as one site and written back as another
+        // (`fuzz_browser_reach_request_head`).
+        "CONNECT a.github.com..:443 HTTP/1.1\r\n\r\n",
+        "CONNECT a..github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT .github.com:443 HTTP/1.1\r\n\r\n",
     ] {
         assert_eq!(read_as(head), None, "{head:?}");
     }
@@ -1884,6 +1889,8 @@ fn a_host_that_ends_in_a_number_is_refused_unless_it_is_an_ipv4_address() {
     // "ends in a number"); the proxy read them as names.
     for head in [
         "CONNECT 0x7f.1:443 HTTP/1.1\r\n\r\n",
+        // Hex in either case (`differential_host_parse_against_curl_and_node`).
+        "CONNECT 0X7F000001:443 HTTP/1.1\r\n\r\n",
         "CONNECT 2130706433:443 HTTP/1.1\r\n\r\n",
         "CONNECT 127.1:443 HTTP/1.1\r\n\r\n",
         "CONNECT a.github.com.1:443 HTTP/1.1\r\n\r\n",

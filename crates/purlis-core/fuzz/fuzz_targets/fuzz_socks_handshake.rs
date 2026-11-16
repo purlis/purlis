@@ -38,7 +38,12 @@ fuzz_target!(|bytes: &[u8]| {
             assert!(offered);
             assert!([2, 4, 7, 8].contains(code), "{code}");
         }
-        None if !offered && bytes.len() >= 2 + usize::from(bytes[1]) && bytes[0] == 5 && bytes[1] > 0 => {
+        None if !offered
+            && bytes.len() >= 2
+            && bytes[0] == 5
+            && bytes[1] > 0
+            && bytes.len() >= 2 + usize::from(bytes[1]) =>
+        {
             // A greeting that offers no method served is answered "no method", and nothing more.
             assert_eq!(read.answered, [5, 0xff]);
         }

@@ -26,12 +26,18 @@ use libfuzzer_sys::fuzz_target;
 use purlis_core::sandbox::fuzzing::{Head, host_header_agrees, proxy_request_head};
 use url::{Host, Url};
 
-/// A host as a resolver takes it: lower case, without IPv6 brackets or a final dot.
+/// A host as a resolver takes it: lower case, without IPv6 brackets or a final dot, and an
+/// address in one spelling (`::0` is `::`), as the proxy's decision reads an address.
 fn plain(host: &str) -> String {
-    host.trim_start_matches('[')
+    let host = host
+        .trim_start_matches('[')
         .trim_end_matches(']')
         .trim_end_matches('.')
-        .to_ascii_lowercase()
+        .to_ascii_lowercase();
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.to_string(),
+        Err(_) => host,
+    }
 }
 
 /// The host `url` names, and the port a client connects to for it.
@@ -74,6 +80,18 @@ fn as_node_sends(url: &Url) -> Option<String> {
     }
 }
 
+/// The host and port `head`'s request line names, read as a URL client reads them: what the
+/// client that sent it meant.
+fn named_on_request_line(head: &str) -> Option<(String, u16)> {
+    let target = head.split("\r\n").next()?.split(' ').nth(1)?;
+    let url = if target.starts_with("http://") {
+        Url::parse(target).ok()?
+    } else {
+        Url::parse(&format!("https://{target}/")).ok()?
+    };
+    meant(&url)
+}
+
 /// The proxy's reading of `head`, where it carries it past its `Host` check.
 fn carried(head: &str) -> Option<Head> {
     proxy_request_head(head).filter(host_header_agrees)
@@ -108,8 +126,11 @@ fuzz_target!(|text: &str| {
     match sent {
         Some(head) => {
             // What a real client sent: carried to the host on its request line, which is the
-            // URL's.
-            same_or_refused(head, &wanted, written);
+            // URL's. A head whose request line names another host than the URL is no recording
+            // (the fuzzer changed one half of a pair), so it says nothing of either client.
+            if named_on_request_line(head).as_ref() == Some(&wanted) {
+                same_or_refused(head, &wanted, written);
+            }
         }
         None => {
             if let Some(head) = as_node_sends(&url) {

@@ -32,14 +32,21 @@ requests are committed as seeds; CI records curl and Node fresh on its runner ev
 What it found, and what became of each:
 
 - **Fixed:** the proxy read a host with a byte no URL host has (`1.2.3.4<tab>.github.com`,
-  `evil.test@x.example.com`, `a?.github.com`, `[name]`) and a host that ends in a number but is no
-  IPv4 address (`0x7f.1`, `2130706433`, which curl, Node and the resolver all read as 127.0.0.1).
-  `egress::Request::parse` and the SOCKS port now refuse both. None reached another host: the name
-  dialled was the one judged, macOS's resolver and glibc's read none of them as an address, and an
-  unlisted one was already refused by the policy's reading (`hosts::Host::parse`).
+  `evil.test@x.example.com`, `a?.github.com`, `[name]`), a host with an empty label (`a..`,
+  which the reach proxy judged as one site and wrote back as another), and a host that ends in a
+  number but is no IPv4 address (`0x7f.1`, `0X7F000001`, `2130706433`, which curl, Node and the
+  resolver all read as 127.0.0.1). `egress::Request::parse` and the SOCKS port now refuse all
+  three.
+  None reached another host: the name dialled was the one judged, macOS's resolver and glibc's
+  read none of them as an address, and an unlisted one was already refused by the policy's
+  reading (`hosts::Host::parse`).
 - **Not a fault:** `allows` and `allows_on` read a malformed bracketed entry (`[]31`) two ways;
   `allows_on`, which the proxy's decision asks, refuses it, and no listed entry is one, since
   `hosts::Host::parse` refuses it (found by `fuzz_host_pattern`).
+- **Not a fault, in the target:** a URL and a recorded head that name different hosts, which the
+  fuzzer makes by changing one half of a pair; the target reads such a pair as no recording.
+- **Not a disagreement:** an IPv6 address in another spelling (`::0` for `::`): the proxy's
+  decision reads an address as an address, so the target compares them so.
 - **Not a disagreement:** a URL the proxy refuses (a host with a character WHATWG allows but no
   DNS name has, such as `a!b.example`). Refusing is not reading another host.
 
