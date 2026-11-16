@@ -19,7 +19,15 @@
 //! connection closed after the answer. The thin checks on what hyper hands the service are
 //! T1a-08's and T1a-43's.
 //!
-//! **What it answers** (T1a-05). A request must carry its run's token as the bearer credential,
+//! **What it answers** (T1a-05, T1a-08). Every request, token-less included, first tells the host
+//! it arrived ([`Heard::arrived`], the route used). Its method and target are then judged in
+//! memory against the [`Route`] the listener was bound to at its start (R-077, R-479): a target
+//! that is not a normalised path (an absolute-form or authority-form target, `CONNECT`, a dot
+//! segment, an encoded slash), or a method and path core's allowlist does not list, is refused
+//! before any key is swapped in, and Claude Code's `HEAD /api/hello` is answered 404 with no body
+//! (R-084, R-087, R-089; `purlis_core::model_route`). What is forwarded goes in origin form, the
+//! base's path joined with the request's, so an upstream never follows a URI of the harness's
+//! over `Host`. A request left must carry its run's token as the bearer credential,
 //! the header a harness sets from `ANTHROPIC_AUTH_TOKEN`, compared in constant time (R-063); one
 //! without it is refused and the listener goes on (R-064). One with it is sent to its listener's
 //! [`Route`], its body passed through as it came and the answer's body back as it came, streamed
@@ -64,6 +72,7 @@ use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_util::client::proxy::matcher::Intercept;
 pub use hyper_util::client::proxy::matcher::Matcher;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use purlis_core::model_route::{self, Refusal, Verdict};
 use purlis_core::upstream::{Destination, Direct, Outbound, trust};
 use purlis_core::window_copy::{self, line};
 use rustls::ClientConfig;
@@ -103,6 +112,12 @@ const NOT_ROUTED: &str = r#"{"type":"error","error":{"type":"invalid_request_err
 
 /// What a request without its run's token is answered (R-064): Anthropic's error shape.
 const NO_TOKEN: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this request does not carry its run's token"}}"#;
+
+/// What a request is answered when its target is not a plain path the route takes (R-084).
+const NOT_A_PATH: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this request's target is not a plain path, so it was not sent"}}"#;
+
+/// What a request is answered when core's allowlist does not list its method and path (R-087).
+const NOT_LISTED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"purlis: this request's method and path are not on this route's list, so it was not sent"}}"#;
 
 /// What a request is answered when its run's key can't be a header value: refused, never sent
 /// with an empty credential.
@@ -144,6 +159,9 @@ pub struct Heard {
     pub say: Arc<dyn Fn(&str) + Send + Sync>,
     /// A line of the network record.
     pub record: Arc<dyn Fn(&Record) + Send + Sync>,
+    /// A request arrived on the listener, token-less included: the route was used (spec C-19,
+    /// U4), which T1a-42's flag reads. Called once per request, before anything is judged.
+    pub arrived: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// A run's token: never written out by `Debug`.
@@ -254,10 +272,14 @@ impl Origin {
     }
 }
 
-/// **Where a listener sends what it serves**: the upstream origin, and the run's key.
+/// **What a listener is bound to at its run's start**, and keeps to its end (R-077, R-479): the
+/// run's route (its profile, its declaration by digest and the endpoint of the harness's format),
+/// the upstream origin its base is reached at, and the run's key. A value: nothing is read again
+/// per request.
 #[derive(Debug, Clone)]
 pub struct Route {
     pub origin: Origin,
+    pub bound: model_route::Route,
     pub key: Key,
 }
 
@@ -454,16 +476,27 @@ async fn answer(
     request: Request<Incoming>,
     serving: Arc<Serving>,
 ) -> Result<Response<Body>, Infallible> {
+    (serving.heard.arrived)();
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
-    let response = match &serving.route {
-        _ if !carries(&serving.token, request.headers()) => refuse(request, NO_TOKEN).await,
-        None => refuse(request, NOT_ROUTED).await,
-        Some(route) => match forward(request, route, &serving.reach).await {
-            Ok(response) => response.map(BodyExt::boxed),
-            Err(Failed::Refused(why)) => fixed(StatusCode::BAD_REQUEST, why, false),
-            Err(Failed::Unreached(why)) => unreached(why, &route.origin),
-        },
+    let decision = decide(
+        serving.route.as_ref(),
+        &serving.token,
+        &method,
+        &request.uri().to_string(),
+        request.headers(),
+    );
+    let response = match (decision, &serving.route) {
+        (Decision::Forward(uri), Some(route)) => {
+            match forward(request, uri, route, &serving.reach).await {
+                Ok(response) => response.map(BodyExt::boxed),
+                Err(Failed::Refused(why)) => fixed(StatusCode::BAD_REQUEST, why, false),
+                Err(Failed::Unreached(why)) => unreached(why, &route.origin),
+            }
+        }
+        (Decision::Absent, _) => absent(request).await,
+        (Decision::Refuse(why), _) => refuse(request, why).await,
+        (Decision::Forward(_), None) => refuse(request, NOT_ROUTED).await,
     };
     (serving.heard.record)(&Record {
         run: serving.run.clone(),
@@ -472,6 +505,41 @@ async fn answer(
         status: response.status().as_u16(),
     });
     Ok(response)
+}
+
+/// What a request is to be answered with, decided in memory before anything is sent.
+#[derive(Debug, PartialEq, Eq)]
+enum Decision {
+    /// Sent to the route's upstream at this path and query, in origin form, the key swapped in.
+    Forward(Uri),
+    /// Answered 404 with no body, nothing sent (Claude Code's `HEAD /api/hello`).
+    Absent,
+    /// Refused with this body, nothing sent.
+    Refuse(&'static str),
+}
+
+/// What a request of `method` on `target` with `headers` is answered with by a listener bound to
+/// `route`: the route's verdict first, so a refused or absent request needs no token, then the
+/// token (R-063, R-084, R-087, R-089).
+fn decide(
+    route: Option<&Route>,
+    token: &Token,
+    method: &str,
+    target: &str,
+    headers: &HeaderMap,
+) -> Decision {
+    let verdict = route.map(|route| route.bound.judge(method, target));
+    match verdict {
+        Some(Verdict::Absent) => Decision::Absent,
+        Some(Verdict::Refused(Refusal::NotListed)) => Decision::Refuse(NOT_LISTED),
+        Some(Verdict::Refused(_)) => Decision::Refuse(NOT_A_PATH),
+        _ if !carries(token, headers) => Decision::Refuse(NO_TOKEN),
+        None => Decision::Refuse(NOT_ROUTED),
+        Some(Verdict::Forward { path_and_query }) => match path_and_query.parse::<Uri>() {
+            Ok(uri) => Decision::Forward(uri),
+            Err(_) => Decision::Refuse(NOT_A_PATH),
+        },
+    }
 }
 
 /// Whether `headers` carry `token` as their one bearer credential, compared in constant time
@@ -662,14 +730,17 @@ async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreac
     }
 }
 
-/// Sends `request` to `route`'s upstream with the credentials and `Host` swapped, on a
+/// Sends `request` to `route`'s upstream at `uri`, with the credentials and `Host` swapped, on a
 /// connection of its own, and hands back its answer as it comes: neither body is read, changed
 /// or added to (R-042, R-045).
 async fn forward(
     mut request: Request<Incoming>,
+    uri: Uri,
     route: &Route,
     reach: &Reach,
 ) -> Result<Response<Incoming>, Failed> {
+    // The joined path and query alone, in origin form (R-084): never the harness's own target.
+    *request.uri_mut() = uri;
     swap(request.headers_mut(), route).map_err(Failed::Refused)?;
     let wire = connect(&route.origin, reach)
         .await
@@ -713,6 +784,22 @@ async fn refuse(request: Request<Incoming>, why: &'static str) -> Response<Body>
         }
     }
     fixed(StatusCode::BAD_REQUEST, why, !whole)
+}
+
+/// Answers `request` 404 with no body (spec C-19), after reading what it sent to its end.
+async fn absent(request: Request<Incoming>) -> Response<Body> {
+    let whole = request.into_body().collect().await.is_ok();
+    let mut response = Response::builder().status(StatusCode::NOT_FOUND);
+    if !whole {
+        response = response.header("connection", "close");
+    }
+    response
+        .body(
+            Full::new(Bytes::new())
+                .map_err(|never| match never {})
+                .boxed(),
+        )
+        .expect("a response of fixed parts")
 }
 
 /// A refusal of the key proxy's own, in the Messages error shape.

@@ -12,11 +12,13 @@ use std::collections::HashSet;
 use hyper::HeaderMap;
 use hyper::header::HeaderValue;
 
+use purlis_core::model_provider::{Format, built_ins};
+use purlis_core::model_route;
 use purlis_core::upstream::Destination;
 
 use super::{
-    CREDENTIAL_HEADERS, Key, Matcher, Origin, Route, Token, Unreached, carries, connect_request,
-    destination, swap,
+    CREDENTIAL_HEADERS, Decision, Key, Matcher, NO_TOKEN, NOT_A_PATH, NOT_LISTED, NOT_ROUTED,
+    Origin, Route, Token, Unreached, carries, connect_request, decide, destination, swap,
 };
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -28,8 +30,19 @@ fn token() -> Token {
 fn route(key: Key) -> Route {
     Route {
         origin: Origin::https("api.anthropic.com", 443),
+        bound: bound(),
         key,
     }
+}
+
+/// The Anthropic built-in's Messages route for Claude Code.
+fn bound() -> model_route::Route {
+    let declaration = built_ins()
+        .iter()
+        .find(|declaration| declaration.id == "anthropic")
+        .expect("the Anthropic built-in ships");
+    model_route::Route::bind("claude-anthropic", declaration, Format::AnthropicMessages)
+        .expect("a Messages endpoint")
 }
 
 fn headers(lines: &[(&str, &str)]) -> HeaderMap {
@@ -185,7 +198,15 @@ fn host_is_the_upstream_origins_whatever_the_harness_sent() {
         (Origin::http("127.0.0.1", 8080), "127.0.0.1:8080"),
     ] {
         let mut sent = headers(&[("Host", "evil.example")]);
-        swap(&mut sent, &Route { origin, key: key() }).unwrap();
+        swap(
+            &mut sent,
+            &Route {
+                origin,
+                bound: bound(),
+                key: key(),
+            },
+        )
+        .unwrap();
         assert_eq!(sent.get_all("host").iter().count(), 1, "{sent:?}");
         assert_eq!(sent["host"], host);
     }
@@ -292,4 +313,73 @@ fn each_failure_to_reach_the_upstream_is_named_by_its_cause() {
         Unreached::ProxyRefused.message("api.anthropic.com"),
         "purlis: The outbound proxy refused the connection."
     );
+}
+
+#[test]
+fn only_a_listed_request_carrying_the_token_is_forwarded_at_the_joined_path() {
+    let route = route(Key::XApiKey("sk-stand-in".to_owned()));
+    let token = token();
+    let with = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
+    assert_eq!(
+        decide(
+            Some(&route),
+            &token,
+            "POST",
+            "/v1/messages?beta=true",
+            &with
+        ),
+        Decision::Forward("/v1/messages?beta=true".parse().unwrap())
+    );
+    assert_eq!(
+        decide(Some(&route), &token, "POST", "/v1/messages", &headers(&[])),
+        Decision::Refuse(NO_TOKEN),
+        "a listed request without the token"
+    );
+    assert_eq!(
+        decide(None, &token, "POST", "/v1/messages", &with),
+        Decision::Refuse(NOT_ROUTED),
+        "a listener with no route"
+    );
+}
+
+#[test]
+fn a_request_the_route_refuses_is_refused_whatever_it_carries() {
+    let route = route(Key::XApiKey("sk-stand-in".to_owned()));
+    let token = token();
+    let with = headers(&[("authorization", &format!("Bearer {TOKEN}"))]);
+    for (method, target, why) in [
+        ("GET", "/v1/messages", NOT_LISTED),
+        ("POST", "/v1/files", NOT_LISTED),
+        ("DELETE", "/v1/messages", NOT_LISTED),
+        ("OPTIONS", "*", NOT_A_PATH),
+        ("POST", "/v1/messages/count_tokens", NOT_LISTED),
+        ("GET", "/v1/models?limit=1000", NOT_LISTED),
+        ("POST", "http://elsewhere.example/v1/messages", NOT_A_PATH),
+        ("CONNECT", "elsewhere.example:443", NOT_A_PATH),
+        ("POST", "/v1/../v1/messages", NOT_A_PATH),
+        ("POST", "/v1%2Fmessages", NOT_A_PATH),
+    ] {
+        for carried in [&with, &headers(&[])] {
+            assert_eq!(
+                decide(Some(&route), &token, method, target, carried),
+                Decision::Refuse(why),
+                "{method} {target}"
+            );
+        }
+    }
+}
+
+#[test]
+fn claude_codes_hello_is_absent_with_or_without_the_token() {
+    let route = route(Key::XApiKey("sk-stand-in".to_owned()));
+    let token = token();
+    for carried in [
+        headers(&[]),
+        headers(&[("authorization", &format!("Bearer {TOKEN}"))]),
+    ] {
+        assert_eq!(
+            decide(Some(&route), &token, "HEAD", "/api/hello", &carried),
+            Decision::Absent
+        );
+    }
 }

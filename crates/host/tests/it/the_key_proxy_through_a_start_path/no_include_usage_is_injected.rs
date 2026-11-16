@@ -2,25 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! R-045: the key proxy never edits a body and never injects `stream_options.include_usage`: a
-//! streamed Chat Completions request without `stream_options` reaches the provider without it.
+//! streamed request without `stream_options` reaches the provider without it. It is a Messages
+//! request on the Anthropic built-in's route, the one format whose allowlist 1a lists (T1a-08);
+//! the Chat Completions form returns with that format's list in 1b.
 
 use fake_harness::model::{Provider, Recording};
 
 use super::StartPath;
 use super::start_path::{Desktop, route_to, send};
 
-const SENT: &[u8] =
-    br#"{"model":"gpt-test","stream":true,"messages":[{"role":"user","content":"hi"}]}"#;
+const SENT: &[u8] = br#"{"model":"claude-test","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}"#;
 
-const CHUNKS: &str = "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
+const CHUNKS: &str = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
 
 pub(crate) async fn check(path: impl StartPath) {
     let provider = Provider::builder()
-        .answer("/v1/chat/completions", Recording::events(CHUNKS))
+        .answer("/v1/messages", Recording::events(CHUNKS))
         .start()
         .expect("the fake provider serves");
     let (port, token) = path.start("run-1", route_to(&provider)).await;
-    let answered = send(port, Some(&token), "/v1/chat/completions", SENT).await;
+    let answered = send(port, Some(&token), "/v1/messages", SENT).await;
     assert_eq!(answered.status, 200, "{answered:?}");
 
     let requests = provider.requests();

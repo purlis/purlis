@@ -179,6 +179,7 @@ pub mod memscope;
 pub mod memstore;
 pub mod mergehold;
 pub mod model_provider;
+pub mod model_route;
 pub mod names;
 pub mod netlog;
 pub mod news;
