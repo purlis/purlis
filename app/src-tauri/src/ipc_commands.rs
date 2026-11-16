@@ -143,6 +143,7 @@ macro_rules! app_commands {
                 sandboxing::sandbox_grants,
                 sandboxing::revoke_sandbox_grant,
                 sandboxing::owed_restarts,
+                sandboxing::chats_owed_for_model_keys,
                 sandboxing::grantable_folders,
                 network::sandbox_network,
                 network::chat_network,

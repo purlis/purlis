@@ -126,6 +126,7 @@ fn running_in(id: &str) -> StartProgram {
             confinement: Some(id.into()),
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

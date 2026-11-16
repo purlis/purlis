@@ -1538,6 +1538,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn keyring_left(&self, number: u32) -> Option<bool> {
+        match self.host_of(number) {
+            Some(host) => host.keyring_left(number),
+            None => self.here.keyring_left(number),
+        }
+    }
+
     fn prompt_key_started(
         &self,
         number: u32,

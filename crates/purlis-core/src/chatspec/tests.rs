@@ -184,6 +184,7 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
         confinement: None,
         prompt_key: session::PromptKey::of("the-chats-prompt-key"),
         pools_held: None,
+        keyring: None,
     };
 
     let started = from_launch(app(), &wired, 7, SIZE).expect("it composes");

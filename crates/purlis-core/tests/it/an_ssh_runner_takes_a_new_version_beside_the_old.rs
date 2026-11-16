@@ -195,6 +195,7 @@ async fn chat(client: &Client, said: &str) -> String {
                 confinement: None,
                 prompt_key: None,
                 pools_held: None,
+                keyring: None,
             }),
             ..StartProgram::of(PROJECT, ProgramKind::Shell)
         })

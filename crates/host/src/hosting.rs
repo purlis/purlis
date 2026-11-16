@@ -1031,6 +1031,9 @@ struct Hosted {
     /// launch said (1.89): kept in memory alone, for a window that takes it back, as
     /// [`Self::prompt_key`] is.
     pools_held: Option<Vec<String>>,
+    /// Whether its sandbox denied the system's credential service as it started, as its
+    /// window's launch said (1.91, R-775): kept in memory alone, as [`Self::pools_held`] is.
+    keyring: Option<bool>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -2617,6 +2620,7 @@ impl Hosting {
                         .launch
                         .as_ref()
                         .and_then(|launch| launch.pools_held.clone()),
+                    keyring: start.launch.as_ref().and_then(|launch| launch.keyring),
                 },
             );
             windowless
@@ -2854,6 +2858,7 @@ impl Hosting {
                 armed_skills: None,
                 skills_not_there: None,
                 pools_held: None,
+                keyring: None,
             },
         );
         drop(state);
@@ -3137,6 +3142,7 @@ impl Hosting {
                 armed_skills: hosted.armed_skills.clone(),
                 skills_not_there: hosted.skills_not_there.clone(),
                 pools_held: hosted.pools_held.clone(),
+                keyring: hosted.keyring,
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));

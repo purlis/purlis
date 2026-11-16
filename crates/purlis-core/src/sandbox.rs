@@ -2816,12 +2816,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // A model key in your keys counts as a keyring vault (decisions.md D6640-T3 item 7): the
     // credential service is denied to every chat whenever one exists, so no chat asks the Secret
     // Service for a model key on a session bus a person allowed it.
-    let model_keys = crate::machine::rooted(
-        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
-        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
-        machine.home.clone(),
-    )
-    .is_some_and(|config_root| crate::yourkeys::may_hold_a_key(&config_root));
+    let model_keys = model_keys_on(machine);
     keyring |= model_keys;
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
@@ -2832,6 +2827,19 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         untold: unresolved,
         notes,
     }
+}
+
+/// **Whether your keys on `machine` may hold a model key** ([`crate::yourkeys::may_hold_a_key`]
+/// under its config home): what every chat's sandbox counts as a keyring vault (decisions.md
+/// D6640-T3 item 7), and what a running chat settled without that rule is judged against
+/// (R-775).
+pub fn model_keys_on(machine: &Machine) -> bool {
+    crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    )
+    .is_some_and(|config_root| crate::yourkeys::may_hold_a_key(&config_root))
 }
 
 /// Whether `half` of the registry has an entry named `name`.
@@ -7641,6 +7649,7 @@ pub(crate) fn applied_of(
             roots_git,
             whole: harness.adapter().sandbox_holds_what_it_starts() || wrapped,
             pools_held,
+            keyring: compiled.denied.services.contains(&Service::CredentialStore),
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -7779,6 +7788,11 @@ pub struct Confines {
     /// this one started and for one it takes back from the session host alike, so a pool added
     /// since is told as the chat's sandbox not holding it yet.
     pub pools_held: Vec<PathBuf>,
+    /// **Whether this sandbox denies the system's credential service** (the keyring rule,
+    /// R-772): a keyring vault in the project, or a model key in your keys, as its compile read
+    /// them ([`Denied::services`]). A chat settled without it while your keys holds a key is
+    /// owed a restart (R-775); a record that does not say reads as without.
+    pub keyring: bool,
 }
 
 /// **What of every pool's programs and files `denied` holds**, of those the pools on `machine`

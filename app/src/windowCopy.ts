@@ -369,6 +369,8 @@ export const windowCopy = {
     keys: ({ lead, system, harness }: { lead: string; system: string; harness: string }) =>
       `${lead}, and on ${system} purlis can't keep ${harness} chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.`,
   },
+  /** W140: Notice, the chat's notices. */
+  W140: "Model keys were added after this chat started, so its sandbox doesn't keep them out of reach yet. It restarts at its next pause.",
 } as const;
 
 /** The systems the window runs on, as `std::env::consts::OS` names them. */

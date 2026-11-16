@@ -311,6 +311,10 @@ pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
 /// Told a chat's number as its run is replaced at once, before it is closed (ADR 0076 §2, Q247).
 pub type Replaced = Box<dyn Fn(u32) + Send + Sync>;
 
+/// Told the chats owed a restart because model keys arrived after their sandbox was settled
+/// (R-775), by number ([`Chats::tell_keys_owed_to`]).
+pub type KeysOwedTeller = Arc<dyn Fn(Vec<u32>) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -490,6 +494,13 @@ struct Running {
     /// [`Self::confines`] hold what a start holds now in its place. Such a chat is asked to
     /// restart wherever any pool is held now, with no pool named as why.
     pools_unknown: bool,
+    /// **Whether its sandbox denies the system's credential service, as it was settled** (the
+    /// keyring rule, R-772): [`purlis_core::sandbox::Confines::keyring`] for a run this window
+    /// started, and the session host's record for one it took back, where a host that kept none
+    /// reads as without. `None` for a chat with no sandbox of this machine's: one started without
+    /// it, or a runner's. A chat at `Some(false)` while your keys holds a key is owed a restart
+    /// (R-775, [`Chats::judge_keyring`]).
+    keyring: Option<bool>,
     /// **Whose persona grants it runs with, as its start read them** (#2691): on a profile, the
     /// grants a handoff left it holding, else its own persona's, else the project's default
     /// persona at its start; on no profile, none ([`grants_persona_of`]). The persona its
@@ -1077,6 +1088,16 @@ pub struct Chats {
     /// The chats being started again in their place right now (#1342): one restart at a time
     /// per chat, whichever asked for it.
     restarting: Mutex<std::collections::HashSet<u32>>,
+    /// **The chats owed a restart because model keys arrived after their sandbox was settled
+    /// without the keyring rule** (R-775, decisions.md D6640-T3 item 9): each shows W140 until it
+    /// restarts. A chat here is owed its restart in [`Self::owed`] as well; one no longer owed
+    /// there is owed nothing here. **In memory only.**
+    keys_owed: Mutex<std::collections::HashSet<u32>>,
+    /// Who is told the chats [`Self::judge_keyring`] owes a restart, by number.
+    keys_owed_told: Mutex<Option<KeysOwedTeller>>,
+    /// **Whether your keys holds a model key now** ([`purlis_core::sandbox::model_keys_on`] on
+    /// this machine): what a running chat's settled sandbox is judged against (R-775).
+    your_keys: Box<dyn Fn() -> bool + Send + Sync>,
     /// What each chat was last told of where it is working (#1450), by its number: who its
     /// siblings and its persona's other chats were then, so a later turn is told only what
     /// changed ([`Self::working`]). **Here, beside the app's record of the chat, and in
@@ -1912,6 +1933,16 @@ impl Chats {
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
+            keys_owed: Mutex::new(std::collections::HashSet::new()),
+            keys_owed_told: Mutex::new(None),
+            // A test's chats read no person's keys: each test that is about them says whose.
+            your_keys: if cfg!(test) {
+                Box::new(|| false)
+            } else {
+                Box::new(|| {
+                    purlis_core::sandbox::model_keys_on(&purlis_core::sandbox::Machine::this())
+                })
+            },
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
@@ -1935,6 +1966,15 @@ impl Chats {
     fn deciding_by(self, deciding: Deciding) -> Self {
         Self {
             deciding: Some(deciding),
+            ..self
+        }
+    }
+
+    /// These chats, judging a running chat's sandbox against your keys on `machine` (R-775).
+    #[cfg(test)]
+    fn your_keys_on(self, machine: purlis_core::sandbox::Machine) -> Self {
+        Self {
+            your_keys: Box::new(move || purlis_core::sandbox::model_keys_on(&machine)),
             ..self
         }
     }
@@ -3514,6 +3554,79 @@ impl Chats {
             );
         }
         serving
+    }
+
+    /// **Judges every running chat's sandbox against your keys** (R-775, decisions.md D6640-T3
+    /// item 9): where your keys holds a key, each open chat whose sandbox was settled without the
+    /// keyring rule ([`Running::keyring`] at `Some(false)`) is owed one restart, which the window
+    /// drives at its next pause between turns (`restartAtPause.ts`, #1986), and shows W140 until
+    /// it restarts. Owed nothing: a chat with no sandbox of this machine's, one settled with the
+    /// rule, one restarting now (its new run is settled as things are now), and one already owed
+    /// for this, so a second key, or a second judging, owes no second restart. An ended chat is
+    /// not open, and takes the rule at its next start.
+    ///
+    /// Asked as the window's write makes your keys hold a key ([`purlis_core::yourkeys::when_keys_arrive`])
+    /// and as the chats left running are taken back at open. The chats newly owed, by number,
+    /// which [`Self::tell_keys_owed_to`]'s teller is told too.
+    pub fn judge_keyring(&self) -> Vec<u32> {
+        if !(self.your_keys)() {
+            return Vec::new();
+        }
+        // Each read out from under its lock, one at a time.
+        let restarting = lock(&self.restarting).clone();
+        let stale: Vec<u32> = lock(&self.open)
+            .iter()
+            .filter(|(session, running)| {
+                running.keyring == Some(false) && !restarting.contains(session)
+            })
+            .map(|(session, _)| *session)
+            .collect();
+        let owed_now: std::collections::HashSet<u32> = lock(&self.owed).keys().copied().collect();
+        let newly: Vec<u32> = {
+            let mut owed = lock(&self.keys_owed);
+            // One no longer owed its restart (it restarted, or its restart was given up) is
+            // judged afresh.
+            owed.retain(|session| owed_now.contains(session));
+            stale
+                .into_iter()
+                .filter(|session| owed.insert(*session))
+                .collect()
+        };
+        let mut owed = Vec::new();
+        for session in newly {
+            // Owed as the person's ask is: nothing told to the chat, and anything it is owed
+            // besides still told.
+            if self.ask_restart(session).is_ok() {
+                owed.push(session);
+            }
+        }
+        owed.sort_unstable();
+        if !owed.is_empty() {
+            let told = lock(&self.keys_owed_told).clone();
+            if let Some(told) = told {
+                told(owed.clone());
+            }
+        }
+        owed
+    }
+
+    /// **The chats that show W140** (R-775): owed a restart because model keys arrived after
+    /// their sandbox was settled without the keyring rule, and not restarted yet.
+    pub fn owed_for_model_keys(&self) -> Vec<u32> {
+        let owed: std::collections::HashSet<u32> = lock(&self.owed).keys().copied().collect();
+        let mut stale: Vec<u32> = lock(&self.keys_owed)
+            .iter()
+            .copied()
+            .filter(|session| owed.contains(session))
+            .collect();
+        stale.sort_unstable();
+        stale
+    }
+
+    /// Who is told, from now on, the chats [`Self::judge_keyring`] owes a restart: the window,
+    /// which drives each restart at its pause and shows W140 (R-775).
+    pub fn tell_keys_owed_to(&self, told: KeysOwedTeller) {
+        *lock(&self.keys_owed_told) = Some(told);
     }
 
     pub fn owe_restart(&self, session: u32, told: String) {
@@ -5720,6 +5833,19 @@ impl Chats {
             && chat
                 .number
                 .is_some_and(|number| self.sessions.pools_held_left(number).is_none());
+        // **Whether its sandbox was settled with the keyring rule** (R-775): a run taken back is
+        // judged by its host's record of its start, never by a sandbox compiled now, and a host
+        // that kept none reads as without; a runner's sandbox is the runner's.
+        let keyring = match (reattaching, chat.number, &ran) {
+            _ if on_the_runner => None,
+            (
+                true,
+                Some(number),
+                Some(purlis_session_protocol::session::RunSandbox::By(_)) | None,
+            ) => Some(self.sessions.keyring_left(number).unwrap_or(false)),
+            (true, _, _) => None,
+            _ => confines.as_ref().map(|confines| confines.keyring),
+        };
         let hearing = purlis_core::sandbox::plan::Hearing {
             refusals,
             more: Some(more_refused_by_the_proxy(
@@ -6188,6 +6314,8 @@ impl Chats {
                     // What its sandbox holds of the pools, kept by its host for a window that
                     // takes it back, with a proxy beside it or none.
                     pools_held: sandbox.map(|applied| applied.confines().pools_held.clone()),
+                    // Whether it is settled with the keyring rule, kept likewise (R-775).
+                    keyring: sandbox.map(|applied| applied.confines().keyring),
                 },
                 &announce,
             ),
@@ -6331,6 +6459,7 @@ impl Chats {
                 ran,
                 composed_by_its_host: on_the_runner,
                 pools_unknown,
+                keyring,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read,
@@ -8791,6 +8920,9 @@ impl Chats {
         if wanted > 0 {
             self.write_it_down();
         }
+        // Each chat taken back is judged against the index found now (R-775): one settled
+        // without the keyring rule while your keys holds a key is owed a restart.
+        self.judge_keyring();
         let open = self.open_now();
         open.into_iter()
             .filter(|one| opened.contains(&one.session))

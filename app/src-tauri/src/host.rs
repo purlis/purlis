@@ -94,6 +94,11 @@ pub struct Opening {
     /// session host in its launch, which keeps it for a window that takes the chat back
     /// ([`SessionHost::pools_held_left`]). None for a start with no sandbox.
     pub pools_held: Option<Vec<std::path::PathBuf>>,
+    /// **Whether its sandbox denies the system's credential service**
+    /// ([`purlis_core::sandbox::Confines::keyring`], R-775), where it starts sandboxed: handed to
+    /// the session host in its launch, which keeps it for a window that takes the chat back
+    /// ([`SessionHost::keyring_left`]). None for a start with no sandbox.
+    pub keyring: Option<bool>,
 }
 
 /// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
@@ -122,6 +127,7 @@ impl Default for Opening {
             ends_with_its_window: false,
             prompt_key: None,
             pools_held: None,
+            keyring: None,
         }
     }
 }
@@ -829,6 +835,15 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **Whether chat `number`'s sandbox denied the system's credential service as it started**
+    /// (R-775), as the window that started it said ([`Opening::keyring`]), where it is left
+    /// running: what the window judges it by against your keys. `None` where the host keeps no
+    /// such record: one before it kept them (1.91), or a chat started with no sandbox.
+    fn keyring_left(&self, number: u32) -> Option<bool> {
+        let _ = number;
+        None
+    }
+
     /// **The prompt key chat `number` started with, as its host answered the start** (#3369),
     /// where the window `minted` one for its launch: a host before 1.60 answers none and sets
     /// none in the chat's environment, so its prompts are marked under none. A chat that runs in
@@ -1101,6 +1116,12 @@ pub(crate) mod pretend {
         /// What of the pools each chat left running held as it started, as its host kept it
         /// ([`Pretend::left_holding`]).
         pools_held_left: Mutex<Vec<(u32, Vec<std::path::PathBuf>)>>,
+        /// Whether each chat it opened said its sandbox denies the credential service, in order
+        /// ([`Pretend::keyring_opened`]).
+        keyring: Mutex<Vec<Option<bool>>>,
+        /// Whether each chat left running denied the credential service as it started, as its
+        /// host kept it ([`Pretend::left_with_keyring`]).
+        keyring_left: Mutex<Vec<(u32, bool)>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
         /// What each session shows, where a test said ([`Pretend::shows`]): what a view of it
@@ -1322,6 +1343,17 @@ pub(crate) mod pretend {
         /// kept it.
         pub fn left_holding(&self, number: u32, held: Vec<std::path::PathBuf>) {
             lock(&self.seen.pools_held_left).push((number, held));
+        }
+
+        /// Whether each chat it opened said its sandbox denies the credential service, in order.
+        pub fn keyring_opened(&self) -> Vec<Option<bool>> {
+            lock(&self.seen.keyring).clone()
+        }
+
+        /// Chat `number`, left running, was settled with the keyring rule or without it, as its
+        /// host kept it.
+        pub fn left_with_keyring(&self, number: u32, keyring: bool) {
+            lock(&self.seen.keyring_left).push((number, keyring));
         }
 
         /// [`Self::leaves_running`], its run sandboxed as `ran` says, as the host recorded it:
@@ -1574,6 +1606,7 @@ pub(crate) mod pretend {
                 return Err(why);
             }
             lock(&self.seen.pools_held).push(opening.pools_held.clone());
+            lock(&self.seen.keyring).push(opening.keyring);
             if let Some((_, why)) = lock(&self.seen.refusing_numbers)
                 .iter()
                 .find(|(number, _)| wanted == Some(*number))
@@ -1870,6 +1903,12 @@ pub(crate) mod pretend {
                 .iter()
                 .find(|(one, _)| *one == number)
                 .map(|(_, held)| held.clone())
+        }
+        fn keyring_left(&self, number: u32) -> Option<bool> {
+            lock(&self.seen.keyring_left)
+                .iter()
+                .find(|(one, _)| *one == number)
+                .map(|(_, keyring)| *keyring)
         }
         fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
             lock(&self.seen.ran_in)

@@ -304,11 +304,13 @@ pub fn add(
     checked: Checked,
     value: &str,
 ) -> Result<Saved, String> {
-    let _held = crate::machine::Lock::named(config_root, LOCK);
+    let lock = crate::machine::Lock::named(config_root, LOCK);
     let mut index = read_to_write(config_root)?;
     if let Some(held) = index.entries.iter().find(|e| e.product == product) {
         return Ok(Saved::ReplaceOffered { held: held.id });
     }
+    // Whether this write is the one that makes the index hold a key (R-775).
+    let first = index.entries.is_empty() && index.unread.is_empty();
     if index.unread.iter().any(|line| may_be_for(line, &product)) {
         return Err(format!(
             "{} holds a line this purlis can't read that may be a key for {}, so it adds no \
@@ -330,7 +332,13 @@ pub fn add(
     let account = id.to_string();
     let why = match credentials.set(SERVICE, &account, value) {
         // Held to the app, or by a store that keeps no rule (the stub, or off macOS).
-        Ok(Held::ToTheApp | Held::NoRule) => return Ok(Saved::Added(id)),
+        Ok(Held::ToTheApp | Held::NoRule) => {
+            drop(lock);
+            if first {
+                keys_arrived(config_root);
+            }
+            return Ok(Saved::Added(id));
+        }
         // Outside the app on macOS: the item is the calling program's, which only the window's
         // write may never leave.
         Ok(Held::NotYet) => "the item couldn't be held to the purlis app; add the key in \
@@ -348,6 +356,47 @@ pub fn add(
         said += &format!("; and its line is left in your keys: {left}");
     }
     Err(said)
+}
+
+/// What is told that your keys under a config home holds a key where it held none.
+type Arrival = dyn Fn(&Path) + Send + Sync;
+
+/// Everyone [`when_keys_arrive`] tells, while their [`Arrivals`] is held.
+static ARRIVALS: std::sync::Mutex<Vec<std::sync::Weak<Arrival>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// **Told while held**: what [`when_keys_arrive`] answers. Dropped, it tells no more.
+#[must_use = "dropped, it tells nothing"]
+pub struct Arrivals {
+    _tell: std::sync::Arc<Arrival>,
+}
+
+/// **Tells `tell` each time [`add`] makes your keys hold a key where it held none** (R-775,
+/// decisions.md D6640-T3 item 9), with the config home it wrote under: the moment a chat
+/// settled without the keyring rule goes stale. Raised by the window's write as it commits,
+/// never by watching the file; a second key, which finds the index holding one, raises nothing.
+/// Told after the store's lock is let go, so `tell` may read your keys.
+pub fn when_keys_arrive(tell: impl Fn(&Path) + Send + Sync + 'static) -> Arrivals {
+    let tell: std::sync::Arc<Arrival> = std::sync::Arc::new(tell);
+    ARRIVALS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(std::sync::Arc::downgrade(&tell));
+    Arrivals { _tell: tell }
+}
+
+/// Tells everyone [`when_keys_arrive`] holds that your keys under `config_root` holds a key now.
+fn keys_arrived(config_root: &Path) {
+    let told: Vec<std::sync::Arc<Arrival>> = {
+        let mut held = ARRIVALS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.retain(|one| one.strong_count() > 0);
+        held.iter().filter_map(std::sync::Weak::upgrade).collect()
+    };
+    for tell in told {
+        tell(config_root);
+    }
 }
 
 /// Whether an index line this build can't read may be a key for `product`: it names the

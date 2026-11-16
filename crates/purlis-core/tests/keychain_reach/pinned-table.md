@@ -141,6 +141,13 @@ started. Today purlis wraps every harness there (Codex and opencode whole, Claud
 own sandbox off, #2037), so no chat is refused for it; a harness added without the wrap would be.
 This is a residual for the operator beside the cells below.
 
+**A chat already running when the first model key is added keeps its sandbox until it restarts**
+(R-775, T1a-78): it was settled without the keyring rule, so it reaches the credential service as
+its cells above read with no model key. purlis owes it a restart at its next pause between turns,
+never mid-turn, and shows W140 with *Restart now*; a chat taken back at open is judged the same
+way. The time between the key being added and that pause stays open: a residual for the operator
+beside the cells below.
+
 ### The items
 
 Your keys' item is `purlis/@your-keys` (account: the entry's id). The mark's device key is

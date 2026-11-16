@@ -329,6 +329,7 @@ fn a_chats_proxy_in_the_host_still_reaches_its_hosts_once_the_windows_link_is_go
                     confinement: Some(confined[0].confinement.clone()),
                     prompt_key: None,
                     pools_held: None,
+                    keyring: None,
                 }),
                 ..StartProgram::of(PROJECT, ProgramKind::Harness)
             })

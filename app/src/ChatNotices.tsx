@@ -44,6 +44,7 @@ import { type HandedFrom } from "./handedFrom";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { askSettingsLink } from "./settings/links";
 import { ChatOffers } from "./ViewOpen";
+import { windowCopy } from "./windowCopy";
 
 /**
  * **What a chat's pane says above its terminal** (#1035, split out of `PlaneView.tsx`): its
@@ -84,6 +85,9 @@ export type RestartSaid = {
   notYet?: string;
   /** Why the last restart did not happen. */
   trouble?: string;
+  /** **Owed because model keys arrived after its sandbox was settled without the keyring rule**
+   *  (R-775): its pane says so in W140, with Restart now, in place of the restart's other words. */
+  keysStale?: boolean;
 };
 
 /**
@@ -506,7 +510,23 @@ export function ChatNotices({
       {!restartSaid?.running && (
         <SkillsChangedNotice plane={plane} session={session} onRestart={onRestart} />
       )}
+      {/* Model keys arrived after its sandbox was settled without the keyring rule (R-775): it
+          restarts at its next pause, or now on a press, and the line goes with the restart. */}
+      {restartSaid?.keysStale &&
+        !restartSaid.running &&
+        restartSaid.notYet === undefined &&
+        restartSaid.trouble === undefined && (
+          <Notice
+            cause={`keys-stale-sandbox:${session}`}
+            at="pane"
+            label="Restart"
+            fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("mid-turn") }]}
+          >
+            {windowCopy.W140}
+          </Notice>
+        )}
       {restartSaid?.midTurn &&
+        !restartSaid.keysStale &&
         !restartSaid.byHand &&
         !restartSaid.running &&
         restartSaid.notYet === undefined &&
@@ -520,17 +540,20 @@ export function ChatNotices({
             {RESTART_WAITS_FOR_THE_TURN}
           </Notice>
         )}
-      {restartSaid?.byHand && !restartSaid.running && restartSaid.notYet === undefined && (
-        <Notice
-          cause={`restart-by-hand:${session}`}
-          at="pane"
-          label="Restart"
-          fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("now") }]}
-        >
-          What you allowed reaches this chat when it restarts on the same conversation. Its harness
-          does not say when a turn ends, so restart it when you are ready.
-        </Notice>
-      )}
+      {restartSaid?.byHand &&
+        !restartSaid.keysStale &&
+        !restartSaid.running &&
+        restartSaid.notYet === undefined && (
+          <Notice
+            cause={`restart-by-hand:${session}`}
+            at="pane"
+            label="Restart"
+            fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("now") }]}
+          >
+            What you allowed reaches this chat when it restarts on the same conversation. Its
+            harness does not say when a turn ends, so restart it when you are ready.
+          </Notice>
+        )}
     </>
   );
 }

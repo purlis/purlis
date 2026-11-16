@@ -47,9 +47,11 @@ import {
 } from "./projectShown";
 import {
   commands,
+  KEYS_OWED,
   PROJECT_READY,
   type AtRisk,
   type AwayRefusal,
+  type KeysOwed,
   type ByHand,
   type ChatSkills,
   type HarnessKind,
@@ -7716,6 +7718,46 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   /**
+   * **The chats owed a restart because model keys arrived after their sandbox was settled
+   * without the keyring rule** (R-775): each is owed its restart as any other, made at its next
+   * pause between turns, and its pane says W140 until it restarts: only while it is owed one
+   * ({@link restartsSaid}), so a chat restarted, under a number of its own, says it no more. Read
+   * when the view is drawn (a chat taken back at open), and told as the window's write adds the
+   * first key (`chat-keys-owed`).
+   */
+  const [keysOwed, setKeysOwed] = useState<readonly number[]>([]);
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    const owe = (sessions: readonly number[]) => {
+      setKeysOwed((was) => [...was, ...sessions.filter((one) => !was.includes(one))]);
+      for (const session of sessions) oweRestart(session);
+    };
+    void commands
+      .chatsOwedForModelKeys(plane)
+      .then((read) => {
+        if (!gone && read.status === "ok" && Array.isArray(read.data)) owe(read.data);
+      })
+      .catch(() => undefined);
+    void (async () => {
+      try {
+        const unlisten = await listen<KeysOwed>(KEYS_OWED, (event) => {
+          const told = event.payload;
+          if (gone || told.plane !== plane) return;
+          owe(told.sessions);
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane, oweRestart]);
+  /**
    * **An ask answered in the Inbox** (#1692): what its source's Notice does after the same
    * answer. A sandbox host answered there is put away on the chat's pane, only while the pane
    * still holds that very host, and an Allow owes the chat its restart, as the block Notice's
@@ -7932,7 +7974,12 @@ export const PlaneView = memo(function PlaneView({
     for (const session of owedRestarts) {
       const state = owedStates[session] ?? "unknown";
       // Mid-turn it waits for the turn to end, and its pane says so, with Restart now (qw351).
-      out[session] = { owed: true, byHand: state === "unknown", midTurn: state === "running" };
+      out[session] = {
+        owed: true,
+        byHand: state === "unknown",
+        midTurn: state === "running",
+        keysStale: keysOwed.includes(session),
+      };
     }
     for (const session of restartsRunning) out[session] = { ...out[session], running: true };
     for (const [session, notYet] of Object.entries(restartNotYet))
@@ -7941,7 +7988,7 @@ export const PlaneView = memo(function PlaneView({
     for (const [session, trouble] of Object.entries(restartTrouble))
       out[Number(session)] = { trouble };
     return out;
-  }, [owedRestarts, owedStates, restartsRunning, restartNotYet, restartTrouble]);
+  }, [owedRestarts, owedStates, restartsRunning, restartNotYet, restartTrouble, keysOwed]);
   /** What a row of the Chats list says of its chat's restart (#1462): why it was refused, or
    *  why it waits. */
   const restartsOnRows = useMemo(() => {

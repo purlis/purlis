@@ -4597,6 +4597,7 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .pools_held
             .as_ref()
             .map(|held| held.iter().map(|path| path.display().to_string()).collect()),
+        keyring: opening.keyring,
     }
 }
 
@@ -5617,6 +5618,13 @@ impl SessionHost for HostedSessions {
         self.link().ok()?;
         let held = lock(&self.left).get(&number)?.pools_held.clone()?;
         Some(held.into_iter().map(PathBuf::from).collect())
+    }
+
+    /// Whether the window that started it said its sandbox denied the credential service
+    /// (R-775): none from a host before 1.91, or for a chat started with no sandbox.
+    fn keyring_left(&self, number: u32) -> Option<bool> {
+        self.link().ok()?;
+        lock(&self.left).get(&number)?.keyring
     }
 
     fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
