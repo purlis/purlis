@@ -22,6 +22,11 @@ pub(crate) async fn check<P: StartPath>(start: impl AsyncFn(Reach) -> P) {
         message(&refused),
         format!("purlis: purlis couldn't connect to {UPSTREAM}.")
     );
+    assert!(
+        refused.headers.get("x-should-retry").is_none(),
+        "a 502 told the harness never to retry: {:?}",
+        refused.headers
+    );
 }
 
 #[tokio::test]

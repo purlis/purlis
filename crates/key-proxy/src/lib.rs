@@ -518,8 +518,10 @@ enum Failed {
 }
 
 /// **Why an upstream could not be reached**, each named by its W81 line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Unreached {
+    /// The upstream's name resolved to no address.
+    HostNotFound,
     /// The connect to the upstream failed (no route, refused).
     NoConnection,
     /// Its certificate did not verify against the trust store under the declared name.
@@ -528,6 +530,10 @@ enum Unreached {
     ProxyRefused,
     /// The connection broke once made.
     Reset,
+    /// The system names an outbound proxy of a scheme other than `http` (`https`, `socks5`,
+    /// `socks5h`, ...), which purlis doesn't speak: refused before anything is sent to it, its
+    /// credential above all.
+    UnsupportedProxy(String),
 }
 
 impl Unreached {
@@ -545,14 +551,19 @@ impl Unreached {
     }
 
     /// The `purlis:` message naming it, for `host`.
-    fn message(self, host: &str) -> String {
-        let said = match self {
-            Unreached::NoConnection => line::W81_NO_CONNECTION,
-            Unreached::Untrusted => line::W81_UNTRUSTED_CERTIFICATE,
-            Unreached::ProxyRefused => line::W81_PROXY_REFUSED,
-            Unreached::Reset => line::W81_RESET,
+    fn message(&self, host: &str) -> String {
+        let (said, scheme) = match self {
+            Unreached::HostNotFound => (line::W81_HOST_NOT_FOUND, ""),
+            Unreached::NoConnection => (line::W81_NO_CONNECTION, ""),
+            Unreached::Untrusted => (line::W81_UNTRUSTED_CERTIFICATE, ""),
+            Unreached::ProxyRefused => (line::W81_PROXY_REFUSED, ""),
+            Unreached::Reset => (line::W81_RESET, ""),
+            Unreached::UnsupportedProxy(scheme) => (line::W81_UNSUPPORTED_PROXY, scheme.as_str()),
         };
-        format!("purlis: {}", window_copy::fill(said, &[("host", host)]))
+        format!(
+            "purlis: {}",
+            window_copy::fill(said, &[("host", host), ("scheme", scheme)])
+        )
     }
 }
 
@@ -639,9 +650,9 @@ async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreac
     let outbound = Arc::clone(&reach.outbound);
     let stream = tokio::task::spawn_blocking(move || outbound.connect(&destination))
         .await
-        .map_err(|_| failed)?
-        .map_err(|_| failed)?;
-    stream.set_nonblocking(true).map_err(|_| failed)?;
+        .map_err(|_| failed.clone())?
+        .map_err(|_| failed.clone())?;
+    stream.set_nonblocking(true).map_err(|_| failed.clone())?;
     let stream = TcpStream::from_std(stream).map_err(|_| failed)?;
     let _ = stream.set_nodelay(true);
     let wire: Box<dyn Wire> = match &proxy {

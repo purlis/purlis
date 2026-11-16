@@ -8,15 +8,18 @@
 //! `purlis-host`'s `the_key_proxy_through_a_start_path`.
 
 use std::collections::HashSet;
+use std::io;
+use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 
 use hyper::HeaderMap;
 use hyper::header::HeaderValue;
 
-use purlis_core::upstream::Destination;
+use purlis_core::upstream::{Destination, HostNotFound, Outbound, trust};
 
 use super::{
-    CREDENTIAL_HEADERS, Key, Matcher, Origin, Route, Token, Unreached, carries, connect_request,
-    destination, swap,
+    CREDENTIAL_HEADERS, Key, Matcher, Origin, Reach, Route, Token, Unreached, carries, connect,
+    connect_request, destination, swap, unreached,
 };
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -292,4 +295,129 @@ fn each_failure_to_reach_the_upstream_is_named_by_its_cause() {
         Unreached::ProxyRefused.message("api.anthropic.com"),
         "purlis: The outbound proxy refused the connection."
     );
+}
+
+/// An outbound that records every destination it is asked for and connects to none of them,
+/// failing each with `why`.
+struct Recorded {
+    asked: Arc<Mutex<Vec<Destination>>>,
+    why: fn(&Destination) -> io::Error,
+}
+
+impl Outbound for Recorded {
+    fn connect(&self, to: &Destination) -> io::Result<TcpStream> {
+        self.asked.lock().unwrap().push(to.clone());
+        Err((self.why)(to))
+    }
+}
+
+/// A reach through `proxies` whose outbound fails every connect with `why`, and what it was
+/// asked for.
+fn recorded(
+    proxies: Matcher,
+    why: fn(&Destination) -> io::Error,
+) -> (Reach, Arc<Mutex<Vec<Destination>>>) {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let reach = Reach {
+        outbound: Arc::new(Recorded {
+            asked: Arc::clone(&asked),
+            why,
+        }),
+        tls: Arc::new(trust::client_config().unwrap()),
+        proxies,
+    };
+    (reach, asked)
+}
+
+fn refused(_: &Destination) -> io::Error {
+    io::Error::new(io::ErrorKind::ConnectionRefused, "refused")
+}
+
+/// Why `connect` to `origin` through `reach` failed.
+async fn why_unreached(origin: &Origin, reach: &Reach) -> Unreached {
+    match connect(origin, reach).await {
+        Err(why) => why,
+        Ok(_) => panic!("{origin:?} was reached"),
+    }
+}
+
+/// With the system's outbound proxy at `proxy`, the call to the upstream is refused naming
+/// `scheme`, and nothing is connected to: not the proxy, so no credential reaches it.
+async fn a_proxy_of_this_scheme_is_refused_naming_it(proxy: &str, scheme: &str) {
+    let origin = Origin::https("api.anthropic.com", 443);
+    let (reach, asked) = recorded(Matcher::builder().https(proxy).build(), refused);
+    let why = why_unreached(&origin, &reach).await;
+    assert_eq!(why, Unreached::UnsupportedProxy(scheme.to_owned()));
+    assert_eq!(
+        why.message(&origin.host),
+        format!("purlis: purlis can't use the outbound proxy's {scheme} scheme.")
+    );
+    let asked = asked.lock().unwrap();
+    assert!(asked.is_empty(), "the {scheme} proxy was connected to: {asked:?}");
+}
+
+#[tokio::test]
+async fn a_socks5_proxy_is_refused_naming_its_scheme() {
+    a_proxy_of_this_scheme_is_refused_naming_it("socks5://127.0.0.1:1080", "socks5").await;
+}
+
+#[tokio::test]
+async fn a_socks5h_proxy_is_refused_naming_its_scheme() {
+    a_proxy_of_this_scheme_is_refused_naming_it("socks5h://127.0.0.1:1080", "socks5h").await;
+}
+
+#[tokio::test]
+async fn an_https_proxy_is_refused_naming_its_scheme_and_gets_no_credential() {
+    a_proxy_of_this_scheme_is_refused_naming_it("https://someone:secret@127.0.0.1:3128", "https")
+        .await;
+}
+
+#[tokio::test]
+async fn an_http_proxy_is_still_asked_for_a_tunnel() {
+    let origin = Origin::https("api.anthropic.com", 443);
+    let (reach, asked) = recorded(
+        Matcher::builder().https("http://127.0.0.1:3128").build(),
+        refused,
+    );
+    assert_eq!(why_unreached(&origin, &reach).await, Unreached::ProxyRefused);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![Destination::through("api.anthropic.com", 443, "127.0.0.1:3128")]
+    );
+}
+
+#[tokio::test]
+async fn an_upstream_the_resolver_cannot_find_is_named_not_found() {
+    let origin = Origin::https("api.anthropic.com", 443);
+    let (reach, _) = recorded(Matcher::builder().build(), |to| HostNotFound::error(&to.host));
+    let why = why_unreached(&origin, &reach).await;
+    assert_eq!(why, Unreached::HostNotFound);
+    assert_eq!(
+        why.message(&origin.host),
+        "purlis: purlis couldn't find api.anthropic.com."
+    );
+
+    let (reach, _) = recorded(Matcher::builder().build(), refused);
+    assert_eq!(why_unreached(&origin, &reach).await, Unreached::NoConnection);
+}
+
+#[test]
+fn a_502_for_an_unreached_upstream_leaves_the_harness_free_to_retry() {
+    let origin = Origin::https("api.anthropic.com", 443);
+    for why in [
+        Unreached::HostNotFound,
+        Unreached::NoConnection,
+        Unreached::Untrusted,
+        Unreached::ProxyRefused,
+        Unreached::Reset,
+        Unreached::UnsupportedProxy("socks5".to_owned()),
+    ] {
+        let answer = unreached(why.clone(), &origin);
+        assert_eq!(answer.status(), hyper::StatusCode::BAD_GATEWAY);
+        assert!(
+            answer.headers().get("x-should-retry").is_none(),
+            "{why:?} said never retry: {:?}",
+            answer.headers()
+        );
+    }
 }

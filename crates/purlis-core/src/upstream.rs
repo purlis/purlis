@@ -54,6 +54,42 @@ impl Destination {
     }
 }
 
+/// **A name the system's resolver found no address for**: the error inside the `io::Error` an
+/// [`Outbound`] answers with when the host it was asked for could not be found, so its caller
+/// can tell that from a connect that failed (W81).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostNotFound {
+    /// The name that was not found.
+    pub host: String,
+}
+
+impl HostNotFound {
+    /// The `io::Error` saying `host` was not found.
+    pub fn error(host: &str) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            HostNotFound {
+                host: host.to_owned(),
+            },
+        )
+    }
+
+    /// Whether `error` says a host was not found.
+    pub fn is(error: &io::Error) -> bool {
+        error
+            .get_ref()
+            .is_some_and(|inner| inner.is::<HostNotFound>())
+    }
+}
+
+impl std::fmt::Display for HostNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no address found for {}", self.host)
+    }
+}
+
+impl std::error::Error for HostNotFound {}
+
 /// What makes the key proxy's outbound connections.
 pub trait Outbound: Send + Sync {
     /// A connection to `to`: to its proxy when it names one, to the upstream otherwise.
@@ -113,3 +149,20 @@ pub use seams::{RecordingOutbound, TestReach};
 
 #[cfg(feature = "test-support")]
 mod seams;
+
+#[cfg(test)]
+mod tests {
+    use super::{Destination, Direct, HostNotFound, Outbound};
+
+    #[test]
+    fn the_resolver_says_a_host_it_cannot_find_was_not_found() {
+        // `.invalid` never resolves (RFC 6761), so this asks no server for an answer.
+        let failed = Direct::new()
+            .connect(&Destination::direct("nowhere.invalid", 443))
+            .expect_err("a name under .invalid resolved");
+        assert!(HostNotFound::is(&failed), "not named not found: {failed:?}");
+
+        let refused = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        assert!(!HostNotFound::is(&refused));
+    }
+}

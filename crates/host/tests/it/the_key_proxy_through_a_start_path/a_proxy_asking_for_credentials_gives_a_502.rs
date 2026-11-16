@@ -24,6 +24,11 @@ pub(crate) async fn check<P: StartPath>(start: impl AsyncFn(Reach) -> P) {
         message(&refused),
         "purlis: The outbound proxy refused the connection."
     );
+    assert!(
+        refused.headers.get("x-should-retry").is_none(),
+        "a 502 told the harness never to retry: {:?}",
+        refused.headers
+    );
 
     let heads = proxy.heads();
     assert_eq!(heads.len(), 1, "{heads:?}");
