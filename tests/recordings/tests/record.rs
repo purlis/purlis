@@ -578,8 +578,6 @@ fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
             "model_providers.standin.name=\"stand-in\"".to_owned(),
             format!("model_providers.standin.base_url=\"{base_url}/v1\""),
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
-            // Its freeform apply_patch, which a custom provider's model is otherwise not offered.
-            "features.apply_patch_freeform=true".to_owned(),
             "model_providers.standin.request_max_retries=0".to_owned(),
             "model_providers.standin.stream_max_retries=0".to_owned(),
         ]

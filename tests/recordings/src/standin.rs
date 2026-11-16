@@ -92,12 +92,14 @@ impl StandIn {
 
     /// The answer to one request.
     pub fn answer(&self, method: &str, path: &str, body: &[u8]) -> Answer {
+        // No model catalogue: a harness that asks for one keeps its own. Codex 0.169 read an
+        // empty one as a model it knows nothing of, and offered it no `apply_patch`.
         if method == "GET" {
-            return json_answer(&json!({
-                "object": "list",
-                "data": [{"id": "stand-in", "object": "model", "created": 0, "owned_by": "purlis"}],
-                "models": [],
-            }));
+            return Answer {
+                status: 404,
+                content_type: "text/plain",
+                body: b"the stand-in keeps no model catalogue".to_vec(),
+            };
         }
         if path
             .split('?')
