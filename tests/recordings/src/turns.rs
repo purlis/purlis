@@ -20,6 +20,9 @@ pub struct TurnScript {
     pub version: String,
     /// The recording it reproduces, beside it.
     pub recording: String,
+    /// What the recording was made under (its `conditions`): the fake harness takes these as the
+    /// conditions it reproduces the recording in, never as what the harness does.
+    pub conditions: std::collections::BTreeMap<String, String>,
     /// What the recorder did in place of the real hook, as the recording says (`stall`, `exit2`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub forced: std::collections::BTreeMap<String, String>,
@@ -62,14 +65,23 @@ const SHELLS: &[(&str, &str)] = &[
     ("shell", "/command/2"),
 ];
 
-/// The turn script that reproduces `recording` (already masked, so its paths are placeholders).
+/// The turn script that reproduces `recording` (already masked, so its paths are placeholders):
+/// a turn for each of its prompts, holding the calls asked for in it.
 pub fn of(recording: &Recording) -> TurnScript {
-    let calls = recording
-        .model
+    let mut turns: Vec<Turn> = recording
+        .prompts
         .iter()
-        .enumerate()
-        .flat_map(|(at, asked)| {
-            asked.calls.iter().map(move |call| TurnCall {
+        .map(|prompt| Turn {
+            prompt: prompt.clone(),
+            calls: Vec::new(),
+        })
+        .collect();
+    for (at, asked) in recording.model.iter().enumerate() {
+        let Some(turn) = turns.get_mut((asked.turn as usize).saturating_sub(1)) else {
+            continue;
+        };
+        turn.calls.extend(asked.calls.iter().map(|call| {
+            TurnCall {
                 step: call.step.clone(),
                 tool: call.tool.clone(),
                 input: call.input.clone(),
@@ -83,17 +95,15 @@ pub fn of(recording: &Recording) -> TurnScript {
                 parallel: asked.parallel,
                 background: call.background,
                 subagent: call.subagent,
-            })
-        })
-        .collect();
+            }
+        }));
+    }
     TurnScript {
         harness: recording.harness.clone(),
         version: recording.version.clone(),
-        recording: "recording.json".to_owned(),
+        recording: crate::recording::files_of(&recording.script).0,
+        conditions: recording.conditions.clone(),
         forced: recording.forced.clone(),
-        turns: vec![Turn {
-            prompt: recording.prompt.clone(),
-            calls,
-        }],
+        turns,
     }
 }

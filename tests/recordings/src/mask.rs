@@ -8,23 +8,33 @@
 //!    shape ([`SESSION_SHAPES`]: a UUID, OpenCode's `ses_…`), wherever it then appears; and the
 //!    harness process's id its hooks are handed ([`PID_KEYS`]: `CLAUDE_PID`, `OPENCODE_PID`),
 //!    which purlis reads as its session's (ADR 0024, C7);
-//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], the id of the background task
-//!    or agent a tool use started, as a harness writes it ([`TASK_IDS`]: Claude Code's
-//!    `with ID: …`, Codex's `Chunk ID: …`), and the id of the message or permission ask that
-//!    carries a call ([`CALL_SHAPES`]: OpenCode's `msg_…`, `per_…`), wherever it then appears;
+//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`] (`<tool-use-N>`), wherever it
+//!    then appears; the id of the background task or agent a tool use started, only where a
+//!    harness writes it in one of [`TASK_IDS`]' shapes (Claude Code's `with ID: …`,
+//!    `tasks/….output`, Codex's `Chunk ID: …`; `<tool-use-task-N>`); and the id of the message
+//!    or permission ask that carries a call ([`CALL_SHAPES`]: OpenCode's `msg_…`, `per_…`;
+//!    `<carrier-N>`, counted apart), wherever it then appears;
 //! 3. **absolute paths**: each root the recording names in `roots` (its work tree, its home, its
 //!    temp folder, the harness's install), wherever a string holds it, in its own spelling or as
 //!    a harness spells a folder in a file name (every character but a letter or digit a `-`:
 //!    Claude Code's project folders); and the per-process suffix of a file a harness writes
 //!    beside its target to write it whole ([`ATOMIC_SUFFIX`]: `.tmp.<pid>.<hex>`);
 //! 4. **timestamps and gaps**: the value of a key in [`TIME_KEYS`] (a call's `duration_ms`
-//!    among them), a date or time inside any string in any of the harnesses' spellings
+//!    among them), and of a key in [`TIME_SHAPED_KEYS`] (`time`, `created`) where the value is
+//!    time-shaped (an epoch time, or a date and time), a date or time inside any string in any of the harnesses' spellings
 //!    ([`TIMES`]: ISO 8601, Codex's `rollout-…T03-01-24`, a `/2026/11/16/` folder, Codex's
 //!    `Wall time: …`, a task notification's `<duration_ms>`), and each hook call's `gap_ms`;
-//! 5. **the order of calls the harness itself runs in parallel**: the hook calls of one parallel
-//!    group (`group`: the calls the stand-in asked for at once, and the hooks of one event the
-//!    harness ran at once, each begun before the one before it answered) are put in one
-//!    canonical order, in the places the group took.
+//! 5. **the order of calls the harness itself runs in parallel**, two ways and no other:
+//!    - the hook calls of a parallel group the stand-in itself scripted (`group`, the number of
+//!      a `model` response asked for `parallel`) are put in one canonical order, in the places
+//!      the group took;
+//!    - a run of adjacent hook calls named in [`RACY_ORDERS`], each an exact set of hook words
+//!      of one harness seen begun in both orders in CI, with the reason, is put in the order
+//!      that entry lists.
+//!
+//!    Hooks that merely overlapped in time are never reordered: they keep the order they began
+//!    in. And a PreToolUse and PostToolUse of one tool use that overlap fail the recording
+//!    outright ([`crate::recording::overlapping`]).
 //!
 //! Each masked value becomes a numbered placeholder (`<session-1>`, `<tool-use-2>`), the same
 //! value the same placeholder throughout, so a reference from one call to another survives.
@@ -63,14 +73,29 @@ pub const TOOL_USE_KEYS: &[&str] = &[
 /// Keys whose value is a time.
 pub const TIME_KEYS: &[&str] = &[
     "timestamp",
-    "time",
-    "created",
     "created_at",
     "createdAt",
     "at_ms",
     "duration_ms",
     "durationMs",
 ];
+
+/// Keys whose value is a time only where it is time-shaped ([`time_shaped`]): `time` and
+/// `created` name other things too.
+pub const TIME_SHAPED_KEYS: &[&str] = &["time", "created"];
+
+/// A run of hook calls a harness begins in either order, which the mask puts in one.
+#[derive(Debug, Clone, Copy)]
+pub struct RacyOrder {
+    pub harness: &'static str,
+    /// The hook words (`argv[1]`), each at most once in a run, in the order the mask puts them.
+    pub words: &'static [&'static str],
+    /// Why the order is racy, and the CI runs it was seen both ways in.
+    pub reason: &'static str,
+}
+
+/// Every order the mask may put right, by name. Nothing is added without CI's evidence.
+pub const RACY_ORDERS: &[RacyOrder] = &[];
 
 /// Variables holding the harness process's id, which purlis reads as its session's.
 pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
@@ -88,10 +113,15 @@ pub static SESSION_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// How a harness writes the id of a background task or agent a tool use started: Claude Code's
-/// `with ID: …`, `agentId: …`, `<task-id>…` and `to: '…'`.
+/// `with ID: …`, `agentId: …`, `<task-id>…`, `to: '…'`, `tasks/….output` and
+/// `subagents/agent-….jsonl`, and Codex's `Chunk ID: …`. Only the id a shape matched is
+/// replaced, never the same word elsewhere.
 pub static TASK_IDS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:with ID: |agentId: |<task-id>|to: '|Chunk ID: )([0-9a-z]{6,24})\b")
-        .expect("a pattern")
+    Regex::new(concat!(
+        r"(?:with ID: |agentId: |<task-id>|to: '|Chunk ID: |/tasks/|/subagents/agent-)",
+        r"([0-9a-z]{6,24})\b"
+    ))
+    .expect("a pattern")
 });
 
 /// A date or a time, in each spelling a harness writes one.
@@ -210,10 +240,13 @@ fn take_roots(value: &mut Value) -> Vec<(String, String)> {
 /// Session and tool-use ids, numbered in the order they are first met.
 #[derive(Default)]
 struct Ids {
+    /// Session, tool-use and carrier ids: replaced wherever they appear.
     named: BTreeMap<String, String>,
+    /// Task ids: replaced only where a [`TASK_IDS`] shape holds them.
+    tasks: BTreeMap<String, String>,
     sessions: usize,
     tool_uses: usize,
-    tasks: usize,
+    carriers: usize,
 }
 
 impl Ids {
@@ -246,17 +279,17 @@ impl Ids {
                 for found in CALL_SHAPES.find_iter(text) {
                     let id = found.as_str();
                     if !self.named.contains_key(id) {
-                        self.tool_uses += 1;
+                        self.carriers += 1;
                         self.named
-                            .insert(id.to_owned(), format!("<tool-use-{}>", self.tool_uses));
+                            .insert(id.to_owned(), format!("<carrier-{}>", self.carriers));
                     }
                 }
                 for found in TASK_IDS.captures_iter(text) {
                     let id = &found[1];
-                    if !self.named.contains_key(id) {
-                        self.tasks += 1;
-                        self.named
-                            .insert(id.to_owned(), format!("<tool-use-task-{}>", self.tasks));
+                    if !self.tasks.contains_key(id) {
+                        let n = self.tasks.len() + 1;
+                        self.tasks
+                            .insert(id.to_owned(), format!("<tool-use-task-{n}>"));
                     }
                 }
             }
@@ -281,6 +314,20 @@ impl Ids {
             if out.contains(id.as_str()) {
                 out = out.replace(id.as_str(), placeholder);
             }
+        }
+        if TASK_IDS.is_match(&out) {
+            out = TASK_IDS
+                .replace_all(&out, |found: &regex::Captures| {
+                    let whole = &found[0];
+                    let id = &found[1];
+                    match self.tasks.get(id) {
+                        Some(placeholder) => {
+                            format!("{}{placeholder}", &whole[..whole.len() - id.len()])
+                        }
+                        None => whole.to_owned(),
+                    }
+                })
+                .into_owned();
         }
         out
     }
@@ -313,6 +360,9 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
         Value::Number(_) if key.is_some_and(|k| TIME_KEYS.contains(&k)) => {
             Value::String("<time>".to_owned())
         }
+        _ if key.is_some_and(|k| TIME_SHAPED_KEYS.contains(&k)) && time_shaped(value) => {
+            Value::String("<time>".to_owned())
+        }
         Value::String(text) => {
             if key.is_some_and(|k| TIME_KEYS.contains(&k)) && !text.is_empty() {
                 return Value::String("<time>".to_owned());
@@ -342,8 +392,21 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
     }
 }
 
-/// The hook calls of each parallel group, in one canonical order (their masked text), in the
-/// places the group took. Calls outside a group keep their order.
+/// Whether `value` is a time: an epoch time in seconds or milliseconds (from 2001 on), or a
+/// string that is a date or time whole.
+fn time_shaped(value: &Value) -> bool {
+    match value {
+        Value::Number(n) => n.as_f64().is_some_and(|n| n >= 1_000_000_000.0),
+        Value::String(text) => TIMES
+            .find(text)
+            .is_some_and(|found| found.start() == 0 && found.end() == text.len()),
+        _ => false,
+    }
+}
+
+/// The hook calls of each parallel group the stand-in scripted, in one canonical order, in the
+/// places the group took; then each run [`RACY_ORDERS`] names, in its order. Every other call
+/// keeps its place.
 fn canonical_parallel_order(recording: &mut Value) {
     // What the model was shown of one response's calls run at once, in one order too.
     let groups: Vec<Vec<String>> = recording["model"]
@@ -379,6 +442,21 @@ fn canonical_parallel_order(recording: &mut Value) {
             }
         }
     }
+    // The groups the stand-in scripted: a `model` response asked for in parallel, by number.
+    let scripted = |group: &Value| {
+        group
+            .as_u64()
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|at| recording["model"].get(at as usize))
+            .is_some_and(|asked| asked["parallel"] == true)
+    };
+    let scripted: Vec<bool> = recording["hook_calls"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|call| scripted(&call["group"]))
+        .collect();
+    let harness = recording["harness"].as_str().unwrap_or_default().to_owned();
     let Some(calls) = recording
         .get_mut("hook_calls")
         .and_then(Value::as_array_mut)
@@ -387,8 +465,11 @@ fn canonical_parallel_order(recording: &mut Value) {
     };
     let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (at, call) in calls.iter().enumerate() {
-        if let Some(group) = call.get("group").filter(|g| !g.is_null()) {
-            groups.entry(group.to_string()).or_default().push(at);
+        if scripted[at] {
+            groups
+                .entry(call["group"].to_string())
+                .or_default()
+                .push(at);
         }
     }
     for places in groups.values() {
@@ -399,6 +480,31 @@ fn canonical_parallel_order(recording: &mut Value) {
         for (&at, call) in places.iter().zip(members) {
             calls[at] = call;
         }
+    }
+    for racy in RACY_ORDERS.iter().filter(|r| r.harness == harness) {
+        racy_order(calls, racy);
+    }
+}
+
+/// Each run of adjacent calls whose words are all `racy`'s, none twice, in `racy`'s order.
+fn racy_order(calls: &mut [Value], racy: &RacyOrder) {
+    let word = |call: &Value| call["argv"][1].as_str().unwrap_or_default().to_owned();
+    let place = |call: &Value| racy.words.iter().position(|w| *w == word(call));
+    let mut at = 0;
+    while at < calls.len() {
+        let mut end = at;
+        let mut seen = Vec::new();
+        while end < calls.len()
+            && let Some(p) = place(&calls[end])
+            && !seen.contains(&p)
+        {
+            seen.push(p);
+            end += 1;
+        }
+        if end - at > 1 {
+            calls[at..end].sort_by_key(|call| place(call));
+        }
+        at = end.max(at + 1);
     }
 }
 
@@ -505,12 +611,18 @@ mod tests {
         );
     }
 
+    /// A `model` whose first response the stand-in asked for in parallel.
+    fn scripted_parallel() -> Value {
+        json!([{"turn": 1, "parallel": true, "calls": []}, {"turn": 1, "calls": []}])
+    }
+
     #[test]
     fn a_parallel_groups_calls_are_heard_before_they_come_back() {
         let pre = |c: &str| json!({"stdin": {"hook_event_name": "PreToolUse", "c": c}, "group": 1});
         let post =
             |c: &str| json!({"stdin": {"hook_event_name": "PostToolUse", "c": c}, "group": 1});
-        let a = json!({"hook_calls": [pre("two"), pre("one"), post("two"), post("one")]});
+        let a = json!({"model": scripted_parallel(),
+            "hook_calls": [pre("two"), pre("one"), post("two"), post("one")]});
         let masked = mask(&a);
         let events: Vec<&str> = masked["hook_calls"]
             .as_array()
@@ -526,13 +638,84 @@ mod tests {
 
     #[test]
     fn a_parallel_group_is_put_in_one_order_and_other_calls_keep_theirs() {
-        let a = json!({"hook_calls": [
+        let a = json!({"model": scripted_parallel(), "hook_calls": [
             {"w": "stop"}, {"w": "a", "group": 1}, {"w": "x"}, {"w": "b", "group": 1}]});
-        let b = json!({"hook_calls": [
+        let b = json!({"model": scripted_parallel(), "hook_calls": [
             {"w": "stop"}, {"w": "b", "group": 1}, {"w": "x"}, {"w": "a", "group": 1}]});
         assert_eq!(mask(&a), mask(&b));
-        let c = json!({"hook_calls": [
+        let c = json!({"model": scripted_parallel(), "hook_calls": [
             {"w": "x"}, {"w": "a", "group": 1}, {"w": "stop"}, {"w": "b", "group": 1}]});
         assert_ne!(mask(&a), mask(&c));
+    }
+
+    #[test]
+    fn a_group_the_stand_in_did_not_script_is_never_reordered() {
+        // OpenCode's real "Stop, then PostToolUse", under a group no parallel response made.
+        let stop = json!({"stdin": {"hook_event_name": "Stop"}, "group": 2});
+        let post = json!({"stdin": {"hook_event_name": "PostToolUse"}, "group": 2});
+        let a = json!({"model": scripted_parallel(), "hook_calls": [stop, post]});
+        assert_eq!(mask(&a)["hook_calls"], a["hook_calls"]);
+    }
+
+    #[test]
+    fn a_task_id_is_replaced_only_where_its_shape_holds_it() {
+        // A word a task id's shape caught is not replaced where it is only a word.
+        let raw = json!({"shown": [
+            {"text": "SendMessage with to: 'general', then tasks/general.output"},
+            {"text": "a general-purpose agent"}
+        ]});
+        let masked = mask(&raw);
+        assert_eq!(
+            masked["shown"][0]["text"],
+            "SendMessage with to: '<tool-use-task-1>', then tasks/general.output"
+        );
+        assert_eq!(masked["shown"][1]["text"], "a general-purpose agent");
+    }
+
+    #[test]
+    fn a_carriers_id_is_counted_apart_from_tool_use_ids() {
+        let raw = json!({"hook_calls": [{"stdin": {
+            "tool_use_id": "toolu_one", "message": "msg_e1dfb2d30ffeB0AQ9FzuJG8kmI"}}]});
+        let masked = mask(&raw);
+        assert_eq!(
+            masked["hook_calls"][0]["stdin"]["tool_use_id"],
+            "<tool-use-1>"
+        );
+        assert_eq!(masked["hook_calls"][0]["stdin"]["message"], "<carrier-1>");
+    }
+
+    #[test]
+    fn time_and_created_are_masked_only_where_time_shaped() {
+        let raw = json!({"shown": [{"time": 1_763_270_000_123_u64, "created": "2026-11-16T04:39:00Z"},
+            {"time": "of day", "created": 3}]});
+        let masked = mask(&raw);
+        assert_eq!(masked["shown"][0]["time"], "<time>");
+        assert_eq!(masked["shown"][0]["created"], "<time>");
+        assert_eq!(masked["shown"][1]["time"], "of day");
+        assert_eq!(masked["shown"][1]["created"], 3);
+    }
+
+    #[test]
+    fn a_racy_order_puts_only_its_named_run_in_order() {
+        let racy = RacyOrder {
+            harness: "codex",
+            words: &["a", "b"],
+            reason: "test",
+        };
+        let call = |w: &str| json!({"argv": ["hook", w]});
+        let mut calls = vec![
+            call("b"),
+            call("a"),
+            call("c"),
+            call("b"),
+            call("c"),
+            call("a"),
+        ];
+        racy_order(&mut calls, &racy);
+        let words: Vec<&str> = calls
+            .iter()
+            .map(|c| c["argv"][1].as_str().expect("a word"))
+            .collect();
+        assert_eq!(words, ["a", "b", "c", "b", "c", "a"]);
     }
 }

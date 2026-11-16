@@ -46,10 +46,6 @@ pub const EXIT2_REASON: &str = "purlis-recorder: refused with exit 2 for the rec
 /// How long a held call is held: past the longest timeout purlis gives a hook entry.
 pub const HELD: Duration = Duration::from_secs(90);
 
-/// The variables of a hook's environment a recording keeps, by prefix: what purlis sets for a
-/// chat and what each harness sets for its hooks. The rest is the machine's.
-pub const KEPT: &[&str] = &["PURLIS_", "CHARTER_", "CLAUDE", "CODEX_", "OPENCODE"];
-
 /// One line of the recorder's file: a call as it began, or its reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Line {
@@ -75,36 +71,25 @@ pub struct Line {
     pub forced: Option<String>,
 }
 
-/// What a credential's value is recorded as: never its value. A chat's token is minted afresh
-/// for every chat, and a recording holds no credential (the mask never has to hide one).
-pub const NOT_RECORDED: &str = "<credential: not recorded>";
+/// What every variable's value is recorded as: never its value. A recording keeps the name of
+/// every variable a hook's environment holds, so a variable a harness or purlis starts setting is
+/// drift, and no value, so it holds no credential and nothing of the machine's.
+pub const WITHHELD: &str = "<withheld>";
 
-/// The endings of a variable's name that hold a credential.
-const CREDENTIALS: &[&str] = &["_TOKEN", "_KEY", "_SECRET", "_PASSWORD"];
-
-/// The variables of `env` a recording keeps ([`KEPT`]), the recorder's own left out, each
-/// credential by its name alone ([`NOT_RECORDED`]).
-pub fn kept(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String, String> {
+/// The name of every variable of `env`, each value [`WITHHELD`], but the recorder's own: the
+/// variables that tell it what to do ([`REAL`], [`OUT`], [`STALL`], [`EXIT2`]), under either of
+/// purlis's spellings (a chat is handed each product variable under both, V93k).
+pub fn names(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String, String> {
     env.into_iter()
-        .filter(|(name, _)| KEPT.iter().any(|prefix| name.starts_with(prefix)) && !the_runs(name))
-        .map(|(name, value)| {
-            if CREDENTIALS.iter().any(|end| name.ends_with(end)) {
-                (name, NOT_RECORDED.to_owned())
-            } else {
-                (name, value)
-            }
-        })
+        .filter(|(name, _)| !the_recorders(name))
+        .map(|(name, _)| (name, WITHHELD.to_owned()))
         .collect()
 }
 
-/// Whether `name` is the recording run's own, under either of purlis's spellings (a chat is
-/// handed each product variable under both, V93k): the recorder's and the driver's variables,
-/// and the test build's fence. None of them is a person's chat's.
-fn the_runs(name: &str) -> bool {
-    let bare = name
-        .strip_prefix("PURLIS_")
-        .or_else(|| name.strip_prefix("CHARTER_"));
-    bare.is_some_and(|bare| bare.starts_with("RECORD") || bare == "PLANE_FENCE")
+fn the_recorders(name: &str) -> bool {
+    name.strip_prefix("PURLIS_")
+        .or_else(|| name.strip_prefix("CHARTER_"))
+        .is_some_and(|bare| bare.starts_with("RECORDER_"))
 }
 
 /// Every line of the recorder's file at `path`, in the order they were written.
@@ -184,7 +169,9 @@ pub fn run(args: Vec<String>) -> i32 {
         at_ms: now_ms(),
         argv: args.clone(),
         stdin: Some(stdin.clone()),
-        env: Some(kept(std::env::vars())),
+        env: Some(names(
+            std::env::vars_os().map(|(k, _)| (k.to_string_lossy().into_owned(), String::new())),
+        )),
         exit: None,
         stdout: None,
         stderr: None,

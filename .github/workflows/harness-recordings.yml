@@ -41,14 +41,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Twice, and the two the same: a recording is deterministic, or it flaps as false drift.
       - name: The recording
         uses: ./.github/actions/harness-recordings
         with:
           harnesses: ${{ matrix.harness }}
+          twice: "true"
       - name: What it recorded
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: harness-recording-${{ matrix.harness }}
-          path: target/recordings/
+          path: |
+            target/recordings/
+            target/recordings-again/
           if-no-files-found: ignore

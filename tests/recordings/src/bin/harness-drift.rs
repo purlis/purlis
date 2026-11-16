@@ -4,14 +4,22 @@
 //! **The nightly re-record's diff** (T1.1-03 item 5, [`purlis_recordings::drift`]):
 //!
 //! ```text
-//! harness-drift <checked-in recording.json> <fresh recording.json> <which> [--dry-run]
+//! harness-drift <checked-in recording.json> <fresh recording.json> <which> --mode drift|escape
+//!     [--dry-run] [--open <issue number>]
 //! ```
 //!
 //! `which` is `pinned` or `latest`. Both recordings are masked again before they are compared.
-//! Drift opens a `harness-drift` issue in `$GITHUB_REPOSITORY` with `gh` (or, with `--dry-run`,
-//! prints the `gh` commands it would run) and exits 0. A difference in a refused call is printed
-//! and exits 1, so the nightly entry, listed `kind: escape`, files it as a public
-//! `area:security`, `priority:p0` issue (Q301). A usage or read error exits 2.
+//! The two nightly entries of a re-record each run one mode, since the scheduler files a red
+//! `kind: escape` entry as a p0 security issue and any other red as an ordinary one:
+//!
+//! - `--mode drift` (an ordinary entry): drift opens a `harness-drift` issue in
+//!   `$GITHUB_REPOSITORY` with `gh`, or comments on the one open with what differs now, and
+//!   exits 0. A refused call that changed is only said: the escape entry fails on it.
+//! - `--mode escape` (the `kind: escape` entry): a refused call that changed is printed and exits
+//!   1, the only way this mode is red. It opens nothing.
+//!
+//! With `--dry-run` it prints the `gh` commands it would run (`--open` names the open drift
+//! issue it would comment on). A usage, read or `gh` error exits 2.
 
 use std::process::{Command, ExitCode};
 
@@ -26,10 +34,30 @@ fn read(path: &str) -> Result<serde_json::Value, String> {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let dry_run = args.iter().any(|a| a == "--dry-run");
-    let words: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
-    let [checked_in, fresh, which] = words.as_slice() else {
+    let after = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|at| args.get(at + 1))
+            .cloned()
+    };
+    let mode = after("--mode");
+    let open_given = after("--open");
+    let valued: Vec<usize> = ["--mode", "--open"]
+        .iter()
+        .filter_map(|flag| args.iter().position(|a| a == flag))
+        .map(|at| at + 1)
+        .collect();
+    let words: Vec<&String> = args
+        .iter()
+        .enumerate()
+        .filter(|(at, a)| !a.starts_with("--") && !valued.contains(at))
+        .map(|(_, a)| a)
+        .collect();
+    let ([checked_in, fresh, which], Some(mode @ ("drift" | "escape"))) =
+        (words.as_slice(), mode.as_deref())
+    else {
         eprintln!(
-            "usage: harness-drift <checked-in recording.json> <fresh recording.json> pinned|latest [--dry-run]"
+            "usage: harness-drift <checked-in recording.json> <fresh recording.json> pinned|latest --mode drift|escape [--dry-run] [--open <issue>]"
         );
         return ExitCode::from(2);
     };
@@ -58,12 +86,38 @@ fn main() -> ExitCode {
         println!("{harness} {version} ({which}): the same recording, masked");
         return ExitCode::SUCCESS;
     }
+    if mode == "escape" {
+        if diff.escape.is_empty() {
+            println!(
+                "{harness} {version} ({which}): every refused call recorded as before; the drift entry reports the rest"
+            );
+            return ExitCode::SUCCESS;
+        }
+        println!(
+            "{harness} {version} ({which}): a refused call's recording changed, which may be an escape (Q301):"
+        );
+        for difference in &diff.escape {
+            println!("  {difference}");
+        }
+        return ExitCode::from(1);
+    }
+    if !diff.escape.is_empty() {
+        println!(
+            "{harness} {version} ({which}): a refused call's recording changed; the escape entry fails on it"
+        );
+    }
     if let Some(issue) = drift::issue(&harness, &version, which, &diff, &run) {
         // One open issue a harness, version and re-record: a later night comments on it.
         let open = if dry_run {
-            None
+            open_given
         } else {
-            open_issue(&repo, &issue.title)
+            match open_issue(&repo, &issue.title) {
+                Ok(open) => open,
+                Err(e) => {
+                    eprintln!("harness-drift: gh issue list: {e}");
+                    return ExitCode::from(2);
+                }
+            }
         };
         let commands = match open {
             Some(number) => vec![vec![
@@ -73,7 +127,7 @@ fn main() -> ExitCode {
                 "--repo".to_owned(),
                 repo.clone(),
                 "--body".to_owned(),
-                format!("Drifted again: {run}"),
+                drift::comment(&diff, &run),
             ]],
             None => drift::gh_commands(&issue, &repo),
         };
@@ -98,20 +152,12 @@ fn main() -> ExitCode {
             }
         }
     }
-    if !diff.escape.is_empty() {
-        println!(
-            "{harness} {version} ({which}): a refused call's recording changed, which may be an escape (Q301):"
-        );
-        for difference in &diff.escape {
-            println!("  {difference}");
-        }
-        return ExitCode::from(1);
-    }
     ExitCode::SUCCESS
 }
 
-/// The number of the open drift issue titled `title`, if there is one.
-fn open_issue(repo: &str, title: &str) -> Option<String> {
+/// The number of the open drift issue titled `title`, if there is one; an error when `gh`
+/// could not say.
+fn open_issue(repo: &str, title: &str) -> Result<Option<String>, String> {
     let output = Command::new("gh")
         .args([
             "issue", "list", "--repo", repo, "--state", "open", "--label",
@@ -124,13 +170,18 @@ fn open_issue(repo: &str, title: &str) -> Option<String> {
             "number,title",
         ])
         .output()
-        .ok()?;
-    let found: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    found
-        .as_array()?
-        .iter()
-        .find(|issue| issue["title"] == title)
-        .map(|issue| issue["number"].to_string())
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+    }
+    let found: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    Ok(found.as_array().and_then(|issues| {
+        issues
+            .iter()
+            .find(|issue| issue["title"] == title)
+            .map(|issue| issue["number"].to_string())
+    }))
 }
 
 fn shell_words(words: &[String]) -> String {

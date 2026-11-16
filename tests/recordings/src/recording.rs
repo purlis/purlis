@@ -18,6 +18,41 @@ use crate::recorder::Line;
 /// The harnesses recorded, by the name their version file has (`tests/fixtures/harness-versions`).
 pub const HARNESSES: [&str; 3] = ["claude", "codex", "opencode"];
 
+/// What every covering recording is made under, said in its header and in the README.
+pub const FULL_BYPASSED: &str =
+    "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)";
+
+/// The file a recording of `script` is checked in as, beside its turn script: the covering
+/// script's `recording.json` and `turns.json`, another's `<script>-recording.json` and
+/// `<script>-turns.json`.
+pub fn files_of(script: &str) -> (String, String) {
+    if script == "covering" {
+        ("recording.json".to_owned(), "turns.json".to_owned())
+    } else {
+        (
+            format!("{script}-recording.json"),
+            format!("{script}-turns.json"),
+        )
+    }
+}
+
+/// The turn script beside the recording at `path`.
+pub fn turns_beside(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .replace("recording.json", "turns.json");
+    path.with_file_name(name)
+}
+
+/// Whether `path` names a checked-in recording.
+pub fn is_recording(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == "recording.json" || n.ends_with("-recording.json"))
+}
+
 /// A recording, as checked in.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,13 +62,18 @@ pub struct Recording {
     /// The protection level it ran at: `full`.
     pub level: String,
     pub os: String,
-    /// The covering script it ran (`scripts/<name>.json`), and the prompt it started with.
+    /// What the recording was made under, which the fake harness copies as conditions, never as
+    /// behaviour: `summary` (what the sandbox and the harness's own prompts were, in a sentence),
+    /// `permission_mode` (Claude Code's), `harness_asks` (how often the harness's own ask was
+    /// allowed once).
+    pub conditions: BTreeMap<String, String>,
+    /// The covering script it ran (`scripts/<name>.json`), and the prompt of each of its turns.
     pub script: String,
-    pub prompt: String,
+    pub prompts: Vec<String>,
     /// What the recorder did in place of the real hook, by what: `stall` (a hook word whose
     /// first call it held past the hook's timeout) and `exit2` (one whose first call it answered
     /// with exit 2 and a reason on standard error), so the recording shows what the harness does
-    /// with each.
+    /// with each; and `esc`, when Esc was pressed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub forced: BTreeMap<String, String>,
     /// The absolute paths the mask replaces, by placeholder name. Only a raw recording has them.
@@ -56,7 +96,8 @@ pub struct HookCall {
     pub argv: Vec<String>,
     /// Its standard input, as JSON where it was JSON.
     pub stdin: Value,
-    /// The variables of its environment purlis or the harness set ([`crate::recorder::KEPT`]).
+    /// The name of every variable of its environment, each value withheld
+    /// ([`crate::recorder::names`]).
     pub env: BTreeMap<String, String>,
     /// Milliseconds since the hook call before it began; masked.
     pub gap_ms: Value,
@@ -145,7 +186,9 @@ pub fn versions_without_a_recording(recorded: &Path) -> Vec<String> {
 }
 
 /// The hook calls the recorder wrote, in the order they began: each call joined with its reply,
-/// its gap from the call before, and the parallel group its tool-use id was asked for in.
+/// its gap from the call before, and the parallel group the stand-in asked for it in. Only a
+/// response the stand-in scripted as parallel makes a group: hooks that merely overlapped in
+/// time keep the order they began in, ungrouped, so the mask never reorders them.
 pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
     let mut groups: BTreeMap<&str, u32> = BTreeMap::new();
     for (at, asked) in model.iter().enumerate() {
@@ -157,18 +200,8 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
     }
     let mut calls: Vec<HookCall> = Vec::new();
     let mut before: Option<u64> = None;
-    // The hooks the harness runs at once: each begun before the one before it answered (Codex
-    // runs every SessionStart hook together).
-    let mut previous: Option<(String, u64, Option<u64>)> = None;
     for line in lines.iter().filter(|l| l.phase == "call") {
-        let reply = lines
-            .iter()
-            .find(|l| l.phase == "reply" && l.id == line.id)
-            .map(|l| Reply {
-                exit: l.exit.unwrap_or(-1),
-                stdout: as_json(l.stdout.as_deref().unwrap_or_default()),
-                stderr: l.stderr.clone().unwrap_or_default(),
-            });
+        let replied = reply_of(lines, line);
         let stdin = as_json(line.stdin.as_deref().unwrap_or_default());
         // By the call's id where the hook is handed one; else by its input, which OpenCode's
         // shim hands on as the model asked for it.
@@ -183,47 +216,18 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
                     .then_some(at as u32 + 1)
                 })
             });
-        let event = stdin
-            .get("hook_event_name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let answered_at = lines
-            .iter()
-            .find(|l| l.phase == "reply" && l.id == line.id)
-            .map(|l| l.at_ms);
-        // Begun before the hook call before it answered, whatever its event: OpenCode's shim
-        // runs `notification` and `permissionrequest` for one ask at once.
-        // One the harness cut off (no reply) runs on only beside hooks of its own event.
-        let at_once = group.is_none()
-            && previous
-                .as_ref()
-                .is_some_and(|(e, _, replied)| match replied {
-                    Some(replied) => line.at_ms < *replied,
-                    None => *e == event,
-                });
-        let group = if at_once {
-            calls.last().and_then(|c| c.group).or_else(|| {
-                let first = calls.len() as u32;
-                if let Some(last) = calls.last_mut() {
-                    last.group = Some(EVENT_GROUPS + first);
-                }
-                Some(EVENT_GROUPS + first)
-            })
-        } else {
-            group
-        };
-        previous = Some((event, line.at_ms, answered_at));
         calls.push(HookCall {
             argv: line.argv.clone(),
             stdin,
             env: line.env.clone().unwrap_or_default(),
             gap_ms: before.map_or(Value::Null, |b| Value::from(line.at_ms.saturating_sub(b))),
             group,
-            reply,
-            forced: lines
-                .iter()
-                .find(|l| l.phase == "reply" && l.id == line.id)
+            reply: replied.map(|l| Reply {
+                exit: l.exit.unwrap_or(-1),
+                stdout: as_json(l.stdout.as_deref().unwrap_or_default()),
+                stderr: l.stderr.clone().unwrap_or_default(),
+            }),
+            forced: replied
                 .and_then(|l| l.forced.clone())
                 .or_else(|| line.forced.clone()),
         });
@@ -232,9 +236,50 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
     calls
 }
 
-/// Where the numbers of the groups of hooks one event ran at once begin, apart from the
-/// stand-in's responses' numbers.
-const EVENT_GROUPS: u32 = 10_000;
+fn reply_of<'a>(lines: &'a [Line], call: &Line) -> Option<&'a Line> {
+    lines.iter().find(|l| l.phase == "reply" && l.id == call.id)
+}
+
+/// Each PreToolUse and PostToolUse of one tool use that overlapped: the PostToolUse began before
+/// the PreToolUse answered, so the harness ran the tool without waiting for purlis's verdict.
+/// Any one fails the recording outright; the mask never hides it.
+pub fn overlapping(lines: &[Line]) -> Vec<String> {
+    let event = |line: &Line| {
+        as_json(line.stdin.as_deref().unwrap_or_default())
+            .get("hook_event_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    // The same tool use: its id where the hook is handed one, else its tool and input.
+    let tool_use = |line: &Line| {
+        let stdin = as_json(line.stdin.as_deref().unwrap_or_default());
+        tool_use_id(&stdin).or_else(|| {
+            let tool = stdin.get("tool_name")?;
+            let input = stdin.get("tool_input")?;
+            Some(format!("{tool} {input}"))
+        })
+    };
+    let calls: Vec<&Line> = lines.iter().filter(|l| l.phase == "call").collect();
+    let mut found = Vec::new();
+    for pre in calls.iter().filter(|l| event(l) == "PreToolUse") {
+        let Some(key) = tool_use(pre) else { continue };
+        let answered = reply_of(lines, pre).map_or(u64::MAX, |r| r.at_ms);
+        for post in calls.iter().filter(|l| {
+            matches!(event(l).as_str(), "PostToolUse" | "PostToolUseFailure")
+                && tool_use(l).as_ref() == Some(&key)
+        }) {
+            if post.at_ms < answered {
+                found.push(format!(
+                    "{} began before {} of the same tool use answered: the harness did not wait for the verdict ({key})",
+                    post.argv.join(" "),
+                    pre.argv.join(" ")
+                ));
+            }
+        }
+    }
+    found
+}
 
 /// The tool-use id a hook's input names, in any harness's spelling.
 pub fn tool_use_id(stdin: &Value) -> Option<String> {
@@ -286,19 +331,17 @@ mod tests {
     }
 
     #[test]
-    fn hooks_begun_before_the_last_answered_are_one_group() {
-        // Two SessionStart hooks at once, then a Stop after both answered.
+    fn hooks_that_merely_overlap_keep_the_order_they_began_in_ungrouped() {
+        // A Stop begun before a PostToolUse answered, as OpenCode's shim runs them.
         let lines = [
-            line("a", "call", 100, "SessionStart"),
-            line("b", "call", 101, "SessionStart"),
-            line("a", "reply", 150, ""),
-            line("b", "reply", 151, ""),
-            line("c", "call", 200, "SessionStart"),
-            line("c", "reply", 210, ""),
+            line("a", "call", 100, "PostToolUse"),
+            line("b", "call", 101, "Stop"),
+            line("b", "reply", 150, ""),
+            line("a", "reply", 151, ""),
         ];
         let calls = hook_calls(&lines, &[]);
-        assert_eq!(calls[0].group, calls[1].group);
-        assert!(calls[0].group.is_some());
-        assert_eq!(calls[2].group, None, "begun after the one before answered");
+        assert_eq!(calls[0].argv, ["hook", "posttooluse"]);
+        assert_eq!(calls[1].argv, ["hook", "stop"]);
+        assert!(calls.iter().all(|c| c.group.is_none()), "{calls:#?}");
     }
 }

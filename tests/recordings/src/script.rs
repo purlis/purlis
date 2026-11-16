@@ -29,6 +29,18 @@ pub struct Script {
     /// What a sub-agent the script starts is answered with, the same way.
     #[serde(default)]
     pub subagent: Vec<Response>,
+    /// The turns after the first, each typed into the harness once the turn before it ended
+    /// normally (so its Stop hook is recorded).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub then: Vec<Turn>,
+}
+
+/// A later turn: the prompt typed for it, and the model's responses in it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Turn {
+    pub prompt: String,
+    pub responses: Vec<Response>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,7 +113,36 @@ impl Script {
             prompt: self.prompt.clone(),
             responses: self.responses.iter().filter(keep).map(fill).collect(),
             subagent: self.subagent.iter().filter(keep).map(fill).collect(),
+            then: self
+                .then
+                .iter()
+                .map(|turn| Turn {
+                    prompt: turn.prompt.clone(),
+                    responses: turn.responses.iter().filter(keep).map(fill).collect(),
+                })
+                .collect(),
         }
+    }
+
+    /// Every turn's prompt, the first's first.
+    pub fn prompts(&self) -> Vec<String> {
+        std::iter::once(self.prompt.clone())
+            .chain(self.then.iter().map(|t| t.prompt.clone()))
+            .collect()
+    }
+
+    /// Every response of the chat, turn after turn, each with its turn from 1.
+    pub fn sequence(&self) -> Vec<(u32, &Response)> {
+        self.responses
+            .iter()
+            .map(|r| (1, r))
+            .chain(
+                self.then
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(t, turn)| turn.responses.iter().map(move |r| (t as u32 + 2, r))),
+            )
+            .collect()
     }
 }
 

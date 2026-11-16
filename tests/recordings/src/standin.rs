@@ -50,8 +50,12 @@ pub enum Conversation {
 pub struct Heard {
     pub path: String,
     pub conversation: Conversation,
-    /// The response it was given, from 0; the end of the turn is the script's length.
+    /// The response it was given, from 0 across every turn of the chat; the end of the chat's
+    /// last turn is the number of its responses.
     pub response: Option<usize>,
+    /// The turn it ended, from 1, when it ended one of the chat's turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_turn: Option<u32>,
     pub shown: Vec<Shown>,
     /// The tools it offered, by name.
     pub offered: Vec<String>,
@@ -135,10 +139,11 @@ impl StandIn {
         } else {
             self.conversation_of(&shown)
         };
-        let responses: &[Response] = match conversation {
-            Conversation::Main => &self.script.responses,
-            Conversation::Subagent => &self.script.subagent,
-            Conversation::Side => &[],
+        let sequence = self.script.sequence();
+        let responses: Vec<&Response> = match conversation {
+            Conversation::Main => sequence.iter().map(|(_, r)| *r).collect(),
+            Conversation::Subagent => self.script.subagent.iter().collect(),
+            Conversation::Side => Vec::new(),
         };
         let answered = results_in(api, &body);
         // A sub-agent runs beside the chat (Claude Code 2.1's agents are asynchronous): the chat's
@@ -150,15 +155,42 @@ impl StandIn {
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
+        let unanswered = |at: usize, r: &Response| {
+            (0..r.calls.len()).any(|i| !answered.contains(&self.id(conversation, at, i)))
+        };
+        let mut ended_turn = None;
         let next = (conversation != Conversation::Side).then(|| {
-            responses
+            let first = responses
                 .iter()
                 .enumerate()
-                .position(|(at, r)| {
-                    (0..r.calls.len()).any(|i| !answered.contains(&self.id(conversation, at, i)))
-                })
-                .unwrap_or(responses.len())
+                .position(|(at, r)| unanswered(at, r))
+                .unwrap_or(responses.len());
+            if conversation != Conversation::Main {
+                return first;
+            }
+            // A later turn begins only once its prompt was typed: until then, the turn before it
+            // has ended.
+            let turn_of = |at: usize| sequence.get(at).map(|(t, _)| *t);
+            let prompts = self.script.prompts();
+            let typed = |turn: u32| {
+                let prompt = &prompts[turn as usize - 1];
+                shown
+                    .iter()
+                    .any(|s| s.kind == "user_text" && s.text.contains(prompt.as_str()))
+            };
+            match turn_of(first) {
+                Some(turn) if turn > 1 && !typed(turn) => {
+                    ended_turn = Some(turn - 1);
+                    usize::MAX
+                }
+                Some(_) => first,
+                None => {
+                    ended_turn = Some(prompts.len() as u32);
+                    first
+                }
+            }
         });
+        let next = next.filter(|&at| at != usize::MAX);
         let stream = body["stream"] == true;
         let model = body["model"].as_str().unwrap_or("stand-in");
         let given = next.and_then(|at| responses.get(at).map(|r| (at, r)));
@@ -179,6 +211,7 @@ impl StandIn {
             path: path.to_owned(),
             conversation,
             response: next,
+            ended_turn,
             shown,
             offered: offers.iter().map(|o| o.name.clone()).collect(),
             asked: calls
@@ -209,11 +242,16 @@ impl StandIn {
     /// Whether `answered` holds the result of the script's sub-agent call, whose sub-agent the
     /// chat's next response waits for.
     fn awaits_its_subagent(&self, answered: &[String]) -> bool {
-        self.script.responses.iter().enumerate().any(|(at, r)| {
-            r.calls.iter().enumerate().any(|(i, step)| {
-                step.kind == "subagent" && answered.contains(&self.id(Conversation::Main, at, i))
+        self.script
+            .sequence()
+            .iter()
+            .enumerate()
+            .any(|(at, (_, r))| {
+                r.calls.iter().enumerate().any(|(i, step)| {
+                    step.kind == "subagent"
+                        && answered.contains(&self.id(Conversation::Main, at, i))
+                })
             })
-        })
     }
 
     /// Whether the sub-agent's turn has ended: it was given its last response.
@@ -266,19 +304,20 @@ impl StandIn {
     /// What the stand-in asked for in the main conversation, response by response, once each.
     pub fn asked(&self) -> Vec<Asked> {
         let heard = self.heard.lock().expect("the stand-in's log");
+        let sequence = self.script.sequence();
         let mut given: Vec<(usize, Asked)> = Vec::new();
         for h in heard
             .iter()
             .filter(|h| h.conversation == Conversation::Main)
         {
-            if let Some(at) = h.response.filter(|&at| at < self.script.responses.len())
+            if let Some(at) = h.response.filter(|&at| at < sequence.len())
                 && !given.iter().any(|(g, _)| *g == at)
             {
                 given.push((
                     at,
                     Asked {
-                        turn: 1,
-                        parallel: self.script.responses[at].parallel,
+                        turn: sequence[at].0,
+                        parallel: sequence[at].1.parallel,
                         calls: h.asked.clone(),
                     },
                 ));

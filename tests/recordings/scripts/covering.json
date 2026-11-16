@@ -16,10 +16,14 @@
     ]},
     {"calls": [{"step": "background", "kind": "bash", "command": "sleep 90; echo background", "background": true}], "dialects": ["claude"]},
     {"calls": [{"step": "subagent", "kind": "subagent", "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for."}], "dialects": ["claude", "opencode"]},
-    {"calls": [{"step": "failing-bash", "kind": "bash", "command": "echo failing >&2; exit 2"}]},
-    {"esc": true, "calls": [{"step": "esc", "kind": "bash", "command": "python3 -c \"import time; time.sleep(120)\""}]}
+    {"calls": [{"step": "failing-bash", "kind": "bash", "command": "echo failing >&2; exit 2"}]}
   ],
   "subagent": [
     {"calls": [{"step": "subagent-bash", "kind": "bash", "command": "echo from-subagent"}]}
+  ],
+  "then": [
+    {"prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.", "responses": [
+      {"esc": true, "calls": [{"step": "esc", "kind": "bash", "command": "python3 -c \"import time; time.sleep(120)\""}]}
+    ]}
   ]
 }

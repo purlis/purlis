@@ -37,7 +37,7 @@ fn main() -> ExitCode {
                     .map_err(|e| e.to_string())?;
                 for (file, value) in [
                     (path.clone(), masked),
-                    (path.with_file_name("turns.json"), turns),
+                    (purlis_recordings::recording::turns_beside(&path), turns),
                 ] {
                     let mut text =
                         serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;

@@ -12,5 +12,9 @@ sandbox-scenarios               macos-15       120
 sandbox-scenarios               macos-26       120
 existing-macos-sandbox-tests    macos-latest   120
 # Ticket 3: each harness re-recorded at its pinned version and at its latest release (T1.1-03).
-harness-rerecord-pinned       ubuntu-24.04   90       kind: escape
-harness-rerecord-latest       ubuntu-24.04   90       kind: escape
+# The `rerecord` entries open drift issues and are red on an ordinary failure (an install, a
+# build, a recording that timed out, `gh`); the `escapes` entries are red on an escape alone.
+harness-rerecord-pinned       ubuntu-24.04   90
+harness-rerecord-latest       ubuntu-24.04   90
+harness-escapes-pinned        ubuntu-24.04   90       kind: escape
+harness-escapes-latest        ubuntu-24.04   90       kind: escape

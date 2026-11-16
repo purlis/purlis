@@ -15,6 +15,8 @@
 //! `#[ignore]`d: it runs on Linux, in CI's recording job and the nightly re-record, with
 //!
 //! - `PURLIS_RECORD_HARNESS`: `claude`, `codex` or `opencode`, whose program is first on `PATH`;
+//! - `PURLIS_RECORD_SCRIPT`, optionally: the script it runs, `covering` (the default) or, for
+//!   Claude Code alone, `asks`, the pass that keeps Claude Code's own prompts and answers one;
 //! - `PURLIS_RECORD_PURLIS`: the built `purlis` the wrap and the recorder run;
 //! - `PURLIS_RECORD_OUT`: the folder `<harness>/<version>/` is written under;
 //! - `PURLIS_CONFIG_HOME` and `PURLIS_DATA_HOME`: folders of the run's own.
@@ -42,12 +44,19 @@ const AT_MOST: Duration = Duration::from_secs(420);
 const STAND_IN_KEY: &str = "stand-in-model-no-credential";
 
 /// The hook word whose first call the recorder holds past its timeout, and the one whose first
-/// call it answers with exit 2.
-const STALL: &str = "sessionstart";
+/// call it answers with exit 2. The held one is a PostToolUse, not the one SessionStart, so
+/// purlis's SessionStart context reaches the model, and the harness's wait on it is measured
+/// (`command-timeout.txt` in the evidence).
+const STALL: &str = "posttooluse-blocked";
 const EXIT2: &str = "pretooluse";
 
-/// The permission mode a Claude Code recording runs in ([`harness_words`]).
+/// The permission mode a Claude Code covering recording runs in ([`harness_words`]), and the
+/// one its `asks` pass runs in.
 const PERMISSION_MODE: &str = "bypassPermissions";
+const ASKS_PERMISSION_MODE: &str = "default";
+
+/// What the vault the refused read aims at holds: it must never reach the model.
+const VAULT_MARKER: &str = "COVERING-VAULT-MARKER-5e1d";
 
 fn var(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
@@ -99,6 +108,18 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let data_home = PathBuf::from(var("PURLIS_DATA_HOME"));
     let program = which(&harness);
     let version = version_of(&harness, &program);
+    let script_name = std::env::var("PURLIS_RECORD_SCRIPT").unwrap_or_else(|_| "covering".into());
+    let asks = script_name == "asks";
+    assert!(
+        !asks || harness == "claude",
+        "the asks pass is Claude Code's alone"
+    );
+    let evidence = out.join("evidence").join(&harness).join(&script_name);
+    fs::create_dir_all(&evidence).expect("the evidence folder");
+    // An escape is said in a file of its own before the run fails on it, so the nightly's escape
+    // entry is red on an escape alone, and on nothing else (`.github/actions/harness-recordings`).
+    let escaped_file = evidence.join("escaped.txt");
+    let _ = fs::remove_file(&escaped_file);
 
     // Outside the system's temp folders, which a chat at Full may write.
     // Outside any git work tree, or a harness reads the repo's state into its prompt: the
@@ -141,20 +162,46 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     .expect("the local settings");
     fs::create_dir_all(root.join(".purlis/vaults")).expect("the vaults");
     let denied_read = root.join(".purlis/vaults/covering.json");
-    fs::write(&denied_read, "{\"covering\": \"a vault no chat reads\"}\n").expect("a vault");
+    fs::write(
+        &denied_read,
+        format!("{{\"covering\": \"a vault no chat reads\", \"marker\": \"{VAULT_MARKER}\"}}\n"),
+    )
+    .expect("a vault");
     fs::write(outside.join("existing.txt"), "before\n").expect("a file outside");
+
+    // What the refused dials aim at: a loopback listener of this run's, which could be dialled,
+    // on a port the chat is never granted. Nothing may arrive at it.
+    let refused = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a refused listener");
+    let refused_url = format!(
+        "http://127.0.0.1:{}/",
+        refused.local_addr().expect("its port").port()
+    );
+    let arrived = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let arrived = Arc::clone(&arrived);
+        refused.set_nonblocking(true).expect("a listener");
+        std::thread::spawn(move || {
+            let ends = Instant::now() + standin::AT_MOST;
+            while Instant::now() < ends {
+                match refused.accept() {
+                    Ok((_, from)) => arrived.lock().expect("arrivals").push(from.to_string()),
+                    Err(_) => std::thread::sleep(Duration::from_millis(20)),
+                }
+            }
+        });
+    }
 
     // The stand-in, on a port granted to the chat.
     let places: BTreeMap<String, String> = [
         ("work", root.display().to_string()),
         ("outside", outside.display().to_string()),
         ("denied_read", denied_read.display().to_string()),
-        ("refused_url", "https://refused.example.invalid/".to_owned()),
+        ("refused_url", refused_url.clone()),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
     .collect();
-    let script = Script::named("covering").expect("the covering script");
+    let script = Script::named(&script_name).expect("the script");
     let given = script.for_harness(&harness, &places);
     let stand_in = Arc::new(StandIn::new(&harness, given.clone()));
     let (port_tx, port_rx) = mpsc::channel();
@@ -254,7 +301,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         "the recording is made at Full"
     );
     applied.wrap_with(purlis.clone());
-    ready.args.extend(harness_words(&harness, &base_url));
+    ready.args.extend(harness_words(&harness, &base_url, asks));
     let host = Host {
         root: root.clone(),
         hosted: Mutex::new(None),
@@ -278,10 +325,19 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         [
             (recorder::REAL, purlis.display().to_string()),
             (recorder::OUT, recorder_out.display().to_string()),
-            (recorder::STALL, STALL.to_owned()),
-            (recorder::EXIT2, EXIT2.to_owned()),
         ]
         .into_iter()
+        .chain(
+            (!asks)
+                .then(|| {
+                    [
+                        (recorder::STALL, STALL.to_owned()),
+                        (recorder::EXIT2, EXIT2.to_owned()),
+                    ]
+                })
+                .into_iter()
+                .flatten(),
+        )
         .map(|(k, v)| (k.to_owned(), v))
         .chain(model_env(&harness, &base_url, &opencode_config)),
     );
@@ -295,28 +351,57 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let session = purlis_core::session::Session::spawn(spec, Box::new(engine))
         .expect("the harness starts in its terminal");
 
-    // Until the turn ends: the stand-in said it was done, or the Esc response's call started
-    // and Esc was pressed.
-    let esc_at = given.responses.iter().position(|r| r.esc);
+    // Until the chat's last turn ends: the stand-in said it was done, or the Esc response's call
+    // started and Esc was pressed. Each turn after the first is typed once the one before it
+    // ended normally and its Stop hook answered.
+    let sequence = given.sequence();
+    let esc_at = sequence.iter().position(|(_, r)| r.esc);
+    let prompts = given.prompts();
     let started = Instant::now();
     let mut pressed = false;
+    let mut typed = 1usize;
     let mut accepted_prompts = 0;
     let mut bypass_presses = 0u32;
     let mut harness_asks = 0u32;
+    let settled = |word: &str| {
+        recorder::read(&recorder_out).is_ok_and(|lines| {
+            lines
+                .iter()
+                .filter(|l| l.phase == "call" && l.argv.get(1).is_some_and(|w| w == word))
+                .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
+        })
+    };
     loop {
         assert!(
             started.elapsed() < AT_MOST,
-            "{harness} did not finish the covering script within {AT_MOST:?}; its screen:\n{}\nthe stand-in heard: {:#?}",
+            "{harness} did not finish the {script_name} script within {AT_MOST:?}; its screen:\n{}\nthe stand-in heard: {:#?}",
             session.screen().lines.join("\n"),
             stand_in.heard.lock().expect("the log")
         );
         let heard = stand_in.heard.lock().expect("the log").clone();
-        let done = heard.iter().any(|h| {
-            h.conversation == Conversation::Main && h.response == Some(given.responses.len())
-        });
-        if done {
+        let ended = |turn: usize| {
+            heard
+                .iter()
+                .any(|h| h.conversation == Conversation::Main && h.ended_turn == Some(turn as u32))
+        };
+        if ended(prompts.len()) {
             std::thread::sleep(Duration::from_secs(5));
             break;
+        }
+        if typed < prompts.len() && ended(typed) {
+            // Its Stop hook answered, or a little while for a harness that runs none.
+            let since = Instant::now();
+            while !settled("stop") && since.elapsed() < Duration::from_secs(15) {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            std::thread::sleep(Duration::from_secs(3));
+            session
+                .write(prompts[typed].as_bytes())
+                .expect("the next prompt is typed");
+            std::thread::sleep(Duration::from_millis(800));
+            session.write(b"\r").expect("Enter is pressed");
+            typed += 1;
+            continue;
         }
         if let Some(esc_at) = esc_at
             && !pressed
@@ -358,19 +443,14 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             std::thread::sleep(Duration::from_secs(2));
         }
         // A harness's own permission ask during the turn (OpenCode's "Permission required" for
-        // a folder outside the project) is allowed once, as a person who lets the sandbox judge
-        // allows it: then the wrap, not the harness, decides the call. Counted in the recording.
-        // Only once purlis's own hook on the ask has answered (`permissionrequest`): pressed
-        // sooner, OpenCode cuts that hook off, and the recording says so (1.19.5, run 9).
-        let hooks_settled = recorder::read(&recorder_out).is_ok_and(|lines| {
-            lines
-                .iter()
-                .filter(|l| {
-                    l.phase == "call" && l.argv.get(1).is_some_and(|w| w == "permissionrequest")
-                })
-                .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
-        });
-        if harness_asks < 8 && hooks_settled && screen.contains("Permission required") {
+        // a folder outside the project; Claude Code's "Do you want to proceed?" in its asks pass)
+        // is allowed once, as a person who lets the sandbox judge allows it: then the wrap, not
+        // the harness, decides the call. Counted in the recording's conditions. Only once
+        // purlis's own hook on the ask has answered (`permissionrequest`): pressed sooner,
+        // OpenCode cuts that hook off, and the recording says so (1.19.5, run 9).
+        let asking = screen.contains("Permission required")
+            || (asks && screen.contains("Do you want to proceed?"));
+        if harness_asks < 8 && settled("permissionrequest") && asking {
             session.write(b"\r").expect("Allow once is chosen");
             harness_asks += 1;
             std::thread::sleep(Duration::from_secs(2));
@@ -386,9 +466,10 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     session.end();
 
     // **What the refused calls aimed at is untouched** (Q301): a file outside the chat's folders
-    // written, or one there changed, is an escape, filed as a public `area:security`,
-    // `priority:p0` issue and fixed first, never pinned.
-    let escaped: Vec<String> = [
+    // written, or one there changed, a dial that arrived at the listener the chat was never
+    // granted, or the refused vault's contents in front of the model, is an escape, filed as a
+    // public `area:security`, `priority:p0` issue and fixed first, never pinned.
+    let mut escaped: Vec<String> = [
         (outside.join("by-bash.txt"), None),
         (outside.join("by-write.txt"), None),
         (outside.join("existing.txt"), Some("before\n")),
@@ -399,6 +480,20 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         (now.as_deref() != want).then(|| format!("{}: {now:?}", path.display()))
     })
     .collect();
+    for from in arrived.lock().expect("arrivals").iter() {
+        escaped.push(format!("a dial arrived at {refused_url} from {from}"));
+    }
+    for heard in stand_in.heard.lock().expect("the log").iter() {
+        if heard.shown.iter().any(|s| s.text.contains(VAULT_MARKER)) {
+            escaped.push(format!(
+                "the refused vault's contents reached the model in a request to {}",
+                heard.path
+            ));
+        }
+    }
+    if !escaped.is_empty() {
+        fs::write(&escaped_file, escaped.join("\n")).expect("the escape is said");
+    }
     assert!(
         escaped.is_empty(),
         "ESCAPE: {harness} {version} under purlis's wrap at Full did what was refused: {escaped:?}"
@@ -438,24 +533,46 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     if let Ok(home) = std::env::var("HOME") {
         root_of("home", Path::new(&home));
     }
+    // The refused dial's target, whose port is this run's.
+    roots.insert(
+        "refused-url".to_owned(),
+        refused_url.trim_end_matches('/').to_owned(),
+    );
     let made = Recording {
         harness: harness.clone(),
         version: version.clone(),
         level: "full".to_owned(),
         os: "linux".to_owned(),
+        conditions: [(
+            "summary".to_owned(),
+            if asks {
+                "Full sandbox, Claude Code's own prompts kept (permission mode default) and each allowed once".to_owned()
+            } else {
+                recording::FULL_BYPASSED.to_owned()
+            },
+        )]
+        .into_iter()
+        .chain((harness == "claude").then(|| {
+            (
+                "permission_mode".to_owned(),
+                if asks { ASKS_PERMISSION_MODE } else { PERMISSION_MODE }.to_owned(),
+            )
+        }))
+        .chain((harness_asks > 0).then(|| {
+            (
+                "harness_asks".to_owned(),
+                format!("allowed once, {harness_asks} times"),
+            )
+        }))
+        .collect(),
         script: given.name.clone(),
-        prompt: given.prompt.clone(),
-        forced: [("stall", STALL), ("exit2", EXIT2)]
+        prompts: prompts.clone(),
+        forced: (!asks)
+            .then_some([("stall", STALL), ("exit2", EXIT2)])
             .into_iter()
+            .flatten()
             .chain(pressed.then_some(("esc", "pressed")))
-            .chain((harness == "claude").then_some(("permission_mode", PERMISSION_MODE)))
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
-            .chain((harness_asks > 0).then(|| {
-                (
-                    "harness_asks".to_owned(),
-                    format!("allowed once, {harness_asks} times"),
-                )
-            }))
             .collect(),
         roots,
         hook_calls: recording::hook_calls(&lines, &model),
@@ -465,16 +582,35 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let masked = recording::masked(&made);
     let folder = out.join(&harness).join(&version);
     fs::create_dir_all(&folder).expect("the recording's folder");
-    write_json(&folder.join("recording.json"), &masked);
+    let (recording_file, turns_file) = recording::files_of(&script_name);
+    write_json(&folder.join(&recording_file), &masked);
     let checked: Recording = serde_json::from_value(masked.clone()).expect("a masked recording");
     write_json(
-        &folder.join("turns.json"),
+        &folder.join(&turns_file),
         &serde_json::to_value(purlis_recordings::turns::of(&checked)).expect("JSON"),
     );
     // What a reader of a red or surprising run needs, never checked in.
-    let evidence = out.join("evidence").join(&harness);
-    fs::create_dir_all(&evidence).expect("the evidence folder");
     fs::write(evidence.join("screen.txt"), &screen).expect("the screen");
+    // How long the harness waited on the hook call the recorder held: from the held call's
+    // start to the next hook call's, which the harness made only once it went on.
+    let held = lines
+        .iter()
+        .position(|l| l.phase == "call" && l.forced.as_deref() == Some("stall"));
+    if let Some(at) = held {
+        let began = lines[at].at_ms;
+        let next = lines[at + 1..]
+            .iter()
+            .find(|l| l.phase == "call")
+            .map(|l| l.at_ms.saturating_sub(began));
+        let said = match next {
+            Some(ms) => format!(
+                "{harness} {version}: the held `{STALL}` call (its entry's timeout: 5 s) began, and the next hook call {ms} ms later\n"
+            ),
+            None => format!("{harness} {version}: no hook call followed the held `{STALL}` call\n"),
+        };
+        print!("{said}");
+        fs::write(evidence.join("command-timeout.txt"), said).expect("the measured wait");
+    }
     write_json(
         &evidence.join("heard.json"),
         &serde_json::to_value(&*stand_in.heard.lock().expect("the log")).expect("JSON"),
@@ -486,8 +622,24 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let told: Vec<String> = heard_rx.try_iter().collect();
     fs::write(evidence.join("hook-socket.txt"), told.join("\n")).expect("the socket's lines");
 
-    let problems = recording::problems(&masked);
+    let mut problems = recording::problems(&masked);
+    problems.extend(recording::overlapping(&lines));
     assert!(problems.is_empty(), "the recording: {problems:?}");
+    // Codex's native write: its own `apply_patch`, never the patch through its shell.
+    if harness == "codex" {
+        for call in checked
+            .model
+            .iter()
+            .flat_map(|a| &a.calls)
+            .filter(|c| c.step == "refused-write" || c.step == "refused-edit")
+        {
+            assert_eq!(
+                call.tool, "apply_patch",
+                "Codex was not offered its native apply_patch for {}",
+                call.step
+            );
+        }
+    }
     assert!(
         !checked.hook_calls.is_empty(),
         "{harness} made no hook call; the screen:\n{screen}"
@@ -592,22 +744,28 @@ fn prepare_harness(
 }
 
 /// The words a harness is started with to reach the stand-in, beside purlis's own.
-fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
+fn harness_words(harness: &str, base_url: &str, asks: bool) -> Vec<String> {
     match harness {
         // Claude Code's default, auto mode, checks each call on Anthropic's servers, which a
         // stand-in model is not: it stops the turn to ask (2.1.325's first recording). The
-        // recording runs without its prompts instead; its deny rules and purlis's hooks hold
-        // as they do in every mode.
-        "claude" => vec!["--permission-mode".to_owned(), PERMISSION_MODE.to_owned()],
-        // A model Codex knows, so it offers that model's tools (its freeform `apply_patch`
-        // among them): under a name it does not know it offered none to write with (0.169.0's
-        // first recording). Only the name: every request goes to the stand-in.
-        // A model Codex knows, so it offers that model's tools (its freeform `apply_patch`
-        // among them): under a name it does not know it offered none to write with (0.169.0's
-        // first recording). Only the name: every request goes to the stand-in.
+        // covering recording runs without its prompts instead; its deny rules and purlis's
+        // hooks hold as they do in every mode. The asks pass keeps them, in the `default` mode.
+        "claude" => vec![
+            "--permission-mode".to_owned(),
+            if asks {
+                ASKS_PERMISSION_MODE
+            } else {
+                PERMISSION_MODE
+            }
+            .to_owned(),
+        ],
+        // A model in the catalogue Codex 0.169 carries, so it offers that model's tools, its
+        // freeform `apply_patch` among them: `gpt-5.3-codex` is not in it, and under it Codex
+        // offered nothing to write with (0.169.0's first recording). Only the name: every
+        // request goes to the stand-in.
         "codex" => [
             "model_provider=\"standin\"".to_owned(),
-            "model=\"gpt-5.3-codex\"".to_owned(),
+            format!("model=\"{CODEX_MODEL}\""),
             "model_providers.standin.name=\"stand-in\"".to_owned(),
             format!("model_providers.standin.base_url=\"{base_url}/v1\""),
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
@@ -620,6 +778,9 @@ fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+/// The model Codex is told it runs: one its own catalogue lists with a freeform `apply_patch`.
+const CODEX_MODEL: &str = "gpt-5.5";
 
 /// The variables that point a harness at the stand-in.
 fn model_env(harness: &str, base_url: &str, opencode_config: &Path) -> Vec<(String, String)> {
