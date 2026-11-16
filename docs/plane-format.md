@@ -135,8 +135,9 @@ its own plane:
   It runs whatever the reopen record says, so a screen never outlives its record.
   A killed write's temp file beside it goes too, once older than `chatscreens::LOCK_WAIT`.
 - the names of what a chat was handed, `.charter/app/chat-handed/<chat>.names`, last written
-  30 days or more before (`secrets::handedto::on_open`, #6309). A chat closed for good takes
-  its own with it.
+  30 days or more before (`secrets::handedto::on_open`, #6309), unless the chat is one the
+  reopen record will bring back, whose screen is still to be kept; where that record cannot
+  say which chats come back, none goes. A chat closed for good takes its own with it.
 - a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
@@ -7622,7 +7623,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   Kept only for a chat a dispatch record names as its worker; nothing of an ordinary chat is
   kept. `<ULID>` is the chat's own id.
 - **Format:** the screen's text, written whole through a temp file as a grade's kept chat is
-  (`keptscreen`), at most `keptscreen::MOST_SCREEN_BYTES`. Held to 200 screens and 256 MiB in
+  (`keptscreen`), at most `keptscreen::MOST_SCREEN_BYTES`. **Masked before it is written**
+  (#6309): each value purlis handed the chat (a vault value, a brokered credential, a runner
+  tool's value, a profile's sign-in, a page's fill or login) is shown as `‹secret: <key>›`,
+  the name of its vault entry and never the value, matched exactly in the text the screen
+  shows, as read, trimmed, and, for a value of several lines, whole and line by line
+  (`secrets::handedto`). A value, or a line of one, shorter than 4 bytes is not masked: as
+  `secrets::seen` rules, three characters or fewer is an ordinary word as often as a secret.
+  A screen that cannot be masked, or would take more than `handedto::MATCH_STEPS_AT_MOST`
+  window steps to look at, is not kept, never kept unmasked. Held to 200 screens and 256 MiB in
   all, the oldest going first. A file not named by a ULID with `.screen`, a link, or one too
   large is never shown.
 - **Status:** **internal** — **purlis only**. Written by the app as it closes a task's chat for
@@ -7654,21 +7663,28 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 
 ### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
 - **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
-  brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in or a browser fill
-  (#6309, parent #5820). A launch after a window crashed reads these entries again to mask
+  brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in, a browser fill or
+  a browser login (#6309, parent #5820), named before the value is handed. A launch after a window crashed reads these entries again to mask
   the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
   process took what it knew of the values with it. **Never a value**: the values themselves
   are known only in memory, as a keyed digest (`secrets::handedto`).
-- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>"}`, each entry
-  once, written whole through a temp file (mode 0600, its folder 0700) and read through no link.
-  A line that does not read is skipped.
-- **Status:** **internal** — **purlis only**. Written by the app as it hands a chat a value,
-  for every chat, and deleted as the chat closes for good. Denied a sandboxed chat's reading
+- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>"}`, and `"form"`
+  where the value was handed in another form than as read: `"dotenv-escaped"`, as a dotenv file
+  holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>,
+  "escaped": <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or
+  `"unrepeatable"`, a one-time code or a minted token, made once. Each entry and form once,
+  written whole through a temp file (mode 0600, its folder 0700) and read through no link.
+- **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
+  value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
+  named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
+  is ended as it starts. Denied a sandboxed chat's reading
   and writing under every harness: a chat that rewrote its own would choose what its kept
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
-  `retention::on_open`) once last written 30 days or more before. An entry that cannot be read
-  again without asking anybody (a vault whose provider asks macOS, an entry gone, a GitHub
-  App's token) leaves that task's screen not kept.
+  `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
+  will bring back. A file that does not read, a line in it that does not, a form that cannot be
+  made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
+  vault whose provider, or the provider of the vault a linked entry reads through, asks macOS;
+  an entry gone; a GitHub App's token) leave that task's screen not kept.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
   screen with what was handed before the crash unmasked, and nothing else is lost.
 - **Git:** gitignored (under `/.charter/`).
