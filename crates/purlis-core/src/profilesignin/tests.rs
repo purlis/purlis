@@ -428,8 +428,11 @@ mod billed {
         let machine = [record("work", Some(key))];
 
         assert_eq!(
-            billed(&profile("work", Source::Machine), &machine, &[]).as_deref(),
-            Some("your key · work key · waits for the key proxy")
+            billed(&profile("work", Source::Machine), &machine, &[]),
+            Some(format!(
+                "your key · work key · {}",
+                crate::window_copy::line::W118
+            ))
         );
         assert_eq!(
             billed(&profile("claude", Source::BuiltIn), &machine, &[]).as_deref(),
@@ -445,7 +448,8 @@ mod billed {
 }
 
 /// The operator's ruling of 2026-10-15 (#2151): a cloud's credentials reach its chat's harness
-/// in its process environment now; a key waits for the key proxy (#822).
+/// in its process environment now; a key in a vault is an old record, refused until it is
+/// copied to your keys (T1a-12, W118).
 mod handing {
     use super::*;
     use crate::profiles::{Profile, Source};
@@ -554,7 +558,7 @@ mod handing {
     }
 
     #[test]
-    fn a_key_profiles_chat_waits_for_the_key_proxy_and_says_so() {
+    fn an_old_key_records_chat_is_refused_until_it_is_copied_to_your_keys() {
         let (profile, machine) = signed_in(
             "claude",
             key_sign_in("ANTHROPIC_API_KEY", "vault:providers/anthropic"),
@@ -562,10 +566,13 @@ mod handing {
 
         let why = at_start(&profile, &machine, &[]).unwrap_err();
 
-        assert!(why.contains("waits for the key proxy"), "{why}");
+        assert!(why.contains(crate::window_copy::line::W118), "{why}");
         assert_eq!(
-            billed(&profile, &machine, &[]).as_deref(),
-            Some("your key · work key · waits for the key proxy"),
+            billed(&profile, &machine, &[]),
+            Some(format!(
+                "your key · work key · {}",
+                crate::window_copy::line::W118
+            )),
             "the picker says it before the start does"
         );
     }
@@ -683,4 +690,194 @@ fn a_sign_in_keeps_every_field_this_build_does_not_know() {
         again,
         serde_json::from_str::<serde_json::Value>(text).unwrap()
     );
+}
+
+/// T1a-12 (#6757): a profile names one declaration, or none for a subscription; a key profile is
+/// refused in words until the route exists (W117), and an old record until *Copy to your keys*
+/// exists (W118).
+mod declaration {
+    use super::*;
+    use crate::profiles::{Profile, Source};
+    use crate::profilestore::MachineProfile;
+    use crate::window_copy::line::{W117, W118};
+
+    fn new_shape(declaration: serde_json::Value, key: Option<&str>) -> SignIn {
+        let mut sign_in: SignIn = serde_json::from_value(serde_json::json!({
+            "kind": "api-key",
+            "declaration": declaration,
+        }))
+        .unwrap();
+        if let Some(key) = key {
+            sign_in
+                .rest
+                .insert("key".to_owned(), serde_json::json!(key));
+        }
+        sign_in
+    }
+
+    fn anthropic() -> serde_json::Value {
+        serde_json::json!({ "from": "built-in", "id": "anthropic" })
+    }
+
+    fn profile(name: &str) -> Profile {
+        Profile {
+            name: name.to_owned(),
+            kind: "claude".to_owned(),
+            harness: "claude".to_owned(),
+            command: vec!["claude".to_owned()],
+            env: Vec::new(),
+            source: Source::Machine,
+        }
+    }
+
+    #[test]
+    fn a_declaration_given_as_an_array_is_refused_by_the_sign_in_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let at = crate::profilestore::path(dir.path());
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(
+            &at,
+            serde_json::to_string(&serde_json::json!({
+                "version": 1,
+                "profiles": [
+                    {
+                        "name": "two-keys", "harness": "claude", "title": "two-keys",
+                        "folders": { "config": "/p/two-keys" },
+                        "sign_in": {
+                            "kind": "api-key",
+                            "declaration": [anthropic(), { "from": "yours", "id": "openai" }],
+                        },
+                    },
+                    {
+                        "name": "plan", "harness": "claude", "title": "plan",
+                        "folders": { "config": "/p/plan" },
+                        "sign_in": { "kind": "subscription" },
+                    },
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let machine: Vec<MachineProfile> =
+            crate::profilestore::list(dir.path()).expect("the rest of the file still loads");
+
+        assert_eq!(machine.len(), 2, "{machine:?}");
+        let why = at_start(&profile("two-keys"), &machine, &[]).unwrap_err();
+        assert!(why.contains("'two-keys'"), "{why}");
+        assert!(why.contains("names one declaration"), "{why}");
+        assert!(at_start(&profile("plan"), &machine, &[]).is_ok());
+    }
+
+    #[test]
+    fn a_subscription_profile_names_none() {
+        let mut plan: SignIn =
+            serde_json::from_value(serde_json::json!({ "kind": "subscription" })).unwrap();
+        assert_eq!(plan.check("claude"), Ok(()));
+        assert_eq!(plan.declaration(), Ok(None));
+
+        plan.rest.insert("declaration".to_owned(), anthropic());
+
+        let why = plan.check("claude").unwrap_err();
+        assert!(why.contains("names no declaration"), "{why}");
+    }
+
+    #[test]
+    fn a_key_profile_names_a_declaration_from_built_in_project_or_yours() {
+        for from in ["built-in", "project", "yours"] {
+            let sign_in = new_shape(serde_json::json!({ "from": from, "id": "x" }), None);
+            assert_eq!(sign_in.check("claude"), Ok(()), "{from}");
+        }
+        let why = new_shape(serde_json::json!({ "from": "elsewhere", "id": "x" }), None)
+            .check("claude")
+            .unwrap_err();
+        assert!(why.contains("built-in, project or yours"), "{why}");
+    }
+
+    #[test]
+    fn a_key_profile_is_refused_in_words_until_the_route_exists() {
+        let record = MachineProfile {
+            sign_in: Some(new_shape(anthropic(), Some("01JD6Y8ZQK3V4T5N6P7R8S9TAB"))),
+            ..record_named("work")
+        };
+
+        let machine = [record];
+
+        let why = at_start(&profile("work"), &machine, &[]).unwrap_err();
+
+        assert!(why.contains(W117), "{why}");
+        assert!(why.contains("Nothing was started"), "{why}");
+        assert!(
+            billed(&profile("work"), &machine, &[])
+                .unwrap()
+                .ends_with(W117)
+        );
+        // The grep check: no key profile is told to wait for a proxy any more.
+        let source = include_str!("../profilesignin.rs");
+        assert!(!source.contains("WAITS_FOR_THE_PROXY"));
+        assert!(!source.contains("#822"));
+    }
+
+    #[test]
+    fn an_old_record_is_refused_in_words_until_the_copy_exists() {
+        let record = MachineProfile {
+            sign_in: Some(key_sign_in(
+                "ANTHROPIC_API_KEY",
+                "vault:providers/anthropic",
+            )),
+            ..record_named("work")
+        };
+
+        let why = at_start(&profile("work"), &[record], &[]).unwrap_err();
+
+        assert!(why.contains(W118), "{why}");
+        assert!(why.contains("Nothing was started"), "{why}");
+    }
+
+    #[test]
+    fn an_old_record_is_refused_in_words_until_copy_to_your_keys() {
+        let record = MachineProfile {
+            sign_in: Some(key_sign_in(
+                "ANTHROPIC_API_KEY",
+                "vault:providers/anthropic",
+            )),
+            ..record_named("work")
+        };
+
+        let row = billed(&profile("work"), &[record], &[]).unwrap();
+
+        assert_eq!(row, format!("your key · work key · {W118}"));
+    }
+
+    #[test]
+    fn a_keyless_key_profile_is_unavailable_with_its_key_missing() {
+        let keyless = new_shape(anthropic(), None);
+        let keyed = new_shape(anthropic(), Some("01JD6Y8ZQK3V4T5N6P7R8S9TAB"));
+
+        assert_eq!(
+            keyless.card_state(),
+            CardState::Unavailable(Unavailable::KeyMissing)
+        );
+        assert_eq!(keyless.card_state().to_string(), "unavailable: key missing");
+        assert_eq!(keyed.card_state(), CardState::Available);
+    }
+
+    fn record_named(name: &str) -> MachineProfile {
+        MachineProfile {
+            name: name.to_owned(),
+            harness: "claude".to_owned(),
+            title: name.to_owned(),
+            folders: crate::profilestore::Folders {
+                config: "/profiles/work/config".into(),
+                data: None,
+            },
+            adopted: None,
+            imported: None,
+            sign_in: None,
+            pinned: None,
+            sandbox_only: false,
+            kept_for: None,
+            rest: Default::default(),
+        }
+    }
 }
