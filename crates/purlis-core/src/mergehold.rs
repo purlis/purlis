@@ -240,8 +240,10 @@ pub fn held(cmd: &str) -> Option<Held> {
 /// value-taking shorthand at a cluster's end the next argument, so `gh pr merge 12 -st -h`
 /// squash-merges with the subject `-h`.
 pub fn asks_for_help(cmd: &str) -> bool {
+    // The quotes are written as escapes: a bare double quote in a char literal is read as a
+    // string's start by the readers that scan this source for messages (`windowControls.test.ts`).
     if cmd.contains([
-        '$', '{', '}', '*', '?', '[', '`', '\\', '(', ')', '<', '>', '~', '\'', '"',
+        '$', '{', '}', '*', '?', '[', '`', '\\', '(', ')', '<', '>', '~', '\u{27}', '\u{22}',
     ]) {
         return false;
     }
