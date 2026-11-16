@@ -104,7 +104,7 @@ pub const REFUSALS_KEPT: usize = 8;
 pub const MORE_COUNTED_AT_MOST: usize = 1024;
 
 /// The most a request's head may be before it is refused.
-const HEAD_MAX: usize = 16 * 1024;
+pub(super) const HEAD_MAX: usize = 16 * 1024;
 
 /// How long a failing accept waits before it tries again.
 const BACKOFF: Duration = Duration::from_millis(100);
@@ -1645,50 +1645,70 @@ fn socks_answer(code: u8) -> [u8; 10] {
 /// Reads the greeting, answers it, and reads the request: the host and port a `CONNECT` names,
 /// or the reply code that refuses what it asked. `None` where the client said nothing a SOCKS5
 /// client says, or not in time: the connection is closed with no reply.
-fn socks_request(client: &mut TcpStream, deadline: Instant) -> Option<Result<(String, u16), u8>> {
-    let [version, methods] = read_exact::<2>(client, deadline)?;
+pub(super) fn socks_request(
+    client: &mut impl SocksClient,
+    deadline: Instant,
+) -> Option<Result<(String, u16), u8>> {
+    let [version, methods] = take::<2>(client, deadline)?;
     if version != SOCKS_VERSION || methods == 0 {
         return None;
     }
     let mut offered = [0u8; 255];
-    read_into(client, &mut offered[..usize::from(methods)], deadline)?;
+    client.fill(&mut offered[..usize::from(methods)], deadline)?;
     if !offered[..usize::from(methods)].contains(&NO_AUTH) {
-        let _ = client.write_all(&[SOCKS_VERSION, NO_METHOD]);
+        let _ = client.send(&[SOCKS_VERSION, NO_METHOD]);
         return None;
     }
-    client.write_all(&[SOCKS_VERSION, NO_AUTH]).ok()?;
-    let [version, command, _, kind] = read_exact::<4>(client, deadline)?;
+    client.send(&[SOCKS_VERSION, NO_AUTH]).ok()?;
+    let [version, command, _, kind] = take::<4>(client, deadline)?;
     if version != SOCKS_VERSION {
         return None;
     }
     let host = match kind {
-        1 => std::net::Ipv4Addr::from(read_exact::<4>(client, deadline)?).to_string(),
+        1 => std::net::Ipv4Addr::from(take::<4>(client, deadline)?).to_string(),
         3 => {
-            let [len] = read_exact::<1>(client, deadline)?;
+            let [len] = take::<1>(client, deadline)?;
             let mut name = [0u8; 255];
             let name = &mut name[..usize::from(len)];
-            read_into(client, name, deadline)?;
+            client.fill(name, deadline)?;
             match std::str::from_utf8(name) {
-                Ok(name) if !name.is_empty() && name.bytes().all(|b| b.is_ascii_graphic()) => {
-                    name.to_owned()
-                }
+                Ok(name) if sent_as_a_name(name) => name.to_owned(),
                 _ => return Some(Err(reply::ADDRESS_NOT_SUPPORTED)),
             }
         }
-        4 => std::net::Ipv6Addr::from(read_exact::<16>(client, deadline)?).to_string(),
+        4 => std::net::Ipv6Addr::from(take::<16>(client, deadline)?).to_string(),
         _ => return Some(Err(reply::ADDRESS_NOT_SUPPORTED)),
     };
-    let port = u16::from_be_bytes(read_exact::<2>(client, deadline)?);
+    let port = u16::from_be_bytes(take::<2>(client, deadline)?);
     if command != 1 {
         return Some(Err(reply::COMMAND_NOT_SUPPORTED));
     }
     Some(Ok((host, port)))
 }
 
-/// `N` bytes from `client`, all of them before `deadline`.
-fn read_exact<const N: usize>(client: &mut TcpStream, deadline: Instant) -> Option<[u8; N]> {
+/// What [`socks_request`] reads a client's greeting and request from, and answers the greeting
+/// on: a client's connection, or, for the fuzz targets (`fuzz/`), bytes in memory.
+pub(super) trait SocksClient {
+    /// Fills `buf` before `deadline`, or `None`.
+    fn fill(&mut self, buf: &mut [u8], deadline: Instant) -> Option<()>;
+    /// Sends `bytes` whole.
+    fn send(&mut self, bytes: &[u8]) -> io::Result<()>;
+}
+
+impl SocksClient for TcpStream {
+    fn fill(&mut self, buf: &mut [u8], deadline: Instant) -> Option<()> {
+        read_into(self, buf, deadline)
+    }
+
+    fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.write_all(bytes)
+    }
+}
+
+/// `N` bytes from a SOCKS client, all of them before `deadline`.
+fn take<const N: usize>(client: &mut impl SocksClient, deadline: Instant) -> Option<[u8; N]> {
     let mut buf = [0u8; N];
-    read_into(client, &mut buf, deadline)?;
+    client.fill(&mut buf, deadline)?;
     Some(buf)
 }
 
@@ -1712,16 +1732,21 @@ fn read_into(client: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Optio
 
 /// Whether a `Host` header's `named` is `host` on `port`.
 pub(super) fn same_host(named: &str, host: &str, port: u16) -> bool {
-    let (name, named_port) = match named.rsplit_once(':') {
-        Some((name, port)) if !name.ends_with(']') || name.starts_with('[') => {
-            (name, port.parse().ok())
-        }
-        _ => (named, None),
+    let (name, named_port) = match named.strip_prefix('[') {
+        // An IPv6 address, whose colons are inside its brackets: a port only after them.
+        Some(rest) => match rest.split_once(']') {
+            Some((inside, "")) => (inside, None),
+            Some((inside, after)) => match after.strip_prefix(':') {
+                Some(port) => (inside, port.parse().ok()),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match named.rsplit_once(':') {
+            Some((name, port)) => (name, port.parse().ok()),
+            None => (named, None),
+        },
     };
-    let name = name
-        .strip_prefix('[')
-        .and_then(|it| it.strip_suffix(']'))
-        .unwrap_or(name);
     let name = name.strip_suffix('.').unwrap_or(name);
     let host = host.strip_suffix('.').unwrap_or(host);
     name.eq_ignore_ascii_case(host) && named_port.unwrap_or(80) == port
@@ -1809,7 +1834,7 @@ impl Request {
             return None;
         }
         if method == "CONNECT" {
-            let (host, port) = host_port(target)?;
+            let (host, port) = authority_of(target, None)?;
             return Some(Self {
                 host,
                 port,
@@ -1827,13 +1852,7 @@ impl Request {
             Some(at) => (&after[..at], &after[at..]),
             None => (after, "/"),
         };
-        let (host, port) = match authority.rsplit_once(':') {
-            Some(_) => host_port(authority)?,
-            None => (authority.to_owned(), 80),
-        };
-        if host.is_empty() || authority.contains('@') {
-            return None;
-        }
+        let (host, port) = authority_of(authority, Some(80))?;
         let body = match lengths[..] {
             [] => 0,
             [length] if !length.is_empty() && length.bytes().all(|b| b.is_ascii_digit()) => {
@@ -1872,18 +1891,56 @@ fn is_token(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
 }
 
-/// `host:port`, with an IPv6 literal's brackets taken off.
-fn host_port(authority: &str) -> Option<(String, u16)> {
-    let (host, port) = authority.rsplit_once(':')?;
-    let host = host
-        .strip_prefix('[')
-        .and_then(|it| it.strip_suffix(']'))
-        .unwrap_or(host);
-    if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
+/// **A request's authority, `host[:port]`, spelled as a URL client sends one**, with an IPv6
+/// address's brackets taken off; `None` for any other spelling, so the host the proxy judges is
+/// the host curl and Node meant (T1.1-47, `docs/fuzzing.md`). The host is [`sent_as_a_name`] or a
+/// bracketed IPv6 address, and the port is not 0. `default` is the port of an authority that
+/// names none; a `CONNECT`'s always names one.
+fn authority_of(authority: &str, default: Option<u16>) -> Option<(String, u16)> {
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(rest) => {
+            let (inside, after) = rest.split_once(']')?;
+            inside.parse::<std::net::Ipv6Addr>().ok()?;
+            (inside, after)
+        }
+        None => {
+            let end = authority.find(':').unwrap_or(authority.len());
+            let (host, after) = authority.split_at(end);
+            if !sent_as_a_name(host) {
+                return None;
+            }
+            (host, after)
+        }
+    };
+    let port = match port.strip_prefix(':') {
+        Some(port) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            port.parse().ok()?
+        }
+        None if port.is_empty() => default?,
+        _ => return None,
+    };
+    // Port 0 is no site's: nothing listens on it, and nothing names a site on it.
+    (port != 0).then(|| (host.to_owned(), port))
+}
+
+/// **Whether `host` is a name or an IPv4 address as a URL client sends one**: a dotted IPv4
+/// address, or a name of labels of letters, digits, `-` and `_`, none empty, with one final dot
+/// at most, that does not end in a number. A name
+/// that does is an IPv4 address in another notation to curl, to Node and to the resolver
+/// (`0x7f.1`, `2130706433`: WHATWG's "ends in a number"), and any other byte is one no URL's host
+/// is sent with (`1.2.3.4<tab>.github.com`, `evil.test@x.example.com`), so neither is read as a
+/// name a listed `*.suffix` could match.
+pub(super) fn sent_as_a_name(host: &str) -> bool {
+    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
     }
-    let port = port.parse().ok()?;
-    (!host.is_empty()).then(|| (host.to_owned(), port))
+    let name = host.strip_suffix('.').unwrap_or(host);
+    name.split('.').all(|label| {
+        !label.is_empty()
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    }) && !super::hosts::ends_in_a_number(&name.to_ascii_lowercase())
 }
 
 /// What a connect came to.

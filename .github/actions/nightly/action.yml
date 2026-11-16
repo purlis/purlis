@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -33,6 +33,13 @@ runs:
       uses: ./.github/actions/macos-sandbox-tests
       with:
         purlis-app: "true"
+    # The parsers' fuzz targets, each fuzzed from its committed seeds for five minutes (T1.1-47,
+    # `docs/fuzzing.md`). A crash is a public issue; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301).
+    - if: inputs.entry == 'fuzz-parsers'
+      uses: ./.github/actions/fuzz-parsers
+      with:
+        seconds: "300"
     # Each harness re-recorded against the stand-in model (T1.1-03), at its pinned version and at
     # its latest release, and diffed against its checked-in recording, in two entries each: the
     # ordinary one opens `harness-drift` issues and is red on a failed install, build or

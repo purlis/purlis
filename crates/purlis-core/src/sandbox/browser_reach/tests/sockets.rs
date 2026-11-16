@@ -159,7 +159,6 @@ fn a_private_a_metadata_and_a_loopback_address_are_refused() {
         format!("CONNECT 127.0.0.1:{other} HTTP/1.1\r\n\r\n"),
         format!("CONNECT 127.0.0.2:{port} HTTP/1.1\r\n\r\n"),
         format!("CONNECT [::ffff:127.0.0.1]:{port} HTTP/1.1\r\n\r\n"),
-        format!("CONNECT 2130706433:{port} HTTP/1.1\r\n\r\n"),
     ] {
         let mut client = to(&proxy);
         assert_eq!(
@@ -168,6 +167,14 @@ fn a_private_a_metadata_and_a_loopback_address_are_refused() {
             "{request}"
         );
     }
+    // An address in another notation is no host a client sends: refused as it is read (T1.1-47).
+    assert_eq!(
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT 2130706433:{port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 400 Bad Request"
+    );
     assert!(nobody_connected(&listener));
     assert!(nobody_connected(&unnamed));
 }

@@ -427,6 +427,25 @@ fn a_plain_request_whose_host_header_names_another_host_is_refused() {
 }
 
 #[test]
+fn a_host_header_naming_an_ipv6_address_in_brackets_is_its_targets_host() {
+    // `http://[::1]/` is sent with `Host: [::1]`: its last colon is inside the brackets.
+    for (named, host, port, same) in [
+        ("[::1]", "::1", 80, true),
+        ("[::1]:8080", "::1", 8080, true),
+        ("[::1]:8080", "::1", 80, false),
+        ("[::1]", "::2", 80, false),
+        ("[::1]x", "::1", 80, false),
+        ("[::1", "::1", 80, false),
+        ("::1", "::1", 80, false),
+        ("Example.com.:8080", "example.com", 8080, true),
+        ("example.com", "example.com", 80, true),
+        ("example.com", "example.com", 8080, false),
+    ] {
+        assert_eq!(super::same_host(named, host, port), same, "{named:?}");
+    }
+}
+
+#[test]
 fn a_plain_request_carries_its_body_and_nothing_after_it() {
     let (listener, port) = an_echo_server();
     let upstream = std::thread::spawn(move || {
@@ -1937,5 +1956,144 @@ fn a_timed_out_hold_tells_the_chat_it_is_a_block_and_a_retry_asks_again() {
         said,
         "purlis's sandbox does not allow api.example.com:443: nobody answered in time; this \
          is now a block. Run the command again to ask again."
+    );
+}
+
+/// The host and port `head` names, as the proxy reads it before judging it: `None` for a `400`.
+fn read_as(head: &str) -> Option<(String, u16)> {
+    super::Request::parse(head).map(|request| (request.host, request.port))
+}
+
+#[test]
+fn a_host_no_url_client_sends_is_refused_before_it_is_judged() {
+    // Found by the differential fuzz target (T1.1-47): each was read as a host no URL parser
+    // reads, so `*.github.com` matched a name curl and Node would never have asked for. The
+    // name dialled is the one judged, so none reached another host, but none is a host either.
+    for head in [
+        "CONNECT 1.2.3.4\t.github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT evil.test\0.github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT evil.test@x.example.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT evil.test%2f.github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT ::1:443 HTTP/1.1\r\n\r\n",
+        "CONNECT [evil.test]:443 HTTP/1.1\r\n\r\n",
+        "GET http://evil.test?.github.com/ HTTP/1.1\r\nHost: evil.test?.github.com\r\n\r\n",
+        "GET http://evil.test#.github.com/ HTTP/1.1\r\nHost: evil.test#.github.com\r\n\r\n",
+        "GET http://evil.test\\.github.com/ HTTP/1.1\r\nHost: evil.test\\.github.com\r\n\r\n",
+        "GET http://[evil.test]/ HTTP/1.1\r\nHost: [evil.test]\r\n\r\n",
+        // An empty label: `a..` was judged as one site and written back as another
+        // (`fuzz_browser_reach_request_head`).
+        "CONNECT a.github.com..:443 HTTP/1.1\r\n\r\n",
+        "CONNECT a..github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT .github.com:443 HTTP/1.1\r\n\r\n",
+        // Port 0, which no site is on (`fuzz_browser_reach_request_head`).
+        "CONNECT github.com:0 HTTP/1.1\r\n\r\n",
+        "GET http://example.com:0/ HTTP/1.1\r\nHost: example.com:0\r\n\r\n",
+    ] {
+        assert_eq!(read_as(head), None, "{head:?}");
+    }
+}
+
+#[test]
+fn a_host_that_ends_in_a_number_is_refused_unless_it_is_an_ipv4_address() {
+    // `0x7f.1` and `2130706433` are 127.0.0.1 to curl, to Node and to the resolver (WHATWG's
+    // "ends in a number"); the proxy read them as names.
+    for head in [
+        "CONNECT 0x7f.1:443 HTTP/1.1\r\n\r\n",
+        // Hex in either case (`differential_host_parse_against_curl_and_node`).
+        "CONNECT 0X7F000001:443 HTTP/1.1\r\n\r\n",
+        "CONNECT 2130706433:443 HTTP/1.1\r\n\r\n",
+        "CONNECT 127.1:443 HTTP/1.1\r\n\r\n",
+        "CONNECT a.github.com.1:443 HTTP/1.1\r\n\r\n",
+        "GET http://0x7f.1/ HTTP/1.1\r\nHost: 0x7f.1\r\n\r\n",
+    ] {
+        assert_eq!(read_as(head), None, "{head:?}");
+    }
+    assert_eq!(
+        read_as("CONNECT 127.0.0.1:443 HTTP/1.1\r\n\r\n"),
+        Some(("127.0.0.1".to_owned(), 443))
+    );
+}
+
+#[test]
+fn a_host_a_client_sends_is_read_as_it_sends_it() {
+    for (head, host, port) in [
+        ("CONNECT github.com:443 HTTP/1.1\r\n\r\n", "github.com", 443),
+        (
+            "CONNECT GitHub.com.:443 HTTP/1.1\r\n\r\n",
+            "GitHub.com.",
+            443,
+        ),
+        ("CONNECT [::1]:8443 HTTP/1.1\r\n\r\n", "::1", 8443),
+        (
+            "CONNECT _dmarc.example.com:443 HTTP/1.1\r\n\r\n",
+            "_dmarc.example.com",
+            443,
+        ),
+        (
+            "CONNECT xn--nxasmq6b.com:443 HTTP/1.1\r\n\r\n",
+            "xn--nxasmq6b.com",
+            443,
+        ),
+        (
+            "GET http://[::1]/x HTTP/1.1\r\nHost: [::1]\r\n\r\n",
+            "::1",
+            80,
+        ),
+        (
+            "GET http://example.com:8080/x HTTP/1.1\r\nHost: example.com:8080\r\n\r\n",
+            "example.com",
+            8080,
+        ),
+    ] {
+        assert_eq!(read_as(head), Some((host.to_owned(), port)), "{head:?}");
+    }
+}
+
+/// A SOCKS client's bytes in memory.
+struct Sent<'a>(&'a [u8]);
+
+impl super::SocksClient for Sent<'_> {
+    fn fill(&mut self, buf: &mut [u8], _deadline: std::time::Instant) -> Option<()> {
+        let (now, rest) = self.0.split_at_checked(buf.len())?;
+        buf.copy_from_slice(now);
+        self.0 = rest;
+        Some(())
+    }
+
+    fn send(&mut self, _bytes: &[u8]) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// What the proxy's SOCKS port reads of a `CONNECT` to the name `name` on 443.
+fn socks_reads(name: &[u8]) -> Option<Result<(String, u16), u8>> {
+    let mut bytes = vec![5, 1, 0, 5, 1, 0, 3, u8::try_from(name.len()).unwrap()];
+    bytes.extend_from_slice(name);
+    bytes.extend_from_slice(&443u16.to_be_bytes());
+    super::socks_request(
+        &mut Sent(&bytes),
+        std::time::Instant::now() + Duration::from_secs(5),
+    )
+}
+
+#[test]
+fn a_socks_name_no_url_client_sends_is_refused() {
+    for name in [
+        &b"evil.test@x.example.com"[..],
+        b"evil.test/.github.com",
+        b"0x7f.1",
+        b"2130706433",
+        b"::1",
+    ] {
+        assert_eq!(
+            socks_reads(name),
+            Some(Err(super::reply::ADDRESS_NOT_SUPPORTED)),
+            "{:?}",
+            String::from_utf8_lossy(name)
+        );
+    }
+    assert_eq!(
+        socks_reads(b"github.com"),
+        Some(Ok(("github.com".to_owned(), 443)))
     );
 }

@@ -1,0 +1,6 @@
+http://xn--nxasmq6b.com/
+GET http://xn--nxasmq6b.com/ HTTP/1.1
+Host: xn--nxasmq6b.com
+proxy-connection: close
+Connection: close
+
