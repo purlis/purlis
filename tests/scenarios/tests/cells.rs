@@ -17,7 +17,7 @@ use purlis_scenarios::model::{
 };
 use purlis_scenarios::plan::{Scheduled, Trigger, production_set, profile, schedule};
 use purlis_scenarios::root;
-use purlis_scenarios::timings::{Ticket1Fixture, TimingsCatalogue, catalogue};
+use purlis_scenarios::timings::catalogue;
 use purlis_scenarios::validate::{Pins, RowTable, Validator};
 use serde_json::{Value, json};
 
@@ -85,7 +85,7 @@ fn run(dialect: Dialect, leg: Leg, timings: TimingsMode) -> Run {
         os: Os::Linux,
         leg,
         timings,
-        seconds: Ticket1Fixture.seconds_at(factor),
+        seconds: catalogue().seconds_at(factor),
     }
 }
 
@@ -788,11 +788,11 @@ fn a_cell_missing_a_kind_its_row_states_fails_validation() {
     );
 }
 
-// ---- the timings fixture stands in for ticket 1 ----------------------------------------------
+// ---- the timings catalogue is ticket 1's ---------------------------------------------------
 
 #[test]
-fn the_ticket_1_fixture_keeps_holds_tie_with_the_hook_timeout_production_only() {
-    let cat = Ticket1Fixture;
+fn the_catalogue_keeps_holds_tie_with_the_hook_timeout_production_only() {
+    let cat = catalogue();
     assert!(cat.production_only_members().contains("hold"));
     assert!(cat.production_only_members().contains("HOOK_TIMEOUT"));
     let scaled = cat.seconds_at(0.5);
@@ -801,6 +801,39 @@ fn the_ticket_1_fixture_keeps_holds_tie_with_the_hook_timeout_production_only() 
         scaled["HOOK_TIMEOUT"], 60.0,
         "out of process, so never scaled"
     );
+}
+
+/// **The catalogue is purlis-core's `Timings`** (T1.1-01): every field at its production value,
+/// every out-of-process duration at its real one and never scaled, no name core does not have,
+/// and the `production_only` pairs core declares.
+#[test]
+fn the_catalogue_is_purlis_cores_timings() {
+    use purlis_core::sandbox::timings::{FIELDS, OUT_OF_PROCESS, PAIRS, Timings, id_of};
+    let cat = catalogue();
+    let production = Timings::production();
+    let seconds = cat.production_seconds();
+    let unscaled = cat.unscaled();
+    for one in &FIELDS {
+        let want = production
+            .duration(one.field)
+            .map_or(production.throttle_per_chat as f64, |at| at.as_secs_f64());
+        assert_eq!(seconds.get(one.field), Some(&want), "{}", one.field);
+    }
+    for (id, _, at) in OUT_OF_PROCESS {
+        assert_eq!(seconds.get(id), Some(&at.as_secs_f64()), "{id}");
+        assert!(unscaled.contains(id), "{id} runs at real time");
+    }
+    assert_eq!(
+        seconds.len(),
+        FIELDS.len() + OUT_OF_PROCESS.len(),
+        "no name core does not have: {seconds:?}"
+    );
+    let pairs: Vec<(&str, &str)> = PAIRS
+        .iter()
+        .filter(|pair| pair.production_only)
+        .map(|pair| (id_of(pair.left), id_of(pair.right)))
+        .collect();
+    assert_eq!(cat.production_only_pairs(), pairs);
 }
 
 // ---- review of #6911 -------------------------------------------------------------------------

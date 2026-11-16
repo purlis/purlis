@@ -133,24 +133,62 @@ pub struct Declared {
     pub alone: Option<&'static str>,
 }
 
-/// The hook sender's wait for the app to let go of its line (`hookwire`'s
-/// `A_NOTICE_IS_SEEN_WITHIN`): out of process, so never scaled.
-const HOOK_SENDERS_WAIT: Side = Side::Fixed(
-    "the hook sender's wait",
-    crate::hookwire::A_NOTICE_IS_SEEN_WITHIN,
-);
+/// **The out-of-process durations**, each by the identifier a cell's Timings expression names
+/// it by, what it is, and its real value: they run at real time in the suite, never scaled.
+pub const OUT_OF_PROCESS: [(&str, &str, Duration); 5] = [
+    // The hook's own timeout (`harness::hooked::HOOK_TIMEOUT`).
+    (
+        "HOOK_TIMEOUT",
+        "HOOK_TIMEOUT",
+        crate::harness::hooked::HOOK_TIMEOUT,
+    ),
+    // How long a hook sender may spend writing its line (`hookwire`'s `A_NOTICE_TAKES_AT_MOST`).
+    (
+        "hook_receipt",
+        "the hook sender's receipt",
+        crate::hookwire::A_NOTICE_TAKES_AT_MOST,
+    ),
+    // The hook sender's wait for the app to let go of its line (`A_NOTICE_IS_SEEN_WITHIN`).
+    (
+        "hook_senders_wait",
+        "the hook sender's wait",
+        crate::hookwire::A_NOTICE_IS_SEEN_WITHIN,
+    ),
+    // The Linux supervisor's window (`purlis_linux_sandbox::refusal::WINDOW`).
+    (
+        "supervisor_window",
+        "the Linux supervisor's WINDOW",
+        purlis_linux_sandbox::refusal::WINDOW,
+    ),
+    // The harness's own Bash timeout ([`HARNESS_BASH_TIMEOUT`]).
+    (
+        "bash_timeout",
+        "the harness's Bash timeout",
+        HARNESS_BASH_TIMEOUT,
+    ),
+];
 
-/// The hook's own timeout ([`crate::harness::hooked::HOOK_TIMEOUT`]): out of process.
-const HOOK_TIMEOUT: Side = Side::Fixed("HOOK_TIMEOUT", crate::harness::hooked::HOOK_TIMEOUT);
+/// The side of a pair that is out-of-process duration `n` of [`OUT_OF_PROCESS`].
+const fn fixed(n: usize) -> Side {
+    Side::Fixed(OUT_OF_PROCESS[n].1, OUT_OF_PROCESS[n].2)
+}
 
-/// The Linux supervisor's window (`purlis_linux_sandbox::refusal::WINDOW`): out of process.
-const SUPERVISOR_WINDOW: Side = Side::Fixed(
-    "the Linux supervisor's WINDOW",
-    purlis_linux_sandbox::refusal::WINDOW,
-);
+const HOOK_TIMEOUT: Side = fixed(0);
+const HOOK_SENDERS_WAIT: Side = fixed(2);
+const SUPERVISOR_WINDOW: Side = fixed(3);
+const BASH_TIMEOUT: Side = fixed(4);
 
-/// The harness's own Bash timeout ([`HARNESS_BASH_TIMEOUT`]): out of process.
-const BASH_TIMEOUT: Side = Side::Fixed("the harness's Bash timeout", HARNESS_BASH_TIMEOUT);
+/// **The identifier a cell names `side` by**: a field's own name, or an out-of-process
+/// duration's identifier in [`OUT_OF_PROCESS`].
+pub fn id_of(side: Side) -> &'static str {
+    match side {
+        Side::Field(field) => field,
+        Side::Fixed(what, _) => OUT_OF_PROCESS
+            .iter()
+            .find(|(_, named, _)| *named == what)
+            .map_or(what, |(id, _, _)| id),
+    }
+}
 
 /// **Every declared pair** (module docs).
 pub const PAIRS: [Pair; 9] = [

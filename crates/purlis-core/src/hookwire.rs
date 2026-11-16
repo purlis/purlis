@@ -3878,9 +3878,10 @@ fn one_line_with_a_deadline(
 }
 
 /// How long [`tell`] and [`tell_saved`] may spend writing their line: a line is under 4 KiB and the app reads it on
-/// a thread of its own, so this is only a bound on an app that has stopped reading.
-#[cfg(unix)]
-const A_NOTICE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_millis(250);
+/// a thread of its own, so this is only a bound on an app that has stopped reading. Out of
+/// process: [`crate::sandbox::timings::OUT_OF_PROCESS`] names it, unscaled.
+pub(crate) const A_NOTICE_TAKES_AT_MOST: std::time::Duration =
+    std::time::Duration::from_millis(250);
 
 /// How long a notice's sender stays, all told, for the app to look at who sent it and let the
 /// connection go (D-1407-10). Spent in full only on an app that has stopped reading. Out of

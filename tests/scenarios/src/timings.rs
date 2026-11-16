@@ -5,13 +5,13 @@
 //! `delay` and a `within` mark's observed range are written in Timings units: `hold+1`,
 //! `2*group`, `500ms`, `throttle_window-5s`. A bare number is seconds.
 //!
-//! **Which names exist, and which pairs are `production_only`, is ticket 1's (T1.1-01)**, which
-//! is built in parallel. Until it lands, [`catalogue`] answers from [`Ticket1Fixture`], the
-//! fields, defaults and pairs as T1.1-01's ticket lists them. When `Timings` is in purlis-core,
-//! [`TimingsCatalogue`] is implemented over it and [`catalogue`] returns that; nothing else here
-//! changes.
+//! **Which names exist, and which pairs are `production_only`, is purlis-core's `Timings`
+//! (T1.1-01)**: [`catalogue`] answers from it ([`CoreTimings`]), so a cell names only what core
+//! declares, at the values core ships.
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use purlis_core::sandbox::timings::{FIELDS, OUT_OF_PROCESS, PAIRS, Timings, id_of};
 
 /// **What the cells format needs to know of `Timings`.**
 pub trait TimingsCatalogue {
@@ -50,66 +50,53 @@ pub trait TimingsCatalogue {
     }
 }
 
-/// **T1.1-01's `Timings` as its ticket lists it**, standing in until the type exists.
-///
-/// In-process fields: `hold` 60 s, `group` 2 s, `quiet_hold` 15 min, `throttle_window` 60 s,
-/// `throttle_per_chat` 10 (a count), `patience` 30 s, `teller_patience` 2 s, `head` 30 s,
-/// `idle` 600 s, `tally_window` 60 s, `tally_tick` 5 s. Out of process, at real time:
-/// `HOOK_TIMEOUT` 60 s, `hook_receipt` 250 ms, the Linux supervisor's `supervisor_window`
-/// 60 s, and the harness's Bash timeout `bash_timeout` 120 s (Q300). Its `production_only`
-/// pairs: `hold` against `HOOK_TIMEOUT`, and `throttle_window` and `hold` against
-/// `supervisor_window`.
+/// **purlis-core's `Timings` as the cells format reads it**: each field of
+/// `Timings::production()` by its name (`throttle_per_chat` a count), each out-of-process duration
+/// by its identifier in `OUT_OF_PROCESS`, and the pairs `PAIRS` marks `production_only`.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Ticket1Fixture;
+pub struct CoreTimings;
 
-impl TimingsCatalogue for Ticket1Fixture {
+impl TimingsCatalogue for CoreTimings {
     fn production_seconds(&self) -> BTreeMap<&'static str, f64> {
-        [
-            ("hold", 60.0),
-            ("group", 2.0),
-            ("quiet_hold", 900.0),
-            ("throttle_window", 60.0),
-            ("throttle_per_chat", 10.0),
-            ("patience", 30.0),
-            ("teller_patience", 2.0),
-            ("head", 30.0),
-            ("idle", 600.0),
-            ("tally_window", 60.0),
-            ("tally_tick", 5.0),
-            ("HOOK_TIMEOUT", 60.0),
-            ("hook_receipt", 0.25),
-            ("supervisor_window", 60.0),
-            ("bash_timeout", 120.0),
-        ]
-        .into_iter()
-        .collect()
+        let production = Timings::production();
+        FIELDS
+            .iter()
+            .map(|one| {
+                let secs = production
+                    .duration(one.field)
+                    .map_or(production.throttle_per_chat as f64, |at| at.as_secs_f64());
+                (one.field, secs)
+            })
+            .chain(
+                OUT_OF_PROCESS
+                    .iter()
+                    .map(|(id, _, at)| (*id, at.as_secs_f64())),
+            )
+            .collect()
     }
 
     fn unscaled(&self) -> BTreeSet<&'static str> {
-        [
-            "throttle_per_chat",
-            "HOOK_TIMEOUT",
-            "hook_receipt",
-            "supervisor_window",
-            "bash_timeout",
-        ]
-        .into_iter()
-        .collect()
+        let production = Timings::production();
+        FIELDS
+            .iter()
+            .map(|one| one.field)
+            .filter(|field| production.duration(field).is_none())
+            .chain(OUT_OF_PROCESS.iter().map(|(id, _, _)| *id))
+            .collect()
     }
 
     fn production_only_pairs(&self) -> Vec<(&'static str, &'static str)> {
-        vec![
-            ("hold", "HOOK_TIMEOUT"),
-            ("throttle_window", "supervisor_window"),
-            ("hold", "supervisor_window"),
-        ]
+        PAIRS
+            .iter()
+            .filter(|pair| pair.production_only)
+            .map(|pair| (id_of(pair.left), id_of(pair.right)))
+            .collect()
     }
 }
 
-/// The catalogue the validator reads. **Hook-up for T1.1-01:** return purlis-core's `Timings`
-/// catalogue here and delete [`Ticket1Fixture`].
+/// The catalogue the validator reads: purlis-core's `Timings`.
 pub fn catalogue() -> Box<dyn TimingsCatalogue> {
-    Box::new(Ticket1Fixture)
+    Box::new(CoreTimings)
 }
 
 /// **One term of an expression**: a literal in seconds, or a name times a factor.
