@@ -639,7 +639,11 @@ fn a_value_escaped_in_a_dotenv_file_is_handed_under_its_entry_as_escaped() {
         handed,
         [
             ("cert", &Form::AsRead, "FAKE-LINE-0022\nFAKE-LINE-0023"),
-            ("cert", &Form::DotenvEscaped, "FAKE-LINE-0022\\nFAKE-LINE-0023"),
+            (
+                "cert",
+                &Form::DotenvEscaped,
+                "FAKE-LINE-0022\\nFAKE-LINE-0023"
+            ),
         ]
     );
 }

@@ -414,7 +414,12 @@ fn a_value_sent_for_a_run_on_a_runner_masks_its_chat_s_kept_screen() {
     let (tools, _gone, _reads, _owned, decided) = a_run_deciding(Duration::from_secs(60));
     let asked = the_run_asked(&tools);
     tools.answer(6, asked.run, true);
-    assert!(decided.recv_timeout(Duration::from_secs(10)).unwrap().is_ok());
+    assert!(
+        decided
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .is_ok()
+    );
 
     assert_eq!(
         purlis_core::secrets::handedto::masked_for(a_project(), 6, "got v-kubeconfig", &|_| None)

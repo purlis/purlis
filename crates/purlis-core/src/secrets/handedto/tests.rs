@@ -62,7 +62,13 @@ fn a_value_of_several_lines_printed_by_cat_is_masked_whole() {
 fn a_value_of_several_lines_cat_printed_is_masked_in_the_terminal_s_own_snapshot() {
     use crate::engine::{AlacrittyEngine, Engine, Size};
     let value = "FAKE-LINE-ONE-0014\nFAKE-LINE-TWO-0014\n";
-    let mut terminal = AlacrittyEngine::new(Size { columns: 80, rows: 10 }, 100);
+    let mut terminal = AlacrittyEngine::new(
+        Size {
+            columns: 80,
+            rows: 10,
+        },
+        100,
+    );
     // What `cat` wrote, as the terminal's line discipline hands it on (ONLCR).
     terminal.advance(b"$ cat kubeconfig\r\n");
     terminal.advance(value.replace('\n', "\r\n").as_bytes());
@@ -145,7 +151,13 @@ fn a_project() -> (tempfile::TempDir, PathBuf) {
 fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
     let (_dir, root) = a_project();
     let (_other_dir, another) = a_project();
-    remember(&root, 41, &Entry::new("team", "github-token"), "FAKE-HANDED-VALUE-0007").unwrap();
+    remember(
+        &root,
+        41,
+        &Entry::new("team", "github-token"),
+        "FAKE-HANDED-VALUE-0007",
+    )
+    .unwrap();
 
     assert_eq!(
         masked_for(&root, 41, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
@@ -164,7 +176,13 @@ fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
 #[test]
 fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
     let (_dir, root) = a_project();
-    remember(&root, 43, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0008").unwrap();
+    remember(
+        &root,
+        43,
+        &Entry::new("team", "k"),
+        "FAKE-HANDED-VALUE-0008",
+    )
+    .unwrap();
     assert!(file(&root, 43).exists(), "named as it was handed");
 
     forget(&root, 43);
@@ -179,8 +197,20 @@ fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
 #[test]
 fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value() {
     let (_dir, root) = a_project();
-    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009").unwrap();
-    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009").unwrap();
+    remember(
+        &root,
+        44,
+        &Entry::new("team", "db-password"),
+        "FAKE-HANDED-VALUE-0009",
+    )
+    .unwrap();
+    remember(
+        &root,
+        44,
+        &Entry::new("team", "db-password"),
+        "FAKE-HANDED-VALUE-0009",
+    )
+    .unwrap();
 
     let written = std::fs::read_to_string(file(&root, 44)).expect("named");
 
@@ -224,7 +254,13 @@ fn after_a_crash_an_entry_that_cannot_be_read_again_leaves_the_screen_unmaskable
 #[test]
 fn an_entry_this_process_knows_is_not_read_again() {
     let (_dir, root) = a_project();
-    remember(&root, 47, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0011").unwrap();
+    remember(
+        &root,
+        47,
+        &Entry::new("team", "k"),
+        "FAKE-HANDED-VALUE-0011",
+    )
+    .unwrap();
 
     assert_eq!(
         masked_for(&root, 47, "FAKE-HANDED-VALUE-0011", &|_| panic!(
@@ -274,11 +310,23 @@ fn names_of_a_chat_the_plane_brings_back_are_kept_however_old() {
 #[test]
 fn names_on_disk_that_do_not_read_leave_the_screen_unmaskable() {
     let (_dir, root) = a_project();
-    named_lines_by_a_crashed_window(&root, 53, "{\"vault\":\"team\",\"key\":\"k\"}\nnot a line\n");
-    assert_eq!(masked_for(&root, 53, "x", &nothing), None, "a line that does not parse");
+    named_lines_by_a_crashed_window(
+        &root,
+        53,
+        "{\"vault\":\"team\",\"key\":\"k\"}\nnot a line\n",
+    );
+    assert_eq!(
+        masked_for(&root, 53, "x", &nothing),
+        None,
+        "a line that does not parse"
+    );
 
     std::fs::create_dir_all(file(&root, 54)).expect("a folder where the file goes");
-    assert_eq!(masked_for(&root, 54, "x", &nothing), None, "a file that does not read");
+    assert_eq!(
+        masked_for(&root, 54, "x", &nothing),
+        None,
+        "a file that does not read"
+    );
 }
 
 #[test]
@@ -286,10 +334,24 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
     let (_dir, root) = a_project();
     std::fs::create_dir_all(file(&root, 55)).expect("a folder where the file goes");
 
-    assert!(remember(&root, 55, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0024").is_err());
+    assert!(
+        remember(
+            &root,
+            55,
+            &Entry::new("team", "k"),
+            "FAKE-HANDED-VALUE-0024"
+        )
+        .is_err()
+    );
 
     std::fs::remove_dir(file(&root, 55)).expect("gone");
-    remember(&root, 55, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0024").unwrap();
+    remember(
+        &root,
+        55,
+        &Entry::new("team", "k"),
+        "FAKE-HANDED-VALUE-0024",
+    )
+    .unwrap();
     assert_eq!(
         std::fs::read_to_string(file(&root, 55)).expect("named"),
         "{\"vault\":\"team\",\"key\":\"k\"}\n"
@@ -311,7 +373,11 @@ fn after_a_crash_a_value_handed_escaped_in_a_dotenv_file_is_masked_as_it_was_esc
         "{\"vault\":\"team\",\"key\":\"cert\"}\n\
          {\"vault\":\"team\",\"key\":\"cert\",\"form\":\"dotenv-escaped\"}\n",
     );
-    let read = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-CERT-0016\nFAKE-CERT-0017".into()));
+    let read = |_: &Entry| {
+        Some(zeroize::Zeroizing::new(
+            "FAKE-CERT-0016\nFAKE-CERT-0017".into(),
+        ))
+    };
 
     assert_eq!(
         masked_for(&root, 49, "CERT=FAKE-CERT-0016\\nFAKE-CERT-0017\r\n", &read).as_deref(),
@@ -383,7 +449,10 @@ fn an_entry_linked_into_a_vault_that_may_ask_the_person_is_not_read_again() {
     )
     .expect("linked");
 
-    assert_eq!(asks_nobody(&ctx, &Entry::new("team", "linked")), Some(false));
+    assert_eq!(
+        asks_nobody(&ctx, &Entry::new("team", "linked")),
+        Some(false)
+    );
     assert_eq!(asks_nobody(&ctx, &Entry::new("team", "own")), Some(true));
     assert_eq!(asks_nobody(&ctx, &Entry::new("shared", "k")), Some(false));
 }

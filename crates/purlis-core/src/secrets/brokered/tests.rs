@@ -3566,7 +3566,11 @@ fn a_connection_string_to_a_host_the_chat_may_reach_goes_through_a_tunnel_to_exa
         "every tunnelled connection is told: {reached:?}"
     );
     let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders", at.port());
-    masked_as_pointed(project.path(), &format!("postgres://app:pw@{went}/orders"), &dsn);
+    masked_as_pointed(
+        project.path(),
+        &format!("postgres://app:pw@{went}/orders"),
+        &dsn,
+    );
 }
 
 /// `pointed`, the value read as `dsn` and pointed at a tunnel, masked in chat 7's screen under

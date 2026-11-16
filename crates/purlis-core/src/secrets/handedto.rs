@@ -78,7 +78,10 @@ impl Print {
 
     /// The process's: `None` where no key could be made for it.
     fn of_the_process() -> Option<Self> {
-        let digest = seen::digest(seen::keyed()?, b"purlis: the base a kept screen is printed by");
+        let digest = seen::digest(
+            seen::keyed()?,
+            b"purlis: the base a kept screen is printed by",
+        );
         let drawn = u64::from_le_bytes(digest[..8].try_into().ok()?);
         Some(Self {
             base: drawn % (Self::MODULUS - 2) + 2,
@@ -90,10 +93,7 @@ impl Print {
     fn times(a: u64, b: u64) -> u64 {
         let product = u128::from(a) * u128::from(b);
         // Both halves are under 2⁶¹: the one by the mask, the other as the product's top.
-        let (low, high) = (
-            (product as u64) & Self::MODULUS,
-            (product >> 61) as u64,
-        );
+        let (low, high) = ((product as u64) & Self::MODULUS, (product >> 61) as u64);
         Self::plus(low, high)
     }
 
