@@ -1544,8 +1544,9 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
             };
             let (read, write) = (list("denyRead"), list("denyWrite"));
             Stated {
-                denies_write: Box::new(move |path| write.iter().any(|it| it == path)),
-                denies_read: Box::new(move |path| read.iter().any(|it| it == path)),
+                // Listed, or below a path listed (#6961).
+                denies_write: Box::new(move |path| super::claude::list_holds(&write, path)),
+                denies_read: Box::new(move |path| super::claude::list_holds(&read, path)),
             }
         }
         // Both are charter's own profile.

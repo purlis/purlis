@@ -40,8 +40,8 @@ describe("settings near their harness's limit", () => {
     expect(withStartHanded({ notes: ["a line"], agentsMd: [] }, handed).heavySettings).toBe(
       300 * 1024,
     );
-    expect(withStartHanded({ notes: ["a line"], agentsMd: [] }, { notes: [], agentsMd: [] })).toEqual(
-      { notes: ["a line"], agentsMd: [] },
-    );
+    expect(
+      withStartHanded({ notes: ["a line"], agentsMd: [] }, { notes: [], agentsMd: [] }),
+    ).toEqual({ notes: ["a line"], agentsMd: [] });
   });
 });

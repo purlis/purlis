@@ -1446,11 +1446,26 @@ impl Respond for AllAtOnce {
             }
             (vec![json!({ "type": "text", "text": "done" })], "end_turn")
         } else {
+            // A file is made with Write where it is offered, and otherwise with Edit, whose empty
+            // `old_string` makes the file: both are held by the same Edit rules.
+            let write = offers("Write");
             let calls = self
                 .calls
                 .iter()
                 .enumerate()
                 .map(|(at, (tool, input))| {
+                    let (tool, input) = if *tool == "Write" && !write {
+                        (
+                            "Edit",
+                            json!({
+                                "file_path": input["file_path"],
+                                "old_string": "",
+                                "new_string": input["content"],
+                            }),
+                        )
+                    } else {
+                        (*tool, input.clone())
+                    };
                     json!({ "type": "tool_use", "id": Self::id(at), "name": tool, "input": input })
                 })
                 .collect();

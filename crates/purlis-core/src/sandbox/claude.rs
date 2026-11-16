@@ -943,8 +943,8 @@ pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
             out.push(rule.clone());
             continue;
         };
-        // DO NOT MERGE: mutation M2, no rule on the /System/Volumes/Data name.
-        if path.starts_with("//System/Volumes/Data") {
+        // DO NOT MERGE: mutation M2', no Read or Edit rule on a vaults folder.
+        if uncased(&path).to_lowercase().ends_with("/vaults") {
             continue;
         }
         if let Some(above) = path.strip_suffix("/**")
