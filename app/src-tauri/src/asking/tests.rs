@@ -1492,7 +1492,7 @@ fn a_hold_ends_a_minute_after_it_began_and_one_past_that_is_looked_at_again_soon
     // #1709: the hold is the proxy's minute from when the block was first heard. A block heard
     // before its connection was held is still held past that: the window looks again shortly.
     let timings = purlis_core::sandbox::timings::Timings::production();
-    let hold = timings.hold.as_secs();
+    let hold = timings.hold().as_secs();
     assert_eq!(hold_ends(Some(1_000), 1_010, &timings), 1_000 + hold);
     assert_eq!(
         hold_ends(Some(1_000), 1_000 + hold, &timings),

@@ -816,7 +816,7 @@ fn the_catalogue_is_purlis_cores_timings() {
     for one in &FIELDS {
         let want = production
             .duration(one.field)
-            .map_or(production.throttle_per_chat as f64, |at| at.as_secs_f64());
+            .map_or(production.throttle_per_chat() as f64, |at| at.as_secs_f64());
         assert_eq!(seconds.get(one.field), Some(&want), "{}", one.field);
     }
     for (id, _, at) in OUT_OF_PROCESS {

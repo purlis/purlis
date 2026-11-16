@@ -2337,8 +2337,8 @@ impl Throttle {
     /// [`Timings::throttle_per_chat`](crate::sandbox::timings::Timings::throttle_per_chat)).
     pub fn new(timings: &crate::sandbox::timings::Timings) -> Self {
         Self {
-            window: timings.throttle_window,
-            per_chat: timings.throttle_per_chat,
+            window: timings.throttle_window(),
+            per_chat: timings.throttle_per_chat(),
             heard: std::collections::HashMap::new(),
             over: Vec::new(),
         }

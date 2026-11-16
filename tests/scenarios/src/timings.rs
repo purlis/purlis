@@ -64,7 +64,7 @@ impl TimingsCatalogue for CoreTimings {
             .map(|one| {
                 let secs = production
                     .duration(one.field)
-                    .map_or(production.throttle_per_chat as f64, |at| at.as_secs_f64());
+                    .map_or(production.throttle_per_chat() as f64, |at| at.as_secs_f64());
                 (one.field, secs)
             })
             .chain(

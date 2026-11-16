@@ -254,9 +254,22 @@ fn hooks_of(root: &Path, relayed: bool) -> (Hooks, Arc<Mutex<Vec<Moved>>>) {
     };
     let at = crate::hooks::socket_for(Some(root));
     let hooks = if relayed {
-        Hooks::relayed(plane, &at, tell, Arc::new(|_| {}))
+        Hooks::relayed(
+            plane,
+            &at,
+            tell,
+            Arc::new(|_| {}),
+            purlis_core::sandbox::timings::Timings::production(),
+        )
     } else {
-        Hooks::listening_on(plane, &at, tell, Arc::new(|_| {})).expect("the window listens")
+        Hooks::listening_on(
+            plane,
+            &at,
+            tell,
+            Arc::new(|_| {}),
+            purlis_core::sandbox::timings::Timings::production(),
+        )
+        .expect("the window listens")
     };
     (hooks, moved)
 }

@@ -68,32 +68,47 @@ const TALLY_TICK: Duration = Duration::from_secs(5);
 /// process, so it never scales; Quiet's hold must stay above it (Q300).
 pub const HARNESS_BASH_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// **The in-process durations the sandbox depends on** (module docs). Read a field; build one
-/// only with [`Self::production`] (or, in a test build, [`Self::scaled`]).
+/// **The in-process durations the sandbox depends on** (module docs). Read a value through its
+/// accessor; build one only with [`Self::production`] (or, in a test build, [`Self::scaled`]).
+///
+/// The fields are private, so no code outside this module can change a value once built:
+///
+/// ```compile_fail
+/// use purlis_core::sandbox::timings::Timings;
+/// let mut t = Timings::production();
+/// t.hold = std::time::Duration::from_secs(1);
+/// ```
+///
+/// Reading goes through the accessor:
+///
+/// ```
+/// use purlis_core::sandbox::timings::Timings;
+/// assert_eq!(Timings::production().hold(), std::time::Duration::from_secs(60));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timings {
     /// How long a held connection waits for the person (N-6).
-    pub hold: Duration,
+    hold: Duration,
     /// How close together new hosts from one chat must come to be one ask (N-10).
-    pub group: Duration,
+    group: Duration,
     /// The most a connection is held in all while the person is Quiet (#6007).
-    pub quiet_hold: Duration,
+    quiet_hold: Duration,
     /// How long one chat's same block is heard once (#1338).
-    pub throttle_window: Duration,
+    throttle_window: Duration,
     /// The most blocks one chat is heard in a `throttle_window` (#1338).
-    pub throttle_per_chat: usize,
+    throttle_per_chat: usize,
     /// How long a client has to send its request, and a host to answer the connection.
-    pub patience: Duration,
+    patience: Duration,
     /// How long a stopping proxy waits for its teller (#1353).
-    pub teller_patience: Duration,
+    teller_patience: Duration,
     /// How long a client has to send its request's whole head.
-    pub head: Duration,
+    head: Duration,
     /// How long a connection may carry nothing before it is closed.
-    pub idle: Duration,
+    idle: Duration,
     /// How long one tally line stands for (#1699).
-    pub tally_window: Duration,
+    tally_window: Duration,
     /// How often a proxy's timer tells what has waited a `tally_window` (#1699).
-    pub tally_tick: Duration,
+    tally_tick: Duration,
     /// Keeps every value built here: no struct literal or `..` update outside this module.
     sealed: Sealed,
 }
@@ -327,6 +342,74 @@ pub const FIELDS: [Declared; 11] = [
         alone: None,
     },
 ];
+
+impl Timings {
+    /// How long a held connection waits for the person (N-6).
+    #[must_use]
+    pub const fn hold(&self) -> Duration {
+        self.hold
+    }
+
+    /// How close together new hosts from one chat must come to be one ask (N-10).
+    #[must_use]
+    pub const fn group(&self) -> Duration {
+        self.group
+    }
+
+    /// The most a connection is held in all while the person is Quiet (#6007).
+    #[must_use]
+    pub const fn quiet_hold(&self) -> Duration {
+        self.quiet_hold
+    }
+
+    /// How long one chat's same block is heard once (#1338).
+    #[must_use]
+    pub const fn throttle_window(&self) -> Duration {
+        self.throttle_window
+    }
+
+    /// The most blocks one chat is heard in a `throttle_window` (#1338).
+    #[must_use]
+    pub const fn throttle_per_chat(&self) -> usize {
+        self.throttle_per_chat
+    }
+
+    /// How long a client has to send its request, and a host to answer the connection.
+    #[must_use]
+    pub const fn patience(&self) -> Duration {
+        self.patience
+    }
+
+    /// How long a stopping proxy waits for its teller (#1353).
+    #[must_use]
+    pub const fn teller_patience(&self) -> Duration {
+        self.teller_patience
+    }
+
+    /// How long a client has to send its request's whole head.
+    #[must_use]
+    pub const fn head(&self) -> Duration {
+        self.head
+    }
+
+    /// How long a connection may carry nothing before it is closed.
+    #[must_use]
+    pub const fn idle(&self) -> Duration {
+        self.idle
+    }
+
+    /// How long one tally line stands for (#1699).
+    #[must_use]
+    pub const fn tally_window(&self) -> Duration {
+        self.tally_window
+    }
+
+    /// How often a proxy's timer tells what has waited a `tally_window` (#1699).
+    #[must_use]
+    pub const fn tally_tick(&self) -> Duration {
+        self.tally_tick
+    }
+}
 
 impl Timings {
     /// **Today's values**, as the rulings and rows set them: the only timings a release build

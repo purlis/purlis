@@ -776,7 +776,7 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let _held = Held(carrying, id);
     let own = super::hosts::own_addresses();
     let target = egress::host_and_port(&carrying.host, carrying.port);
-    let patience = super::timings::Timings::production().patience;
+    let patience = super::timings::Timings::production().patience();
     let upstream = match egress::connect(
         &carrying.host,
         carrying.port,

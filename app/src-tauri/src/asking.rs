@@ -4707,7 +4707,7 @@ pub fn hold_ends(
     now: u64,
     timings: &purlis_core::sandbox::timings::Timings,
 ) -> u64 {
-    let hold = timings.hold.as_secs();
+    let hold = timings.hold().as_secs();
     match since {
         Some(at) if at.saturating_add(hold) > now => at.saturating_add(hold),
         Some(_) => now.saturating_add(LOOK_AGAIN),

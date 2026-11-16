@@ -23,7 +23,9 @@ struct Allowed {
 
 /// **The durations in the sandbox's code that are not `Timings`'**, each with its reason.
 const ALLOWED: &[Allowed] = &[
-    // Out of process, or another component's bound, run at real time.
+    // Each is out of process (a program's or git's bound), another component's (the browser
+    // door's, a confined extension's, the resolver's), or in process but deliberately unscaled
+    // (a retry, a poll, a clamp, a cache, a teardown or a wake on loopback), as its `why` says.
     Allowed {
         file: "sandbox/egress.rs",
         line: "const BACKOFF: Duration = Duration::from_millis(100);",
@@ -83,11 +85,6 @@ const ALLOWED: &[Allowed] = &[
         file: "sandbox/browser_reach.rs",
         line: "std::thread::sleep(Duration::from_millis(10));",
         why: "the poll while the accept ends, bounded by STOP_PATIENCE",
-    },
-    Allowed {
-        file: "sandbox/door.rs",
-        line: "pub const HEAD_WITHIN: Duration = Duration::from_secs(30);",
-        why: "the browser door's bound on a request's head: the door, not a chat's proxy",
     },
     Allowed {
         file: "sandbox/door.rs",
@@ -165,6 +162,11 @@ const ALLOWED: &[Allowed] = &[
         why: "a bound on the arrival checks' own work, not a timer a cell orders",
     },
     Allowed {
+        file: "sandbox/arrived.rs",
+        line: "let at = Duration::new(",
+        why: "a file's change time read as a point in time since the epoch: not a wait",
+    },
+    Allowed {
         file: "sandbox/nat64.rs",
         line: "const READ_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(300);",
         why: "how long a NAT64 prefix stands: the test build swaps NAT64 (ticket 6's inventory)",
@@ -177,7 +179,8 @@ const ALLOWED: &[Allowed] = &[
     Allowed {
         file: "sandbox/personal/no_sandbox.rs",
         line: "const BLAME_WITHIN: Duration = Duration::from_secs(3);",
-        why: "how long a refusal is blamed on a missing sandbox: the window's wording",
+        why: "git blame's bound, out of process, on naming who added a vault: it only picks \
+              the refusal's wording (a name or \"your team\"), never a wait of the sandbox's",
     },
     Allowed {
         file: "sandbox.rs",
@@ -274,18 +277,12 @@ fn code_lines(text: &str) -> Vec<(usize, &str)> {
         if code.starts_with("#[cfg(test)]") || code.starts_with("#[cfg(any(test") {
             let mut depth = 0usize;
             let mut opened = false;
+            let mut open = None;
             for (_, next) in lines.by_ref() {
+                let (more, fewer) = braces(next, &mut open);
+                opened |= more > 0;
+                depth = (depth + more).saturating_sub(fewer);
                 let next = next.split("//").next().unwrap_or_default();
-                for c in next.chars() {
-                    match c {
-                        '{' => {
-                            depth += 1;
-                            opened = true;
-                        }
-                        '}' => depth = depth.saturating_sub(1),
-                        _ => {}
-                    }
-                }
                 if (opened && depth == 0) || (!opened && next.trim_end().ends_with(';')) {
                     break;
                 }
@@ -298,6 +295,71 @@ fn code_lines(text: &str) -> Vec<(usize, &str)> {
         out.push((n + 1, line));
     }
     out
+}
+
+/// Whether `line` builds a `Duration`.
+fn builds_a_duration(line: &str) -> bool {
+    line.contains("Duration::from_") || line.contains("Duration::new(")
+}
+
+/// A string literal left open: a plain one, or a raw one closed by `"` and this many `#`.
+#[derive(Clone, Copy)]
+enum Open {
+    Plain,
+    Raw(usize),
+}
+
+/// How `line` moves the brace depth, as `(opened, closed)`, its string and char literals and its
+/// comment left out. `open` carries a string left open at the end of a line to the next.
+fn braces(line: &str, open: &mut Option<Open>) -> (usize, usize) {
+    let chars: Vec<char> = line.chars().collect();
+    let (mut opened, mut closed) = (0, 0);
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match *open {
+            Some(Open::Plain) => match c {
+                '\\' => i += 1,
+                '"' => *open = None,
+                _ => {}
+            },
+            Some(Open::Raw(hashes)) => {
+                if c == '"' && (1..=hashes).all(|n| chars.get(i + n) == Some(&'#')) {
+                    *open = None;
+                    i += hashes;
+                }
+            }
+            None => match c {
+                '/' if chars.get(i + 1) == Some(&'/') => break,
+                '"' => *open = Some(Open::Plain),
+                // A raw string, `r"…"` or `r#"…"#`, unless `r` ends a longer name.
+                'r' if !i
+                    .checked_sub(1)
+                    .and_then(|before| chars.get(before))
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == '_') =>
+                {
+                    let hashes = chars[i + 1..].iter().take_while(|h| **h == '#').count();
+                    if chars.get(i + 1 + hashes) == Some(&'"') {
+                        *open = Some(Open::Raw(hashes));
+                        i += 1 + hashes;
+                    }
+                }
+                // A char literal, `'{'` or `'\\u{7b}'`; a lifetime has no closing quote.
+                '\'' if chars.get(i + 1) == Some(&'\\') => {
+                    i += 2;
+                    while i < chars.len() && chars[i] != '\'' {
+                        i += 1;
+                    }
+                }
+                '\'' if chars.get(i + 2) == Some(&'\'') => i += 2,
+                '{' => opened += 1,
+                '}' => closed += 1,
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    (opened, closed)
 }
 
 /// Whether `word` stands alone in `line`, not as part of a longer name.
@@ -377,7 +439,7 @@ fn no_sandbox_duration_lives_outside_timings() {
 
         for (n, line) in &lines {
             // A duration in the sandbox's code is `Timings`', or allowed by name.
-            if sandboxed && line.contains("Duration::from_") {
+            if sandboxed && builds_a_duration(line) {
                 let rest = in_core.unwrap_or_default();
                 match ALLOWED
                     .iter()
@@ -438,5 +500,44 @@ fn no_sandbox_duration_lives_outside_timings() {
         stale.is_empty(),
         "an allowed duration is no longer in its file; take it out of ALLOWED:\n{}",
         stale.join("\n")
+    );
+}
+
+#[test]
+fn a_duration_built_with_new_is_a_duration_too() {
+    assert!(builds_a_duration(
+        "const WAIT: Duration = Duration::new(5, 0);"
+    ));
+    assert!(builds_a_duration(
+        "let d = std::time::Duration::from_secs(5);"
+    ));
+    assert!(!builds_a_duration("let d = timings.hold();"));
+}
+
+#[test]
+fn a_brace_in_a_string_or_char_does_not_end_or_extend_a_test_items_skip() {
+    let text = "\
+#[cfg(test)]
+mod tests {
+    const CLOSE: &str = \"}\";
+    const LATE: Duration = Duration::from_secs(9);
+    const QUOTED: &str = \"a \\\" { quote\";
+    const RAW: &str = r#\"{\"a\": {\"b\": 1}\"#;
+    const RAW_OPEN: &str = r#\"{\"a\": \"}\"#;
+}
+const KEPT: Duration = Duration::from_secs(1);
+#[cfg(test)]
+fn opens() -> char {
+    '{'
+}
+const ALSO_KEPT: Duration = Duration::from_secs(2);
+";
+    let kept: Vec<&str> = code_lines(text).into_iter().map(|(_, line)| line).collect();
+    assert_eq!(
+        kept,
+        [
+            "const KEPT: Duration = Duration::from_secs(1);",
+            "const ALSO_KEPT: Duration = Duration::from_secs(2);",
+        ]
     );
 }

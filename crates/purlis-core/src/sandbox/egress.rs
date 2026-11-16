@@ -133,9 +133,9 @@ impl Limits {
     pub fn of(timings: &Timings) -> Self {
         Self {
             connections: CONNECTIONS,
-            idle: timings.idle,
-            head: timings.head,
-            patience: timings.patience,
+            idle: timings.idle(),
+            head: timings.head(),
+            patience: timings.patience(),
         }
     }
 }
@@ -499,7 +499,7 @@ impl Tally {
     /// [`Timings::tally_window`].
     pub fn new(timings: &Timings) -> Self {
         Self {
-            window: timings.tally_window,
+            window: timings.tally_window(),
             seen: Vec::new(),
             others: Vec::new(),
         }
@@ -838,7 +838,7 @@ impl Proxy {
         }
         // Without its timer, a count is told at the next connection or at the stop, as before.
         let ticking = if allowed.reached.is_some() {
-            let tick = serving.timings.tally_tick;
+            let tick = serving.timings.tally_tick();
             let allowed = Arc::clone(&allowed);
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
@@ -868,7 +868,7 @@ impl Proxy {
             allowed,
             ticking,
             telling,
-            teller_patience: serving.timings.teller_patience,
+            teller_patience: serving.timings.teller_patience(),
             keep,
             also: also_addrs,
             asking: serving.asking,

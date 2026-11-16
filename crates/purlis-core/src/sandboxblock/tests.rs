@@ -664,10 +664,10 @@ fn a_chat_is_heard_once_a_minute_per_block_and_a_handful_a_minute_in_all() {
         .count();
     assert_eq!(
         let_through,
-        crate::sandbox::timings::Timings::production().throttle_per_chat - 1,
+        crate::sandbox::timings::Timings::production().throttle_per_chat() - 1,
         "the chat's share of the minute"
     );
-    let later = now + crate::sandbox::timings::Timings::production().throttle_window;
+    let later = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(
         throttle.lets(3, &write, later),
         "a minute on, it is heard again"
@@ -701,7 +701,7 @@ fn another_host_refused_within_the_minute_is_heard_and_the_same_one_is_not() {
         .count();
     assert_eq!(
         let_through,
-        crate::sandbox::timings::Timings::production().throttle_per_chat - 3
+        crate::sandbox::timings::Timings::production().throttle_per_chat() - 3
     );
 }
 
@@ -721,12 +721,14 @@ fn the_repeats_held_back_in_a_minute_are_told_once_the_minute_is_over() {
     assert!(throttle.lets(4, &write, now));
     assert!(
         throttle
-            .repeats_over(now + crate::sandbox::timings::Timings::production().throttle_window / 2)
+            .repeats_over(
+                now + crate::sandbox::timings::Timings::production().throttle_window() / 2
+            )
             .is_empty(),
         "not while its minute runs"
     );
 
-    let over = now + crate::sandbox::timings::Timings::production().throttle_window;
+    let over = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert_eq!(
         throttle.repeats_over(over),
         [Repeated {
@@ -750,7 +752,7 @@ fn a_block_heard_anew_still_tells_the_repeats_of_its_minute_before() {
     let write = block(Operation::Write, Kind::ProjectFiles, false);
     assert!(throttle.lets(3, &write, now));
     assert!(!throttle.lets(3, &write, now));
-    let next = now + crate::sandbox::timings::Timings::production().throttle_window;
+    let next = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(throttle.lets(3, &write, next));
     assert_eq!(
         throttle
@@ -789,7 +791,7 @@ fn a_quiet_or_ended_chats_repeats_are_told_at_once_and_counted_afresh() {
     assert!(throttle.every_repeat().is_empty());
     assert!(
         throttle
-            .repeats_over(now + crate::sandbox::timings::Timings::production().throttle_window)
+            .repeats_over(now + crate::sandbox::timings::Timings::production().throttle_window())
             .is_empty()
     );
 }
@@ -803,7 +805,7 @@ fn a_repeat_whose_minute_ended_is_told_with_its_chats_flush() {
     let write = block(Operation::Write, Kind::ProjectFiles, false);
     assert!(throttle.lets(3, &write, now));
     assert!(!throttle.lets(3, &write, now));
-    let next = now + crate::sandbox::timings::Timings::production().throttle_window;
+    let next = now + crate::sandbox::timings::Timings::production().throttle_window();
     assert!(throttle.lets(3, &write, next));
     assert_eq!(
         throttle

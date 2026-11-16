@@ -4921,6 +4921,7 @@ impl Planes {
                 &at,
                 Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
+                self.timings,
             ))
         } else {
             Hooks::listening_on(
@@ -4928,16 +4929,17 @@ impl Planes {
                 &at,
                 Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
+                self.timings,
             )
         };
-        let mut hooks = hooks.unwrap_or_else(|why| {
+        let hooks = hooks.unwrap_or_else(|why| {
             tracing::warn!(
                 "purlis: no hook channel at {} ({why}); every chat in {} will show as \
                      unknown",
                 at.socket.display(),
                 root.display()
             );
-            Hooks::deaf(id.clone())
+            Hooks::deaf(id.clone(), self.timings)
         });
         if let Some(events) = &self.events {
             hooks.record_into(events.clone());
@@ -4945,8 +4947,6 @@ impl Planes {
             // is started and issued a token (FD-30).
             hooks.drain_spool();
         }
-        // One value for the throttle, the hold's end and the chats' confinements (T1.1-01).
-        hooks.timed_by(self.timings);
         hooks.tell_asks_to(Arc::clone(&self.asks));
         let reporting = hooks.reporting();
 

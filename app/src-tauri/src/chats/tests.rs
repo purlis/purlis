@@ -12323,7 +12323,10 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
     use purlis_core::sandbox::asks::Heard;
     let logs = tempfile::tempdir().expect("a folder for the log");
     let plane: crate::planes::PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Arc::new(crate::hooks::Hooks::deaf(plane));
+    let hooks = Arc::new(crate::hooks::Hooks::deaf(
+        plane,
+        purlis_core::sandbox::timings::Timings::production(),
+    ));
     hooks.record_into(crate::hooks::Events::here(Recorder::new(
         Log::open(logs.path(), "DEVICE").expect("a log"),
         ArgsKey::open(logs.path()).expect("a key"),

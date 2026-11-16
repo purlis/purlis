@@ -1168,6 +1168,7 @@ fn a_window_of<H: session::Host + Clone>(
             Arc::new(move |what| moved.lock().unwrap().push(what))
         },
         Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
     );
     let sessions = HostedSessions::new(connection, root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("relayed"));

@@ -176,9 +176,9 @@ impl Asks {
             state: Mutex::default(),
             changed: Condvar::new(),
             tell,
-            hold: timings.hold,
-            group: timings.group,
-            most_open: timings.quiet_hold,
+            hold: timings.hold(),
+            group: timings.group(),
+            most_open: timings.quiet_hold(),
             known: None,
             askable: None,
         }

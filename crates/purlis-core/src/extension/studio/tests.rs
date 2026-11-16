@@ -1264,7 +1264,7 @@ fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
             &[],
             &carried_when_confined,
             &|_, _| vec![at],
-            crate::sandbox::timings::Timings::production().patience,
+            crate::sandbox::timings::Timings::production().patience(),
         );
         assert!(
             matches!(connected, Connected::OnlyLocal),

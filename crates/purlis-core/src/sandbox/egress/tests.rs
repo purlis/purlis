@@ -259,7 +259,7 @@ fn a_head_that_comes_too_slowly_is_given_up_on() {
             connections: 8,
             idle: Duration::from_secs(60),
             head: Duration::from_millis(400),
-            patience: crate::sandbox::timings::Timings::production().patience,
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -473,7 +473,7 @@ fn connections_past_the_limit_are_refused_rather_than_given_a_thread() {
             connections: 2,
             idle: Duration::from_secs(60),
             head: Duration::from_secs(30),
-            patience: crate::sandbox::timings::Timings::production().patience,
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -503,7 +503,7 @@ fn a_tunnel_idle_both_ways_is_closed() {
             connections: 8,
             idle: Duration::from_millis(300),
             head: Duration::from_secs(30),
-            patience: crate::sandbox::timings::Timings::production().patience,
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -1216,7 +1216,7 @@ fn the_connection_limit_counts_both_ports_together() {
             connections: 2,
             idle: Duration::from_secs(60),
             head: Duration::from_secs(30),
-            patience: crate::sandbox::timings::Timings::production().patience,
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -1248,7 +1248,7 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
     }
     // A window on: the four held back are told, with the one now.
     let later = start
-        + crate::sandbox::timings::Timings::production().tally_window
+        + crate::sandbox::timings::Timings::production().tally_window()
         + Duration::from_secs(1);
     assert_eq!(
         tally.heard(a, "open", later),
@@ -1286,17 +1286,17 @@ fn a_bursts_count_is_told_once_its_window_passes_with_no_connection_since() {
     tally.heard(a, "open", start);
     assert!(
         tally
-            .due(start + crate::sandbox::timings::Timings::production().tally_window / 2)
+            .due(start + crate::sandbox::timings::Timings::production().tally_window() / 2)
             .is_empty(),
         "its window runs"
     );
     assert_eq!(
-        tally.due(start + crate::sandbox::timings::Timings::production().tally_window),
+        tally.due(start + crate::sandbox::timings::Timings::production().tally_window()),
         [(Some(a.to_owned()), "open", 2)]
     );
     assert!(
         tally
-            .due(start + crate::sandbox::timings::Timings::production().tally_window)
+            .due(start + crate::sandbox::timings::Timings::production().tally_window())
             .is_empty(),
         "told once"
     );
@@ -1306,7 +1306,7 @@ fn a_bursts_count_is_told_once_its_window_passes_with_no_connection_since() {
         tally.heard(
             a,
             "open",
-            start + crate::sandbox::timings::Timings::production().tally_window
+            start + crate::sandbox::timings::Timings::production().tally_window()
         ),
         [(Some(a.to_owned()), "open", 1)]
     );
@@ -1401,7 +1401,7 @@ fn a_scaled_board_asks_after_group_and_blocks_after_hold() {
     let began = Instant::now();
     let mut client = TcpStream::connect(("127.0.0.1", proxy.port())).expect("the proxy");
     client
-        .set_read_timeout(Some(production.hold * 2))
+        .set_read_timeout(Some(production.hold() * 2))
         .expect("a timeout");
     let answered = std::thread::spawn(move || {
         let said = status(
@@ -1412,23 +1412,23 @@ fn a_scaled_board_asks_after_group_and_blocks_after_hold() {
     });
 
     let (asked_at, asked) = events
-        .recv_timeout(production.group * 5)
+        .recv_timeout(production.group() * 5)
         .expect("asked within a few groups");
     assert_eq!(asked, Said::Asked(vec!["held.invalid:443".to_owned()]));
     assert!(
-        asked_at - began >= timings.group,
+        asked_at - began >= timings.group(),
         "asked after the scaled group ({:?}), at {:?}",
-        timings.group,
+        timings.group(),
         asked_at - began
     );
     let (timed_out_at, timed_out) = events
-        .recv_timeout(production.hold - (asked_at - began))
+        .recv_timeout(production.hold() - (asked_at - began))
         .expect("timed out before production's hold");
     assert_eq!(timed_out, Said::TimedOut("held.invalid:443".to_owned()));
     assert!(
-        timed_out_at - began >= timings.hold,
+        timed_out_at - began >= timings.hold(),
         "timed out after the scaled hold ({:?}), at {:?}",
-        timings.hold,
+        timings.hold(),
         timed_out_at - began
     );
     let (refused_at, refused) = answered.join().expect("answered");
@@ -1784,7 +1784,7 @@ fn an_internal_address_the_runners_policy_does_not_list_is_never_connected_to() 
         &Reach::anything(),
         &[],
         &|at| crate::sandbox::internal::Internal::default().carries("10.255.255.1", at, Some(&[])),
-        crate::sandbox::timings::Timings::production().patience,
+        crate::sandbox::timings::Timings::production().patience(),
     );
 
     assert!(matches!(held, super::Connected::OnlyLocal));

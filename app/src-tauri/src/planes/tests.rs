@@ -1595,12 +1595,12 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_process() {
     let held = planes.held(&plane).expect("held");
 
     // The throttle every block of the project is let through.
-    assert_eq!(held.hooks().throttle_window(), timings.throttle_window);
+    assert_eq!(held.hooks().throttle_window(), timings.throttle_window());
     // The window's end of a live ask's hold.
     assert_eq!(held.hooks().timings(), timings);
     assert_eq!(
         crate::asking::hold_ends(None, 1_000, &held.hooks().timings()),
-        1_000 + timings.hold.as_secs()
+        1_000 + timings.hold().as_secs()
     );
     // The board and proxy of a chat the window confines: its chats hand their hearing this.
     let hearing = Hearing {
@@ -1616,7 +1616,7 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_process() {
     assert_eq!(telling.timings, timings, "the proxy's");
     assert_eq!(
         telling.asks.expect("a board").holds_for(),
-        timings.hold,
+        timings.hold(),
         "the board's"
     );
 }
