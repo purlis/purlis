@@ -16,7 +16,7 @@
 //!   and chat settings' folders, and the window's shims. The wrap is that binary too
 //!   (`sandboxing::scenarios_wrap_with`).
 //! - **Its own homes**: each scenario runs in a child of this test binary whose data and config
-//!   homes, `FAKE_HARNESS_STATE` and `PATH` are its own ([`Homes::of_this_scenario`]): the app
+//!   homes and `PATH` are its own ([`Homes::of_this_scenario`]): the app
 //!   reads its homes from the environment, which a test cannot set in its own process.
 //! - **Under `strict`** ([`Template`]), unless a cell names another template (Q308).
 //!
@@ -236,21 +236,9 @@ impl Homes {
             (HOME_VAR, homes.home.clone().into()),
             (purlis_core::datahome::HOME_VAR, homes.data.clone().into()),
             (purlis_core::machine::HOME_VAR, homes.config.clone().into()),
-            // What a chat relaunched from the reopen record runs with, which keeps no variable
-            // of the chat's own: the first project's (a relaunch is one scenario's alone).
-            (
-                "FAKE_HARNESS_STATE",
-                own_folder(&homes.projects.join("1"))
-                    .join("fake-state")
-                    .into(),
-            ),
-            (
-                "FAKE_HARNESS_TRANSCRIPT",
-                own_folder(&homes.projects.join("1"))
-                    .join(TRANSCRIPT)
-                    .into(),
-            ),
-            ("FAKE_HARNESS_SCRIPT", homes.scripts.join(CURRENT).into()),
+            // Never the turn script, its transcript or its state: what the app runs of a harness
+            // beside a chat (its sign-in status, its version) inherits this environment and would
+            // play the script outside any sandbox. Each chat is handed its own (`starts`).
             ("FAKE_HARNESS_BIN", fake.into()),
             ("PATH", path),
         ];
@@ -316,9 +304,6 @@ fn own_folder(root: &Path) -> PathBuf {
 
 /// The one transcript every chat of a scenario appends to.
 const TRANSCRIPT: &str = "transcript.jsonl";
-
-/// The turn script of the chat started last, which a relaunched chat plays on from.
-const CURRENT: &str = "current.json";
 
 /// What a scenario started, written by its teardown for its parent's check.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -684,7 +669,8 @@ impl Scenario {
     /// new host and a new window start on the same homes, and the window relaunches the live chats.
     pub(crate) fn quits_and_relaunches(&mut self) {
         let window = self.window.take().expect("a window");
-        window.planes().let_go_of_all();
+        // As the app's quit does: the record keeps every chat that was live, for the relaunch.
+        window.planes().let_go_of_all_to_update();
         window.quits();
         drop(window);
         self.hosting.take();
@@ -761,7 +747,6 @@ impl Scenario {
         });
         let number = self.chats.lock().expect("chats").len() + 1;
         let at = self.script(&format!("chat-{number}"), script);
-        self.script(CURRENT.trim_end_matches(".json"), script);
         let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
         let transcript = own.join(TRANSCRIPT);
@@ -862,16 +847,12 @@ impl Scenario {
         purlis_core::eventlog::read(&self.homes.data).unwrap_or_default()
     }
 
-    /// The events of `kind` that name `target` anywhere in their body.
-    pub(crate) fn events_naming(
-        &self,
-        kind: &str,
-        target: &str,
-    ) -> Vec<purlis_core::eventlog::Event> {
+    /// How many events of `kind` the log holds.
+    pub(crate) fn count_of(&self, kind: &str) -> usize {
         self.events()
             .into_iter()
-            .filter(|event| event.kind == kind && event.body.to_string().contains(target))
-            .collect()
+            .filter(|event| event.kind == kind)
+            .count()
     }
 
     /// **The person types `text` into chat `id`, and Enter**, as T1.1-03's driver types a turn.
