@@ -424,3 +424,33 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
 }
+
+#[test]
+fn an_acceptance_whose_seal_does_not_hold_counts_as_none() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    at_start(root.path());
+    press(root.path()).expect("the press is kept");
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Off);
+    // Something other than the app writes an acceptance of its own beside the seal.
+    let file = crate::sandbox::local::path(root.path());
+    let text = std::fs::read_to_string(&file).expect("this machine's file");
+    let mut doc: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    doc["policy_accepted"]["guards.release"] = serde_json::json!("enforce");
+    std::fs::write(&file, doc.to_string()).expect("written");
+    assert!(crate::sandbox::local::policy_unsealed(root.path()));
+    // No acceptance: the shipped default stands until the person presses again.
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Log);
+    assert_eq!(at_start(root.path()).mode(Family::GuardsGit), Mode::Log);
+}
+
+#[test]
+fn a_process_that_cannot_seal_cannot_accept_a_loosening() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_for_this_test(None);
+    let pressed = press(root.path());
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert!(pressed.is_err());
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Log);
+}

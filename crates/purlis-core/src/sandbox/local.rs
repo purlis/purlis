@@ -209,6 +209,10 @@ struct OnDisk {
     /// ([`crate::enforcement::accepted`]). Absent before the first chat start that read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     policy_accepted: Option<std::collections::BTreeMap<String, String>>,
+    /// The seal of [`Self::policy_accepted`] ([`crate::secrets::seal`]), bound to this clone:
+    /// an acceptance whose seal does not hold counts as none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    policy_seal: Option<String>,
     /// `"taken"` or `"kept-off"` once the offer is answered; absent before.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     offer: String,
@@ -1187,20 +1191,58 @@ pub fn forget_team_off(root: &Path) -> io::Result<()> {
     change(root, |held| held.team_off = None)
 }
 
-/// What this person last accepted of the project's `[policy]` at `root` (Q308a), where they
-/// accepted anything yet.
-pub fn policy_accepted(root: &Path) -> Option<std::collections::BTreeMap<String, String>> {
-    read(root).policy_accepted
+/// The kind an accepted policy is sealed as.
+const POLICY_KIND: &str = "policy-accepted";
+
+/// An accepted policy as its seal covers it: `family=mode` pairs in key order.
+fn policy_text(accepted: &std::collections::BTreeMap<String, String>) -> String {
+    accepted
+        .iter()
+        .map(|(family, mode)| format!("{family}={mode}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
-/// Keeps `accepted` as what this person accepted of the project's `[policy]` at `root`: at a
-/// chat start for a tightening, which needs no press, and at the window's press for a
-/// loosening. Never a chat (a sandboxed chat cannot write this file).
+/// What this person last accepted of the project's `[policy]` at `root` (Q308a), where they
+/// accepted anything yet **and its seal holds** for this clone (Q308b): one this process cannot
+/// verify, or whose seal does not hold, counts as no acceptance ([`policy_unsealed`]).
+pub fn policy_accepted(root: &Path) -> Option<std::collections::BTreeMap<String, String>> {
+    let held = read(root);
+    let accepted = held.policy_accepted?;
+    let seal = held.policy_seal?;
+    crate::secrets::seal::holds(
+        &seal,
+        POLICY_KIND,
+        &clone_key(root),
+        &policy_text(&accepted),
+    )
+    .then_some(accepted)
+}
+
+/// **Whether an acceptance is kept for `root` that does not hold** (Q308b): edited by hand,
+/// copied from another clone, or written by something other than the app. What a Notice says;
+/// it is never re-sealed in bulk, only replaced by the person's press.
+pub fn policy_unsealed(root: &Path) -> bool {
+    let held = read(root);
+    held.policy_accepted.is_some() && policy_accepted(root).is_none()
+}
+
+/// Keeps `accepted` as what this person accepted of the project's `[policy]` at `root`, sealed:
+/// at a chat start for a tightening, which needs no press, and at the window's press for a
+/// loosening. Refused where this process cannot seal (it is not the app), so nothing is kept
+/// that would not hold. Never a chat (a sandboxed chat cannot write this file).
 pub fn accept_policy(
     root: &Path,
     accepted: std::collections::BTreeMap<String, String>,
 ) -> io::Result<()> {
-    change(root, |held| held.policy_accepted = Some(accepted))
+    let seal = crate::secrets::seal::sealed(POLICY_KIND, &clone_key(root), &policy_text(&accepted))
+        .ok_or_else(|| {
+            io::Error::other("only purlis's app can accept a policy, and it could not seal it")
+        })?;
+    change(root, |held| {
+        held.policy_accepted = Some(accepted);
+        held.policy_seal = Some(seal);
+    })
 }
 
 /// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.
