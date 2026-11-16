@@ -125,7 +125,17 @@
       "properties": {
         "$schema": {"type": "string"},
         "dialect": {"$ref": "#/$defs/dialect"},
-        "shows": {"$ref": "#/$defs/shows"}
+        "shows": {"$ref": "#/$defs/shows"},
+        "recorded": {
+          "description": "Where ticket 3 drew these defaults from: the checked-in recording, and each fact it shows that a cell cannot name as an event (a command's timeout, which events fire, what the model is shown), in words.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "facts"],
+          "properties": {
+            "from": {"type": "string", "pattern": "^tests/recordings/recorded/[a-z]+/[^/]+/recording\\.json$"},
+            "facts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}
+          }
+        }
       }
     },
     "step": {

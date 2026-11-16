@@ -155,8 +155,11 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
             }
         }
     }
-    let mut calls = Vec::new();
+    let mut calls: Vec<HookCall> = Vec::new();
     let mut before: Option<u64> = None;
+    // The hooks of one event the harness runs at once: each begun before the one before it of
+    // the same event answered (Codex runs every SessionStart hook together).
+    let mut previous: Option<(String, u64, Option<u64>)> = None;
     for line in lines.iter().filter(|l| l.phase == "call") {
         let reply = lines
             .iter()
@@ -180,6 +183,32 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
                     .then_some(at as u32 + 1)
                 })
             });
+        let event = stdin
+            .get("hook_event_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let answered_at = lines
+            .iter()
+            .find(|l| l.phase == "reply" && l.id == line.id)
+            .map(|l| l.at_ms);
+        let at_once = group.is_none()
+            && !event.is_empty()
+            && previous.as_ref().is_some_and(|(e, _, replied)| {
+                *e == event && replied.is_none_or(|replied| line.at_ms < replied)
+            });
+        let group = if at_once {
+            calls.last().and_then(|c| c.group).or_else(|| {
+                let first = calls.len() as u32;
+                if let Some(last) = calls.last_mut() {
+                    last.group = Some(EVENT_GROUPS + first);
+                }
+                Some(EVENT_GROUPS + first)
+            })
+        } else {
+            group
+        };
+        previous = Some((event, line.at_ms, answered_at));
         calls.push(HookCall {
             argv: line.argv.clone(),
             stdin,
@@ -197,6 +226,10 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
     }
     calls
 }
+
+/// Where the numbers of the groups of hooks one event ran at once begin, apart from the
+/// stand-in's responses' numbers.
+const EVENT_GROUPS: u32 = 10_000;
 
 /// The tool-use id a hook's input names, in any harness's spelling.
 pub fn tool_use_id(stdin: &Value) -> Option<String> {
@@ -226,4 +259,41 @@ pub fn problems(masked: &Value) -> Vec<String> {
         found.push("the recording still names its roots".to_owned());
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(id: &str, phase: &str, at_ms: u64, event: &str) -> Line {
+        Line {
+            id: id.to_owned(),
+            phase: phase.to_owned(),
+            at_ms,
+            argv: vec!["hook".to_owned(), event.to_lowercase()],
+            stdin: (phase == "call").then(|| format!("{{\"hook_event_name\":\"{event}\"}}")),
+            env: None,
+            exit: (phase == "reply").then_some(0),
+            stdout: None,
+            stderr: None,
+            forced: None,
+        }
+    }
+
+    #[test]
+    fn hooks_of_one_event_begun_before_the_last_answered_are_one_group() {
+        // Two SessionStart hooks at once, then a Stop after both answered.
+        let lines = [
+            line("a", "call", 100, "SessionStart"),
+            line("b", "call", 101, "SessionStart"),
+            line("a", "reply", 150, ""),
+            line("b", "reply", 151, ""),
+            line("c", "call", 200, "SessionStart"),
+            line("c", "reply", 210, ""),
+        ];
+        let calls = hook_calls(&lines, &[]);
+        assert_eq!(calls[0].group, calls[1].group);
+        assert!(calls[0].group.is_some());
+        assert_eq!(calls[2].group, None, "begun after the one before answered");
+    }
 }

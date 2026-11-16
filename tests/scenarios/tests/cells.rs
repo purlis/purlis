@@ -1018,3 +1018,41 @@ fn b0_judges_chat_682s_record_as_the_record_says() {
         );
     }
 }
+
+/// **The Codex and OpenCode pins** (ticket 3): both files exist and pass their schema; each
+/// names the recording it was drawn from, which is checked in; and each event it says the
+/// dialect shows something else for is one the dialect does not produce, while what it shows
+/// instead is.
+#[test]
+fn the_codex_and_opencode_pins_files_exist_and_are_drawn_from_their_recordings() {
+    let kinds = Kinds::from_core();
+    for (word, dialect) in [("codex", Dialect::Codex), ("opencode", Dialect::Opencode)] {
+        let path = root().join("pins").join(format!("{word}.json"));
+        assert!(path.is_file(), "{} is not there", path.display());
+        let value = read_json(&path);
+        let errors = schema_errors("cells.schema.json", Some("pins_file"), &value);
+        assert!(errors.is_empty(), "{}: {errors:#?}", path.display());
+        let pins: PinsFile = serde_json::from_value(value).expect("a pins file");
+        assert_eq!(pins.dialect, dialect, "{}", path.display());
+        let recorded = pins.recorded.expect("the recording it was drawn from");
+        let from = root().join("../..").join(&recorded.from);
+        assert!(from.is_file(), "{} names {}, not checked in", path.display(), recorded.from);
+        assert!(!recorded.facts.is_empty(), "{}", path.display());
+        assert!(!pins.shows.is_empty(), "{}", path.display());
+        for (kind, instead) in &pins.shows {
+            assert!(
+                kinds.knows(kind) && !kinds.produced_by(kind, dialect),
+                "{}: {word} produces {kind}, so it needs no stand-in",
+                path.display()
+            );
+            for e in instead {
+                assert!(
+                    kinds.produced_by(&e.kind, dialect),
+                    "{}: {word} does not produce {}, shown for {kind}",
+                    path.display(),
+                    e.kind
+                );
+            }
+        }
+    }
+}

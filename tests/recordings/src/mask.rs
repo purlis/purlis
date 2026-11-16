@@ -5,19 +5,26 @@
 //! still be the same recording. It is a closed list, and nothing else is masked:
 //!
 //! 1. **session ids**: the value of a key in [`SESSION_KEYS`], and a value of a session id's
-//!    shape ([`SESSION_SHAPES`]: a UUID, OpenCode's `ses_…`), wherever it then appears;
-//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], and the id of the background
-//!    task or agent a tool use started, as a harness writes it ([`TASK_IDS`]), wherever it then
-//!    appears;
+//!    shape ([`SESSION_SHAPES`]: a UUID, OpenCode's `ses_…`), wherever it then appears; and the
+//!    harness process's id its hooks are handed ([`PID_KEYS`]: `CLAUDE_PID`, `OPENCODE_PID`),
+//!    which purlis reads as its session's (ADR 0024, C7);
+//! 2. **tool-use ids**: the value of a key in [`TOOL_USE_KEYS`], the id of the background task
+//!    or agent a tool use started, as a harness writes it ([`TASK_IDS`]: Claude Code's
+//!    `with ID: …`, Codex's `Chunk ID: …`), and the id of the message or permission ask that
+//!    carries a call ([`CALL_SHAPES`]: OpenCode's `msg_…`, `per_…`), wherever it then appears;
 //! 3. **absolute paths**: each root the recording names in `roots` (its work tree, its home, its
 //!    temp folder, the harness's install), wherever a string holds it, in its own spelling or as
-//!    a harness spells a folder in a file name (every `/` and `.` a `-`: Claude Code's project
-//!    folders);
-//! 4. **timestamps and gaps**: the value of a key in [`TIME_KEYS`], an ISO 8601 time inside any
-//!    string, and each hook call's `gap_ms`;
+//!    a harness spells a folder in a file name (every character but a letter or digit a `-`:
+//!    Claude Code's project folders); and the per-process suffix of a file a harness writes
+//!    beside its target to write it whole ([`ATOMIC_SUFFIX`]: `.tmp.<pid>.<hex>`);
+//! 4. **timestamps and gaps**: the value of a key in [`TIME_KEYS`] (a call's `duration_ms`
+//!    among them), a date or time inside any string in any of the harnesses' spellings
+//!    ([`TIMES`]: ISO 8601, Codex's `rollout-…T03-01-24`, a `/2026/11/16/` folder, Codex's
+//!    `Wall time: …`), and each hook call's `gap_ms`;
 //! 5. **the order of calls the harness itself runs in parallel**: the hook calls of one parallel
-//!    group (`group`, from the stand-in's account of which calls it asked for at once) are put
-//!    in one canonical order, in the places the group took.
+//!    group (`group`: the calls the stand-in asked for at once, and the hooks of one event the
+//!    harness ran at once, each begun before the one before it answered) are put in one
+//!    canonical order, in the places the group took.
 //!
 //! Each masked value becomes a numbered placeholder (`<session-1>`, `<tool-use-2>`), the same
 //! value the same placeholder throughout, so a reference from one call to another survives.
@@ -61,7 +68,12 @@ pub const TIME_KEYS: &[&str] = &[
     "created_at",
     "createdAt",
     "at_ms",
+    "duration_ms",
+    "durationMs",
 ];
+
+/// Variables holding the harness process's id, which purlis reads as its session's.
+pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
 
 /// A hook call's distance from the one before it, in milliseconds.
 pub const GAP_KEY: &str = "gap_ms";
@@ -78,13 +90,29 @@ pub static SESSION_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
 /// How a harness writes the id of a background task or agent a tool use started: Claude Code's
 /// `with ID: …`, `agentId: …`, `<task-id>…` and `to: '…'`.
 pub static TASK_IDS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:with ID: |agentId: |<task-id>|to: ')([0-9a-z]{8,24})\b").expect("a pattern")
-});
-
-static ISO_TIME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+    Regex::new(r"(?:with ID: |agentId: |<task-id>|to: '|Chunk ID: )([0-9a-z]{6,24})\b")
         .expect("a pattern")
 });
+
+/// A date or a time, in each spelling a harness writes one.
+pub static TIMES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?",
+        r"|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}",
+        r"|\b\d{4}/\d{2}/\d{2}\b",
+        r"|\b\d{4}-\d{2}-\d{2}\b",
+        r"|Wall time: [0-9.]+ seconds",
+    ))
+    .expect("a pattern")
+});
+
+/// The id of the message or permission ask that carries a call: OpenCode's.
+pub static CALL_SHAPES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(?:msg|per|prt)_[0-9A-Za-z]{20,}\b").expect("a pattern"));
+
+/// The suffix of a file a harness writes beside its target to write it whole.
+pub static ATOMIC_SUFFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\.tmp\.\d+\.[0-9a-f]{8,}").expect("a pattern"));
 
 /// Shapes a credential has. A recording holding one fails, masked or not.
 static SECRET_SHAPES: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
@@ -162,7 +190,10 @@ fn take_roots(value: &mut Value) -> Vec<(String, String)> {
             (!path.is_empty()).then(|| (path, format!("<{name}>")))
         })
         .flat_map(|(path, placeholder)| {
-            let dashed = path.replace(['/', '.'], "-");
+            let dashed: String = path
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect();
             let dashed_placeholder = format!("{}-dashed>", placeholder.trim_end_matches('>'));
             [(path, placeholder), (dashed, dashed_placeholder)]
         })
@@ -206,6 +237,14 @@ impl Ids {
             Value::String(text) => {
                 for found in SESSION_SHAPES.find_iter(text) {
                     self.session(found.as_str());
+                }
+                for found in CALL_SHAPES.find_iter(text) {
+                    let id = found.as_str();
+                    if !self.named.contains_key(id) {
+                        self.tool_uses += 1;
+                        self.named
+                            .insert(id.to_owned(), format!("<tool-use-{}>", self.tool_uses));
+                    }
                 }
                 for found in TASK_IDS.captures_iter(text) {
                     let id = &found[1];
@@ -260,6 +299,11 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
                 .collect(),
         ),
         _ if key == Some(GAP_KEY) && !value.is_null() => Value::String("<gap>".to_owned()),
+        // By its key alone: a process id is a short number, which replaced wherever it appears
+        // would eat part of others.
+        Value::String(_) | Value::Number(_) if key.is_some_and(|k| PID_KEYS.contains(&k)) => {
+            Value::String("<session-pid>".to_owned())
+        }
         Value::Number(_) if key.is_some_and(|k| TIME_KEYS.contains(&k)) => {
             Value::String("<time>".to_owned())
         }
@@ -273,8 +317,13 @@ fn rewrite(value: &Value, key: Option<&str>, roots: &[(String, String)], ids: &I
                     out = out.replace(path.as_str(), placeholder);
                 }
             }
-            if ISO_TIME.is_match(&out) {
-                out = ISO_TIME.replace_all(&out, "<time>").into_owned();
+            if ATOMIC_SUFFIX.is_match(&out) {
+                out = ATOMIC_SUFFIX
+                    .replace_all(&out, ".tmp.<pid>.<suffix>")
+                    .into_owned();
+            }
+            if TIMES.is_match(&out) {
+                out = TIMES.replace_all(&out, "<time>").into_owned();
             }
             Value::String(out)
         }
@@ -299,10 +348,27 @@ fn canonical_parallel_order(recording: &mut Value) {
     }
     for places in groups.values() {
         let mut members: Vec<Value> = places.iter().map(|&at| calls[at].clone()).collect();
-        members.sort_by_key(|call| call.to_string());
+        // Each call's hooks keep their place in its life (a call is heard before it runs and
+        // after it came back); only the order among the calls run at once is masked.
+        members.sort_by_key(|call| (lifecycle(call), call.to_string()));
         for (&at, call) in places.iter().zip(members) {
             calls[at] = call;
         }
+    }
+}
+
+/// Where a hook call's event comes in the life of a turn and of a tool call.
+fn lifecycle(call: &Value) -> u8 {
+    match call["stdin"]["hook_event_name"]
+        .as_str()
+        .unwrap_or_default()
+    {
+        "SessionStart" => 0,
+        "UserPromptSubmit" => 1,
+        "PreToolUse" => 2,
+        "PermissionRequest" => 3,
+        "PostToolUse" | "PostToolUseFailure" => 4,
+        _ => 5,
     }
 }
 
@@ -391,6 +457,25 @@ mod tests {
         assert_eq!(
             mask(&raw)["shown"][0]["text"],
             "Command running in background with ID: <tool-use-task-1>. Output: /x/<work-dashed>/tasks/<tool-use-task-1>.output"
+        );
+    }
+
+    #[test]
+    fn a_parallel_groups_calls_are_heard_before_they_come_back() {
+        let pre = |c: &str| json!({"stdin": {"hook_event_name": "PreToolUse", "c": c}, "group": 1});
+        let post =
+            |c: &str| json!({"stdin": {"hook_event_name": "PostToolUse", "c": c}, "group": 1});
+        let a = json!({"hook_calls": [pre("two"), pre("one"), post("two"), post("one")]});
+        let masked = mask(&a);
+        let events: Vec<&str> = masked["hook_calls"]
+            .as_array()
+            .expect("calls")
+            .iter()
+            .map(|c| c["stdin"]["hook_event_name"].as_str().expect("an event"))
+            .collect();
+        assert_eq!(
+            events,
+            ["PreToolUse", "PreToolUse", "PostToolUse", "PostToolUse"]
         );
     }
 

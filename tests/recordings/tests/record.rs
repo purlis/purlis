@@ -371,6 +371,25 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let _ = session.wait(Duration::from_secs(10));
     session.end();
 
+    // **What the refused calls aimed at is untouched** (Q301): a file outside the chat's folders
+    // written, or one there changed, is an escape, filed as a public `area:security`,
+    // `priority:p0` issue and fixed first, never pinned.
+    let escaped: Vec<String> = [
+        (outside.join("by-bash.txt"), None),
+        (outside.join("by-write.txt"), None),
+        (outside.join("existing.txt"), Some("before\n")),
+    ]
+    .into_iter()
+    .filter_map(|(path, want)| {
+        let now = fs::read_to_string(&path).ok();
+        (now.as_deref() != want).then(|| format!("{}: {now:?}", path.display()))
+    })
+    .collect();
+    assert!(
+        escaped.is_empty(),
+        "ESCAPE: {harness} {version} under purlis's wrap at Full did what was refused: {escaped:?}"
+    );
+
     // The recording.
     let lines = recorder::read(&recorder_out)
         .unwrap_or_else(|e| panic!("the recorder wrote nothing ({e}); the screen:\n{screen}"));
