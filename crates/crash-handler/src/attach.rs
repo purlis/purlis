@@ -131,10 +131,8 @@ fn on_crash(client: Arc<Client>) -> Box<dyn CrashEvent> {
             // The companion answers a ping only once it has read every message sent before it on
             // this socket, and nothing else pings on it, so a `panicked` sent just before the
             // crash is heard before the dump is asked for.
-            let pinged = client.ping();
-            let dumped = client.request_dump(crash);
-            eprintln!("[DEBUG-6909] on_crash ping={pinged:?} dump={dumped:?}");
-            CrashEventResult::Handled(dumped.is_ok())
+            let _ = client.ping();
+            CrashEventResult::Handled(client.request_dump(crash).is_ok())
         })
     }
 }
