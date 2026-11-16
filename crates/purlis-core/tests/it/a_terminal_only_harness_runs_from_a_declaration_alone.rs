@@ -866,3 +866,49 @@ fn a_local_replacement_in_a_file_git_would_carry_changes_nothing() {
     let id = ready.session.clone().unwrap();
     assert_eq!(ready.args, ["--session-id", id.as_str(), "--name", "ide.7"]);
 }
+
+#[test]
+fn a_project_declared_harness_runs_on_its_own_sign_in_only() {
+    purlis_core::unsteered!();
+    // R-459 (T1a-37): a project may declare any harness, and it signs in its own way. Only a
+    // built-in routes, so a chat on it is never offered a proxied route: no listener, no base
+    // URL and no token handed to it.
+    use purlis_core::keyroute::{self, Level, Route, Way};
+    let project = Project::new();
+    project.declares(
+        "shelly",
+        &format!("{SHELLY}\n[sign_in]\nkinds = [\"subscription\", \"api-key\"]\n"),
+    );
+    project.approve("shelly");
+
+    let ready = start::ready(&project.start("shelly"), project.root()).expect("it starts");
+
+    let handed: Vec<&str> = ready.env.iter().map(|(name, _)| name.as_str()).collect();
+    for name in &handed {
+        assert!(
+            !name.ends_with("_BASE_URL")
+                && !name.ends_with("_TOKEN")
+                && !name.ends_with("_API_KEY"),
+            "{name} is a route or a token, handed to a project's harness: {handed:?}"
+        );
+    }
+    let declared = ready
+        .declaration()
+        .expect("its declaration rides the start");
+    assert!(declared.route.formats.is_empty(), "{:?}", declared.route);
+    assert!(
+        keyroute::resolve(declared, Way::YourKey, Level::One).is_err(),
+        "a key from your keys is never routed to it"
+    );
+    for way in [
+        Way::Subscription,
+        Way::HarnessStoredKey,
+        Way::OwnSettingsKey,
+    ] {
+        assert_eq!(
+            keyroute::resolve(declared, way, Level::One),
+            Ok(Route::OwnSignIn),
+            "{way:?}"
+        );
+    }
+}

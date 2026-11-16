@@ -915,8 +915,8 @@ struct RawSignIn {
     #[serde(default)]
     kinds: Vec<String>,
     kept_from_commands: Option<String>,
-    #[serde(default)]
-    plans: Vec<RawPlan>,
+    /// Absent and present apart: a replacement of a built-in may not set it at all (R-224).
+    plans: Option<Vec<RawPlan>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1180,6 +1180,21 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         }
         None => raw.env,
     };
+    // Only a built-in routes (R-223, R-224): a routing fact is never a project's or this
+    // machine's to set, nor a replacement's plans, and the refusal names the field.
+    if origin != Origin::BuiltIn
+        && let Some(raw_route) = &raw.route
+    {
+        return Err(route_refusal(raw_route, origin, &at));
+    }
+    if let Some(replaced) = replaces
+        && raw.sign_in.as_ref().is_some_and(|raw| raw.plans.is_some())
+    {
+        return Err(crate::window_copy::fill(
+            crate::window_copy::line::W101,
+            &[("harness", &replaced.name)],
+        ));
+    }
     let sign_in = match (replaces, raw.sign_in) {
         (None, raw_sign_in) => sign_in(raw_sign_in.unwrap_or_default(), &raw.name, &at)?,
         (Some(replaced), None) => replaced.sign_in.clone(),
@@ -1191,20 +1206,12 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             &at,
         )?,
     };
-    // A routing fact never comes from a project or this machine (H-19): only a built-in's
-    // declaration may carry `[route]`, and a replacement routes as the built-in it replaces.
-    let route = match (origin, replaces, raw.route) {
-        (Origin::BuiltIn, _, Some(raw_route)) => route(raw_route, &at)?,
-        (_, Some(replaced), None) => replaced.route.clone(),
-        (_, _, None) => RouteFacts::default(),
-        (Origin::Project | Origin::Local, _, Some(_)) => {
-            return Err(format!(
-                "{} is a routing table, and only a harness purlis ships may carry one: where a \
-                 chat's model calls go is never a project's or this machine's to say. Remove \
-                 [route].",
-                at("[route]")
-            ));
-        }
+    // Only a built-in's declaration reaches here with `[route]` (refused above for any other),
+    // and a replacement routes as the built-in it replaces.
+    let route = match (replaces, raw.route) {
+        (_, Some(raw_route)) => route(raw_route, &at)?,
+        (Some(replaced), None) => replaced.route.clone(),
+        (None, None) => RouteFacts::default(),
     };
     let folders = match (replaces, raw.folders) {
         (None, raw_folders) => folders(raw_folders.unwrap_or_default(), &env, origin, &at)?,
@@ -1304,6 +1311,35 @@ fn kept_as_built<T: PartialEq>(
     ))
 }
 
+/// Why a `[route]` table from `origin`, never a built-in, is refused, naming the first field it
+/// sets (R-223, R-224): this machine's in W92's words. From phase 2 a replacement may set
+/// `min_context`; in 1a every field is refused.
+fn route_refusal(raw: &RawRoute, origin: Origin, at: &dyn Fn(&str) -> String) -> String {
+    let field = [
+        ("formats", raw.formats.is_some()),
+        ("min_context", raw.min_context.is_some()),
+        ("unsigned_cloud", raw.unsigned_cloud.is_some()),
+    ]
+    .into_iter()
+    .find_map(|(field, set)| set.then_some(field));
+    match (origin, field) {
+        (Origin::Local, Some(field)) => {
+            crate::window_copy::fill(crate::window_copy::line::W92, &[("field", field)])
+        }
+        (_, Some(field)) => format!(
+            "{} is a routing field, and only a harness purlis ships may set one: where a chat's \
+             model calls go is never a project's to say. Remove [route].",
+            at(&format!("[route] {field}"))
+        ),
+        (_, None) => format!(
+            "{} is a routing table, and only a harness purlis ships may carry one: where a \
+             chat's model calls go is never a project's or this machine's to say. Remove \
+             [route].",
+            at("[route]")
+        ),
+    }
+}
+
 /// A built-in's `[route]`: each format one purlis reads, once (spec C-14).
 fn route(raw: RawRoute, at: &dyn Fn(&str) -> String) -> Result<RouteFacts, String> {
     let mut formats = Vec::new();
@@ -1361,7 +1397,7 @@ fn sign_in(raw: RawSignIn, name: &str, at: &dyn Fn(&str) -> String) -> Result<Si
         None => Answer::Unknown,
         Some(value) => answer(value, &at("[sign_in] kept_from_commands"))?,
     };
-    let plans = plans(raw.plans, &kinds, name, at)?;
+    let plans = plans(raw.plans.unwrap_or_default(), &kinds, name, at)?;
     Ok(SignInFacts {
         kinds,
         kept_from_commands,
@@ -2359,3 +2395,6 @@ mod profile_facts_tests;
 
 #[cfg(test)]
 mod route_tests;
+
+#[cfg(test)]
+mod only_built_ins_route_tests;
