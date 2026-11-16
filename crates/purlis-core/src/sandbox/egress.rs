@@ -1229,13 +1229,11 @@ impl Allowed {
             use super::names::Found;
             let answer = match names.look_up(host, port) {
                 // The one address exempt from the filter, for this exact name and port alone.
-                Found::Origin(at) => {
-                    return names
-                        .dial_origin(host, port, &at, self.patience)
-                        .map_or(Connected::Not, Connected::To);
-                }
+                // DO NOT MERGE M5: an origin goes through the filter like any answer.
+                Found::Origin(at) => vec![at],
                 Found::Scripted(answer) => answer,
-                Found::Unmapped => Vec::new(),
+                // DO NOT MERGE M4: an unmapped name asks the system's resolver.
+                Found::Unmapped => system_resolve(host, port),
             };
             let resolve = |_: &str, _: u16| answer.clone();
             let dial = |at: &SocketAddr, patience| names.dial(at, patience);
@@ -1501,6 +1499,8 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         }
     };
     if !decision.carries() {
+        // DO NOT MERGE M2: a refused name is connected (looked up, dialled) all the same.
+        let _ = allowed.connect(&request.host, request.port, &own, read.as_deref());
         allowed.refused(&request.host, request.port, &decision);
         answer(
             &mut client,
@@ -2127,9 +2127,10 @@ fn reachable_from(
     resolved
         .iter()
         .copied()
+        // DO NOT MERGE M1: the filter keeps every address.
         .filter(|addr| {
-            !super::hosts::refused_address(addr.ip(), own)
-                || reach.lists_exactly(addr.ip(), addr.port())
+            let _ = (own, reach.lists_exactly(addr.ip(), addr.port()));
+            true
         })
         .collect()
 }
