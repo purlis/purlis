@@ -205,7 +205,11 @@ mod tests {
     #[test]
     fn each_dialect_reads_its_own_resume_argument() {
         assert_eq!(
-            read(Dialect::Claude, &words(&["--resume", "abc", "--name", "chat 1"])).resume,
+            read(
+                Dialect::Claude,
+                &words(&["--resume", "abc", "--name", "chat 1"])
+            )
+            .resume,
             Some("abc".to_owned())
         );
         assert_eq!(
@@ -222,7 +226,15 @@ mod tests {
     fn the_first_message_is_the_dialects_own() {
         let claude = read(
             Dialect::Claude,
-            &words(&["--mcp-config", "{}", "--settings", "{}", "--session-id", "s", "hello"]),
+            &words(&[
+                "--mcp-config",
+                "{}",
+                "--settings",
+                "{}",
+                "--session-id",
+                "s",
+                "hello",
+            ]),
         );
         assert_eq!(claude.prompt.as_deref(), Some("hello"));
         assert_eq!(claude.session_id.as_deref(), Some("s"));

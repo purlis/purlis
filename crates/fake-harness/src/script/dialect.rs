@@ -88,10 +88,19 @@ impl Dialect {
                 .or_else(|| call.field(&["command", "cmd"]))
                 .unwrap_or_default()
         };
-        let path = || call.field(&["path", "file_path", "filePath"]).unwrap_or_default();
+        let path = || {
+            call.field(&["path", "file_path", "filePath"])
+                .unwrap_or_default()
+        };
         let content = || call.field(&["content"]).unwrap_or_default();
-        let old = || call.field(&["old", "old_string", "oldString"]).unwrap_or_default();
-        let new = || call.field(&["new", "new_string", "newString"]).unwrap_or_default();
+        let old = || {
+            call.field(&["old", "old_string", "oldString"])
+                .unwrap_or_default()
+        };
+        let new = || {
+            call.field(&["new", "new_string", "newString"])
+                .unwrap_or_default()
+        };
         let url = || call.field(&["url"]).unwrap_or_default();
         let step = call.step.clone().unwrap_or_default();
         let prompt = || call.field(&["prompt"]).unwrap_or_default();
@@ -269,12 +278,22 @@ impl Dialect {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Shell(String),
-    Write { path: String, content: String },
-    Edit { path: String, old: String, new: String },
+    Write {
+        path: String,
+        content: String,
+    },
+    Edit {
+        path: String,
+        old: String,
+        new: String,
+    },
     Read(String),
     Web(String),
     Subagent,
-    Mcp { server: String, tool: String },
+    Mcp {
+        server: String,
+        tool: String,
+    },
     Unknown,
 }
 

@@ -117,7 +117,10 @@ pub fn call(
     command.args(&server.args);
     if let Some(only) = &server.only {
         command.env_clear();
-        for name in only.iter().chain(["PATH", "HOME"].map(str::to_owned).iter()) {
+        for name in only
+            .iter()
+            .chain(["PATH", "HOME"].map(str::to_owned).iter())
+        {
             if let Ok(value) = std::env::var(name) {
                 command.env(name, value);
             }
@@ -157,18 +160,22 @@ pub fn call(
         }
     };
     let result = (|| {
-        send(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": {"name": "fake-harness", "version": env!("CARGO_PKG_VERSION")}
-        }}))
+        send(
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "fake-harness", "version": env!("CARGO_PKG_VERSION")}
+            }}),
+        )
         .map_err(|e| e.to_string())?;
         answer(1)?;
         send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))
             .map_err(|e| e.to_string())?;
-        send(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-            "name": tool, "arguments": arguments
-        }}))
+        send(
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": tool, "arguments": arguments
+            }}),
+        )
         .map_err(|e| e.to_string())?;
         let answered = answer(2)?;
         if let Some(error) = answered.get("error") {

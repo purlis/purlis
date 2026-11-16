@@ -2190,6 +2190,8 @@ dependencies = [
  "glob",
  "portable-pty",
  "purlis-core",
+ "purlis-recordings",
+ "purlis-session-protocol",
  "regex",
  "serde",
  "serde_json",

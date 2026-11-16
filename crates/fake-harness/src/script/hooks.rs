@@ -134,8 +134,18 @@ fn finish(route: &Route, started: Started) -> Fired {
             text
         })
     };
-    let out = pipe(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
-    let err = pipe(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    let out = pipe(
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    );
+    let err = pipe(
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    );
     let deadline = Instant::now() + Duration::from_secs(route.timeout);
     let status = loop {
         match child.try_wait() {

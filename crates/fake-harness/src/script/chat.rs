@@ -247,11 +247,12 @@ impl Chat {
 
     fn turn(&self, turn: &Turn, prompt: &str, typed: bool) {
         self.interrupted.store(false, Ordering::SeqCst);
-        *self.turn_id.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(super::dialect::uuid());
+        *self
+            .turn_id
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(super::dialect::uuid());
         if self.dialect == Dialect::Codex && !self.reported_start.load(Ordering::SeqCst) {
-            self.transcript
-                .user_text(&self.codex_environment(), false);
+            self.transcript.user_text(&self.codex_environment(), false);
         }
         if !self.dialect.starts_before_the_first_prompt() {
             self.session_start();
@@ -365,7 +366,11 @@ impl Chat {
             self.transcript.tool_result(&ToolResult {
                 id,
                 step: call.step.clone(),
-                text: format!("unsupported call: {} offers no {} tool", self.dialect.name(), call.tool),
+                text: format!(
+                    "unsupported call: {} offers no {} tool",
+                    self.dialect.name(),
+                    call.tool
+                ),
                 is_error: Some(true),
                 ran: None,
                 refused_by: None,
@@ -526,10 +531,20 @@ impl Chat {
             let handles: Vec<_> = both
                 .iter()
                 .map(|route| {
-                    let payload = if route.event == "Notification" { &note } else { &ask };
+                    let payload = if route.event == "Notification" {
+                        &note
+                    } else {
+                        &ask
+                    };
                     let env = &env;
                     scope.spawn(move || {
-                        hooks::run_all(&[route], Spawn::Direct(&self.binary), payload, env, &self.cwd)
+                        hooks::run_all(
+                            &[route],
+                            Spawn::Direct(&self.binary),
+                            payload,
+                            env,
+                            &self.cwd,
+                        )
                     })
                 })
                 .collect();
@@ -540,7 +555,8 @@ impl Chat {
         });
         !fired.iter().any(|f| {
             f.event == "PermissionRequest"
-                && f.json().and_then(|j| j.get("reply").and_then(Value::as_str).map(str::to_owned))
+                && f.json()
+                    .and_then(|j| j.get("reply").and_then(Value::as_str).map(str::to_owned))
                     == Some("reject".to_owned())
         })
     }
@@ -554,7 +570,9 @@ impl Chat {
             Action::Shell(command) => self.shell(command),
             Action::Write { path, content } => Outcome::File(self.write(path, content)),
             Action::Edit { path, old, new } => Outcome::File(self.edit(path, old, new)),
-            Action::Read(path) => Outcome::Read(std::fs::read_to_string(path).map_err(|e| (e, path.clone()))),
+            Action::Read(path) => {
+                Outcome::Read(std::fs::read_to_string(path).map_err(|e| (e, path.clone())))
+            }
             Action::Web(url) => Outcome::Web(dial(url)),
             Action::Mcp { server, tool } => {
                 let Some(entry) = mcp_call::server(self.dialect, server, &self.argv) else {
@@ -603,8 +621,18 @@ impl Chat {
                 s
             })
         };
-        let out = read(child.stdout.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>));
-        let err = read(child.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>));
+        let out = read(
+            child
+                .stdout
+                .take()
+                .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
+        );
+        let err = read(
+            child
+                .stderr
+                .take()
+                .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
+        );
         let exit = loop {
             if let Ok(Some(status)) = child.try_wait() {
                 break Some(status.code().unwrap_or(-1));
@@ -702,7 +730,10 @@ impl Chat {
         let before = std::fs::read_to_string(path).map_err(|e| (e, path.to_owned()))?;
         if !before.contains(old) {
             return Err((
-                std::io::Error::new(std::io::ErrorKind::NotFound, "String to replace not found in file."),
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "String to replace not found in file.",
+                ),
                 path.to_owned(),
             ));
         }
@@ -730,7 +761,8 @@ impl Chat {
                 if let Some(context) = f.context() {
                     if self.dialect == Dialect::Opencode {
                         if purlis_core::opencode::EFFECTFUL.contains(&c.tool.as_str()) {
-                            text = format!("{text}\n\n--- purlis ---\n{context}\n--- end purlis ---");
+                            text =
+                                format!("{text}\n\n--- purlis ---\n{context}\n--- end purlis ---");
                         }
                     } else {
                         self.transcript.context(&context, Some(&f.word));
@@ -787,7 +819,10 @@ impl Chat {
                     Action::Shell(cmd) => cmd.clone(),
                     _ => c.input.as_str().unwrap_or_default().to_owned(),
                 };
-                format!("Command blocked by PreToolUse hook: {}. Command: {command}", r.reason)
+                format!(
+                    "Command blocked by PreToolUse hook: {}. Command: {command}",
+                    r.reason
+                )
             }
             Dialect::Opencode => {
                 if r.reason.is_empty() {
@@ -817,7 +852,12 @@ impl Chat {
                 let err = ran.stderr.trim_end_matches('\n');
                 f.ran = Some(ran.clone());
                 if ran.exit == Some(0) {
-                    f.text = [out, err].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join("\n");
+                    f.text = [out, err]
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     f.is_error = Some(false);
                     f.post = Some((
                         "PostToolUse",
@@ -825,7 +865,12 @@ impl Chat {
                         json!({"stdout": out, "stderr": err, "interrupted": false, "isImage": false, "noOutputExpected": false}),
                     ));
                 } else {
-                    let both = [err, out].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join("\n");
+                    let both = [err, out]
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     f.text = format!("Exit code {}\n{both}", ran.exit.unwrap_or(-1));
                     f.is_error = Some(true);
                     f.post = Some(("PostToolUseFailure", "error", f.text.clone().into()));
@@ -880,7 +925,11 @@ impl Chat {
                             format!("The file {path} has been updated successfully.")
                         };
                         f.is_error = Some(false);
-                        f.post = Some(("PostToolUse", "tool_response", json!({"filePath": path, "type": if is_write {"create"} else {"update"}})));
+                        f.post = Some((
+                            "PostToolUse",
+                            "tool_response",
+                            json!({"filePath": path, "type": if is_write {"create"} else {"update"}}),
+                        ));
                     }
                     (Dialect::Claude, Err((e, path))) => {
                         f.text = node_error(e, path);
@@ -888,18 +937,31 @@ impl Chat {
                     }
                     (Dialect::Codex, Ok(path)) => {
                         let mark = if is_write { "A" } else { "M" };
-                        f.text = format!("Exit code: 0\nWall time: 0.0000 seconds\nOutput:\nSuccess. Updated the following files:\n{mark} {path}\n");
+                        f.text = format!(
+                            "Exit code: 0\nWall time: 0.0000 seconds\nOutput:\nSuccess. Updated the following files:\n{mark} {path}\n"
+                        );
                         f.post = Some(("PostToolUse", "tool_response", f.text.clone().into()));
                     }
                     (Dialect::Codex, Err((_, path))) => {
-                        f.text = format!("Exit code: 1\nWall time: 0.0000 seconds\nOutput:\nFailed to write file {}\n", strip_tmp(path));
+                        f.text = format!(
+                            "Exit code: 1\nWall time: 0.0000 seconds\nOutput:\nFailed to write file {}\n",
+                            strip_tmp(path)
+                        );
                     }
                     (Dialect::Opencode, Ok(_)) => {
-                        f.text = if is_write { "Wrote file successfully." } else { "Edit applied successfully." }.to_owned();
+                        f.text = if is_write {
+                            "Wrote file successfully."
+                        } else {
+                            "Edit applied successfully."
+                        }
+                        .to_owned();
                         f.post = Some(("PostToolUse", "tool_response", json!({"output": f.text})));
                     }
                     (Dialect::Opencode, Err((_, path))) => {
-                        f.text = format!("PermissionDenied: FileSystem.writeFile ({})", strip_tmp(path));
+                        f.text = format!(
+                            "PermissionDenied: FileSystem.writeFile ({})",
+                            strip_tmp(path)
+                        );
                     }
                 }
             }
@@ -919,33 +981,42 @@ impl Chat {
                     f.is_error = self.error_flag(true);
                 }
             },
-            (_, Outcome::Web(result)) => {
-                match result {
-                    Ok(status) => {
-                        f.text = status.clone();
-                        f.is_error = self.error_flag(false);
-                    }
-                    Err(_) if d == Dialect::Opencode => {
-                        f.text = format!("Transport error (GET {})", match &c.action {
+            (_, Outcome::Web(result)) => match result {
+                Ok(status) => {
+                    f.text = status.clone();
+                    f.is_error = self.error_flag(false);
+                }
+                Err(_) if d == Dialect::Opencode => {
+                    f.text = format!(
+                        "Transport error (GET {})",
+                        match &c.action {
                             Action::Web(url) => url.as_str(),
                             _ => "",
-                        });
-                    }
-                    Err(e) => {
-                        f.text = e.clone();
-                        f.is_error = self.error_flag(true);
-                    }
+                        }
+                    );
                 }
-            }
+                Err(e) => {
+                    f.text = e.clone();
+                    f.is_error = self.error_flag(true);
+                }
+            },
             (_, Outcome::Mcp(result)) => match result {
                 Ok(answered) => {
                     f.text = answered.text.clone();
                     f.is_error = self.error_flag(answered.is_error);
-                    let event = if answered.is_error { "PostToolUseFailure" } else { "PostToolUse" };
+                    let event = if answered.is_error {
+                        "PostToolUseFailure"
+                    } else {
+                        "PostToolUse"
+                    };
                     if answered.is_error && d == Dialect::Claude {
                         f.post = Some((event, "error", answered.text.clone().into()));
                     } else if !answered.is_error {
-                        f.post = Some((event, "tool_response", json!([{"type": "text", "text": answered.text}])));
+                        f.post = Some((
+                            event,
+                            "tool_response",
+                            json!([{"type": "text", "text": answered.text}]),
+                        ));
                     }
                 }
                 Err(e) => {
@@ -1027,7 +1098,8 @@ impl Chat {
                     }),
                     Some(&agent),
                 );
-                self.lock_background().retain(|t| t["id"] != agent_id.as_str());
+                self.lock_background()
+                    .retain(|t| t["id"] != agent_id.as_str());
                 self.transcript.tool_result(&ToolResult {
                     id: c.id.clone(),
                     step: c.step.clone(),
@@ -1105,7 +1177,13 @@ impl Chat {
     }
 
     /// `event`'s hooks for `tool`, each handed `fields` with the dialect's common ones.
-    fn fire(&self, event: &str, tool: Option<&str>, fields: Value, agent: Option<&Agent>) -> Vec<Fired> {
+    fn fire(
+        &self,
+        event: &str,
+        tool: Option<&str>,
+        fields: Value,
+        agent: Option<&Agent>,
+    ) -> Vec<Fired> {
         let routes = self.routes_for(event, tool);
         if routes.is_empty() {
             return Vec::new();
@@ -1145,16 +1223,15 @@ impl Chat {
     /// A hook's payload: the dialect's common fields, then `fields`.
     fn payload(&self, event: &str, fields: Value, agent: Option<&Agent>) -> Value {
         let mut p = Map::new();
-        let turn = self
-            .turn_id
-            .lock()
-            .ok()
-            .and_then(|t| t.clone());
+        let turn = self.turn_id.lock().ok().and_then(|t| t.clone());
         let tool_event = matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure");
         match self.dialect {
             Dialect::Claude => {
                 p.insert("session_id".into(), self.session_id.clone().into());
-                p.insert("transcript_path".into(), self.transcript_path().display().to_string().into());
+                p.insert(
+                    "transcript_path".into(),
+                    self.transcript_path().display().to_string().into(),
+                );
                 p.insert("cwd".into(), self.cwd.display().to_string().into());
                 match event {
                     "SessionStart" => {}
@@ -1200,7 +1277,10 @@ impl Chat {
                 {
                     p.insert("turn_id".into(), turn.into());
                 }
-                p.insert("transcript_path".into(), self.transcript_path().display().to_string().into());
+                p.insert(
+                    "transcript_path".into(),
+                    self.transcript_path().display().to_string().into(),
+                );
                 p.insert("cwd".into(), self.cwd.display().to_string().into());
                 p.insert("hook_event_name".into(), event.into());
                 if event != "SessionEnd" {
@@ -1243,7 +1323,10 @@ impl Chat {
                     ("CLAUDE_CODE_CHILD_SESSION".to_owned(), "1".to_owned()),
                     ("CLAUDE_CODE_SESSION_ATTENDED".to_owned(), "1".to_owned()),
                     ("CLAUDE_PID".to_owned(), pid),
-                    ("CLAUDE_PROJECT_DIR".to_owned(), self.cwd.display().to_string()),
+                    (
+                        "CLAUDE_PROJECT_DIR".to_owned(),
+                        self.cwd.display().to_string(),
+                    ),
                     (
                         "CLAUDE_PLUGIN_DATA".to_owned(),
                         config
@@ -1264,8 +1347,10 @@ impl Chat {
                         dir.join("sessionstart-hook-0.sh").display().to_string(),
                     ));
                 }
-                if matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "SubagentStop")
-                    || agent.is_some()
+                if matches!(
+                    event,
+                    "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "SubagentStop"
+                ) || agent.is_some()
                 {
                     env.push(("CLAUDE_EFFORT".to_owned(), "medium".to_owned()));
                 }
@@ -1354,10 +1439,16 @@ fn dial(url: &str) -> Result<String, String> {
     } else {
         format!("{host}:443")
     };
-    let proxy = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY"]
-        .iter()
-        .find_map(|k| std::env::var(k).ok())
-        .filter(|p| !p.is_empty());
+    let proxy = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+    ]
+    .iter()
+    .find_map(|k| std::env::var(k).ok())
+    .filter(|p| !p.is_empty());
     let connect_to = |addr: &str| {
         use std::net::ToSocketAddrs;
         let addr = addr
@@ -1376,8 +1467,11 @@ fn dial(url: &str) -> Result<String, String> {
                 .trim_end_matches('/')
                 .to_owned();
             let mut stream = connect_to(&addr)?;
-            write!(stream, "CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n")
-                .map_err(|e| e.to_string())?;
+            write!(
+                stream,
+                "CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"
+            )
+            .map_err(|e| e.to_string())?;
             let mut line = String::new();
             BufReader::new(stream)
                 .read_line(&mut line)
@@ -1429,7 +1523,13 @@ fn dashed(path: &Path) -> String {
     path.display()
         .to_string()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 

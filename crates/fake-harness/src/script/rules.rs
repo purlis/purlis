@@ -52,10 +52,7 @@ impl Rules {
             .flatten()
             .filter_map(Value::as_str)
         {
-            let Some((tool, spec)) = rule
-                .strip_suffix(')')
-                .and_then(|r| r.split_once('('))
-            else {
+            let Some((tool, spec)) = rule.strip_suffix(')').and_then(|r| r.split_once('(')) else {
                 rules.tools.push(rule.to_owned());
                 continue;
             };
@@ -90,11 +87,7 @@ impl Rules {
         let spellings = spellings(Path::new(path));
         rules
             .iter()
-            .any(|rule| {
-                spellings
-                    .iter()
-                    .any(|p| rule.matches_path_with(p, options))
-            })
+            .any(|rule| spellings.iter().any(|p| rule.matches_path_with(p, options)))
             .then_some(Refused::Path)
     }
 }
@@ -105,11 +98,7 @@ fn pattern_of(spec: &str, cwd: &Path) -> Option<glob::Pattern> {
     } else if let Some(home) = spec.strip_prefix("~/") {
         format!("{}/{home}", std::env::var("HOME").unwrap_or_default())
     } else {
-        format!(
-            "{}/{}",
-            cwd.display(),
-            spec.trim_start_matches('/')
-        )
+        format!("{}/{}", cwd.display(), spec.trim_start_matches('/'))
     };
     glob::Pattern::new(&absolute).ok()
 }
@@ -140,15 +129,25 @@ mod tests {
     #[test]
     fn an_absolute_rule_holds_its_folder_and_everything_below() {
         let r = rules(&["Edit(//outside)", "Edit(//outside/**)"]);
-        assert_eq!(r.refuses("Write", Some("/outside/a/b.txt")), Some(Refused::Path));
+        assert_eq!(
+            r.refuses("Write", Some("/outside/a/b.txt")),
+            Some(Refused::Path)
+        );
         assert_eq!(r.refuses("Edit", Some("/outside")), Some(Refused::Path));
         assert_eq!(r.refuses("Write", Some("/work/a.txt")), None);
-        assert_eq!(r.refuses("Read", Some("/outside/a.txt")), None, "an Edit rule holds no read");
+        assert_eq!(
+            r.refuses("Read", Some("/outside/a.txt")),
+            None,
+            "an Edit rule holds no read"
+        );
     }
 
     #[test]
     fn a_vault_rule_holds_a_vault_at_any_depth_in_either_case() {
-        let r = rules(&["Read(//**/.purlis/vaults/**)", "Read(//**/.[pP][uU]rlis/vaults/**)"]);
+        let r = rules(&[
+            "Read(//**/.purlis/vaults/**)",
+            "Read(//**/.[pP][uU]rlis/vaults/**)",
+        ]);
         assert_eq!(
             r.refuses("Read", Some("/work/.purlis/vaults/v.json")),
             Some(Refused::Path)

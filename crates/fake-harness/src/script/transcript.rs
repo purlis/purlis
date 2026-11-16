@@ -42,7 +42,9 @@ impl Transcript {
         let Some(file) = &self.file else {
             return;
         };
-        let mut file = file.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut file = file
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = writeln!(file, "{}", Value::Object(line));
         let _ = file.flush();
     }
@@ -78,10 +80,7 @@ impl Transcript {
         if let Some(ran) = &result.ran {
             line.insert("stdout".to_owned(), ran.stdout.clone().into());
             line.insert("stderr".to_owned(), ran.stderr.clone().into());
-            line.insert(
-                "exit".to_owned(),
-                ran.exit.map_or(Value::Null, Value::from),
-            );
+            line.insert("exit".to_owned(), ran.exit.map_or(Value::Null, Value::from));
         }
         if let Some(refusal) = &result.refused_by {
             line.insert("hook".to_owned(), refusal.word.clone().into());

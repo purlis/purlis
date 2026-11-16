@@ -34,6 +34,11 @@ portable-pty.workspace = true
 tempfile.workspace = true
 # `scripted.rs` writes the stand-in `purlis` its hooks run.
 stand-in.workspace = true
+# `under_the_wrap.rs` starts the fake as purlis starts a harness, with T1.1-03's recorder as its
+# hook binary, and compares what it did with T1.1-03's recordings.
+purlis-core = { workspace = true, features = ["test-support", "fenced"] }
+purlis-recordings = { path = "../../tests/recordings" }
+purlis-session-protocol.workspace = true
 
 [lints]
 workspace = true

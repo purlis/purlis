@@ -133,8 +133,8 @@ impl Call {
 /// The script at `path`, with each `<name>` placeholder T1.1-03's mask left in it replaced by
 /// what `places` names, so a masked turn script runs in this run's own folders.
 pub fn read(path: &Path, places: &BTreeMap<String, String>) -> Result<Script, String> {
-    let mut text =
-        std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let mut text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     for (name, value) in places {
         // Inside a JSON string: the value written as JSON would write it there.
         let quoted = serde_json::to_string(value).map_err(|e| e.to_string())?;

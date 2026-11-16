@@ -80,7 +80,10 @@ impl Run {
             .arg(self.path("script.json"))
             .args(["--dialect", dialect, "--transcript"])
             .arg(&transcript)
-            .args(["--place", &format!("outside={}", self.path("outside").display())])
+            .args([
+                "--place",
+                &format!("outside={}", self.path("outside").display()),
+            ])
             .args(words)
             .current_dir(self.work())
             .env("CHARTER_HOOK_BINARY", self.path("purlis"))
@@ -113,7 +116,10 @@ impl Run {
             .lines()
             .filter_map(|l| {
                 let (word, input) = l.split_once('\t')?;
-                Some((word.to_owned(), serde_json::from_str(input).unwrap_or(Value::Null)))
+                Some((
+                    word.to_owned(),
+                    serde_json::from_str(input).unwrap_or(Value::Null),
+                ))
             })
             .collect();
         let transcript = std::fs::read_to_string(&transcript)
@@ -165,7 +171,11 @@ fn routes(dialect: &str, env: &[(&str, &str)]) -> Value {
         .envs(env.iter().copied())
         .output()
         .expect("the routes");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     serde_json::from_slice(&out.stdout).expect("the routes are JSON")
 }
 
@@ -222,7 +232,11 @@ fn the_fake_harness_routes_come_from_purlis_core_for_every_dialect() {
         purlis_core::harness::hooked::WORD.to_owned(),
         purlis_core::harness::hooked::HOOK_TIMEOUT.as_secs(),
     ));
-    assert_eq!(triples(&claude), want, "Claude Code's routes are its plugin's");
+    assert_eq!(
+        triples(&claude),
+        want,
+        "Claude Code's routes are its plugin's"
+    );
     for handler in purlis_core::hookreg::HANDLERS {
         assert!(
             fires(&claude).contains(handler.event),
@@ -301,7 +315,11 @@ fn a_codex_turn_fires_no_posttoolusefailure_and_no_notification() {
     ])));
     let played = run.play("codex", &strs(&first_message("codex", "go")), &[], &[]);
     let events = played.events();
-    assert!(!events.contains("PostToolUseFailure"), "{:?}", played.words());
+    assert!(
+        !events.contains("PostToolUseFailure"),
+        "{:?}",
+        played.words()
+    );
     assert!(!events.contains("Notification"), "{:?}", played.words());
     assert!(
         !played.words().contains(&"notification"),
@@ -312,12 +330,18 @@ fn a_codex_turn_fires_no_posttoolusefailure_and_no_notification() {
     let post = played
         .hooks
         .iter()
-        .find(|(w, i)| w == "posttooluse-blocked" && i["tool_input"]["command"] == "echo failing >&2; exit 2")
+        .find(|(w, i)| {
+            w == "posttooluse-blocked" && i["tool_input"]["command"] == "echo failing >&2; exit 2"
+        })
         .expect("the failed command's PostToolUse");
     assert_eq!(post.1["tool_response"], "failing\n");
     // The same calls in Claude Code do fire PostToolUseFailure: the difference is the dialect's.
     let claude = run.play("claude", &strs(&first_message("claude", "go")), &[], &[]);
-    assert!(claude.events().contains("PostToolUseFailure"), "{:?}", claude.words());
+    assert!(
+        claude.events().contains("PostToolUseFailure"),
+        "{:?}",
+        claude.words()
+    );
 }
 
 #[test]
@@ -407,16 +431,26 @@ fn a_relaunched_script_continues_at_its_next_turn() {
             "{dialect}: the first launch plays the first turn alone"
         );
         let cursor = run.path("state").join(format!("{session}.json"));
-        assert!(cursor.is_file(), "{dialect}: the cursor is kept by session id");
         assert!(
-            !run.path("script.json").with_file_name(format!("{session}.json")).exists(),
+            cursor.is_file(),
+            "{dialect}: the cursor is kept by session id"
+        );
+        assert!(
+            !run.path("script.json")
+                .with_file_name(format!("{session}.json"))
+                .exists(),
             "{dialect}: never beside the script"
         );
         // Relaunched as purlis relaunches it, with the dialect's resume argument.
         let resume: Vec<String> = match dialect {
             "claude" => vec!["--resume".into(), session.clone(), "second".into()],
             "codex" => vec!["resume".into(), session.clone(), "second".into()],
-            _ => vec!["-s".into(), session.clone(), "--prompt".into(), "second".into()],
+            _ => vec![
+                "-s".into(),
+                session.clone(),
+                "--prompt".into(),
+                "second".into(),
+            ],
         };
         let second = run.play(dialect, &strs(&resume), &[], &[]);
         assert_eq!(second.session(), session, "{dialect}: the same session");
@@ -458,7 +492,10 @@ fn the_claude_dialect_applies_permissions_deny_before_native_io() {
     words.extend(first_message("claude", "go"));
     let played = run.play("claude", &strs(&words), &[], &[]);
 
-    assert!(!outside.join("by-write.txt").exists(), "the denied write happened");
+    assert!(
+        !outside.join("by-write.txt").exists(),
+        "the denied write happened"
+    );
     assert_eq!(
         std::fs::read_to_string(work.join("ok.txt")).ok().as_deref(),
         Some("ok"),
@@ -497,7 +534,11 @@ fn the_claude_dialect_applies_permissions_deny_before_native_io() {
         .map(|(_, i)| &i["tool_input"])
         .collect();
     assert_eq!(guarded.len(), 1, "{guarded:?}");
-    assert!(guarded[0]["file_path"].as_str().is_some_and(|p| p.ends_with("ok.txt")));
+    assert!(
+        guarded[0]["file_path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("ok.txt"))
+    );
 }
 
 #[test]
@@ -513,7 +554,9 @@ fn one_script_runs_unchanged_in_all_three_dialects() {
         let _ = std::fs::remove_file(run.work().join("w.txt"));
         let played = run.play(dialect, &strs(&first_message(dialect, "go")), &[], &[]);
         assert_eq!(
-            std::fs::read_to_string(run.work().join("w.txt")).ok().as_deref(),
+            std::fs::read_to_string(run.work().join("w.txt"))
+                .ok()
+                .as_deref(),
             Some(if dialect == "codex" { "v\n" } else { "v" }),
             "{dialect}: {:#?}",
             played.transcript
@@ -522,7 +565,8 @@ fn one_script_runs_unchanged_in_all_three_dialects() {
             played
                 .transcript
                 .iter()
-                .any(|l| l["step"] == "bash" && l["text"].as_str().is_some_and(|t| t.contains("hello"))),
+                .any(|l| l["step"] == "bash"
+                    && l["text"].as_str().is_some_and(|t| t.contains("hello"))),
             "{dialect}"
         );
         assert!(played.events().contains("PreToolUse"), "{dialect}");
