@@ -9367,3 +9367,29 @@ fn the_tls_pool_files_a_restart_ask_compares_are_named_and_real_but_never_purlis
         "the copies' folder is held from every chat whatever the pools name"
     );
 }
+
+/// R-038: the `model-providers` preset stays for every chat purlis doesn't proxy, so opencode
+/// on its own OpenRouter key, passed through the person's own settings, keeps reaching it.
+#[test]
+fn an_unproxied_chat_keeps_the_model_providers_preset() {
+    use crate::keyroute::{Level, Route, Way};
+    let opencode = crate::harness_declaration::of(Harness::Opencode);
+    assert_eq!(
+        crate::keyroute::resolve(opencode, Way::OwnSettingsKey, Level::One),
+        Ok(Route::OwnSignIn),
+        "its own key is not proxied"
+    );
+    let plane = plane_saying("[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n");
+
+    let applied =
+        compiled_anyway(Harness::Opencode, plane.path(), &machine(Os::MacOs)).expect("compiles");
+
+    let reached = reached(&applied);
+    for host in Preset::ModelProviders.own_hosts() {
+        assert!(reached.iter().any(|it| it == host), "{host}: {reached:?}");
+    }
+    assert!(
+        reached.iter().any(|it| it == "openrouter.ai"),
+        "{reached:?}"
+    );
+}

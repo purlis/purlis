@@ -139,6 +139,8 @@ pub mod line {
     pub const W81_PROXY_REFUSED: &str = "The outbound proxy refused the connection.";
     pub const W81_NO_ANSWER: &str = "<host> didn't answer within <n> seconds.";
     pub const W81_RESET: &str = "<host> reset the connection.";
+    pub const W81_UNSUPPORTED_PROXY: &str =
+        "purlis can't use the outbound proxy's <scheme> scheme.";
     /// W82: Refusal, printed by Claude Code when it gives up (the cap's 429).
     pub const W82: &str = "purlis: this chat has 64 model calls running at once.";
     /// W83: Refusal, printed by Claude Code when it gives up (the body-wait 429).
