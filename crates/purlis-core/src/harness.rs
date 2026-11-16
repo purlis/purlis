@@ -19,6 +19,7 @@ pub mod codex;
 pub mod hooked;
 pub mod model;
 pub mod opencode;
+pub mod tested;
 #[cfg(test)]
 pub(crate) mod testing;
 

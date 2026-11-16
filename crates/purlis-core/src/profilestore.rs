@@ -46,7 +46,7 @@ const LOCK: &str = "profiles.json.lock";
 const VERSION: u64 = 1;
 
 /// The most [`FILE`] may be. A machine has a handful of profiles.
-const MOST_BYTES: u64 = 1 << 20;
+pub(crate) const MOST_BYTES: u64 = 1 << 20;
 
 /// Where [`FILE`] is under the config home `config_root`.
 pub fn path(config_root: &Path) -> PathBuf {

@@ -255,6 +255,7 @@ mod the_index_is_read_and_repaired_by_the_rules_an_edit_keeps;
 mod the_leak_guard_answers_what_the_python_answers;
 mod the_local_layer_has_one_reader;
 mod the_local_project_runs_sandboxed_chats;
+mod the_model_key_mark_is_one_sealed_record;
 mod the_named_spin_loops_and_fake_homes_never_hang_in_a_sandboxed_chat;
 mod the_native_transport_asks_conditionally_and_once;
 mod the_one_route_is_taught_in_the_same_words;
@@ -276,6 +277,7 @@ mod upgrading_leaves_every_chat_start_as_it_was_and_records_its_folder;
 mod what_codex_keeps_of_a_briefing_and_takes_in_mid_chat_is_measured;
 mod when_the_forge_cache_is_refreshed;
 mod workspace_remove_clears_only_its_own_exclude_lines;
+mod your_keys_holds_a_keychain_value_and_its_index;
 
 /// Set on the child [`alone`] starts.
 const ALONE: &str = "CORE_TEST_ALONE";

@@ -1874,6 +1874,8 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             // purlis's own copies of the TLS files read from Docker contexts (#6268).
             std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/docker-context-tls"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/forge-etags"),
+            // Your keys' index, and the rest of the model-keys folder (T1a-09, C-23).
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/model-keys"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/peers.json"),
@@ -1883,6 +1885,7 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/cluster-kubeconfigs"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/docker-context-tls"),
             std::path::PathBuf::from("/nonexistent-home/op/.config/charter/forge-etags"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/model-keys"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
@@ -1914,6 +1917,66 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
                 .to_path_buf(),
         ]
     );
+}
+
+/// **No chat reads or writes your keys' index** (T1a-09, C-23): the whole `model-keys` folder is
+/// denied to every chat's sandbox, reading and writing, on every OS, so the index's path is
+/// under a folder denied both ways, in the form each harness is handed.
+#[test]
+fn no_chat_reads_or_writes_your_keys_index() {
+    for os in [Os::MacOs, Os::Linux] {
+        let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
+        let index = crate::yourkeys::index_path(&config);
+        let (_plane, denied) = denied_with(None, os);
+        let both = paths(&denied, Class::HumanPowers, Access::ReadWrite);
+        let folder = both
+            .iter()
+            .find(|denied| index.starts_with(denied) && denied.ends_with(crate::yourkeys::DIR));
+        assert!(folder.is_some(), "{os:?}: {} in {both:?}", index.display());
+        if os == Os::MacOs {
+            let named = super::real(folder.expect("checked")).display().to_string();
+            let settings = claude::settings(&compiled(denied, os)).expect("compiles");
+            for key in ["denyRead", "denyWrite"] {
+                assert!(
+                    settings.sandbox["filesystem"][key]
+                        .as_array()
+                        .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+                    "{key}: {}",
+                    settings.sandbox["filesystem"][key]
+                );
+            }
+        }
+    }
+}
+
+/// **No chat reads or writes the model-key marks** (T1a-10, R-174, C-23): each entry's mark is
+/// under `model-keys/marks`, so a chat's sandbox denies it both ways, on every OS, as it denies
+/// the whole `model-keys` folder. The device key's keychain item is T1a-72's table's to assert.
+#[test]
+fn a_chat_cannot_read_the_marks_folder() {
+    for os in [Os::MacOs, Os::Linux] {
+        let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
+        let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
+        let marks = seal.parent().expect("a folder").to_path_buf();
+        assert!(marks.ends_with("model-keys/marks"), "{}", marks.display());
+        let (_plane, denied) = denied_with(None, os);
+        let both = paths(&denied, Class::HumanPowers, Access::ReadWrite);
+        let folder = both.iter().find(|denied| marks.starts_with(denied));
+        assert!(folder.is_some(), "{os:?}: {} in {both:?}", marks.display());
+        if os == Os::MacOs {
+            let named = super::real(folder.expect("checked")).display().to_string();
+            let settings = claude::settings(&compiled(denied, os)).expect("compiles");
+            for key in ["denyRead", "denyWrite"] {
+                assert!(
+                    settings.sandbox["filesystem"][key]
+                        .as_array()
+                        .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+                    "{key}: {}",
+                    settings.sandbox["filesystem"][key]
+                );
+            }
+        }
+    }
 }
 
 /// **On a runner, a chat reads no other profile's folder** (#2049): a runner keeps each of its
