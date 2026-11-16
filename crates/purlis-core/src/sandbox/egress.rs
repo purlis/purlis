@@ -1695,16 +1695,21 @@ fn read_into(client: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Optio
 
 /// Whether a `Host` header's `named` is `host` on `port`.
 pub(super) fn same_host(named: &str, host: &str, port: u16) -> bool {
-    let (name, named_port) = match named.rsplit_once(':') {
-        Some((name, port)) if !name.ends_with(']') || name.starts_with('[') => {
-            (name, port.parse().ok())
-        }
-        _ => (named, None),
+    let (name, named_port) = match named.strip_prefix('[') {
+        // An IPv6 address, whose colons are inside its brackets: a port only after them.
+        Some(rest) => match rest.split_once(']') {
+            Some((inside, "")) => (inside, None),
+            Some((inside, after)) => match after.strip_prefix(':') {
+                Some(port) => (inside, port.parse().ok()),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match named.rsplit_once(':') {
+            Some((name, port)) => (name, port.parse().ok()),
+            None => (named, None),
+        },
     };
-    let name = name
-        .strip_prefix('[')
-        .and_then(|it| it.strip_suffix(']'))
-        .unwrap_or(name);
     let name = name.strip_suffix('.').unwrap_or(name);
     let host = host.strip_suffix('.').unwrap_or(host);
     name.eq_ignore_ascii_case(host) && named_port.unwrap_or(80) == port
