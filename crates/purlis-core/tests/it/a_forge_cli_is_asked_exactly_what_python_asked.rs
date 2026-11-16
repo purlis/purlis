@@ -1244,7 +1244,6 @@ fn the_glab_head_read_answers_from_a_gitlab_clone() {
 mod glab_head {
     use super::*;
     use purlis_core::forge::Caller;
-    use purlis_core::forge::backend::Requests;
     use purlis_core::forge::pr::Pr;
     use serde_json::json;
 
