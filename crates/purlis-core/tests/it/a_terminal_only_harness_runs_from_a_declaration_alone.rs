@@ -892,13 +892,19 @@ fn a_project_declared_harness_runs_on_its_own_sign_in_only() {
             "{name} is a route or a token, handed to a project's harness: {handed:?}"
         );
     }
-    let declared = ready.declaration().expect("its declaration rides the start");
+    let declared = ready
+        .declaration()
+        .expect("its declaration rides the start");
     assert!(declared.route.formats.is_empty(), "{:?}", declared.route);
     assert!(
         keyroute::resolve(declared, Way::YourKey, Level::One).is_err(),
         "a key from your keys is never routed to it"
     );
-    for way in [Way::Subscription, Way::HarnessStoredKey, Way::OwnSettingsKey] {
+    for way in [
+        Way::Subscription,
+        Way::HarnessStoredKey,
+        Way::OwnSettingsKey,
+    ] {
         assert_eq!(
             keyroute::resolve(declared, way, Level::One),
             Ok(Route::OwnSignIn),

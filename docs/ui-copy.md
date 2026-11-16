@@ -106,7 +106,10 @@ empty state and error copy follow it.
 - **A refusal says what purlis will not do, and why:** *purlis cannot send {key}.*, *purlis
   will not read …*. If it does something else instead, say that too: *{name} did not start
   ({reason}). It is still recorded, and will be tried again at the next launch.*
-  (`PlaneView.tsx`, the notice for a chat that did not reopen).
+  (`PlaneView.tsx`, the notice for a chat that did not reopen). A file's refusal names the field
+  it refuses: *A local harness declaration can't set `route.min_context` in this version.*
+  (W92), and *`charter.local.toml` sets `[sign_in] plans` for opencode, which only purlis's own
+  declaration may set. purlis uses its own.* (W101, `harness_declaration.rs`).
 - **Don't blame the reader.** The subject is what failed, not what the reader did wrong.
 - **Say the cost of an act that cannot be undone, before it happens:** *There is no undo.*,
   *Its 2 secrets are destroyed in your system keychain and cannot be recovered.*

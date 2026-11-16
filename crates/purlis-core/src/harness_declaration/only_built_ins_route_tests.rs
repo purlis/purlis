@@ -142,8 +142,5 @@ fn a_built_ins_route_facts_come_from_the_binary() {
         shipped.formats,
         [crate::model_provider::Format::AnthropicMessages]
     );
-    assert_eq!(
-        builtin("claude").map(|d| d.origin),
-        Some(Origin::BuiltIn)
-    );
+    assert_eq!(builtin("claude").map(|d| d.origin), Some(Origin::BuiltIn));
 }
