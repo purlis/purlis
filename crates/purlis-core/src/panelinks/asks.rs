@@ -70,6 +70,15 @@ struct Opened {
     at: Instant,
 }
 
+/// One file on a runner, outside its chat's workspace, as opened (#6387).
+#[derive(Debug)]
+struct OnRunner {
+    pane: Asked,
+    runner: String,
+    path: String,
+    at: Instant,
+}
+
 /// **The asks the core issued tokens for, and the files outside the project opened on one.**
 #[derive(Debug)]
 pub struct Asks {
@@ -77,6 +86,7 @@ pub struct Asks {
     opened_life: Duration,
     issued: Mutex<VecDeque<Issued>>,
     opened: Mutex<VecDeque<Opened>>,
+    on_runners: Mutex<VecDeque<OnRunner>>,
 }
 
 impl Default for Asks {
@@ -93,6 +103,7 @@ impl Asks {
             opened_life,
             issued: Mutex::new(VecDeque::new()),
             opened: Mutex::new(VecDeque::new()),
+            on_runners: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -155,6 +166,43 @@ impl Asks {
             .rev()
             .find(|one| one.pane == pane && one.path == path && one.at.elapsed() < self.opened_life)
             .map(|one| one.identity)
+    }
+}
+
+impl Asks {
+    /// `path`, a file on `runner` outside its chat's workspace, was opened in `pane` on an
+    /// answered ask (#6387): the runner reads it for that pane's tab from now on.
+    pub fn keep_opened_on_runner(&self, pane: &Pane, runner: &str, path: &str) {
+        let pane = Asked::from(pane);
+        let mut on_runners = lock(&self.on_runners);
+        on_runners.retain(|one| {
+            one.at.elapsed() < self.opened_life
+                && !(one.pane == pane && one.runner == runner && one.path == path)
+        });
+        while on_runners.len() >= MOST_OPENED {
+            on_runners.pop_front();
+        }
+        on_runners.push_back(OnRunner {
+            pane,
+            runner: runner.to_owned(),
+            path: path.to_owned(),
+            at: Instant::now(),
+        });
+    }
+
+    /// **Whether `path` on `runner` was opened in `pane` on an answered ask**, within
+    /// [`OPENED_LIFE`]: `Some(())` where it was, so its tab may read it outside the workspace.
+    pub fn opened_on_runner(&self, pane: &Pane, runner: &str, path: &str) -> Option<()> {
+        let pane = Asked::from(pane);
+        lock(&self.on_runners)
+            .iter()
+            .any(|one| {
+                one.pane == pane
+                    && one.runner == runner
+                    && one.path == path
+                    && one.at.elapsed() < self.opened_life
+            })
+            .then_some(())
     }
 }
 

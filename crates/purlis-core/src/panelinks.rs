@@ -19,6 +19,8 @@
 //!   the window was handed that ask, not that a person read it.
 //! - **A file path** ([`Kind::File`], [`LocalFile`]) links only once the core finds the file,
 //!   and opens in the light editor at its line; one outside the chat's workspace asks first.
+//! - **A runner chat's file path** ([`RunnerFile`], #6387) is looked for on its runner, through
+//!   the adapter of that runner's kind ([`RunnerFiles`]), and opens read-only, read from there.
 
 use std::path::PathBuf;
 
@@ -28,6 +30,8 @@ pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
 mod chat;
 pub mod onrunner;
+mod runner;
+pub use runner::{RunnerFile, RunnerFiles};
 pub use chat::{ChatAt, ChatNumber, Goes};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
@@ -63,12 +67,14 @@ pub struct Pane {
     pub runs: Runs,
 }
 
-/// **Whose filesystem a pane's paths name**: this machine's, or a runner's, whose paths are not
-/// this machine's files until they are mapped through its mounts (#6221).
+/// **Whose filesystem a pane's paths name**: this machine's; a runner's that purlis can read
+/// its files on (#6387), whose paths are never this machine's; or one purlis cannot place.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Runs {
     #[default]
     Here,
+    /// A chat on a runner, whose files the resolver's [`RunnerFile`] reads there.
+    OnRunner,
     Elsewhere,
 }
 
@@ -157,6 +163,12 @@ pub trait LinkKind: Send + Sync {
     /// An ask for `target` in `pane` was answered with its token, and it opens now: what the
     /// kind keeps of that, in `asks`. Nothing, unless the kind says so.
     fn accepted(&self, _target: &Target, _pane: &Pane, _asks: &Asks) {}
+    /// Whether it reads its hint's candidates in `pane`: two kinds may answer one hint, each
+    /// for its own panes, as a file path is read here or on a chat's runner. Every pane, unless
+    /// the kind says so.
+    fn serves(&self, _pane: &Pane) -> bool {
+        true
+    }
 }
 
 /// **The core's link resolver**: the kinds it knows, each reading the candidates of its hint.
@@ -185,10 +197,10 @@ impl Resolver {
         self
     }
 
-    fn kind_of(&self, kind: Kind) -> Option<&dyn LinkKind> {
+    fn kind_of(&self, kind: Kind, pane: &Pane) -> Option<&dyn LinkKind> {
         self.kinds
             .iter()
-            .find(|one| one.kind() == kind)
+            .find(|one| one.kind() == kind && one.serves(pane))
             .map(|one| &**one)
     }
 
@@ -198,7 +210,12 @@ impl Resolver {
         candidate: &Candidate,
         pane: &Pane,
     ) -> Result<(&dyn LinkKind, Target), Resolved> {
-        let Some(kind) = self.kind_of(candidate.kind) else {
+        let Some(kind) = self.kind_of(candidate.kind, pane) else {
+            // A kind that reads this hint, but not in this pane: a runner chat's path where the
+            // window cannot read that runner says nothing, as a path that names no file.
+            if self.kinds.iter().any(|one| one.kind() == candidate.kind) {
+                return Err(Resolved::Quiet);
+            }
             return Err(Resolved::NotALink(
                 "purlis does not link that kind of text".into(),
             ));
