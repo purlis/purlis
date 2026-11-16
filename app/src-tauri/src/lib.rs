@@ -132,7 +132,6 @@ mod freshkept;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedkeyproxy;
-mod keychainunlock;
 #[cfg(unix)]
 mod hostedsessions;
 mod hostfailing;
@@ -144,6 +143,7 @@ mod inputlanes;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
+mod keychainunlock;
 mod killswitch;
 mod kubectl;
 mod lifecycle;

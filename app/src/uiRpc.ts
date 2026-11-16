@@ -504,6 +504,11 @@ export const commands = {
 	linkSecretAsk: __WINDOW_ONLY_RESULT,
 	secretAskEntries: __WINDOW_ONLY_RESULT,
 	runAskEntries: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
+	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
+	 */
+	unlockYourKeys: () => typedError<Unlock, string>(__TAURI_INVOKE("unlock_your_keys")),
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -2028,11 +2033,6 @@ export const commands = {
 	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
 	poolSetupGetHelp: __WINDOW_ONLY_RESULT,
 	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
-	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
-	 */
-	unlockYourKeys: () => typedError<Unlock, string>(__TAURI_INVOKE("unlock_your_keys")),
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,

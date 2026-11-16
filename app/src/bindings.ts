@@ -1069,6 +1069,11 @@ export const commands = {
 	 */
 	runAskEntries: (plane: PlaneId, id: number) => typedError<EntriesOf[], string>(__TAURI_INVOKE("run_ask_entries", { plane, id })),
 	/**
+	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
+	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
+	 */
+	unlockYourKeys: () => typedError<Unlock, string>(__TAURI_INVOKE("unlock_your_keys")),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -4429,11 +4434,6 @@ export const commands = {
 	 *  answered.
 	 */
 	poolSetupStopWaiting: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_stop_waiting")),
-	/**
-	 *  **W10's *Unlock***: the OS's unlock of the keychain. The window's start that waits on the
-	 *  Ask reads its entry again where it unlocked, so the start goes on with no second press.
-	 */
-	unlockYourKeys: () => typedError<Unlock, string>(__TAURI_INVOKE("unlock_your_keys")),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
