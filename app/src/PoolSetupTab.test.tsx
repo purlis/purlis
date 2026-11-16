@@ -245,7 +245,21 @@ describe("PoolSetupTab", () => {
     const calls = core(() => CHOSEN);
     const { unmount } = render(<PoolSetupTab plane="p" />);
     const box = await screen.findByRole("textbox", { name: /Name/ });
-    vi.useFakeTimers();
+    // The step's own reads land first: the release image, then the command it shows. One that
+    // landed after the clock was faked could start a wait of its own, not the name's, and the
+    // count below would hold it against the name (#6917's queue drop).
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.cmd === "pool_setup_command" &&
+            (call.args as { adding?: { image?: string } } | undefined)?.adding?.image ===
+              "img@sha256:a",
+        ),
+      ).toBe(true),
+    );
+    // Only the wait the name is kept after is the clock's to hold.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.change(box, { target: { value: "dev" } });
     const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
     expect(kept()).toEqual([]);
