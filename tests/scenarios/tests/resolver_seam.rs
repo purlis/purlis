@@ -605,9 +605,11 @@ fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
     let service = Origin::http().expect("a service on this machine's loopback");
     let decoy = Origin::http().expect("an origin the map names");
     let port = service.addr().port();
-    // The grant of a port of this machine (qw384b), asked for by a name of this Mac.
-    let listed = format!("127.0.0.1:{port}");
+    // Asked for by a name of this Mac, decided by that name, and pinned to the loopback by the
+    // grant of the port itself (qw384b): with only the name listed, production looks it up.
     let asked = format!("localhost:{port}");
+    let grant = format!("127.0.0.1:{port}");
+    let listed: [&str; 2] = [&asked, &grant];
     let names = Names::new();
     // Mapped as an origin too: production never looks a pinned name up, so neither does the seam.
     names.origin("localhost", port, decoy.addr());
@@ -615,13 +617,13 @@ fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
     // A service left out of the plan, allowed: the pinned branch.
     let pinned = Proxy::serving(Serving {
         left_out: vec![port],
-        ..serving(&[&listed], &names)
+        ..serving(&listed, &names)
     })
     .expect("the proxy starts");
     let answer = get(pinned.port(), &asked, "/pinned");
     assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
     // A name of this Mac on a port the chat holds: pinned to the loopback by `address_of`.
-    let held = proxy(&[&listed], &names);
+    let held = proxy(&listed, &names);
     let answer = get(held.port(), &asked, "/held");
     assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
 
