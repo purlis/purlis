@@ -78,6 +78,7 @@ jobs:
           for test in $tests; do
             echo "::group::$DIALECT: $test"
             log="$out/$test.log"
+            rc=0
             CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" \
               PATH="$PWD/crates/fake-harness/shims:$PATH" \
               FAKE_WRAP_DIALECT="$DIALECT" FAKE_WRAP_PURLIS="$PWD/target/debug/purlis" \
@@ -87,9 +88,9 @@ jobs:
               FAKE_WRAP_OUT="$out" FAKE_WRAP_BASE="$RUNNER_TEMP/recording-$DIALECT-covering" \
               PURLIS_CONFIG_HOME="$homes/config-$test" PURLIS_DATA_HOME="$homes/data-$test" \
               cargo test --locked -p fake-harness --test under_the_wrap -- --ignored --exact "$test" --nocapture \
-              2>&1 | tee "$log"
+              2>&1 | tee "$log" || rc=$?
             # A test renamed or gone runs nothing and exits 0: only "1 passed" is a pass.
-            if [ "${PIPESTATUS[0]}" -ne 0 ] || ! grep -qE '^test result: ok\. 1 passed;' "$log"; then
+            if [ "$rc" -ne 0 ] || ! grep -qE '^test result: ok\. 1 passed;' "$log"; then
               echo "::error::$DIALECT: $test failed, or ran no test"
               status=1
             fi
