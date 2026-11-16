@@ -491,9 +491,8 @@ fn a_new_version_is_installed_beside_the_old_whose_chats_keep_running() {
         assert_eq!(running(&old).await, on_v1, "version 1's chats still run");
 
         // Version 1 drains: its chats end, and its host is stopped as a person or a supervisor
-        // stops it, by a signal (a desktop's link may not quit a runner's host; only the
-        // window's may quit its own). Killed so, it empties nothing: its record keeps each
-        // chat's start beside its end.
+        // stops it, by `SIGTERM` (a desktop's link may not quit a runner's host; only the
+        // window's may quit its own), which it hears as a quit and empties its record (#6700).
         for chat in &on_v1 {
             old.stop(chat).await.expect("a version 1 chat stops");
         }

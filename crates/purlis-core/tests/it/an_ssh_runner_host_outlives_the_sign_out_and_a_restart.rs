@@ -16,14 +16,16 @@
 //!    processes killed, as a dropped link leaves them) and the account is signed out: logind has
 //!    no session of it and says it lingers. The unit is still active, both chats' processes still
 //!    run, and the host, reached again through its bridge, still lists both;
-//! 4. the machine restarts (`docker restart`: systemd shuts down and boots again). Nothing is
-//!    run over SSH to start the host, and it serves again; the two chats ended with the machine,
-//!    and the host's first act was to settle each from its host record as ended by the restart:
-//!    the record is emptied and its log says so. Doctor is green again.
+//! 4. the machine restarts (`docker restart`: systemd shuts down and boots again). The shutdown
+//!    stops the unit by `SIGTERM` to the host alone (`KillMode=mixed`), which hears it as a quit
+//!    (#6700): it says so in the journal of the boot that ended, ends both chats as a quit and
+//!    empties its host record. Nothing is run over SSH to start the host, and it serves again,
+//!    with nothing to settle as a crash. Doctor is green again.
 //!
-//! The chats are shells (the chat's harness is not what this checks). A harness chat's end is
-//! kept in the event log by the same take-over (`left_by_its_last_host`), which
-//! `a_host_started_after_one_that_crashed_settles_what_it_left` checks in the host's own tests.
+//! The chats are shells (the chat's harness is not what this checks). A harness chat's run ended
+//! as a quit is `purlis-cli`'s `purlis_serve_hears_sigterm_as_a_quit`, which also checks that a
+//! host killed outright still leaves its chats for the next to settle as a crash, as
+//! `a_host_started_after_one_that_crashed_settles_what_it_left` does in the host's own tests.
 //!
 //! It needs the fixture: `SSH_RUNNER_SYSTEMD_TEST_ROUTE` (`ssh://keeper@127.0.0.1:2225`),
 //! `SSH_RUNNER_SYSTEMD_TEST_MACHINE` (the container, which the test restarts and looks into as
@@ -419,21 +421,36 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
         )
         .0
     });
+    // The boot that ended: the shutdown's stop was heard as a quit (#6700). Every journal on
+    // the disk, merged (`-m`): a container's machine id may be made new at each boot, which
+    // files the boot that ended under another machine's folder, where `-b -1` does not look.
+    // The host was stopped only once before now, by the restart.
+    let (_, stopped) = as_root(
+        machine,
+        &format!("journalctl -m --no-pager _SYSTEMD_USER_UNIT={unit}"),
+    );
+    if !stopped.contains(purlis_host::TOLD_TO_STOP) {
+        let (_, kept) = as_root(
+            machine,
+            "cat /etc/machine-id; ls -R /var/log/journal; journalctl -m --list-boots --no-pager",
+        );
+        panic!("the shutdown's SIGTERM was heard as a quit: {stopped}\n{kept}");
+    }
+    // This boot: the host serves again, and finds nothing left to settle as a crash.
     let (_, journal) = as_root(
         machine,
         &format!("journalctl -b --no-pager _SYSTEMD_USER_UNIT={unit}"),
     );
-    until("the host settled what the restart ended", || {
-        let (_, journal) = as_root(
-            machine,
-            &format!("journalctl -b --no-pager _SYSTEMD_USER_UNIT={unit}"),
-        );
-        journal.contains(&format!(
-            "ended without ending {CHATS} of its programs; each is settled as ended by its crash"
-        ))
-    });
+    assert!(
+        !journal.contains("each is settled as ended by its crash"),
+        "a planned restart is not kept as a crash: {journal}"
+    );
     let (_, record) = as_root(machine, RECORD_SIZE);
-    assert_eq!(record.trim(), "0", "the record was taken over: {journal}");
+    assert_eq!(
+        record.trim(),
+        "0",
+        "the record was emptied at the quit: {journal}"
+    );
     assert_eq!(
         chat_processes(machine),
         0,
