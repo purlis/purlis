@@ -76,9 +76,11 @@ pub struct Line {
 /// drift, and no value, so it holds no credential and nothing of the machine's.
 pub const WITHHELD: &str = "<withheld>";
 
-/// The name of every variable of `env`, each value [`WITHHELD`], but the recorder's own: the
-/// variables that tell it what to do ([`REAL`], [`OUT`], [`STALL`], [`EXIT2`]), under either of
-/// purlis's spellings (a chat is handed each product variable under both, V93k).
+/// The name of every variable of `env`, each value [`WITHHELD`], but the recording's own: the
+/// variables that tell the recorder what to do ([`REAL`], [`OUT`], [`STALL`], [`EXIT2`]) and the
+/// ones CI hands the recording's driver (`PURLIS_RECORD_HARNESS`, `_SCRIPT`, `_PURLIS`, `_OUT`,
+/// `_BASE`), which reach the chat's environment only because the driver started it. Each under
+/// either of purlis's spellings (a chat is handed each product variable under both, V93k).
 pub fn names(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String, String> {
     env.into_iter()
         .filter(|(name, _)| !the_recorders(name))
@@ -89,7 +91,7 @@ pub fn names(env: impl IntoIterator<Item = (String, String)>) -> BTreeMap<String
 fn the_recorders(name: &str) -> bool {
     name.strip_prefix("PURLIS_")
         .or_else(|| name.strip_prefix("CHARTER_"))
-        .is_some_and(|bare| bare.starts_with("RECORDER_"))
+        .is_some_and(|bare| bare.starts_with("RECORDER_") || bare.starts_with("RECORD_"))
 }
 
 /// Every line of the recorder's file at `path`, in the order they were written.
@@ -248,4 +250,30 @@ fn exec(real: &Path, args: &[String]) -> i32 {
         .args(args)
         .status()
         .map_or(127, |s| s.code().unwrap_or(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recording_keeps_no_name_of_the_recorders_or_the_drivers_own_variables() {
+        let env = [
+            "PURLIS_RECORDER_OUT",
+            "CHARTER_RECORDER_STALL",
+            "PURLIS_RECORD_HARNESS",
+            "CHARTER_RECORD_SCRIPT",
+            "PURLIS_RECORD_BASE",
+            "CHARTER_RECORD_OUT",
+            "PURLIS_CONFIG_HOME",
+            "CHARTER_CHAT",
+            "RECORD_SOMETHING",
+        ]
+        .map(|name| (name.to_owned(), "a value".to_owned()));
+        let kept: Vec<String> = names(env).into_keys().collect();
+        assert_eq!(
+            kept,
+            ["CHARTER_CHAT", "PURLIS_CONFIG_HOME", "RECORD_SOMETHING"]
+        );
+    }
 }

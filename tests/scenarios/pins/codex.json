@@ -7,11 +7,7 @@
         "kind": "hook.posttooluse-blocked"
       }
     ],
-    "hook.pretooluse-edit": [
-      {
-        "kind": "hook.pretooluse"
-      }
-    ],
+    "hook.pretooluse-edit": [],
     "hook.posttooluse": [],
     "hook.notification": [],
     "hook.permissiondenied": []
@@ -27,8 +23,11 @@
       "esc": "A turn that ends normally fires Stop. Esc interrupts the running command (\"Conversation interrupted\"); no Stop fires for the interrupted turn, and SessionEnd fires as the chat ends.",
       "folder_access": "At every sandboxed start Codex 0.169 asks \"Folder access: Open restricted\" for the folder purlis marks untrusted; Codex 0.147 did not. The recording answers Enter.",
       "refused_network": "A command to a loopback port the chat was never granted is refused by purlis's proxy: the model is shown \"purlis's sandbox does not allow <host>:<port>: it is this machine, …\", and nothing arrives at the port.",
-      "command_timeout": "Measured: a hook that outlives its entry's timeout (5 s) is cut off and the turn goes on. The held posttooluse-blocked call's next hook call began 5014 to 5039 ms after it, in runs 43834558626 to 43866922203.",
+      "hook_entry_timeout": "Measured: a hook that outlives the 5 s timeout of its own hook entry (the `timeout` purlis writes in the harness's hook settings, not a tool command's) is cut off and the turn goes on. The held posttooluse-blocked call's next hook call began 5014 to 5039 ms after it, in runs 43834558626 to 43866922203.",
       "model_offer": "Under gpt-5.5, Codex 0.169 offers \"Meet GPT-6 Sol\" before the chat; the recording keeps the existing model."
+    },
+    "gaps": {
+      "hook.pretooluse-edit": "Known gap (#6991): Codex 0.169 writes and edits with its native apply_patch and runs no hook for it, PreToolUse or PostToolUse, so purlis's hooks are blind to a native write. The OS wrap refused both writes outside the chat's folders (not an escape); only the wrap judges them."
     }
   }
 }

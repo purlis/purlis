@@ -3,6 +3,7 @@
   "version": "2.1.325",
   "recording": "recording.json",
   "conditions": {
+    "exit": "/exit, its \"Background work is running\" answered \"Exit and stop tasks\"",
     "permission_mode": "bypassPermissions",
     "sessionend_budget": "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000",
     "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
@@ -148,7 +149,8 @@
               "response": 1
             }
           ],
-          "says": "Covering script done."
+          "says": "Covering script done.",
+          "tokens": 23
         },
         {
           "step": "failing-bash",

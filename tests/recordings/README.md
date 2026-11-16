@@ -23,6 +23,7 @@ PermissionRequest and Notification are recorded.
 | `recorded/claude/<version>/asks-recording.json`, `asks-turns.json` | The `asks` pass and its turn script. |
 | `src/recorder.rs`, `src/bin/purlis-recorder.rs` | The recorder: writes each `hook` call, then runs the real `purlis hook`; any other command is the real `purlis`'s. It keeps every variable's name and no variable's value. |
 | `src/standin.rs` | The stand-in model: Messages (Claude Code), Responses (Codex) and Chat Completions (OpenCode), on a loopback port. |
+| `src/projection.rs` | What the model was shown: the user's text, each tool's result and the context hooks add, never the system prompt or the tool schemas, nor the text Claude Code adds of its own (`CLAUDE_CODE_OWN`, a closed named list: the attribution, "hasn't heard from you", the deferred tools, the agent types, and its environment section to the end of its message). |
 | `src/mask.rs` | The mask, a closed list: session ids, tool-use ids, absolute paths, timestamps and gaps, and the order of the calls of a parallel response the stand-in scripted, or of a run of hooks `RACY_ORDERS` names with the CI runs that saw it begun both ways; and the reply of a hook `RACY_REPLIES` names, one a harness cuts off or lets answer as it exits (Claude Code's SessionEnd). Hooks that merely overlapped keep the order they began in. A secret-shaped value is never masked: it fails the recording, as a PreToolUse and PostToolUse of one tool use that overlap do. |
 | `src/drift.rs`, `src/bin/harness-drift.rs` | The nightly re-record's diff: drift opens a `harness-drift` issue; a refused call that changed, found by what it aimed at, is an escape (Q301). |
 | `tests/record.rs` | The recording driver (`#[ignore]`d; Linux CI runs it). |
@@ -31,9 +32,15 @@ PermissionRequest and Notification are recorded.
 
 Recordings are made on Linux only, by CI: `.github/workflows/harness-recordings.yml` records each
 harness twice on a pull request into `phase-1-proven`, fails unless the two runs wrote the same
-files, and uploads `harness-recording-<harness>`. Take
-the files from that run's artifact into `recorded/`, read their diff, and say in the pull request
-which contract moved and why. Never edit a recording by hand.
+files and each is the one checked in for the pinned version, byte for byte, and uploads
+`harness-recording-<harness>`. A pull request that moves a recording is red until it checks in
+what its run recorded: take the files from that run's artifact into `recorded/`, read their
+diff, and say in the pull request which contract moved and why. Never edit a recording by hand.
+
+Claude Code is ended with its own `/exit`, and its covering recording's SessionEnd says
+`prompt_input_exit`. With the script's background shell still running, Claude Code answers
+`/exit` with "Background work is running"; the driver takes its default, "Exit and stop tasks",
+and the recording's header says so (`conditions.exit`).
 
 A change to the mask is applied to what is checked in with
 `cargo run -p purlis-recordings --bin recording-remask -- tests/recordings/recorded/*/*/recording.json`,

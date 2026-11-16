@@ -189,6 +189,10 @@ pub struct PinsFile {
 pub struct Recorded {
     pub from: String,
     pub facts: BTreeMap<String, String>,
+    /// Each event the dialect shows nothing of where purlis needs it, by its kind in `shows`: a
+    /// known gap, with its issue.
+    #[serde(default)]
+    pub gaps: BTreeMap<String, String>,
 }
 
 /// **A step**: what the chat is made to do, what the scripted person does, and what must and

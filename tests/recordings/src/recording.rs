@@ -321,6 +321,17 @@ pub fn overlapping(lines: &[Line]) -> Vec<String> {
     found
 }
 
+/// The reason of each SessionEnd hook call `recording` heard, in order (Claude Code's `reason`:
+/// `prompt_input_exit` for its own `/exit`, `other` for a chat ended from outside).
+pub fn session_end_reasons(recording: &Recording) -> Vec<String> {
+    recording
+        .hook_calls
+        .iter()
+        .filter(|c| c.stdin["hook_event_name"] == "SessionEnd")
+        .map(|c| c.stdin["reason"].as_str().unwrap_or("(none)").to_owned())
+        .collect()
+}
+
 /// The tool-use id a hook's input names, in any harness's spelling.
 pub fn tool_use_id(stdin: &Value) -> Option<String> {
     crate::mask::TOOL_USE_KEYS
