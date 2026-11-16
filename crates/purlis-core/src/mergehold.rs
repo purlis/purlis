@@ -314,8 +314,38 @@ pub enum AppSaid<'a> {
     Held(&'a str),
     /// The app raised no ask, in its words.
     Refused(&'a str),
+    /// The app could not read the hand-over (#6960). Red first: told as a refusal, as today.
+    OtherBuild,
     /// No app answered in time, or none was there.
     Unheard,
+}
+
+/// **A way out a merge refusal names** (#6960). Red first: today's ways out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WayOut {
+    MergeOnItsOwn,
+    AskThePerson,
+    OneBuild,
+}
+
+impl WayOut {
+    /// The commands this way out names.
+    pub fn forms(self) -> &'static [&'static str] {
+        match self {
+            WayOut::MergeOnItsOwn => &["gh pr merge <number>", "glab mr merge <number>"],
+            WayOut::AskThePerson | WayOut::OneBuild => &[],
+        }
+    }
+}
+
+/// **The ways out the refusal of `held` names** (#6960). Red first: today's.
+pub fn ways_out(held: &Held, app: &AppSaid<'_>) -> &'static [WayOut] {
+    match (held, app) {
+        (Held::Request(_), AppSaid::Held(_)) => &[],
+        (Held::Request(_), _) => &[WayOut::AskThePerson],
+        (Held::Unreadable, _) => &[WayOut::MergeOnItsOwn],
+        (Held::Land, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
+    }
 }
 
 /// **The trace reason the hook refuses `held` with**, by what the app said (Q239): a hold only
@@ -337,6 +367,13 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
                          person's press. Nothing was merged.";
     match (held, app) {
         (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said}"),
+        (Held::Request(request), AppSaid::OtherBuild) => format!(
+            "{OPENS} Nobody was asked to merge {}{}: {} Ask the person to merge it in the \
+             window. Do not merge it another way.",
+            request.number_said(),
+            request.repo_said(),
+            crate::hookwire::UNKNOWN_LINE
+        ),
         (Held::Request(request), AppSaid::Refused(why)) => format!(
             "{OPENS} Nobody was asked to merge {}{}: {why} Ask the person to merge it in the \
              window. Do not merge it another way.",

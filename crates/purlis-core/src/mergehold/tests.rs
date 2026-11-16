@@ -387,3 +387,120 @@ fn a_failed_ruleset_read_is_unknown_never_none() {
     };
     assert!(why.contains("Server Error"), "{why}");
 }
+
+/// #6960 (d): a line that is one merge asking for its help, by a literal `--help` or `-h`
+/// before any `--`, or `gh help pr merge` / `glab help mr merge`, is no merge.
+#[test]
+fn a_merge_help_is_not_a_merge() {
+    for cmd in [
+        "gh pr merge --help",
+        "gh pr merge -h",
+        "gh pr merge 12 --help",
+        "gh pr merge --squash -h",
+        "glab mr merge --help",
+        "glab mr merge -h",
+        "glab mr accept --help",
+        "gh help pr merge",
+        "glab help mr merge",
+        "env GH_PAGER=cat gh pr merge --help",
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+    }
+}
+
+/// #6960 (d): anything but a literal help token before `--` is still read as a merge: a branch
+/// named `help`, a `--help` past `--`, a `--help` that is a flag's value, a help joined to
+/// another command.
+#[test]
+fn gh_pr_merge_help_on_a_branch_named_help_is_still_held() {
+    for cmd in [
+        "gh pr merge help",
+        "glab mr merge help",
+        "gh pr merge -- --help",
+        "gh pr merge 12 --body --help",
+        "gh pr merge 12 -t -h",
+        "gh pr merge 12 --body=--help",
+        "gh pr merge --help; gh pr merge 12",
+        "gh pr merge --help && gh pr merge 12",
+    ] {
+        assert!(held(cmd).is_some(), "{cmd} is not held");
+    }
+    assert_eq!(
+        held("gh pr merge 12 --body=--help"),
+        Some(Held::Request(Request {
+            repo: None,
+            number: 12
+        }))
+    );
+}
+
+/// The refusal's commands with `<number>` filled in, each a backticked span of `said`.
+fn commands_named(said: &str) -> Vec<String> {
+    said.split('`')
+        .skip(1)
+        .step_by(2)
+        .map(|form| form.replace("<number>", "12"))
+        .collect()
+}
+
+/// #6960: `Held::Unreadable`'s refusal names only forms that, run on their own, are held as one
+/// request, which asks the person.
+#[test]
+fn the_unreadable_merge_refusal_names_a_form_that_is_asked() {
+    let said = refusal(&Held::Unreadable, &AppSaid::Unheard);
+    let named = commands_named(&said);
+    assert!(!named.is_empty(), "{said}");
+    for cmd in named {
+        assert_eq!(
+            held(&cmd),
+            Some(Held::Request(Request {
+                repo: None,
+                number: 12
+            })),
+            "{cmd}, named in: {said}"
+        );
+    }
+    assert!(said.contains("A yes in this chat merges nothing"), "{said}");
+    assert!(said.contains("press of Merge in Asks"), "{said}");
+}
+
+/// #6960 (c): every refusal names exactly the commands its ways out list, and no other, and each
+/// is held as one request, which asks; every refusal says a yes in the chat merges nothing.
+/// `Held::Land`'s words are ticket 68's, so only its commands are checked here.
+#[test]
+fn every_refusal_names_only_the_commands_of_its_ways_out() {
+    let request = Held::Request(Request {
+        repo: None,
+        number: 12,
+    });
+    for held_ in [request, Held::Unreadable, Held::Land] {
+        for app in [
+            AppSaid::Held("The person is asked in Asks to merge request 12."),
+            AppSaid::Refused("chat 4 is not one this app has open."),
+            AppSaid::OtherBuild,
+            AppSaid::Unheard,
+        ] {
+            let said = refusal(&held_, &app);
+            let forms: Vec<String> = ways_out(&held_, &app)
+                .iter()
+                .flat_map(|way| way.forms())
+                .map(|form| form.replace("<number>", "12"))
+                .collect();
+            for cmd in commands_named(&said) {
+                if held_ == Held::Land && cmd == "purlis change land" {
+                    continue;
+                }
+                assert!(forms.contains(&cmd), "{cmd} is no way out of: {said}");
+            }
+            for cmd in &forms {
+                assert!(
+                    matches!(held(cmd), Some(Held::Request(_))),
+                    "{cmd} is not asked"
+                );
+            }
+            if held_ != Held::Land {
+                assert!(said.contains("A yes in this chat merges nothing"), "{said}");
+            }
+        }
+    }
+}
