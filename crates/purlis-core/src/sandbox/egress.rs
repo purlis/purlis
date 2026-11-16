@@ -1698,7 +1698,9 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return socks_reply(&mut client, reply::NOT_ALLOWED);
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
+    // DELIBERATE MUTATION M12 (T1.1-23): SOCKS dials the decided host's parent, not the host.
+    let dialled = host.split_once('.').map_or(host.as_str(), |(_, parent)| parent);
+    let upstream = match allowed.connect(dialled, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
