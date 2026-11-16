@@ -20,9 +20,9 @@ use purlis_core::seam::{Kind, Record, RecordingCredentials, RecordingFiles, Targ
 use purlis_core::secrets::VaultError;
 use purlis_core::secrets::keyring::{FileStore, Held, STUB_FILE, Secret, Store};
 use purlis_core::window_copy::line;
-use purlis_core::yourkeys::mark::{self, Binding};
+use purlis_core::yourkeys::mark::{self, Binding, ModelKeyError};
 use purlis_core::yourkeys::start::{Locked, Read, Unlock, Unlocking, Unlocks, read_once};
-use purlis_core::yourkeys::{Checked, Product, SERVICE, Saved, add};
+use purlis_core::yourkeys::{Checked, Product, ReadError, SERVICE, Saved, add};
 use ulid::Ulid;
 
 /// The stand-in for an Anthropic key: never a real one.
@@ -144,8 +144,16 @@ impl Here {
     /// Answers `locked`'s Ask with *Unlock*, the OS's unlock answering `answer` and, where it
     /// unlocks, unlocking the seam's store. How many unlocks ran, and what the start did.
     fn unlock(&self, locked: Locked, answer: Unlock) -> (usize, Unlocking) {
+        self.unlock_lifting(locked, answer, true)
+    }
+
+    /// As [`Here::unlock`], but where `lifts` is false the store keeps refusing after the OS's
+    /// unlock says it unlocked: an unlocked keychain whose item's access list doesn't trust the
+    /// app, which macOS refuses with the same code as a locked one.
+    fn unlock_lifting(&self, locked: Locked, answer: Unlock, lifts: bool) -> (usize, Unlocking) {
         let os = OsUnlock {
             answer,
+            lifts,
             locked: Arc::clone(&self.locked),
             ran: Rc::new(Cell::new(0)),
         };
@@ -158,6 +166,8 @@ impl Here {
 /// The OS's unlock as the test answers it.
 struct OsUnlock {
     answer: Unlock,
+    /// Whether an unlock lifts the store's refusal.
+    lifts: bool,
     locked: Arc<AtomicBool>,
     ran: Rc<Cell<usize>>,
 }
@@ -165,7 +175,7 @@ struct OsUnlock {
 impl Unlocks for OsUnlock {
     fn unlock(&self) -> Unlock {
         self.ran.set(self.ran.get() + 1);
-        if self.answer == Unlock::Unlocked {
+        if self.answer == Unlock::Unlocked && self.lifts {
             self.locked.store(false, Ordering::SeqCst);
         }
         self.answer
@@ -270,6 +280,25 @@ fn a_failed_unlock_shows_w84_and_makes_no_run() {
         Unlocking::Read(..) => panic!("a failed unlock handed a key on"),
         Unlocking::Cancelled(_) => panic!("a failed unlock was said as a cancel"),
         Unlocking::Refused(why) => panic!("a failed unlock refused the start: {why}"),
+    }
+}
+
+#[test]
+fn a_read_refused_after_a_successful_unlock_refuses_the_start_and_offers_no_unlock_again() {
+    let here = Here::new();
+    here.lock();
+    let locked = Here::locked(here.start());
+
+    let (ran, did) = here.unlock_lifting(locked, Unlock::Unlocked, false);
+    assert_eq!(ran, 1, "one press of Unlock runs the OS's unlock once");
+    match did {
+        Unlocking::Refused(ModelKeyError::Read(ReadError::Locked)) => {}
+        Unlocking::Failed(_) => {
+            panic!("an unlock that worked was said as a failure, leaving Unlock to press again")
+        }
+        Unlocking::Cancelled(_) => panic!("an unlock that worked was said as a cancel"),
+        Unlocking::Read(..) => panic!("a refused read handed a key on"),
+        Unlocking::Refused(why) => panic!("the start was refused for another reason: {why}"),
     }
 }
 
