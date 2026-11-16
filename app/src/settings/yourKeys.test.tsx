@@ -78,7 +78,7 @@ describe("the page lists what core answers", () => {
     const table = await screen.findByRole("table", { name: "Your keys" });
     expect(within(table).getByText("Anthropic")).toBeInTheDocument();
     expect(within(table).getByText("Sent to https://api.anthropic.com")).toBeInTheDocument();
-    expect(within(table).getByText("Asks before each use: off")).toBeInTheDocument();
+    expect(within(table).getByText(windowCopy.W144({ setting: "off" }))).toBeInTheDocument();
     expect(
       within(table).getByText("Used by claude-anthropic, claude-work. Chats: Fix the parser."),
     ).toBeInTheDocument();
@@ -118,9 +118,11 @@ describe("Remove…", () => {
       await userEvent.click(
         await screen.findByRole("button", { name: "Remove the key for Anthropic" }),
       );
-      const asked = await screen.findByRole("alertdialog");
+      const asked = await screen.findByRole("alertdialog", {
+        name: windowCopy.W142({ product: "Anthropic" }),
+      });
       expect(within(asked).getByText(new RegExp(escape(windowCopy.W5({ count }))))).toBeVisible();
-      expect(within(asked).getByText(/There is no undo\./)).toBeVisible();
+      expect(within(asked).getByText(new RegExp(escape(windowCopy.W141)))).toBeVisible();
       expect(called("your_key_remove")).toHaveLength(0);
       await userEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
       unmount();
@@ -175,6 +177,20 @@ describe("Remove…", () => {
   });
 });
 
+describe("the row's Try again", () => {
+  it("that fails says why with W143 under the row", async () => {
+    rows = [row("01A", { checked: "not checked yet" })];
+    answers.your_key_check_again = () => Promise.reject("Anthropic didn't answer");
+    page();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Try again: check the key for Anthropic" }),
+    );
+    expect(
+      await screen.findByText(windowCopy.W143({ error: "Anthropic didn't answer" })),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("Stop sending", () => {
   it("asks with W123's count from core, then deletes that pool's row through core", async () => {
     rows = [row("01A", { pools: ["gpu", "lab"] })];
@@ -186,8 +202,11 @@ describe("Stop sending", () => {
     };
     page();
     await userEvent.click(await screen.findByRole("button", { name: "Stop sending to gpu" }));
-    const asked = await screen.findByRole("alertdialog");
-    expect(within(asked).getByText(windowCopy.W123({ count: 2, pool: "gpu" }))).toBeVisible();
+    // W123 is the question, once: its title, with no "Stop sending?" over it.
+    const asked = await screen.findByRole("alertdialog", {
+      name: windowCopy.W123({ count: 2, pool: "gpu" }),
+    });
+    expect(within(asked).queryByText(`${windowCopy.W125}?`)).toBeNull();
     expect(called("your_key_stop_sending")).toHaveLength(0);
     await userEvent.click(within(asked).getByRole("button", { name: "Stop sending" }));
     await waitFor(() =>
