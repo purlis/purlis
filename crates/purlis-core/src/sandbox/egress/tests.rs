@@ -6,7 +6,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::{
     Limits, MORE_COUNTED_AT_MOST, Proxy, REFUSALS_KEPT, Refusals, allows, allows_on, reachable,
@@ -259,6 +259,7 @@ fn a_head_that_comes_too_slowly_is_given_up_on() {
             connections: 8,
             idle: Duration::from_secs(60),
             head: Duration::from_millis(400),
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -491,6 +492,7 @@ fn connections_past_the_limit_are_refused_rather_than_given_a_thread() {
             connections: 2,
             idle: Duration::from_secs(60),
             head: Duration::from_secs(30),
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -520,6 +522,7 @@ fn a_tunnel_idle_both_ways_is_closed() {
             connections: 8,
             idle: Duration::from_millis(300),
             head: Duration::from_secs(30),
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -881,7 +884,7 @@ impl Heard {
                     .unwrap()
                     .push((target.map(str::to_owned), by, times));
             })),
-            ..super::Serving::of(reach)
+            ..super::Serving::of(reach, &crate::sandbox::timings::Timings::production())
         }
     }
 
@@ -1232,6 +1235,7 @@ fn the_connection_limit_counts_both_ports_together() {
             connections: 2,
             idle: Duration::from_secs(60),
             head: Duration::from_secs(30),
+            patience: crate::sandbox::timings::Timings::production().patience(),
         },
     )
     .expect("a proxy");
@@ -1246,9 +1250,9 @@ fn the_connection_limit_counts_both_ports_together() {
 
 #[test]
 fn every_connection_carried_is_told_once_a_window_with_how_many() {
-    use super::{TALLY_HOSTS, TALLY_WINDOW, Tally};
+    use super::{TALLY_HOSTS, Tally};
     let start = std::time::Instant::now();
-    let mut tally = Tally::default();
+    let mut tally = Tally::new(&crate::sandbox::timings::Timings::production());
     let a = "registry.npmjs.org:443";
     assert_eq!(
         tally.heard(a, "open", start),
@@ -1262,7 +1266,9 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
         );
     }
     // A window on: the four held back are told, with the one now.
-    let later = start + TALLY_WINDOW + Duration::from_secs(1);
+    let later = start
+        + crate::sandbox::timings::Timings::production().tally_window()
+        + Duration::from_secs(1);
     assert_eq!(
         tally.heard(a, "open", later),
         [
@@ -1272,7 +1278,7 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
     );
     assert!(tally.heard(a, "open", later).is_empty());
     // Past what one tally tells apart, connections are counted together, per layer.
-    let mut many = Tally::default();
+    let mut many = Tally::new(&crate::sandbox::timings::Timings::production());
     for n in 0..TALLY_HOSTS {
         assert_eq!(
             many.heard(&format!("h{n}.example:443"), "you", start).len(),
@@ -1290,26 +1296,37 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
 /// since, so the record's line is timed at the window's end, not at the next connection.
 #[test]
 fn a_bursts_count_is_told_once_its_window_passes_with_no_connection_since() {
-    use super::{TALLY_WINDOW, Tally};
+    use super::Tally;
     let start = std::time::Instant::now();
-    let mut tally = Tally::default();
+    let mut tally = Tally::new(&crate::sandbox::timings::Timings::production());
     let a = "registry.npmjs.org:443";
     tally.heard(a, "open", start);
     tally.heard(a, "open", start);
     tally.heard(a, "open", start);
     assert!(
-        tally.due(start + TALLY_WINDOW / 2).is_empty(),
+        tally
+            .due(start + crate::sandbox::timings::Timings::production().tally_window() / 2)
+            .is_empty(),
         "its window runs"
     );
     assert_eq!(
-        tally.due(start + TALLY_WINDOW),
+        tally.due(start + crate::sandbox::timings::Timings::production().tally_window()),
         [(Some(a.to_owned()), "open", 2)]
     );
-    assert!(tally.due(start + TALLY_WINDOW).is_empty(), "told once");
+    assert!(
+        tally
+            .due(start + crate::sandbox::timings::Timings::production().tally_window())
+            .is_empty(),
+        "told once"
+    );
     assert!(tally.ended().is_empty());
     // Told again at once, as a host it let go of.
     assert_eq!(
-        tally.heard(a, "open", start + TALLY_WINDOW),
+        tally.heard(
+            a,
+            "open",
+            start + crate::sandbox::timings::Timings::production().tally_window()
+        ),
         [(Some(a.to_owned()), "open", 1)]
     );
 }
@@ -1373,6 +1390,72 @@ fn until_held(asks: &crate::sandbox::asks::Asks) {
         std::thread::sleep(Duration::from_millis(5));
     }
     panic!("the connection was never held");
+}
+
+/// **A board scaled ×0.5 asks after its group and blocks after its hold, through a real proxy**
+/// (T1.1-01): the ask is told no sooner than the group, the timeout no sooner than the hold, in
+/// that order, and the client is refused after both. The wall clock is bounded below only; the
+/// waits are bounded above by production's, so a board still holding at production fails.
+#[test]
+fn a_scaled_board_asks_after_group_and_blocks_after_hold() {
+    use crate::sandbox::asks::{Asks, Heard as Said};
+    use crate::sandbox::timings::Timings;
+
+    let timings = Timings::scaled(0.5);
+    let production = Timings::production();
+    let (said, events) = std::sync::mpsc::channel::<(Instant, Said)>();
+    let said = std::sync::Mutex::new(said);
+    let asks = std::sync::Arc::new(Asks::new(
+        std::sync::Arc::new(move |heard| {
+            let _ = said.lock().unwrap().send((Instant::now(), heard));
+        }),
+        &timings,
+    ));
+    let proxy = Proxy::serving(super::Serving {
+        asks: Some(std::sync::Arc::clone(&asks)),
+        ..super::Serving::of(none(), &timings)
+    })
+    .expect("a proxy");
+
+    let began = Instant::now();
+    let mut client = TcpStream::connect(("127.0.0.1", proxy.port())).expect("the proxy");
+    client
+        .set_read_timeout(Some(production.hold() * 2))
+        .expect("a timeout");
+    let answered = std::thread::spawn(move || {
+        let said = status(
+            &mut client,
+            "CONNECT held.invalid:443 HTTP/1.1\r\nHost: held.invalid:443\r\n\r\n",
+        );
+        (Instant::now(), said)
+    });
+
+    let (asked_at, asked) = events
+        .recv_timeout(production.group() * 5)
+        .expect("asked within a few groups");
+    assert_eq!(asked, Said::Asked(vec!["held.invalid:443".to_owned()]));
+    assert!(
+        asked_at - began >= timings.group(),
+        "asked after the scaled group ({:?}), at {:?}",
+        timings.group(),
+        asked_at - began
+    );
+    let (timed_out_at, timed_out) = events
+        .recv_timeout(production.hold() - (asked_at - began))
+        .expect("timed out before production's hold");
+    assert_eq!(timed_out, Said::TimedOut("held.invalid:443".to_owned()));
+    assert!(
+        timed_out_at - began >= timings.hold(),
+        "timed out after the scaled hold ({:?}), at {:?}",
+        timings.hold(),
+        timed_out_at - began
+    );
+    let (refused_at, refused) = answered.join().expect("answered");
+    assert_eq!(refused, "HTTP/1.1 403 Forbidden");
+    assert!(
+        asked_at <= timed_out_at && timed_out_at <= refused_at,
+        "in that order"
+    );
 }
 
 #[test]
@@ -1714,9 +1797,14 @@ fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
 /// address it reaches, at every connect, whatever its reach lists.
 #[test]
 fn an_internal_address_the_runners_policy_does_not_list_is_never_connected_to() {
-    let held = super::connect_held("10.255.255.1", 443, &Reach::anything(), &[], &|at| {
-        crate::sandbox::internal::Internal::default().carries("10.255.255.1", at, Some(&[]))
-    });
+    let held = super::connect_held(
+        "10.255.255.1",
+        443,
+        &Reach::anything(),
+        &[],
+        &|at| crate::sandbox::internal::Internal::default().carries("10.255.255.1", at, Some(&[])),
+        crate::sandbox::timings::Timings::production().patience(),
+    );
 
     assert!(matches!(held, super::Connected::OnlyLocal));
 }

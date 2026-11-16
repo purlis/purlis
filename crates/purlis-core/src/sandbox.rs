@@ -5348,6 +5348,7 @@ impl Applied {
                     refusals,
                     reached,
                     asks,
+                    timings: timings::Timings::production(),
                 })
             })
             .transpose()
@@ -5399,6 +5400,7 @@ impl Applied {
                 refusals,
                 reached,
                 asks: None,
+                timings: timings::Timings::production(),
             },
         )
     }
@@ -5746,7 +5748,7 @@ impl Confinement {
     pub fn start_keeping(hosts: Vec<String>, refusals: egress::Refusals) -> std::io::Result<Self> {
         Self::serving(egress::Serving {
             refusals,
-            ..egress::Serving::of(reach::Reach::open(hosts))
+            ..egress::Serving::of(reach::Reach::open(hosts), &timings::Timings::production())
         })
     }
 
@@ -8457,6 +8459,7 @@ pub mod services;
 pub mod signin;
 pub mod sshproxy;
 pub mod team;
+pub mod timings;
 pub mod tools;
 pub mod tunnel;
 #[cfg(unix)]

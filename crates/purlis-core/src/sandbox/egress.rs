@@ -84,6 +84,7 @@ use super::asks::{Answer, Asks};
 use super::internal::Internal;
 use super::localport;
 use super::reach::{Decision, Reach, Refused};
+use super::timings::Timings;
 
 pub(crate) mod providers;
 pub use providers::ProviderAddresses;
@@ -105,16 +106,14 @@ pub const MORE_COUNTED_AT_MOST: usize = 1024;
 /// The most a request's head may be before it is refused.
 pub(super) const HEAD_MAX: usize = 16 * 1024;
 
-/// How long a client has to send its request, and a host to answer the connection.
-pub(super) const PATIENCE: Duration = Duration::from_secs(30);
-
 /// How long a failing accept waits before it tries again.
 const BACKOFF: Duration = Duration::from_millis(100);
 
-/// How long a stopping proxy waits for its teller to tell what it was handed (#1353).
-const TELLER_PATIENCE: Duration = Duration::from_secs(2);
+/// What a chat's proxy takes on at once: a harness opens a handful of connections, and a
+/// model's answer streams far more often than this.
+pub const CONNECTIONS: usize = 64;
 
-/// What one proxy takes on at once, and how long a connection may carry nothing.
+/// What one proxy takes on at once, and how long it waits.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     /// Connections served at once; one more is answered `503` and closed.
@@ -124,15 +123,22 @@ pub struct Limits {
     pub idle: Duration,
     /// How long a client has to send its request's whole head.
     pub head: Duration,
+    /// How long a client has to send its request, and a host to answer the connection.
+    pub patience: Duration,
 }
 
-/// What a chat's proxy takes on: a harness opens a handful of connections, and a model's
-/// answer streams far more often than this.
-pub const LIMITS: Limits = Limits {
-    connections: 64,
-    idle: Duration::from_secs(600),
-    head: Duration::from_secs(30),
-};
+impl Limits {
+    /// **What a chat's proxy takes on**: [`CONNECTIONS`] at once, waiting as `timings` say
+    /// ([`Timings::idle`], [`Timings::head`], [`Timings::patience`]).
+    pub fn of(timings: &Timings) -> Self {
+        Self {
+            connections: CONNECTIONS,
+            idle: timings.idle(),
+            head: timings.head(),
+            patience: timings.patience(),
+        }
+    }
+}
 
 /// Whether `host` is one `listed` names: the same name, ignoring case and a final dot, or a
 /// name under a listed `*.suffix` (never the suffix itself).
@@ -453,25 +459,22 @@ pub fn host_and_port(host: &str, port: u16) -> String {
 /// through, or `ask` or `refused`), and how many connections the line stands for. A target of `None` stands for hosts past what one tally tells apart.
 pub type Reached = Arc<dyn Fn(Option<&str>, &'static str, u64) + Send + Sync + 'static>;
 
-/// How long one tally line stands for: a host and port is told once a [`TALLY_WINDOW`], with
-/// how many connections went to it since it was last told.
-pub const TALLY_WINDOW: Duration = Duration::from_secs(60);
-
-/// How often a proxy's timer tells what has waited a [`TALLY_WINDOW`] (#1699).
-pub const TALLY_TICK: Duration = Duration::from_secs(5);
-
 /// The most hosts and ports one tally tells apart at once; connections past it are counted
 /// together, with no target.
 pub const TALLY_HOSTS: usize = 32;
 
 /// **Every connection a proxy carried, coalesced** (#1664): the first to a host and port is told
-/// at once; those after it in the same [`TALLY_WINDOW`] are counted and told as one line when
-/// the window has passed (by the proxy's timer, [`TALLY_TICK`], or at the next connection,
+/// at once; those after it in the same [`Timings::tally_window`] are counted and told as one line
+/// when the window has passed (by the proxy's timer, [`Timings::tally_tick`], or at the next
+/// connection,
 /// whichever is first) or when the proxy stops. So a chat that
 /// opens a thousand connections to its registry is a line or two a minute, never a thousand,
 /// and the network record keeps every connection without a chat being able to turn it over.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Tally {
+    /// How long one line stands for: a host and port is told once a window, with how many
+    /// connections went to it since it was last told ([`Timings::tally_window`]).
+    window: Duration,
     seen: Vec<Seen>,
     /// Connections past [`TALLY_HOSTS`] since they were last told, per layer, and when they
     /// began.
@@ -492,6 +495,16 @@ struct Seen {
 pub type Line = (Option<String>, &'static str, u64);
 
 impl Tally {
+    /// A tally that has heard nothing yet, its lines standing for `timings`'
+    /// [`Timings::tally_window`].
+    pub fn new(timings: &Timings) -> Self {
+        Self {
+            window: timings.tally_window(),
+            seen: Vec::new(),
+            others: Vec::new(),
+        }
+    }
+
     /// A connection to `target`, let through by `by`, at `now`: the lines to tell now.
     pub fn heard(&mut self, target: &str, by: &'static str, now: Instant) -> Vec<Line> {
         let mut out = self.due(now);
@@ -524,8 +537,9 @@ impl Tally {
     /// window's end, not at the next connection.
     pub fn due(&mut self, now: Instant) -> Vec<Line> {
         let mut out = Vec::new();
+        let window = self.window;
         self.seen.retain_mut(|seen| {
-            if now.saturating_duration_since(seen.since) < TALLY_WINDOW {
+            if now.saturating_duration_since(seen.since) < window {
                 return true;
             }
             if seen.untold > 0 {
@@ -534,7 +548,7 @@ impl Tally {
             false
         });
         self.others.retain(|(layer, since, untold)| {
-            if now.saturating_duration_since(*since) < TALLY_WINDOW {
+            if now.saturating_duration_since(*since) < window {
                 return true;
             }
             out.push((None, layer, *untold));
@@ -573,6 +587,9 @@ pub struct Serving {
     /// Claude Code chat's own proxy did, by name alone ([`Reach::decide_on_any_port`]).
     pub any_port: bool,
     pub limits: Limits,
+    /// The timings the proxy, its teller and its tally wait by (its `limits` are made from the
+    /// same value by [`Self::of`]).
+    pub timings: Timings,
     pub refusals: Refusals,
     /// Told each connection carried, coalesced ([`Tally`]); none tells nobody.
     pub reached: Option<Reached>,
@@ -610,14 +627,15 @@ pub struct Serving {
 
 impl Serving {
     /// A chat's proxy for `reach`: tunnels on [`TUNNEL_PORTS`], plain requests on
-    /// [`PLAIN_PORTS`], within [`LIMITS`], keeping nothing.
-    pub fn of(reach: Reach) -> Self {
+    /// [`PLAIN_PORTS`], within [`Limits::of`] `timings`, keeping nothing.
+    pub fn of(reach: Reach, timings: &Timings) -> Self {
         Self {
             reach,
             tunnel_ports: TUNNEL_PORTS.to_vec(),
             plain_ports: PLAIN_PORTS.to_vec(),
             any_port: false,
-            limits: LIMITS,
+            limits: Limits::of(timings),
+            timings: *timings,
             refusals: Refusals::default(),
             reached: None,
             asks: None,
@@ -632,12 +650,16 @@ impl Serving {
     /// **A confined extension's proxy for `hosts`** ([`Self::confined`]), refusing anything they
     /// do not name, and every address a model is served at as `providers` answer, and asking
     /// nobody.
-    pub fn confined(hosts: Vec<String>, providers: Arc<ProviderAddresses>) -> Self {
+    pub fn confined(
+        hosts: Vec<String>,
+        providers: Arc<ProviderAddresses>,
+        timings: &Timings,
+    ) -> Self {
         Self {
             confined: true,
             asking: Some(Arc::new(AtomicUsize::new(0))),
             providers: Some(providers),
-            ..Self::of(Reach::open(hosts))
+            ..Self::of(Reach::open(hosts), timings)
         }
     }
 }
@@ -662,6 +684,8 @@ pub struct Proxy {
     ticking: Option<std::thread::JoinHandle<()>>,
     /// The teller's thread (#1353).
     telling: Option<std::thread::JoinHandle<()>>,
+    /// How long it waits for its teller as it stops (#1353, [`Timings::teller_patience`]).
+    teller_patience: Duration,
     /// Whether its ports stay bound and purlis's own once it stops ([`Serving::confined`]).
     keep: bool,
     /// The `[::1]` listeners on its ports, for a confined extension's proxy.
@@ -679,6 +703,8 @@ impl std::fmt::Debug for Proxy {
     }
 }
 
+/// Proxies a test starts in one line, at production's timings.
+#[cfg(any(test, feature = "test-support"))]
 impl Proxy {
     /// A proxy that tunnels to `hosts` on [`TUNNEL_PORTS`] and carries plain requests to them
     /// on [`PLAIN_PORTS`].
@@ -690,13 +716,13 @@ impl Proxy {
     pub fn start_keeping(hosts: Vec<String>, refusals: Refusals) -> io::Result<Self> {
         Self::serving(Serving {
             refusals,
-            ..Serving::of(Reach::open(hosts))
+            ..Serving::of(Reach::open(hosts), &Timings::production())
         })
     }
 
     /// A proxy that carries `hosts` on `ports`, tunnels and plain requests alike.
     pub fn allowing(hosts: Vec<String>, ports: Vec<u16>) -> io::Result<Self> {
-        Self::limited(hosts, ports, LIMITS)
+        Self::limited(hosts, ports, Limits::of(&Timings::production()))
     }
 
     /// A proxy that carries `hosts` on `ports`, tunnels and plain requests alike, within
@@ -706,10 +732,12 @@ impl Proxy {
             tunnel_ports: ports.clone(),
             plain_ports: ports,
             limits,
-            ..Serving::of(Reach::open(hosts))
+            ..Serving::of(Reach::open(hosts), &Timings::production())
         })
     }
+}
 
+impl Proxy {
     /// **A chat's proxy**: two new ports on the loopback interface, serving `serving`.
     pub fn serving(serving: Serving) -> io::Result<Self> {
         // A confined proxy without the addresses a model is served at would connect to them.
@@ -766,6 +794,7 @@ impl Proxy {
             any_port: serving.any_port,
             idle: limits.idle,
             head: limits.head,
+            patience: limits.patience,
             refusals: serving.refusals.clone(),
             reached: serving.reached,
             asks: serving.asks,
@@ -775,7 +804,7 @@ impl Proxy {
             asking: serving.asking.clone(),
             providers: serving.providers,
             live: Live::default(),
-            tally: Mutex::new(Tally::default()),
+            tally: Mutex::new(Tally::new(&serving.timings)),
             teller: Teller::default(),
         });
         // The teller (#1353). Where its thread does not start, a refusal is told on the
@@ -809,13 +838,14 @@ impl Proxy {
         }
         // Without its timer, a count is told at the next connection or at the stop, as before.
         let ticking = if allowed.reached.is_some() {
+            let tick = serving.timings.tally_tick();
             let allowed = Arc::clone(&allowed);
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
                 .name("purlis-egress-tally".into())
                 .spawn(move || {
                     loop {
-                        std::thread::park_timeout(TALLY_TICK);
+                        std::thread::park_timeout(tick);
                         if stop.load(Ordering::SeqCst) {
                             return;
                         }
@@ -838,6 +868,7 @@ impl Proxy {
             allowed,
             ticking,
             telling,
+            teller_patience: serving.timings.teller_patience(),
             keep,
             also: also_addrs,
             asking: serving.asking,
@@ -921,7 +952,7 @@ impl Drop for Proxy {
         // most: a listener stuck on a refusal never holds up a chat's end.
         self.allowed.teller.close();
         if let Some(telling) = self.telling.take() {
-            let until = Instant::now() + TELLER_PATIENCE;
+            let until = Instant::now() + self.teller_patience;
             while !telling.is_finished() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -1038,6 +1069,7 @@ struct Allowed {
     any_port: bool,
     idle: Duration,
     head: Duration,
+    patience: Duration,
     refusals: Refusals,
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
@@ -1185,17 +1217,22 @@ impl Allowed {
                 providers,
                 &resolve,
             ) {
-                Ok(reached) => connect_first(reached),
+                Ok(reached) => connect_first(reached, self.patience),
                 Err(refused) => refused,
             };
         }
         match self.pinned(host, port) {
             Some(at) => {
-                TcpStream::connect_timeout(&at, PATIENCE).map_or(Connected::Not, Connected::To)
+                TcpStream::connect_timeout(&at, self.patience).map_or(Connected::Not, Connected::To)
             }
-            None => connect_held(host, port, &self.reach, own, &|at| {
-                self.carries(host, at, read)
-            }),
+            None => connect_held(
+                host,
+                port,
+                &self.reach,
+                own,
+                &|at| self.carries(host, at, read),
+                self.patience,
+            ),
         }
     }
 
@@ -1356,7 +1393,7 @@ fn at_a_model(host: &str) -> Decision {
 
 /// One client connection: its request is read, judged, and either carried or refused.
 fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
-    let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
+    let _ = client.set_write_timeout(Some(allowed.idle.min(allowed.patience)));
     let Some((head, rest)) = read_head(&mut client, allowed.head) else {
         answer(
             &mut client,
@@ -1544,7 +1581,7 @@ pub(super) mod reply {
 /// carried or refused with SOCKS's own reply. The whole of the greeting and the request must
 /// arrive within the head's deadline, and neither is more than a few hundred bytes.
 fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
-    let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
+    let _ = client.set_write_timeout(Some(allowed.idle.min(allowed.patience)));
     // A confined extension's proxy carries tunnels its HTTP port judges, the ClientHello among
     // what it judges ([`Serving::confined`]), and no SOCKS request.
     if allowed.confined {
@@ -1921,9 +1958,16 @@ pub(crate) enum Connected {
 /// Connects to `host` on `port`, only at the addresses it resolves to now that a chat may reach
 /// ([`reachable`]), checked at every connect so a name rebound to this machine or a metadata
 /// service reaches nothing. An address literal was decided as itself
-/// ([`super::reach::Reach::decide`]) and is held to the same check here.
-pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpAddr]) -> Connected {
-    connect_held(host, port, reach, own, &|_| true)
+/// ([`super::reach::Reach::decide`]) and is held to the same check here. Each address has
+/// `patience` to answer.
+pub(crate) fn connect(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    patience: Duration,
+) -> Connected {
+    connect_held(host, port, reach, own, &|_| true, patience)
 }
 
 /// [`connect`], only at the addresses `carries` keeps besides (#2445): what a chat planned on
@@ -1935,6 +1979,7 @@ pub(crate) fn connect_held(
     reach: &Reach,
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
+    patience: Duration,
 ) -> Connected {
     let resolve = |host: &str, port: u16| {
         (host, port)
@@ -1942,7 +1987,7 @@ pub(crate) fn connect_held(
             .map(Iterator::collect)
             .unwrap_or_default()
     };
-    connect_held_resolving(host, port, reach, own, carries, &resolve)
+    connect_held_resolving(host, port, reach, own, carries, &resolve, patience)
 }
 
 /// Whether a confined extension's proxy connects to `at`: never an address in a private or
@@ -2003,11 +2048,11 @@ fn held_addresses(
     Ok(reached)
 }
 
-/// Connects to the first of `reached` that answers.
-fn connect_first(reached: Vec<SocketAddr>) -> Connected {
+/// Connects to the first of `reached` that answers within `patience`.
+fn connect_first(reached: Vec<SocketAddr>, patience: Duration) -> Connected {
     reached
         .into_iter()
-        .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
+        .find_map(|addr| TcpStream::connect_timeout(&addr, patience).ok())
         .map_or(Connected::Not, Connected::To)
 }
 
@@ -2019,9 +2064,10 @@ pub(crate) fn connect_held_resolving(
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+    patience: Duration,
 ) -> Connected {
     match held_addresses(host, port, reach, own, carries, resolve) {
-        Ok(reached) => connect_first(reached),
+        Ok(reached) => connect_first(reached, patience),
         Err(refused) => refused,
     }
 }

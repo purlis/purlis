@@ -30,7 +30,12 @@ fn a_proxy(port: u16, new_sites: NewSites) -> ReachProxy {
             .map(|entry| (entry, By::Chat))
             .collect(),
     );
-    ReachProxy::start(Lane::of(reach), new_sites).expect("a reach proxy")
+    ReachProxy::start(
+        Lane::of(reach),
+        new_sites,
+        &crate::sandbox::timings::Timings::production(),
+    )
+    .expect("a reach proxy")
 }
 
 fn to(proxy: &ReachProxy) -> TcpStream {
@@ -293,7 +298,13 @@ fn a_bound_proxy(ports: &[u16], bound: Bound) -> ReachProxy {
             .map(|entry| (entry, By::Chat))
             .collect(),
     );
-    ReachProxy::bound_by(Lane::of(reach), NewSites::refusing(), bound).expect("a reach proxy")
+    ReachProxy::bound_by(
+        Lane::of(reach),
+        NewSites::refusing(),
+        bound,
+        &crate::sandbox::timings::Timings::production(),
+    )
+    .expect("a reach proxy")
 }
 
 #[test]

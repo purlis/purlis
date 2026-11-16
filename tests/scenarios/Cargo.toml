@@ -1,0 +1,27 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-scenarios"
+description = "The sandbox scenario cells' format: its JSON Schemas, the reader and the validator the suite and the live checker share (T1.1-05)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The event kinds a cell may name are read from purlis-core's own lists (`kinds.rs`).
+purlis-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# The cells, pins and leg-report files are checked by their JSON Schemas with the standard
+# validator. No network or file retrieval: every schema is read from `schema/` here.
+# `arbitrary-precision` because purlis-core turns serde_json's on for the whole build.
+jsonschema = { version = "0.61.2", default-features = false, features = ["arbitrary-precision"] }
+
+[lints]
+workspace = true

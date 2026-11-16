@@ -1,0 +1,4 @@
+[
+  {"row": "M-T-20", "dialect": "claude", "os": "linux", "log": true, "window": true, "chat": false},
+  {"row": "M-T-20", "dialect": "claude", "os": "macos", "log": true, "window": true, "chat": false}
+]
