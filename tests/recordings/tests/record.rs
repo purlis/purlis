@@ -634,6 +634,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         hook_calls: recording::hook_calls(&lines, &model),
         model,
         shown: stand_in.shown(),
+        said: stand_in.said(),
     };
     let masked = recording::masked(&made);
     let folder = out.join(&harness).join(&version);

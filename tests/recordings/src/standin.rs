@@ -245,6 +245,8 @@ impl StandIn {
                     tool_use_id: call.id.clone(),
                     background: step.background,
                     subagent: step.kind == "subagent",
+                    subagent_model: Vec::new(),
+                    says: None,
                 })
                 .collect(),
         });
@@ -345,7 +347,55 @@ impl StandIn {
                 ));
             }
         }
-        given.into_iter().map(|(_, asked)| asked).collect()
+        // A sub-agent call carries what its sub-agent was asked for, and its last message.
+        let mut inner: Vec<(usize, Asked)> = Vec::new();
+        for h in heard
+            .iter()
+            .filter(|h| h.conversation == Conversation::Subagent)
+        {
+            if let Some(at) = h.response.filter(|&at| at < self.script.subagent.len())
+                && !inner.iter().any(|(g, _)| *g == at)
+            {
+                inner.push((
+                    at,
+                    Asked {
+                        turn: 1,
+                        parallel: self.script.subagent[at].parallel,
+                        calls: h.asked.clone(),
+                    },
+                ));
+            }
+        }
+        let ended = heard.iter().any(|h| {
+            h.conversation == Conversation::Subagent
+                && h.response == Some(self.script.subagent.len())
+        });
+        given
+            .into_iter()
+            .map(|(_, mut asked)| {
+                for call in asked.calls.iter_mut().filter(|c| c.subagent) {
+                    call.subagent_model = inner.iter().map(|(_, a)| a.clone()).collect();
+                    call.says = ended.then(|| DONE.to_owned());
+                }
+                asked
+            })
+            .collect()
+    }
+
+    /// What the model said as each of the chat's turns ended normally.
+    pub fn said(&self) -> Vec<crate::recording::Said> {
+        let heard = self.heard.lock().expect("the stand-in's log");
+        (1..=self.script.prompts().len() as u32)
+            .filter(|turn| {
+                heard
+                    .iter()
+                    .any(|h| h.conversation == Conversation::Main && h.ended_turn == Some(*turn))
+            })
+            .map(|turn| crate::recording::Said {
+                turn,
+                says: DONE.to_owned(),
+            })
+            .collect()
     }
 
     /// What the model was shown across every request of the chat and its sub-agents, once each.

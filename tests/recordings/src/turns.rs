@@ -34,6 +34,9 @@ pub struct TurnScript {
 pub struct Turn {
     pub prompt: String,
     pub calls: Vec<TurnCall>,
+    /// The model's last message as the turn ended; none for a turn Esc interrupted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,6 +57,13 @@ pub struct TurnCall {
     pub background: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub subagent: bool,
+    /// For a sub-agent call: the calls its sub-agent made, in order, `response` counted in the
+    /// sub-agent's own responses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub calls: Vec<TurnCall>,
+    /// For a sub-agent call: the sub-agent's last message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
 }
 
 /// The shell tools' names, in every harness, and where each keeps its command.
@@ -71,32 +81,22 @@ pub fn of(recording: &Recording) -> TurnScript {
     let mut turns: Vec<Turn> = recording
         .prompts
         .iter()
-        .map(|prompt| Turn {
+        .enumerate()
+        .map(|(at, prompt)| Turn {
             prompt: prompt.clone(),
             calls: Vec::new(),
+            says: recording
+                .said
+                .iter()
+                .find(|s| s.turn as usize == at + 1)
+                .map(|s| s.says.clone()),
         })
         .collect();
     for (at, asked) in recording.model.iter().enumerate() {
         let Some(turn) = turns.get_mut((asked.turn as usize).saturating_sub(1)) else {
             continue;
         };
-        turn.calls.extend(asked.calls.iter().map(|call| {
-            TurnCall {
-                step: call.step.clone(),
-                tool: call.tool.clone(),
-                input: call.input.clone(),
-                run: SHELLS
-                    .iter()
-                    .find(|(name, _)| *name == call.tool)
-                    .and_then(|(_, at)| call.input.pointer(at))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                response: at as u32 + 1,
-                parallel: asked.parallel,
-                background: call.background,
-                subagent: call.subagent,
-            }
-        }));
+        turn.calls.extend(calls_of(asked, at as u32 + 1));
     }
     TurnScript {
         harness: recording.harness.clone(),
@@ -106,4 +106,34 @@ pub fn of(recording: &Recording) -> TurnScript {
         forced: recording.forced.clone(),
         turns,
     }
+}
+
+/// The calls of one model response, `response` its number; a sub-agent call with its own.
+fn calls_of(asked: &crate::recording::Asked, response: u32) -> Vec<TurnCall> {
+    asked
+        .calls
+        .iter()
+        .map(|call| TurnCall {
+            step: call.step.clone(),
+            tool: call.tool.clone(),
+            input: call.input.clone(),
+            run: SHELLS
+                .iter()
+                .find(|(name, _)| *name == call.tool)
+                .and_then(|(_, at)| call.input.pointer(at))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            response,
+            parallel: asked.parallel,
+            background: call.background,
+            subagent: call.subagent,
+            calls: call
+                .subagent_model
+                .iter()
+                .enumerate()
+                .flat_map(|(at, inner)| calls_of(inner, at as u32 + 1))
+                .collect(),
+            says: call.says.clone(),
+        })
+        .collect()
 }

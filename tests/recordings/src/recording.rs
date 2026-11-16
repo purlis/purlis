@@ -86,6 +86,19 @@ pub struct Recording {
     /// What the model was shown from purlis's side (item 7): the projection of every request the
     /// stand-in received, without the system prompt or the tool schemas, de-duplicated.
     pub shown: Vec<crate::projection::Shown>,
+    /// What the model said as each turn that ended normally ended: its last message. A turn Esc
+    /// interrupted has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub said: Vec<Said>,
+}
+
+/// The model's last message of a turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Said {
+    /// The turn, from 1.
+    pub turn: u32,
+    pub says: String,
 }
 
 /// One hook call: what the harness handed it and what it answered.
@@ -145,6 +158,12 @@ pub struct AskedCall {
     pub background: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub subagent: bool,
+    /// For a sub-agent call: what the stand-in asked the sub-agent for, response by response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subagent_model: Vec<Asked>,
+    /// For a sub-agent call: the sub-agent's last message, once its turn ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
 }
 
 /// Where a harness's recording at `version` lives in the repo.
