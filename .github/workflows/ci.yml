@@ -363,7 +363,8 @@ jobs:
       # output and of its own skills catalogue, and what it takes in mid-chat, printed on
       # `measured:` lines for ADR 0102's and ADR 0099's amendments of 2026-11-09. The version
       # purlis supports, this runner's build of it from npm with no install scripts run, pointed
-      # at a loopback port that refuses: no model is called and no credential is used. The tests
+      # at a loopback port that answers every request at once with the end of a turn (0.169 waits
+      # for ever on one that refuses): no model is called and no credential is used. The tests
       # fail only on a Codex that is missing or another version, never on what it did, and are
       # `#[ignore]`d everywhere else.
       - name: Codex, measured

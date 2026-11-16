@@ -1,0 +1,31 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-recordings"
+description = "Recordings of the real harnesses under purlis's wrap against stand-in models, the mask, and the turn scripts the fake harness reproduces them from (T1.1-03)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The version files are read as purlis-core reads a harness's `--version` answer, and the
+# recordings are made through purlis-core's own chat start and wrap.
+purlis-core.workspace = true
+regex = "1"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# The recording driver listens on a chat's hook socket as the host does, and issues the chat its
+# token, which only a test build may (`hookwire`'s `issue_to_this_process`).
+purlis-core = { workspace = true, features = ["test-support", "fenced"] }
+purlis-session-protocol.workspace = true
+stand-in.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
