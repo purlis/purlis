@@ -1960,11 +1960,23 @@ fn no_chat_reads_or_writes_your_keys_index() {
 /// the whole `model-keys` folder. The device key's keychain item is T1a-72's table's to assert.
 #[test]
 fn a_chat_cannot_read_the_marks_folder() {
-    for os in [Os::MacOs, Os::Linux] {
-        let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
-        let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
-        let marks = seal.parent().expect("a folder").to_path_buf();
-        assert!(marks.ends_with("model-keys/marks"), "{}", marks.display());
+    let config = std::path::PathBuf::from("/nonexistent-home/op/.config");
+    let seal = crate::yourkeys::mark::path(&config, ulid::Ulid::nil());
+    assert!(
+        seal.parent()
+            .is_some_and(|marks| marks.ends_with("model-keys/marks")),
+        "{}",
+        seal.display()
+    );
+    let spelled = crate::machine::dirs_spelled(&config);
+    assert!(spelled.len() > 1, "both spellings: {spelled:?}");
+    for (os, home) in [Os::MacOs, Os::Linux]
+        .into_iter()
+        .flat_map(|os| spelled.iter().map(move |home| (os, home)))
+    {
+        let marks = home
+            .join(crate::yourkeys::DIR)
+            .join(crate::yourkeys::mark::DIR);
         let (_plane, denied) = denied_with(None, os);
         let both = paths(&denied, Class::HumanPowers, Access::ReadWrite);
         let folder = both.iter().find(|denied| marks.starts_with(denied));
