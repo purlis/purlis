@@ -2,11 +2,15 @@
   "harness": "claude",
   "version": "2.1.325",
   "recording": "recording.json",
+  "conditions": {
+    "permission_mode": "bypassPermissions",
+    "sessionend_budget": "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000",
+    "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
+  },
   "forced": {
     "esc": "pressed",
     "exit2": "pretooluse",
-    "permission_mode": "bypassPermissions",
-    "stall": "sessionstart"
+    "stall": "posttooluse-blocked"
   },
   "turns": [
     {
@@ -36,10 +40,10 @@
           "step": "refused-bash-net",
           "tool": "Bash",
           "input": {
-            "command": "curl -sS -m 10 https://refused.example.invalid/",
+            "command": "curl -sS -m 10 http://<refused-target>/",
             "description": "refused-bash-net"
           },
-          "run": "curl -sS -m 10 https://refused.example.invalid/",
+          "run": "curl -sS -m 10 http://<refused-target>/",
           "response": 3
         },
         {
@@ -83,7 +87,7 @@
           "step": "refused-web",
           "tool": "WebFetch",
           "input": {
-            "url": "https://refused.example.invalid/",
+            "url": "http://<refused-target>/",
             "prompt": "Say what the page says."
           },
           "response": 8
@@ -131,7 +135,20 @@
             "subagent_type": "general-purpose"
           },
           "response": 11,
-          "subagent": true
+          "subagent": true,
+          "calls": [
+            {
+              "step": "subagent-bash",
+              "tool": "Bash",
+              "input": {
+                "command": "echo from-subagent",
+                "description": "subagent-bash"
+              },
+              "run": "echo from-subagent",
+              "response": 1
+            }
+          ],
+          "says": "Covering script done."
         },
         {
           "step": "failing-bash",
@@ -142,7 +159,13 @@
           },
           "run": "echo failing >&2; exit 2",
           "response": 12
-        },
+        }
+      ],
+      "says": "Covering script done."
+    },
+    {
+      "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
+      "calls": [
         {
           "step": "esc",
           "tool": "Bash",

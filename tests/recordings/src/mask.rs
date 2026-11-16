@@ -32,6 +32,9 @@
 //!      of one harness seen begun in both orders in CI, with the reason, is put in the order
 //!      that entry lists.
 //!
+//!    - the reply of a hook call named in [`RACY_REPLIES`], one a harness cuts off or lets answer
+//!      as it exits, seen both ways in CI, with the reason: `<racy: cut off or answered>`.
+//!
 //!    Hooks that merely overlapped in time are never reordered: they keep the order they began
 //!    in. And a PreToolUse and PostToolUse of one tool use that overlap fail the recording
 //!    outright ([`crate::recording::overlapping`]).
@@ -103,16 +106,26 @@ pub struct RacyOrder {
     pub words: &'static [&'static str],
     /// Why the order is racy, and the CI runs it was seen both ways in.
     pub reason: &'static str,
+    /// Text one call of the run must hold for the entry to apply, so it puts right only the run
+    /// it names and never the same words elsewhere; any run of the words when `None`.
+    pub when: Option<&'static str>,
 }
 
 /// Every order the mask may put right, by name. Nothing is added without CI's evidence.
 pub const RACY_ORDERS: &[RacyOrder] = &[
     RacyOrder {
         harness: "codex",
-        words: &["sessionstart", "sessionstart-skills"],
-        reason: "Codex 0.169 starts every SessionStart hook at once; these two began in both \
-                 orders in the two recordings of one CI job (run 43834558626, \
-                 `harness recording (codex)`)",
+        words: &[
+            "sessionstart",
+            "sessionstart-notes",
+            "sessionstart-quoted",
+            "sessionstart-skills",
+        ],
+        reason: "Codex 0.169 starts every SessionStart hook at once, and each began out of order \
+                 between the two recordings of one CI job: sessionstart and -skills in run \
+                 43834558626, -notes and sessionstart and -quoted and -skills in run \
+                 43859227733 (`harness recording (codex)`)",
+        when: None,
     },
     RacyOrder {
         harness: "opencode",
@@ -120,8 +133,40 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
         reason: "OpenCode 1.19.5's shim runs both hooks of one permission ask at once; they began \
                  notification first in run 43834558626 and permissionrequest first in run \
                  43836719317 (`harness recording (opencode)`)",
+        when: None,
+    },
+    RacyOrder {
+        harness: "opencode",
+        words: &["stop", "posttooluse-blocked"],
+        reason: "After Esc, OpenCode 1.19.5 runs the interrupted turn's Stop and the aborted \
+                 command's PostToolUse at once; Stop began first in run 43859227733 and \
+                 PostToolUse first in run 43861652433 (`harness recording (opencode)`). Only \
+                 that run: a turn that ends normally keeps its PostToolUse, then Stop",
+        when: Some("User aborted the command"),
     },
 ];
+
+/// A hook call whose reply a harness cuts off or lets come back as it exits, seen both ways in CI.
+#[derive(Debug, Clone, Copy)]
+pub struct RacyReply {
+    pub harness: &'static str,
+    /// The hook word (`argv[1]`).
+    pub word: &'static str,
+    /// Why, and the CI runs it was seen both ways in.
+    pub reason: &'static str,
+}
+
+/// Every reply the mask may hide, by name. Nothing is added without CI's evidence.
+pub const RACY_REPLIES: &[RacyReply] = &[RacyReply {
+    harness: "claude",
+    word: "sessionend",
+    reason: "Claude Code 2.1.325 ends its SessionEnd hooks when it exits: ended with /exit, the \
+             call came back in one recording of run 43866922203 and was cut off in the other \
+             (`harness recording (claude)`)",
+}];
+
+/// What a racy reply is masked as.
+pub const RACY_REPLY: &str = "<racy: cut off or answered>";
 
 /// Variables holding the harness process's id, which purlis reads as its session's.
 pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
@@ -518,6 +563,14 @@ fn canonical_parallel_order(recording: &mut Value) {
     for racy in RACY_ORDERS.iter().filter(|r| r.harness == harness) {
         racy_order(calls, racy);
     }
+    for racy in RACY_REPLIES.iter().filter(|r| r.harness == harness) {
+        for call in calls
+            .iter_mut()
+            .filter(|c| c["argv"][1].as_str() == Some(racy.word))
+        {
+            call["reply"] = Value::String(RACY_REPLY.to_owned());
+        }
+    }
 }
 
 /// Each run of adjacent calls whose words are all `racy`'s, none twice, in `racy`'s order.
@@ -535,7 +588,12 @@ fn racy_order(calls: &mut [Value], racy: &RacyOrder) {
             seen.push(p);
             end += 1;
         }
-        if end - at > 1 {
+        let named = racy.when.is_none_or(|text| {
+            calls[at..end]
+                .iter()
+                .any(|c| c["stdin"].to_string().contains(text))
+        });
+        if end - at > 1 && named {
             calls[at..end].sort_by_key(|call| place(call));
         }
         at = end.max(at + 1);
@@ -735,6 +793,7 @@ mod tests {
             harness: "codex",
             words: &["a", "b"],
             reason: "test",
+            when: None,
         };
         let call = |w: &str| json!({"argv": ["hook", w]});
         let mut calls = vec![
@@ -780,21 +839,59 @@ mod tests {
     }
 
     #[test]
-    fn codexs_session_start_pair_seen_both_ways_is_put_in_one_order() {
+    fn codexs_session_start_hooks_seen_in_every_order_are_put_in_one() {
         let call = |w: &str| json!({"argv": ["hook", w]});
-        let recording = |first: &str, second: &str| {
-            json!({"harness": "codex", "hook_calls": [call("sessionstart-notes"), call(first),
-                call(second), call("sessionstart-quoted")]})
+        let recording = |words: [&str; 4]| {
+            let mut calls: Vec<Value> = words.iter().map(|w| call(w)).collect();
+            calls.push(call("userpromptsubmit"));
+            json!({"harness": "codex", "hook_calls": calls})
         };
-        let a = mask(&recording("sessionstart-skills", "sessionstart"));
-        assert_eq!(a, mask(&recording("sessionstart", "sessionstart-skills")));
-        assert_eq!(a["hook_calls"][1]["argv"][1], "sessionstart");
+        let seen = [
+            [
+                "sessionstart-notes",
+                "sessionstart-skills",
+                "sessionstart",
+                "sessionstart-quoted",
+            ],
+            [
+                "sessionstart-notes",
+                "sessionstart",
+                "sessionstart-quoted",
+                "sessionstart-skills",
+            ],
+            [
+                "sessionstart",
+                "sessionstart-notes",
+                "sessionstart-skills",
+                "sessionstart-quoted",
+            ],
+        ];
+        let a = mask(&recording(seen[0]));
+        for words in &seen[1..] {
+            assert_eq!(a, mask(&recording(*words)), "{words:?}");
+        }
+        let order: Vec<&str> = a["hook_calls"]
+            .as_array()
+            .expect("calls")
+            .iter()
+            .map(|c| c["argv"][1].as_str().expect("a word"))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "sessionstart",
+                "sessionstart-notes",
+                "sessionstart-quoted",
+                "sessionstart-skills",
+                "userpromptsubmit"
+            ]
+        );
         // Only Codex's: another harness's order is its own.
-        let mut other = recording("sessionstart-skills", "sessionstart");
+        let mut other = recording(seen[0]);
         other["harness"] = json!("claude");
         assert_eq!(
-            mask(&other)["hook_calls"][1]["argv"][1],
-            "sessionstart-skills"
+            mask(&other)["hook_calls"][0]["argv"][1],
+            "sessionstart-notes"
         );
     }
 
@@ -808,5 +905,36 @@ mod tests {
         let a = mask(&recording("permissionrequest", "notification"));
         assert_eq!(a, mask(&recording("notification", "permissionrequest")));
         assert_eq!(a["hook_calls"][1]["argv"][1], "notification");
+    }
+
+    #[test]
+    fn opencodes_stop_after_esc_is_put_in_one_order_and_a_normal_turns_end_keeps_its_own() {
+        let stop = json!({"argv": ["hook", "stop"], "stdin": {"hook_event_name": "Stop"}});
+        let aborted = json!({"argv": ["hook", "posttooluse-blocked"], "stdin": {
+            "hook_event_name": "PostToolUse", "tool_response": "User aborted the command"}});
+        let failed = json!({"argv": ["hook", "posttooluse-blocked"], "stdin": {
+            "hook_event_name": "PostToolUse", "tool_response": "failing"}});
+        let recording = |calls: Vec<&Value>| json!({"harness": "opencode", "hook_calls": calls});
+        // The Esc turn's two, seen in both orders, are put in one.
+        let a = mask(&recording(vec![&aborted, &stop, &stop]));
+        assert_eq!(a, mask(&recording(vec![&stop, &aborted, &stop])));
+        assert_eq!(a["hook_calls"][0]["argv"][1], "stop");
+        // A turn that ended normally keeps its real "PostToolUse, then Stop".
+        let normal = mask(&recording(vec![&failed, &stop]));
+        assert_eq!(normal["hook_calls"][0]["argv"][1], "posttooluse-blocked");
+    }
+
+    #[test]
+    fn claude_codes_session_end_reply_cut_off_or_answered_is_one_recording() {
+        let end = |reply: Value| json!({"argv": ["hook", "sessionend"], "reply": reply});
+        let answered = json!({"harness": "claude",
+            "hook_calls": [end(json!({"exit": 0, "stdout": "", "stderr": ""}))]});
+        let cut_off = json!({"harness": "claude", "hook_calls": [end(Value::Null)]});
+        assert_eq!(mask(&answered), mask(&cut_off));
+        assert_eq!(mask(&answered)["hook_calls"][0]["reply"], RACY_REPLY);
+        // Only Claude Code's SessionEnd: another hook's reply, or another harness's, is its own.
+        let mut codex = cut_off.clone();
+        codex["harness"] = json!("codex");
+        assert_eq!(mask(&codex)["hook_calls"][0]["reply"], Value::Null);
     }
 }

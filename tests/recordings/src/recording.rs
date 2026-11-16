@@ -86,6 +86,19 @@ pub struct Recording {
     /// What the model was shown from purlis's side (item 7): the projection of every request the
     /// stand-in received, without the system prompt or the tool schemas, de-duplicated.
     pub shown: Vec<crate::projection::Shown>,
+    /// What the model said as each turn that ended normally ended: its last message. A turn Esc
+    /// interrupted has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub said: Vec<Said>,
+}
+
+/// The model's last message of a turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Said {
+    /// The turn, from 1.
+    pub turn: u32,
+    pub says: String,
 }
 
 /// One hook call: what the harness handed it and what it answered.
@@ -106,10 +119,29 @@ pub struct HookCall {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<u32>,
     /// What it answered; `None` when the harness ended it first (a hook timeout).
-    pub reply: Option<Reply>,
+    pub reply: Option<Replied>,
     /// What the recorder did in place of the real hook for this call, if anything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forced: Option<String>,
+}
+
+/// A hook call's reply as a recording holds it: what it answered, or, for a call the mask names
+/// in [`crate::mask::RACY_REPLIES`], [`crate::mask::RACY_REPLY`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Replied {
+    Answered(Reply),
+    Racy(String),
+}
+
+impl HookCall {
+    /// What the call answered, where the recording holds it.
+    pub fn answered(&self) -> Option<&Reply> {
+        match &self.reply {
+            Some(Replied::Answered(reply)) => Some(reply),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -145,6 +177,12 @@ pub struct AskedCall {
     pub background: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub subagent: bool,
+    /// For a sub-agent call: what the stand-in asked the sub-agent for, response by response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subagent_model: Vec<Asked>,
+    /// For a sub-agent call: the sub-agent's last message, once its turn ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
 }
 
 /// Where a harness's recording at `version` lives in the repo.
@@ -222,10 +260,12 @@ pub fn hook_calls(lines: &[Line], model: &[Asked]) -> Vec<HookCall> {
             env: line.env.clone().unwrap_or_default(),
             gap_ms: before.map_or(Value::Null, |b| Value::from(line.at_ms.saturating_sub(b))),
             group,
-            reply: replied.map(|l| Reply {
-                exit: l.exit.unwrap_or(-1),
-                stdout: as_json(l.stdout.as_deref().unwrap_or_default()),
-                stderr: l.stderr.clone().unwrap_or_default(),
+            reply: replied.map(|l| {
+                Replied::Answered(Reply {
+                    exit: l.exit.unwrap_or(-1),
+                    stdout: as_json(l.stdout.as_deref().unwrap_or_default()),
+                    stderr: l.stderr.clone().unwrap_or_default(),
+                })
             }),
             forced: replied
                 .and_then(|l| l.forced.clone())

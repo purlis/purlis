@@ -115,11 +115,11 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
             "{name} is the recorder's own"
         );
     }
-    assert_eq!(calls[0].reply.as_ref().expect("a reply").exit, 0);
+    assert_eq!(calls[0].answered().expect("a reply").exit, 0);
     assert!(calls[0].gap_ms.is_null());
     assert!(calls[1].gap_ms.is_u64());
     assert_eq!(calls[2].forced.as_deref(), Some("exit2"));
-    assert_eq!(calls[2].reply.as_ref().expect("a reply").exit, 2);
+    assert_eq!(calls[2].answered().expect("a reply").exit, 2);
 
     let made = |calls| Recording {
         harness: "claude".into(),
@@ -134,6 +134,7 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
         hook_calls: calls,
         model: vec![],
         shown: vec![],
+        said: vec![],
     };
     let masked = recording::masked(&made(calls.clone()));
     // The closed list is masked: session and tool-use ids, absolute paths, times, gaps.
@@ -265,6 +266,49 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
         found[0].contains("did not wait for the verdict"),
         "{found:?}"
     );
+
+    // The turn script carries what the fake harness needs to reproduce a sub-agent and each
+    // turn's end: a sub-agent call's own calls (`calls[].calls`) and its last message, and the
+    // model's last message of each turn that ended normally (`says`); none for one Esc ended.
+    let mut with_subagent = made(vec![]);
+    with_subagent.prompts = vec!["COVERING-SCRIPT".into(), "second turn".into()];
+    with_subagent.model = serde_json::from_value(json!([
+        {"turn": 1, "calls": [{"step": "subagent", "tool": "Agent", "input": {"prompt": "SUB"},
+            "tool_use_id": "toolu_cs_0_0", "subagent": true,
+            "subagent_model": [{"turn": 1, "calls": [{"step": "subagent-bash", "tool": "Bash",
+                "input": {"command": "echo from-subagent"}, "tool_use_id": "toolu_sub_0_0"}]}],
+            "says": "Covering script done."}]},
+        {"turn": 2, "calls": [{"step": "esc", "tool": "Bash", "input": {"command": "sleep 120"},
+            "tool_use_id": "toolu_cs_1_0"}]}
+    ]))
+    .expect("the model's responses");
+    with_subagent.said = vec![recording::Said {
+        turn: 1,
+        says: "Covering script done.".into(),
+    }];
+    let checked: Recording =
+        serde_json::from_value(recording::masked(&with_subagent)).expect("a masked recording");
+    let turns = serde_json::to_value(purlis_recordings::turns::of(&checked)).expect("JSON");
+    assert_eq!(
+        turns["turns"][0]["says"], "Covering script done.",
+        "{turns:#}"
+    );
+    assert!(turns["turns"][1].get("says").is_none(), "{turns:#}");
+    let subagent = &turns["turns"][0]["calls"][0];
+    assert_eq!(subagent["says"], "Covering script done.", "{turns:#}");
+    assert_eq!(subagent["calls"][0]["tool"], "Bash", "{turns:#}");
+    assert_eq!(
+        subagent["calls"][0]["run"], "echo from-subagent",
+        "{turns:#}"
+    );
+    assert_eq!(subagent["calls"][0]["response"], 1, "{turns:#}");
+    // The inner call's id is a tool-use id like any other: masked.
+    assert!(
+        checked.model[0].calls[0].subagent_model[0].calls[0]
+            .tool_use_id
+            .starts_with("<tool-use-"),
+        "{checked:#?}"
+    );
 }
 
 // ---- every pinned version has a recording --------------------------------------------------
@@ -369,7 +413,7 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
                 .argv
                 .get(1)
                 .is_some_and(|w| w.starts_with("sessionstart"))
-                && c.reply.is_some()),
+                && c.answered().is_some()),
             "{harness}: no SessionStart answered"
         );
         // What purlis's SessionStart answered reaches the model, wherever the harness puts it.
@@ -378,7 +422,7 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
             .iter()
             .filter(|c| c.argv.get(1).is_some_and(|w| w.starts_with("sessionstart")))
             .filter_map(|c| {
-                c.reply.as_ref()?.stdout["hookSpecificOutput"]["additionalContext"]
+                c.answered()?.stdout["hookSpecificOutput"]["additionalContext"]
                     .as_str()
                     .and_then(|t| t.lines().next())
                     .map(str::to_owned)
@@ -400,7 +444,32 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
             "{harness}: the recording's header says what it was made under"
         );
     }
-    // Codex writes with its native apply_patch, and its hooks hear that.
+    // What the fake harness needs to reproduce a sub-agent and a turn's end, in the turn script.
+    for harness in HARNESSES {
+        let made = covering(harness);
+        let turns = purlis_recordings::turns::of(&made);
+        assert!(
+            turns.turns[0].says.is_some(),
+            "{harness}: turn 1's last message"
+        );
+        assert!(turns.turns[1].says.is_none(), "{harness}: Esc ended turn 2");
+        if harness != "codex" {
+            let subagent = turns.turns[0]
+                .calls
+                .iter()
+                .find(|c| c.subagent)
+                .unwrap_or_else(|| panic!("{harness}: no sub-agent call"));
+            assert!(
+                !subagent.calls.is_empty(),
+                "{harness}: the sub-agent's own calls"
+            );
+            assert!(
+                subagent.says.is_some(),
+                "{harness}: the sub-agent's last message"
+            );
+        }
+    }
+    // Codex writes with its native apply_patch.
     let codex = covering("codex");
     for step in ["refused-write", "refused-edit"] {
         let call = codex

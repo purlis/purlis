@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "fuzz-parsers", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
