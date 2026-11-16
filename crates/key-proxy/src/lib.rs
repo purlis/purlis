@@ -64,7 +64,7 @@ use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_util::client::proxy::matcher::Intercept;
 pub use hyper_util::client::proxy::matcher::Matcher;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use purlis_core::upstream::{Destination, Direct, Outbound, trust};
+use purlis_core::upstream::{Destination, Direct, HostNotFound, Outbound, trust};
 use purlis_core::window_copy::{self, line};
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
@@ -569,8 +569,13 @@ impl Unreached {
 
 /// Where a connection to `origin` goes: straight there, or through the outbound proxy `proxies`
 /// name for it, with the proxy's credentials where its address carried them. A loopback
-/// upstream always goes direct, never through the proxy (design §3.3).
-fn destination(origin: &Origin, proxies: &Matcher) -> (Destination, Option<Intercept>) {
+/// upstream always goes direct, never through the proxy (design §3.3). Only an `http` proxy is
+/// spoken to, with a `CONNECT`; one of any other scheme (`https`, `socks5`, `socks5h`, ...) is
+/// refused here, before anything, its credential above all, is sent to it.
+fn destination(
+    origin: &Origin,
+    proxies: &Matcher,
+) -> Result<(Destination, Option<Intercept>), Unreached> {
     let loopback = origin.host.eq_ignore_ascii_case("localhost")
         || origin
             .host
@@ -580,22 +585,22 @@ fn destination(origin: &Origin, proxies: &Matcher) -> (Destination, Option<Inter
         .uri()
         .filter(|_| !loopback)
         .and_then(|uri| proxies.intercept(&uri));
-    let proxy = intercept.as_ref().and_then(|intercept| {
-        let uri = intercept.uri();
-        let own = if uri.scheme_str() == Some("https") {
-            443
-        } else {
-            80
-        };
-        Some(format!("{}:{}", uri.host()?, uri.port_u16().unwrap_or(own)))
-    });
-    match proxy {
-        Some(proxy) => (
-            Destination::through(&origin.host, origin.port, &proxy),
-            intercept,
-        ),
-        None => (Destination::direct(&origin.host, origin.port), None),
+    let Some(intercept) = intercept else {
+        return Ok((Destination::direct(&origin.host, origin.port), None));
+    };
+    let uri = intercept.uri();
+    let scheme = uri.scheme_str().unwrap_or_default();
+    if scheme != "http" {
+        return Err(Unreached::UnsupportedProxy(scheme.to_owned()));
     }
+    let proxy = uri
+        .host()
+        .map(|host| format!("{host}:{}", uri.port_u16().unwrap_or(80)))
+        .ok_or(Unreached::ProxyRefused)?;
+    Ok((
+        Destination::through(&origin.host, origin.port, &proxy),
+        Some(intercept),
+    ))
 }
 
 /// The `CONNECT` that asks the outbound proxy for a tunnel to `origin`, carrying a
@@ -641,7 +646,7 @@ async fn tunnel(
 /// A connection to `origin` through `reach`: made by its outbound off the reactor, through the
 /// outbound proxy's tunnel where one is named, and under TLS for an `https` origin.
 async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreached> {
-    let (destination, proxy) = destination(origin, &reach.proxies);
+    let (destination, proxy) = destination(origin, &reach.proxies)?;
     let failed = if proxy.is_some() {
         Unreached::ProxyRefused
     } else {
@@ -651,7 +656,13 @@ async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreac
     let stream = tokio::task::spawn_blocking(move || outbound.connect(&destination))
         .await
         .map_err(|_| failed.clone())?
-        .map_err(|_| failed.clone())?;
+        .map_err(|why| {
+            if proxy.is_none() && HostNotFound::is(&why) {
+                Unreached::HostNotFound
+            } else {
+                failed.clone()
+            }
+        })?;
     stream.set_nonblocking(true).map_err(|_| failed.clone())?;
     let stream = TcpStream::from_std(stream).map_err(|_| failed)?;
     let _ = stream.set_nodelay(true);

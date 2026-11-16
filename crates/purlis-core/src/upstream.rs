@@ -110,13 +110,20 @@ impl Direct {
         Direct::default()
     }
 
-    /// The addresses `host:port` resolves to.
+    /// The addresses `host:port` resolves to; [`HostNotFound`] where it resolves to none.
     fn resolve(&self, host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
         #[cfg(feature = "test-support")]
         if let Some(entry) = self.reach.iter().find(|entry| entry.host == host) {
             return Ok(vec![entry.address]);
         }
-        Ok((host, port).to_socket_addrs()?.collect())
+        let addresses: Vec<SocketAddr> = (host, port)
+            .to_socket_addrs()
+            .map_err(|_| HostNotFound::error(host))?
+            .collect();
+        if addresses.is_empty() {
+            return Err(HostNotFound::error(host));
+        }
+        Ok(addresses)
     }
 }
 

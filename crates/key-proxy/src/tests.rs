@@ -216,7 +216,7 @@ fn the_system_proxy_is_asked_for_the_upstream_and_no_proxy_exempts_it() {
     let origin = Origin::https("api.anthropic.com", 443);
     let proxied = Matcher::builder().https("http://127.0.0.1:3128").build();
     assert_eq!(
-        destination(&origin, &proxied).0,
+        destination(&origin, &proxied).unwrap().0,
         Destination::through("api.anthropic.com", 443, "127.0.0.1:3128")
     );
 
@@ -225,13 +225,13 @@ fn the_system_proxy_is_asked_for_the_upstream_and_no_proxy_exempts_it() {
         .no("api.anthropic.com")
         .build();
     assert_eq!(
-        destination(&origin, &exempt).0,
+        destination(&origin, &exempt).unwrap().0,
         Destination::direct("api.anthropic.com", 443)
     );
 
     let unset = Matcher::builder().build();
     assert_eq!(
-        destination(&origin, &unset).0,
+        destination(&origin, &unset).unwrap().0,
         Destination::direct("api.anthropic.com", 443)
     );
 
@@ -239,7 +239,7 @@ fn the_system_proxy_is_asked_for_the_upstream_and_no_proxy_exempts_it() {
     for host in ["127.0.0.1", "::1", "localhost"] {
         let loopback = Origin::http(host, 8080);
         assert_eq!(
-            destination(&loopback, &everything).0,
+            destination(&loopback, &everything).unwrap().0,
             Destination::direct(host, 8080),
             "a loopback upstream went through the outbound proxy"
         );
@@ -353,7 +353,10 @@ async fn a_proxy_of_this_scheme_is_refused_naming_it(proxy: &str, scheme: &str) 
         format!("purlis: purlis can't use the outbound proxy's {scheme} scheme.")
     );
     let asked = asked.lock().unwrap();
-    assert!(asked.is_empty(), "the {scheme} proxy was connected to: {asked:?}");
+    assert!(
+        asked.is_empty(),
+        "the {scheme} proxy was connected to: {asked:?}"
+    );
 }
 
 #[tokio::test]
@@ -379,17 +382,26 @@ async fn an_http_proxy_is_still_asked_for_a_tunnel() {
         Matcher::builder().https("http://127.0.0.1:3128").build(),
         refused,
     );
-    assert_eq!(why_unreached(&origin, &reach).await, Unreached::ProxyRefused);
+    assert_eq!(
+        why_unreached(&origin, &reach).await,
+        Unreached::ProxyRefused
+    );
     assert_eq!(
         *asked.lock().unwrap(),
-        vec![Destination::through("api.anthropic.com", 443, "127.0.0.1:3128")]
+        vec![Destination::through(
+            "api.anthropic.com",
+            443,
+            "127.0.0.1:3128"
+        )]
     );
 }
 
 #[tokio::test]
 async fn an_upstream_the_resolver_cannot_find_is_named_not_found() {
     let origin = Origin::https("api.anthropic.com", 443);
-    let (reach, _) = recorded(Matcher::builder().build(), |to| HostNotFound::error(&to.host));
+    let (reach, _) = recorded(Matcher::builder().build(), |to| {
+        HostNotFound::error(&to.host)
+    });
     let why = why_unreached(&origin, &reach).await;
     assert_eq!(why, Unreached::HostNotFound);
     assert_eq!(
@@ -398,7 +410,10 @@ async fn an_upstream_the_resolver_cannot_find_is_named_not_found() {
     );
 
     let (reach, _) = recorded(Matcher::builder().build(), refused);
-    assert_eq!(why_unreached(&origin, &reach).await, Unreached::NoConnection);
+    assert_eq!(
+        why_unreached(&origin, &reach).await,
+        Unreached::NoConnection
+    );
 }
 
 #[test]
