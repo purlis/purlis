@@ -227,8 +227,7 @@ proptest! {
     ///   service at machine, and nothing but a host in the committed file.
     /// - On a chat's board, after Keep blocked of a target, no connection to it is carried
     ///   unless a later Allow covers it; and where the last answer covering it is an Allow, it is.
-    #[test]
-    fn grant_scopes_form_a_lattice_and_keep_blocked_dominates(
+    fn grant_scopes_form_a_lattice_and_keep_blocked_dominates_law(
         granted in (domain(), port()),
         asked in prop_oneof![
             3 => Just(None),
@@ -322,6 +321,13 @@ proptest! {
     }
 }
 
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn grant_scopes_form_a_lattice_and_keep_blocked_dominates() {
+    purlis_core::unsteered!();
+    grant_scopes_form_a_lattice_and_keep_blocked_dominates_law();
+}
+
 // ---------------------------------------------------------------------------------------------
 // 2. `decide` is total, deterministic and monotone.
 // ---------------------------------------------------------------------------------------------
@@ -350,8 +356,7 @@ proptest! {
     /// on.** Any string as the host (never a panic), decided twice alike, and alike by the reach
     /// the session host reads back (`Reach::from_written`). Listing more never lowers a
     /// decision (refused < asked < carried); pinning more as never allowed never raises one.
-    #[test]
-    fn decide_is_total_deterministic_and_monotone(
+    fn decide_is_total_deterministic_and_monotone_law(
         listed in proptest::collection::vec((listed_host(), by()), 0..8),
         more in proptest::collection::vec((listed_host(), by()), 0..4),
         never in proptest::collection::vec(listed_host(), 0..3),
@@ -385,6 +390,13 @@ proptest! {
         let pinned_more = base.never(pinned(&stricter)).decide(&host, port, &defaults, &own);
         prop_assert!(rank(&pinned_more) <= rank(&first), "{first:?} then {pinned_more:?}");
     }
+}
+
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn decide_is_total_deterministic_and_monotone() {
+    purlis_core::unsteered!();
+    decide_is_total_deterministic_and_monotone_law();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -549,8 +561,7 @@ proptest! {
     /// zone. The same holds of this machine's own addresses, by a name of this Mac, and of what
     /// a name resolves to. A private address is asked about for a chat unless listed, never
     /// carried, and is special-use for a confined extension in every form that carries it.
-    #[test]
-    fn every_encoding_of_a_special_use_address_is_refused(
+    fn every_encoding_of_a_special_use_address_is_refused_law(
         (address, any_address) in prop_oneof![
             3 => special_use_address().prop_map(|ip| (ip, false)),
             1 => any::<IpAddr>().prop_map(|ip| (ip, true)),
@@ -616,6 +627,13 @@ proptest! {
     }
 }
 
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn every_encoding_of_a_special_use_address_is_refused() {
+    purlis_core::unsteered!();
+    every_encoding_of_a_special_use_address_is_refused_law();
+}
+
 // ---------------------------------------------------------------------------------------------
 // 4. The hosts matcher.
 // ---------------------------------------------------------------------------------------------
@@ -660,8 +678,7 @@ proptest! {
     /// matches every such well-formed name; a name without a wildcard matches only itself; an
     /// address literal never matches a wildcard. Changing the case of either side changes
     /// nothing, and neither does a final dot on the host.
-    #[test]
-    fn the_hosts_matcher_respects_label_boundaries(
+    fn the_hosts_matcher_respects_label_boundaries_law(
         (suffix, host) in domain().prop_flat_map(|suffix| (Just(suffix.clone()), near(suffix))),
         wildcard in any::<bool>(),
         flips in proptest::collection::vec(any::<bool>(), 1..8),
@@ -693,6 +710,13 @@ proptest! {
         let over = format!("*.{suffix}");
         prop_assert!(!allows(&[over], &ip.to_string()), "{} names {}", suffix, ip);
     }
+}
+
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn the_hosts_matcher_respects_label_boundaries() {
+    purlis_core::unsteered!();
+    the_hosts_matcher_respects_label_boundaries_law();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -745,8 +769,7 @@ proptest! {
     /// reach lists, at whatever layers, and the hosts policy pins as never allowed, decides every
     /// connection the same, layer and all; shuffling the Allows given on a chat's board carries
     /// the same connections.
-    #[test]
-    fn permuting_rules_never_changes_a_decision(
+    fn permuting_rules_never_changes_a_decision_law(
         listed in proptest::collection::vec((pooled(), by()), 0..10)
             .prop_flat_map(|listed| (Just(listed.clone()), Just(listed).prop_shuffle())),
         never in proptest::collection::vec(pooled(), 0..3)
@@ -782,11 +805,19 @@ proptest! {
     }
 }
 
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn permuting_rules_never_changes_a_decision() {
+    purlis_core::unsteered!();
+    permuting_rules_never_changes_a_decision_law();
+}
+
 /// The regression case the permutation law found (T1.1-23): a host listed as an Open host and
 /// taken live for the project decided by whichever came first, so the network record named it
 /// `open` or `project` by the order the reach was given its list.
 #[test]
 fn a_host_listed_open_and_taken_live_for_the_project_decides_open_in_either_order() {
+    purlis_core::unsteered!();
     let open_first = Reach::of(vec![
         ("a.example.com".to_owned(), By::Open),
         ("a.example.com".to_owned(), By::Project),
@@ -892,8 +923,7 @@ proptest! {
     /// from the same project's list: whatever the person allows, keeps blocked, allows next
     /// time, forgets, withdraws or gives back for A, and whatever A attempts, B answers each
     /// connection as it did before, and as a B beside no A would.
-    #[test]
-    fn one_chats_grants_never_change_another_chats_decisions(
+    fn one_chats_grants_never_change_another_chats_decisions_law(
         listed in proptest::collection::vec((pooled(), by()), 0..6),
         theirs in proptest::collection::vec(act(), 0..6),
         acts in proptest::collection::vec(act(), 0..16),
@@ -926,6 +956,13 @@ proptest! {
     }
 }
 
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn one_chats_grants_never_change_another_chats_decisions() {
+    purlis_core::unsteered!();
+    one_chats_grants_never_change_another_chats_decisions_law();
+}
+
 // ---------------------------------------------------------------------------------------------
 // 7. Allow once, under interleaved connections.
 // ---------------------------------------------------------------------------------------------
@@ -950,8 +987,7 @@ proptest! {
     /// connections to other targets beside them. Exactly one attempt at its target is allowed,
     /// its use is told once, and none at another target takes it. Allowed again, one at a time,
     /// each lets exactly one more attempt on.
-    #[test]
-    fn allow_once_is_consumed_exactly_once_under_interleaving(
+    fn allow_once_is_consumed_exactly_once_under_interleaving_law(
         attempts in 1usize..6,
         others in 0usize..3,
         settle in 0usize..6,
@@ -1015,6 +1051,13 @@ proptest! {
     }
 }
 
+/// The law above, run with the shell's steering shed first (`purlis_core::unsteered!`).
+#[test]
+fn allow_once_is_consumed_exactly_once_under_interleaving() {
+    purlis_core::unsteered!();
+    allow_once_is_consumed_exactly_once_under_interleaving_law();
+}
+
 // ---------------------------------------------------------------------------------------------
 // 8. The decided host, the dialled host and the server name.
 // ---------------------------------------------------------------------------------------------
@@ -1066,6 +1109,20 @@ fn origin() -> (SocketAddr, mpsc::Receiver<Vec<u8>>) {
         }
     });
     (at, receive)
+}
+
+/// The name a model is served at, for the confined proxy. It looks it up at its own pace, so the
+/// law leaves it out of what a tunnel looked up ([`looked_up`]).
+const PROVIDER: &str = "api.provider.test";
+
+/// What a proxy looked up for its tunnels: every lookup but the provider's.
+fn looked_up(names: &Names) -> Vec<String> {
+    names
+        .lookups()
+        .into_iter()
+        .map(|one| one.name)
+        .filter(|name| name != PROVIDER)
+        .collect()
 }
 
 /// The hosts both proxies list, and the hosts a tunnel asks for.
@@ -1121,12 +1178,22 @@ fn under(confined: bool, at: SocketAddr) -> Under {
     ] {
         names.origin(name, 443, at);
     }
+    // Where a model is served, as a confined proxy looks it up: an address no origin is at. With
+    // nothing known, every address may be a model's, and nothing would be carried.
+    names.resolves_to(
+        PROVIDER,
+        443,
+        vec![vec![SocketAddr::from(([192, 0, 2, 10], 443))]],
+    );
     let hosts: Vec<String> = LISTED.iter().map(|one| (*one).to_owned()).collect();
     let timings = Timings::production();
     let mut serving = if confined {
         let serving = Serving::confined(
             hosts,
-            Arc::new(ProviderAddresses::resolving(Vec::new(), names.resolver())),
+            Arc::new(ProviderAddresses::resolving(
+                vec![PROVIDER.to_owned()],
+                names.resolver(),
+            )),
             &timings,
         );
         // A question is being answered, so the confined proxy carries.
@@ -1150,6 +1217,7 @@ fn spelled(name: &str) -> String {
 
 #[test]
 fn the_decided_host_is_the_dialled_host_and_the_sni() {
+    purlis_core::unsteered!();
     let (at, bytes) = origin();
     let proxies = [under(false, at), under(true, at)];
     let reach = Reach::open(LISTED.iter().map(|one| (*one).to_owned()).collect());
@@ -1167,7 +1235,7 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
             let under = &proxies[which];
             let server = server.unwrap_or(host);
             let (lookups, dials, hits) = (
-                under.names.lookups().len(),
+                looked_up(&under.names).len(),
                 under.names.dials().len(),
                 under.names.origin_hits().len(),
             );
@@ -1179,7 +1247,7 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
                     "{host} not listed, yet {head}"
                 );
                 prop_assert_eq!(
-                    under.names.lookups().len(),
+                    looked_up(&under.names).len(),
                     lookups,
                     "{} was looked up",
                     host
@@ -1197,10 +1265,7 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
                 .recv_timeout(Duration::from_secs(10))
                 .expect("the origin heard the connection end");
             // Looked up, dialled and reached as the host decided, and nothing else.
-            let looked: Vec<String> = under.names.lookups()[lookups..]
-                .iter()
-                .map(|one| one.name.clone())
-                .collect();
+            let looked = looked_up(&under.names)[lookups..].to_vec();
             prop_assert_eq!(looked, vec![spelled(host)], "for {}", host);
             prop_assert_eq!(under.names.dials()[dials..].to_vec(), vec![at]);
             prop_assert_eq!(
@@ -1217,19 +1282,15 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
             Ok(())
         })
         .unwrap();
-    // The chats' proxies saw no name but the ones decided.
+    // Neither proxy looked up a name it had not decided to carry.
     let decided: BTreeSet<String> = ASKED
         .iter()
         .filter(|one| reach.decide(one, 443, &TUNNEL_PORTS, &[]).carries())
         .map(|one| spelled(one))
         .collect();
     for under in &proxies {
-        for lookup in under.names.lookups() {
-            assert!(
-                decided.contains(&lookup.name),
-                "{} was looked up",
-                lookup.name
-            );
+        for name in looked_up(&under.names) {
+            assert!(decided.contains(&name), "{name} was looked up");
         }
     }
 }
