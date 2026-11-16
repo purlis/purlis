@@ -158,6 +158,7 @@ struct RawEntry {
 /// why it is not one. The first failure wins.
 pub fn parse(
     text: &str,
+    harnesses: &[crate::harness_declaration::Declaration],
     providers: &[model_provider::Declaration],
     file: &str,
 ) -> Result<Table, String> {
@@ -166,7 +167,7 @@ pub fn parse(
     let mut entries = Vec::with_capacity(raw.entry.len());
     for (at, raw) in raw.entry.into_iter().enumerate() {
         let entry =
-            read_entry(raw, providers).map_err(|why| format!("{file}: entry {}: {why}", at + 1))?;
+            read_entry(raw, harnesses, providers).map_err(|why| format!("{file}: entry {}: {why}", at + 1))?;
         let key = (
             entry.harness.clone(),
             entry.provider.clone(),
@@ -183,10 +184,14 @@ pub fn parse(
     Ok(Table { entries })
 }
 
-fn read_entry(raw: RawEntry, providers: &[model_provider::Declaration]) -> Result<Entry, String> {
+fn read_entry(
+    raw: RawEntry,
+    harnesses: &[crate::harness_declaration::Declaration],
+    providers: &[model_provider::Declaration],
+) -> Result<Entry, String> {
     let missing = |field: &str| format!("has no `{field}`");
     let harness = raw.harness.ok_or_else(|| missing("harness"))?;
-    if crate::harness_declaration::builtin(&harness).is_none() {
+    if !harnesses.iter().any(|declared| declared.name == harness) {
         return Err(format!(
             "`harness` names {harness:?}, which is no harness purlis ships"
         ));
@@ -282,6 +287,7 @@ pub fn shipped() -> &'static Table {
     static SHIPPED: std::sync::LazyLock<Table> = std::sync::LazyLock::new(|| {
         parse(
             include_str!("tested.toml"),
+            crate::harness_declaration::builtins(),
             model_provider::built_ins(),
             "tested.toml",
         )

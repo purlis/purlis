@@ -100,5 +100,16 @@ pub fn own_sign_in_only(declaration: &Declaration) -> Option<String> {
     })
 }
 
+/// **The wire format a pair speaks**: the first of `declaration`'s `[route] formats` that
+/// `provider` serves an endpoint in, or none where they share none, so the pair takes no proxied
+/// route. The one place a pair's format is worked out: the shipped table reads it rather than
+/// restating it.
+pub fn pair_format(
+    _declaration: &Declaration,
+    _provider: &crate::model_provider::Declaration,
+) -> Option<Format> {
+    None
+}
+
 #[cfg(test)]
 mod tests;

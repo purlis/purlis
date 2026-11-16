@@ -104,3 +104,59 @@ fn a_subscription_profile_is_never_routed_or_shared() {
     .expect_err("the Claude plan in another harness");
     assert!(why.contains("anthropic"), "{why}");
 }
+
+/// A provider declaration `id` serving an endpoint in each of `formats`, in that order.
+fn a_provider(id: &str, formats: &[&str]) -> crate::model_provider::Declaration {
+    let endpoints: String = formats
+        .iter()
+        .map(|format| {
+            format!("\n[[endpoint]]\nformat = \"{format}\"\nbase = \"https://{format}.{id}.example\"\n")
+        })
+        .collect();
+    crate::model_provider::parse(
+        &format!("id = \"{id}\"\nname = \"{id}\"\nkind = \"vendor\"\n{endpoints}"),
+        &crate::model_provider::From::Yours,
+        crate::model_provider::built_ins(),
+        &format!("{id}.toml"),
+    )
+    .expect("a provider declaration")
+}
+
+#[test]
+fn the_pair_format_is_the_first_of_the_harness_formats_the_provider_serves() {
+    let both_ways = declaration::parse(
+        "name = \"shelly\"\nprogram = \"shelly\"\n\n\
+         [route]\nformats = [\"openai-chat\", \"anthropic-messages\"]\n",
+        Origin::BuiltIn,
+        "built-in",
+    )
+    .expect("a built-in speaking both formats");
+    let anthropic = crate::model_provider::built_ins()
+        .iter()
+        .find(|provider| provider.id == "anthropic")
+        .expect("the Anthropic built-in");
+
+    assert_eq!(
+        pair_format(claude(), anthropic),
+        Some(Format::AnthropicMessages)
+    );
+    assert_eq!(
+        pair_format(&both_ways, &a_provider("duo", &["anthropic-messages", "openai-chat"])),
+        Some(Format::OpenaiChat),
+        "the harness's order decides, not the provider's"
+    );
+    assert_eq!(
+        pair_format(&both_ways, anthropic),
+        Some(Format::AnthropicMessages)
+    );
+    assert_eq!(
+        pair_format(claude(), &a_provider("chatty", &["openai-chat"])),
+        None,
+        "no format shared"
+    );
+    assert_eq!(
+        pair_format(declaration::of(Harness::Codex), anthropic),
+        None,
+        "a harness stating no format pairs with nothing"
+    );
+}
