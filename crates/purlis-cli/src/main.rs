@@ -1570,6 +1570,11 @@ enum ProfileCommand {
         /// harness's own sign-in.
         #[arg(long)]
         sandbox_only: bool,
+        /// Sign it in with a key for this model provider declaration, from your keys: only the
+        /// built-in `anthropic`, for Claude Code, in this version. It is made with no key; add
+        /// one in Settings › You › Your keys.
+        #[arg(long, value_name = "ID")]
+        declaration: Option<String>,
     },
     /// Copy this machine's harness settings files into a profile again, as they are. Its
     /// sign-in and conversations stay.
@@ -4395,6 +4400,32 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             name,
             harness,
             sandbox_only,
+            declaration: Some(declaration),
+        } => {
+            if let Err(why) = declaration_refusal(declaration, harness, *sandbox_only) {
+                return refused_with_usage_status(why);
+            }
+            let product = purlis_core::yourkeys::Product::anthropic();
+            profilestore::create_keyless(&store, name, harness, &machine, &product, now).map(
+                |made| {
+                    format!(
+                        "made the profile '{}' ({}) in {}, signing in with a key for the built-in \
+                         {} declaration\n{}it has no key yet: add one in Settings › You › Your \
+                         keys\n",
+                        made.record.name,
+                        made.record.harness,
+                        store.folder_of(&made.record.name).display(),
+                        product.id,
+                        imported_lines(&made),
+                    )
+                },
+            )
+        }
+        ProfileCommand::Create {
+            name,
+            harness,
+            sandbox_only,
+            declaration: None,
         } => {
             let made = if *sandbox_only {
                 profilestore::create_sandbox_only(&store, name, harness, now)
@@ -4474,6 +4505,9 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             in_own_terminal,
             way,
         } => {
+            if let Some(why) = signs_in_with_a_key(&store, name) {
+                return refused_with_usage_status(&why);
+            }
             if let Some(pool) = pool {
                 let signed_in = match (*in_terminal, way.as_deref()) {
                     (true, None | Some("device")) => pool_sign_in_in_terminal(
@@ -4523,7 +4557,12 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             };
             return profile_sign_in(&store, name, check, provider.as_deref(), held, way);
         }
-        ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
+        ProfileCommand::SignOut { name } => {
+            if let Some(why) = signs_in_with_a_key(&store, name) {
+                return refused_with_usage_status(&why);
+            }
+            return profile_sign_out(&store, name);
+        }
         ProfileCommand::List => unreachable!("listed in run"),
     };
     match said {
@@ -4533,6 +4572,54 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         }
         Err(why) => refused(&why),
     }
+}
+
+/// **Why `purlis profile create --declaration <declaration>` is refused** (T1a-12, H-17), in one
+/// terminal sentence each, before anything is written: only the built-in `anthropic`
+/// declaration, only for Claude Code, and never for a profile for sandboxed chats only.
+fn declaration_refusal(
+    declaration: &str,
+    harness: &str,
+    sandbox_only: bool,
+) -> Result<(), &'static str> {
+    if declaration != "anthropic" {
+        Err("Only the built-in `anthropic` declaration works in this version.")
+    } else if harness != "claude" {
+        // The terminal's form of W105.
+        Err("Only Claude Code can use a key in this version.")
+    } else if sandbox_only {
+        Err(
+            "A profile with a declaration signs in with a key, so `--sandbox-only` doesn't apply \
+             to it in this version.",
+        )
+    } else {
+        Ok(())
+    }
+}
+
+/// Why the profile `name` is not signed in or out through its harness's own sign-in: it signs in
+/// with a key from your keys (T1a-12, H-17). `None` for any other profile, or one this machine
+/// does not have, which the verb itself says.
+fn signs_in_with_a_key(store: &purlis_core::profilestore::Homes, name: &str) -> Option<String> {
+    let profiles = purlis_core::profilestore::list(store.config_root()).ok()?;
+    let sign_in = profiles.into_iter().find(|p| p.name == name)?.sign_in?;
+    let names_a_declaration = sign_in
+        .rest
+        .contains_key(purlis_core::profilesignin::DECLARATION);
+    (sign_in.kind == "api-key" && names_a_declaration).then(|| {
+        format!(
+            "{} signs in with a key from your keys, not its harness's own sign-in. Change its key \
+             in Settings › You › Your keys.",
+            shown::short(name)
+        )
+    })
+}
+
+/// Says `why` as purlis's refusal and exits 2, as a usage error does: a request this version
+/// does not take, refused before anything is written.
+fn refused_with_usage_status(why: &str) -> ExitCode {
+    say_refused(why);
+    ExitCode::from(2)
 }
 
 /// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
@@ -6214,8 +6301,22 @@ fn harness_listing(
         .iter()
         .map(|p| {
             let mut row = vec![shown::short(&p.name), p.kind.clone()];
-            if let Some((declarations, passed, _)) = declared {
-                row.push(sign_in(p, (declarations, passed)));
+            if let Some((declarations, passed, machine)) = declared {
+                // A key profile of this machine's says the declaration it names (T1a-12).
+                let named = (p.source == profiles::Source::Machine)
+                    .then(|| machine.iter().find(|m| m.name == p.name))
+                    .flatten()
+                    .and_then(|m| m.sign_in.as_ref())
+                    .and_then(|s| Some((s.kind.clone(), s.declaration().ok()??)));
+                row.push(match named {
+                    Some((kind, product)) => format!(
+                        "{} ({} {})",
+                        shown::short(&kind),
+                        shown::short(&product.from),
+                        shown::short(&product.id)
+                    ),
+                    None => sign_in(p, (declarations, passed)),
+                });
             }
             row.push(profiles::display(p));
             row

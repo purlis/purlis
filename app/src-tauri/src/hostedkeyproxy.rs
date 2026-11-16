@@ -33,6 +33,8 @@ impl ProxiesKeys for ProxiesKeysHere {
                     status: record.status,
                 })
             }),
+            // The route-used signal is T1a-42's to read: until then nothing hears it.
+            arrived: Arc::new(|| {}),
         };
         // No route yet: binding a run to its route is T1a-08's, so every request is refused.
         let started = proxy
