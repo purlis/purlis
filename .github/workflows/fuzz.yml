@@ -11,7 +11,19 @@ on:
   pull_request:
     branches: [main, phase-1-proven]
     paths:
+      # purlis-core and every crate of this repository it builds with (its path dependencies,
+      # and theirs): a change to any of them can change what a target reaches.
       - "crates/purlis-core/**"
+      - "crates/terminal/**"
+      - "crates/session-protocol/**"
+      - "crates/unicode/**"
+      - "crates/skills/**"
+      - "crates/linux-sandbox/**"
+      - "crates/cluster-doctor/**"
+      - "crates/changelog/**"
+      - "crates/host/**"
+      - "crates/browser-engine/**"
+      - "crates/same-user/**"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - ".nvmrc"
@@ -36,3 +48,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-parsers
+      # The fuzz crate is a workspace of its own, so the repository's clippy never reads it.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: clippy
+      - name: Lint the fuzz crate
+        working-directory: crates/purlis-core/fuzz
+        run: cargo clippy --locked --all-targets -- -D warnings

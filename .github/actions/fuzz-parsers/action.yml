@@ -47,8 +47,17 @@ runs:
         SECONDS_EACH: ${{ inputs.seconds }}
       run: |
         set -euo pipefail
+        # Every target, or the step fails: a list that came back short (or failed) would
+        # otherwise loop fewer times and go green having run nothing (Q301).
+        targets=$(cargo fuzz list)
+        want=$(sed -n 's/^name = "\(.*\)"$/\1/p' fuzz/Cargo.toml | grep -v '^purlis-core-fuzz$' | sort)
+        if [ "$(echo "$targets" | sort)" != "$want" ] || [ "$(echo "$want" | wc -l)" -ne 8 ]; then
+          echo "::error::cargo fuzz list gave $(echo "$targets" | wc -w) targets, not the 8 in fuzz/Cargo.toml:"
+          echo "$targets"
+          exit 1
+        fi
         status=0
-        for target in $(cargo fuzz list); do
+        for target in $targets; do
           dirs=("fuzz/seeds/$target")
           if [ "$target" = differential_host_parse_against_curl_and_node ]; then
             dirs+=("$RUNNER_TEMP/clients")
@@ -69,3 +78,10 @@ runs:
           echo "::endgroup::"
         done
         exit "$status"
+    # The input that crashed a target, kept with the run: libFuzzer writes it under artifacts/.
+    - if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz-artifacts-${{ github.run_attempt }}
+        path: crates/purlis-core/fuzz/artifacts
+        if-no-files-found: ignore
