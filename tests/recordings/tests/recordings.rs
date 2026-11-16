@@ -556,7 +556,7 @@ fn codex_runs_a_covering_script_against_the_responses_stand_in() {
             "-c",
             "model_provider=\"standin\"",
             "-c",
-            "model=\"stand-in\"",
+            "model=\"gpt-5.3-codex\"",
             "-c",
             "model_providers.standin.name=\"stand-in\"",
             "-c",
@@ -599,6 +599,11 @@ fn codex_runs_a_covering_script_against_the_responses_stand_in() {
             call.tool
         );
     }
+    // Each call reached a tool Codex has: none came back as one it does not offer.
+    assert!(
+        !shown.iter().any(|s| s.text.contains("unsupported")),
+        "a call reached no tool of Codex's: {shown:#?}"
+    );
     assert_eq!(
         fs::read_to_string(work.join("covered.txt")).ok().as_deref(),
         Some("covered\n"),

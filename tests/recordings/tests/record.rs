@@ -297,6 +297,8 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let started = Instant::now();
     let mut pressed = false;
     let mut accepted_prompts = 0;
+    let mut bypass_accepted = false;
+    let mut harness_asks = 0u32;
     loop {
         assert!(
             started.elapsed() < AT_MOST,
@@ -336,6 +338,24 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         if accepted_prompts < 3 && heard.is_empty() && asks_to_go_on(&screen) {
             session.write(b"\r").expect("Enter is pressed");
             accepted_prompts += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        // Claude Code's bypass-permissions warning defaults to "No, exit": a person who chose
+        // the mode takes "Yes, I accept".
+        if !bypass_accepted
+            && screen.contains("Bypass Permissions mode")
+            && screen.contains("Yes, I accept")
+        {
+            session.write(b"\x1b[B\r").expect("Yes, I accept is chosen");
+            bypass_accepted = true;
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        // A harness's own permission ask during the turn (OpenCode's "Permission required" for
+        // a folder outside the project) is allowed once, as a person who lets the sandbox judge
+        // allows it: then the wrap, not the harness, decides the call. Counted in the recording.
+        if harness_asks < 8 && screen.contains("Permission required") {
+            session.write(b"\r").expect("Allow once is chosen");
+            harness_asks += 1;
             std::thread::sleep(Duration::from_secs(2));
         }
         std::thread::sleep(Duration::from_millis(250));
@@ -394,6 +414,12 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             .chain(pressed.then_some(("esc", "pressed")))
             .chain((harness == "claude").then_some(("permission_mode", PERMISSION_MODE)))
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .chain((harness_asks > 0).then(|| {
+                (
+                    "harness_asks".to_owned(),
+                    format!("allowed once, {harness_asks} times"),
+                )
+            }))
             .collect(),
         roots,
         hook_calls: recording::hook_calls(&lines, &model),
@@ -490,6 +516,7 @@ fn prepare_harness(
                 .collect();
             value["hasCompletedOnboarding"] = true.into();
             value["theme"] = "dark".into();
+            value["bypassPermissionsModeAccepted"] = true.into();
             value["customApiKeyResponses"] =
                 serde_json::json!({"approved": [tail], "rejected": []});
             value["projects"][root.display().to_string()] =
@@ -527,9 +554,15 @@ fn harness_words(harness: &str, base_url: &str) -> Vec<String> {
         // recording runs without its prompts instead; its deny rules and purlis's hooks hold
         // as they do in every mode.
         "claude" => vec!["--permission-mode".to_owned(), PERMISSION_MODE.to_owned()],
+        // A model Codex knows, so it offers that model's tools (its freeform `apply_patch`
+        // among them): under a name it does not know it offered none to write with (0.169.0's
+        // first recording). Only the name: every request goes to the stand-in.
+        // A model Codex knows, so it offers that model's tools (its freeform `apply_patch`
+        // among them): under a name it does not know it offered none to write with (0.169.0's
+        // first recording). Only the name: every request goes to the stand-in.
         "codex" => [
             "model_provider=\"standin\"".to_owned(),
-            "model=\"stand-in\"".to_owned(),
+            "model=\"gpt-5.3-codex\"".to_owned(),
             "model_providers.standin.name=\"stand-in\"".to_owned(),
             format!("model_providers.standin.base_url=\"{base_url}/v1\""),
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
