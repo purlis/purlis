@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { commands, type YourKeyRow } from "../bindings";
+import { commands, type KeyTarget, type YourKeyRow } from "../bindings";
 import { KeyForm } from "../KeyForm";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
@@ -32,8 +32,8 @@ const YOUR_KEYS_LIST = yourKeyLink("").setting ?? "";
  * product, the origins its mark binds it to, its approval setting, what the check at save found,
  * the profiles, chats and pools using it are all core's.
  *
- * - **Add a key…** opens the one key form (`KeyForm`) in place under the list's head, aimed at a
- *   new entry; **Replace the key…** opens it under the row, aimed at that entry, so a rotated key
+ * - **Add a key…** opens the one key form (`KeyForm`) in place under the list's head, aimed at
+ *   the missing entry a profile points at, if any (F-8), else at a new entry; **Replace the key…** opens it under the row, aimed at that entry, so a rotated key
  *   keeps its id, its mark and its pools. Never a dialog (X3).
  * - **Remove…** always asks, with W5's count of the chats using the key, and has no undo (U19).
  *   After it the keyboard goes to the next row, or to *Add a key…* (G-10).
@@ -262,6 +262,16 @@ function RowButton({
   );
 }
 
+/**
+ * **What *Add a key…* aims the form at** (F-8): the missing entry a profile points at, so the
+ * key is written under that entry's id and the profile works again, never W9's *Replace it?*
+ * for a key that is missing; else a new entry.
+ */
+function addTarget(rows: YourKeyRow[]): KeyTarget {
+  const missing = rows.find((one) => one.state === "missing" && one.profiles.length > 0);
+  return missing === undefined ? { kind: "new-entry" } : { kind: "this-entry", id: missing.id };
+}
+
 /** What the row says of its users. */
 function usedBy(row: YourKeyRow): string {
   const profiles =
@@ -348,7 +358,7 @@ const listed: LiveSetting = {
                 {addAKey}
               </div>
               {now.form === "new" && (
-                <KeyForm target={{ kind: "new-entry" }} onSaved={saved} onCancel={closeForm} />
+                <KeyForm target={addTarget(now.read.rows)} onSaved={saved} onCancel={closeForm} />
               )}
               {now.read.rows.length > 0 && (
                 <ControlTable
