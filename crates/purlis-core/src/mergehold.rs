@@ -211,36 +211,118 @@ pub enum Held {
 /// **Whether `cmd` is held**, and which request it merges where that can be read: `None` for a
 /// command the release floor does not read as a merge.
 ///
-/// **A help is no merge** (#6960): a line that is one `gh pr merge` or `glab mr merge` asking
-/// for its help, by a literal `--help` or `-h` before any `--`, or `gh help pr merge` / `glab
-/// help mr merge`, is not held in any mode. Only a line of that one command: anything joined to
-/// it, a branch named `help`, or a `--help` that is a flag's value, is still read as a merge.
+/// **A help is no merge** (#6960): a line that [`asks_for_help`] is not held in any mode.
 pub fn held(cmd: &str) -> Option<Held> {
     crate::floorguard::merge_reason(cmd)?;
-    let segments = crate::shellseg::segment_argv(cmd);
-    if let [only] = &segments[..]
-        && merge_of(only) == Some(Merge::Help)
-    {
+    if asks_for_help(cmd) {
         return None;
     }
+    let segments = crate::shellseg::segment_argv(cmd);
     if segments.iter().any(|toks| lands(toks)) {
         return Some(Held::Land);
     }
     let mut found = segments.iter().filter_map(|toks| merge_of(toks));
     Some(match (found.next(), found.next()) {
-        (Some(Merge::Of(Some(request))), None) => Held::Request(request),
+        (Some(Some(request)), None) => Held::Request(request),
         _ => Held::Unreadable,
     })
 }
 
-/// What one segment that is a `gh pr merge`, `glab mr merge` or `glab mr accept` asks for.
-#[derive(Debug, PartialEq, Eq)]
-enum Merge {
-    /// Its help, and nothing is merged.
-    Help,
-    /// A merge: of the request named, or `None` where that cannot be read.
-    Of(Option<Request>),
+/// **Whether `cmd` only asks a merge command for its help** (#6960): one `gh pr merge`, `glab
+/// mr merge` or `glab mr accept` with a literal `--help` or `-h`, or `gh help pr merge` / `glab
+/// help mr merge`, and nothing else that could make it merge. Such a line merges nothing: the
+/// merge hold does not hold it and the release floor lets it run unattended.
+///
+/// **Read strictly, and anything else is a merge.** The line is one command, at most behind
+/// `env` and variable assignments (no `xargs`, no other wrapper), with no character the shell
+/// expands or redirects on, and every other argument a plain word or a boolean flag of that
+/// command ([`HELP_MAY_STAND_BESIDE`]) spelled on its own. A cluster is never read: pflag gives a
+/// value-taking shorthand at a cluster's end the next argument, so `gh pr merge 12 -st -h`
+/// squash-merges with the subject `-h`.
+pub fn asks_for_help(cmd: &str) -> bool {
+    if cmd.contains([
+        '$', '{', '}', '*', '?', '[', '`', '\\', '(', ')', '<', '>', '~', '\'', '"',
+    ]) {
+        return false;
+    }
+    let segments = crate::shellseg::segment_argv(cmd);
+    let [toks] = &segments[..] else {
+        return false;
+    };
+    let mut toks: Vec<&str> = toks.iter().map(String::as_str).collect();
+    if toks.first() == Some(&"env") {
+        toks.remove(0);
+    }
+    let start = toks
+        .iter()
+        .position(|tok| !crate::shellwrap::is_env_assignment(tok))
+        .unwrap_or(toks.len());
+    let Some((prog, args)) = toks[start..].split_first() else {
+        return false;
+    };
+    let Some((_, noun, verbs, booleans)) =
+        HELP_MAY_STAND_BESIDE.iter().find(|(cli, ..)| cli == prog)
+    else {
+        return false;
+    };
+    let mut words = Vec::new();
+    let mut help = false;
+    for arg in args {
+        match *arg {
+            "--help" | "-h" => help = true,
+            flag if flag.starts_with('-') => {
+                if !booleans.contains(&flag) {
+                    return false;
+                }
+            }
+            word => words.push(word),
+        }
+    }
+    match words[..] {
+        ["help", n, verb] => n == *noun && verbs.contains(&verb),
+        [n, verb, ..] => help && n == *noun && verbs.contains(&verb),
+        _ => false,
+    }
 }
+
+/// For each CLI: its merge noun and verbs, and the boolean flags of its merge that a help may
+/// stand beside in [`asks_for_help`]. A flag that takes a value is never here, nor is `-R`.
+const HELP_MAY_STAND_BESIDE: &[(&str, &str, &[&str], &[&str])] = &[
+    (
+        "gh",
+        "pr",
+        &["merge"],
+        &[
+            "--admin",
+            "--auto",
+            "-d",
+            "--delete-branch",
+            "--disable-auto",
+            "-m",
+            "--merge",
+            "-r",
+            "--rebase",
+            "-s",
+            "--squash",
+        ],
+    ),
+    (
+        "glab",
+        "mr",
+        &["merge", "accept"],
+        &[
+            "--auto-merge",
+            "-d",
+            "--remove-source-branch",
+            "-r",
+            "--rebase",
+            "-s",
+            "--squash",
+            "-y",
+            "--yes",
+        ],
+    ),
+];
 
 /// Whether one segment is `purlis change land` (or its older name, `charter change land`).
 fn lands(toks: &[String]) -> bool {
@@ -275,24 +357,17 @@ const VALUE_FLAGS: &[&str] = &[
 ];
 
 /// One segment's merge: `None` where it is no `gh pr merge`, `glab mr merge` or `glab mr
-/// accept`; its help, or the request it merges where that can be read. A flag's value is never
-/// read as a word or as a help.
-fn merge_of(toks: &[String]) -> Option<Merge> {
+/// accept`; the request it merges where that can be read, or `Some(None)`. A flag's value is
+/// never read as a word. A help is [`asks_for_help`]'s to read, never this one's.
+fn merge_of(toks: &[String]) -> Option<Option<Request>> {
     let (prog, _, argv) = crate::shellwrap::split_env(toks);
     let base = crate::shellwrap::base_lower(&prog);
     let args = argv.get(1..).unwrap_or(&[]);
     let mut repo = None;
     let mut words = Vec::new();
-    let mut help = false;
-    let mut past_options = false;
     let mut i = 0;
     while i < args.len() {
         let arg = args[i].as_str();
-        if arg == "--" {
-            past_options = true;
-        } else if !past_options && (arg == "--help" || arg == "-h") {
-            help = true;
-        }
         if arg == "-R" || arg == "--repo" {
             repo = Some(args.get(i + 1).map(String::as_str));
             i += 2;
@@ -314,28 +389,24 @@ fn merge_of(toks: &[String]) -> Option<Merge> {
     };
     let noun = if base == "gh" { "pr" } else { "mr" };
     match words[..] {
-        ["help", n, verb] if n == noun && verbs.contains(&verb) => return Some(Merge::Help),
         [n, verb, ..] if n == noun && verbs.contains(&verb) => {}
         _ => return None,
-    }
-    if help {
-        return Some(Merge::Help);
     }
     let repo = match repo {
         None => None,
         Some(named) => match named.map(Repo::try_from) {
             Some(Ok(repo)) => Some(repo),
-            _ => return Some(Merge::Of(None)),
+            _ => return Some(None),
         },
     };
-    Some(Merge::Of(match words[2..] {
+    Some(match words[2..] {
         [number] => number
             .parse::<u64>()
             .ok()
             .filter(|n| *n > 0 && number.bytes().all(|b| b.is_ascii_digit()))
             .map(|number| Request { repo, number }),
         _ => None,
-    }))
+    })
 }
 
 /// **What the app answered about a held merge** (Q239), as the hook heard it.

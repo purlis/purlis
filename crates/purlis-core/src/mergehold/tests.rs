@@ -403,6 +403,9 @@ fn a_merge_help_is_not_a_merge() {
         "gh help pr merge",
         "glab help mr merge",
         "env GH_PAGER=cat gh pr merge --help",
+        "gh pr merge 12 --squash --delete-branch -h",
+        "gh pr merge 12 -s -d --help",
+        "glab mr merge 12 -y -s -h",
     ] {
         assert_eq!(held(cmd), None, "{cmd}");
     }
@@ -422,6 +425,23 @@ fn gh_pr_merge_help_on_a_branch_named_help_is_still_held() {
         "gh pr merge 12 --body=--help",
         "gh pr merge --help; gh pr merge 12",
         "gh pr merge --help && gh pr merge 12",
+        // A short-flag cluster gives its last value-taking flag the next argument (pflag), so
+        // `-h` is a subject or a body here and the request is merged.
+        "gh pr merge 12 -st -h",
+        "gh pr merge 12 -db -h",
+        "glab mr merge 12 -ym -h",
+        "gh pr merge 12 -{s,t} -h",
+        "gh pr merge 12 $X -h",
+        // Only a known boolean flag of the command, spelled singly, stands beside a help.
+        "gh pr merge 12 -t x -h",
+        "gh pr merge 12 --subject=x -h",
+        "glab mr merge 12 -m -h",
+        "gh pr merge 12 -R o/r -h",
+        "gh pr merge 12 `x` -h",
+        "gh pr merge 1* -h",
+        "gh pr merge 1? -h",
+        "xargs gh pr merge -h",
+        "echo 12 | xargs gh pr merge -h",
     ] {
         assert!(held(cmd).is_some(), "{cmd} is not held");
     }
