@@ -4019,11 +4019,6 @@ pub struct Widened {
     /// Whether the chat keeps to its own terminal alone, on macOS: the project's
     /// `own-terminal-only` ([`OWN_TERMINAL_ONLY`]). Nothing a person grants turns it off.
     pub own_terminal_only: bool,
-    /// **Whether the floor lets programs out** (Q308a, the `processes` family): where the
-    /// project's `[policy]` does not enforce it, the floor's refusal of `launchctl`,
-    /// `osascript`, `open`, cron and Apple Events is left out of the wrap. A kernel's refusal
-    /// cannot log and allow, so `log` lifts it as `off` does. The full sandbox keeps its own.
-    pub processes_lifted: bool,
 }
 
 impl Widened {
@@ -4048,7 +4043,6 @@ impl Widened {
             listen_only: Vec::new(),
             unserved: Vec::new(),
             lifted: Vec::new(),
-            processes_lifted: false,
         }
     }
 
@@ -4316,8 +4310,6 @@ impl Compiled {
         let widened = Widened {
             trust: written.certificate_checks,
             own_terminal_only: written.own_terminal_only,
-            processes_lifted: crate::enforcement::mode(root, crate::enforcement::Family::Processes)
-                != crate::enforcement::Mode::Enforce,
             ..Widened::default()
         }
         .lifting(grant::still_lifted(
