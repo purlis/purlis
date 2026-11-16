@@ -89,7 +89,8 @@ runs:
     # settings weigh is measured where each path has its `/System/Volumes/Data` name too.
     - name: A large plane's settings within the budget
       shell: bash
-      run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::claude_tests::size_budget_tests:: --nocapture
+      run: |
+        tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::claude_tests::size_budget_tests:: --nocapture
     # **The pinned Claude Code decides the smaller rules** (T1.1-71, #6961): its own Read and
     # Write tools on every spelling of held paths. The version purlis supports, from the committed
     # lockfile with no install scripts run, against a stand-in model on a loopback port. No model
