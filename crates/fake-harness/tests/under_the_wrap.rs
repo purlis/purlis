@@ -123,6 +123,27 @@ fn play(given: &Given) -> Played {
     )
     .expect("a vault");
     fs::write(outside.join("existing.txt"), "before\n").expect("a file outside");
+    // What the refused dials aim at: a loopback listener of this run's, on a port the chat is
+    // never granted. Anything arriving there is an escape.
+    let refused = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a refused listener");
+    let refused_target = format!(
+        "127.0.0.1:{}",
+        refused.local_addr().expect("its port").port()
+    );
+    let arrived = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let arrived = Arc::clone(&arrived);
+        refused.set_nonblocking(true).expect("a listener");
+        std::thread::spawn(move || {
+            let ends = Instant::now() + AT_MOST;
+            while Instant::now() < ends {
+                match refused.accept() {
+                    Ok((_, from)) => arrived.lock().expect("arrivals").push(from.to_string()),
+                    Err(_) => std::thread::sleep(Duration::from_millis(20)),
+                }
+            }
+        });
+    }
     let transcript = base_path.join("transcript.jsonl");
     let state = base_path.join("fake-state");
 
@@ -230,6 +251,7 @@ fn play(given: &Given) -> Played {
     let places = json!({
         "work": root.display().to_string(),
         "outside": outside.display().to_string(),
+        "refused-target": refused_target,
     });
     launch.set.extend(
         [
@@ -261,6 +283,10 @@ fn play(given: &Given) -> Played {
     // Until the script's last turn is played: every scripted step has a result, or Esc was
     // pressed on the step it names.
     let steps = steps_of(&first);
+    let turns = first["turns"].as_array().cloned().unwrap_or_default();
+    // Each turn after the first is typed once the one before it is played, as a person types
+    // it (T1.1-03's driver types its covering script's second turn so).
+    let mut typed = 1usize;
     let started = Instant::now();
     loop {
         let screen = session.screen().lines.join("\n");
@@ -276,6 +302,21 @@ fn play(given: &Given) -> Played {
             session.write(b"\x1b").expect("Esc is pressed");
             std::thread::sleep(Duration::from_secs(4));
             break;
+        }
+        if typed < turns.len()
+            && steps_of(&json!({"turns": turns[..typed]}))
+                .iter()
+                .all(|s| done.iter().any(|l| l["step"] == s.as_str()))
+        {
+            std::thread::sleep(Duration::from_secs(3));
+            let prompt = turns[typed]["prompt"].as_str().unwrap_or_default();
+            session
+                .write(prompt.as_bytes())
+                .expect("the next prompt is typed");
+            std::thread::sleep(Duration::from_millis(800));
+            session.write(b"\r").expect("Enter is pressed");
+            typed += 1;
+            continue;
         }
         let answered = steps
             .iter()
@@ -325,6 +366,12 @@ fn play(given: &Given) -> Played {
     if let Ok(home) = std::env::var("HOME") {
         root_of("home", Path::new(&home));
     }
+    roots.insert("refused-target".to_owned(), refused_target.clone());
+    let dialled = arrived.lock().expect("arrivals").clone();
+    assert!(
+        dialled.is_empty(),
+        "ESCAPE: a dial arrived at {refused_target}, which the chat was never granted: {dialled:?}"
+    );
     let played = Played {
         _base: base,
         dialect,
