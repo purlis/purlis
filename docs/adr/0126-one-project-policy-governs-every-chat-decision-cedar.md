@@ -1,11 +1,12 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
 Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
-Q309 to Q319 and Q320, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5), Q320b
-(R2-1–R2-4), Q320c (R5-1–R5-3) and Q320d, in the who-judges orchestration
-(`work/who-judges/decisions.md` on the plane). It also takes in the calls of the spec's first six
-Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` to
-`review-round-5.md` on the plane; review round 6's calls are Q320c and Q320d).
+Q309 to Q319, Q320 and Q322, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5), Q320b
+(R2-1–R2-4), Q320c (R5-1–R5-3), Q320d and Q320e (R6-1, R6-2), in the who-judges orchestration
+(`work/who-judges/decisions.md` on the plane). It also takes in the calls of the spec's first
+seven Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` to
+`review-round-5.md` on the plane; review round 6's calls are Q320c and Q320d, and review round
+7's are Q320e and Q322).
 Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
 closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
@@ -97,8 +98,10 @@ rewriting every project's `policy.cedar`.
   holds; there is no device name, and the hostname is only a label). It is sealed into the
   keyring item's registry at the plane's first open and stays **unset until the person confirms
   it in the window**; with no keyring or an unreadable registry it is unset too, so a rule that
-  reads it is a deny, which doctor declares. Rules name a device by its id (Q320d, replacing
-  Q320c R5-3). Every other entity attribute a rule can name (a vault's tags, a path's owning
+  reads it is a deny, which doctor declares. On Windows, which has no machine store yet (ADR
+  0031), it stays unset, a declared gap until that store exists (Q320e R6-2). Rules name a device
+  by its id (Q320d, replacing Q320c R5-3). `context.harness_mode` is supplied by the host, read
+  from its own start record, never from the chat (Q320e R6-1). Every other entity attribute a rule can name (a vault's tags, a path's owning
   workspace) is read at HEAD and falls under "stricter of two"; a local vault registration's tag
   counts only when the app sealed it as the person's answer, and an unsealed one is ignored
   (Q320d). A push is judged against its target as git will resolve it, `pushurl` and `insteadOf`
@@ -114,7 +117,10 @@ rewriting every project's `policy.cedar`.
   first acceptance (Q309 point 2; review round 1, S-B8; review round 2, S2-SF1).
 - **Tightenings are sealed into the accepted floor.** The app seals every tightening it sees
   into the **accepted floor** (distinct from the sandbox level `floor`), which is the conjunction
-  of every committed version seen since the last press. A sealed, monotonic manifest covers the
+  of every committed version seen since the last press. The person's own local tighten-only file
+  is no exception: each tightening seen there is sealed into the accepted floor, so writing a new
+  one applies at once and removing one is a loosening that waits for the press (Q322, which
+  withdraws Q309 point 8's "needs no seal"). A sealed, monotonic manifest covers the
   whole sealed store, and only the entries it lists are loaded: a sealed file it doesn't list is
   ignored, with a Notice. Moving HEAD back, committing a broken file, deleting the store's
   accepted entry, or replaying an older store or a removed grant then loosens nothing (review
@@ -189,7 +195,8 @@ second instance (§7; Q319 C6 as amended by Q320a N1). Any later design must kee
   A rule mode and a same-`@id` replacement reach only rules at their own level or below (review
   round 1, S-B5).
 - Organisation loosens without a press. Project, Workspace and Persona loosen only after it, and
-  You only tightens. A level writes rules only about its own chats (Q310 point 4).
+  You only tightens; its tightenings are sealed like any other, so removing one waits for the
+  press (§2; Q322). A level writes rules only about its own chats (Q310 point 4).
 - Organisation and Project may **lock** a family, an action, a grant scope or timed grants. A
   lock freezes the default below it and drops a lower permit on the locked key, with a Notice.
   Tightening is never locked (Q310 point 5, Q314 point 10). Locks replace "admin locks".
@@ -300,7 +307,10 @@ the rule.
   now holds for a grant only, any other missing or failing sealed entry being the deny state
   (Q320b R2-3; review round 3, SEC3-B2; added by review round 4, F4 nit); and Q319 C6, as
   amended by Q320a N1 (with an opt-in on, the seal gap is narrowed, not closed, and stays
-  declared). ADR 0126 states the amended reading.
+  declared); and Q309 point 8's "needs no seal" for the person's local level, withdrawn by Q322
+  (its tightenings are sealed into the accepted floor, so removing one waits for the press; the
+  Organisation's folder is still protected by its ownership, not the seal). ADR 0126 states the
+  amended reading.
 - **CONTEXT.md:** "Policy" widens to the whole statement; "admin lock" becomes **Lock**; **Level**
   gains Organisation and You, with You at the bottom and tighten-only (the M75 spec lists every
   entry).
