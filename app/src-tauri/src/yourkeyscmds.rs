@@ -285,7 +285,7 @@ pub async fn your_key_stop_sending(id: String, pool: String) -> Result<(), Strin
 pub async fn your_key_save(target: KeyTarget, value: String) -> Result<KeySaved, String> {
     blocking(move || {
         let root = config_root()?;
-        save(&root, &credentials(&root), &target, &value)
+        save(&root, &credentials(&root), &ALLOWANCES, &target, &value)
     })
     .await
 }
@@ -304,6 +304,7 @@ pub async fn your_key_replace_held(
         replace_held(
             &root,
             &credentials(&root),
+            &ALLOWANCES,
             id_of(&held)?,
             &value,
             profile.as_deref(),
@@ -346,6 +347,7 @@ fn mark_again(root: &Path, credentials: &dyn Credentials, id: Ulid) -> Result<()
 fn save(
     root: &Path,
     credentials: &dyn Credentials,
+    allowances: &dyn pools::Allowances,
     target: &KeyTarget,
     value: &str,
 ) -> Result<KeySaved, String> {
@@ -360,7 +362,7 @@ fn save(
         let id = id_of(id)?;
         if listed.iter().any(|l| l.entry.id == id) {
             // The same id, its new value, marked: a rotated key keeps its pools (X1).
-            let replaced = yourkeys::replace(root, credentials, &ALLOWANCES, id, value, checked)?;
+            let replaced = yourkeys::replace(root, credentials, allowances, id, value, checked)?;
             if replaced == Replaced::Unmarked {
                 mark_again(root, credentials, id)?;
             }
@@ -391,7 +393,7 @@ fn save(
         });
     if let Err(why) = finished {
         let mut said = why;
-        if let Err(left) = yourkeys::remove(root, credentials, &ALLOWANCES, id) {
+        if let Err(left) = yourkeys::remove(root, credentials, allowances, id) {
             said += &format!("; and the key is left in your keys: {left}");
         }
         return Err(said);
@@ -404,12 +406,13 @@ fn save(
 fn replace_held(
     root: &Path,
     credentials: &dyn Credentials,
+    allowances: &dyn pools::Allowances,
     held: Ulid,
     value: &str,
     profile: Option<&str>,
 ) -> Result<KeySaved, String> {
     let checked = check_at_save(&Secret::new(value.to_owned()));
-    if yourkeys::replace(root, credentials, &ALLOWANCES, held, value, checked)?
+    if yourkeys::replace(root, credentials, allowances, held, value, checked)?
         == Replaced::Unmarked
     {
         mark_again(root, credentials, held)?;

@@ -30,7 +30,7 @@ impl Here {
         self.config.path()
     }
     fn save(&self, target: KeyTarget, value: &str) -> KeySaved {
-        save(self.root(), &self.credentials, &target, value).expect("the form saves")
+        save(self.root(), &self.credentials, &NoneYet, &target, value).expect("the form saves")
     }
     fn ids(&self) -> Vec<Ulid> {
         yourkeys::list(self.root(), &self.credentials)
@@ -166,6 +166,7 @@ fn the_key_form_takes_a_target() {
         save(
             here.root(),
             &here.credentials,
+            &NoneYet,
             &KeyTarget::ThisProfile {
                 name: "no-such-profile".to_owned()
             },
@@ -201,6 +202,7 @@ fn w9_replace_replaces_in_place_with_the_value_in_hand() {
         replace_held(
             here.root(),
             &here.credentials,
+            &NoneYet,
             held,
             "synthetic-in-hand",
             Some("claude-anthropic"),
@@ -221,4 +223,65 @@ fn w9_replace_replaces_in_place_with_the_value_in_hand() {
         Some(held.to_string()),
         "the save is finished: the profile points at the held entry"
     );
+}
+
+/// Pool key allowances holding one pool for every entry, recording each reseal (X1).
+#[derive(Default)]
+struct OnePool {
+    resealed: std::sync::Mutex<Vec<Ulid>>,
+}
+
+impl pools::Allowances for OnePool {
+    fn pools(&self, _entry: Ulid) -> Vec<String> {
+        vec!["gpu".to_owned()]
+    }
+    fn revoke(&self, _entry: Ulid, _pool: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn remove_all(&self, _entry: Ulid) -> Result<(), String> {
+        Ok(())
+    }
+    fn reseal(&self, entry: Ulid) -> Result<(), String> {
+        self.resealed.lock().unwrap().push(entry);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_replace_that_comes_back_unmarked_reseals_the_pools_after_marking_again() {
+    // This entry, its item gone: Replace answers Unmarked, the form marks it again, and its
+    // one pool is sealed to the new value too, so the rotated key keeps it (X1).
+    let here = Here::new();
+    let id = saved(here.save(KeyTarget::NewEntry, "synthetic-first"));
+    stub(here.root()).delete(SERVICE, &id.to_string()).unwrap();
+    let allowances = OnePool::default();
+    assert_eq!(
+        save(
+            here.root(),
+            &here.credentials,
+            &allowances,
+            &KeyTarget::ThisEntry { id: id.to_string() },
+            "synthetic-written-again",
+        ),
+        Ok(KeySaved::Saved { id: id.to_string() })
+    );
+    assert!(here.marked(id));
+    assert_eq!(*allowances.resealed.lock().unwrap(), [id], "the save's pool");
+
+    // W9's Replace the key… on a held entry whose item is gone: the same.
+    stub(here.root()).delete(SERVICE, &id.to_string()).unwrap();
+    let allowances = OnePool::default();
+    assert_eq!(
+        replace_held(
+            here.root(),
+            &here.credentials,
+            &allowances,
+            id,
+            "synthetic-in-hand",
+            None,
+        ),
+        Ok(KeySaved::Saved { id: id.to_string() })
+    );
+    assert!(here.marked(id));
+    assert_eq!(*allowances.resealed.lock().unwrap(), [id], "W9's pool");
 }
