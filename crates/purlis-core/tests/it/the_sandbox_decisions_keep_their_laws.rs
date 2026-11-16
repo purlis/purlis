@@ -78,7 +78,9 @@ fn label() -> impl Strategy<Value = String> {
 fn domain() -> impl Strategy<Value = String> {
     proptest::collection::vec(label(), 2..=4)
         .prop_map(|labels| labels.join("."))
-        .prop_filter("a domain the hosts' rules accept", |name| Host::parse(name).is_ok())
+        .prop_filter("a domain the hosts' rules accept", |name| {
+            Host::parse(name).is_ok()
+        })
 }
 
 fn port() -> impl Strategy<Value = u16> {
@@ -177,16 +179,36 @@ enum Op {
     KeepBlocked(String),
 }
 
-/// A target as a block names one: a host and a port, never a wildcard.
-fn target() -> impl Strategy<Value = String> {
-    (domain(), port()).prop_map(|(name, port)| format!("{name}:{port}"))
+/// A target as a block names one: a host and a port, never a wildcard. From a small pool, so
+/// an Allow, a Keep blocked and a connection meet the same target often.
+fn target() -> impl Strategy<Value = (String, u16)> {
+    (
+        proptest::sample::select(vec![
+            "a.example.com",
+            "b.example.com",
+            "example.com",
+            "a.b.example.com",
+        ]),
+        proptest::sample::select(vec![80u16, 443]),
+    )
+        .prop_map(|(name, port)| (name.to_owned(), port))
+}
+
+/// What a wider Allow names: a target, the host on every port, or a wildcard over it.
+fn allowed_host() -> impl Strategy<Value = String> {
+    prop_oneof![
+        3 => target().prop_map(|(name, port)| format!("{name}:{port}")),
+        1 => proptest::sample::select(vec!["a.example.com", "example.com", "*.example.com", "*.example.com:443", "*.b.example.com"])
+            .prop_map(str::to_owned),
+    ]
 }
 
 fn op() -> impl Strategy<Value = Op> {
+    let typed = || target().prop_map(|(name, port)| format!("{name}:{port}"));
     prop_oneof![
-        2 => (prop_oneof![target(), listed_host()], by()).prop_map(|(host, by)| Op::Allow(host, by)),
-        1 => target().prop_map(Op::AllowNext),
-        2 => target().prop_map(Op::KeepBlocked),
+        2 => (allowed_host(), by()).prop_map(|(host, by)| Op::Allow(host, by)),
+        1 => typed().prop_map(Op::AllowNext),
+        2 => typed().prop_map(Op::KeepBlocked),
     ]
 }
 
@@ -216,7 +238,7 @@ proptest! {
         socket in "/[a-z]{1,8}/[a-z]{1,8}\\.sock",
         service in "com\\.[a-z]{1,8}\\.[a-z]{1,8}",
         ops in proptest::collection::vec(op(), 0..12),
-        query in (domain(), port()),
+        query in target(),
     ) {
         // The chain, by what is carried.
         let host = Host::parse(&format!("{}:{}", granted.0, granted.1)).unwrap();
@@ -288,7 +310,7 @@ proptest! {
         // The later answer wins: the last answer covering it an Allow, it is carried, unless a
         // later Keep blocked of another target ended that Allow (it covers that target, or that
         // target covers it), as the code ends one.
-        if let Some(at) = ops.iter().rposition(|one| covering(one))
+        if let Some(at) = ops.iter().rposition(&covering)
             && let Op::Allow(allowed, _) = &ops[at]
             && let Some(allowed) = host_of(allowed)
             && !ops[at + 1..].iter().any(|one| matches!(one, Op::KeepBlocked(kept)
@@ -394,9 +416,28 @@ fn refused_v6() -> impl Strategy<Value = Ipv6Addr> {
     prop_oneof![
         Just(Ipv6Addr::LOCALHOST),
         Just(Ipv6Addr::UNSPECIFIED),
-        any::<[u16; 7]>().prop_map(|s| Ipv6Addr::new(0xfe80 | (s[0] & 0x3f), s[1], s[2], s[3], s[4], s[5], s[6], s[0])),
-        any::<[u16; 7]>().prop_map(|s| Ipv6Addr::new(0xff00 | (s[0] & 0xff), s[1], s[2], s[3], s[4], s[5], s[6], s[0])),
-        any::<[u16; 6]>().prop_map(|s| Ipv6Addr::new(0xfd00, 0x0ec2, s[0], s[1], s[2], s[3], s[4], s[5])),
+        any::<[u16; 7]>().prop_map(|s| Ipv6Addr::new(
+            0xfe80 | (s[0] & 0x3f),
+            s[1],
+            s[2],
+            s[3],
+            s[4],
+            s[5],
+            s[6],
+            s[0]
+        )),
+        any::<[u16; 7]>().prop_map(|s| Ipv6Addr::new(
+            0xff00 | (s[0] & 0xff),
+            s[1],
+            s[2],
+            s[3],
+            s[4],
+            s[5],
+            s[6],
+            s[0]
+        )),
+        any::<[u16; 6]>()
+            .prop_map(|s| Ipv6Addr::new(0xfd00, 0x0ec2, s[0], s[1], s[2], s[3], s[4], s[5])),
     ]
 }
 
@@ -411,7 +452,9 @@ fn private_v4() -> impl Strategy<Value = Ipv4Addr> {
         any::<u8>().prop_map(|d| Ipv4Addr::new(192, 0, 2, d)),
         any::<u8>().prop_map(|d| Ipv4Addr::new(203, 0, 113, d)),
     ]
-    .prop_filter("not a metadata address", |ip| *ip != Ipv4Addr::new(100, 100, 100, 200))
+    .prop_filter("not a metadata address", |ip| {
+        *ip != Ipv4Addr::new(100, 100, 100, 200)
+    })
 }
 
 fn hex_pair(ip: Ipv4Addr) -> (u16, u16) {
@@ -467,7 +510,11 @@ fn spellings_v4(ip: Ipv4Addr) -> Vec<String> {
 fn spellings_v6(ip: Ipv6Addr) -> Vec<String> {
     let plain = ip.to_string();
     let s = ip.segments();
-    let long = s.iter().map(|one| format!("{one:x}")).collect::<Vec<_>>().join(":");
+    let long = s
+        .iter()
+        .map(|one| format!("{one:x}"))
+        .collect::<Vec<_>>()
+        .join(":");
     vec![
         plain.clone(),
         plain.to_ascii_uppercase(),
@@ -479,7 +526,11 @@ fn spellings_v6(ip: Ipv6Addr) -> Vec<String> {
 
 /// Whether `spelled`, as the decision reads a host, is an address literal it parses, and which.
 fn literal(spelled: &str) -> Option<IpAddr> {
-    spelled.strip_suffix('.').unwrap_or(spelled).parse::<IpAddr>().ok()
+    spelled
+        .strip_suffix('.')
+        .unwrap_or(spelled)
+        .parse::<IpAddr>()
+        .ok()
 }
 
 fn special_use_address() -> impl Strategy<Value = IpAddr> {
@@ -577,7 +628,13 @@ fn labels(name: &str) -> Vec<&str> {
 fn recased(text: &str, flips: &[bool]) -> String {
     text.chars()
         .zip(flips.iter().cycle())
-        .map(|(c, up)| if *up { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() })
+        .map(|(c, up)| {
+            if *up {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
         .collect()
 }
 
@@ -630,7 +687,7 @@ proptest! {
         // Case on either side, never.
         let recased_entry = recased(&entry, &flips);
         let recased_host = recased(&host, &other_flips);
-        prop_assert_eq!(allows(&[recased_entry.clone()], &recased_host), matched, "{} against {}", recased_entry, recased_host);
+        prop_assert_eq!(allows(std::slice::from_ref(&recased_entry), &recased_host), matched, "{} against {}", recased_entry, recased_host);
         prop_assert_eq!(allows_on(&[recased_entry], &recased_host, 443, &[443]), matched);
         // A wildcard never names an address.
         let over = format!("*.{suffix}");
@@ -1013,13 +1070,27 @@ fn origin() -> (SocketAddr, mpsc::Receiver<Vec<u8>>) {
 
 /// The hosts both proxies list, and the hosts a tunnel asks for.
 const LISTED: [&str; 3] = ["a.test", "b.test", "*.w.test"];
-const ASKED: [&str; 7] = ["a.test", "B.Test", "c.test", "x.w.test", "w.test", "evil.test", "a.test."];
+const ASKED: [&str; 7] = [
+    "a.test",
+    "B.Test",
+    "c.test",
+    "x.w.test",
+    "w.test",
+    "evil.test",
+    "a.test.",
+];
 
 /// The response head a proxy answers a `CONNECT` with, and the stream after it.
 fn connect(proxy: u16, host: &str) -> (String, TcpStream) {
     let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy)).expect("the proxy");
-    stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-    write!(stream, "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n").unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    write!(
+        stream,
+        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+    )
+    .unwrap();
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
@@ -1040,7 +1111,14 @@ struct Under {
 
 fn under(confined: bool, at: SocketAddr) -> Under {
     let names = Names::new();
-    for name in ["a.test", "b.test", "x.w.test", "w.test", "c.test", "evil.test"] {
+    for name in [
+        "a.test",
+        "b.test",
+        "x.w.test",
+        "w.test",
+        "c.test",
+        "evil.test",
+    ] {
         names.origin(name, 443, at);
     }
     let hosts: Vec<String> = LISTED.iter().map(|one| (*one).to_owned()).collect();
@@ -1096,8 +1174,16 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
             let decided = reach.decide(host, 443, &TUNNEL_PORTS, &[]);
             let (head, mut stream) = connect(under.proxy.port(), host);
             if !decided.carries() {
-                prop_assert!(!head.starts_with("HTTP/1.1 200"), "{host} not listed, yet {head}");
-                prop_assert_eq!(under.names.lookups().len(), lookups, "{} was looked up", host);
+                prop_assert!(
+                    !head.starts_with("HTTP/1.1 200"),
+                    "{host} not listed, yet {head}"
+                );
+                prop_assert_eq!(
+                    under.names.lookups().len(),
+                    lookups,
+                    "{} was looked up",
+                    host
+                );
                 prop_assert_eq!(under.names.dials().len(), dials);
                 return Ok(());
             }
@@ -1111,10 +1197,16 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
                 .recv_timeout(Duration::from_secs(10))
                 .expect("the origin heard the connection end");
             // Looked up, dialled and reached as the host decided, and nothing else.
-            let looked: Vec<String> = under.names.lookups()[lookups..].iter().map(|one| one.name.clone()).collect();
+            let looked: Vec<String> = under.names.lookups()[lookups..]
+                .iter()
+                .map(|one| one.name.clone())
+                .collect();
             prop_assert_eq!(looked, vec![spelled(host)], "for {}", host);
             prop_assert_eq!(under.names.dials()[dials..].to_vec(), vec![at]);
-            prop_assert_eq!(under.names.origin_hits()[hits..].to_vec(), vec![(spelled(host), 443)]);
+            prop_assert_eq!(
+                under.names.origin_hits()[hits..].to_vec(),
+                vec![(spelled(host), 443)]
+            );
             // The server name: a confined proxy carries the hello only where it names the host.
             let names_it = spelled(server) == spelled(host);
             if under.confined && !names_it {
@@ -1133,7 +1225,11 @@ fn the_decided_host_is_the_dialled_host_and_the_sni() {
         .collect();
     for under in &proxies {
         for lookup in under.names.lookups() {
-            assert!(decided.contains(&lookup.name), "{} was looked up", lookup.name);
+            assert!(
+                decided.contains(&lookup.name),
+                "{} was looked up",
+                lookup.name
+            );
         }
     }
 }

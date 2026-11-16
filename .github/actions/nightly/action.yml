@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "fuzz-parsers"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "fuzz-parsers", "property-tests"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -40,3 +40,14 @@ runs:
       uses: ./.github/actions/fuzz-parsers
       with:
         seconds: "300"
+    # The sandbox's laws as property tests (T1.1-23, #6870), from a fresh seed each night and at
+    # ten times a pull request's 10 000 cases. A failure prints its minimal input; one that means
+    # an escape is labelled `area:security` and `priority:p0` and fixed first (Q301).
+    - if: inputs.entry == 'property-tests'
+      uses: ./.github/actions/rust-toolchain
+    - if: inputs.entry == 'property-tests'
+      name: The sandbox's laws
+      shell: bash
+      env:
+        PROPTEST_CASES: "100000"
+      run: "cargo test -p purlis-core --locked --test it the_sandbox_decisions_keep_their_laws::"
