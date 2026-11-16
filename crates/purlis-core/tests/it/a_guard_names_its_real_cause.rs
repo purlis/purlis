@@ -169,3 +169,79 @@ fn a_placeholder_no_variable_on_the_line_names_is_still_a_credential() {
         assert_eq!(a_credential(line, "notes.md"), (true, true), "{line:?}");
     }
 }
+
+/// S2: a `-F` field gh reads from a file (`@name`) or fills in from the checkout (`{branch}`)
+/// holds no value on the line, so purlis cannot read the branch or ref it names.
+#[test]
+fn a_typed_branch_read_from_a_file_or_filled_in_by_gh_is_refused_as_a_push() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "gh api -X PUT repos/o/r/contents/a.md -F branch=@branch.txt -f message=m -f content=eA==",
+        "gh api -X PUT repos/o/r/contents/a.md -F branch={branch} -f message=m -f content=eA==",
+        "gh api -X PUT repos/o/r/contents/a.md -F 'branch=x-{branch}' -f message=m -f content=eA==",
+    ] {
+        let said = refused(cmd);
+        assert!(said.contains("default branch"), "{cmd}: {said}");
+        assert!(said.contains("`purlis worktree push`"), "{cmd}: {said}");
+    }
+}
+
+#[test]
+fn a_typed_ref_read_from_a_file_or_filled_in_by_gh_is_refused_with_write_it_out_literally() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "gh api -X POST repos/o/r/git/refs -F ref=@ref.txt -f sha=abc",
+        "gh api -X POST repos/o/r/git/refs -F ref=refs/heads/{branch} -f sha=abc",
+    ] {
+        let said = refused(cmd);
+        assert!(
+            said.contains("can't tell what this ref writes; write it out literally"),
+            "{cmd}: {said}"
+        );
+    }
+}
+
+/// S3: a contents call on a repository named by id, or through a GHES full URL, commits too.
+#[test]
+fn putting_contents_by_repository_id_or_a_ghes_url_is_refused_as_a_push() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "gh api -X PUT repositories/123/contents/a.md -f message=m -f content=eA==",
+        "gh api -X PUT https://ghe.example.com/api/v3/repos/o/r/contents/a.md -f branch=main -f message=m -f content=eA==",
+    ] {
+        let said = refused(cmd);
+        assert!(said.contains("default branch"), "{cmd}: {said}");
+        assert!(said.contains("`purlis worktree push`"), "{cmd}: {said}");
+    }
+}
+
+/// S5: a `--variable` that defines the name from a value on the same line puts that value on
+/// the line, so its placeholder does not make the line clean. The value is built from parts.
+#[test]
+fn a_placeholder_whose_variable_is_defined_from_a_literal_on_the_line_is_still_a_credential() {
+    purlis_core::unsteered!();
+    let value = ["not", "a", "real", "value"].join("-");
+    for line in [
+        format!(
+            "curl --variable AUTH_PASSWORD={value} --expand-data 'password={{{{AUTH_PASSWORD}}}}' https://x"
+        ),
+        format!(
+            "curl --variable '%AUTH_PASSWORD={value}' --expand-data 'password={{{{AUTH_PASSWORD}}}}' https://x"
+        ),
+    ] {
+        assert_eq!(a_credential(&line, "notes.md"), (true, true), "{line}");
+    }
+}
+
+/// The nit: `--variable` counts only as an argument of curl, not in a comment or another
+/// program's words.
+#[test]
+fn a_variable_flag_outside_curls_arguments_does_not_name_the_placeholder() {
+    purlis_core::unsteered!();
+    for line in [
+        "curl --expand-data 'password={{AUTH_PASSWORD}}' https://x # --variable %AUTH_PASSWORD",
+        "echo --variable %AUTH_PASSWORD 'password={{AUTH_PASSWORD}}'",
+    ] {
+        assert_eq!(a_credential(line, "notes.md"), (true, true), "{line}");
+    }
+}

@@ -277,3 +277,39 @@ fn the_fact_a4_reads_is_kept_across_a_relaunch() {
     let relaunched = Fact::resumed(prior, Begun::Person, Some(Harness::ClaudeCode), &[]);
     assert_eq!(relaunched.attendance(), Attendance::Attended);
 }
+
+/// S1 of #6962's review, the orchestrator's ruling: a release or a tag made through `gh api`
+/// is A4's like `gh release create`, `git tag` and `git push`. Attended, it runs; in a chat
+/// nobody is at, the floor refuses it.
+#[test]
+fn a_release_or_tag_through_gh_api_runs_attended_and_is_refused_unattended() {
+    purlis_core::unsteered!();
+    let attended = Fact::at_start(Begun::Person, Some(Harness::ClaudeCode), &[]);
+    let unattended = Fact::at_start(Begun::Task, Some(Harness::ClaudeCode), &[]);
+    for cmd in [
+        "gh api -X POST repos/o/r/releases -f tag_name=v1.2.3",
+        "gh api -X POST repos/o/r/git/refs -f ref=refs/tags/v1.2.3 -f sha=abc",
+        "gh api -X POST repos/o/r/git/tags -f tag=v1.2.3 -f object=abc -f type=commit -f message=m",
+    ] {
+        assert_eq!(
+            refused_by(
+                cmd,
+                Some(attended.attendance()),
+                Some("claude"),
+                Some("default")
+            ),
+            None,
+            "attended: {cmd}"
+        );
+        assert_eq!(
+            refused_by(
+                cmd,
+                Some(unattended.attendance()),
+                Some("claude"),
+                Some("default")
+            ),
+            Some(Arm::ReleaseFloor),
+            "unattended: {cmd}"
+        );
+    }
+}
