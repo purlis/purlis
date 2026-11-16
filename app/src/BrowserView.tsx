@@ -1,7 +1,19 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Bot, Globe, Hand, Lock, ShieldAlert, WifiOff } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  Copy,
+  Globe,
+  Hand,
+  Lock,
+  RotateCw,
+  ShieldAlert,
+  WifiOff,
+  X,
+} from "lucide-react";
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -12,10 +24,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import {
   type BrowserInput,
+  type BrowserStep,
   type BrowserWatching,
   commands,
   type GrantLevel,
   type Offered,
+  type PageLoadSaid,
 } from "./bindings";
 import {
   SIZE_PRESETS,
@@ -30,7 +44,7 @@ import {
 import { leavesTheSurface } from "./leaveKeys";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
 import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
-import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
+import { useBrowserOrigin, useBrowserPage, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { poolOf, programsOf, secretsOf, useChatBrowsers } from "./chatBrowsers";
 import { DRIVEN } from "./ChatBrowsersShown";
 import { useProjectsBrowsers } from "./browsersGrid";
@@ -44,7 +58,7 @@ import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { SecretMarks, marksOn } from "./SecretMarks";
 import { onAMac } from "./tabKeys";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -57,9 +71,11 @@ const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
 export const DROPPED =
   "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
-/** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
- *  button pressed or let go. A move or a wheel is followed by the next one. */
+/** Whether `input` is one the person would miss if it were dropped: a key pressed, a mouse
+ *  button pressed or let go, or a step through the page's history (#6938). A move or a wheel is
+ *  followed by the next one. */
 function anAct(input: BrowserInput) {
+  if (input.kind === "navigate") return true;
   if (input.kind === "key") return input.action === "down";
   return input.kind === "mouse" && (input.action === "pressed" || input.action === "released");
 }
@@ -217,6 +233,10 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** Where its page is, as its views are told (#2300); before a host says, where it went. */
   const told = useBrowserOrigin(program);
   const origin = told === undefined ? wentTo : told;
+  /** What its page is (#6938): its whole address, title and load, as its views are told. A host
+   *  older than this window tells none, and its view has no history buttons. */
+  const shownPage = useBrowserPage(program);
+  const loading = shownPage?.load.state === "loading";
   const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
   /** The pool whose runner it runs on, as its view said (#2050), until it says: unknown. */
@@ -424,6 +444,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     });
   };
 
+  /** **A step through the page's history** (#6938): the person's own, so it takes the browser
+   *  over first, as a size preset does, and the agent is paused until Done. None is ever sent
+   *  for the agent. */
+  const step = (to: BrowserStep) => {
+    void takeOver().then((took) => {
+      if (took) send({ kind: "navigate", aim: aim.current, step: to });
+    });
+  };
+
   /** Opens the page's DevTools beside it (#2028), taking the browser over first. */
   const inspect = () => {
     void takeOver().then(async (took) => {
@@ -562,7 +591,16 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           filled there (#2024, #5119): drawn by purlis, outside the page, so a page cannot fake
           them. */}
       <div className="browser-head" data-testid="browser-head">
-        <BrowserChip origin={origin} device={device} />
+        <BrowserChip origin={origin} device={device} address={shownPage?.address ?? null} />
+        {/* Its title, after the site (#6938): the engine's record, never read from the page. */}
+        {shownPage?.title != null && (
+          <Tooltip tip={shownPage.title}>
+            <span className="browser-title" data-testid="browser-title">
+              {shownPage.title}
+            </span>
+          </Tooltip>
+        )}
+        {shownPage?.address != null && <CopyAddress address={shownPage.address} />}
         <SecretMarks secrets={marks} />
       </div>
       {(theirs || handed) && (
@@ -632,7 +670,54 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       )}
       {/* **Who drives it, said as a sentence with the one next step** (#6937): Take control
           while its agent does, Done while the person does, on the accent while they do (#2014). */}
-      <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
+      <div
+        className="browser-bar"
+        data-driving={driving ? "person" : "agent"}
+        data-loading={loading || undefined}
+      >
+        {/* Its lower edge, moving while the page loads (#6938); heard in the status below. */}
+        {loading && <span className="browser-progress" aria-hidden="true" />}
+        {/* **Back, Forward, Reload and Stop** (#6938), at the strip's start: the person's, so
+            each takes the browser over first. Drawn once the host says what the page is. */}
+        {shownPage !== undefined && (
+          <div className="browser-nav" role="group" aria-label="Page history">
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<ArrowLeft />}
+              aria-label="Back"
+              tooltip="Go back a page. You drive the browser until you press Done."
+              onPress={() => step("back")}
+            />
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<ArrowRight />}
+              aria-label="Forward"
+              tooltip="Go forward a page. You drive the browser until you press Done."
+              onPress={() => step("forward")}
+            />
+            {loading ? (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<X />}
+                aria-label="Stop"
+                tooltip="Stop loading this page. You drive the browser until you press Done."
+                onPress={() => step("stop")}
+              />
+            ) : (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<RotateCw />}
+                aria-label="Reload"
+                tooltip="Load this page again. You drive the browser until you press Done."
+                onPress={() => step("reload")}
+              />
+            )}
+          </div>
+        )}
         <DriverMark
           driving={driving}
           reconnecting={reconnecting}
@@ -643,6 +728,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
           {driverSaid}
+          {shownPage !== undefined && <LoadSaid load={shownPage.load} />}
           {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
@@ -729,14 +815,71 @@ type SitesAsked = { address: string; sites: string[]; answers: Offered[] };
 /** Keep blocked, where the core offered no answer that refuses. */
 const KEEP_SAID = "Keep blocked";
 
+/** What the strip says while the page is loading (#6938): heard, as its lower edge is seen. */
+export const LOADING_SAID = "Loading the page…";
+
+/** **What the strip says of the page's load** (#6938): that it is loading, or that it did not
+ *  load (with the engine's reason) or stopped working, and what to do. Nothing once loaded. */
+export function loadSaid(load: PageLoadSaid): string | null {
+  switch (load.state) {
+    case "loading":
+      return LOADING_SAID;
+    case "failed":
+      return `This page did not load${load.why === null ? "" : ` (${load.why})`}. Press Reload to try again.`;
+    case "crashed":
+      return "This page stopped working. Press Reload to open it again.";
+    case "loaded":
+      return null;
+  }
+}
+
+/** The strip's words for the page's load, where it says any. */
+function LoadSaid({ load }: { load: PageLoadSaid }) {
+  const said = loadSaid(load);
+  if (said === null) return null;
+  return (
+    <span
+      className={load.state === "loading" ? "browser-bar-loading" : "browser-bar-refused"}
+      data-testid="browser-load"
+    >
+      {" "}
+      {said}
+    </span>
+  );
+}
+
+/** **Copy the page's whole address** (#6938), as the site's tooltip shows it. */
+function CopyAddress({ address }: { address: string }) {
+  return (
+    <IconButton
+      size="sm"
+      variant="ghost"
+      className="browser-copy-address"
+      icon={<Copy />}
+      aria-label="Copy address"
+      tooltip={address}
+      onPress={() => void navigator.clipboard?.writeText(address).catch(() => undefined)}
+    />
+  );
+}
+
 /** Where a browser's page is and on which device, as its view says them above its page
- *  (#2024, #2300): its origin alone, never its path or title. A browser on a pool's runner names
- *  its pool, so its `localhost` is never taken for this machine's (#2050). */
-function BrowserChip({ origin, device }: { origin: string | null; device: string | null }) {
+ *  (#2024, #2300): its origin, with its whole address in its tooltip once the core says it
+ *  (#6938). A browser on a pool's runner names its pool, so its `localhost` is never taken for
+ *  this machine's (#2050). */
+function BrowserChip({
+  origin,
+  device,
+  address,
+}: {
+  origin: string | null;
+  device: string | null;
+  address: string | null;
+}) {
   const chip = addressChip(origin, device);
   const safety = siteSafety(origin);
   return (
-    <Tooltip tip={chip.whole ?? undefined}>
+    <Tooltip tip={address ?? chip.whole ?? undefined}>
       <span className="browser-chip" data-testid="browser-chip" data-safety={safety ?? undefined}>
         {/* Heard by its name, never part of the chip's words (#6937). */}
         {safety === "secure" && <Lock role="img" aria-label="Secure connection" />}

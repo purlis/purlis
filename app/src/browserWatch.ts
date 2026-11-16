@@ -8,6 +8,7 @@ import {
   type BrowserFrame,
   type BrowserViewRole,
   type BrowserWatching,
+  type ShownPage,
 } from "./bindings";
 import { frameBytes, latestOnly, paint } from "./browserFrames";
 
@@ -55,9 +56,28 @@ export function originOf(program: string): string | null | undefined {
   return origins.get(program);
 }
 
-/** Forgets where every browser's page is: for a test, which starts from none. */
+/**
+ * **What each browser's page is, by program** (#6938): its whole address, its title and where
+ * its load stands, as its views were last told. A browser no view has been told of, or whose
+ * host is older than this window, is not here.
+ */
+const pages = new Map<string, ShownPage>();
+
+/** Browser `program`'s page is `shown` now, as one of its views was told. */
+export function pageTold(program: string, shown: ShownPage): void {
+  pages.set(program, shown);
+  for (const listener of listeners) listener();
+}
+
+/** What browser `program`'s page is, as its views were last told: `undefined` if never. */
+export function pageOf(program: string): ShownPage | undefined {
+  return pages.get(program);
+}
+
+/** Forgets where every browser's page is and what it is: for a test, which starts from none. */
 export function forgetOrigins(): void {
   origins.clear();
+  pages.clear();
   for (const listener of listeners) listener();
 }
 
@@ -69,6 +89,11 @@ function subscribe(listener: () => void): () => void {
 /** **Where browser `program`'s page is** (#2300), following what its views are told. */
 export function useBrowserOrigin(program: string): string | null | undefined {
   return useSyncExternalStore(subscribe, () => originOf(program));
+}
+
+/** **What browser `program`'s page is** (#6938), following what its views are told. */
+export function useBrowserPage(program: string): ShownPage | undefined {
+  return useSyncExternalStore(subscribe, () => pageOf(program));
 }
 
 /** What a watch tells its caller besides drawing: each frame's aim, the view attached. */
@@ -135,6 +160,11 @@ export function useBrowserWatch(
       // Where its page is, its origin alone (#2300): no image of its own.
       if (frame.page !== null) {
         originTold(program, frame.page.origin);
+        return;
+      }
+      // What its page is (#6938): no image of its own either.
+      if (frame.shown !== null) {
+        pageTold(program, frame.shown);
         return;
       }
       // An empty frame is the host's word that the view has ended for good.

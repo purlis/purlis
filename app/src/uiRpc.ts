@@ -4251,6 +4251,9 @@ export type BrowserDriver =
  *  reconnected.
  * 
  *  Or, with `page` and no image, where the browser's page is (#2300): its origin alone.
+ * 
+ *  Or, with `shown` and no image, what the browser's page is (#6938): its whole address, its
+ *  title and where its load stands.
  */
 export type BrowserFrame = {
 	aim: string,
@@ -4271,6 +4274,12 @@ export type BrowserFrame = {
 	 *  `ended`; `null` on every other frame.
 	 */
 	closed: string | null,
+	/**
+	 *  What the browser's page is (#6938): said on its own, with no image, where it changed
+	 *  and before the first frame of each snapshot; `null` on every frame, and from a host
+	 *  before 1.90.
+	 */
+	shown: ShownPage | null,
 };
 
 /**
@@ -4278,7 +4287,9 @@ export type BrowserFrame = {
  *  (its `aim`), at a point in CSS pixels of the page; `modifiers` are bits (Alt 1, Control 2,
  *  Meta 4, Shift 8).
  */
-export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number } | 
+/**  Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed. */
+{ kind: "navigate"; aim: string; step: BrowserStep };
 
 /**  Which limit a row sets. */
 export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
@@ -4338,6 +4349,9 @@ export type BrowserSitesChanged = {
 	added: string[],
 	removed: string[],
 };
+
+/**  **A step through a page's history the person takes** (#6938), from the strip above it. */
+export type BrowserStep = "back" | "forward" | "reload" | "stop";
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
@@ -9953,6 +9967,12 @@ export type PageAt = {
 	origin: string | null,
 };
 
+/**
+ *  **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
+ *  (`net::ERR_NAME_NOT_RESOLVED`, `null` where it gave none), or crashed.
+ */
+export type PageLoadSaid = { state: "loading" } | { state: "loaded" } | { state: "failed"; why: string | null } | { state: "crashed" };
+
 /**  One part of a panel's body. */
 export type PanelBlock = { kind: "list"; rows: PanelRow[]; empty: PanelEmpty } | { kind: "note"; text: string; tone: string } | 
 /**
@@ -14718,6 +14738,19 @@ export type Shown = {
 	 *  ask that is never offered a rule nor cooled off.
 	 */
 	rule?: RuleShown | null,
+};
+
+/**
+ *  **What a browser's page is** (#6938), as the core tells its view, from the engine's own
+ *  record of the page and never read from its content: its whole address, `null` where there
+ *  is none to show (no page, a page that is not on the web, or one whose address holds a value
+ *  purlis keeps out); its title, `null` for none; and where its load stands. Drawn by purlis
+ *  outside the page, so a page cannot fake it (#2024).
+ */
+export type ShownPage = {
+	address: string | null,
+	title: string | null,
+	load: PageLoadSaid,
 };
 
 /**
