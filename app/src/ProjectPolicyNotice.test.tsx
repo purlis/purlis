@@ -51,9 +51,7 @@ describe("the project's policy (Q308a)", () => {
   it("names each family a loosening waits on, and Accept presses it", async () => {
     const asked = core(LOOSENED);
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
-    await waitFor(() =>
-      expect(screen.getByText(/guards\.merge from enforce to log/)).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText(/guards\.merge from enforce to log/)).toBeTruthy());
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(asked("accept_project_policy")).toEqual([{ plane: PLANE }]));
     await waitFor(() => expect(screen.queryByText(/guards\.merge from/)).toBeNull());
@@ -83,7 +81,9 @@ describe("the project's policy (Q308a)", () => {
   it("says an acceptance whose seal does not hold counts as none", async () => {
     core({ ...QUIET, unsealed: true });
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
-    await waitFor(() => expect(screen.getByText(/does not hold, so it counts as none/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/does not hold, so it counts as none/)).toBeTruthy(),
+    );
     // Never a bulk re-seal: with nothing waiting, there is nothing to accept.
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });

@@ -19,9 +19,7 @@ export const POLICY_ACCEPT_MEANS =
 
 /** The families that wait, one clause each: "guards.merge from enforce to log". */
 export const waitingSaid = (state: PolicyState): string =>
-  state.waiting
-    .map((one) => `${one.family} from ${one.accepted} to ${one.committed}`)
-    .join(", ");
+  state.waiting.map((one) => `${one.family} from ${one.accepted} to ${one.committed}`).join(", ");
 
 /**
  * **A loosening of the project's `[policy]` waits for your press** (rulings Q308a, Q308b; ADR
