@@ -26,35 +26,44 @@ jobs:
       - run: cargo test --locked -p purlis-crash-handler --lib
 
   probe:
-    name: the probe's abort, looped (${{ matrix.mode }})
+    name: the abort test, looped (${{ matrix.code }}, ${{ matrix.mode }})
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        mode: [test-serial, test-parallel, test-all, heavy]
+        code: [old, fixed]
+        mode: [serial, parallel]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: false
-      - run: cargo build --locked -p purlis-crash-handler --bin crash-probe
-      - run: cargo test --locked -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run
+      - name: The code before the fix (instrumented)
+        if: matrix.code == 'old'
+        run: git checkout 0704985df05ec6fbef986326b577de766d1610ae -- crates/crash-handler Cargo.lock
+      - name: Build
+        run: |
+          cargo test --locked -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .target.name == "a_native_crash_leaves_a_minidump") | .executable' \
+            > test-binary.txt
+          cat test-binary.txt
+          test -x "$(cat test-binary.txt)"
       - name: Loop
         env:
           MODE: ${{ matrix.mode }}
         run: |
-          T=$(ls -t target/debug/deps/a_native_crash_leaves_a_minidump-* | grep -v '\.d$' | head -1)
+          T=$(cat test-binary.txt)
+          F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler
           case "$MODE" in
-            heavy)
-              for k in 1 2 3 4 5 6; do (while :; do :; done) & done
-              bash tools/abort-loop-6909.sh target/debug/crash-probe 4000 16; exit ;;
-            test-serial) N=800; J=1; F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler ;;
-            test-parallel) N=2000; J=6; F=an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler ;;
-            test-all) N=300; J=1; F= ;;
+            serial) N=1000; J=1 ;;
+            parallel) N=3000; J=6 ;;
           esac
           seq 1 "$N" | xargs -P "$J" -I{} sh -c "'$T' $F > \"\$TMPDIR/t{}.txt\" 2>&1 || echo {}" > failed.txt || true
-          echo "failed: $(wc -l < failed.txt) of $N"
-          for i in $(cat failed.txt); do echo "::group::run $i"; cat "$TMPDIR/t$i.txt"; echo "::endgroup::"; done
+          echo "failed: $(wc -l < failed.txt | tr -d ' ') of $N"
+          for i in $(head -20 failed.txt); do echo "::group::run $i"; cat "$TMPDIR/t$i.txt"; echo "::endgroup::"; done
+          echo "::group::a run that passed"; cat "$TMPDIR/t$(seq 1 "$N" | grep -vxFf failed.txt | head -1).txt"; echo "::endgroup::"
           test ! -s failed.txt
