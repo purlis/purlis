@@ -1768,7 +1768,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
 }
 
 /// A pane: what its view is sent, as it is sent, and the terminal of its own that draws it.
-struct Pane {
+pub(crate) struct Pane {
     seen: Arc<Mutex<Seen>>,
 }
 
@@ -1808,7 +1808,7 @@ impl Pane {
     }
 
     /// A pane of chat `id`, which `sessions` runs.
-    fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
+    pub(crate) fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
         // A pane sized as the window's first is: the view says the size its screen was
         // drawn for only once it opens, after its first bytes may have been sent.
         let seen = Arc::new(Mutex::new(Seen::new(SIZE)));
@@ -1818,6 +1818,11 @@ impl Pane {
         };
         sessions.watch(id, sink).expect("a view opens");
         Pane { seen }
+    }
+
+    /// Everything the pane was sent, as text: what a red scenario's reader needs (T1.1-06).
+    pub(crate) fn text(&self) -> String {
+        drawn(&self.seen.lock().expect("the pane").sent)
     }
 
     /// A pane that was sent `bytes`, on a screen of [`SIZE`].

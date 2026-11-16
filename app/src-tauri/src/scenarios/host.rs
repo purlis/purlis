@@ -539,6 +539,8 @@ pub(crate) struct Scenario {
     window: Option<Window>,
     /// Each chat it started.
     chats: Mutex<Vec<u32>>,
+    /// Each chat's pane, as the window's view of it draws it.
+    panes: Mutex<Vec<(u32, crate::behaviour::Pane)>>,
     /// How each chat was launched, as the window composed it: what a red run's reader needs.
     launched: Mutex<Vec<String>>,
     /// The profile its chats start on, made once.
@@ -642,6 +644,7 @@ impl Scenario {
             hosting: Some(hosting),
             window: Some(window),
             chats: Mutex::default(),
+            panes: Mutex::default(),
             launched: Mutex::default(),
             profiled: std::sync::Once::new(),
             also: Mutex::default(),
@@ -824,6 +827,11 @@ impl Scenario {
             .start_ready(&chat, &ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        if let Ok(pane) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::behaviour::Pane::of(held.chats().sessions(), id)
+        })) {
+            self.panes.lock().expect("panes").push((id, pane));
+        }
         if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
             self.types(id, prompt);
         }
@@ -846,9 +854,15 @@ impl Scenario {
             })
             .collect();
         format!(
-            "launched: {:#?}\nopen now: {:?}\nconfinements: {:?}\nevents: {kinds:#?}\n\
-             transcript: {:#?}",
+            "launched: {:#?}\nscreens: {:#?}\nopen now: {:?}\nconfinements: {:?}\n\
+             events: {kinds:#?}\ntranscript: {:#?}",
             self.launched.lock().expect("launched"),
+            self.panes
+                .lock()
+                .expect("panes")
+                .iter()
+                .map(|(id, pane)| format!("chat {id}: {}", pane.text()))
+                .collect::<Vec<_>>(),
             self.open_chats(),
             self.confines.started(),
             self.transcript()
