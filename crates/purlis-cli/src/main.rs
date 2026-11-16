@@ -1446,6 +1446,8 @@ impl purlis_host::Confine for Confines {
             confining.alone,
             tell,
             askable,
+            // The session host's confinements wait by production's timings (T1.1-01).
+            &purlis_core::sandbox::timings::Timings::production(),
         )
         .map(|hosted| Box::new(HeldByServe(hosted)) as Box<dyn purlis_host::Confining>)
     }

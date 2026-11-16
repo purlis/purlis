@@ -5348,6 +5348,7 @@ impl Applied {
                     refusals,
                     reached,
                     asks,
+                    timings: timings::Timings::production(),
                 })
             })
             .transpose()
@@ -5399,6 +5400,7 @@ impl Applied {
                 refusals,
                 reached,
                 asks: None,
+                timings: timings::Timings::production(),
             },
         )
     }
@@ -5746,7 +5748,7 @@ impl Confinement {
     pub fn start_keeping(hosts: Vec<String>, refusals: egress::Refusals) -> std::io::Result<Self> {
         Self::serving(egress::Serving {
             refusals,
-            ..egress::Serving::of(reach::Reach::open(hosts))
+            ..egress::Serving::of(reach::Reach::open(hosts), &timings::Timings::production())
         })
     }
 
@@ -8429,6 +8431,9 @@ pub mod codex;
 pub mod confined;
 pub mod door;
 pub mod egress;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod grant;
 pub mod held;
 pub mod hosted;
@@ -8438,6 +8443,8 @@ pub mod kubeconfig;
 pub mod level_why;
 pub mod local;
 pub mod localport;
+#[cfg(any(test, feature = "test-support"))]
+pub mod names;
 pub mod nat64;
 pub mod opencode;
 pub mod persona;
@@ -8454,6 +8461,7 @@ pub mod services;
 pub mod signin;
 pub mod sshproxy;
 pub mod team;
+pub mod timings;
 pub mod tools;
 pub mod tunnel;
 #[cfg(unix)]

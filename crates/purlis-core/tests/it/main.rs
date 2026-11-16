@@ -217,6 +217,7 @@ mod no_count_says_thing_s;
 mod no_multi_step_git_operation_runs_at_a_plane_root;
 mod no_old_name_is_spelled_in_the_window_or_its_assets;
 mod no_old_name_is_spelled_outside_the_name_module;
+mod no_sandbox_duration_lives_outside_timings;
 mod no_tracked_file_is_one_a_sandboxed_chat_may_not_write;
 mod nothing_escapes;
 mod nothing_escapes_a_worktree;
