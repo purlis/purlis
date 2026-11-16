@@ -195,7 +195,7 @@ pub async fn your_keys(planes: tauri::State<'_, Planes>) -> Result<Vec<YourKeyRo
 pub async fn your_key_chats(planes: tauri::State<'_, Planes>, id: String) -> Result<u32, String> {
     let chats = chats_here(&planes);
     blocking(move || {
-        let count = page::chats_using(&config_root()?, id_of(&id)?, &chats).len();
+        let count = page::chats_using(&config_root()?, id_of(&id)?, &chats)?.len();
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     })
     .await
@@ -211,7 +211,7 @@ pub async fn your_key_pool_chats(
 ) -> Result<u32, String> {
     let chats = chats_here(&planes);
     blocking(move || {
-        let count = page::chats_on_pool(&config_root()?, id_of(&id)?, &pool, &chats).len();
+        let count = page::chats_on_pool(&config_root()?, id_of(&id)?, &pool, &chats)?.len();
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     })
     .await

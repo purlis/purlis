@@ -132,17 +132,22 @@ fn on(profiles: &[String], chats: &[ChatUse], keep: impl Fn(&ChatUse) -> bool) -
 }
 
 /// **The chats *Remove* stops** (W5's count): the chats on a profile naming entry `id`.
-pub fn chats_using(config_root: &Path, id: Ulid, chats: &[ChatUse]) -> Vec<String> {
+pub fn chats_using(config_root: &Path, id: Ulid, chats: &[ChatUse]) -> Result<Vec<String>, String> {
     let profiles = crate::profilestore::list(config_root).unwrap_or_default();
-    on(&naming(&profiles, id), chats, |_| true)
+    Ok(on(&naming(&profiles, id), chats, |_| true))
 }
 
 /// **The chats *Stop sending* stops** (W123's count): those of [`chats_using`] on `pool`.
-pub fn chats_on_pool(config_root: &Path, id: Ulid, pool: &str, chats: &[ChatUse]) -> Vec<String> {
+pub fn chats_on_pool(
+    config_root: &Path,
+    id: Ulid,
+    pool: &str,
+    chats: &[ChatUse],
+) -> Result<Vec<String>, String> {
     let profiles = crate::profilestore::list(config_root).unwrap_or_default();
-    on(&naming(&profiles, id), chats, |c| {
+    Ok(on(&naming(&profiles, id), chats, |c| {
         c.pool.as_deref() == Some(pool)
-    })
+    }))
 }
 
 /// **Unlock** (W6): reads entry `id`'s item, which on a locked keychain asks the system to

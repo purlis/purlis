@@ -501,13 +501,35 @@ fn remove_counts_the_chats_that_use_the_entry() {
     ];
 
     assert_eq!(
-        page::chats_using(here.root(), id, &chats),
+        page::chats_using(here.root(), id, &chats).unwrap(),
         ["Fix the parser", "Run the tests"]
     );
-    assert!(page::chats_using(here.root(), id, &chats[2..]).is_empty());
+    assert!(page::chats_using(here.root(), id, &chats[2..]).unwrap().is_empty());
     assert_eq!(
         page::chats_using(here.root(), Ulid::generate(), &chats),
-        Vec::<String>::new()
+        Ok(Vec::<String>::new())
+    );
+}
+
+#[test]
+fn an_unreadable_profiles_file_is_never_counted_as_no_chats() {
+    // The counts the page and its questions say come from profiles.json: one that can't be read
+    // is an error the window shows (W115, W114, W129), never "No chats use this key".
+    let here = Here::new();
+    let id = here.marked("synthetic-uncounted");
+    let at = purlis_core::profilestore::path(here.root());
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(&at, "{ not json").unwrap();
+    let chats = [chat("On gpu", "claude-anthropic", Some("gpu"))];
+
+    assert!(page::chats_using(here.root(), id, &chats).is_err(), "Remove's count");
+    assert!(
+        page::chats_on_pool(here.root(), id, "gpu", &chats).is_err(),
+        "Stop sending's count"
+    );
+    assert!(
+        page::rows(here.root(), &here.credentials, &chats, &NoneYet).is_err(),
+        "the page's users"
     );
 }
 
@@ -538,7 +560,7 @@ fn stop_sending_deletes_that_pools_row() {
         chat("Here", "claude-anthropic", None),
     ];
     assert_eq!(
-        page::chats_on_pool(here.root(), id, "gpu", &chats),
+        page::chats_on_pool(here.root(), id, "gpu", &chats).unwrap(),
         ["On gpu"]
     );
 

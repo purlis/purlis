@@ -195,7 +195,7 @@ fn w9_replace_replaces_in_place_with_the_value_in_hand() {
     };
     assert_eq!(offered, held.to_string());
     // W5's count of the chats on the old value comes first.
-    assert!(page::chats_using(here.root(), held, &[]).is_empty());
+    assert_eq!(page::chats_using(here.root(), held, &[]), Ok(Vec::new()));
 
     // Pressing Replace the key… with the value still in hand: no second paste.
     assert_eq!(
