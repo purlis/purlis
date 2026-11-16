@@ -1277,9 +1277,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "your_key_unlock",
     "your_key_check_again",
     "your_key_stop_sending",
-    "your_key_save",
-    "your_key_replace_held",
     "your_key_use_held",
+    // The key form's save and W9's replace take the pasted key: [`WINDOW_ONLY_CREDENTIALS`].
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -1342,6 +1341,11 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "vault_setup_cancel",
     // A forge token pasted for a sign-in (#1814, ADR 0077 §4): the same rule.
     "forge_sign_in_with_token",
+    // A model key pasted into Your keys' one key form (T1a-11, R-173): its save, and W9's
+    // replace in place with the value in hand. `value_free` in `ipc_commands.rs`, as
+    // `vault_secret_set` is: neither answers a key's value.
+    "your_key_save",
+    "your_key_replace_held",
 ];
 
 /// **A part of a reply that is the window's alone** (#1146): a link is served the method, and
