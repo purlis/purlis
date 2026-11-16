@@ -145,7 +145,7 @@ fn a_project() -> (tempfile::TempDir, PathBuf) {
 fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
     let (_dir, root) = a_project();
     let (_other_dir, another) = a_project();
-    remember(&root, 41, &Entry::new("team", "github-token"), "FAKE-HANDED-VALUE-0007");
+    remember(&root, 41, &Entry::new("team", "github-token"), "FAKE-HANDED-VALUE-0007").unwrap();
 
     assert_eq!(
         masked_for(&root, 41, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
@@ -164,7 +164,7 @@ fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
 #[test]
 fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
     let (_dir, root) = a_project();
-    remember(&root, 43, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0008");
+    remember(&root, 43, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0008").unwrap();
     assert!(file(&root, 43).exists(), "named as it was handed");
 
     forget(&root, 43);
@@ -179,8 +179,8 @@ fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
 #[test]
 fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value() {
     let (_dir, root) = a_project();
-    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009");
-    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009");
+    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009").unwrap();
+    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009").unwrap();
 
     let written = std::fs::read_to_string(file(&root, 44)).expect("named");
 
@@ -224,7 +224,7 @@ fn after_a_crash_an_entry_that_cannot_be_read_again_leaves_the_screen_unmaskable
 #[test]
 fn an_entry_this_process_knows_is_not_read_again() {
     let (_dir, root) = a_project();
-    remember(&root, 47, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0011");
+    remember(&root, 47, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0011").unwrap();
 
     assert_eq!(
         masked_for(&root, 47, "FAKE-HANDED-VALUE-0011", &|_| panic!(
@@ -244,14 +244,56 @@ fn names_left_30_days_are_swept_at_the_project_s_open_and_younger_ones_kept() {
     on_open(
         &root,
         now + crate::retention::KEEP_FOR - std::time::Duration::from_secs(60),
+        Some(&[]),
     );
     assert!(file(&root, 48).exists());
 
     on_open(
         &root,
         now + crate::retention::KEEP_FOR + std::time::Duration::from_secs(60),
+        Some(&[]),
     );
     assert!(!file(&root, 48).exists());
+}
+
+#[test]
+fn names_of_a_chat_the_plane_brings_back_are_kept_however_old() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(&root, 52, "team", "k");
+    let later = std::time::SystemTime::now()
+        + crate::retention::KEEP_FOR
+        + std::time::Duration::from_secs(60);
+
+    on_open(&root, later, Some(&[52]));
+    assert!(file(&root, 52).exists(), "a chat still open");
+
+    on_open(&root, later, None);
+    assert!(file(&root, 52).exists(), "no record says which are open");
+}
+
+#[test]
+fn names_on_disk_that_do_not_read_leave_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    named_lines_by_a_crashed_window(&root, 53, "{\"vault\":\"team\",\"key\":\"k\"}\nnot a line\n");
+    assert_eq!(masked_for(&root, 53, "x", &nothing), None, "a line that does not parse");
+
+    std::fs::create_dir_all(file(&root, 54)).expect("a folder where the file goes");
+    assert_eq!(masked_for(&root, 54, "x", &nothing), None, "a file that does not read");
+}
+
+#[test]
+fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_hand_out() {
+    let (_dir, root) = a_project();
+    std::fs::create_dir_all(file(&root, 55)).expect("a folder where the file goes");
+
+    assert!(remember(&root, 55, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0024").is_err());
+
+    std::fs::remove_dir(file(&root, 55)).expect("gone");
+    remember(&root, 55, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0024").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(file(&root, 55)).expect("named"),
+        "{\"vault\":\"team\",\"key\":\"k\"}\n"
+    );
 }
 
 /// What a crashed window's process named on disk for chat `chat`: `lines`, as it wrote them.

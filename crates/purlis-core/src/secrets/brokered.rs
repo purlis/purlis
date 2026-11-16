@@ -2620,8 +2620,18 @@ pub fn fill_value(
         asker.chat,
         &super::handedto::Entry::new(vault, key),
         value.expose(),
-    );
+    )
+    .map_err(|why| not_named_said(&why))?;
     Ok(Some(value))
+}
+
+/// **What a chat is told where what it is about to be handed could not be named for its kept
+/// screen** (#6309): nothing is handed, so no screen of it is kept unmasked after a crash.
+pub fn not_named_said(why: &std::io::Error) -> String {
+    format!(
+        "purlis could not note which vault entries this chat was handed ({why}), so it handed \
+         nothing: a screen of it kept after a crash would show them"
+    )
 }
 
 /// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
@@ -2700,7 +2710,8 @@ pub fn fill_code(
         asker.chat,
         &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
         code.expose(),
-    );
+    )
+    .map_err(|why| not_named_said(&why))?;
     Ok(Some(code))
 }
 
@@ -4216,7 +4227,9 @@ pub(crate) fn serve_recorded(
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for one in &prepared.values {
         let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
-        super::handedto::remember(&asker.root, asker.chat, &entry, &one.value);
+        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+            return refuse(&mut *writer, 1, not_named_said(&why));
+        }
     }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {

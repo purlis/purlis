@@ -21,7 +21,7 @@
 //!   crash, which kept nothing in memory of what the chat was handed before, reads those entries
 //!   again and makes each form again to mask its screen ([`masked_for`]). Clone state, denied
 //!   to every sandboxed chat, gone as the chat closes for good, and swept at the project's open
-//!   once 30 days old ([`on_open`]).
+//!   once 30 days old, but a chat's the plane will bring back ([`on_open`]).
 //! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
 //!   value a colour change or a soft wrap runs through is still one run of characters there.
 //!   A hard line break is not: a value the program printed in two pieces is two words. A value
@@ -31,9 +31,11 @@
 //!   stretch, shown as the mask of each, in the order they start, so no tail of either is left.
 //! - **A value shorter than [`super::seen::SHORTEST`] is not masked**: as `seen` says, three
 //!   characters or fewer is an ordinary word as often as a secret.
-//! - **It fails closed**: a screen with a value handed that cannot be known is not maskable
+//! - **It fails closed**: a value whose entry cannot be named on disk is not handed
+//!   ([`remember`]), and a screen with a value handed that cannot be known is not maskable
 //!   ([`masked_for`] answers `None`), so it is not kept. That is where no key could be made for
-//!   the process, and where an entry named on disk cannot be read again without asking the
+//!   the process, where the names on disk do not read, and where an entry named there cannot be
+//!   read again without asking the
 //!   person ([`read_again`]): a vault whose provider asks macOS, an entry gone or changed, and a
 //!   value made once ([`Form::Unrepeatable`]): a one-time code, a GitHub App token.
 //! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
@@ -223,26 +225,34 @@ fn file(root: &Path, chat: u32) -> PathBuf {
 }
 
 /// **Remembers that chat `chat` of the project at `root` was handed `value`, `entry`'s value in
-/// its form**: from now on its kept screen masks it ([`masked_for`]).
-pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) {
+/// its form**: from now on its kept screen masks it ([`masked_for`]). Called before the value
+/// is handed: where its entry could not be named on disk, it answers why, and the value is not
+/// handed, or a launch after a crash would keep the chat's screen unmasked.
+pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) -> std::io::Result<()> {
     remember_known(
         root,
         chat,
         std::slice::from_ref(entry),
         Known::of(&entry.key, value),
-    );
+    )
 }
 
 /// **Remembers that chat `chat` of the project at `root` was handed `entries`, known as
 /// `known`**, or, for `None`, as something that could not be known ([`Known::of`]): for values
 /// read before the chat had its number, as a profile's sign-in is. Each entry not named for the
-/// chat before is named on disk ([`dir`]), best effort: one that cannot be leaves only a
-/// launch after a crash without it.
-pub fn remember_known(root: &Path, chat: u32, entries: &[Entry], known: Option<Vec<Known>>) {
-    let mut handed = handed();
-    let one = handed
+/// chat before is named on disk ([`dir`]); where that fails, it answers why, as [`remember`]
+/// does, and the entries are named again at the next hand-out.
+pub fn remember_known(
+    root: &Path,
+    chat: u32,
+    entries: &[Entry],
+    known: Option<Vec<Known>>,
+) -> std::io::Result<()> {
+    let key = (root.to_path_buf(), chat);
+    let mut held = handed();
+    let one = held
         .get_or_insert_with(HashMap::new)
-        .entry((root.to_path_buf(), chat))
+        .entry(key.clone())
         .or_default();
     match known {
         Some(known) => one.known.extend(known),
@@ -253,20 +263,26 @@ pub fn remember_known(root: &Path, chat: u32, entries: &[Entry], known: Option<V
         .filter(|entry| one.entries.insert((*entry).clone()))
         .cloned()
         .collect();
-    drop(handed);
-    if !new.is_empty()
-        && let Err(why) = name_on_disk(root, chat, new)
-    {
-        tracing::info!("purlis: what chat {chat} was handed was not named on disk ({why})");
+    drop(held);
+    if new.is_empty() {
+        return Ok(());
     }
+    name_on_disk(root, chat, &new).inspect_err(|_| {
+        if let Some(one) = handed().as_mut().and_then(|handed| handed.get_mut(&key)) {
+            for entry in &new {
+                one.entries.remove(entry);
+            }
+        }
+    })
 }
 
-/// `new` added to what chat `chat` has named on disk, the file written whole and private.
-fn name_on_disk(root: &Path, chat: u32, new: Vec<Entry>) -> std::io::Result<()> {
-    let mut all = named(root, chat);
+/// `new` added to what chat `chat` has named on disk, the file written whole and private. A
+/// file there that does not read is not written over: what it named would be lost.
+fn name_on_disk(root: &Path, chat: u32, new: &[Entry]) -> std::io::Result<()> {
+    let mut all = named(root, chat)?;
     for entry in new {
-        if !all.contains(&entry) {
-            all.push(entry);
+        if !all.contains(entry) {
+            all.push(entry.clone());
         }
     }
     let mut text = String::new();
@@ -306,37 +322,53 @@ pub(crate) fn as_a_crash_leaves_it(root: &Path, chat: u32) {
     }
 }
 
-/// The entries named on disk for chat `chat`, read through no link: a line that does not read
-/// is skipped.
-fn named(root: &Path, chat: u32) -> Vec<Entry> {
+/// The entries named on disk for chat `chat`, read through no link: none where it has no file.
+/// A file that cannot be read, or a line in it that does not parse, is an error: what it names
+/// is not known.
+fn named(root: &Path, chat: u32) -> std::io::Result<Vec<Entry>> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     let mut text = String::new();
-    let read = crate::contain::nofollow(&mut options)
+    match crate::contain::nofollow(&mut options)
         .open(file(root, chat))
-        .and_then(|mut opened| std::io::Read::read_to_string(&mut opened, &mut text));
-    if read.is_err() {
-        return Vec::new();
+        .and_then(|mut opened| std::io::Read::read_to_string(&mut opened, &mut text))
+    {
+        Ok(_) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(why) => return Err(why),
     }
     text.lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+        .map(|line| serde_json::from_str(line).map_err(std::io::Error::other))
         .collect()
 }
 
 /// **Sweeps the store at the project's open**: a chat's names last written
-/// [`crate::retention::KEEP_FOR`] or more before go, as a task's screen and its record do.
-pub fn on_open(root: &Path, now: std::time::SystemTime) {
+/// [`crate::retention::KEEP_FOR`] or more before go, as a task's screen and its record do, but
+/// never those of a chat in `live`, one the plane's reopen record brings back, whose screen is
+/// still to be kept. `None` where that record cannot say which they are: then none goes.
+pub fn on_open(root: &Path, now: std::time::SystemTime, live: Option<&[u32]>) {
+    let Some(live) = live else {
+        return;
+    };
     let Ok(entries) = std::fs::read_dir(dir(root)) else {
         return;
     };
     for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(chat) = name
+            .to_str()
+            .and_then(|name| name.strip_suffix(SUFFIX))
+            .and_then(|chat| chat.parse::<u32>().ok())
+        else {
+            continue;
+        };
         let old = entry
             .metadata()
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|written| now.duration_since(written).ok())
             .is_some_and(|age| age >= crate::retention::KEEP_FOR);
-        if old && entry.file_name().to_string_lossy().ends_with(SUFFIX) {
+        if old && !live.contains(&chat) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -376,7 +408,7 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> 
         return None;
     }
     let mut known = one.known;
-    for entry in named(root, chat) {
+    for entry in named(root, chat).ok()? {
         if one.entries.contains(&entry) {
             continue;
         }

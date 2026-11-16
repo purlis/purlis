@@ -5348,8 +5348,8 @@ impl Chats {
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
-        // Known to mask the chat's kept screen with once it has its number (#6309): the values
-        // themselves go to its start.
+        // Known to mask the chat's kept screen with once it has its number, as it is announced
+        // (#6309): the values themselves go to its start.
         let signed_in_with =
             (!handed.is_empty()).then(|| (handed.entries().to_vec(), handed.known()));
         let cause = match why {
@@ -5985,7 +5985,21 @@ impl Chats {
         };
         // What the announcement below said, so a start that fails can take it back.
         let announced = std::sync::atomic::AtomicU32::new(0);
+        // Why what a profile's sign-in hands the chat could not be named for its kept screen.
+        let sign_in_unnamed: Mutex<Option<std::io::Error>> = Mutex::new(None);
         let announce = |session: u32| {
+            // Named on disk before its program exists (#6309): a crash after it starts leaves
+            // what masks its screen, and where that fails the chat is ended below.
+            if let Some((entries, known)) = &signed_in_with
+                && let Err(why) = purlis_core::secrets::handedto::remember_known(
+                    &self.project,
+                    session,
+                    entries,
+                    known.clone(),
+                )
+            {
+                *lock(&sign_in_unnamed) = Some(why);
+            }
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
@@ -6213,8 +6227,9 @@ impl Chats {
                 gone(announced);
             }
         })?;
-        if let Some((entries, known)) = signed_in_with {
-            purlis_core::secrets::handedto::remember_known(&self.project, session, &entries, known);
+        if let Some(why) = lock(&sign_in_unnamed).take() {
+            let _ = self.close(session);
+            return Err(purlis_core::secrets::brokered::not_named_said(&why));
         }
         // The key its host set in its environment, where the window launched it: a host that
         // answers none set none, and its prompts are marked under none (#3369).

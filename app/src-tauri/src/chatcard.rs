@@ -653,7 +653,8 @@ mod tests {
             7,
             &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
             "FAKE-VAULT-VALUE-6309",
-        );
+        )
+        .expect("named");
 
         keep_screen_on_close(&root, &host, 7, TASK);
 

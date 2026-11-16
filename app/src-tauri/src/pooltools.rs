@@ -674,7 +674,8 @@ pub fn answered(
     for (key, value) in &values {
         let entry = purlis_core::secrets::handedto::Entry::new(&checked.tool.vault, key)
             .in_form(form.clone());
-        purlis_core::secrets::handedto::remember(gate.root, ask.chat, &entry, value);
+        purlis_core::secrets::handedto::remember(gate.root, ask.chat, &entry, value)
+            .map_err(|why| brokered::not_named_said(&why))?;
     }
     Ok(Approved {
         handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
