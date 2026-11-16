@@ -69,7 +69,9 @@ runs:
           echo "::group::$harness at its $AT version"
           bin=$(tools/harness-install.sh "$harness" "$AT") || { status=1; echo "::endgroup::"; continue; }
           homes=$(mktemp -d "$RUNNER_TEMP/homes-$harness-XXXX")
-          if ! PATH="$bin:$PATH" PURLIS_RECORD_HARNESS="$harness" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
+          # The test build is fenced to the trees the run makes: the homes, and the project the
+          # driver lays out under `target/tmp` (CARGO_TARGET_TMPDIR).
+          if ! CHARTER_PLANE_FENCE="$RUNNER_TEMP:$PWD/target/tmp" PATH="$bin:$PATH" PURLIS_RECORD_HARNESS="$harness" PURLIS_RECORD_PURLIS="$PWD/target/debug/purlis" \
               PURLIS_RECORD_OUT="$out" PURLIS_CONFIG_HOME="$homes/config" PURLIS_DATA_HOME="$homes/data" \
               cargo test --locked -p purlis-recordings --test record -- --ignored --exact \
               records_a_harness_under_purlis_wrap_at_full --nocapture; then
