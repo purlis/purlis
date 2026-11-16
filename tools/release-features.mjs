@@ -46,6 +46,7 @@ export const SHIPPING_WORKFLOWS = ["release.yml", "runner-image.yml", "operator-
  */
 export const NOT_SHIPPING = {
   "ci.yml": "checks every pull request and main: its builds are tested, linted and measured, never handed on",
+  "fake-harness-wrap.yml": "runs the fake harness under purlis's wrap in tests: its builds are only ever tested",
   "forge-live.yml": "runs the forge contract tests against a real forge: it compiles tests only",
   "mutants.yml": "mutation testing of the core crate: its builds are only ever tested",
   "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster; its push to main calls operator-image.yml, which ships",
