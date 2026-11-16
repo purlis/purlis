@@ -290,11 +290,21 @@ fn play(given: &Given) -> Played {
     let started = Instant::now();
     loop {
         let screen = session.screen().lines.join("\n");
-        assert!(
-            started.elapsed() < AT_MOST,
-            "the fake did not finish its script within {AT_MOST:?}; its screen:\n{screen}"
-        );
         let done = read_jsonl(&transcript);
+        if started.elapsed() >= AT_MOST {
+            let heard: Vec<String> = recorder::read(&recorder_out)
+                .unwrap_or_default()
+                .iter()
+                .map(|l| format!("{} {}", l.phase, l.argv.join(" ")))
+                .collect();
+            panic!(
+                "the fake did not finish its script within {AT_MOST:?}, {typed} turn(s) typed; \
+                 the steps with a result: {:?}; the hooks heard: {heard:#?}; its screen:\n{screen}",
+                done.iter()
+                    .filter_map(|l| l["step"].as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
         if let Some(step) = &given.esc_step
             && heard_guard_of(&recorder_out, step, &first)
         {
@@ -415,10 +425,14 @@ fn heard_guard_of(out: &Path, step: &str, script: &Value) -> bool {
     else {
         return false;
     };
-    let needle = call["run"]
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or_else(|| call["input"].to_string());
+    // As it stands inside the hook's JSON input: a command's quotes are escaped there.
+    let needle = match call["run"].as_str() {
+        Some(run) => {
+            let quoted = Value::from(run).to_string();
+            quoted[1..quoted.len() - 1].to_owned()
+        }
+        None => call["input"].to_string(),
+    };
     recorder::read(out).is_ok_and(|lines| {
         lines.iter().any(|l| {
             l.phase == "call"
