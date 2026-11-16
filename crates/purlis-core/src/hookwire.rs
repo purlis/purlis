@@ -1035,6 +1035,36 @@ impl ChatTokens {
         }
     }
 
+    /// **The chat `senders` run inside, by their ancestry alone** (#6995): the one chat whose
+    /// recorded program every sender is, or runs inside ([`Seen::inside`]), with its token.
+    /// `None` where no chat's does, where two do (nothing names one chat then), and where a
+    /// sender cannot be read.
+    pub fn chat_of(&self, senders: &[u32]) -> Option<(u32, ChatToken)> {
+        if senders.is_empty() {
+            return None;
+        }
+        let seen = Seen::all(senders)?;
+        self.chat_by(&|program| seen.iter().all(|one| one.inside(program)))
+    }
+
+    /// [`Self::chat_of`], asking `inside` whether the senders run inside a chat's program.
+    pub(crate) fn chat_by(&self, inside: &dyn Fn(&Program) -> bool) -> Option<(u32, ChatToken)> {
+        let roots: Vec<(u32, Program)> = self
+            .rooted()
+            .iter()
+            .map(|(chat, program)| (*chat, program.clone()))
+            .collect();
+        let mut chats = roots
+            .iter()
+            .filter(|(_, program)| inside(program))
+            .map(|(chat, _)| *chat);
+        let chat = chats.next()?;
+        if chats.next().is_some() {
+            return None;
+        }
+        self.held().get(&chat).cloned().map(|token| (chat, token))
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, ChatToken>> {
         self.held
             .lock()
@@ -2767,6 +2797,10 @@ enum Line {
     Serve(serve::ServeAsk),
     /// After every other kind: it requires `harness_reason`, which none of them carries.
     Reason(HarnessReason),
+    /// After every other kind: it requires `whoami`, which none of them carries. Answered from
+    /// the asker's ancestry before any token is looked for (#6995, [`reach`]).
+    #[cfg(unix)]
+    WhoAmI(reach::WhoAmI),
 }
 
 impl Ask {
@@ -2821,6 +2855,9 @@ impl Line {
             Self::Frames(hello) => hello.chat,
             Self::Serve(ask) => ask.chat,
             Self::Reason(said) => said.chat,
+            // It names no chat: it asks which one.
+            #[cfg(unix)]
+            Self::WhoAmI(_) => 0,
         }
     }
 }
@@ -3986,6 +4023,8 @@ pub mod alive;
 
 pub mod framed;
 
+#[cfg(unix)]
+pub mod reach;
 pub mod relay;
 
 pub mod serve;
@@ -4690,6 +4729,27 @@ fn serve(
             refuse(&mut writer, UNKNOWN_LINE.to_owned());
             return;
         };
+        // Which chat the asker runs in is the app's to say, from its ancestry (#6995): answered
+        // before any token is looked for, since the asker may have none, and the connection
+        // then carries its ask.
+        if matches!(line, Line::WhoAmI(reach::WhoAmI { whoami: true })) {
+            let said = match tokens.chat_of(&senders_of(peer, &writer)) {
+                Some((chat, token)) => serde_json::to_vec(&reach::YouAre {
+                    you_are: chat,
+                    token: token.0,
+                }),
+                None => serde_json::to_vec(&Answer::No {
+                    why: reach::IN_NO_CHAT.to_owned(),
+                }),
+            };
+            if let Ok(mut said) = said {
+                said.push(b'\n');
+                if writer.write_all(&said).is_err() {
+                    return;
+                }
+            }
+            continue;
+        }
         // Every line is checked against the token of the chat it names, and one that does not
         // carry it ends the connection unread, said so and never acted on. The chat's number
         // is said in the app's log (#647); the token is not.
@@ -4808,6 +4868,9 @@ fn serve(
             Line::Doing(doing) => (hearing.doing)(doing),
             Line::Output(output) => (hearing.output)(output),
             Line::Reason(said) => (hearing.reason)(said),
+            // One that asks is answered above, before its token is looked for; one that does
+            // not names chat 0, whose token no line carries.
+            Line::WhoAmI(_) => {}
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -4896,15 +4959,7 @@ fn admission_of(
     peer: Option<u32>,
     connection: &std::os::unix::net::UnixStream,
 ) -> Admission {
-    let now = purlis_same_user::peer_process_of(connection)
-        .ok()
-        .map(|(_, pid)| pid);
-    // A connection handed on mid-line names its new holder on macOS.
-    let senders: Vec<u32> = match (peer, now) {
-        (Some(peer), Some(now)) if peer != now => vec![peer, now],
-        (Some(pid), _) | (None, Some(pid)) => vec![pid],
-        (None, None) => Vec::new(),
-    };
+    let senders = senders_of(peer, connection);
     tokens.admission_by(
         chat,
         token,
@@ -4913,6 +4968,21 @@ fn admission_of(
             Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
         },
     )
+}
+
+/// The processes a line on `connection` is judged by: the one that connected (`peer`) and the
+/// one the socket names now, where they differ. A connection handed on mid-line names its new
+/// holder on macOS.
+#[cfg(unix)]
+fn senders_of(peer: Option<u32>, connection: &std::os::unix::net::UnixStream) -> Vec<u32> {
+    let now = purlis_same_user::peer_process_of(connection)
+        .ok()
+        .map(|(_, pid)| pid);
+    match (peer, now) {
+        (Some(peer), Some(now)) if peer != now => vec![peer, now],
+        (Some(pid), _) | (None, Some(pid)) => vec![pid],
+        (None, None) => Vec::new(),
+    }
 }
 
 /// How long one framed ask may take to arrive, from when it begins to be read: an ask is at
@@ -5081,7 +5151,7 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
                 refused: Some(why.to_owned()),
             })
         }
-        Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
+        Line::Ask(_) | Line::Frames(_) | Line::WhoAmI(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),
         Line::Permission(_) => serde_json::to_vec(&permission::Chosen { chosen: None }),
