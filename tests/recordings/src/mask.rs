@@ -109,10 +109,16 @@ pub struct RacyOrder {
 pub const RACY_ORDERS: &[RacyOrder] = &[
     RacyOrder {
         harness: "codex",
-        words: &["sessionstart", "sessionstart-skills"],
-        reason: "Codex 0.169 starts every SessionStart hook at once; these two began in both \
-                 orders in the two recordings of one CI job (run 43834558626, \
-                 `harness recording (codex)`)",
+        words: &[
+            "sessionstart",
+            "sessionstart-notes",
+            "sessionstart-quoted",
+            "sessionstart-skills",
+        ],
+        reason: "Codex 0.169 starts every SessionStart hook at once, and each began out of order \
+                 between the two recordings of one CI job: sessionstart and -skills in run \
+                 43834558626, -notes and sessionstart and -quoted and -skills in run \
+                 43859227733 (`harness recording (codex)`)",
     },
     RacyOrder {
         harness: "opencode",
@@ -780,21 +786,59 @@ mod tests {
     }
 
     #[test]
-    fn codexs_session_start_pair_seen_both_ways_is_put_in_one_order() {
+    fn codexs_session_start_hooks_seen_in_every_order_are_put_in_one() {
         let call = |w: &str| json!({"argv": ["hook", w]});
-        let recording = |first: &str, second: &str| {
-            json!({"harness": "codex", "hook_calls": [call("sessionstart-notes"), call(first),
-                call(second), call("sessionstart-quoted")]})
+        let recording = |words: [&str; 4]| {
+            let mut calls: Vec<Value> = words.iter().map(|w| call(w)).collect();
+            calls.push(call("userpromptsubmit"));
+            json!({"harness": "codex", "hook_calls": calls})
         };
-        let a = mask(&recording("sessionstart-skills", "sessionstart"));
-        assert_eq!(a, mask(&recording("sessionstart", "sessionstart-skills")));
-        assert_eq!(a["hook_calls"][1]["argv"][1], "sessionstart");
+        let seen = [
+            [
+                "sessionstart-notes",
+                "sessionstart-skills",
+                "sessionstart",
+                "sessionstart-quoted",
+            ],
+            [
+                "sessionstart-notes",
+                "sessionstart",
+                "sessionstart-quoted",
+                "sessionstart-skills",
+            ],
+            [
+                "sessionstart",
+                "sessionstart-notes",
+                "sessionstart-skills",
+                "sessionstart-quoted",
+            ],
+        ];
+        let a = mask(&recording(seen[0]));
+        for words in &seen[1..] {
+            assert_eq!(a, mask(&recording(*words)), "{words:?}");
+        }
+        let order: Vec<&str> = a["hook_calls"]
+            .as_array()
+            .expect("calls")
+            .iter()
+            .map(|c| c["argv"][1].as_str().expect("a word"))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "sessionstart",
+                "sessionstart-notes",
+                "sessionstart-quoted",
+                "sessionstart-skills",
+                "userpromptsubmit"
+            ]
+        );
         // Only Codex's: another harness's order is its own.
-        let mut other = recording("sessionstart-skills", "sessionstart");
+        let mut other = recording(seen[0]);
         other["harness"] = json!("claude");
         assert_eq!(
-            mask(&other)["hook_calls"][1]["argv"][1],
-            "sessionstart-skills"
+            mask(&other)["hook_calls"][0]["argv"][1],
+            "sessionstart-notes"
         );
     }
 

@@ -2,11 +2,14 @@
   "harness": "opencode",
   "version": "1.19.5",
   "recording": "recording.json",
+  "conditions": {
+    "harness_asks": "allowed once, 2 times",
+    "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
+  },
   "forced": {
     "esc": "pressed",
     "exit2": "pretooluse",
-    "harness_asks": "allowed once, 2 times",
-    "stall": "sessionstart"
+    "stall": "posttooluse-blocked"
   },
   "turns": [
     {
@@ -36,10 +39,10 @@
           "step": "refused-bash-net",
           "tool": "bash",
           "input": {
-            "command": "curl -sS -m 10 https://refused.example.invalid/",
+            "command": "curl -sS -m 10 http://<refused-target>/",
             "description": "refused-bash-net"
           },
-          "run": "curl -sS -m 10 https://refused.example.invalid/",
+          "run": "curl -sS -m 10 http://<refused-target>/",
           "response": 3
         },
         {
@@ -83,7 +86,7 @@
           "step": "refused-web",
           "tool": "webfetch",
           "input": {
-            "url": "https://refused.example.invalid/",
+            "url": "http://<refused-target>/",
             "format": "text"
           },
           "response": 8
@@ -130,7 +133,12 @@
           },
           "run": "echo failing >&2; exit 2",
           "response": 11
-        },
+        }
+      ]
+    },
+    {
+      "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
+      "calls": [
         {
           "step": "esc",
           "tool": "bash",

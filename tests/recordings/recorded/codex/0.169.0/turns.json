@@ -2,10 +2,13 @@
   "harness": "codex",
   "version": "0.169.0",
   "recording": "recording.json",
+  "conditions": {
+    "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
+  },
   "forced": {
     "esc": "pressed",
     "exit2": "pretooluse",
-    "stall": "sessionstart"
+    "stall": "posttooluse-blocked"
   },
   "turns": [
     {
@@ -33,9 +36,9 @@
           "step": "refused-bash-net",
           "tool": "exec_command",
           "input": {
-            "cmd": "curl -sS -m 10 https://refused.example.invalid/"
+            "cmd": "curl -sS -m 10 http://<refused-target>/"
           },
-          "run": "curl -sS -m 10 https://refused.example.invalid/",
+          "run": "curl -sS -m 10 http://<refused-target>/",
           "response": 3
         },
         {
@@ -49,20 +52,14 @@
         },
         {
           "step": "refused-write",
-          "tool": "exec_command",
-          "input": {
-            "cmd": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: <outside>/by-write.txt\n+by-write\n*** End Patch\nPATCH\n"
-          },
-          "run": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: <outside>/by-write.txt\n+by-write\n*** End Patch\nPATCH\n",
+          "tool": "apply_patch",
+          "input": "*** Begin Patch\n*** Add File: <outside>/by-write.txt\n+by-write\n*** End Patch\n",
           "response": 5
         },
         {
           "step": "refused-edit",
-          "tool": "exec_command",
-          "input": {
-            "cmd": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: <outside>/existing.txt\n@@\n-before\n+after\n*** End Patch\nPATCH\n"
-          },
-          "run": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: <outside>/existing.txt\n@@\n-before\n+after\n*** End Patch\nPATCH\n",
+          "tool": "apply_patch",
+          "input": "*** Begin Patch\n*** Update File: <outside>/existing.txt\n@@\n-before\n+after\n*** End Patch\n",
           "response": 6
         },
         {
@@ -93,7 +90,12 @@
           },
           "run": "echo failing >&2; exit 2",
           "response": 8
-        },
+        }
+      ]
+    },
+    {
+      "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
+      "calls": [
         {
           "step": "esc",
           "tool": "exec_command",
