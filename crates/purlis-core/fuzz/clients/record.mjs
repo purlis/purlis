@@ -146,17 +146,34 @@ function namedOnRequestLine(head) {
   return hostOf(target.startsWith("http://") ? target : `https://${target}/`);
 }
 
+/**
+ * Where a client reads a URL otherwise than WHATWG does, so its head names another host than the
+ * URL's, on purpose and known: `<client> <url>` to the host and port it names. The proxy judges
+ * the host the client named, which is the one it dials, so it is no disagreement of the proxy's
+ * (`docs/fuzzing.md`). Any other such head, or one of these naming another host, fails the run.
+ */
+const readsOtherwise = new Map([
+  // curl takes everything before the `@` as userinfo, backslash and all; WHATWG reads a
+  // backslash as a slash, so the `@` is in the path.
+  ["curl http://example.com\\@evil.test/", "evil.test:80"],
+]);
+
 async function main([out, flag]) {
   if (!out) throw new Error("usage: node record.mjs <out> [--no-listen]");
   mkdirSync(out, { recursive: true });
   const written = { node: 0, curl: 0 };
   const mispaired = [];
+  const none = [];
   const write = (client, n, url, head) => {
-    if (!head) return;
+    if (!head) {
+      none.push(`${client}-${n}: ${url}`);
+      return;
+    }
     // A recording is a head and the URL its client was asked for. One whose request line names
     // another host is a head filed under the wrong URL, which the differential target would
     // silently pass over: the recording fails instead.
-    if (namedOnRequestLine(head) !== hostOf(url)) {
+    const named = namedOnRequestLine(head);
+    if (named !== (readsOtherwise.get(`${client} ${url}`) ?? hostOf(url))) {
       mispaired.push(`${client}-${n}: ${url} -> ${head.split("\r\n")[0]}`);
     }
     writeFileSync(join(out, `${client}-${n}`), `${url}\n${head}`, "latin1");
@@ -176,6 +193,7 @@ async function main([out, flag]) {
     `recorded ${written.node + written.curl} heads (node ${written.node}, curl ${written.curl}) ` +
       `from ${urls.length} URLs into ${out}`,
   );
+  if (none.length > 0) console.log(`no head (the client refused the URL):\n${none.join("\n")}`);
   if (mispaired.length > 0) {
     throw new Error(`heads whose request line names another host than their URL:\n${mispaired.join("\n")}`);
   }
