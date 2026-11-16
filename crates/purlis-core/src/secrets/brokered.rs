@@ -4171,7 +4171,7 @@ pub(crate) fn serve_recorded(
             ),
         );
     }
-    let _ = values.set(zeroize::Zeroizing::new(prepared.secret_values.clone()));
+    let _ = values.set(prepared.secret_values());
     let mut prepared = prepared;
     let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
@@ -4200,8 +4200,8 @@ pub(crate) fn serve_recorded(
         }
     };
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
-    for (entry, value) in &prepared.named {
-        super::handedto::remember(&asker.root, asker.chat, &wanted.vault, entry, value);
+    for one in &prepared.values {
+        super::handedto::remember(&asker.root, asker.chat, &wanted.vault, &one.key, &one.value);
     }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {
@@ -4404,19 +4404,14 @@ pub(crate) fn serve_recorded(
         let _ = spawned.wait();
         return;
     }
-    let code = run(
-        spawned,
-        &group,
-        reader,
-        &mut *writer,
-        &prepared.secret_values,
-    );
+    let secret_values = prepared.secret_values();
+    let code = run(spawned, &group, reader, &mut *writer, &secret_values);
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()
         .into_iter()
-        .partition(|target| carries_a_value(target, &prepared.secret_values));
+        .partition(|target| carries_a_value(target, &secret_values));
     for target in named {
-        let note = super::redact_str(&refused_note(&target), &prepared.secret_values);
+        let note = super::redact_str(&refused_note(&target), &secret_values);
         let _ = send(&mut *writer, &Frame::Note(note));
     }
     if !withheld.is_empty() {
@@ -4505,6 +4500,7 @@ fn tunnelled(
         }
     }
     // A value a credential file holds, pointed in the file itself, every other line as it was.
+    let mut pointed_in_files: Vec<(zeroize::Zeroizing<String>, String)> = Vec::new();
     for handed in &mut prepared.handed {
         let mut moved = false;
         for (entry, value) in &mut handed.entries {
@@ -4514,28 +4510,9 @@ fn tunnelled(
             };
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
-                // Masked under the entry the value it was came from (#6309).
-                let entry = prepared
-                    .named
-                    .iter()
-                    .find(|(_, was)| was == value)
-                    .map(|(entry, _)| entry.clone());
                 // The value it was is wiped as the file is pointed (#3420).
-                drop(zeroize::Zeroizing::new(std::mem::replace(
-                    value,
-                    pointed.at(at),
-                )));
-                prepared.secret_values.push(value.clone());
-                let escaped = super::dotenv::escaped(value);
-                if let Some(entry) = &entry {
-                    prepared.named.push((entry.clone(), value.clone()));
-                    if escaped != *value {
-                        prepared.named.push((entry.clone(), escaped.clone()));
-                    }
-                }
-                if escaped != *value {
-                    prepared.secret_values.push(escaped);
-                }
+                let was = zeroize::Zeroizing::new(std::mem::replace(value, pointed.at(at)));
+                pointed_in_files.push((was, value.clone()));
                 moved = true;
             }
         }
@@ -4543,6 +4520,14 @@ fn tunnelled(
             let body = zeroize::Zeroizing::new(handed_body(&handed.entries)?);
             std::fs::write(&handed.path, body.as_bytes())?;
         }
+    }
+    // Redacted as the value it was, and masked under its entry (#6309), as written and escaped.
+    for (was, now) in pointed_in_files {
+        let escaped = super::dotenv::escaped(&now);
+        if escaped != now {
+            prepared.handed_instead(&was, escaped);
+        }
+        prepared.handed_instead(&was, now);
     }
     Ok((opening.tunnels, opening.notes))
 }

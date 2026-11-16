@@ -183,10 +183,10 @@ fn temp_file(
 /// recorded, and the temp files made, removed when this is dropped.
 pub(crate) struct Prepared {
     pub env: Vec<(OsString, OsString)>,
-    pub secret_values: Vec<String>,
-    /// **Each value handed, with the vault entry it came from** (#6309): what a kept task screen
-    /// is masked with ([`super::handedto`]), the entry named in place of the value.
-    pub named: Vec<(String, String)>,
+    /// **Each value handed, in every form it was handed in, with the vault entry it came from**:
+    /// what is redacted ([`Self::secret_values`]) and what a kept task screen is masked with
+    /// ([`super::handedto`], #6309), the entry named in place of the value.
+    pub values: Vec<HandedValue>,
     pub key_names: Vec<String>,
     pub env_names: Vec<String>,
     /// The temp files, in the order they were made.
@@ -203,9 +203,8 @@ pub(crate) struct Prepared {
 impl Drop for Prepared {
     fn drop(&mut self) {
         wipe_env(&mut self.env);
-        self.secret_values.zeroize();
-        for (_, value) in &mut self.named {
-            value.zeroize();
+        for one in &mut self.values {
+            one.value.zeroize();
         }
         for handed in &mut self.handed {
             for (_, value) in &mut handed.entries {
@@ -215,19 +214,38 @@ impl Drop for Prepared {
     }
 }
 
+/// **One value a run was handed, and the vault entry it came from** (#6309).
+pub(crate) struct HandedValue {
+    pub key: String,
+    pub value: String,
+}
+
 impl Prepared {
+    /// Every value handed, to redact: wiped as it is dropped.
+    pub(crate) fn secret_values(&self) -> Zeroizing<Vec<String>> {
+        Zeroizing::new(self.values.iter().map(|one| one.value.clone()).collect())
+    }
+
+    /// `value`, the entry `key` read, handed as it is.
+    fn handed(&mut self, key: &str, value: &str) {
+        self.values.push(HandedValue {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+
     /// **`now` handed in place of `was`** (#1667's tunnels): redacted as `was` is, and masked
-    /// under the vault entry `was` came from (#6309).
+    /// under the vault entry `was` came from (#6309). A `was` that is no value handed is no
+    /// secret, and neither is what it became.
     pub(crate) fn handed_instead(&mut self, was: &str, now: String) {
-        let entry = self
-            .named
+        if let Some(key) = self
+            .values
             .iter()
-            .find(|(_, value)| value == was)
-            .map(|(entry, _)| entry.clone());
-        if let Some(entry) = entry {
-            self.named.push((entry, now.clone()));
+            .find(|one| one.value == was)
+            .map(|one| one.key.clone())
+        {
+            self.values.push(HandedValue { key, value: now });
         }
-        self.secret_values.push(now);
     }
 }
 
@@ -284,8 +302,7 @@ pub(crate) fn prepare_from(
     // temp files are removed with it.
     let mut out = Prepared {
         env,
-        secret_values: Vec::new(),
-        named: Vec::new(),
+        values: Vec::new(),
         key_names: Vec::new(),
         env_names: Vec::new(),
         files: Vec::new(),
@@ -316,8 +333,7 @@ pub(crate) fn prepare_from(
         };
         let val = resolve(key)?;
         set_var(&mut out.env, name, val.as_str());
-        out.secret_values.push(val.as_str().to_owned());
-        out.named.push((key.to_owned(), val.as_str().to_owned()));
+        out.handed(key, &val);
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
     }
@@ -332,8 +348,7 @@ pub(crate) fn prepare_from(
             }
         };
         let val = resolve(key)?;
-        out.secret_values.push(val.as_str().to_owned());
-        out.named.push((key.to_owned(), val.as_str().to_owned()));
+        out.handed(key, &val);
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
         match temp_file(&mut out._cleanup, within, val.as_bytes()) {
@@ -393,13 +408,11 @@ pub(crate) fn prepare_from(
         out.env_names.push(envvar.clone());
         for (name, key) in entries {
             let val = resolve(key)?;
-            out.secret_values.push(val.as_str().to_owned());
-            out.named.push((key.clone(), val.as_str().to_owned()));
+            out.handed(key, &val);
             out.key_names.push(key.clone());
             let escaped = Zeroizing::new(dotenv::escaped(&val));
             if *escaped != *val {
-                out.secret_values.push(escaped.as_str().to_owned());
-                out.named.push((key.clone(), escaped.as_str().to_owned()));
+                out.handed(key, &escaped);
             }
             match dotenv::line(name, &val) {
                 Ok(line) => lines.push(line),
@@ -459,7 +472,7 @@ pub(crate) fn record(
         ("mode", Value::String(mode.into())),
     ];
     fields.extend(also.iter().cloned());
-    cmd::trace_secret_use(ctx, "secret-exec", &prepared.secret_values, &fields);
+    cmd::trace_secret_use(ctx, "secret-exec", &prepared.secret_values(), &fields);
 }
 
 /// The usage line a request with no command is refused with.
@@ -613,8 +626,8 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     }
     let out = out_reader.join().unwrap_or_default();
     let err = err_reader.join().unwrap_or_default();
-    let out = super::redact(&out, &prepared.secret_values);
-    let err = super::redact(&err, &prepared.secret_values);
+    let out = super::redact(&out, &prepared.secret_values());
+    let err = super::redact(&err, &prepared.secret_values());
     if !out.is_empty() {
         io.out(&out);
     }

@@ -198,13 +198,15 @@ pub struct Handed {
 }
 
 impl Handed {
-    /// Each variable and its value, as a caller that read them hands them on.
-    pub fn of(pairs: Vec<(String, String)>) -> Self {
-        let entries = pairs
-            .iter()
-            .map(|(name, _)| crate::secrets::handedto::Entry::new("", name))
-            .collect();
-        Self { pairs, entries }
+    /// Each variable, the vault entry it was read from and its value, as a caller that read
+    /// them hands them on.
+    pub fn of(read: Vec<(String, crate::secrets::handedto::Entry, String)>) -> Self {
+        let mut handed = Self::default();
+        for (variable, entry, value) in read {
+            handed.pairs.push((variable, value));
+            handed.entries.push(entry);
+        }
+        handed
     }
 
     /// **Each value as a kept screen knows it to mask** (#6309), under the vault entry it was
