@@ -122,6 +122,20 @@ fn a_policy_file_over_64_kib_is_refused_naming_the_cap() {
     assert!(locks.forbids_opt_out());
 }
 
+#[test]
+fn a_policy_file_of_exactly_64_kib_is_read() {
+    let mut text = String::from("{\"owner\": \"");
+    text.push_str(&"a".repeat(64 * 1024 - "{\"owner\": \"\"}".len()));
+    text.push_str("\"}");
+    assert_eq!(text.len(), 64 * 1024, "the cap itself");
+    let policy = Policy::holding(text);
+    let locks = policy.locks();
+
+    assert_eq!(locks.refused_because(), None, "{locks:?}");
+    assert!(locks.any());
+    assert!(!locks.forbids_opt_out());
+}
+
 // R-128 ------------------------------------------------------------------------------------
 
 /// How one row of the table makes its file refused.
