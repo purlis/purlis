@@ -8994,6 +8994,7 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
     let kit = crate::harness::Kit {
         skills: None,
         laid_out: None,
+        key_route: None,
         binary: std::path::Path::new("/app/purlis"),
         plugin: Some(plugin.path()),
         persona: None,

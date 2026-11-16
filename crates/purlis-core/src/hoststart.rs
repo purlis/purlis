@@ -1641,6 +1641,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         own,
         laid_out: linked.as_deref(),
+        key_route: None,
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {

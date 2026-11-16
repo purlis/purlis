@@ -44,6 +44,7 @@ fn kit(plugin: &Path) -> Kit<'_> {
         own: &[],
         graded: false,
         laid_out: None,
+        key_route: None,
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,

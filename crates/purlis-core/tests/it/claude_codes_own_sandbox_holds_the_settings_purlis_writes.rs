@@ -1371,6 +1371,7 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
                 runs_a_shell: false,
                 own: &[],
                 laid_out: None,
+                key_route: None,
             },
             Harness::ClaudeCode,
         );

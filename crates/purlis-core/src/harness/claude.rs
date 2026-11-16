@@ -12,6 +12,7 @@ use crate::sandbox::Form;
 
 pub mod ownwork;
 pub mod project;
+pub mod route;
 
 /// Claude Code's adapter.
 pub struct ClaudeCode;

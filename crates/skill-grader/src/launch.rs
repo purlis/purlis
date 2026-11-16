@@ -325,6 +325,7 @@ fn armed(ask: &Ask<'_>, harness: Harness) -> (Vec<String>, Vec<(String, String)>
         // No plane's skills, so none of the person's own are read into Claude Code's listing
         // limit (#5736): a CI runner has none, and the limit is purlis's alone.
         laid_out: None,
+        key_route: None,
         // Nor any skills of the person's own (#5842): a CI runner has none to share the listing.
         own: &[],
     };

@@ -365,6 +365,10 @@ pub struct Kit<'a> {
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
     /// out none: a harness that needs the folder is then handed none of what it holds.
     pub laid_out: Option<&'a std::path::Path>,
+    /// **A key chat's route** (T1a-15): the run's listener, as its start resolved it
+    /// ([`crate::keyroute::at_start`]), which the adapter pins the harness to. `None` for every
+    /// chat the key proxy doesn't carry, whose harness is armed as it always was (R-252).
+    pub key_route: Option<&'a crate::keyroute::KeyRoute>,
 }
 
 /// The persona a chat runs as, and the project that defines it.
