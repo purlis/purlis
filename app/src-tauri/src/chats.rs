@@ -2144,7 +2144,6 @@ impl Chats {
         None
     }
 
-    /// **Whether chat `session` runs on a runner of its own** (#4569): what a move asks.
     /// **The chats open here on a profile** (T1a-11): each one's name, its profile and the pool
     /// it runs on, what Your keys counts as the chats using a key.
     pub(crate) fn on_profiles(&self) -> Vec<purlis_core::yourkeys::page::ChatUse> {
@@ -2164,6 +2163,7 @@ impl Chats {
             .collect()
     }
 
+    /// **Whether chat `session` runs on a runner of its own** (#4569): what a move asks.
     pub(crate) fn on_its_own_runner(&self, session: u32) -> bool {
         let id = lock(&self.open)
             .get(&session)

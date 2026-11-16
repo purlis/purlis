@@ -146,8 +146,9 @@ pub fn chats_on_pool(config_root: &Path, id: Ulid, pool: &str, chats: &[ChatUse]
 }
 
 /// **Unlock** (W6): reads entry `id`'s item, which on a locked keychain asks the system to
-/// unlock it. `Ok(true)` where it now reads, `Ok(false)` where it still doesn't (the person
-/// cancelled), and the error where the keychain failed (W84).
+/// unlock it. `Ok(true)` where it now reads, `Ok(false)` where the keychain holds no item for
+/// the entry (a missing item, W55), and the error where the keychain failed (W84), which is
+/// also what a cancelled unlock answers: telling the two apart is T1a-61's.
 pub fn unlock(config_root: &Path, credentials: &dyn Credentials, id: Ulid) -> Result<bool, String> {
     use super::ReadError;
     match super::read_key(config_root, &crate::seam::RealFiles, credentials, id) {

@@ -239,7 +239,7 @@ pub async fn your_key_mark_again(id: String) -> Result<(), String> {
     .await
 }
 
-/// **Unlock** (W6): `true` where the key now reads, `false` where the person cancelled.
+/// **Unlock** (W6): `true` where the key now reads, `false` where its item is missing (W55).
 #[tauri::command]
 #[specta::specta]
 pub async fn your_key_unlock(id: String) -> Result<bool, String> {
