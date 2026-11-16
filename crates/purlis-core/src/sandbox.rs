@@ -5210,7 +5210,12 @@ impl Applied {
     /// each folder from `cwd` up to the project root denied too ([`manifests_held`], #1336).
     /// The one form a chat is armed with and opened under, so both name the same folders.
     pub fn form_in(&self, cwd: Option<&Path>) -> Form {
-        self.with(self.chain(cwd))
+        let mut form = self.with(self.chain(cwd));
+        // Each git folder pin written only where a command in `cwd` may write (#6961).
+        if let (Form::ClaudeCode(settings), Some(cwd)) = (&mut form, cwd) {
+            *settings = settings.written_in(cwd);
+        }
+        form
     }
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.

@@ -2124,6 +2124,7 @@ fn start_chat_in(
         session,
         label,
         notices,
+        heavy_settings: held.chats().heavy_settings(session),
         agents_md: ready
             .agents_md
             .into_iter()
@@ -2145,6 +2146,10 @@ struct Started {
     /// The branches whose `AGENTS.md` a notice names as the operator's and hidden by charter's
     /// line: what the notice's Open file and Move aside… act on (NO-4).
     agents_md: Vec<TheirAgentsMd>,
+    /// How many bytes the chat's harness settings weigh, where that is past
+    /// `limits.harness_settings_bytes` (#6961): its pane says so, with a way out. Absent for
+    /// every other start.
+    heavy_settings: Option<u32>,
 }
 
 /// A branch whose `AGENTS.md` is the operator's and hidden from `git status` by charter's line:

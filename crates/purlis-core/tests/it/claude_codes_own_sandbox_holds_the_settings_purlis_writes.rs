@@ -1674,3 +1674,140 @@ fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
         wrong.join("\n")
     );
 }
+
+/// **A command writes no git folder outside where it may write** (the person's ruling,
+/// 2026-11-16, #6961): a chat's settings pin a repository's git folder only where a command may
+/// write (the chat's folder, its grants and caches, Claude Code's shared temp folder), because
+/// Claude Code refuses every write anywhere else. This is that refusal, measured: a chat opened
+/// in one branch folder, with the git folder pins of every other left out, runs commands that
+/// write another workspace's branch folder's `.git`, move that branch folder and its workspace
+/// aside, and write beside them, and every one is refused; one in its own folder is written.
+///
+/// Not held to the pinned version: CI runs it on the version purlis supports, and the nightly
+/// (`claude-code-newest-writes`) on Claude Code's newest release, so a release that writes
+/// further is red the night it ships.
+#[test]
+fn a_command_writes_no_git_folder_outside_where_it_may_write() {
+    purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, LEVELS[0].2);
+    for (workspace, piece) in [("w", "p1"), ("v", "q1")] {
+        let clone = root.join("workspaces").join(workspace).join("app");
+        fs::create_dir_all(&clone).expect("a clone");
+        git(&clone, &["init", "-q", "-b", "main"]);
+        git(&clone, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        let folder = clone.join("../.worktrees/app").join(piece);
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                piece,
+                folder.to_str().expect("a path"),
+            ],
+        );
+    }
+    let cwd = root.join("workspaces/w/.worktrees/app/p1");
+    let other = root.join("workspaces/v/.worktrees/app/q1");
+    let gitfile = fs::read_to_string(other.join(".git")).expect("its .git");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let Some(Decided::Sandboxed(mut applied)) =
+        sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+    else {
+        panic!("not sandboxed");
+    };
+    applied.answered(SUPPORTED);
+    let Form::ClaudeCode(compiled) = applied.form_in(Some(&cwd)) else {
+        panic!("not Claude Code's own sandbox");
+    };
+    let other_git = other.join(".git").display().to_string();
+    assert!(
+        compiled.pins.contains(&other_git)
+            && !compiled.sandbox["filesystem"]["denyWrite"]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .any(|it| *it == other_git),
+        "the other branch folder's pin is left out, so this measures Claude Code's own refusal"
+    );
+    compiled.make_empty();
+    let settings = compiled.reporting_on(None).through(PROXY_PORTS);
+    let file = at.join("settings.json");
+    fs::write(
+        &file,
+        json!({ "sandbox": settings.sandbox, "permissions": { "deny": settings.deny } })
+            .to_string(),
+    )
+    .expect("the settings");
+    let tried = |what: &str| format!("{{ {what}; }} 2>/dev/null && echo WRITTEN || echo REFUSED");
+    let q = |path: &Path| format!("'{}'", path.display());
+    let commands = vec![
+        tried(&format!(
+            "printf 'gitdir: /elsewhere\\n' > {}",
+            q(&other.join(".git"))
+        )),
+        tried(&format!(
+            "mv {} {}",
+            q(&other),
+            q(&other.with_file_name("q1-aside"))
+        )),
+        tried(&format!(
+            "mv {} {}",
+            q(&root.join("workspaces/v")),
+            q(&root.join("workspaces/v-aside"))
+        )),
+        tried(&format!("printf x > {}", q(&other.join("beside.txt")))),
+        tried(&format!("printf x > {}", q(&cwd.join("mine.txt")))),
+    ];
+    let said = ran_steps(
+        &program,
+        &home,
+        &tmp,
+        &cwd,
+        &file,
+        &["--setting-sources".to_owned(), "user".to_owned()],
+        "writes outside where a command may write",
+        commands,
+    );
+    let answers: Vec<&str> = said
+        .iter()
+        .map(|it| {
+            if it.contains("WRITTEN") {
+                "WRITTEN"
+            } else {
+                "REFUSED"
+            }
+        })
+        .collect();
+    assert_eq!(
+        answers,
+        ["REFUSED", "REFUSED", "REFUSED", "REFUSED", "WRITTEN"],
+        "{said:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(other.join(".git")).expect("still there"),
+        gitfile,
+        "the other branch folder's .git is as it was"
+    );
+}

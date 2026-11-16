@@ -1199,6 +1199,8 @@ fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_
         sandbox: serde_json::json!({ "enabled": false }),
         deny: vec!["WebFetch".to_owned()],
         made_folders: Vec::new(),
+        pins: Vec::new(),
+        persons_roots: Vec::new(),
     };
     let text = super::claude::armed_settings_for_tests(&settings);
     let armed: serde_json::Value = serde_json::from_str(&text).expect("JSON");
@@ -1314,10 +1316,14 @@ fn a_sandboxed_claude_code_chat_reaches_its_hook_socket_and_no_other() {
         .iter()
         .position(|rule| *rule == serde_json::json!(format!("Edit(/{folder})")))
         .unwrap_or_else(|| panic!("the folder is denied: {deny:?}"));
-    assert_eq!(
-        deny.get(at + 1),
-        Some(&serde_json::json!(format!("Edit(/{folder}/**)"))),
-        "the folder's own rule is followed by its contents': {deny:?}"
+    // The folder's own rule holds what is below it too (#6961).
+    let rules: Vec<String> = deny
+        .iter()
+        .filter_map(|rule| rule.as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        crate::sandbox::claude::tool_holds(&rules, "Edit", &format!("/{folder}/**")),
+        "the folder's contents are held with it: {deny:?}"
     );
     // On macOS the folder is under `/private/var`, a firmlink, so its twin on the data
     // volume is denied as well.
@@ -1325,8 +1331,7 @@ fn a_sandboxed_claude_code_chat_reaches_its_hook_socket_and_no_other() {
     {
         let twin = format!("/System/Volumes/Data{folder}");
         assert!(
-            deny.contains(&serde_json::json!(format!("Edit(/{twin})")))
-                && deny.contains(&serde_json::json!(format!("Edit(/{twin}/**)"))),
+            deny.contains(&serde_json::json!(format!("Edit(/{twin})"))),
             "the folder's firmlink twin is denied too: {deny:?}"
         );
     }

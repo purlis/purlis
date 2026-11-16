@@ -140,6 +140,13 @@ pub struct Settings {
     /// ([`super::MAY_LIFT`]). Claude Code pins every folder above a held path, so neither a
     /// tool's first run nor a lift could make them in the chat.
     pub made_folders: Vec<PathBuf>,
+    /// The entries of `denyWrite` that are a repository's git folder pin and nothing else
+    /// ([`super::Denied::git_folder_pins`]): what [`Self::written_in`] leaves out where no command
+    /// writes (the person's ruling, 2026-11-16, #6961).
+    pub pins: Vec<String>,
+    /// The folders the person's own and the administrators' Claude Code settings let a command
+    /// write, read as the chat starts ([`persons_write_roots`]): places a pin is kept in too.
+    pub persons_roots: Vec<String>,
 }
 
 /// The folders above each name of [`super::MAY_LIFT`] in `home`, outermost first, `home` and the
@@ -276,15 +283,24 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // in or at it is denied ([`super::Denied::git_folder_pins`]), and Claude Code pins every
     // folder above a denied path (see the caches below), so a `.git` directory stays where it is
     // while git writes the rest of it, and a `.git` file is held itself. Each as a plain path, by
-    // every name a rule on it is written by: a glob gets no folder above it pinned.
+    // every name a rule on it is written by: a glob gets no folder above it pinned. The Edit
+    // tool pins nothing, so for it every branch folder's git in a plane is one rule (#6961): a
+    // plane holds hundreds, and each by path weighs the settings past auto mode's check.
+    let pinned_from = deny_write.len();
     for pin in &compiled.denied.git_folder_pins {
         for name in names_for(pin) {
             let path = name.display().to_string();
-            edit_rules.push(format!("Edit(/{path})"));
-            edit_rules.push(format!("Edit(/{path}/**)"));
+            match every_branch_folders_git(&path) {
+                Some(glob) => edit_rules.push(format!("Edit(/{glob})")),
+                None => {
+                    edit_rules.push(format!("Edit(/{path})"));
+                    edit_rules.push(format!("Edit(/{path}/**)"));
+                }
+            }
             deny_write.push(path);
         }
     }
+    let pinned: Vec<String> = deny_write[pinned_from..].to_vec();
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
     let mut allow_write: Vec<String> = Vec::new();
     if let Some(caches) = &compiled.widened.caches {
@@ -468,6 +484,15 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             deny_write.push(path.to_owned());
         }
     }
+    // A pin is a pin alone where nothing else wrote the same entry.
+    let pins: Vec<String> = pinned
+        .iter()
+        .filter(|pin| {
+            deny_write.iter().filter(|it| it == pin).count()
+                == pinned.iter().filter(|it| it == pin).count()
+        })
+        .cloned()
+        .collect();
     let mut filesystem = json!({
         "denyRead": deny_read,
         "denyWrite": deny_write,
@@ -476,7 +501,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         filesystem["allowWrite"] = json!(allow_write);
     }
     if compiled.level == Level::Floor {
-        return floor(filesystem, read_rules, edit_rules, compiled);
+        return floor(filesystem, read_rules, edit_rules, compiled, pins);
     }
     let deny = WEB_TOOLS
         .iter()
@@ -515,7 +540,10 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         sandbox,
         deny,
         made_folders: Vec::new(),
+        pins,
+        persons_roots: persons_write_roots(compiled),
     }
+    .tidied()
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
@@ -531,6 +559,7 @@ fn floor(
     read_rules: Vec<String>,
     edit_rules: Vec<String>,
     compiled: &Compiled,
+    pins: Vec<String>,
 ) -> Settings {
     let mut sandbox = json!({
         "enabled": true,
@@ -565,10 +594,99 @@ fn floor(
             Some(home) if compiled.level == Level::Floor => above_what_may_be_lifted(home),
             _ => Vec::new(),
         },
+        pins,
+        persons_roots: persons_write_roots(compiled),
     }
+    .tidied()
 }
 
 impl Settings {
+    /// These settings with each rule and each denied path written once ([`fewest`], [`once`]).
+    fn tidied(mut self) -> Settings {
+        self.deny = fewest(std::mem::take(&mut self.deny));
+        for list in ["denyRead", "denyWrite"] {
+            if let Some(paths) = strings_of(&self.sandbox["filesystem"][list]) {
+                self.sandbox["filesystem"][list] = json!(once(paths));
+            }
+        }
+        self
+    }
+
+    /// These settings, `before` with more added, with each rule and path added written only
+    /// where what is there does not hold it already: what `before` had is kept as it was, and
+    /// leads each list, so a caller that reads the added rules after `before`'s
+    /// ([`crate::harness::claude::reporting_on`]) reads exactly them.
+    fn tidied_after(mut self, before: &Settings) -> Settings {
+        self.deny = added_once(&before.deny, &self.deny, fewest);
+        for list in ["denyRead", "denyWrite"] {
+            let (Some(had), Some(now)) = (
+                strings_of(&before.sandbox["filesystem"][list]),
+                strings_of(&self.sandbox["filesystem"][list]),
+            ) else {
+                continue;
+            };
+            self.sandbox["filesystem"][list] = json!(added_once(&had, &now, once));
+        }
+        self
+    }
+
+    /// **These settings for a chat that opens in `cwd`, each git folder pin written only where a
+    /// command may write** (the person's ruling, 2026-11-16, #6961). A pin is a plain path in
+    /// `denyWrite`, so that Claude Code pins every folder above it too; a plane holds hundreds,
+    /// one a branch folder, and each by both names weighs the settings past what auto mode's
+    /// check takes. Where no command may write, a pin holds and pins nothing more: Claude Code
+    /// refuses every write outside the places its sandbox writes. So a pin is kept where it
+    /// meets one, below or above it: `cwd`, each `allowWrite` entry (a person's grants, the
+    /// caches; a glob by its plain part), each write root of the person's own and the
+    /// administrators' settings as the chat started ([`persons_write_roots`]; one added while
+    /// the chat runs counts from its next start), and Claude Code's shared temp folder ([`SHARED_TEMP`],
+    /// the only paths its sandbox always writes), each by both its names; and `/`, at the floor,
+    /// meets every pin. The chat's own temp folder is made new for it as it starts
+    /// ([`super::Confinement::proxy_only`]), so no pin is in or above it. The Edit tool's pins are kept whole ([`every_branch_folders_git`]).
+    pub fn written_in(&self, cwd: &Path) -> Settings {
+        let mut out = self.clone();
+        let mut places: Vec<String> = Vec::new();
+        let mut place = |path: &Path| {
+            for name in both_names(path) {
+                let name = name.display().to_string();
+                if !places.contains(&name) {
+                    places.push(name);
+                }
+            }
+        };
+        place(cwd);
+        for root in &self.persons_roots {
+            place(Path::new(root));
+        }
+        for shared in SHARED_TEMP {
+            place(Path::new(shared));
+        }
+        for allowed in strings_of(&self.sandbox["filesystem"]["allowWrite"]).unwrap_or_default() {
+            let plain = allowed
+                .split(['*', '?', '['])
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches('/');
+            place(Path::new(if plain.is_empty() { "/" } else { plain }));
+        }
+        let meets = |pin: &str| {
+            places.iter().any(|place| {
+                let under = |inner: &str, outer: &str| {
+                    outer == "/" || inner == outer || inner.starts_with(&format!("{outer}/"))
+                };
+                under(pin, place) || under(place, pin)
+            })
+        };
+        let away: Vec<&String> = self.pins.iter().filter(|pin| !meets(pin)).collect();
+        if let Some(list) = out.sandbox["filesystem"]["denyWrite"].as_array_mut() {
+            list.retain(|it| {
+                !it.as_str()
+                    .is_some_and(|it| away.iter().any(|pin| *pin == it))
+            });
+        }
+        out
+    }
+
     /// Whether these switch Claude Code's own sandbox off: a chat purlis wraps whole
     /// ([`super::claude_wrap`]).
     pub fn is_off(&self) -> bool {
@@ -618,7 +736,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{name}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 
     /// These settings for a chat whose commands reach the network through purlis's proxy
@@ -668,7 +786,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{folder}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 
     /// These settings with `denied` denied too, after the compiled rules: each path as written
@@ -694,7 +812,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{path}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 }
 
@@ -775,6 +893,78 @@ fn plain_and_cased(prefix: &str, name: &str) -> [String; 2] {
     ]
 }
 
+/// **`rules` for Claude Code's own tools, each path written once** (#6961, Sentry
+/// PURLIS-APP-J): what decides as they did, in fewer words. Settings near a megabyte switch auto
+/// mode's check off for the chat, and every action that needs the check is then refused unasked.
+///
+/// Claude Code matches a Read or Edit rule's path the way gitignore matches a line (the `ignore`
+/// library at its defaults, read in its bundled CLI): **a path is held when it or a folder above
+/// it matches, and letters match in either case.** So, of the rules for one tool, this drops:
+///
+/// - a rule written twice;
+/// - `T(<p>/**)` beside `T(<p>)`, which holds what is below `<p>` already;
+/// - `T(<glob>)` that [`either_case`] made, beside `T(<the name as written>)`, which matches
+///   every case already;
+/// - `T(<q>)`, a plain path, below `T(<p>)`, a plain path that is a folder above it.
+///
+/// A rule on another tool, or one that is not a path rule, is kept as it is, in its place. That
+/// every spelling the rules held before is held still, and by the pinned Claude Code itself, is
+/// `the_smaller_rules_deny_every_spelling_the_old_rules_denied`.
+pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
+    let parts = |rule: &str| -> Option<(String, String)> {
+        let (tool, rest) = rule.split_once('(')?;
+        let path = rest.strip_suffix(')')?;
+        matches!(tool, "Read" | "Edit").then(|| (tool.to_owned(), path.to_owned()))
+    };
+    let written: std::collections::HashSet<&str> = rules.iter().map(String::as_str).collect();
+    let plain: std::collections::HashSet<(String, String)> = rules
+        .iter()
+        .filter_map(|rule| parts(rule))
+        .filter(|(_, path)| literal(path))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for rule in &rules {
+        if !seen.insert(rule.as_str()) {
+            continue;
+        }
+        let Some((tool, path)) = parts(rule) else {
+            out.push(rule.clone());
+            continue;
+        };
+        if let Some(above) = path.strip_suffix("/**")
+            && written.contains(format!("{tool}({above})").as_str())
+        {
+            continue;
+        }
+        let as_written = uncased(&path);
+        if as_written != path && written.contains(format!("{tool}({as_written})").as_str()) {
+            continue;
+        }
+        if literal(&path)
+            && folders_above(&path).any(|above| plain.contains(&(tool.clone(), above.to_owned())))
+        {
+            continue;
+        }
+        out.push(rule.clone());
+    }
+    out
+}
+
+/// `paths` for Claude Code's sandbox, each written once, and none below a plain path in the list:
+/// Claude Code holds a listed path and all that is below it, and pins each folder above it, so
+/// a path below another listed one holds and pins nothing more (#6961). A glob is kept as it is.
+fn once(paths: Vec<String>) -> Vec<String> {
+    let plain: std::collections::HashSet<String> =
+        paths.iter().filter(|path| literal(path)).cloned().collect();
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter(|path| seen.insert(path.clone()))
+        .filter(|path| !literal(path) || !folders_above(path).any(|above| plain.contains(above)))
+        .collect()
+}
+
 /// **Whether the rules `deny` hold `tool` from `path`**, as [`fewest`] leaves them: a rule on
 /// the path itself, on `<path>/**`, or on a plain folder above it, in any case. `path` is a
 /// rule's path, as a test asks for it (`//a/b`, a glob, `<p>/**`, or an [`either_case`] glob).
@@ -793,12 +983,41 @@ pub(crate) fn tool_holds(deny: &[String], tool: &str, path: &str) -> bool {
     if !literal(&path) {
         return false;
     }
+    // A rule's glob as gitignore reads one: `*` within a name, `**` any folders or none, in
+    // either case, and what is below what it matches held with it.
+    let matches = |glob: &str| {
+        let mut pattern = String::from("(?i)^");
+        let mut rest = glob;
+        while let Some(c) = rest.chars().next() {
+            if let Some(after) = rest.strip_prefix("**/") {
+                pattern.push_str("(?:.*/)?");
+                rest = after;
+            } else if let Some(after) = rest.strip_prefix("**") {
+                pattern.push_str(".*");
+                rest = after;
+            } else {
+                match c {
+                    '*' => pattern.push_str("[^/]*"),
+                    '?' => pattern.push_str("[^/]"),
+                    _ => pattern.push_str(&regex::escape(&c.to_string())),
+                }
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+        pattern.push_str("(?:/.*)?$");
+        regex::Regex::new(&pattern).is_ok_and(|it| it.is_match(&path))
+    };
     deny.iter()
         .filter_map(|rule| rule.strip_prefix(&format!("{tool}(")))
         .filter_map(|rest| rest.strip_suffix(')'))
-        .map(str::to_lowercase)
-        .filter(|held| literal(held))
-        .any(|held| path == held || path.starts_with(&format!("{held}/")))
+        .map(|held| uncased(held).to_lowercase())
+        .any(|held| {
+            if literal(&held) {
+                path == held || path.starts_with(&format!("{held}/"))
+            } else {
+                !held.contains('[') && matches(&held)
+            }
+        })
 }
 
 /// [`tool_holds`] for `rule`, written as a whole rule (`Edit(//a/b)`).
@@ -833,15 +1052,70 @@ pub(crate) fn list_holds<S: AsRef<str>>(list: &[S], path: &str) -> bool {
         .any(|it| path.starts_with(&format!("{it}/")))
 }
 
-#[cfg(test)]
+/// **Every branch folder's git in the plane `path`'s is in**, as one glob, where `path` is a
+/// branch folder's git (`<plane>/workspaces/<ws>/.worktrees/<repo>/<piece>/.git`, the folders
+/// [`super::planted::clones_purlis_works_in`] finds): `<plane>/workspaces/*/.worktrees/*/*/.git`.
+/// It holds that one and every other branch folder's, one made later among them, and nothing
+/// that is not a branch folder's git. `None` for any other path, and for one whose plane's own
+/// path a glob would read as more than itself.
+fn every_branch_folders_git(path: &str) -> Option<String> {
+    let rest = path.strip_suffix("/.git")?;
+    let (rest, _piece) = rest.rsplit_once('/')?;
+    let (rest, _repo) = rest.rsplit_once('/')?;
+    let rest = rest.strip_suffix(&format!("/{}", crate::worktree::DIR_NAME))?;
+    let (rest, _workspace) = rest.rsplit_once('/')?;
+    let plane = rest.strip_suffix(&format!("/{}", super::WORKSPACES))?;
+    let parts = &path[plane.len()..];
+    (literal(path) && !plane.is_empty() && parts.split('/').all(|part| part != ".." && part != "."))
+        .then(|| {
+            format!(
+                "{plane}/{}/*/{}/*/*/.git",
+                super::WORKSPACES,
+                crate::worktree::DIR_NAME
+            )
+        })
+}
+
+/// `now`, which is `had` with more after it, with `had` as it was and each added entry kept only
+/// where `tidy`, run over the whole, keeps it: an added entry `tidy` drops is held by one it
+/// keeps, which is `had`'s or another added one.
+fn added_once(had: &[String], now: &[String], tidy: fn(Vec<String>) -> Vec<String>) -> Vec<String> {
+    debug_assert!(now.starts_with(had), "added after what was there");
+    let kept: std::collections::HashSet<String> = tidy(now.to_vec()).into_iter().collect();
+    let mut out = had.to_vec();
+    for added in &now[had.len().min(now.len())..] {
+        if kept.contains(added) && !out.contains(added) {
+            out.push(added.clone());
+        }
+    }
+    out
+}
+
+/// The strings of a JSON list, or `None` where it is not one.
+fn strings_of(list: &Value) -> Option<Vec<String>> {
+    list.as_array().map(|paths| {
+        paths
+            .iter()
+            .filter_map(|path| path.as_str().map(str::to_owned))
+            .collect()
+    })
+}
+
 /// Whether `path` is a plain path, with nothing a glob reads as more than itself.
 fn literal(path: &str) -> bool {
     !path.contains(['*', '?', '[', '\\'])
 }
 
+/// Each folder above `path`, as `path` spells it: `/a/b/c` gives `/a` and `/a/b`; `//a/b`, a
+/// rule's absolute path, gives `//a`.
+fn folders_above(path: &str) -> impl Iterator<Item = &str> {
+    path.match_indices('/')
+        .map(|(at, _)| &path[..at])
+        .filter(|above| !above.trim_start_matches('/').is_empty())
+}
+
 /// `glob` with each class [`either_case`] made written back as the letter it was made from:
-/// what a test compares a held name with.
-#[cfg(test)]
+/// what a test compares a held name with, and how [`fewest`] knows a rule's plain twin.
 pub(crate) fn uncased(glob: &str) -> String {
     let chars: Vec<char> = glob.chars().collect();
     let mut out = String::with_capacity(glob.len());
@@ -890,6 +1164,139 @@ fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
         }
     }
     names
+}
+
+/// **Where the person's own and the administrators' Claude Code settings let a command write**
+/// (#6961, the orchestrator's ruling A'): Claude Code adds to its sandbox's write roots each
+/// `sandbox.filesystem.allowWrite` entry, each `permissions.additionalDirectories` folder and
+/// each Edit allow rule's path from these tiers ("merged with paths from Edit(...) allow
+/// permission rules", read in its bundled CLI). A git folder pin under one is kept. Read from the
+/// managed files ([`crate::footerclaim::managed`]) and every user settings file the chat may run
+/// on: `~/.claude`'s, `$CLAUDE_CONFIG_DIR`'s and each profile purlis made's.
+fn persons_write_roots(compiled: &Compiled) -> Vec<String> {
+    #[cfg(test)]
+    if let Some(files) = TEST_PERSONS_FILES.with(|it| it.borrow().clone()) {
+        return write_roots_in(&files, compiled.homes.home.as_deref());
+    }
+    let mut files = crate::footerclaim::managed();
+    let mut configs: Vec<PathBuf> = Vec::new();
+    if let Some(home) = &compiled.homes.home {
+        configs.push(home.join(".claude"));
+    }
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        configs.push(PathBuf::from(dir));
+    }
+    if let Some(profiles) = &compiled.homes.profiles {
+        for profile in std::fs::read_dir(profiles).into_iter().flatten().flatten() {
+            configs.push(profile.path());
+            configs.extend(
+                std::fs::read_dir(profile.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|entry| entry.path()),
+            );
+        }
+    }
+    files.extend(configs.into_iter().map(|dir| dir.join("settings.json")));
+    write_roots_in(&files, compiled.homes.home.as_deref())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The settings files [`persons_write_roots`] reads on this test's thread, in place of this
+    /// machine's, where a test sets them: what it measures is then not the machine's.
+    pub(crate) static TEST_PERSONS_FILES: std::cell::RefCell<Option<Vec<PathBuf>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// [`persons_write_roots`] in `files`, each a plain folder: `/` for what cannot be placed exactly
+/// (a bare Edit allow, a relative path or pattern, a file there that cannot be read), which keeps
+/// every pin. A file that is not there says nothing.
+pub(crate) fn write_roots_in(files: &[PathBuf], home: Option<&Path>) -> Vec<String> {
+    const EVERYWHERE: &str = "/";
+    let placed = |path: &str| -> String {
+        let path = match path.strip_prefix("//") {
+            Some(rest) => format!("/{rest}"),
+            None => path.to_owned(),
+        };
+        let expanded = match (path.strip_prefix("~/"), home) {
+            (Some(rest), Some(home)) => home.join(rest).display().to_string(),
+            (Some(_), None) => return EVERYWHERE.to_owned(),
+            (None, _) => path,
+        };
+        if !expanded.starts_with('/') {
+            return EVERYWHERE.to_owned();
+        }
+        let plain = expanded
+            .split(['*', '?', '[', '{'])
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches('/');
+        if plain.is_empty() {
+            EVERYWHERE.to_owned()
+        } else {
+            plain.to_owned()
+        }
+    };
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |root: String| {
+        if !out.contains(&root) {
+            out.push(root);
+        }
+    };
+    for file in files {
+        let doc: Value = match std::fs::metadata(file) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Ok(meta) if meta.is_file() && meta.len() <= MANAGED_AT_MOST => {
+                match std::fs::read_to_string(file)
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+                {
+                    Some(doc) => doc,
+                    None => {
+                        add(EVERYWHERE.to_owned());
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                add(EVERYWHERE.to_owned());
+                continue;
+            }
+        };
+        let strings = |pointer: &str| -> Vec<String> {
+            doc.pointer(pointer)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|it| it.as_str().map(str::to_owned))
+                .collect()
+        };
+        for path in strings("/sandbox/filesystem/allowWrite")
+            .into_iter()
+            .chain(strings("/permissions/additionalDirectories"))
+        {
+            add(placed(&path));
+        }
+        for rule in strings("/permissions/allow") {
+            let rule = rule.trim();
+            let (tool, content) = match rule.split_once('(') {
+                Some((tool, rest)) => (tool, rest.strip_suffix(')')),
+                None => (rule, None),
+            };
+            if !matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit") {
+                continue;
+            }
+            match content {
+                // A path from the settings file's own folder, or one to match anywhere: not one
+                // folder, so everywhere.
+                Some(path) if path.starts_with("//") || path.starts_with("~/") => add(placed(path)),
+                _ => add(EVERYWHERE.to_owned()),
+            }
+        }
+    }
+    out
 }
 
 /// **Whether an administrator's Claude Code settings turn local binding on** (#1699): with

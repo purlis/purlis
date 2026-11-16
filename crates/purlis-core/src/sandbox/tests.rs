@@ -8322,6 +8322,8 @@ impl Repositories {
     /// The settings a Claude Code chat in the plane starts with, compiled as a start compiles
     /// them, at the full sandbox; and at the floor, from the same denials.
     fn claude_settings(&self) -> Vec<(Level, claude::Settings)> {
+        // No Claude Code settings of this machine's: the write roots are purlis's alone.
+        claude::TEST_PERSONS_FILES.with(|it| *it.borrow_mut() = Some(Vec::new()));
         let machine = machine(Os::MacOs);
         let applied =
             compiled_anyway(Harness::ClaudeCode, self.plane.path(), &machine).expect("compiles");
@@ -8425,14 +8427,29 @@ fn a_claude_code_chat_denies_a_path_in_each_repository_s_git_folder() {
     let repositories = Repositories::laid_out();
     for (level, settings) in repositories.claude_settings() {
         let deny_write = deny_write_as_written(&settings);
+        // Where a command may write: the chat's folder (the plane) and what it is allowed.
+        let mut roots = vec![repositories.plane.path().to_path_buf()];
+        roots.push(super::real(repositories.plane.path()));
+        roots.extend(
+            settings.sandbox["filesystem"]["allowWrite"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|it| it.as_str())
+                .map(std::path::PathBuf::from),
+        );
         for pin in repositories.pins() {
             // As a plain path, never a glob: Claude Code pins every folder above a denied path,
-            // so the git folder and the folders that hold it stay where they are.
+            // so the git folder and the folders that hold it stay where they are. Only where a
+            // command may write: elsewhere Claude Code refuses every write, and the pin holds
+            // nothing more (the person's ruling, 2026-11-16, #6961).
             for name in [pin.clone(), super::real(&pin)] {
+                let written = roots.iter().any(|root| name.starts_with(root));
                 let name = name.display().to_string();
-                assert!(
+                assert_eq!(
                     claude::list_holds(&deny_write, &name),
-                    "{level:?}: {name} not denied"
+                    written,
+                    "{level:?}: {name} denied where a command may write it, and only there"
                 );
                 for rule in [format!("/{name}"), format!("/{name}/**")] {
                     assert!(

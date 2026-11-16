@@ -92,7 +92,8 @@ runs:
       run: |
         tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::claude_tests::size_budget_tests:: --nocapture
     # **The pinned Claude Code decides the smaller rules** (T1.1-71, #6961): its own Read and
-    # Write tools on every spelling of held paths. The version purlis supports, from the committed
+    # Write tools on every spelling of held paths, and its own sandbox on a command's writes where
+    # purlis pins no git folder (the person's ruling, 2026-11-16). The version purlis supports, from the committed
     # lockfile with no install scripts run, against a stand-in model on a loopback port. No model
     # is called, and no credential is used.
     - name: The pinned Claude Code decides the smaller rules
@@ -116,6 +117,7 @@ runs:
         PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
           tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- \
           claude_codes_own_sandbox_holds_the_settings_purlis_writes::the_smaller_rules_deny_every_spelling_the_old_rules_denied \
+          claude_codes_own_sandbox_holds_the_settings_purlis_writes::a_command_writes_no_git_folder_outside_where_it_may_write \
           --exact --nocapture
     # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
     - name: What the sandbox refused
