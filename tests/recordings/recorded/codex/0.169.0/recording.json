@@ -16,75 +16,10 @@
     "exit2": "pretooluse",
     "stall": "posttooluse-blocked"
   },
-  "shown": [
+  "said": [
     {
-      "kind": "user_text",
-      "text": "<environment_context>\n  <cwd><work></cwd>\n  <shell>bash</shell>\n  <current_date><time></current_date>\n  <timezone>Etc/UTC</timezone>\n  <filesystem><workspace_roots><root><work></root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
-    },
-    {
-      "kind": "context",
-      "text": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace."
-    },
-    {
-      "kind": "context",
-      "text": "⬢ **If work has to go to another chat.** Use purlis's tools for it first: `dispatch` starts a task; `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, `dispatch_answer`, `dispatch_pass_on`, `dispatch_cancel` and `dispatch_close` look after one, and `dispatch_tell` with `all` tells every task still working at once; a task answers with `dispatch_note` (its `ack` acknowledges an instruction), `dispatch_ask` and `dispatch_report`. A task's question comes to you first: answer it, or pass it on with `dispatch_pass_on`. Security, cost, anything public and anything that amends a ruling are always passed on, and your own answer is never the person's word. They need no shell; the `purlis dispatch` command does the same, one call at a time. Work that writes, commits, needs its own branch folder or runs long is a purlis task, through `dispatch`; a harness's helper is for read-only work (searching, reading, reviewing), and from inside one `purlis worktree add`, `commit` and `push` are refused. Work this chat needs an answer from, for its own persona or another, is `purlis dispatch` (with `--in workspace:<name>` when it must run elsewhere). A handoff is fire-and-forget: the person's work moves to a chat they will read themselves. This says where such work goes, not that work should go: what this chat can do itself, it does, and it dispatches when the work needs another persona's charter, memory or vault.\n\n⬢ **A credential you lack is the person's to fill.** Never ask the person for a password, token or key in this conversation, and never have them paste one. Prefer simply running the command that needs it with `purlis secret exec`: the person is asked in purlis's window for whatever the run lacks, a key or an Allow for its program, in one notice, and the command goes on once they answer. To ask ahead, raise a Secret ask for any credential you lack, declared or not, with the `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, naming the program you will run with `--program` where you know it. You hear only filled, with the vault and key to use and whether the program was allowed, or declined.\n\n⬢ **This chat runs in purlis's sandbox.** When it blocks a command (a host it may not reach, or a folder it may not write), the person sees a Notice in the Inbox, and on this chat's pane when it is on screen, and chooses **Allow for this chat**, **Always allow** (for every chat of this project on their machine, or, for a host only, for everyone in the project) or **Keep blocked**. If they allow it, this chat restarts on the same conversation and is told to retry, so say what was blocked and wait for them. Where purlis grants nothing, the person alone may choose **Start without the sandbox** for this chat; never suggest it as something you can do. **This chat's level is the person's alone**: they set it in **Settings › Project › Sandbox › Your level**, and you cannot lower it, so never suggest you can, never write it in a file for them to confirm, and never ask them to lower it. If they say they lowered it and this chat is still sandboxed, do not guess why: ask them to read the reason on this chat's sandbox mark or on its Notice. It may say that a restart applies the level, that a persona's row or a policy holds it, that a level waits for their Confirm, or that a chat that asked for this one is stricter. A blocked local socket (Docker's, a database's, an SSH agent's) or system service (macOS's certificate check, which Go tools such as `gh` and `glab` use) may get a Notice the person can answer: say which one was blocked, by its path or name, and that the person decides. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not apply here: purlis's own settings outrank them, so never suggest them. A credential is never granted to a chat: run one of your persona's declared tools by its plain name, which purlis runs through `purlis secret exec` and hands the credential. Any other command with a vault is refused, and the refusal names the tool to declare; the person can run it in their own terminal. A website login is the `browser_login` tool: call it with the login's name, and purlis fills it in your browser on the declared site alone; running the login's name as a command does nothing. Git work happens in branch folders purlis cuts: `purlis worktree add <repo> <piece>` makes one (a raw `git worktree add` is refused), and you commit and push from it with `purlis worktree commit` and `purlis worktree push`."
-    },
-    {
-      "kind": "context",
-      "text": "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed here. When a request matches one, read its `SKILL.md` and follow it before acting; a prompt that names a skill by its name means this list. Under a folder named below, a skill's file is `<that folder>/<name>/SKILL.md`: read it by that whole path.\nUnder `<plugin>/skills`:\n- `purlis-browser` — When a purlis chat must log in to a website with a vault login, or needs several logged-in browsers, drive a real browser where purlis fills the password unseen. Use when asked to log in, sign in, or test behind auth. Not for an API's credential (purlis-secrets) or theming (purlis-theme).\n- `purlis-change` — When work in a purlis workspace spans several repos and should land as one cross-repo change, a branch and pull request per repo. Use when asked to start or track a cross-repo change, or land its pull requests in order (`purlis change`). Not for one repo's branch (purlis-repo-work).\n- `purlis-curation-action` — When a person wants a purlis persona to offer a chat in the Curate menu, with a prompt typed, write its curation action. Use when asked to add, change or remove a curation action or Curate menu entry. Not for writing a skill (purlis-skill-studio) or a persona (purlis-persona).\n- `purlis-handoff` — When the person wants work moved out of this purlis chat into a new chat they will read themselves, here or in another workspace. Use when asked to hand off or open a chat for something. Not for work this chat needs an answer from, its own persona's or another's (purlis-persona), or ending this chat (purlis-smart-close).\n- `purlis-permissions` — When a purlis chat is stopped by a permission — a harness asking, a sandbox block, a guard's refusal — say why and change it where purlis reads it. Use when asked to stop asking or allow a host. Not for a credential (purlis-secrets), a site login (purlis-browser) or committing (purlis-repo-work).\n- `purlis-persona` — When work needs a purlis persona, a role with its own charter, memory and vault — act as one, create one, or dispatch work to another. Use when asked to dispatch, ask another persona or report back. Not for a new chat (purlis-handoff), a credential (purlis-secrets) or removal (purlis-safe-remove).\n- `purlis-remember` — When something learned in a purlis chat should outlive it, record it or recall a decision. Use when asked to remember this, note that, add a todo, or what did we decide. Not for tidying memory (purlis-tidy-memory), a closing summary (purlis-smart-close) or a password (purlis-secrets).\n- `purlis-repo-work` — When a purlis chat works in a repo its workspace owns, build, test and commit by its conventions, in branch folders (`purlis worktree`). Use when asked to fix, build or commit in a repo. Not for another persona (purlis-persona), a credential (purlis-secrets) or a cross-repo change (purlis-change).\n- `purlis-report` — When purlis itself misbehaves — a command, tool or window fails, is wrong or slow, blocks its own work, or you work around it, or a purlis skill should have started — draft a report for the person. Not for their own project, the harness, permissions (purlis-permissions) or editing a skill (purlis-skill-studio).\n- `purlis-safe-remove` — When the person wants a purlis workspace or persona gone, keep what it learned, then run the guarded remove. Use when asked to remove, delete, retire or archive one. Not for pruning memory (purlis-tidy-memory), a branch folder (purlis-repo-work) or a new persona (purlis-persona).\n- `purlis-secrets` — When a task needs a purlis vault's credential — a password, token or key — use it without its value in the chat. Use when a command needs a secret, or to store one. Not for a site login (purlis-browser), a persona (purlis-persona), a repo (purlis-repo-work), a new chat (purlis-handoff) or memory (purlis-tidy-memory).\n- `purlis-skill-studio` — When purlis's Skill studio typed this chat's prompt — draft a skill, its trigger tests or evals, or improve it from its grades — follow its steps, each file a draft. Use when a prompt names this skill. Not for a Curate menu entry (purlis-curation-action) or a persona's skills (purlis-persona).\n- `purlis-smart-close` — When this purlis chat is ending, write its session record for the next chat to resume from, and fold what lasts into workspace.md. Use when asked to smart close, wrap up, call it a day or write a session record. Not for tidying memory (purlis-tidy-memory) or a new chat (purlis-handoff).\n- `purlis-theme` — When a person wants the purlis window to look a certain way, make, change, check or share a purlis theme from a brand colour, image, Figma frame or another theme. Use when asked about a theme or its colours. Not for a repo's styles (purlis-repo-work) or a site's pages (purlis-browser).\n- `purlis-tidy-memory` — When a purlis workspace's or persona's memory has duplicates and stale entries, prune them only with the person's yes. Use when asked to tidy, compact, dedupe or prune memory. Not for a session record (purlis-smart-close), removal (purlis-safe-remove) or a new fact (purlis-remember).\n- `purlis-upgrade` — When a person asks whether purlis is up to date or what a version brought, say how the app installs it and relay `purlis news`. Use when asked to update or upgrade purlis, or what is new. Not for a repo's dependencies (purlis-repo-work), memory (purlis-tidy-memory) or its look (purlis-theme).\n- `purlis-workspace` — When the person wants a purlis workspace made, chosen, shared or saved (`purlis save`). Use when asked to create, fork, rename or share a workspace. Not for removing one (purlis-safe-remove), its memory (purlis-tidy-memory), a new chat (purlis-handoff) or a branch (purlis-repo-work)."
-    },
-    {
-      "kind": "user_text",
-      "text": "COVERING-SCRIPT: make each call the stand-in asks for, in order."
-    },
-    {
-      "kind": "tool_result",
-      "text": "Command blocked by PreToolUse hook: purlis-recorder: refused with exit 2 for the recording. Command: echo exit-two",
-      "tool_use_id": "<tool-use-1>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-1>\n<time>\nProcess exited with code 0\nOriginal token count: 2\nOutput:\ncovered\n",
-      "tool_use_id": "<tool-use-2>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-2>\n<time>\nProcess exited with code 0\nOriginal token count: 50\nOutput:\npurlis's sandbox does not allow <refused-target>: it is this machine, a link-local address, a cloud metadata service, or, for a chat on a runner, an internal address the runner's policy does not list",
-      "tool_use_id": "<tool-use-3>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-3>\n<time>\nProcess exited with code 1\nOriginal token count: 30\nOutput:\n/bin/bash: line 1: <outside>/by-bash.txt: Permission denied\n",
-      "tool_use_id": "<tool-use-4>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Exit code: 1\n<time>\nOutput:\nFailed to write file <outside>/by-write.txt\n",
-      "tool_use_id": "<tool-use-5>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Exit code: 1\n<time>\nOutput:\nFailed to write file <outside>/existing.txt\n",
-      "tool_use_id": "<tool-use-6>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-4>\n<time>\nProcess exited with code 0\nOriginal token count: 1\nOutput:\none\n",
-      "tool_use_id": "<tool-use-7>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-5>\n<time>\nProcess exited with code 0\nOriginal token count: 1\nOutput:\ntwo\n",
-      "tool_use_id": "<tool-use-8>"
-    },
-    {
-      "kind": "tool_result",
-      "text": "Chunk ID: <tool-use-task-6>\n<time>\nProcess exited with code 2\nOriginal token count: 2\nOutput:\nfailing\n",
-      "tool_use_id": "<tool-use-9>"
-    },
-    {
-      "kind": "user_text",
-      "text": "COVERING-SCRIPT, second turn: make the call the stand-in asks for."
+      "turn": 1,
+      "says": "Covering script done."
     }
   ],
   "hook_calls": [
@@ -2352,6 +2287,77 @@
           "tool_use_id": "<tool-use-10>"
         }
       ]
+    }
+  ],
+  "shown": [
+    {
+      "kind": "user_text",
+      "text": "<environment_context>\n  <cwd><work></cwd>\n  <shell>bash</shell>\n  <current_date><time></current_date>\n  <timezone>Etc/UTC</timezone>\n  <filesystem><workspace_roots><root><work></root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+    },
+    {
+      "kind": "context",
+      "text": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace."
+    },
+    {
+      "kind": "context",
+      "text": "⬢ **If work has to go to another chat.** Use purlis's tools for it first: `dispatch` starts a task; `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, `dispatch_answer`, `dispatch_pass_on`, `dispatch_cancel` and `dispatch_close` look after one, and `dispatch_tell` with `all` tells every task still working at once; a task answers with `dispatch_note` (its `ack` acknowledges an instruction), `dispatch_ask` and `dispatch_report`. A task's question comes to you first: answer it, or pass it on with `dispatch_pass_on`. Security, cost, anything public and anything that amends a ruling are always passed on, and your own answer is never the person's word. They need no shell; the `purlis dispatch` command does the same, one call at a time. Work that writes, commits, needs its own branch folder or runs long is a purlis task, through `dispatch`; a harness's helper is for read-only work (searching, reading, reviewing), and from inside one `purlis worktree add`, `commit` and `push` are refused. Work this chat needs an answer from, for its own persona or another, is `purlis dispatch` (with `--in workspace:<name>` when it must run elsewhere). A handoff is fire-and-forget: the person's work moves to a chat they will read themselves. This says where such work goes, not that work should go: what this chat can do itself, it does, and it dispatches when the work needs another persona's charter, memory or vault.\n\n⬢ **A credential you lack is the person's to fill.** Never ask the person for a password, token or key in this conversation, and never have them paste one. Prefer simply running the command that needs it with `purlis secret exec`: the person is asked in purlis's window for whatever the run lacks, a key or an Allow for its program, in one notice, and the command goes on once they answer. To ask ahead, raise a Secret ask for any credential you lack, declared or not, with the `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, naming the program you will run with `--program` where you know it. You hear only filled, with the vault and key to use and whether the program was allowed, or declined.\n\n⬢ **This chat runs in purlis's sandbox.** When it blocks a command (a host it may not reach, or a folder it may not write), the person sees a Notice in the Inbox, and on this chat's pane when it is on screen, and chooses **Allow for this chat**, **Always allow** (for every chat of this project on their machine, or, for a host only, for everyone in the project) or **Keep blocked**. If they allow it, this chat restarts on the same conversation and is told to retry, so say what was blocked and wait for them. Where purlis grants nothing, the person alone may choose **Start without the sandbox** for this chat; never suggest it as something you can do. **This chat's level is the person's alone**: they set it in **Settings › Project › Sandbox › Your level**, and you cannot lower it, so never suggest you can, never write it in a file for them to confirm, and never ask them to lower it. If they say they lowered it and this chat is still sandboxed, do not guess why: ask them to read the reason on this chat's sandbox mark or on its Notice. It may say that a restart applies the level, that a persona's row or a policy holds it, that a level waits for their Confirm, or that a chat that asked for this one is stricter. A blocked local socket (Docker's, a database's, an SSH agent's) or system service (macOS's certificate check, which Go tools such as `gh` and `glab` use) may get a Notice the person can answer: say which one was blocked, by its path or name, and that the person decides. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not apply here: purlis's own settings outrank them, so never suggest them. A credential is never granted to a chat: run one of your persona's declared tools by its plain name, which purlis runs through `purlis secret exec` and hands the credential. Any other command with a vault is refused, and the refusal names the tool to declare; the person can run it in their own terminal. A website login is the `browser_login` tool: call it with the login's name, and purlis fills it in your browser on the declared site alone; running the login's name as a command does nothing. Git work happens in branch folders purlis cuts: `purlis worktree add <repo> <piece>` makes one (a raw `git worktree add` is refused), and you commit and push from it with `purlis worktree commit` and `purlis worktree push`."
+    },
+    {
+      "kind": "context",
+      "text": "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed here. When a request matches one, read its `SKILL.md` and follow it before acting; a prompt that names a skill by its name means this list. Under a folder named below, a skill's file is `<that folder>/<name>/SKILL.md`: read it by that whole path.\nUnder `<plugin>/skills`:\n- `purlis-browser` — When a purlis chat must log in to a website with a vault login, or needs several logged-in browsers, drive a real browser where purlis fills the password unseen. Use when asked to log in, sign in, or test behind auth. Not for an API's credential (purlis-secrets) or theming (purlis-theme).\n- `purlis-change` — When work in a purlis workspace spans several repos and should land as one cross-repo change, a branch and pull request per repo. Use when asked to start or track a cross-repo change, or land its pull requests in order (`purlis change`). Not for one repo's branch (purlis-repo-work).\n- `purlis-curation-action` — When a person wants a purlis persona to offer a chat in the Curate menu, with a prompt typed, write its curation action. Use when asked to add, change or remove a curation action or Curate menu entry. Not for writing a skill (purlis-skill-studio) or a persona (purlis-persona).\n- `purlis-handoff` — When the person wants work moved out of this purlis chat into a new chat they will read themselves, here or in another workspace. Use when asked to hand off or open a chat for something. Not for work this chat needs an answer from, its own persona's or another's (purlis-persona), or ending this chat (purlis-smart-close).\n- `purlis-permissions` — When a purlis chat is stopped by a permission — a harness asking, a sandbox block, a guard's refusal — say why and change it where purlis reads it. Use when asked to stop asking or allow a host. Not for a credential (purlis-secrets), a site login (purlis-browser) or committing (purlis-repo-work).\n- `purlis-persona` — When work needs a purlis persona, a role with its own charter, memory and vault — act as one, create one, or dispatch work to another. Use when asked to dispatch, ask another persona or report back. Not for a new chat (purlis-handoff), a credential (purlis-secrets) or removal (purlis-safe-remove).\n- `purlis-remember` — When something learned in a purlis chat should outlive it, record it or recall a decision. Use when asked to remember this, note that, add a todo, or what did we decide. Not for tidying memory (purlis-tidy-memory), a closing summary (purlis-smart-close) or a password (purlis-secrets).\n- `purlis-repo-work` — When a purlis chat works in a repo its workspace owns, build, test and commit by its conventions, in branch folders (`purlis worktree`). Use when asked to fix, build or commit in a repo. Not for another persona (purlis-persona), a credential (purlis-secrets) or a cross-repo change (purlis-change).\n- `purlis-report` — When purlis itself misbehaves — a command, tool or window fails, is wrong or slow, blocks its own work, or you work around it, or a purlis skill should have started — draft a report for the person. Not for their own project, the harness, permissions (purlis-permissions) or editing a skill (purlis-skill-studio).\n- `purlis-safe-remove` — When the person wants a purlis workspace or persona gone, keep what it learned, then run the guarded remove. Use when asked to remove, delete, retire or archive one. Not for pruning memory (purlis-tidy-memory), a branch folder (purlis-repo-work) or a new persona (purlis-persona).\n- `purlis-secrets` — When a task needs a purlis vault's credential — a password, token or key — use it without its value in the chat. Use when a command needs a secret, or to store one. Not for a site login (purlis-browser), a persona (purlis-persona), a repo (purlis-repo-work), a new chat (purlis-handoff) or memory (purlis-tidy-memory).\n- `purlis-skill-studio` — When purlis's Skill studio typed this chat's prompt — draft a skill, its trigger tests or evals, or improve it from its grades — follow its steps, each file a draft. Use when a prompt names this skill. Not for a Curate menu entry (purlis-curation-action) or a persona's skills (purlis-persona).\n- `purlis-smart-close` — When this purlis chat is ending, write its session record for the next chat to resume from, and fold what lasts into workspace.md. Use when asked to smart close, wrap up, call it a day or write a session record. Not for tidying memory (purlis-tidy-memory) or a new chat (purlis-handoff).\n- `purlis-theme` — When a person wants the purlis window to look a certain way, make, change, check or share a purlis theme from a brand colour, image, Figma frame or another theme. Use when asked about a theme or its colours. Not for a repo's styles (purlis-repo-work) or a site's pages (purlis-browser).\n- `purlis-tidy-memory` — When a purlis workspace's or persona's memory has duplicates and stale entries, prune them only with the person's yes. Use when asked to tidy, compact, dedupe or prune memory. Not for a session record (purlis-smart-close), removal (purlis-safe-remove) or a new fact (purlis-remember).\n- `purlis-upgrade` — When a person asks whether purlis is up to date or what a version brought, say how the app installs it and relay `purlis news`. Use when asked to update or upgrade purlis, or what is new. Not for a repo's dependencies (purlis-repo-work), memory (purlis-tidy-memory) or its look (purlis-theme).\n- `purlis-workspace` — When the person wants a purlis workspace made, chosen, shared or saved (`purlis save`). Use when asked to create, fork, rename or share a workspace. Not for removing one (purlis-safe-remove), its memory (purlis-tidy-memory), a new chat (purlis-handoff) or a branch (purlis-repo-work)."
+    },
+    {
+      "kind": "user_text",
+      "text": "COVERING-SCRIPT: make each call the stand-in asks for, in order."
+    },
+    {
+      "kind": "tool_result",
+      "text": "Command blocked by PreToolUse hook: purlis-recorder: refused with exit 2 for the recording. Command: echo exit-two",
+      "tool_use_id": "<tool-use-1>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-1>\n<time>\nProcess exited with code 0\nOriginal token count: 2\nOutput:\ncovered\n",
+      "tool_use_id": "<tool-use-2>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-2>\n<time>\nProcess exited with code 0\nOriginal token count: 50\nOutput:\npurlis's sandbox does not allow <refused-target>: it is this machine, a link-local address, a cloud metadata service, or, for a chat on a runner, an internal address the runner's policy does not list",
+      "tool_use_id": "<tool-use-3>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-3>\n<time>\nProcess exited with code 1\nOriginal token count: 30\nOutput:\n/bin/bash: line 1: <outside>/by-bash.txt: Permission denied\n",
+      "tool_use_id": "<tool-use-4>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Exit code: 1\n<time>\nOutput:\nFailed to write file <outside>/by-write.txt\n",
+      "tool_use_id": "<tool-use-5>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Exit code: 1\n<time>\nOutput:\nFailed to write file <outside>/existing.txt\n",
+      "tool_use_id": "<tool-use-6>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-4>\n<time>\nProcess exited with code 0\nOriginal token count: 1\nOutput:\none\n",
+      "tool_use_id": "<tool-use-7>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-5>\n<time>\nProcess exited with code 0\nOriginal token count: 1\nOutput:\ntwo\n",
+      "tool_use_id": "<tool-use-8>"
+    },
+    {
+      "kind": "tool_result",
+      "text": "Chunk ID: <tool-use-task-6>\n<time>\nProcess exited with code 2\nOriginal token count: 2\nOutput:\nfailing\n",
+      "tool_use_id": "<tool-use-9>"
+    },
+    {
+      "kind": "user_text",
+      "text": "COVERING-SCRIPT, second turn: make the call the stand-in asks for."
     }
   ]
 }

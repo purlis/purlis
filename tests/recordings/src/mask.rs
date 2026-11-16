@@ -32,6 +32,9 @@
 //!      of one harness seen begun in both orders in CI, with the reason, is put in the order
 //!      that entry lists.
 //!
+//!    - the reply of a hook call named in [`RACY_REPLIES`], one a harness cuts off or lets answer
+//!      as it exits, seen both ways in CI, with the reason: `<racy: cut off or answered>`.
+//!
 //!    Hooks that merely overlapped in time are never reordered: they keep the order they began
 //!    in. And a PreToolUse and PostToolUse of one tool use that overlap fail the recording
 //!    outright ([`crate::recording::overlapping`]).
@@ -142,6 +145,28 @@ pub const RACY_ORDERS: &[RacyOrder] = &[
         when: Some("User aborted the command"),
     },
 ];
+
+/// A hook call whose reply a harness cuts off or lets come back as it exits, seen both ways in CI.
+#[derive(Debug, Clone, Copy)]
+pub struct RacyReply {
+    pub harness: &'static str,
+    /// The hook word (`argv[1]`).
+    pub word: &'static str,
+    /// Why, and the CI runs it was seen both ways in.
+    pub reason: &'static str,
+}
+
+/// Every reply the mask may hide, by name. Nothing is added without CI's evidence.
+pub const RACY_REPLIES: &[RacyReply] = &[RacyReply {
+    harness: "claude",
+    word: "sessionend",
+    reason: "Claude Code 2.1.325 ends its SessionEnd hooks when it exits: ended with /exit, the \
+             call came back in one recording of run 43866922203 and was cut off in the other \
+             (`harness recording (claude)`)",
+}];
+
+/// What a racy reply is masked as.
+pub const RACY_REPLY: &str = "<racy: cut off or answered>";
 
 /// Variables holding the harness process's id, which purlis reads as its session's.
 pub const PID_KEYS: &[&str] = &["CLAUDE_PID", "OPENCODE_PID", "CODEX_PID"];
@@ -538,6 +563,14 @@ fn canonical_parallel_order(recording: &mut Value) {
     for racy in RACY_ORDERS.iter().filter(|r| r.harness == harness) {
         racy_order(calls, racy);
     }
+    for racy in RACY_REPLIES.iter().filter(|r| r.harness == harness) {
+        for call in calls
+            .iter_mut()
+            .filter(|c| c["argv"][1].as_str() == Some(racy.word))
+        {
+            call["reply"] = Value::String(RACY_REPLY.to_owned());
+        }
+    }
 }
 
 /// Each run of adjacent calls whose words are all `racy`'s, none twice, in `racy`'s order.
@@ -889,5 +922,19 @@ mod tests {
         // A turn that ended normally keeps its real "PostToolUse, then Stop".
         let normal = mask(&recording(vec![&failed, &stop]));
         assert_eq!(normal["hook_calls"][0]["argv"][1], "posttooluse-blocked");
+    }
+
+    #[test]
+    fn claude_codes_session_end_reply_cut_off_or_answered_is_one_recording() {
+        let end = |reply: Value| json!({"argv": ["hook", "sessionend"], "reply": reply});
+        let answered = json!({"harness": "claude",
+            "hook_calls": [end(json!({"exit": 0, "stdout": "", "stderr": ""}))]});
+        let cut_off = json!({"harness": "claude", "hook_calls": [end(Value::Null)]});
+        assert_eq!(mask(&answered), mask(&cut_off));
+        assert_eq!(mask(&answered)["hook_calls"][0]["reply"], RACY_REPLY);
+        // Only Claude Code's SessionEnd: another hook's reply, or another harness's, is its own.
+        let mut codex = cut_off.clone();
+        codex["harness"] = json!("codex");
+        assert_eq!(mask(&codex)["hook_calls"][0]["reply"], Value::Null);
     }
 }

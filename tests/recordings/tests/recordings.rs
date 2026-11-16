@@ -115,11 +115,11 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
             "{name} is the recorder's own"
         );
     }
-    assert_eq!(calls[0].reply.as_ref().expect("a reply").exit, 0);
+    assert_eq!(calls[0].answered().expect("a reply").exit, 0);
     assert!(calls[0].gap_ms.is_null());
     assert!(calls[1].gap_ms.is_u64());
     assert_eq!(calls[2].forced.as_deref(), Some("exit2"));
-    assert_eq!(calls[2].reply.as_ref().expect("a reply").exit, 2);
+    assert_eq!(calls[2].answered().expect("a reply").exit, 2);
 
     let made = |calls| Recording {
         harness: "claude".into(),
@@ -413,7 +413,7 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
                 .argv
                 .get(1)
                 .is_some_and(|w| w.starts_with("sessionstart"))
-                && c.reply.is_some()),
+                && c.answered().is_some()),
             "{harness}: no SessionStart answered"
         );
         // What purlis's SessionStart answered reaches the model, wherever the harness puts it.
@@ -422,7 +422,7 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
             .iter()
             .filter(|c| c.argv.get(1).is_some_and(|w| w.starts_with("sessionstart")))
             .filter_map(|c| {
-                c.reply.as_ref()?.stdout["hookSpecificOutput"]["additionalContext"]
+                c.answered()?.stdout["hookSpecificOutput"]["additionalContext"]
                     .as_str()
                     .and_then(|t| t.lines().next())
                     .map(str::to_owned)

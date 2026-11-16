@@ -27,7 +27,7 @@
       "esc": "A turn that ends normally fires Stop. Esc is pressed twice to interrupt (the first shows \"esc interrupt\"); Stop fires, then the command's PostToolUse with \"User aborted the command\", then Stop again.",
       "session_end": "No SessionEnd hook fires as the chat ends.",
       "title_request": "OpenCode asks the model for the chat's title in a request that offers no tools; it is no turn of the chat.",
-      "command_timeout": "Measured: a hook that outlives its entry's timeout (5 s) is cut off and the turn goes on. The held posttooluse-blocked call's next hook call began 5048 to 5058 ms after it, in runs 43834558626, 43836719317 and 43859227733.",
+      "command_timeout": "Measured: a hook that outlives its entry's timeout (5 s) is cut off and the turn goes on. The held posttooluse-blocked call's next hook call began 5048 to 5060 ms after it, in runs 43834558626 to 43866922203.",
       "session_start": "purlis's SessionStart context reaches the model appended to the user's first message, not as a message of its own."
     }
   }

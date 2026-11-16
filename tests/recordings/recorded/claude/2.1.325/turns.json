@@ -135,7 +135,20 @@
             "subagent_type": "general-purpose"
           },
           "response": 11,
-          "subagent": true
+          "subagent": true,
+          "calls": [
+            {
+              "step": "subagent-bash",
+              "tool": "Bash",
+              "input": {
+                "command": "echo from-subagent",
+                "description": "subagent-bash"
+              },
+              "run": "echo from-subagent",
+              "response": 1
+            }
+          ],
+          "says": "Covering script done."
         },
         {
           "step": "failing-bash",
@@ -147,7 +160,8 @@
           "run": "echo failing >&2; exit 2",
           "response": 12
         }
-      ]
+      ],
+      "says": "Covering script done."
     },
     {
       "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
