@@ -67,6 +67,7 @@ impl ProxiesKeys for KeepsWhatItTells {
                         recorded.lock().unwrap().push(told.clone());
                         tell_recorded(told);
                     }),
+                    arrived: Arc::new(|| {}),
                 },
             )
             .map_err(|why| why.to_string())?;
