@@ -380,7 +380,7 @@ const listed: LiveSetting = {
                                 </span>
                               )}
                               <span className="ui-setting-help ui-text-secondary">
-                                Asks before each use: {row.approval}
+                                {windowCopy.W144({ setting: row.approval })}
                               </span>
                               {row.state === "missing" && (
                                 <span className="ui-setting-help">{windowCopy.W55}</span>
@@ -477,7 +477,7 @@ const listed: LiveSetting = {
                                       row.id,
                                       "check",
                                       () => commands.yourKeyCheckAgain(row.id),
-                                      (error) => error,
+                                      (error) => windowCopy.W143({ error }),
                                     )
                                   }
                                 />
@@ -524,10 +524,10 @@ const listed: LiveSetting = {
           {now.asking?.kind === "remove" && (
             <AlertDialog
               onClose={() => set((was) => ({ ...was, asking: undefined }))}
-              title={`Remove the key for ${now.asking.row.product}?`}
+              title={windowCopy.W142({ product: now.asking.row.product })}
               description={
                 <p className="came-back ui-text-secondary">
-                  {windowCopy.W5({ count: now.asking.count })} There is no undo.
+                  {`${windowCopy.W5({ count: now.asking.count })} ${windowCopy.W141}`}
                 </p>
               }
               main={{
@@ -542,12 +542,7 @@ const listed: LiveSetting = {
           {now.asking?.kind === "stop" && (
             <AlertDialog
               onClose={() => set((was) => ({ ...was, asking: undefined }))}
-              title={`${windowCopy.W125}?`}
-              description={
-                <p className="came-back ui-text-secondary">
-                  {windowCopy.W123({ count: now.asking.count, pool: now.asking.pool })}
-                </p>
-              }
+              title={windowCopy.W123({ count: now.asking.count, pool: now.asking.pool })}
               main={{
                 children: windowCopy.W125,
                 variant: "danger",

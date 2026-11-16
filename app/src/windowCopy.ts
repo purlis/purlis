@@ -369,6 +369,14 @@ export const windowCopy = {
     keys: ({ lead, system, harness }: { lead: string; system: string; harness: string }) =>
       `${lead}, and on ${system} purlis can't keep ${harness} chats away from the system keyring, where your model keys are, so nothing was started. Remove your model keys in Your keys to start it sandboxed.`,
   },
+  /** W141: Row, Your keys (Remove's confirmation). */
+  W141: "There is no undo.",
+  /** W142: Ask, Your keys (Remove's confirmation, its title). */
+  W142: ({ product }: { product: string }) => `Remove the key for ${product}?`,
+  /** W143: Row, Your keys, under the key's row. */
+  W143: ({ error }: { error: string }) => `purlis couldn't check this key: ${error}.`,
+  /** W144: Row, Your keys. */
+  W144: ({ setting }: { setting: string }) => `Asks before each use: ${setting}`,
 } as const;
 
 /** The systems the window runs on, as `std::env::consts::OS` names them. */

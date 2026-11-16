@@ -100,7 +100,7 @@ export const YourKeysPage: Story = {
     const table = await theTable(canvas);
     await expect(within(table).getAllByRole("rowheader")).toHaveLength(1);
     await expect(within(table).getByText("Sent to https://api.anthropic.com")).toBeVisible();
-    await expect(within(table).getByText("Asks before each use: off")).toBeVisible();
+    await expect(within(table).getByText(windowCopy.W144({ setting: "off" }))).toBeVisible();
     const replace = canvas.getByRole("button", { name: "Replace the key… for Anthropic" });
     replace.focus();
     await untilFocused(() => replace, "Replace the key…");
@@ -155,7 +155,9 @@ export const YourKeysStopSendingConfirms: Story = {
         "Stop sending",
         userEvent,
       );
-      const asked = await screen.findByRole("alertdialog");
+      const asked = await screen.findByRole("alertdialog", {
+        name: windowCopy.W123({ count, pool: "gpu" }),
+      });
       await untilSettled(asked);
       await expect(within(asked).getByText(windowCopy.W123({ count, pool: "gpu" }))).toBeVisible();
       if (count > 0) {
@@ -442,7 +444,7 @@ export const YourKeysRemoveConfirms: Story = {
       const asked = await screen.findByRole("alertdialog");
       await untilSettled(asked);
       await expect(
-        within(asked).getByText(`${windowCopy.W5({ count })} There is no undo.`),
+        within(asked).getByText(`${windowCopy.W5({ count })} ${windowCopy.W141}`),
       ).toBeVisible();
       await expect(within(asked).queryByRole("button", { name: /undo/i })).toBeNull();
       if (count > 0) {
