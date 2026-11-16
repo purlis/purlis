@@ -162,8 +162,8 @@ fn a_mapped_origin_is_decided_by_name_and_carried_to_the_local_origin() {
     assert_eq!(seen[0].sni.as_deref(), Some("api.example.test"));
     assert_eq!(seen[0].path, "/secure");
 
-    // A tunnel by SOCKS, to the same origin.
-    let (code, _stream) = socks(proxy.socks_port(), "api.example.test", 80);
+    // A tunnel by SOCKS (carried on the tunnel port, 443), to the HTTPS origin.
+    let (code, _stream) = socks(proxy.socks_port(), "api.example.test", 443);
     assert_eq!(code, 0, "SOCKS succeeded");
 
     assert_eq!(
@@ -171,12 +171,12 @@ fn a_mapped_origin_is_decided_by_name_and_carried_to_the_local_origin() {
         vec![
             ("api.example.test".to_owned(), 80),
             ("api.example.test".to_owned(), 443),
-            ("api.example.test".to_owned(), 80),
+            ("api.example.test".to_owned(), 443),
         ]
     );
     assert_eq!(
         names.dials(),
-        vec![plain.addr(), tls.addr(), plain.addr()],
+        vec![plain.addr(), tls.addr(), tls.addr()],
         "each carried connection dialled its origin, and nothing else"
     );
 }
@@ -203,7 +203,7 @@ fn a_refused_name_is_never_looked_up_dialled_or_reached() {
         &TestCa::new().expect("a CA"),
     );
     assert!(purlis_refused(&head), "{head}");
-    let (code, _) = socks(proxy.socks_port(), "blocked.test", 80);
+    let (code, _) = socks(proxy.socks_port(), "blocked.test", 443);
     assert_ne!(code, 0, "SOCKS refused it");
 
     assert_eq!(names.lookups(), Vec::<Lookup>::new(), "no lookup");
