@@ -846,3 +846,126 @@ fn a_known_hosts_path_ssh_cannot_be_handed_as_one_file_is_refused() {
         );
     }
 }
+
+/// **A machine on this one's loopback that answers each connection with `greeting`** and closes:
+/// its port.
+fn answering_with(greeting: &'static [u8]) -> u16 {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let _ = stream.write_all(greeting);
+        }
+    });
+    port
+}
+
+fn resolved_at(port: u16, proxied: bool) -> connect::Resolved {
+    connect::Resolved {
+        hostname: "127.0.0.1".into(),
+        port,
+        user: "me".into(),
+        proxied,
+        known_hosts: Vec::new(),
+    }
+}
+
+#[test]
+fn a_server_whose_first_line_starts_ssh_greets_as_ssh_even_after_other_lines() {
+    let port = answering_with(b"Welcome to box\r\nSSH-2.0-OpenSSH_9.6\r\n");
+    assert!(connect::greets_as_ssh(&resolved_at(port, false)));
+}
+
+#[test]
+fn a_port_that_closes_or_answers_otherwise_doesnt_greet_as_ssh() {
+    for greeting in [&b""[..], b"HTTP/1.1 400 Bad Request\r\n\r\n"] {
+        let port = answering_with(greeting);
+        assert!(
+            !connect::greets_as_ssh(&resolved_at(port, false)),
+            "{}",
+            String::from_utf8_lossy(greeting)
+        );
+    }
+}
+
+#[test]
+fn a_first_contact_that_saved_no_key_is_not_met_only_where_ssh_answered() {
+    let route = Route::parse("ssh://me@127.0.0.1").unwrap();
+    let ssh_port = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(ssh_port, false), String::new()),
+        connect::Finding::NotMet { .. }
+    ));
+    let closing = answering_with(b"");
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(closing, false), String::new()),
+        connect::Finding::NotSsh { proxied: false, port, .. } if port == closing
+    ));
+    // Past a jump host this machine can't ask, whatever answers at the address it names.
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(ssh_port, true), String::new()),
+        connect::Finding::NotSsh { proxied: true, .. }
+    ));
+}
+
+/// **A real first contact, by this machine's ssh**, against a port that closes as it is reached
+/// and one that greets as SSH and then closes: neither leaves a key, and only the second was SSH.
+#[test]
+fn a_first_contact_where_nothing_answers_as_ssh_is_not_ssh_and_one_ssh_answered_is_not_met() {
+    let Ok(ssh) = ssh_here() else { return };
+    let settings = tempfile::tempdir().unwrap();
+    let closing = answering_with(b"");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{closing}")).unwrap();
+    let found = connect::meet(&ssh, &route, settings.path()).unwrap_err();
+    assert!(
+        matches!(found, connect::Finding::NotSsh { proxied: false, .. }),
+        "{found:?}"
+    );
+    let greeting = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{greeting}")).unwrap();
+    let found = connect::meet(&ssh, &route, settings.path()).unwrap_err();
+    assert!(
+        matches!(found, connect::Finding::NotMet { .. }),
+        "{found:?}"
+    );
+}
+
+/// **A jump host that is down** (#6823 review): ssh reaches nothing as SSH through it, and the
+/// address it names past the jump is never asked, so it is not SSH, through the jump host.
+#[test]
+fn a_first_contact_through_a_jump_host_that_is_down_is_not_ssh_through_it() {
+    let Ok(ssh) = ssh_here() else { return };
+    let scratch = tempfile::tempdir().unwrap();
+    let known = scratch.path().join("known_hosts");
+    std::fs::write(&known, "").unwrap();
+    // The machine past the jump greets as SSH: only the jump is down.
+    let past = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{past}")).unwrap();
+    let mut args = contact_args(&route, &known).unwrap();
+    let at = args.iter().position(|arg| arg == "--").unwrap();
+    args.splice(
+        at..at,
+        [
+            "-F".to_owned(),
+            "/dev/null".to_owned(),
+            "-J".to_owned(),
+            "me@127.0.0.1:1".to_owned(),
+        ],
+    );
+    let ran = run(&ssh, &args).unwrap();
+    assert_eq!(key_met(&std::fs::read_to_string(&known).unwrap()), None);
+    let printed = crate::forklock::output(
+        std::process::Command::new(&ssh)
+            .args(["-G", "-F", "/dev/null", "-J", "me@127.0.0.1:1", "-p"])
+            .arg(past.to_string())
+            .arg("me@127.0.0.1"),
+    )
+    .unwrap();
+    let resolved = connect::resolved_from(&String::from_utf8_lossy(&printed.stdout)).unwrap();
+    assert!(resolved.proxied);
+    assert!(matches!(
+        connect::unmet(&route, &resolved, ran.said),
+        connect::Finding::NotSsh { proxied: true, .. }
+    ));
+}

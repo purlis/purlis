@@ -338,8 +338,12 @@ describe("ConnectStep", () => {
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
   });
 
-  it("marks the machine as answering, and its key as the line that failed, when ssh recorded no key", () => {
+  it("marks the machine as answering, and its key as the line that failed, when SSH answered and no key was saved", () => {
     expect(verdictsOf("not-met", false).slice(0, 3)).toEqual(["ok", "ok", "missing"]);
+  });
+
+  it("marks the answer as the line that failed when nothing answered as SSH (#6823 review)", () => {
+    expect(verdictsOf("not-ssh", false).slice(0, 3)).toEqual(["ok", "missing", "todo"]);
   });
 
   it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {

@@ -7,7 +7,8 @@
 //!
 //! Each check is read from what can be told without reading ssh's words: the person's own SSH
 //! settings as `ssh -G` prints them, the system's resolver, a TCP connection, the key ssh wrote
-//! as it met the machine, and ssh's and the probe's exits ([`super::PROBE`]). Each failure is a
+//! as it met the machine, the greeting an SSH server sends first ([`greets_as_ssh`]), and ssh's
+//! and the probe's exits ([`super::PROBE`]). Each failure is a
 //! [`Finding`], whose words are Pool setup's ([`crate::poolsetup`]).
 
 use std::net::ToSocketAddrs as _;
@@ -24,8 +25,16 @@ pub enum Finding {
     NoSuchName { host: String },
     /// Nothing answers on the port.
     NoAnswer { host: String, port: u16 },
-    /// ssh met no key (it couldn't be run, or the machine said nothing ssh could read): what it
-    /// said, to be shown.
+    /// Nothing answered as SSH (#6823 review): its port took the connection and no SSH server
+    /// greeted ssh there, or, where a jump host or command reaches it (`proxied`), ssh got no SSH
+    /// server through it. What ssh said, to be shown.
+    NotSsh {
+        host: String,
+        port: u16,
+        proxied: bool,
+        said: String,
+    },
+    /// An SSH server greeted ssh there, and ssh saved no key from it: what it said, to be shown.
     NotMet { host: String, said: String },
     /// The machine presents a key other than the one pinned or confirmed.
     KeyChanged {
@@ -278,9 +287,74 @@ pub fn meet(ssh: &Path, route: &Route, settings_in: &Path) -> Result<HostKey, Fi
     let args = super::contact_args(route, &scratch).map_err(Finding::Here)?;
     let ran = super::run(ssh, &args).map_err(Finding::Here)?;
     let written = std::fs::read_to_string(&scratch).unwrap_or_default();
-    super::key_met(&written).ok_or_else(|| Finding::NotMet {
-        host: route.host().to_owned(),
-        said: ran.said,
+    if let Some(key) = super::key_met(&written) {
+        return Ok(key);
+    }
+    // ssh's exit is the same either way, and its words are never read to decide: whether an SSH
+    // server was there is asked of the machine itself.
+    Err(match resolve(ssh, route) {
+        Ok(resolved) => unmet(route, &resolved, ran.said),
+        Err(_) => Finding::NotSsh {
+            host: route.host().to_owned(),
+            port: route.port().unwrap_or(22),
+            proxied: false,
+            said: ran.said,
+        },
+    })
+}
+
+/// **What a first contact that saved no key found**: [`Finding::NotMet`] only where an SSH
+/// server greets this machine on the route's port, so the key was there to save; otherwise
+/// [`Finding::NotSsh`], always where a jump host or command reaches it, since this machine
+/// can't ask past them.
+#[must_use]
+pub fn unmet(route: &Route, resolved: &Resolved, said: String) -> Finding {
+    let host = route.host().to_owned();
+    if !resolved.proxied && greets_as_ssh(resolved) {
+        Finding::NotMet { host, said }
+    } else {
+        Finding::NotSsh {
+            host,
+            port: resolved.port,
+            proxied: resolved.proxied,
+            said,
+        }
+    }
+}
+
+/// The most of an answer read for an SSH server's greeting: RFC 4253 §4.2 lets a server send
+/// lines before it, and holds each line to 255 bytes.
+const GREETING_WITHIN_BYTES: u64 = 8 * 1024;
+
+/// **Whether an SSH server greets this machine on the resolved port** (RFC 4253 §4.2: its first
+/// line beginning `SSH-` is its identification), read with nothing sent and nothing signed in.
+/// False where a jump host or command reaches the machine, or nothing answers in time.
+#[must_use]
+pub fn greets_as_ssh(resolved: &Resolved) -> bool {
+    use std::io::{BufRead as _, Read as _};
+    if resolved.proxied {
+        return false;
+    }
+    let Ok(addresses) = (resolved.hostname.as_str(), resolved.port).to_socket_addrs() else {
+        return false;
+    };
+    addresses.into_iter().any(|at| {
+        let Ok(stream) = std::net::TcpStream::connect_timeout(&at, ANSWER_WITHIN) else {
+            return false;
+        };
+        if stream.set_read_timeout(Some(ANSWER_WITHIN)).is_err() {
+            return false;
+        }
+        let mut lines = std::io::BufReader::new(stream.take(GREETING_WITHIN_BYTES));
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match lines.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => return false,
+                Ok(_) if line.starts_with(b"SSH-") => return true,
+                Ok(_) => {}
+            }
+        }
     })
 }
 
