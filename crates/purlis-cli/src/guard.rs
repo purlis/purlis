@@ -215,7 +215,7 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 /// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
 /// is refused with a block's reason, which the event log records.
 fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
-    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS, UNKNOWN_LINE};
+    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
     use purlis_core::mergehold::{self, AppSaid, Held};
     crate::session::chat_number()?;
     let held = mergehold::held(command)?;
@@ -236,8 +236,6 @@ fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
     };
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
-        // An app of another build could not read the hand-over: no refusal of its own (#6960).
-        Some(Answer::No { why }) if why == UNKNOWN_LINE => AppSaid::OtherBuild,
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
     };

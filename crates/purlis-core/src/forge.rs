@@ -854,9 +854,7 @@ pub(super) fn cli_env_keeping(
         // Nothing here has a terminal to answer a prompt on, and a prompt nobody can see is
         // an endless wait.
         ("GH_PROMPT_DISABLED".to_string(), "1".to_string()),
-        // glab's own name for it: it answers the older `NO_PROMPT` with a warning of its own,
-        // which an answer purlis reads as JSON need not carry (#6960).
-        ("GLAB_NO_PROMPT".to_string(), "1".to_string()),
+        ("NO_PROMPT".to_string(), "1".to_string()),
         ("GH_NO_UPDATE_NOTIFIER".to_string(), "1".to_string()),
         ("GLAB_CHECK_UPDATE".to_string(), "false".to_string()),
     ];
