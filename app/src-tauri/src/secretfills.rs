@@ -1023,13 +1023,15 @@ fn read_now(asker: &brokered::Asker, asked: &FillAsked) -> Result<Option<Secret>
         brokered::fill_value(asker, &asked.vault, &asked.key)
     };
     if let Ok(Some(secret)) = &read {
-        purlis_core::secrets::handedto::remember(
-            &asker.root,
-            asker.chat,
-            &asked.vault,
-            &asked.key,
-            secret.expose(),
+        // A code is made for now from its seed: a launch after a crash cannot know it.
+        let entry = purlis_core::secrets::handedto::Entry::new(&asked.vault, &asked.key).in_form(
+            if asked.code {
+                purlis_core::secrets::handedto::Form::Unrepeatable
+            } else {
+                purlis_core::secrets::handedto::Form::AsRead
+            },
         );
+        purlis_core::secrets::handedto::remember(&asker.root, asker.chat, &entry, secret.expose());
     }
     read
 }

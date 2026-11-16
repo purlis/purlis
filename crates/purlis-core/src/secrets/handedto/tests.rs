@@ -145,7 +145,7 @@ fn a_project() -> (tempfile::TempDir, PathBuf) {
 fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
     let (_dir, root) = a_project();
     let (_other_dir, another) = a_project();
-    remember(&root, 41, "team", "github-token", "FAKE-HANDED-VALUE-0007");
+    remember(&root, 41, &Entry::new("team", "github-token"), "FAKE-HANDED-VALUE-0007");
 
     assert_eq!(
         masked_for(&root, 41, "x FAKE-HANDED-VALUE-0007", &nothing).unwrap(),
@@ -164,7 +164,7 @@ fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
 #[test]
 fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
     let (_dir, root) = a_project();
-    remember(&root, 43, "team", "k", "FAKE-HANDED-VALUE-0008");
+    remember(&root, 43, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0008");
     assert!(file(&root, 43).exists(), "named as it was handed");
 
     forget(&root, 43);
@@ -179,8 +179,8 @@ fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
 #[test]
 fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value() {
     let (_dir, root) = a_project();
-    remember(&root, 44, "team", "db-password", "FAKE-HANDED-VALUE-0009");
-    remember(&root, 44, "team", "db-password", "FAKE-HANDED-VALUE-0009");
+    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009");
+    remember(&root, 44, &Entry::new("team", "db-password"), "FAKE-HANDED-VALUE-0009");
 
     let written = std::fs::read_to_string(file(&root, 44)).expect("named");
 
@@ -224,7 +224,7 @@ fn after_a_crash_an_entry_that_cannot_be_read_again_leaves_the_screen_unmaskable
 #[test]
 fn an_entry_this_process_knows_is_not_read_again() {
     let (_dir, root) = a_project();
-    remember(&root, 47, "team", "k", "FAKE-HANDED-VALUE-0011");
+    remember(&root, 47, &Entry::new("team", "k"), "FAKE-HANDED-VALUE-0011");
 
     assert_eq!(
         masked_for(&root, 47, "FAKE-HANDED-VALUE-0011", &|_| panic!(
@@ -252,4 +252,70 @@ fn names_left_30_days_are_swept_at_the_project_s_open_and_younger_ones_kept() {
         now + crate::retention::KEEP_FOR + std::time::Duration::from_secs(60),
     );
     assert!(!file(&root, 48).exists());
+}
+
+/// What a crashed window's process named on disk for chat `chat`: `lines`, as it wrote them.
+fn named_lines_by_a_crashed_window(root: &Path, chat: u32, lines: &str) {
+    std::fs::create_dir_all(dir(root)).expect("made");
+    std::fs::write(file(root, chat), lines).expect("written");
+}
+
+#[test]
+fn after_a_crash_a_value_handed_escaped_in_a_dotenv_file_is_masked_as_it_was_escaped() {
+    let (_dir, root) = a_project();
+    named_lines_by_a_crashed_window(
+        &root,
+        49,
+        "{\"vault\":\"team\",\"key\":\"cert\"}\n\
+         {\"vault\":\"team\",\"key\":\"cert\",\"form\":\"dotenv-escaped\"}\n",
+    );
+    let read = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-CERT-0016\nFAKE-CERT-0017".into()));
+
+    assert_eq!(
+        masked_for(&root, 49, "CERT=FAKE-CERT-0016\\nFAKE-CERT-0017\r\n", &read).as_deref(),
+        Some("CERT=‹secret: cert›\r\n")
+    );
+}
+
+#[test]
+fn after_a_crash_a_value_pointed_at_a_tunnel_is_masked_as_it_was_pointed() {
+    let (_dir, root) = a_project();
+    let form = Form::Tunnelled {
+        port: 54321,
+        pgsslmode: None,
+        reads_hostaddr: true,
+        escaped: false,
+    };
+    named_lines_by_a_crashed_window(
+        &root,
+        50,
+        &format!(
+            "{}\n",
+            serde_json::to_string(&Entry::new("team", "dsn").in_form(form)).unwrap()
+        ),
+    );
+    let read = |_: &Entry| {
+        Some(zeroize::Zeroizing::new(
+            "postgres://fake-user:FAKE-PASS-0018@db.example.test:5432/orders".into(),
+        ))
+    };
+    let shown = "connecting to postgres://fake-user:FAKE-PASS-0018@127.0.0.1:54321/orders\r\n";
+
+    assert_eq!(
+        masked_for(&root, 50, shown, &read).as_deref(),
+        Some("connecting to ‹secret: dsn›\r\n")
+    );
+}
+
+#[test]
+fn after_a_crash_a_value_made_once_leaves_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    named_lines_by_a_crashed_window(
+        &root,
+        51,
+        "{\"vault\":\"team\",\"key\":\"totp\",\"form\":\"unrepeatable\"}\n",
+    );
+    let read = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-SEED-0019".into()));
+
+    assert_eq!(masked_for(&root, 51, "code 123456", &read), None);
 }

@@ -612,3 +612,34 @@ fn a_git_link_runs_the_git_command_its_name_says() {
     assert_eq!(code, 0);
     assert!(rec.out().starts_with("git version "), "{}", rec.out());
 }
+
+/// #6309: a value a dotenv file holds escaped is handed under the entry it was read from, in
+/// the form a launch after a crash makes again, and so is the value as read.
+#[test]
+fn a_value_escaped_in_a_dotenv_file_is_handed_under_its_entry_as_escaped() {
+    let req = Request {
+        dotenv: vec!["F=CERT:cert".into()],
+        ..Request::default()
+    };
+    let prepared = prepare_from(
+        &|_| Ok(Zeroizing::new("FAKE-LINE-0022\nFAKE-LINE-0023".to_owned())),
+        &req,
+        Vec::new(),
+        None,
+        &|| None,
+    )
+    .unwrap_or_else(|_| panic!("prepared"));
+
+    let handed: Vec<(&str, &Form, &str)> = prepared
+        .values
+        .iter()
+        .map(|one| (one.key.as_str(), &one.form, one.value.as_str()))
+        .collect();
+    assert_eq!(
+        handed,
+        [
+            ("cert", &Form::AsRead, "FAKE-LINE-0022\nFAKE-LINE-0023"),
+            ("cert", &Form::DotenvEscaped, "FAKE-LINE-0022\\nFAKE-LINE-0023"),
+        ]
+    );
+}

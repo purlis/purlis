@@ -760,8 +760,15 @@ pub fn run_on_its_runner(
     let read = |persona: &str, tool: &Tool| {
         let values = read_or_mint(persona, tool);
         // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
+        // A token minted with the entry is made once: a launch after a crash cannot know it.
+        let form = match tool.mint {
+            Some(_) => purlis_core::secrets::handedto::Form::Unrepeatable,
+            None => purlis_core::secrets::handedto::Form::AsRead,
+        };
         for (key, value) in values.iter().flatten() {
-            purlis_core::secrets::handedto::remember(root, session, &tool.vault, key, value);
+            let entry =
+                purlis_core::secrets::handedto::Entry::new(&tool.vault, key).in_form(form.clone());
+            purlis_core::secrets::handedto::remember(root, session, &entry, value);
         }
         values
     };

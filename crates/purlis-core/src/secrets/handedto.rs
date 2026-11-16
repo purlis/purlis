@@ -16,10 +16,12 @@
 //!   (`brokered::Asker`), remembered as each value is handed ([`remember`]) and forgotten when
 //!   the chat closes for good ([`forget`]).
 //! - **And named on disk, never a value**: each chat's entries, by vault and key, in
-//!   `<state>/app/chat-handed/<chat>.names` ([`dir`]), so a launch after a crash, which kept
-//!   nothing in memory of what the chat was handed before, reads those entries again to mask its
-//!   screen ([`masked_for`]). Clone state, denied to every sandboxed chat, gone as the chat
-//!   closes for good, and swept at the project's open once 30 days old ([`on_open`]).
+//!   `<state>/app/chat-handed/<chat>.names` ([`dir`]), each with the form its value was handed
+//!   in ([`Form`]: escaped for a dotenv file, pointed at a tunnel's port), so a launch after a
+//!   crash, which kept nothing in memory of what the chat was handed before, reads those entries
+//!   again and makes each form again to mask its screen ([`masked_for`]). Clone state, denied
+//!   to every sandboxed chat, gone as the chat closes for good, and swept at the project's open
+//!   once 30 days old ([`on_open`]).
 //! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
 //!   value a colour change or a soft wrap runs through is still one run of characters there.
 //!   A hard line break is not: a value the program printed in two pieces is two words. A value
@@ -33,7 +35,7 @@
 //!   ([`masked_for`] answers `None`), so it is not kept. That is where no key could be made for
 //!   the process, and where an entry named on disk cannot be read again without asking the
 //!   person ([`read_again`]): a vault whose provider asks macOS, an entry gone or changed, and a
-//!   GitHub App token, which is minted and never read.
+//!   value made once ([`Form::Unrepeatable`]): a one-time code, a GitHub App token.
 //! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
 //!   where no app answered, and anything the chat found on its own.
 
@@ -112,19 +114,91 @@ struct Handed {
     blind: bool,
 }
 
-/// A vault's entry, by its vault and its key: what [`dir`] names, never a value.
+/// A vault's entry, by its vault and its key, and the form its value was handed in: what [`dir`]
+/// names, never a value.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Entry {
     pub vault: String,
     pub key: String,
+    #[serde(default, skip_serializing_if = "Form::is_as_read")]
+    pub form: Form,
 }
 
 impl Entry {
+    /// The entry `key` of vault `vault`, its value handed as it was read.
     pub fn new(vault: &str, key: &str) -> Self {
         Self {
             vault: vault.to_owned(),
             key: key.to_owned(),
+            form: Form::AsRead,
         }
+    }
+
+    /// This entry, its value handed in `form`.
+    #[must_use]
+    pub fn in_form(self, form: Form) -> Self {
+        Self { form, ..self }
+    }
+}
+
+/// **The form an entry's value was handed in**, as a launch after a crash makes it again from
+/// the value read ([`Form::of`]): nothing in it is secret.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Form {
+    /// As it was read.
+    #[default]
+    AsRead,
+    /// As a dotenv file holds it ([`super::dotenv::escaped`]).
+    DotenvEscaped,
+    /// Pointed at a tunnel on the loopback's port `port` (#1667) for a client with `pgsslmode`
+    /// and `reads_hostaddr` ([`crate::sandbox::tunnel::Client`]), dotenv-escaped too where
+    /// `escaped`.
+    Tunnelled {
+        port: u16,
+        pgsslmode: Option<String>,
+        reads_hostaddr: bool,
+        escaped: bool,
+    },
+    /// Made once and never again: a one-time code, a token minted with the entry. A launch after
+    /// a crash cannot know it.
+    Unrepeatable,
+}
+
+impl Form {
+    fn is_as_read(&self) -> bool {
+        *self == Self::AsRead
+    }
+
+    /// **`value` in this form**: `None` where it cannot be made again.
+    pub fn of(&self, value: &str) -> Option<zeroize::Zeroizing<String>> {
+        let made = match self {
+            Self::AsRead => value.to_owned(),
+            Self::DotenvEscaped => super::dotenv::escaped(value),
+            Self::Tunnelled {
+                port,
+                pgsslmode,
+                reads_hostaddr,
+                escaped,
+            } => {
+                let client = crate::sandbox::tunnel::Client {
+                    pgsslmode: pgsslmode.clone(),
+                    reads_hostaddr: *reads_hostaddr,
+                };
+                let pointed = zeroize::Zeroizing::new(
+                    crate::sandbox::tunnel::pointed_for(value, &client)?.at(*port),
+                );
+                if *escaped {
+                    super::dotenv::escaped(&pointed)
+                } else {
+                    pointed.to_string()
+                }
+            }
+            Self::Unrepeatable => return None,
+        };
+        Some(zeroize::Zeroizing::new(made))
     }
 }
 
@@ -148,10 +222,15 @@ fn file(root: &Path, chat: u32) -> PathBuf {
     dir(root).join(format!("{chat}{SUFFIX}"))
 }
 
-/// **Remembers that chat `chat` of the project at `root` was handed `value`, the entry `key` of
-/// vault `vault`**: from now on its kept screen masks it ([`masked_for`]).
-pub fn remember(root: &Path, chat: u32, vault: &str, key: &str, value: &str) {
-    remember_known(root, chat, &[Entry::new(vault, key)], Known::of(key, value));
+/// **Remembers that chat `chat` of the project at `root` was handed `value`, `entry`'s value in
+/// its form**: from now on its kept screen masks it ([`masked_for`]).
+pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) {
+    remember_known(
+        root,
+        chat,
+        std::slice::from_ref(entry),
+        Known::of(&entry.key, value),
+    );
 }
 
 /// **Remembers that chat `chat` of the project at `root` was handed `entries`, known as
@@ -218,6 +297,15 @@ pub fn forget(root: &Path, chat: u32) {
     }
 }
 
+/// What this process holds of chat `chat` of the project at `root` let go of, its names left on
+/// disk: as a crash leaves them.
+#[cfg(test)]
+pub(crate) fn as_a_crash_leaves_it(root: &Path, chat: u32) {
+    if let Some(handed) = handed().as_mut() {
+        handed.remove(&(root.to_path_buf(), chat));
+    }
+}
+
 /// The entries named on disk for chat `chat`, read through no link: a line that does not read
 /// is skipped.
 fn named(root: &Path, chat: u32) -> Vec<Entry> {
@@ -254,7 +342,8 @@ pub fn on_open(root: &Path, now: std::time::SystemTime) {
     }
 }
 
-/// What reads an entry's value again: its vault and key, to the value, or `None`.
+/// What reads an entry's value again, by its vault and key, as it was read: the value, or
+/// `None`.
 pub type ReadAgain<'a> = &'a dyn Fn(&Entry) -> Option<zeroize::Zeroizing<String>>;
 
 /// **Reads an entry of the project at `root` again, where that asks nobody**: through its vault's
@@ -292,7 +381,8 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> 
             continue;
         }
         let value = read(&entry)?;
-        known.extend(Known::of(&entry.key, &value)?);
+        let handed = entry.form.of(&value)?;
+        known.extend(Known::of(&entry.key, &handed)?);
     }
     masked(screen, &known)
 }

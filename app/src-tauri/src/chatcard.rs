@@ -651,8 +651,7 @@ mod tests {
         purlis_core::secrets::handedto::remember(
             &root,
             7,
-            "team",
-            "github-token",
+            &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
             "FAKE-VAULT-VALUE-6309",
         );
 

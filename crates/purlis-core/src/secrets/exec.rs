@@ -179,6 +179,8 @@ fn temp_file(
     Ok(path)
 }
 
+use super::handedto::Form;
+
 /// What the child is handed, resolved: its environment, every value to redact, the names
 /// recorded, and the temp files made, removed when this is dropped.
 pub(crate) struct Prepared {
@@ -217,6 +219,8 @@ impl Drop for Prepared {
 /// **One value a run was handed, and the vault entry it came from** (#6309).
 pub(crate) struct HandedValue {
     pub key: String,
+    /// How the value was made from what `key` read: what a launch after a crash makes again.
+    pub form: super::handedto::Form,
     pub value: String,
 }
 
@@ -226,25 +230,30 @@ impl Prepared {
         Zeroizing::new(self.values.iter().map(|one| one.value.clone()).collect())
     }
 
-    /// `value`, the entry `key` read, handed as it is.
-    fn handed(&mut self, key: &str, value: &str) {
+    /// `value`, made in `form` from what the entry `key` read, handed.
+    fn handed(&mut self, key: &str, form: super::handedto::Form, value: &str) {
         self.values.push(HandedValue {
             key: key.to_owned(),
+            form,
             value: value.to_owned(),
         });
     }
 
-    /// **`now` handed in place of `was`** (#1667's tunnels): redacted as `was` is, and masked
-    /// under the vault entry `was` came from (#6309). A `was` that is no value handed is no
-    /// secret, and neither is what it became.
-    pub(crate) fn handed_instead(&mut self, was: &str, now: String) {
+    /// **`now` handed in place of `was`, made from it in `form`** (#1667's tunnels): redacted as
+    /// `was` is, and masked under the vault entry `was` was read from (#6309). A `was` that is no
+    /// value handed is no secret, and neither is what it became.
+    pub(crate) fn handed_instead(&mut self, was: &str, form: super::handedto::Form, now: String) {
         if let Some(key) = self
             .values
             .iter()
-            .find(|one| one.value == was)
+            .find(|one| one.value == was && one.form == super::handedto::Form::AsRead)
             .map(|one| one.key.clone())
         {
-            self.values.push(HandedValue { key, value: now });
+            self.values.push(HandedValue {
+                key,
+                form,
+                value: now,
+            });
         }
     }
 }
@@ -333,7 +342,7 @@ pub(crate) fn prepare_from(
         };
         let val = resolve(key)?;
         set_var(&mut out.env, name, val.as_str());
-        out.handed(key, &val);
+        out.handed(key, Form::AsRead, &val);
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
     }
@@ -348,7 +357,7 @@ pub(crate) fn prepare_from(
             }
         };
         let val = resolve(key)?;
-        out.handed(key, &val);
+        out.handed(key, Form::AsRead, &val);
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
         match temp_file(&mut out._cleanup, within, val.as_bytes()) {
@@ -408,11 +417,11 @@ pub(crate) fn prepare_from(
         out.env_names.push(envvar.clone());
         for (name, key) in entries {
             let val = resolve(key)?;
-            out.handed(key, &val);
+            out.handed(key, Form::AsRead, &val);
             out.key_names.push(key.clone());
             let escaped = Zeroizing::new(dotenv::escaped(&val));
             if *escaped != *val {
-                out.handed(key, &escaped);
+                out.handed(key, Form::DotenvEscaped, &escaped);
             }
             match dotenv::line(name, &val) {
                 Ok(line) => lines.push(line),

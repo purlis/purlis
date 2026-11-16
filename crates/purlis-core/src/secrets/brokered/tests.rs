@@ -3498,6 +3498,10 @@ fn a_value_in_a_credential_file_the_chat_may_reach_is_pointed_at_a_tunnel_there(
         "pointed at the tunnel, not at the host itself: {out}"
     );
     assert_eq!(told, Vec::new());
+    // What the file was pointed at is masked under its entry, in this process and in one a
+    // crash leaves to read the entry again (#6309).
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders", at.port());
+    masked_as_pointed(project.path(), &format!("postgres://app:pw@{went}"), &dsn);
     drop(database);
 }
 
@@ -3560,6 +3564,28 @@ fn a_connection_string_to_a_host_the_chat_may_reach_goes_through_a_tunnel_to_exa
     assert!(
         reached.contains(&(Some(listed.clone()), "open", 1)),
         "every tunnelled connection is told: {reached:?}"
+    );
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders", at.port());
+    masked_as_pointed(project.path(), &format!("postgres://app:pw@{went}/orders"), &dsn);
+}
+
+/// `pointed`, the value read as `dsn` and pointed at a tunnel, masked in chat 7's screen under
+/// its entry `DSN` (#6309): by what this process remembers, and, once a crash has left only
+/// what is named on disk, by `dsn` read again and pointed again.
+fn masked_as_pointed(root: &Path, pointed: &str, dsn: &str) {
+    use super::super::handedto::{as_a_crash_leaves_it, masked_for};
+    let shown = format!("dsn {pointed}\r\n");
+    assert_eq!(
+        masked_for(root, 7, &shown, &|_| None).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "as handed"
+    );
+    as_a_crash_leaves_it(root, 7);
+    let read = |_: &super::super::handedto::Entry| Some(zeroize::Zeroizing::new(dsn.to_owned()));
+    assert_eq!(
+        masked_for(root, 7, &shown, &read).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "after a crash"
     );
 }
 

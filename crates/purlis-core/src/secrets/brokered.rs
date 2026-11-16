@@ -4201,7 +4201,8 @@ pub(crate) fn serve_recorded(
     };
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for one in &prepared.values {
-        super::handedto::remember(&asker.root, asker.chat, &wanted.vault, &one.key, &one.value);
+        let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
+        super::handedto::remember(&asker.root, asker.chat, &entry, &one.value);
     }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {
@@ -4496,11 +4497,11 @@ fn tunnelled(
         } else {
             let swapped = pointed.at(at);
             exec::set_var(&mut prepared.env, name, swapped.clone());
-            prepared.handed_instead(&value, swapped);
+            prepared.handed_instead(&value, tunnelled_form(&client, at, false), swapped);
         }
     }
     // A value a credential file holds, pointed in the file itself, every other line as it was.
-    let mut pointed_in_files: Vec<(zeroize::Zeroizing<String>, String)> = Vec::new();
+    let mut pointed_in_files: Vec<(zeroize::Zeroizing<String>, u16, String)> = Vec::new();
     for handed in &mut prepared.handed {
         let mut moved = false;
         for (entry, value) in &mut handed.entries {
@@ -4512,7 +4513,7 @@ fn tunnelled(
             if let Some((pointed, at)) = opening.open(&name, routed)? {
                 // The value it was is wiped as the file is pointed (#3420).
                 let was = zeroize::Zeroizing::new(std::mem::replace(value, pointed.at(at)));
-                pointed_in_files.push((was, value.clone()));
+                pointed_in_files.push((was, at, value.clone()));
                 moved = true;
             }
         }
@@ -4522,14 +4523,29 @@ fn tunnelled(
         }
     }
     // Redacted as the value it was, and masked under its entry (#6309), as written and escaped.
-    for (was, now) in pointed_in_files {
+    for (was, at, now) in pointed_in_files {
         let escaped = super::dotenv::escaped(&now);
         if escaped != now {
-            prepared.handed_instead(&was, escaped);
+            prepared.handed_instead(&was, tunnelled_form(&client, at, true), escaped);
         }
-        prepared.handed_instead(&was, now);
+        prepared.handed_instead(&was, tunnelled_form(&client, at, false), now);
     }
     Ok((opening.tunnels, opening.notes))
+}
+
+/// How a value pointed at the tunnel on port `at` for `client` is made again from the value
+/// read (#6309), dotenv-escaped where `escaped`.
+fn tunnelled_form(
+    client: &crate::sandbox::tunnel::Client,
+    at: u16,
+    escaped: bool,
+) -> super::handedto::Form {
+    super::handedto::Form::Tunnelled {
+        port: at,
+        pgsslmode: client.pgsslmode.clone(),
+        reads_hostaddr: client.reads_hostaddr,
+        escaped,
+    }
 }
 
 /// What a credential file holds: a `--file`'s one value, or a `--dotenv` file's lines, as
