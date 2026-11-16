@@ -10,7 +10,7 @@
 //!
 //! **The runner approves nothing of its own** (R-168, R-471). The plan names 1a's built-in by id
 //! and digest, and the runner looks for that digest among its own binary's built-ins ([`Binary`]):
-//! one it doesn't have refuses the start, naming both purlis versions (W75), so a runner on
+//! one it doesn't have refuses the start, naming both purlis versions for W75, so a runner on
 //! another build never gets the key. A runner chat then uses the background model and the prices
 //! of **its own binary's** built-in (H-18): the digest leaves out `[models] background` and
 //! `[[models.table]]`, so they never travel and never have to.
@@ -22,6 +22,7 @@
 //! profile on the desktop, and the runner host refuses the command, until T1a-73's swap. This
 //! module is the plan seam those changes plug into.
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 
 use purlis_session_protocol::keyplan::{
@@ -30,9 +31,8 @@ use purlis_session_protocol::keyplan::{
 use purlis_session_protocol::session::{MALFORMED, Refusal};
 
 use crate::harness_declaration::SignInKind;
-use crate::model_provider::{Declaration, Price};
+use crate::model_provider::{Declaration, From, Price};
 use crate::profilestore::onrunner::Kept;
-use crate::window_copy::{fill, line};
 
 /// **What a runner's binary carries**: its purlis version and its built-in declarations.
 #[derive(Debug, Clone)]
@@ -94,7 +94,8 @@ pub enum Refused {
     Refused(String),
     /// A sign-in kind 1a doesn't route.
     SignIn(String),
-    /// The built-in's digest isn't one the runner's binary has (R-471).
+    /// The built-in's digest isn't one the runner's binary has (R-471): both versions, for W75,
+    /// which the window draws on the pool's *Runs on* row (T1a-54).
     DoesNotMatch {
         id: String,
         /// The desktop's purlis version.
@@ -109,26 +110,36 @@ pub enum Refused {
 impl Refused {
     /// The refusal as the runner answers it on the link.
     pub fn on_the_wire(&self) -> Refusal {
-        // Skeleton (T1a-51).
-        Refusal {
-            code: MALFORMED.into(),
-            why: "refused".into(),
+        match self {
+            Refused::DoesNotMatch { runner_version, .. } => Refusal {
+                code: PLAN_DOES_NOT_MATCH.into(),
+                why: runner_version.clone(),
+            },
+            Refused::NotTheSchema(why) | Refused::Refused(why) => Refusal {
+                code: MALFORMED.into(),
+                why: why.clone(),
+            },
+            Refused::SignIn(word) => Refusal {
+                code: MALFORMED.into(),
+                why: format!("the plan's sign-in kind `{word}` takes no key route in this version"),
+            },
+            Refused::HeldAlready { run } => Refusal {
+                code: MALFORMED.into(),
+                why: format!("run {run} holds its plan already: a plan crosses once"),
+            },
         }
-    }
-
-    /// The sentence the desktop shows for a start on pool `pool` this refused: W75 where the
-    /// built-in didn't match, naming both versions.
-    pub fn said(&self, pool: &str) -> String {
-        // Skeleton (T1a-51).
-        let _ = (pool, fill, line::W10);
-        "refused".into()
     }
 }
 
 /// **A plan as it arrives**, one line of JSON: read whole against 1a's schema, or refused (B-17,
 /// R-470).
 pub fn arrive(json: &str) -> Result<KeyProxyPlan, Refused> {
-    serde_json::from_str(json).map_err(|e| Refused::NotTheSchema(e.to_string()))
+    let plan: KeyProxyPlan =
+        serde_json::from_str(json).map_err(|e| Refused::NotTheSchema(e.to_string()))?;
+    match plan.refusal() {
+        Some(why) => Err(Refused::Refused(why)),
+        None => Ok(plan),
+    }
 }
 
 /// **A plan the runner keeps for its run**, checked.
@@ -201,19 +212,50 @@ impl Plans {
 
     /// **Checks `plan` at arrival and keeps it for its run**, or refuses it.
     pub fn take(&mut self, plan: KeyProxyPlan) -> Result<&Held, Refused> {
-        // Skeleton (T1a-51): checks nothing until built.
-        let run = plan.run.clone();
-        let held = Held {
-            run: run.clone(),
-            declaration: self.binary.built_ins[0].clone(),
-            sign_in: SignInKind::Subscription,
+        if let Some(why) = plan.refusal() {
+            return Err(Refused::Refused(why));
+        }
+        let sign_in = match SignInKind::of_word(&plan.sign_in) {
+            Some(SignInKind::ApiKey) => SignInKind::ApiKey,
+            _ => return Err(Refused::SignIn(plan.sign_in)),
+        };
+        // Only a built-in of the runner's own binary, by id and digest: nothing else it holds
+        // is approved here (R-168).
+        let Some(declaration) = self.binary.built_ins.iter().find(|declaration| {
+            declaration.from == From::BuiltIn
+                && declaration.id == plan.built_in.id
+                && declaration.digest() == plan.built_in.digest
+        }) else {
+            return Err(Refused::DoesNotMatch {
+                id: plan.built_in.id,
+                version: plan.built_in.purlis,
+                runner_version: self.binary.version.clone(),
+            });
+        };
+        let held = match self.held.entry(plan.run) {
+            Entry::Occupied(entry) => {
+                return Err(Refused::HeldAlready {
+                    run: entry.key().clone(),
+                });
+            }
+            Entry::Vacant(entry) => entry,
+        };
+        let Some(key) = plan.key else {
+            return Err(Refused::Refused(
+                "the plan carries no key in the same round trip".into(),
+            ));
+        };
+        let run = held.key().clone();
+        Ok(held.insert(Held {
+            run,
+            declaration: declaration.clone(),
+            sign_in,
             template: plan.template,
             locks: plan.locks,
             origins: plan.origins,
             pinned_key: plan.pinned_key,
-            key: plan.key.unwrap_or_else(|| PlanKey::of("")),
-        };
-        Ok(self.held.entry(run).or_insert(held))
+            key,
+        }))
     }
 
     /// The plan `run` holds, while it runs.
@@ -223,7 +265,7 @@ impl Plans {
 
     /// **`run` ended**: its plan and key are discarded.
     pub fn end(&mut self, run: &str) {
-        let _ = (run, MALFORMED, PLAN_DOES_NOT_MATCH);
+        self.held.remove(run);
     }
 
     /// How many runs hold a plan.

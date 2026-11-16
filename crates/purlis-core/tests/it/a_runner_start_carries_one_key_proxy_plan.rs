@@ -162,6 +162,7 @@ fn a_built_in_digest_mismatch_refuses_the_start_naming_both_versions() {
             .await
             .expect_err("a mismatch refuses the start");
         assert_eq!(refusal.code, PLAN_DOES_NOT_MATCH);
+        assert_eq!(refusal.why, "0.4.9", "the runner's version, beside the desktop's own");
         assert!(plans.is_empty(), "nothing kept, so no key proxy and no upstream");
 
         let mut plans = Plans::on(Binary {
@@ -174,16 +175,16 @@ fn a_built_in_digest_mismatch_refuses_the_start_naming_both_versions() {
         let refused = plans
             .take(the_plan(desktops_anthropic()))
             .expect_err("a mismatch");
-        let said = refused.said("gpu");
-        let this = env!("CARGO_PKG_VERSION");
         assert_eq!(
-            said,
-            format!(
-                "Pool gpu runs purlis 0.4.9, which doesn't match this purlis ({this}). Update \
-                 the pool to send keys there."
-            ),
-            "W75, naming both versions"
+            refused,
+            Refused::DoesNotMatch {
+                id: "anthropic".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                runner_version: "0.4.9".into(),
+            },
+            "both versions named, for W75"
         );
+        assert_eq!(refused.on_the_wire().why, "0.4.9");
     });
 }
 

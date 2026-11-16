@@ -135,7 +135,22 @@ impl KeyProxyPlan {
     /// **Why this plan is refused at arrival**, or `None`: a reserved field set, named, or no
     /// key in the same round trip (R-470).
     pub fn refusal(&self) -> Option<String> {
-        // Skeleton (T1a-51): refuses nothing until built.
-        None
+        let set = [
+            self.project_declaration.is_some(),
+            self.your_declaration.is_some(),
+            self.policy_declaration.is_some(),
+            self.confirmations.is_some(),
+            self.remaining_budget.is_some(),
+            self.hosting_terms.is_some(),
+        ];
+        if let Some((field, _)) = Self::RESERVED.iter().zip(set).find(|(_, set)| *set) {
+            return Some(format!(
+                "the plan sets `{field}`, which this version reserves for a later one"
+            ));
+        }
+        match &self.key {
+            Some(key) if !key.0.is_empty() => None,
+            _ => Some("the plan carries no key in the same round trip".into()),
+        }
     }
 }
