@@ -107,7 +107,13 @@ impl Names {
     }
 
     /// **`name` on `port` answers `answers`, one per lookup**, the last again once they run out
-    /// (none answers nothing). Each answer goes through the production filter unchanged.
+    /// (none answers nothing). Each answer goes through the production filter unchanged, and
+    /// each answer's port is the one dialled, so it can point at a local listener.
+    ///
+    /// Every lookup counts, whoever makes it: a confined proxy's provider names are looked up by
+    /// [`super::egress::ProviderAddresses`] at its own pace (at most every `ANSWERS_STAND`), so a
+    /// provider name's script is consumed by those lookups too. Script a provider name with one
+    /// answer, which repeats, unless the cell is about its rotation.
     pub fn resolves_to(&self, name: &str, port: u16, answers: Vec<Vec<SocketAddr>>) -> &Self {
         self.kept()
             .entries
@@ -216,17 +222,27 @@ impl Names {
     }
 }
 
-/// Every name a test build asked of the system's resolver, so a scenario test can show a name
-/// never reached it ([`asked_the_system`]).
-static ASKED_THE_SYSTEM: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// The most names [`ASKED_THE_SYSTEM`] keeps: the newest, each once. A test asks about a name it
+/// made unique, just after asking, so a bound this size never loses one it looks for.
+const ASKED_KEPT: usize = 4096;
+
+/// The names a test build asked of the system's resolver lately ([`ASKED_KEPT`] at most), so a
+/// scenario test can show a name never reached it ([`asked_the_system`]).
+static ASKED_THE_SYSTEM: Mutex<std::collections::VecDeque<String>> =
+    Mutex::new(std::collections::VecDeque::new());
 
 /// Records that `name` was asked of the system's resolver (called from the one place each proxy
 /// does that, in a test build alone).
 pub(crate) fn asking_the_system(name: &str) {
-    ASKED_THE_SYSTEM
+    let name = spelled(name);
+    let mut asked = ASKED_THE_SYSTEM
         .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(spelled(name));
+        .unwrap_or_else(PoisonError::into_inner);
+    asked.retain(|one| *one != name);
+    if asked.len() >= ASKED_KEPT {
+        asked.pop_front();
+    }
+    asked.push_back(name);
 }
 
 /// Whether this process has asked the system's resolver for `name`.
@@ -268,6 +284,24 @@ mod tests {
         assert_eq!(names.look_up("site.test", 80), Found::Origin(at(9, 8080)));
         // Only that exact port.
         assert_eq!(names.look_up("site.test", 443), Found::Unmapped);
+    }
+
+    #[test]
+    fn the_names_asked_of_the_system_are_kept_once_each_and_bounded() {
+        let mine = format!("bounded-{}.invalid", std::process::id());
+        asking_the_system(&mine);
+        asking_the_system(&mine.to_ascii_uppercase());
+        for one in 0..ASKED_KEPT {
+            asking_the_system(&format!("filler-{one}.invalid"));
+        }
+        let asked = ASKED_THE_SYSTEM
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        assert!(asked.len() <= ASKED_KEPT, "{}", asked.len());
+        assert!(!asked.contains(&mine), "the oldest went first");
+        drop(asked);
+        asking_the_system(&mine);
+        assert!(asked_the_system(&mine));
     }
 
     #[test]

@@ -14,7 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use purlis_core::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
-use purlis_core::sandbox::egress::{Proxy, Serving};
+use purlis_core::sandbox::egress::{ProviderAddresses, Proxy, Serving};
+use purlis_core::sandbox::internal::Internal;
 use purlis_core::sandbox::names::{self, Found, Lookup, Names};
 use purlis_core::sandbox::reach::Reach;
 use purlis_core::sandbox::timings::Timings;
@@ -28,14 +29,38 @@ fn loopback() -> IpAddr {
 
 /// A chat proxy for `hosts`, looking names up and dialling through `names`.
 fn proxy(hosts: &[&str], names: &Arc<Names>) -> Proxy {
-    Proxy::serving(Serving {
+    Proxy::serving(serving(hosts, names)).expect("the proxy starts")
+}
+
+/// What [`proxy`] serves, for a test to change before it starts.
+fn serving(hosts: &[&str], names: &Arc<Names>) -> Serving {
+    Serving {
         names: Some(Arc::clone(names)),
         ..Serving::of(
             Reach::open(hosts.iter().map(|host| (*host).to_owned()).collect()),
             &Timings::production(),
         )
+    }
+}
+
+/// A confined extension's proxy for `hosts`, with `providers` the model's hosts, answering one
+/// question now, looking names up and dialling through `names`.
+fn confined(hosts: &[&str], providers: &[&str], names: &Arc<Names>) -> Proxy {
+    let providers = ProviderAddresses::of(providers.iter().map(|one| (*one).to_owned()).collect());
+    let proxy = Proxy::serving(Serving {
+        names: Some(Arc::clone(names)),
+        ..Serving::confined(
+            hosts.iter().map(|host| (*host).to_owned()).collect(),
+            Arc::new(providers),
+            &Timings::production(),
+        )
     })
-    .expect("the proxy starts")
+    .expect("the confined proxy starts");
+    proxy
+        .asking()
+        .expect("a confined proxy counts its questions")
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    proxy
 }
 
 fn connected(port: u16) -> TcpStream {
@@ -520,4 +545,184 @@ fn the_resolver_seam_is_absent_without_test_support() {
         tested.contains("purlis-core feature \"test-support\""),
         "the control: the test build has it:\n{tested}"
     );
+}
+
+/// **The compile check**: `purlis-scenarios`' own library, which depends on purlis-core without
+/// `test-support`, built with `--cfg purlis_seam_probe` names `purlis_core::sandbox::names`
+/// (`src/lib.rs`), and must fail on that path alone. A cfg widened past `test-support` (to
+/// `debug_assertions`, say) lets it compile, and this goes red. The control: the same build
+/// without the probe compiles.
+#[test]
+fn the_resolver_seam_does_not_compile_without_test_support() {
+    let check = |probe: bool| {
+        let mut args = vec![
+            "rustc",
+            "--locked",
+            "-p",
+            "purlis-scenarios",
+            "--lib",
+            "--profile",
+            "check",
+            "--message-format",
+            "short",
+        ];
+        if probe {
+            args.extend(["--", "--cfg", "purlis_seam_probe"]);
+        }
+        let out = std::process::Command::new(env!("CARGO"))
+            .args(&args)
+            .current_dir(purlis_scenarios::root())
+            .output()
+            .expect("cargo runs");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let (built, said) = check(false);
+    assert!(built, "the control builds:\n{said}");
+    let (built, said) = check(true);
+    assert!(
+        !built,
+        "purlis_core::sandbox::names compiled without test-support:\n{said}"
+    );
+    let errors: Vec<&str> = said.lines().filter(|line| line.contains("error")).collect();
+    assert!(
+        errors.iter().any(|line| line.contains("names")),
+        "it failed on the seam's path: {errors:?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .filter(|line| line.contains("error["))
+            .all(|line| line.contains("names")),
+        "and on nothing else: {errors:?}"
+    );
+}
+
+#[test]
+fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
+    let service = Origin::http().expect("a service on this machine's loopback");
+    let decoy = Origin::http().expect("an origin the map names");
+    let port = service.addr().port();
+    let listed = format!("localhost:{port}");
+    let names = Names::new();
+    // Mapped as an origin too: production never looks a pinned name up, so neither does the seam.
+    names.origin("localhost", port, decoy.addr());
+
+    // A service left out of the plan, allowed: the pinned branch.
+    let pinned = Proxy::serving(Serving {
+        left_out: vec![port],
+        ..serving(&[&listed], &names)
+    })
+    .expect("the proxy starts");
+    let answer = get(pinned.port(), &listed, "/pinned");
+    assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
+    // A name of this Mac on a port the chat holds: pinned to the loopback by `address_of`.
+    let held = proxy(&[&listed], &names);
+    let answer = get(held.port(), &listed, "/held");
+    assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
+
+    assert_eq!(names.lookups(), Vec::<Lookup>::new(), "never looked up");
+    let loopback = SocketAddr::from(([127, 0, 0, 1], port));
+    assert_eq!(names.dials(), vec![loopback, loopback], "each a dial");
+    assert!(names.unlisted(&[]).is_empty());
+    assert_eq!(service.requests().len(), 2);
+    assert!(decoy.requests().is_empty(), "{:?}", decoy.requests());
+}
+
+#[test]
+fn an_address_literal_is_dialled_and_never_looked_up() {
+    let target = purlis_scenarios::net::DirectTarget::start().expect("the direct target");
+    let at = target.tcp();
+    let names = Names::new();
+    let proxy = proxy(&[&at.to_string()], &names);
+
+    let _ = get(proxy.port(), &at.to_string(), "/");
+    let deadline = std::time::Instant::now() + WAIT;
+    while target.connections().is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(target.connections().len(), 1, "the literal was reached");
+    assert_eq!(names.lookups(), Vec::<Lookup>::new(), "never looked up");
+    assert_eq!(names.dials(), vec![at], "a dial");
+    assert!(names.unlisted(&[]).is_empty(), "nothing fails the scenario");
+}
+
+#[test]
+fn an_origin_under_an_internal_only_reach_is_still_refused() {
+    // On this machine's own network address, which a runner's internal networks hold back.
+    let ip = purlis_scenarios::net::interface_address().expect("a non-loopback interface");
+    let origin = Origin::start(Scheme::Http, Variant::Plain, ip).expect("an origin on it");
+    let names = Names::new();
+    names.origin("service.test", 80, origin.addr());
+    let proxy = Proxy::serving(Serving {
+        internal: Some(Internal::listing(Vec::new())),
+        ..serving(&["service.test"], &names)
+    })
+    .expect("the proxy starts");
+
+    let answer = get(proxy.port(), "service.test", "/");
+    assert!(purlis_refused(&answer), "{answer}");
+    assert_eq!(names.dials(), Vec::<SocketAddr>::new(), "never dialled");
+    assert!(names.origin_hits().is_empty());
+    assert!(origin.requests().is_empty(), "{:?}", origin.requests());
+}
+
+#[test]
+fn a_confined_proxy_looks_its_providers_up_through_the_seam() {
+    let origin = Origin::http().expect("an origin");
+    let names = Names::new();
+    names
+        .origin("extension.test", 80, origin.addr())
+        .resolves_to(
+            "model.test",
+            443,
+            vec![vec![SocketAddr::from(([192, 0, 2, 10], 443))]],
+        );
+    let proxy = confined(&["extension.test"], &["model.test"], &names);
+
+    let answer = get(proxy.port(), "extension.test", "/asked");
+    assert!(status(&answer).starts_with("HTTP/1.1 200"), "{answer}");
+    let looked: Vec<(String, u16)> = names
+        .lookups()
+        .into_iter()
+        .map(|lookup| (lookup.name, lookup.port))
+        .collect();
+    assert!(
+        looked.contains(&("model.test".to_owned(), 443)),
+        "the provider was looked up through the seam: {looked:?}"
+    );
+    assert!(
+        looked.contains(&("extension.test".to_owned(), 80)),
+        "{looked:?}"
+    );
+    assert!(!names::asked_the_system("model.test"));
+    assert_eq!(names.dials(), vec![origin.addr()]);
+    assert_eq!(origin.requests().len(), 1);
+}
+
+#[test]
+fn a_confined_proxy_refuses_an_origin_at_a_providers_address() {
+    let origin = Origin::http().expect("an origin");
+    let names = Names::new();
+    names
+        .origin("extension.test", 80, origin.addr())
+        // The model is served at the origin's address: the origin is exempt from the loopback
+        // filter alone, never from this.
+        .resolves_to(
+            "model.test",
+            443,
+            vec![vec![SocketAddr::new(origin.addr().ip(), 443)]],
+        );
+    let proxy = confined(&["extension.test"], &["model.test"], &names);
+
+    let answer = get(proxy.port(), "extension.test", "/");
+    assert!(purlis_refused(&answer), "{answer}");
+    assert!(
+        answer.contains("model provider"),
+        "refused as at a model: {answer}"
+    );
+    assert_eq!(names.dials(), Vec::<SocketAddr>::new(), "never dialled");
+    assert!(origin.requests().is_empty(), "{:?}", origin.requests());
 }

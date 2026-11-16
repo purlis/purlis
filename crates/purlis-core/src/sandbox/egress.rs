@@ -621,7 +621,7 @@ pub struct Serving {
     pub asking: Option<Arc<AtomicUsize>>,
     /// For a confined extension's proxy (#3094): the addresses a model is served at, never
     /// connected to whatever name resolved to one, and the resolver it looks every name up by
-    /// ([`ProviderAddresses`], [`confined_addresses`]).
+    /// ([`ProviderAddresses`], [`not_at_a_model`]).
     pub providers: Option<Arc<ProviderAddresses>>,
     /// **A scenario's resolver seam** (T1.1-02), a test build's alone: where this proxy looks
     /// names up and dials, its `providers` among them ([`super::names`]). None asks the system.
@@ -1214,7 +1214,7 @@ impl Allowed {
 
     /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
     /// a service left out of this chat's plan ([`Self::pinned`]); for a confined extension, never
-    /// at an address a model is served at ([`confined_addresses`]); otherwise as
+    /// at an address a model is served at ([`not_at_a_model`]); otherwise as
     /// [`connect_held`]. In a scenario, looked up and dialled through its resolver seam
     /// ([`super::names`]), which decides nothing: this runs only for what was carried.
     fn connect(
@@ -1226,28 +1226,46 @@ impl Allowed {
     ) -> Connected {
         #[cfg(any(test, feature = "test-support"))]
         if let Some(names) = &self.names {
-            use super::names::Found;
-            let answer = match names.look_up(host, port) {
-                // The one address exempt from the filter, for this exact name and port alone.
-                Found::Origin(at) => {
-                    return names
-                        .dial_origin(host, port, &at, self.patience)
-                        .map_or(Connected::Not, Connected::To);
+            // The seam is only the resolver and the dial: looked up where production would look
+            // up, in its order (never a pinned name, a name of this Mac or an address literal).
+            let origin = std::cell::Cell::new(None);
+            let resolve = |name: &str, port: u16| -> Vec<SocketAddr> {
+                if let Some(literal) = literal_address(name, port) {
+                    return vec![literal];
                 }
-                Found::Scripted(answer) => answer,
-                Found::Unmapped => Vec::new(),
+                match names.look_up(name, port) {
+                    super::names::Found::Origin(at) => {
+                        origin.set(Some(at));
+                        vec![at]
+                    }
+                    super::names::Found::Scripted(answer) => answer,
+                    super::names::Found::Unmapped => Vec::new(),
+                }
             };
-            let resolve = |_: &str, _: u16| answer.clone();
-            let dial = |at: &SocketAddr, patience| names.dial(at, patience);
-            return self.connect_by(host, port, own, read, Some(&resolve), &dial);
+            let dial = |at: &SocketAddr, patience| match origin.get() {
+                Some(to) if to == *at => names.dial_origin(host, port, at, patience),
+                _ => names.dial(at, patience),
+            };
+            // An origin's address, for this exact name and port, is exempt from the filter that
+            // keeps a chat off this machine and special-use addresses, and from nothing else.
+            let exempt = |at: SocketAddr| origin.get() == Some(at);
+            return self.connect_by(host, port, own, read, Some(&resolve), &dial, &exempt);
         }
-        self.connect_by(host, port, own, read, None, &|at, patience| {
-            TcpStream::connect_timeout(at, patience)
-        })
+        self.connect_by(
+            host,
+            port,
+            own,
+            read,
+            None,
+            &|at, patience| TcpStream::connect_timeout(at, patience),
+            &|_| false,
+        )
     }
 
     /// [`Self::connect`], looking `host` up by `resolve` (by default the confined proxy's
-    /// providers' resolver, or the system's) and dialling by `dial`.
+    /// providers' resolver, or the system's), dialling by `dial`, and keeping an address
+    /// `exempt` names past the address filter (none in production; a scenario's origin).
+    #[allow(clippy::too_many_arguments)]
     fn connect_by(
         &self,
         host: &str,
@@ -1256,21 +1274,33 @@ impl Allowed {
         read: Option<&[super::hosts::Network]>,
         resolve: Option<&LookUp<'_>>,
         dial: &Dial<'_>,
+        exempt: &dyn Fn(SocketAddr) -> bool,
     ) -> Connected {
+        let carries = |at: SocketAddr| {
+            if exempt(at) {
+                // Only the special-use filter is waived: a runner's internal networks still hold.
+                self.internal
+                    .as_ref()
+                    .is_none_or(|internal| internal.carries(host, at, read))
+            } else {
+                self.carries(host, at, read)
+            }
+        };
         if self.confined
             && let Some(providers) = &self.providers
         {
-            let carries = |at| self.carries(host, at, read);
             let by_providers = |name: &str, port: u16| providers.resolve(name, port);
-            return match confined_addresses(
+            return match held_addresses(
                 host,
                 port,
                 &self.reach,
                 own,
                 &carries,
-                providers,
                 resolve.unwrap_or(&by_providers),
-            ) {
+                exempt,
+            )
+            .and_then(|reached| not_at_a_model(reached, providers))
+            {
                 Ok(reached) => connect_first_by(reached, self.patience, dial),
                 Err(refused) => refused,
             };
@@ -1282,8 +1312,9 @@ impl Allowed {
                 port,
                 &self.reach,
                 own,
-                &|at| self.carries(host, at, read),
+                &carries,
                 resolve.unwrap_or(&system_resolve),
+                exempt,
             ) {
                 Ok(reached) => connect_first_by(reached, self.patience, dial),
                 Err(refused) => refused,
@@ -2009,6 +2040,9 @@ pub(crate) fn carried_when_confined(at: SocketAddr) -> bool {
 /// #3094): the addresses `host` resolves to now by `resolve` that a chat may reach and `carries`
 /// keeps, less every one a model is served at as `providers` answer. The refusal says which held
 /// it back: [`Connected::AtAModel`] where an address was left only for serving a model.
+// The proxy itself goes through `held_addresses` and `not_at_a_model`; this is the studio's
+// tests' one call of both.
+#[cfg(test)]
 pub(crate) fn confined_addresses(
     host: &str,
     port: u16,
@@ -2018,7 +2052,16 @@ pub(crate) fn confined_addresses(
     providers: &ProviderAddresses,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
 ) -> Result<Vec<SocketAddr>, Connected> {
-    let mut reached = held_addresses(host, port, reach, own, carries, resolve)?;
+    let reached = held_addresses(host, port, reach, own, carries, resolve, &|_| false)?;
+    not_at_a_model(reached, providers)
+}
+
+/// `reached`, less every address a model is served at as `providers` answer:
+/// [`Connected::AtAModel`] where none is left.
+fn not_at_a_model(
+    mut reached: Vec<SocketAddr>,
+    providers: &ProviderAddresses,
+) -> Result<Vec<SocketAddr>, Connected> {
     reached.retain(|at| !providers.serves(at.ip()));
     if reached.is_empty() {
         return Err(Connected::AtAModel);
@@ -2036,6 +2079,7 @@ fn held_addresses(
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+    exempt: &dyn Fn(SocketAddr) -> bool,
 ) -> Result<Vec<SocketAddr>, Connected> {
     // Looked up once at most: what answered is remembered, so an empty answer tells apart from
     // one with only addresses a chat never reaches.
@@ -2045,7 +2089,10 @@ fn held_addresses(
         answered.set(!found.is_empty());
         found
     };
-    let mut reached = addresses(host, port, reach, own, &once);
+    let mut reached = match reach.address_of(host, port) {
+        Some(pinned) => vec![pinned],
+        None => reachable_from(&once(host, port), reach, own, exempt),
+    };
     reached.retain(|at| carries(*at));
     if reached.is_empty() {
         return Err(if answered.get() {
@@ -2082,7 +2129,7 @@ pub(crate) fn connect_held_resolving(
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
     patience: Duration,
 ) -> Connected {
-    match held_addresses(host, port, reach, own, carries, resolve) {
+    match held_addresses(host, port, reach, own, carries, resolve, &|_| false) {
         Ok(reached) => connect_first(reached, patience),
         Err(refused) => refused,
     }
@@ -2101,7 +2148,7 @@ pub fn addresses(
 ) -> Vec<SocketAddr> {
     match reach.address_of(host, port) {
         Some(pinned) => vec![pinned],
-        None => reachable_from(&resolve(host, port), reach, own),
+        None => reachable_from(&resolve(host, port), reach, own, &|_| false),
     }
 }
 
@@ -2116,13 +2163,16 @@ pub fn reachable(
     reach: &Reach,
     own: &[std::net::IpAddr],
 ) -> Vec<SocketAddr> {
-    reachable_from(&resolve(host, port), reach, own)
+    reachable_from(&resolve(host, port), reach, own, &|_| false)
 }
 
+/// [`reachable`], keeping too an address `exempt` names (a scenario's origin; none in
+/// production).
 fn reachable_from(
     resolved: &[SocketAddr],
     reach: &Reach,
     own: &[std::net::IpAddr],
+    exempt: &dyn Fn(SocketAddr) -> bool,
 ) -> Vec<SocketAddr> {
     resolved
         .iter()
@@ -2130,8 +2180,21 @@ fn reachable_from(
         .filter(|addr| {
             !super::hosts::refused_address(addr.ip(), own)
                 || reach.lists_exactly(addr.ip(), addr.port())
+                || exempt(*addr)
         })
         .collect()
+}
+
+/// `host` as an address literal on `port`, which a resolver answers as itself, asking nobody.
+#[cfg(any(test, feature = "test-support"))]
+fn literal_address(host: &str, port: u16) -> Option<SocketAddr> {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|inside| inside.strip_suffix(']'))
+        .unwrap_or(host);
+    bare.parse::<std::net::IpAddr>()
+        .ok()
+        .map(|ip| SocketAddr::new(ip, port))
 }
 
 /// Whether binding `[::1]` failed because this machine has no IPv6 loopback to bind: none

@@ -24,6 +24,13 @@ pub mod validate;
 
 use std::path::PathBuf;
 
+/// **The compile check that the resolver seam is absent without `test-support`** (T1.1-02): this
+/// crate depends on purlis-core without the feature, so under `--cfg purlis_seam_probe` this line
+/// must not compile. `the_resolver_seam_does_not_compile_without_test_support` builds it so, and
+/// a cfg on `purlis_core::sandbox::names` widened past `test-support` turns that test red.
+#[cfg(purlis_seam_probe)]
+pub use purlis_core::sandbox::names::Names as SeamProbe;
+
 /// This crate's folder: `tests/scenarios` in the repo.
 pub fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
