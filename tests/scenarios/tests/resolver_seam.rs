@@ -605,14 +605,15 @@ fn a_pinned_or_this_mac_name_is_dialled_and_never_looked_up() {
     let service = Origin::http().expect("a service on this machine's loopback");
     let decoy = Origin::http().expect("an origin the map names");
     let port = service.addr().port();
-    // Asked for by a name of this Mac, decided by that name, and pinned to the loopback by the
-    // grant of the port itself (qw384b): with only the name listed, production looks it up.
-    let asked = format!("localhost:{port}");
+    // Asked for by a name of this Mac (`NAMES_OF_THIS_MAC`, a fixed list, never looked up) on a
+    // port the chat's grant holds (qw384b). `localhost` is not one of them: production looks it
+    // up, and so does the seam.
+    let asked = format!("host.docker.internal:{port}");
     let grant = format!("127.0.0.1:{port}");
-    let listed: [&str; 2] = [&asked, &grant];
+    let listed: [&str; 1] = [&grant];
     let names = Names::new();
     // Mapped as an origin too: production never looks a pinned name up, so neither does the seam.
-    names.origin("localhost", port, decoy.addr());
+    names.origin("host.docker.internal", port, decoy.addr());
 
     // A service left out of the plan, allowed: the pinned branch.
     let pinned = Proxy::serving(Serving {
