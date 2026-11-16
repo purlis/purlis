@@ -505,6 +505,7 @@ fn no_sandbox_duration_lives_outside_timings() {
 
 #[test]
 fn a_duration_built_with_new_is_a_duration_too() {
+    purlis_core::unsteered!();
     assert!(builds_a_duration(
         "const WAIT: Duration = Duration::new(5, 0);"
     ));
@@ -516,6 +517,7 @@ fn a_duration_built_with_new_is_a_duration_too() {
 
 #[test]
 fn a_brace_in_a_string_or_char_does_not_end_or_extend_a_test_items_skip() {
+    purlis_core::unsteered!();
     let text = "\
 #[cfg(test)]
 mod tests {
