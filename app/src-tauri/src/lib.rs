@@ -251,6 +251,7 @@ mod worklinks;
 mod workspaces;
 mod workspacewrites;
 mod worktrees;
+mod yourkeyscmds;
 mod yoursandbox;
 
 use std::path::PathBuf;

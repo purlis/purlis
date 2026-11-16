@@ -103,6 +103,8 @@ sha2 = "0.11"
 # ReadDirectoryChangesW). Its events are folded into bursts by hand (`watchset.rs`), not by
 # notify-debouncer-full, which drops a file made and removed inside one fold (#1139).
 notify = "8.2"
+# An entry of your keys, by its id, in the window's commands for it (T1a-11).
+ulid = "3"
 
 # The theme specimen's picture (#2330, `specimen.rs`): WebKit's own snapshot of the hidden
 # window's webview, as a PNG. The crates and versions wry already brings in on macOS, with the
@@ -173,8 +175,6 @@ tauri = { version = "2", features = ["test", "tray-icon", "unstable"] }
 # crate's tests — and the one named in charter-app#129.
 purlis-core = { workspace = true, features = ["fenced", "test-support"] }
 stand-in.workspace = true
-# An event's id at a chosen time, for the tests of a question's trail (#4567).
-ulid = "3"
 # The UI RPC's list of commands no link serves (`session_protocol::ui::WINDOW_ONLY`, HP-6), so
 # the client generated for the link leaves out the same ones; and an in-memory link to a session
 # host, for the tests of chats run in one (#1998).

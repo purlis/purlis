@@ -2321,6 +2321,36 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**  **Your keys, as the page lists them** (R-171). */
+	yourKeys: () => typedError<YourKeyRow[], string>(__TAURI_INVOKE("your_keys")),
+	/**  **How many chats use entry `id`** (W5's count, before *Remove* and W9's *Replace the key…*). */
+	yourKeyChats: (id: string) => typedError<number, string>(__TAURI_INVOKE("your_key_chats", { id })),
+	/**  **How many chats on `pool` use entry `id`** (W123's count, before *Stop sending*). */
+	yourKeyPoolChats: (id: string, pool: string) => typedError<number, string>(__TAURI_INVOKE("your_key_pool_chats", { id, pool })),
+	/**  **Remove** (C-23): the item, the mark, the allowances, then the line. */
+	yourKeyRemove: (id: string) => typedError<null, string>(__TAURI_INVOKE("your_key_remove", { id })),
+	/**  **Replace** on the page (R-176): the key form aimed at this entry. */
+	yourKeyReplace: (id: string, value: string) => typedError<KeySaved, string>(__TAURI_INVOKE("your_key_replace", { id, value })),
+	/**  **Mark again** (W126, U8): T1a-10's one writer of a mark, for the entry's own declaration. */
+	yourKeyMarkAgain: (id: string) => typedError<null, string>(__TAURI_INVOKE("your_key_mark_again", { id })),
+	/**  **Unlock** (W6): `true` where the key now reads, `false` where the person cancelled. */
+	yourKeyUnlock: (id: string) => typedError<boolean, string>(__TAURI_INVOKE("your_key_unlock", { id })),
+	/**
+	 *  **The row's *Try again*** for a key *not checked yet* (W7, F-6): the check again, and what
+	 *  it found kept. T1a-71's one request takes its place once it lands.
+	 */
+	yourKeyCheckAgain: (id: string) => typedError<string, string>(__TAURI_INVOKE("your_key_check_again", { id })),
+	/**  **Stop sending** (W125, X1): the entry's row for `pool`, and its removal pushed to the pool. */
+	yourKeyStopSending: (id: string, pool: string) => typedError<null, string>(__TAURI_INVOKE("your_key_stop_sending", { id, pool })),
+	/**  **The key form's Save** (V7): aimed at `target`, with the pasted `value`. */
+	yourKeySave: (target: KeyTarget, value: string) => typedError<KeySaved, string>(__TAURI_INVOKE("your_key_save", { target, value })),
+	/**
+	 *  **W9's *Replace the key…*** (X2): replaces the held entry's value in place with the value in
+	 *  hand, then finishes the save: a keyless `profile` is pointed at it.
+	 */
+	yourKeyReplaceHeld: (held: string, value: string, profile: string | null) => typedError<KeySaved, string>(__TAURI_INVOKE("your_key_replace_held", { held, value, profile })),
+	/**  **Use the key you already have** (W2): a keyless `profile` is pointed at the held entry. */
+	yourKeyUseHeld: (held: string, profile: string | null) => typedError<KeySaved, string>(__TAURI_INVOKE("your_key_use_held", { held, profile })),
 	/**
 	 *  This machine's profiles, in the order they were made, each with the version of its harness
 	 *  installed here beside its pin (#2038): each harness asked `--version` once.
@@ -11488,6 +11518,29 @@ export type KeptMark =
 
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
+
+/**  What a save of the key form did. */
+export type KeySaved = 
+/**  The key is in your keys, under `id`, marked. */
+{ kind: "saved"; id: string } | 
+/**
+ *  A key for the product is held, under `held`, and nothing was written: the form offers
+ *  *Use the key you already have* and, where `may_replace`, W9's *Replace the key…* (U9);
+ *  aimed at a missing entry, only the first (F-8).
+ */
+{ kind: "held"; held: string; may_replace: boolean };
+
+/**  What the key form is aimed at (V7). */
+export type KeyTarget = 
+/**  A new entry: J0's form and the page's *Add a key…*. */
+{ kind: "new-entry" } | 
+/**
+ *  This entry: *Replace the key…*, and *Add a key…* for a missing entry. The new value is
+ *  written under the same id and marked.
+ */
+{ kind: "this-entry"; id: string } | 
+/**  This keyless profile: the saved entry's id is written into it. */
+{ kind: "this-profile"; name: string };
 
 /**
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
@@ -21697,6 +21750,31 @@ export type YourEditor =
 "idea" | 
 /**  `$VISUAL`, else `$EDITOR`, from charter's own environment, with `+line`. */
 "variable";
+
+/**  One row of Your keys, as the window draws it. */
+export type YourKeyRow = {
+	/**  The entry's id: what every command for it names. */
+	id: string,
+	/**  The product's name, as its declaration gives it (*Anthropic*); no label in 1a. */
+	product: string,
+	/**  The origins its mark binds it to; empty where it isn't marked. */
+	origins: string[],
+	/**  Its approval setting: `off`, the only one in 1a. */
+	approval: string,
+	/**  What the check at save found: `passed`, `not checked yet` or `refused at save`. */
+	checked: string,
+	/**
+	 *  The state its row is drawn in: `marked`, `unmarked` (W60), `missing` (W55) or
+	 *  `locked` (W6).
+	 */
+	state: string,
+	/**  The profiles naming it. */
+	profiles: string[],
+	/**  The chats on those profiles. */
+	chats: string[],
+	/**  The pools it is sent to. */
+	pools: string[],
+};
 
 /**  Your own level for a project, as it starts a chat you start there (#2071). */
 export type YourLevel = {

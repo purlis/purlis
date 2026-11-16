@@ -1267,6 +1267,20 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",
     "set_task_screens",
+    // Your keys (T1a-11, R-173): a model key is written, read for its state, removed and
+    // marked by the person's own window alone, never a link, a verb or a chat.
+    "your_keys",
+    "your_key_chats",
+    "your_key_pool_chats",
+    "your_key_remove",
+    "your_key_replace",
+    "your_key_mark_again",
+    "your_key_unlock",
+    "your_key_check_again",
+    "your_key_stop_sending",
+    "your_key_save",
+    "your_key_replace_held",
+    "your_key_use_held",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

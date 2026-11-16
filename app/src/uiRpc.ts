@@ -944,6 +944,18 @@ export const commands = {
 	agentIdentityRemove: __WINDOW_ONLY_RESULT,
 	forgePkceSignIn: __WINDOW_ONLY_RESULT,
 	forgePkceSignInCancel: __WINDOW_ONLY,
+	yourKeys: __WINDOW_ONLY_RESULT,
+	yourKeyChats: __WINDOW_ONLY_RESULT,
+	yourKeyPoolChats: __WINDOW_ONLY_RESULT,
+	yourKeyRemove: __WINDOW_ONLY_RESULT,
+	yourKeyReplace: __WINDOW_ONLY_RESULT,
+	yourKeyMarkAgain: __WINDOW_ONLY_RESULT,
+	yourKeyUnlock: __WINDOW_ONLY_RESULT,
+	yourKeyCheckAgain: __WINDOW_ONLY_RESULT,
+	yourKeyStopSending: __WINDOW_ONLY_RESULT,
+	yourKeySave: __WINDOW_ONLY_RESULT,
+	yourKeyReplaceHeld: __WINDOW_ONLY_RESULT,
+	yourKeyUseHeld: __WINDOW_ONLY_RESULT,
 	machineProfiles: __WINDOW_ONLY_RESULT,
 	machineProfileCreate: __WINDOW_ONLY_RESULT,
 	machineProfileImport: __WINDOW_ONLY_RESULT,
@@ -8210,6 +8222,29 @@ export type KeptMark =
 
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
+
+/**  What a save of the key form did. */
+export type KeySaved = 
+/**  The key is in your keys, under `id`, marked. */
+{ kind: "saved"; id: string } | 
+/**
+ *  A key for the product is held, under `held`, and nothing was written: the form offers
+ *  *Use the key you already have* and, where `may_replace`, W9's *Replace the key…* (U9);
+ *  aimed at a missing entry, only the first (F-8).
+ */
+{ kind: "held"; held: string; may_replace: boolean };
+
+/**  What the key form is aimed at (V7). */
+export type KeyTarget = 
+/**  A new entry: J0's form and the page's *Add a key…*. */
+{ kind: "new-entry" } | 
+/**
+ *  This entry: *Replace the key…*, and *Add a key…* for a missing entry. The new value is
+ *  written under the same id and marked.
+ */
+{ kind: "this-entry"; id: string } | 
+/**  This keyless profile: the saved entry's id is written into it. */
+{ kind: "this-profile"; name: string };
 
 /**
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
@@ -18419,6 +18454,31 @@ export type YourEditor =
 "idea" | 
 /**  `$VISUAL`, else `$EDITOR`, from charter's own environment, with `+line`. */
 "variable";
+
+/**  One row of Your keys, as the window draws it. */
+export type YourKeyRow = {
+	/**  The entry's id: what every command for it names. */
+	id: string,
+	/**  The product's name, as its declaration gives it (*Anthropic*); no label in 1a. */
+	product: string,
+	/**  The origins its mark binds it to; empty where it isn't marked. */
+	origins: string[],
+	/**  Its approval setting: `off`, the only one in 1a. */
+	approval: string,
+	/**  What the check at save found: `passed`, `not checked yet` or `refused at save`. */
+	checked: string,
+	/**
+	 *  The state its row is drawn in: `marked`, `unmarked` (W60), `missing` (W55) or
+	 *  `locked` (W6).
+	 */
+	state: string,
+	/**  The profiles naming it. */
+	profiles: string[],
+	/**  The chats on those profiles. */
+	chats: string[],
+	/**  The pools it is sent to. */
+	pools: string[],
+};
 
 /**  Your own level for a project, as it starts a chat you start there (#2071). */
 export type YourLevel = {
