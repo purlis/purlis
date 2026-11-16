@@ -244,8 +244,7 @@ pub fn route(
     }
     let public: Vec<SocketAddr> = resolved
         .into_iter()
-        // DO NOT MERGE M3: every address counts as public.
-        .filter(|addr| public_address(addr.ip(), own) || addr.ip().is_loopback())
+        .filter(|addr| public_address(addr.ip(), own))
         .collect();
     if public.is_empty() {
         Route::NotPublic
