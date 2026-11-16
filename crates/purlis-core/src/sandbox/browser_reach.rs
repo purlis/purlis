@@ -51,7 +51,7 @@
 
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -875,6 +875,9 @@ struct Served {
     new_sites: NewSites,
     bound: Bound,
     limits: Limits,
+    /// A scenario's resolver seam (T1.1-02), a test build's alone ([`super::names`]).
+    #[cfg(any(test, feature = "test-support"))]
+    names: Option<Arc<super::names::Names>>,
 }
 
 impl ReachProxy {
@@ -950,17 +953,42 @@ impl ReachProxy {
         self.bound.fill_released(number)
     }
 
+    /// **[`Self::start`], looking names up and dialling through a scenario's resolver seam**
+    /// (T1.1-02, [`super::names`]): a test build's alone.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn named(
+        lane: Lane,
+        new_sites: NewSites,
+        timings: &Timings,
+        names: Arc<super::names::Names>,
+    ) -> io::Result<Self> {
+        Self::listening(Served {
+            lane,
+            new_sites,
+            bound: Bound::default(),
+            limits: Limits::of(timings),
+            names: Some(names),
+        })
+    }
+
     fn serving(lane: Lane, new_sites: NewSites, bound: Bound, limits: Limits) -> io::Result<Self> {
+        Self::listening(Served {
+            lane,
+            new_sites,
+            bound,
+            limits,
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
+        })
+    }
+
+    fn listening(served: Served) -> io::Result<Self> {
         // Never a port a chat may be allowed, and kept as purlis's own while it listens.
         let listener = super::localport::bind_loopback()?;
         let address = listener.local_addr()?;
         let stop = Arc::new(AtomicBool::new(false));
-        let served = Arc::new(Served {
-            lane,
-            new_sites,
-            bound: bound.clone(),
-            limits,
-        });
+        let bound = served.bound.clone();
+        let served = Arc::new(served);
         let open = Arc::new(AtomicUsize::new(0));
         let stopping = Arc::clone(&stop);
         let live = Live::default();
@@ -1119,17 +1147,8 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         }
     };
     let own = own.unwrap_or_default();
-    let resolve = |host: &str, port: u16| -> Vec<SocketAddr> {
-        let host = host.to_owned();
-        lookup_within(LOOKUP_PATIENCE, move || {
-            (host.as_str(), port)
-                .to_socket_addrs()
-                .map(Iterator::collect)
-                .unwrap_or_default()
-        })
-        .unwrap_or_default()
-    };
-    let addresses = match route(host, port, at, &own, &resolve) {
+    let (routed, dial) = routed(served, host, port, at, &own);
+    let addresses = match routed {
         Route::To(addresses) => addresses,
         Route::NotPublic => {
             answer(
@@ -1150,7 +1169,7 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     };
     let Some(mut upstream) = addresses
         .iter()
-        .find_map(|addr| TcpStream::connect_timeout(addr, served.limits.patience).ok())
+        .find_map(|addr| dial(addr, served.limits.patience).ok())
     else {
         answer(
             &mut client,
@@ -1179,6 +1198,49 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         return;
     }
     splice(client, upstream, up_to - rest.len() as u64, idle);
+}
+
+/// How a carried connection is made: an address, and how long it has to answer.
+type Dial<'a> = Box<dyn Fn(&SocketAddr, Duration) -> io::Result<TcpStream> + 'a>;
+
+/// **Where a carried connection to `host` on `port` goes, and how it is dialled** ([`route`]):
+/// looked up by the system's resolver within [`LOOKUP_PATIENCE`], or, in a scenario, through
+/// its resolver seam ([`super::names`]), whose origin entry alone is exempt from the filter to
+/// public addresses, for its exact name and port. This runs only for what was carried.
+fn routed<'a>(
+    served: &'a Served,
+    host: &str,
+    port: u16,
+    at: Option<SocketAddr>,
+    own: &[IpAddr],
+) -> (Route, Dial<'a>) {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(names) = &served.names {
+        use super::names::Found;
+        // An address literal is never looked up.
+        let answer = match at.map_or_else(|| names.look_up(host, port), |_| Found::Unmapped) {
+            Found::Origin(origin) => {
+                let host = host.to_owned();
+                let dial: Dial<'a> =
+                    Box::new(move |to, patience| names.dial_origin(&host, port, to, patience));
+                return (Route::To(vec![origin]), dial);
+            }
+            Found::Scripted(answer) => answer,
+            Found::Unmapped => Vec::new(),
+        };
+        let dial: Dial<'a> = Box::new(|to, patience| names.dial(to, patience));
+        return (route(host, port, at, own, &|_, _| answer.clone()), dial);
+    }
+    let _ = served;
+    let resolve = |host: &str, port: u16| -> Vec<SocketAddr> {
+        let host = host.to_owned();
+        lookup_within(LOOKUP_PATIENCE, move || {
+            super::egress::system_resolve(&host, port)
+        })
+        .unwrap_or_default()
+    };
+    let dial: Dial<'a> = Box::new(TcpStream::connect_timeout);
+    (route(host, port, at, own, &resolve), dial)
 }
 
 /// Why a site was refused to a browser holding a login (#2016), as the browser is told.

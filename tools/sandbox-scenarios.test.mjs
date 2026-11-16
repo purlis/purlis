@@ -233,6 +233,9 @@ test("the scenarios are purlis-app's one-word scenarios module, and the script's
   assert.ok(existsSync(join(root, "app/src-tauri/src/scenarios.rs")));
   assert.match(runScript("suite").calls[0], /test\(\/\^scenarios::\/\) & not test\(\/\^scenarios::production_timings::\/\)/);
   assert.match(runScript("production-timings").calls[0], /test\(\/\^scenarios::production_timings::\/\)/);
+  // The resolver seam's own tests bind local ports, so the suite runs them on each OS's leg (T1.1-02).
+  assert.match(runScript("suite").calls[0], /\| binary_id\(purlis-scenarios::resolver_seam\)/);
+  assert.doesNotMatch(runScript("production-timings").calls[0], /resolver_seam/);
 });
 
 test("the Linux scenario build is the rust job's test build, so it restores the rust job's cache", () => {
@@ -243,12 +246,12 @@ test("the Linux scenario build is the rust job's test build, so it restores the 
   assert.doesNotMatch(rust.text, /shared-key/);
   assert.match(action, /shared-key: \$\{\{ runner\.os == 'macOS' && 'app' \|\| 'rust' \}\}/);
   // The same packages build and run, so the run reuses the build.
-  assert.match(action, /CARGO_PACKAGES: \$\{\{ runner\.os == 'Linux' && '--workspace' \|\| '-p purlis-app' \}\}/);
+  assert.match(action, /CARGO_PACKAGES: \$\{\{ runner\.os == 'Linux' && '--workspace' \|\| '-p purlis-app -p purlis-scenarios' \}\}/);
   assert.equal(built, "--workspace --locked");
   assert.match(action, /cargo nextest run \$CARGO_PACKAGES --locked --no-run/);
   const linux = runScript("suite", { CARGO_PACKAGES: "--workspace" });
   assert.match(linux.calls[0], /^cargo nextest run --workspace --locked /);
-  assert.match(runScript("suite").calls[0], /^cargo nextest run -p purlis-app --locked /);
+  assert.match(runScript("suite").calls[0], /^cargo nextest run -p purlis-app -p purlis-scenarios --locked /);
 });
 
 test("an unknown scenario set is refused", () => {

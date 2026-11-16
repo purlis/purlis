@@ -99,7 +99,6 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
         "PURLIS_CHAT",
         "PURLIS_CHAT_TOKEN",
         "UNRELATED_MACHINE_VARIABLE",
-        "PURLIS_RECORD_HARNESS",
         "CHARTER_PLANE_FENCE",
     ] {
         assert_eq!(
@@ -108,11 +107,17 @@ fn the_recorder_writes_every_hook_call_and_masks_only_the_closed_list() {
             "{name}"
         );
     }
-    // But the recorder's own, which tell it what to do.
-    for name in [recorder::REAL, recorder::OUT, "CHARTER_RECORDER_OUT"] {
+    // But the recording's own: the recorder's, which tell it what to do, and the driver's,
+    // which reach the chat only because the driver started it.
+    for name in [
+        recorder::REAL,
+        recorder::OUT,
+        "CHARTER_RECORDER_OUT",
+        "PURLIS_RECORD_HARNESS",
+    ] {
         assert!(
             !calls[0].env.contains_key(name),
-            "{name} is the recorder's own"
+            "{name} is the recording's own"
         );
     }
     assert_eq!(calls[0].answered().expect("a reply").exit, 0);
@@ -467,6 +472,13 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
                 subagent.says.is_some(),
                 "{harness}: the sub-agent's last message"
             );
+            // The tokens Claude Code's task notification says the sub-agent used, which the
+            // fake harness cannot work out; OpenCode sends no task notification.
+            assert_eq!(
+                subagent.tokens.is_some(),
+                harness == "claude",
+                "{harness}: the sub-agent's tokens"
+            );
         }
     }
     // Codex writes with its native apply_patch.
@@ -499,6 +511,222 @@ fn each_recording_covers_what_the_ticket_asks_of_it() {
             words(&asks)
         );
     }
+}
+
+#[test]
+fn claude_code_ends_each_recording_by_its_own_exit() {
+    let version = recording::pinned_version("claude").expect("a version");
+    let folder = recording::folder("claude", &version);
+    for file in ["recording.json", "asks-recording.json"] {
+        let made: Recording =
+            serde_json::from_str(&fs::read_to_string(folder.join(file)).expect("a recording"))
+                .expect("a recording");
+        // Its `/exit`, never the Ctrl-C after it: one SessionEnd, `prompt_input_exit`.
+        assert_eq!(
+            recording::session_end_reasons(&made),
+            ["prompt_input_exit"],
+            "claude {version} {file}"
+        );
+    }
+}
+
+/// The covering steps a pinned hook word is about, and the event the harness would fire for them
+/// under that word: what a pin of the word says the recording shows in its place.
+const PINNED_STEPS: &[(&str, &[&str], &str)] = &[
+    ("pretooluse-edit", &["write", "edit"], "PreToolUse"),
+    (
+        "posttoolusefailure-blocked",
+        &["failing-bash"],
+        "PostToolUse",
+    ),
+    ("subagentstop", &["subagent"], "SubagentStop"),
+];
+
+/// What a pins file in `tests/scenarios/pins` claims of its recording that the recording
+/// contradicts: a hook word the dialect is pinned not to show that it shows; a step whose
+/// pinned stand-in is not heard for it; or a step pinned to show nothing that a hook of its
+/// event is heard for. A pin to nothing that the pins file does not name as a known gap is one
+/// too, for a step the table above knows.
+fn pins_contradicted(pins: &Value, made: &Value) -> Vec<String> {
+    let mut found = Vec::new();
+    let hooks = made["hook_calls"].as_array().cloned().unwrap_or_default();
+    let word = |c: &Value| c["argv"][1].as_str().unwrap_or_default().to_owned();
+    let steps: Vec<Value> = made["model"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|a| a["calls"].as_array().cloned().unwrap_or_default())
+        .collect();
+    // A hook call is for a step when it carries its tool-use id, or names what it aimed at (a
+    // path, a command, a patch's file, or a sub-agent's prompt).
+    let for_step = |hook: &Value, step: &Value| {
+        let stdin = &hook["stdin"];
+        if recording::tool_use_id(stdin).is_some_and(|id| step["tool_use_id"] == id.as_str()) {
+            return true;
+        }
+        // The hook's input as JSON, so each aim is looked for as JSON spells it.
+        let input = stdin.get("tool_input").unwrap_or(stdin).to_string();
+        let prompt = step["input"]["prompt"].as_str().map(str::to_owned);
+        drift::targets(&step["input"])
+            .into_iter()
+            .chain(prompt)
+            .any(|aim| {
+                let spelled = serde_json::to_string(&aim).expect("JSON");
+                let bare = spelled.strip_prefix('"').and_then(|s| s.strip_suffix('"'));
+                input.contains(bare.unwrap_or(&spelled))
+            })
+    };
+    let gaps = &pins["recorded"]["gaps"];
+    for (kind, shown) in pins["shows"].as_object().into_iter().flatten() {
+        let Some(pinned) = kind.strip_prefix("hook.") else {
+            continue;
+        };
+        if hooks.iter().any(|h| word(h) == pinned) {
+            found.push(format!(
+                "{kind} is pinned as not shown, and the recording shows it"
+            ));
+        }
+        let Some((_, about, event)) = PINNED_STEPS.iter().find(|(w, ..)| *w == pinned) else {
+            continue;
+        };
+        let instead: Vec<&str> = shown
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s["kind"].as_str()?.strip_prefix("hook."))
+            .collect();
+        let concerned = steps.iter().filter(|s| {
+            let name = s["step"].as_str().unwrap_or_default();
+            about.contains(&name) || about.contains(&step_kind(name).as_str())
+        });
+        for step in concerned {
+            let name = step["step"].as_str().unwrap_or_default();
+            let heard: Vec<&Value> = hooks.iter().filter(|h| for_step(h, step)).collect();
+            if instead.is_empty() {
+                if let Some(h) = heard
+                    .iter()
+                    .find(|h| h["stdin"]["hook_event_name"] == *event)
+                {
+                    found.push(format!(
+                        "{kind} is pinned to nothing, and {name} is heard as {}",
+                        word(h)
+                    ));
+                }
+                if !gaps.get(kind.as_str()).is_some_and(Value::is_string) {
+                    found.push(format!(
+                        "{kind} is pinned to nothing, and no known gap names it"
+                    ));
+                }
+            } else {
+                for want in &instead {
+                    if !heard.iter().any(|h| word(h) == *want) {
+                        found.push(format!(
+                            "{kind} is pinned to {want}, and no {want} is heard for {name}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// What the covering script's step `name` is a kind of (`bash`, `write`, `edit`, …).
+fn step_kind(name: &str) -> String {
+    let script = purlis_recordings::script::Script::named("covering").expect("the covering script");
+    script
+        .sequence()
+        .iter()
+        .flat_map(|(_, r)| &r.calls)
+        .chain(script.subagent.iter().flat_map(|r| &r.calls))
+        .find(|s| s.step == name)
+        .map(|s| s.kind.clone())
+        .unwrap_or_default()
+}
+
+/// Each pins file in `tests/scenarios/pins`, read.
+fn pins_files() -> Vec<(PathBuf, Value)> {
+    let dir = purlis_recordings::repo().join("tests/scenarios/pins");
+    let mut found: Vec<(PathBuf, Value)> = fs::read_dir(&dir)
+        .expect("the pins folder")
+        .map(|e| e.expect("an entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .map(|p| {
+            let pins =
+                serde_json::from_str(&fs::read_to_string(&p).expect("a pins file")).expect("JSON");
+            (p, pins)
+        })
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found
+}
+
+#[test]
+fn every_pins_file_says_only_what_its_recording_shows() {
+    let files = pins_files();
+    assert!(!files.is_empty(), "no pins files");
+    for (path, pins) in files {
+        let from = pins["recorded"]["from"]
+            .as_str()
+            .expect("the recording it was drawn from");
+        let made: Value = serde_json::from_str(
+            &fs::read_to_string(purlis_recordings::repo().join(from)).expect("its recording"),
+        )
+        .expect("JSON");
+        assert_eq!(
+            pins_contradicted(&pins, &made),
+            Vec::<String>::new(),
+            "{}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn a_pin_its_recording_contradicts_is_found() {
+    let edit = json!({"step": "refused-edit", "tool": "apply_patch", "tool_use_id": "<tool-use-1>",
+        "input": "*** Begin Patch\n*** Update File: <outside>/existing.txt\n*** End Patch\n"});
+    let made = |hooks: Value| json!({"model": [{"calls": [edit.clone()]}], "hook_calls": hooks});
+    let pre = json!({"argv": ["hook", "pretooluse"], "stdin": {"hook_event_name": "PreToolUse",
+        "tool_input": {"command": "*** Update File: <outside>/existing.txt"}}});
+    let pinned = |shown: Value, gaps: Value| json!({"shows": {"hook.pretooluse-edit": shown}, "recorded": {"gaps": gaps}});
+    let gap = json!({"hook.pretooluse-edit": "Known gap (#1): no hook"});
+    // Pinned to a PreToolUse in its place, and none is heard for the edit: contradicted.
+    assert_eq!(
+        pins_contradicted(
+            &pinned(json!([{"kind": "hook.pretooluse"}]), json!({})),
+            &made(json!([]))
+        ),
+        [
+            "hook.pretooluse-edit is pinned to pretooluse, and no pretooluse is heard for refused-edit"
+        ]
+    );
+    // Pinned to nothing, named as a gap, and nothing is heard: what the recording shows.
+    assert!(pins_contradicted(&pinned(json!([]), gap.clone()), &made(json!([]))).is_empty());
+    // Pinned to nothing, and a PreToolUse is heard for the edit: contradicted.
+    assert_eq!(
+        pins_contradicted(&pinned(json!([]), gap), &made(json!([pre.clone()]))),
+        ["hook.pretooluse-edit is pinned to nothing, and refused-edit is heard as pretooluse"]
+    );
+    // Pinned to nothing, with no known gap naming it.
+    assert_eq!(
+        pins_contradicted(&pinned(json!([]), json!({})), &made(json!([]))),
+        ["hook.pretooluse-edit is pinned to nothing, and no known gap names it"]
+    );
+    // Pinned as not shown, and shown.
+    let shown = json!([{"argv": ["hook", "pretooluse-edit"], "stdin": {}}]);
+    assert_eq!(
+        pins_contradicted(
+            &pinned(json!([{"kind": "hook.pretooluse"}]), json!({})),
+            &made(shown)
+        ),
+        [
+            "hook.pretooluse-edit is pinned as not shown, and the recording shows it",
+            "hook.pretooluse-edit is pinned to pretooluse, and no pretooluse is heard for refused-edit"
+        ]
+    );
 }
 
 #[test]

@@ -46,7 +46,7 @@ const STAND_IN_KEY: &str = "stand-in-model-no-credential";
 /// The hook word whose first call the recorder holds past its timeout, and the one whose first
 /// call it answers with exit 2. The held one is a PostToolUse, not the one SessionStart, so
 /// purlis's SessionStart context reaches the model, and the harness's wait on it is measured
-/// (`command-timeout.txt` in the evidence).
+/// (`hook-entry-timeout.txt` in the evidence).
 const STALL: &str = "posttooluse-blocked";
 const EXIT2: &str = "pretooluse";
 
@@ -322,6 +322,21 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let recorder_out = chat_tmp
         .as_ref()
         .map_or(recorder_out, |tmp| tmp.join("recorder.jsonl"));
+    // Claude Code's sub-agent ends with its SubagentStop hook: the chat's next call waits for its
+    // reply, so the sub-agent's hooks and the next call's never interleave: waiting only for the
+    // sub-agent's last response left its SubagentStop free to begin after the next PreToolUse.
+    if harness == "claude" {
+        let out = recorder_out.clone();
+        *stand_in.subagent_settled.lock().expect("the gate") = Some(Box::new(move || {
+            recorder::read(&out).is_ok_and(|lines| {
+                lines.iter().any(|call| {
+                    call.phase == "call"
+                        && call.argv.get(1).is_some_and(|w| w == "subagentstop")
+                        && lines.iter().any(|l| l.phase == "reply" && l.id == call.id)
+                })
+            })
+        }));
+    }
     launch.set.extend(
         [
             (recorder::REAL, purlis.display().to_string()),
@@ -486,14 +501,43 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     // The chat ends as a person ends it, and is left to run its closing hooks: every hook call
     // it began answers before the confinement goes. Claude Code is ended with its own `/exit`:
     // ended with Ctrl-C, its SessionEnd fired in some runs and not others, whatever its budget
-    // (CI runs 43834558626 to 43861652433). The others, and Claude Code if it is still running,
-    // with Ctrl-C until they exit.
+    // (CI runs 43834558626 to 43861652433). With the covering script's background shell still
+    // running, Claude Code 2.1.325 answers `/exit` with "Background work is running" (Exit and
+    // stop tasks, Move to background and exit, Stay) and waits; left unanswered, the Ctrl-C after
+    // it ended the chat with no SessionEnd, or with reason `other` (runs 43868988968 and
+    // 43876529524). A person who typed `/exit` takes its default, "Exit and stop tasks", and
+    // the recording's header says so. The others, and Claude Code if it is still running, with
+    // Ctrl-C until they exit.
+    let mut stopped_its_tasks = false;
     if harness == "claude" {
         std::thread::sleep(Duration::from_secs(2));
         let _ = session.write(b"/exit");
         std::thread::sleep(Duration::from_millis(800));
         let _ = session.write(b"\r");
-        let _ = session.wait(Duration::from_secs(15));
+        let since = Instant::now();
+        let mut exited = false;
+        while since.elapsed() < Duration::from_secs(20) {
+            if matches!(session.wait(Duration::from_millis(250)), Ok(Some(_))) {
+                exited = true;
+                break;
+            }
+            let screen = session.screen().lines.join("\n");
+            if !stopped_its_tasks
+                && screen.contains("Background work is running")
+                && screen.contains("❯ 1. Exit and stop tasks")
+            {
+                std::thread::sleep(Duration::from_millis(500));
+                let _ = session.write(b"\r");
+                stopped_its_tasks = true;
+            }
+        }
+        if !exited {
+            // What Claude Code shows when /exit did not end it, for the run's reader.
+            let _ = fs::write(
+                evidence.join("screen-after-exit.txt"),
+                session.screen().lines.join("\n"),
+            );
+        }
     }
     for _ in 0..3 {
         if matches!(session.wait(Duration::from_millis(100)), Ok(Some(_))) {
@@ -614,6 +658,12 @@ fn records_a_harness_under_purlis_wrap_at_full() {
                 format!("CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS={SESSIONEND_BUDGET_MS}"),
             )
         }))
+        .chain(stopped_its_tasks.then(|| {
+            (
+                "exit".to_owned(),
+                "/exit, its \"Background work is running\" answered \"Exit and stop tasks\"".to_owned(),
+            )
+        }))
         .chain((harness_asks > 0).then(|| {
             (
                 "harness_asks".to_owned(),
@@ -666,7 +716,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
             None => format!("{harness} {version}: no hook call followed the held `{STALL}` call\n"),
         };
         print!("{said}");
-        fs::write(evidence.join("command-timeout.txt"), said).expect("the measured wait");
+        fs::write(evidence.join("hook-entry-timeout.txt"), said).expect("the measured wait");
     }
     write_json(
         &evidence.join("heard.json"),
@@ -682,6 +732,15 @@ fn records_a_harness_under_purlis_wrap_at_full() {
     let mut problems = recording::problems(&masked);
     problems.extend(recording::overlapping(&lines));
     assert!(problems.is_empty(), "the recording: {problems:?}");
+    // Claude Code ended by its own `/exit`, never by the Ctrl-C after it: one SessionEnd, whose
+    // reason says so.
+    if harness == "claude" {
+        assert_eq!(
+            purlis_recordings::recording::session_end_reasons(&checked),
+            ["prompt_input_exit"],
+            "Claude Code did not end by its /exit; its screen after /exit is in the evidence"
+        );
+    }
     // Codex's native write: its own `apply_patch`, never the patch through its shell.
     if harness == "codex" {
         for call in checked
