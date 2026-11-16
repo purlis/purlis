@@ -827,7 +827,9 @@ jobs:
       # `purlis serve --install` hands the host to the account's user manager with linger; every
       # SSH connection is cut and the account signed out, and the host and its chats keep running;
       # `docker restart` restarts the machine, and the host comes back on its own and settles what
-      # the restart ended from its record.
+      # the restart ended from its record. Then newer versions beside it: the old version's host
+      # stops itself once idle and the next install prunes it, and one with a live chat is kept
+      # (#6704).
       - name: A machine that boots systemd, behind an sshd
         if: steps.scope.outputs.run == 'true'
         run: tests/ssh-runner/up-systemd.sh

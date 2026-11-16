@@ -31,8 +31,12 @@
 //!
 //! **A host the manager starts never exits for want of a client**: `purlis serve` never did
 //! (`purlis_host::lifetime`). It is started as `purlis serve --as-a-service`, which differs from
-//! `purlis serve` in one thing: finding another host of its version already serving is a
-//! success, so the manager does not restart it into the same answer until its limit trips.
+//! `purlis serve` in two things: finding another host of its version already serving is a
+//! success, so the manager does not restart it into the same answer until its limit trips; and
+//! **an old version's host stops itself** once a newer version is installed beside it and it has
+//! had nothing to run and no link for a minute (#6704, `purlis_host::Superseded`). Either exits
+//! 0, which neither manager restarts, so the next prune finds the old version drained and takes
+//! its service back by name ([`remove_version`]).
 //!
 //! Nothing here reads what a manager prints but the exit status of its own query commands
 //! (`systemctl --user is-enabled`, `launchctl print`), which are their interfaces for scripts.
