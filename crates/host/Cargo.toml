@@ -54,9 +54,10 @@ purlis-key-proxy.workspace = true
 # A run's key proxy served through a start path (T1a-05): the fake provider it routes to, and
 # hyper's own client as the harness's side, both dev-dependencies the host's guard skips.
 fake-harness = { path = "../fake-harness" }
-# A run's route through the Anthropic built-in, bound as the key proxy is (T1a-08): a
-# dev-dependency the host's guard skips, which fake-harness links already.
-purlis-core.workspace = true
+# The upstream's test seams (T1a-60): the fake provider's name reached on loopback and its test
+# root in the trust store (`test-support`), and a run's route bound as the key proxy is (T1a-08):
+# a dev-dependency the host's guard skips.
+purlis-core = { workspace = true, features = ["test-support"] }
 hyper = { version = "1.12", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 http-body-util = "0.1"

@@ -6586,9 +6586,11 @@ dependencies = [
  "hyper",
  "hyper-util",
  "purlis-core",
+ "rustls",
  "serde_json",
  "subtle",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

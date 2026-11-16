@@ -5,29 +5,32 @@
 //! [`Desktop`]: the window's `StartKeyProxy` to its session host, which starts the real key
 //! proxy through the binary's trait. Here that trait is the test's own: it hands the key proxy
 //! the route the test named for the run, or the one it resolves at the start from [`Sources`],
-//! a declaration store and your keys that count their reads, with the stand-in key (the real
-//! start's wiring is T1a-17's, its key T1a-61's).
+//! a declaration store and your keys that count their reads (T1a-08), with the stand-in key (the
+//! real start's wiring is T1a-17's, its key T1a-61's). A start path is made with the [`Reach`] its key proxy reaches
+//! upstreams through (T1a-60): [`plain_reach`] for a plain-HTTP provider on loopback, or one the
+//! test made, with the fake provider's test root in the trust store, its name reached on
+//! loopback and the outbound proxy the test names in place of the system's.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use fake_harness::model::{Provider, Recording};
+use fake_harness::model::{Provider, Recording, TestRoot};
 use http_body_util::{BodyExt, Full};
 use hyper::{HeaderMap, Request};
 use hyper_util::rt::TokioIo;
+use purlis_core::model_provider::{self, Format, built_ins};
+use purlis_core::model_route;
+use purlis_core::upstream::{Direct, TestReach, trust};
 use purlis_host::standin::StandIns;
 use purlis_host::{
     Compose, Ended, Hosting, KeyProxyStarted, KeyProxyTell, KeyProxyTold, ProxiesKeys, Record,
     ToCompose,
 };
-use purlis_core::model_provider::{self, Format, built_ins};
-use purlis_core::model_route;
-use purlis_key_proxy::{Heard, Key, KeyProxy, Route};
+use purlis_key_proxy::{Heard, Key, KeyProxy, Matcher, Origin, Reach, Route};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
 use purlis_session_protocol::session::{self, Answer, Client, Command, Events};
@@ -66,40 +69,46 @@ pub(crate) trait StartPath {
     fn written(&self) -> Vec<String>;
 }
 
-/// The Anthropic built-in's route for Claude Code, reached at `provider`, with the stand-in key
-/// in `x-api-key`, as the built-in names.
+/// A route to `provider` over plain HTTP, with the stand-in key in `x-api-key`, as the Anthropic
+/// built-in names.
 pub fn route_to(provider: &Provider) -> Route {
-    let declaration = built_ins()
-        .iter()
-        .find(|declaration| declaration.id == "anthropic")
-        .expect("the Anthropic built-in ships");
     Route {
-        upstream: provider.address(),
-        bound: model_route::Route::bind("claude-anthropic", declaration, Format::AnthropicMessages)
-            .expect("a Messages endpoint"),
+        origin: Origin::http("127.0.0.1", provider.port()),
+        bound: anthropic(),
         key: Key::XApiKey(STAND_IN_KEY.to_owned()),
     }
 }
 
-/// **Where a run's route comes from at its start**: a declaration store holding one
-/// declaration of the person's own, your keys holding the stand-in key, and the address each
-/// origin is reached at; each read of the store and of your keys counted (R-479).
+/// The Anthropic built-in's Messages route for Claude Code (T1a-08).
+pub fn anthropic() -> model_route::Route {
+    let declaration = built_ins()
+        .iter()
+        .find(|declaration| declaration.id == "anthropic")
+        .expect("the Anthropic built-in ships");
+    model_route::Route::bind("claude-anthropic", declaration, Format::AnthropicMessages)
+        .expect("a Messages endpoint")
+}
+
+/// **Where a run's route comes from at its start** (R-077, R-479): a declaration store holding
+/// one declaration of the person's own, your keys holding the stand-in key, and the plain-HTTP
+/// port on loopback each declared origin is served at; each read of the store and of your keys
+/// counted.
 pub struct Sources {
     declaration: Mutex<String>,
-    reached_at: HashMap<String, SocketAddr>,
+    served_at: HashMap<String, u16>,
     pub declaration_reads: AtomicUsize,
     pub key_reads: AtomicUsize,
 }
 
 impl Sources {
-    /// A store holding a Messages declaration whose base is `base`, each origin in `reached_at`
-    /// served at its address.
-    pub fn new(base: &str, reached_at: &[(&str, SocketAddr)]) -> Arc<Sources> {
+    /// A store holding a Messages declaration whose base is `base`, each origin in `served_at`
+    /// served on that loopback port.
+    pub fn new(base: &str, served_at: &[(&str, u16)]) -> Arc<Sources> {
         Arc::new(Sources {
             declaration: Mutex::new(Sources::text(base)),
-            reached_at: reached_at
+            served_at: served_at
                 .iter()
-                .map(|(origin, address)| ((*origin).to_owned(), *address))
+                .map(|(origin, port)| ((*origin).to_owned(), *port))
                 .collect(),
             declaration_reads: AtomicUsize::new(0),
             key_reads: AtomicUsize::new(0),
@@ -128,11 +137,60 @@ impl Sources {
             .expect("a Messages endpoint");
         self.key_reads.fetch_add(1, Ordering::SeqCst);
         Route {
-            upstream: self.reached_at[bound.base.origin()],
+            origin: Origin::http("127.0.0.1", self.served_at[bound.base.origin()]),
             bound,
             key: Key::XApiKey(STAND_IN_KEY.to_owned()),
         }
     }
+}
+
+/// The name the TLS tests' upstream is declared by, served by the fake provider on loopback.
+pub const UPSTREAM: &str = "api.anthropic.com";
+
+/// A route to [`UPSTREAM`] over TLS on its own port, 443, with the stand-in key in `x-api-key`.
+pub fn route_to_upstream() -> Route {
+    Route {
+        origin: Origin::https(UPSTREAM, 443),
+        bound: anthropic(),
+        key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+    }
+}
+
+/// How a key proxy reaches a plain-HTTP provider on loopback: no outbound proxy, whatever this
+/// machine's settings name.
+pub fn plain_reach() -> Reach {
+    Reach {
+        outbound: Arc::new(Direct::new()),
+        tls: Arc::new(trust::client_config().expect("the OS trust store")),
+        proxies: Matcher::builder().build(),
+    }
+}
+
+/// How a key proxy reaches [`UPSTREAM`] when it is served at `served`: its name resolves there,
+/// `trusted` (the fake provider's test root, or none) sits in the trust-store seam beside the
+/// OS's own roots, and `proxies` stands for the proxy variables in `purlisd`'s environment.
+pub fn reach(served: std::net::SocketAddr, trusted: Option<&TestRoot>, proxies: Matcher) -> Reach {
+    let tls = match trusted {
+        Some(root) => trust::trusting_test_root(root.certificate()),
+        None => trust::client_config(),
+    };
+    Reach {
+        outbound: Arc::new(Direct::with_test_reach(TestReach::new(UPSTREAM, served))),
+        tls: Arc::new(tls.expect("a TLS client")),
+        proxies,
+    }
+}
+
+/// A fake provider for [`UPSTREAM`] over TLS under a fresh test root, answering Messages: the
+/// provider and its root.
+pub fn tls_provider() -> (Provider, TestRoot) {
+    let root = TestRoot::generate(&[UPSTREAM]);
+    let provider = Provider::builder()
+        .answer("/v1/messages", Recording::message(MESSAGE))
+        .tls(&root)
+        .start()
+        .expect("the fake provider serves");
+    (provider, root)
 }
 
 /// A fake provider answering Messages with a non-streamed message.
@@ -162,6 +220,18 @@ pub async fn try_send(
     path: &str,
     body: &[u8],
 ) -> Result<Answered, String> {
+    try_send_with(port, token, path, body, &[]).await
+}
+
+/// [`try_send`], with `extra` headers beside the token as the harness set them; a `host` among
+/// them in place of the listener's own.
+pub async fn try_send_with(
+    port: u16,
+    token: Option<&str>,
+    path: &str,
+    body: &[u8],
+    extra: &[(&str, &str)],
+) -> Result<Answered, String> {
     let stream = tokio::time::timeout(
         PATIENCE,
         tokio::net::TcpStream::connect(("127.0.0.1", port)),
@@ -174,11 +244,19 @@ pub async fn try_send(
         .map_err(|why| why.to_string())?;
     tokio::spawn(connection);
     let mut request = Request::post(path)
-        .header("host", format!("127.0.0.1:{port}"))
         .header("content-type", "application/json")
         .header("anthropic-version", "2023-06-01");
+    if !extra
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+    {
+        request = request.header("host", format!("127.0.0.1:{port}"));
+    }
     if let Some(token) = token {
         request = request.header("authorization", format!("Bearer {token}"));
+    }
+    for (name, value) in extra {
+        request = request.header(*name, *value);
     }
     let request = request
         .body(Full::new(Bytes::copy_from_slice(body)))
@@ -253,6 +331,39 @@ pub async fn send(port: u16, token: Option<&str>, path: &str, body: &[u8]) -> An
     try_send(port, token, path, body)
         .await
         .expect("the key proxy answers")
+}
+
+/// [`try_send_with`], answered.
+pub async fn send_with(
+    port: u16,
+    token: Option<&str>,
+    path: &str,
+    body: &[u8],
+    extra: &[(&str, &str)],
+) -> Answered {
+    try_send_with(port, token, path, body, extra)
+        .await
+        .expect("the key proxy answers")
+}
+
+/// The `error.message` of an answer in the Messages error shape.
+pub fn message(answered: &Answered) -> String {
+    let body: serde_json::Value =
+        serde_json::from_slice(&answered.body).expect("an answer in the Messages error shape");
+    body["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no error message in {body}"))
+        .to_owned()
+}
+
+/// Every value of `name` in a request the fake provider read, in any letter case.
+pub fn headers_named<'a>(request: &'a fake_harness::model::Request, name: &str) -> Vec<&'a str> {
+    request
+        .headers
+        .iter()
+        .filter(|(sent, _)| sent.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+        .collect()
 }
 
 /// The value of `name` in a request the fake provider read, if it was sent.
@@ -376,10 +487,16 @@ pub struct Desktop {
 }
 
 impl Desktop {
+    /// The desktop's start, its key proxy reaching a plain-HTTP provider ([`plain_reach`]).
     pub async fn new() -> Desktop {
+        Desktop::reaching(plain_reach()).await
+    }
+
+    /// The desktop's start, its key proxy reaching upstreams through `reach`.
+    pub async fn reaching(reach: Reach) -> Desktop {
         let folder = tempfile::tempdir().unwrap();
         let proxies = RoutesTheTestNamed {
-            proxy: Arc::new(KeyProxy::new().expect("its runtime starts")),
+            proxy: Arc::new(KeyProxy::reaching(reach).expect("its runtime starts")),
             routes: Arc::default(),
             told: Arc::default(),
             arrivals: Arc::default(),
