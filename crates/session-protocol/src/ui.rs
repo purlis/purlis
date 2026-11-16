@@ -1480,6 +1480,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "adopt_layout",
     "agents_stopped",
     // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
+    // The project's `[policy]` as it stands for you (Q308): a read; Accept stays the window's.
+    "project_policy_state",
     "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",
