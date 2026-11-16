@@ -62,14 +62,15 @@ pub struct Row {
 /// **Your keys as the page lists it**: every entry the index holds, in its order, each read
 /// once for its state (its value read and its mark verified, never shown), with the profiles in
 /// `profiles.json` naming it, the chats among `chats` on those profiles, and the pools
-/// `allowances` sends it to. An index that can't be read is the page's trouble state (W115).
+/// `allowances` sends it to. An index or a `profiles.json` that can't be read is the page's
+/// trouble state (W115), so no row says no profile uses it because the file couldn't be read.
 pub fn rows(
     config_root: &Path,
     credentials: &dyn Credentials,
     chats: &[ChatUse],
     allowances: &dyn Allowances,
 ) -> Result<Vec<Row>, String> {
-    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    let profiles = profiles_of(config_root)?;
     Ok(super::list(config_root, credentials)?
         .into_iter()
         .map(|listed| {
@@ -122,6 +123,13 @@ fn naming(profiles: &[crate::profilestore::MachineProfile], id: Ulid) -> Vec<Str
         .collect()
 }
 
+/// The profiles `profiles.json` holds. One that can't be read is an error, never no profiles:
+/// the page and its questions never say no chats use a key because they couldn't look.
+fn profiles_of(config_root: &Path) -> Result<Vec<crate::profilestore::MachineProfile>, String> {
+    crate::profilestore::list(config_root)
+        .map_err(|why| format!("purlis couldn't tell which profiles use your keys: {why}"))
+}
+
 /// The chats of `chats` on one of `profiles` that `keep` keeps, by name.
 fn on(profiles: &[String], chats: &[ChatUse], keep: impl Fn(&ChatUse) -> bool) -> Vec<String> {
     chats
@@ -133,7 +141,7 @@ fn on(profiles: &[String], chats: &[ChatUse], keep: impl Fn(&ChatUse) -> bool) -
 
 /// **The chats *Remove* stops** (W5's count): the chats on a profile naming entry `id`.
 pub fn chats_using(config_root: &Path, id: Ulid, chats: &[ChatUse]) -> Result<Vec<String>, String> {
-    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    let profiles = profiles_of(config_root)?;
     Ok(on(&naming(&profiles, id), chats, |_| true))
 }
 
@@ -144,7 +152,7 @@ pub fn chats_on_pool(
     pool: &str,
     chats: &[ChatUse],
 ) -> Result<Vec<String>, String> {
-    let profiles = crate::profilestore::list(config_root).unwrap_or_default();
+    let profiles = profiles_of(config_root)?;
     Ok(on(&naming(&profiles, id), chats, |c| {
         c.pool.as_deref() == Some(pool)
     }))
