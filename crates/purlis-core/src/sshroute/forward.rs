@@ -184,7 +184,7 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
         .write(true)
         .open(folder.join(HELD))
         .map_err(|why| format!("purlis could not hold {}: {why}", folder.display()))?;
-    if !held_or_shared(&held, &socket, from.pool, folder)? {
+    if let Taken::Shared = taken(&held, &socket, from.pool, folder)? {
         return Ok(Held::Shared(socket));
     }
     // What the person's settings add that would ride on it is refused before ssh runs.
@@ -238,7 +238,9 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
         _settings: settings,
         said,
     };
-    let waited = wait_for(&socket, FORWARD_WITHIN, &mut || Ok(!forward.lease().ended()));
+    let waited = wait_for(&socket, FORWARD_WITHIN, &mut || {
+        Ok(!forward.lease().ended())
+    });
     match waited {
         Ok(()) => {
             watch(&forward.lease);
@@ -262,7 +264,8 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
     }
 }
 
-/// Waits up to `within` for `socket` to be there, while `going` says the forward still runs.
+/// Waits up to `within` for something to answer on `socket`, while `going` says the forward
+/// still runs.
 fn wait_for(
     socket: &Path,
     within: Duration,
@@ -270,7 +273,7 @@ fn wait_for(
 ) -> Result<(), String> {
     let until = Instant::now() + within;
     loop {
-        if std::fs::symlink_metadata(socket).is_ok() {
+        if answers(socket) {
             return Ok(());
         }
         if !going()? {
@@ -286,30 +289,48 @@ fn wait_for(
     }
 }
 
-/// **Takes the pool's lock, or answers that another process's forward is to be used**: `true`
-/// where this process now holds it, `false` where another holds it and its socket answers. A
-/// lock held over a socket nothing answers is the forward of a process whose ssh ended and that
-/// has not let go yet: waited out up to [`FORWARD_WITHIN`], and refused after that.
-fn held_or_shared(
-    held: &std::fs::File,
-    socket: &Path,
-    pool: &str,
-    folder: &Path,
-) -> Result<bool, String> {
+/// What [`taken`] found.
+enum Taken {
+    /// This process holds the pool's lock now.
+    Held,
+    /// Another holds it, and its socket answers.
+    Shared,
+}
+
+/// How long a lock held over a socket nothing answers is waited out: a holder whose ssh ended lets
+/// go within [`WATCHED_EVERY`]. Short, since the wait holds this process's table of forwards.
+const LET_GO_WITHIN: Duration = Duration::from_secs(2);
+
+/// **Takes the pool's lock, or answers that another process's forward is to be used**. A holder
+/// with no socket yet is still opening it, and is waited for up to [`FORWARD_WITHIN`]. A lock held
+/// over a socket nothing answers is the forward of a process whose ssh ended and that has not let
+/// go yet: waited out up to [`LET_GO_WITHIN`], and refused after that.
+fn taken(held: &std::fs::File, socket: &Path, pool: &str, folder: &Path) -> Result<Taken, String> {
     let until = Instant::now() + FORWARD_WITHIN;
+    let mut silent_since = None;
     loop {
         match held.try_lock() {
-            Ok(()) => return Ok(true),
-            Err(std::fs::TryLockError::WouldBlock) if answers(socket) => return Ok(false),
-            Err(std::fs::TryLockError::WouldBlock) => {}
+            Ok(()) => return Ok(Taken::Held),
+            Err(std::fs::TryLockError::WouldBlock) if answers(socket) => return Ok(Taken::Shared),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if std::fs::symlink_metadata(socket).is_ok() {
+                    let since = *silent_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() >= LET_GO_WITHIN {
+                        return Err(format!(
+                            "purlis could not reach pool {pool}: another purlis process holds its \
+                             connection to that machine, and nothing answers on it. Quit that \
+                             process, or the purlis window, and try again"
+                        ));
+                    }
+                }
+            }
             Err(std::fs::TryLockError::Error(why)) => {
                 return Err(format!("purlis could not hold {}: {why}", folder.display()));
             }
         }
         if Instant::now() >= until {
             return Err(format!(
-                "another purlis process holds pool {pool}'s SSH forward, and nothing has answered \
-                 on it for {} seconds. Quit that process, or the purlis window, and try again",
+                "the forward didn't open within {} seconds",
                 FORWARD_WITHIN.as_secs()
             ));
         }
@@ -318,7 +339,8 @@ fn held_or_shared(
 }
 
 /// **Whether something answers on `socket`**: an ssh still forwarding listens there; the file a
-/// killed one left does not.
+/// killed one left does not. Each ask is a connection ssh carries to the engine as a channel of
+/// its own, closed at once.
 fn answers(socket: &Path) -> bool {
     std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
@@ -399,7 +421,8 @@ pub fn ssh_of(pool: &str) -> Option<u32> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     match held.get(pool) {
-        Some(Held::Own(forward)) => Some(forward.ssh()),
+        // Not one whose ssh has ended and that has let go: its id may be another process's now.
+        Some(Held::Own(forward)) if forward.lease().held.is_some() => Some(forward.ssh()),
         _ => None,
     }
 }

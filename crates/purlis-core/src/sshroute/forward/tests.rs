@@ -8,7 +8,8 @@
 
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use super::super::{HELD, HostKey, Route};
 use super::*;
@@ -20,7 +21,7 @@ const FORWARDING: &str = "PURLIS_TEST_SSH_FORWARDING";
 /// local socket until its standard input closes, as the forward's session ends with purlis's
 /// pipe. Run any other way, it does nothing.
 #[test]
-#[ignore = "run by an_ssh's script only"]
+#[ignore = "run in a child, as ssh, by the two tests below"]
 fn stands_in_for_ssh() {
     let Some(forwarding) = crate::envvar::var(FORWARDING) else {
         return;
@@ -42,25 +43,25 @@ fn an_ssh(folder: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let ssh = folder.join("ssh");
     let exe = std::env::current_exe().expect("the test binary");
-    std::fs::write(
-        &ssh,
-        format!(
-            "#!/bin/sh\n\
-             forwarding=\n\
-             while [ $# -gt 0 ]; do\n\
-               case \"$1\" in\n\
-                 -G) printf 'hostname box\\nuser me\\n'; exit 0;;\n\
-                 -L) forwarding=$2;;\n\
-               esac\n\
-               shift\n\
-             done\n\
-             {FORWARDING}=\"$forwarding\" exec '{}' --exact \
-             sshroute::forward::tests::stands_in_for_ssh --ignored --quiet\n",
-            exe.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let script = format!(
+        "#!/bin/sh\n\
+         forwarding=\n\
+         while [ $# -gt 0 ]; do\n\
+           case \"$1\" in\n\
+             -G) printf 'hostname box\\nuser me\\n'; exit 0;;\n\
+             -L) forwarding=$2;;\n\
+           esac\n\
+           shift\n\
+         done\n\
+         {FORWARDING}=\"$forwarding\" exec '{}' --exact \
+         sshroute::forward::tests::stands_in_for_ssh --ignored --quiet\n",
+        exe.display()
+    );
+    // Written while nothing forks, so no child holds it open for writing as it is run (ETXTBSY).
+    crate::forklock::while_descriptors_are_made(|| {
+        std::fs::write(&ssh, script).unwrap();
+        std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    });
     ssh
 }
 
@@ -71,7 +72,8 @@ fn key() -> HostKey {
     .unwrap()
 }
 
-fn answers(socket: &Path) -> bool {
+/// The test's own look at a socket, apart from the one under test.
+fn something_answers(socket: &Path) -> bool {
     UnixStream::connect(socket).is_ok()
 }
 
@@ -103,7 +105,7 @@ fn a_holder_whose_ssh_ends_lets_go_so_another_process_opens_a_forward_that_answe
     let Held::Own(mut first) = open(&opening).expect("it opens") else {
         panic!("the first to open it holds it");
     };
-    assert!(answers(first.socket()));
+    assert!(something_answers(first.socket()));
 
     // Its ssh ends, and the window does not look at the pool again.
     kill(first.ssh());
@@ -111,7 +113,7 @@ fn a_holder_whose_ssh_ends_lets_go_so_another_process_opens_a_forward_that_answe
     // Another process of the person's (the session host's connector) asks for the pool.
     let second = open(&opening).expect("another process gets a forward");
     assert!(
-        answers(second.socket()),
+        something_answers(second.socket()),
         "another process was handed a socket nothing answers"
     );
     assert!(
@@ -121,7 +123,7 @@ fn a_holder_whose_ssh_ends_lets_go_so_another_process_opens_a_forward_that_answe
     assert!(!first.alive());
     // The first lets go of its forward without taking the socket the second made.
     drop(first);
-    assert!(answers(second.socket()));
+    assert!(something_answers(second.socket()));
 }
 
 #[test]
@@ -151,18 +153,28 @@ fn a_forward_another_process_holds_is_used_only_while_its_socket_answers() {
     // Its ssh ends; it keeps the lock a while, and the socket's file stays.
     drop(listener);
     assert!(socket.exists());
-    assert!(dropped("stale"), "a socket nothing answers is a dropped forward");
+    assert!(
+        dropped("stale"),
+        "a socket nothing answers is a dropped forward"
+    );
 
     // It lets go a moment later; meanwhile nothing is handed the dead socket.
-    let letting_go = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(500));
-        drop(lock);
+    let let_go_of = Arc::new(AtomicBool::new(false));
+    let letting_go = std::thread::spawn({
+        let let_go_of = Arc::clone(&let_go_of);
+        move || {
+            std::thread::sleep(Duration::from_millis(500));
+            let_go_of.store(true, Ordering::SeqCst);
+            drop(lock);
+        }
     });
-    let asked = Instant::now();
     let held = hold(&opening).expect("a forward of its own");
+    assert!(
+        let_go_of.load(Ordering::SeqCst),
+        "waited for the holder to let go"
+    );
     letting_go.join().unwrap();
-    assert!(asked.elapsed() >= Duration::from_millis(400), "waited for the holder");
-    assert!(answers(&held), "handed a socket nothing answers");
+    assert!(something_answers(&held), "handed a socket nothing answers");
     assert!(ssh_of("stale").is_some(), "this process opened it anew");
     let_go("stale");
 }
