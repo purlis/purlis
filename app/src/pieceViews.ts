@@ -105,9 +105,14 @@ export function runnerFileView(session: number | null, runner: string, path: str
   };
 }
 
+/** Where a runner's file is, as its tab says it: in that runner, read-only. */
+export function inRunnerSaid(runner: string): string {
+  return `In runner ${runner}, read-only`;
+}
+
 /** What a runner's file's tab is called: its name, and that it is in the runner, read-only. */
 export function runnerFileTitle(runner: string, path: string): string {
-  return `${path.slice(path.lastIndexOf("/") + 1)} · In runner ${runner}, read-only`;
+  return `${path.slice(path.lastIndexOf("/") + 1)} · ${inRunnerSaid(runner)}`;
 }
 
 /** The chat, its runner and the path there of a runner's file's view. */

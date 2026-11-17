@@ -47,6 +47,7 @@ import {
   type PlaneId,
 } from "../bindings";
 import {
+  inRunnerSaid,
   pieceDiffTitle,
   pieceDiffView,
   isPlaneRoot,
@@ -766,7 +767,7 @@ export function OutsideFileTab({
       <header {...editorToolbar("piece-files-head")}>
         <ToolbarFile path={path} named={false} />
         {runner !== undefined && (
-          <span className="ui-text-secondary">In runner {runner}, read-only</span>
+          <span className="ui-text-secondary">{inRunnerSaid(runner)}</span>
         )}
       </header>
       <Shown
