@@ -182,7 +182,13 @@ fn pretooluse_read(hook: &Hook) -> Answer {
         Mode::Log => {
             let chat = (hook.env)(purlis_core::hookwire::CHAT_ID_ENV);
             let chat = chat.as_deref().unwrap_or(enforcement::UNKNOWN_CHAT);
-            enforcement::record(hook.root, chat, Family::Secrets, "A-read", None);
+            enforcement::record(
+                hook.root,
+                chat,
+                Family::Secrets,
+                enforcement::RULE_VAULT_READ,
+                None,
+            );
             Answer::Nothing
         }
         Mode::Off => Answer::Nothing,

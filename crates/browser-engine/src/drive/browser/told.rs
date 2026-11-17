@@ -342,6 +342,7 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
         | Refusal::PageReadPastItsLimit
         | Refusal::FocusUnseen
         | Refusal::NoEarlierPage
+        | Refusal::NoLaterPage
         | Refusal::EarlierNotWeb
         | Refusal::EarlierHoldsKept
         | Refusal::TooLarge

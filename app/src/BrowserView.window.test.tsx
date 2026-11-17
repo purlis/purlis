@@ -10,6 +10,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
 import { forgetOrigins } from "./browserWatch";
+import type { ShownPage } from "./bindings";
 import { pickIn, selectNamed } from "./ui/select/select.testkit";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
@@ -123,11 +124,28 @@ function core(
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
     send: (jpeg: string, aim = "p1:1") =>
-      frames?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null }),
+      frames?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null, shown: null }),
     reconnection: (reconnection: "reconnecting" | "reconnected") =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null, closed: null }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null, closed: null, shown: null }),
     page: (origin: string | null) =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null }),
+      frames?.onmessage({
+        aim: "",
+        jpeg: "",
+        reconnection: null,
+        page: { origin },
+        closed: null,
+        shown: null,
+      }),
+    /** What the page is, as the core tells the view (#6938). */
+    shown: (shown: ShownPage) =>
+      frames?.onmessage({
+        aim: "",
+        jpeg: "",
+        reconnection: null,
+        page: null,
+        closed: null,
+        shown,
+      }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }
@@ -1227,5 +1245,111 @@ describe("the view's header (#6937)", () => {
     expect(await within(head).findByRole("button", { name: "12 secrets" })).toBeInTheDocument();
     expect(within(head).queryAllByTestId("secret-mark")).toHaveLength(0);
     expect(within(head).getByTestId("browser-chip")).toHaveTextContent("console.example.test");
+  });
+});
+
+describe("what the page is, and the person's steps through its history (#6938)", () => {
+  const page = (more: Partial<ShownPage> = {}): ShownPage => ({
+    address: "https://docs.example.test/guide/start?tab=2",
+    title: "Getting started",
+    load: { state: "loaded" },
+    ...more,
+  });
+
+  async function drawn(input?: (args: Record<string, unknown>) => unknown) {
+    const { BrowserView } = await import("./BrowserView");
+    const { ProjectShownProvider } = await import("./projectShown");
+    const host = core(undefined, false, input);
+    render(
+      <ProjectShownProvider value={true}>
+        <BrowserView plane={PLANE} program="B1" />
+      </ProjectShownProvider>,
+    );
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==", "p1:7");
+    return host;
+  }
+
+  it("draws no history buttons and no title until the core says what the page is", async () => {
+    await drawn();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    expect(screen.queryByTestId("browser-title")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy address" })).toBeNull();
+  });
+
+  it("names the page's title after the site, and copies its whole address", async () => {
+    const host = await drawn();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    host.page("https://docs.example.test");
+    host.shown(page());
+
+    const head = screen.getByTestId("browser-head");
+    await waitFor(() =>
+      expect(within(head).getByTestId("browser-title")).toHaveTextContent("Getting started"),
+    );
+    const chip = within(head).getByTestId("browser-chip");
+    expect(chip.compareDocumentPosition(within(head).getByTestId("browser-title"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    await userEvent.click(within(head).getByRole("button", { name: "Copy address" }));
+    expect(writeText).toHaveBeenCalledWith("https://docs.example.test/guide/start?tab=2");
+  });
+
+  it("says the page is loading, offers Stop in Reload's place, and says nothing once it loaded", async () => {
+    const host = await drawn();
+    host.shown(page({ load: { state: "loading" } }));
+    await waitFor(() => expect(barSaid()).toHaveTextContent("Loading the page…"));
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+
+    host.shown(page());
+    await waitFor(() => expect(barSaid()).not.toHaveTextContent("Loading"));
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  });
+
+  it("says a page that did not load with the engine's reason, and one that stopped working", async () => {
+    const host = await drawn();
+    host.shown(page({ load: { state: "failed", why: "net::ERR_NAME_NOT_RESOLVED" } }));
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent(
+        "This page did not load (net::ERR_NAME_NOT_RESOLVED). Press Reload to try again.",
+      ),
+    );
+    host.shown(page({ load: { state: "crashed" } }));
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent(
+        "This page stopped working. Press Reload to open it again.",
+      ),
+    );
+  });
+
+  it("takes the browser over before a step, and sends it aimed at the frame the person saw", async () => {
+    const host = await drawn();
+    host.shown(page());
+    const back = await screen.findByRole("button", { name: "Back" });
+    back.focus();
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    const order = host.order();
+    expect(order.indexOf("take_over_browser")).toBeLessThan(order.indexOf("browser_input"));
+    expect(host.asked("browser_input")[0]).toEqual({
+      program: "B1",
+      input: { kind: "navigate", aim: "p1:7", step: "back" },
+    });
+    expect(barSaid()).toHaveTextContent("You are driving this browser.");
+  });
+
+  it("says in the strip why a step was refused", async () => {
+    const host = await drawn(() => ({
+      outcome: "refused",
+      why: "the page has no earlier address to go back to",
+    }));
+    host.shown(page());
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent("the page has no earlier address to go back to"),
+    );
   });
 });

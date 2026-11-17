@@ -40,6 +40,16 @@ pub(super) const UNREADABLE: &str =
 const PUBLISHES: &str =
     "A release or a tag made through the API publishes, as `release create` does.";
 
+/// The sentence a refusal of a new ref whose name cannot be read ends with (#6962): it could be
+/// a tag, but it is no merge.
+pub(super) const REF_UNREADABLE: &str =
+    "purlis can't tell what this ref writes; write it out literally.";
+
+/// The branches a commit through the API may not land on unattended: the default branch, which
+/// the command line cannot name (#6962). A future policy key, `guards.git.default_branches`,
+/// with this as its default (Q307).
+const DEFAULT_BRANCHES: [&str; 2] = ["main", "master"];
+
 /// How a refused compound call is split into calls the floor can read (#6294).
 const SPLIT: &str = "Split the call: give each read its method (`-X GET`) or its endpoint written \
      out, and run a write on its own, with its endpoint and method written out.";
@@ -62,6 +72,12 @@ pub(super) fn opaque(word: &str) -> bool {
 fn brace_expansion_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\{[^{}]*(,|\.\.)[^{}]*\}").expect("compiles"))
+}
+
+/// `{name}`: a placeholder gh fills in from the checkout in a `-F` field, such as `{branch}`.
+fn placeholder_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\{[^{}]*\}").expect("compiles"))
 }
 
 /// A forge CLI's own aliases of a verb the floor holds: `(cli, noun, alias, verb)`.
@@ -249,6 +265,15 @@ struct Field {
 }
 
 impl Field {
+    /// True when purlis cannot read this field's value from the line: the shell fills it in, or
+    /// it is a `-F` field gh reads from a file (`@name`) or fills in with a placeholder such as
+    /// `{branch}` (#6962).
+    fn value_opaque(&self) -> bool {
+        opaque(&self.value)
+            || (self.kind == FieldKind::Typed
+                && (self.value.starts_with('@') || placeholder_re().is_match(&self.value)))
+    }
+
     fn new(kind: FieldKind, written: &str) -> Self {
         let (key, value) = written.split_once('=').unwrap_or((written, ""));
         Self {
@@ -480,7 +505,10 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         if is_merge_path(&segs) {
             return Some(MERGES.to_owned());
         }
-        if let Some(why) = publish_reason(&segs, &call) {
+        // A release or a tag is no merge: the merge hold leaves it to the floor (#6962).
+        if !super::only_merges()
+            && let Some(why) = publish_reason(&segs, &call)
+        {
             return Some(why.to_owned());
         }
         let settable = is_request_path(&segs) || is_repository(&segs);
@@ -517,12 +545,15 @@ fn publish_reason(segs: &[String], call: &ApiCall) -> Option<&'static str> {
         ["git", "refs", "tags", ..] => Some(PUBLISHES),
         ["git", "refs"] => {
             if call.opaque_body {
-                return Some(UNREADABLE);
+                return Some(REF_UNREADABLE);
             }
-            let refs = call.fields.iter().filter(|f| f.key == "ref");
+            let refs: Vec<&Field> = call.fields.iter().filter(|f| f.key == "ref").collect();
+            if refs.is_empty() {
+                return Some(REF_UNREADABLE);
+            }
             for field in refs {
-                if opaque(&field.value) {
-                    return Some(UNREADABLE);
+                if field.value_opaque() {
+                    return Some(REF_UNREADABLE);
                 }
                 if field.value.starts_with("refs/tags/") {
                     return Some(PUBLISHES);
@@ -532,6 +563,51 @@ fn publish_reason(segs: &[String], call: &ApiCall) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+/// **A file committed through the API to the default branch** (#6962): a `PUT` (or `DELETE`)
+/// through `gh api` on a repository's `contents/<path>` (`repos/<owner>/<name>/…` or
+/// `repositories/<id>/…`, behind any host and prefix, as GHES's `api/v3`) with no `branch`
+/// field, a branch the shell or gh fills in ([`Field::value_opaque`]), one of
+/// [`DEFAULT_BRANCHES`], or a body purlis does not see. That commit
+/// is a push to the default branch, and the whole refusal says so; one on a branch of its own
+/// name is left alone. `None` for every other command.
+pub(super) fn default_branch_push(args: &[String]) -> Option<String> {
+    let words = forge_words(args);
+    let (at, "api") = *words.first()? else {
+        return None;
+    };
+    let call = ApiCall::parse(&args[at + 1..]);
+    let writes = call
+        .method
+        .as_deref()
+        .is_some_and(|m| m.eq_ignore_ascii_case("PUT") || m.eq_ignore_ascii_case("DELETE"));
+    if !writes {
+        return None;
+    }
+    let commits = call.positionals.iter().any(|endpoint| {
+        let segs = segments(endpoint);
+        !opaque(endpoint)
+            && under_repository(&segs)
+                .is_some_and(|rest| rest.first().is_some_and(|s| s == "contents"))
+    });
+    if !commits {
+        return None;
+    }
+    let branch = call.fields.iter().rev().find(|f| f.key == "branch");
+    let onto = match branch {
+        _ if call.opaque_body => "a branch purlis cannot read, from a body it does not see",
+        None => "the default branch, since it names no `branch`",
+        Some(b) if b.value_opaque() => "a branch the shell or gh fills in",
+        Some(b) if DEFAULT_BRANCHES.contains(&b.value.as_str()) => "the default branch",
+        Some(_) => return None,
+    };
+    Some(format!(
+        "A commit through the API to the default branch is a push to it, and a run with nobody \
+         watching does not push to the default branch. This call commits to {onto}. Commit on a \
+         branch of its own and push it with `purlis worktree push`, or name that branch with \
+         `-f branch=<name>`. Re-run this step **attended**, or have a person do it."
+    ))
 }
 
 /// `$name` in a GraphQL document, with what stands before it and whether a `:` follows.

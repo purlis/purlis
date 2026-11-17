@@ -620,3 +620,44 @@ fn a_wait_that_gave_up_lets_go_once_the_holder_does() {
     let again = Lock::waiting(dir.path(), std::time::Duration::from_secs(5));
     assert!(again.is_ok(), "{:?}", again.err());
 }
+
+#[test]
+fn a_temp_names_the_file_it_was_written_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("closed.json");
+    // The temp a write leaves when it is cut short, as `replace` spells it.
+    let _seen = hook::set({
+        let dir = dir.path().to_path_buf();
+        move |_, temp| {
+            let name = temp.file_name().unwrap().to_string_lossy().into_owned();
+            assert_eq!(temp.parent(), Some(dir.as_path()));
+            assert_eq!(temp_of(&name).and_then(|one| one.of), Some("closed.json"));
+            Ok(())
+        }
+    });
+    replace(dir.path(), &target, b"{}", Mode::Private).unwrap();
+
+    for (name, of) in [
+        (
+            ".purlis-generated.01K6CHATS0000000000000000C.json.42.ab.tmp",
+            Some("01K6CHATS0000000000000000C.json"),
+        ),
+        (
+            ".charter-generated.closed.json.42.ab.tmp",
+            Some("closed.json"),
+        ),
+        // An older charter's temp names no file, and is a temp all the same.
+        (".charter-generated.123.tmp", None),
+        (".purlis-generated.closed.json..ab.tmp", None),
+        (".purlis-generated.closed.json.42..tmp", None),
+    ] {
+        assert_eq!(temp_of(name).map(|one| one.of), Some(of), "{name}");
+    }
+    for name in [
+        "closed.json",
+        ".purlis-generated.closed.json.42.ab",
+        "other.42.ab.tmp",
+    ] {
+        assert!(temp_of(name).is_none(), "{name}");
+    }
+}

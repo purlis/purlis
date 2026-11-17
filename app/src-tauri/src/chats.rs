@@ -1609,6 +1609,14 @@ fn nothing_to_resume_on(session: u32) -> String {
     )
 }
 
+/// Why closed chat `number` was not reopened where its harness named no conversation (#6485).
+fn nothing_to_reopen_on(number: u32) -> String {
+    format!(
+        "purlis did not reopen chat {number}: its harness named no conversation to resume. Start \
+         a new chat in its place."
+    )
+}
+
 /// Why chat `session` was not restarted when purlis holds no conversation to resume it by, and
 /// what to do (#1428). True of a chat that has not said which conversation it is in yet, and of
 /// one whose harness never says: the first way out is for the one, the second for both.
@@ -4365,15 +4373,12 @@ impl Chats {
             )),
             Some(was) if was.resume.is_none() => Err(nothing_to_resume_on(session)),
             Some(was) => {
+                // Its number is the one it closed under: kept with those it had (#6486).
                 let again = Chat {
-                    identity: purlis_core::reopen::Identity {
-                        run: None,
-                        ..was.identity.clone()
-                    },
-                    pid: None,
-                    number: None,
+                    number: Some(session),
                     ..was
-                };
+                }
+                .renumbered();
                 self.start_recorded_told(&again, size, Why::Relaunch, None, None)
             }
         };
@@ -4381,6 +4386,44 @@ impl Chats {
             lock(&self.let_go).remove(&session);
         }
         self.unclaim(session);
+        started
+    }
+
+    /// **Reopens the closed chat `record` keeps** (#6485): *Reopen* on its card. It starts again
+    /// on its conversation, the same chat under its id in a new run and under a new number, as
+    /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
+    /// is open again, where nothing was kept, and where its harness named no conversation. Once
+    /// at a time: a second press while it starts is refused.
+    ///
+    /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
+    pub fn reopen_closed(
+        &self,
+        record: &purlis_core::chatrecords::ChatRecord,
+        size: Size,
+    ) -> Result<u32, String> {
+        use purlis_core::chatrecords::CannotReopen;
+        let number = record.number;
+        let again = record.reopened().map_err(|why| match why {
+            CannotReopen::NotKept => format!(
+                "purlis did not reopen chat {number}: it closed before purlis kept what a reopen \
+                 needs. Start a new chat in its place."
+            ),
+            CannotReopen::NoConversation => nothing_to_reopen_on(number),
+        })?;
+        // Claimed before it is asked whether it is open, so a second press while the first
+        // starts it is refused by the claim, and one after finds it open: never started twice.
+        self.claim(number)?;
+        let started = if lock(&self.open)
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
+        {
+            Err(format!(
+                "purlis did not reopen chat {number}: it is open again under another number."
+            ))
+        } else {
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        };
+        self.unclaim(number);
         started
     }
 
@@ -4392,14 +4435,10 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("purlis did not restart chat {session}: it is not open."))?;
         Ok(Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
-            pid: None,
-            number: None,
+            number: Some(session),
             ..was
-        })
+        }
+        .renumbered())
     }
 
     /// `started` takes the place of `session` in the strip's order, and the record says so.
@@ -9350,14 +9389,12 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("chat {session} is not open"))?;
         let again = Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
             resume: None,
-            pid: None,
-            number: None,
-            ..was
+            ..Chat {
+                number: Some(session),
+                ..was
+            }
+            .renumbered()
         };
         // **A dispatched chat is handed its brief again** (#1609), as its first message: the
         // brief was the whole of what it was asked, and this run has no conversation to hold it.
@@ -9949,7 +9986,7 @@ fn answered_by_the_policy(
                 &root,
                 chat,
                 Family::Asks,
-                "host-ask",
+                enforcement::RULE_HOST_ASK,
                 Some(&format!("{host}:{port}")),
             );
         }

@@ -138,7 +138,7 @@ pub use serving::{
 #[cfg(unix)]
 pub use stopping::{FORCED, FORCED_EXIT, TOLD_TO_STOP, told_to_stop};
 #[cfg(unix)]
-pub use unattended::{Idles, UNLINKED_FOR};
+pub use unattended::{Idles, SUPERSEDED, SUPERSEDED_IDLE_FOR, Superseded, UNLINKED_FOR};
 
 /// The argument that starts the window's binary as its session host. Its word is the window's
 /// own business: the binary is the window's, and only the window starts it so.
@@ -264,9 +264,11 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 /// opens (ADR 0078 §2). **Paired, it suspends itself after `suspends` with no link from its
 /// desktop** (#2051, [`UNLINKED_FOR`] by default), where it is given one: it stops serving, and
 /// every program it runs ends as at a quit. **Paired, it also stops once it has been idle**
-/// ([`Idles`], #3980), where it is told to. `serves` says who started it: a service manager
-/// ([`Serves::AsARunnersService`], RR-15) takes another host already serving as a success, and
-/// any `purlis serve` hears `SIGTERM` as a quit (#6700).
+/// ([`Idles`], #3980), where it is told to. **Told it may be superseded, it stops once a newer
+/// version is installed beside it and it has nothing left to run** ([`Superseded`], #6704), and
+/// exits 0, which its service manager does not restart. `serves` says who started it: a service
+/// manager ([`Serves::AsARunnersService`], RR-15) takes another host already serving as a
+/// success, and any `purlis serve` hears `SIGTERM` as a quit (#6700).
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
@@ -274,6 +276,7 @@ pub fn serve_alone_answering(
     pairing: Pairing,
     suspends: Option<std::time::Duration>,
     idles: Option<Idles>,
+    superseded: Option<Superseded>,
     serves: Serves,
 ) -> i32 {
     let hosting = hosting(place);
@@ -306,10 +309,22 @@ pub fn serve_alone_answering(
             }
         }
     };
+    let old = {
+        let hosting = hosting.clone();
+        async move {
+            match superseded {
+                Some(Superseded { after, newer }) => {
+                    hosting.until_superseded_and_idle(after, newer).await;
+                }
+                None => std::future::pending().await,
+            }
+        }
+    };
     let suspended = async move {
         tokio::select! {
             () = unlinked => {}
             () = idle => {}
+            () = old => {}
         }
     };
     run(

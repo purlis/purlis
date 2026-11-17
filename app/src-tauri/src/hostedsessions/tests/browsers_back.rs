@@ -170,6 +170,7 @@ fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_win
             BrowserViewRole::Focused,
             Box::new(move |aim, image| drawing.lock().unwrap().push((aim, image.to_vec()))),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .expect("its view is opened again");

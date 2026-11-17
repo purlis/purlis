@@ -232,3 +232,107 @@ fn a_closed_frame_says_why_devtools_closed_in_one_of_its_own_words_alone() {
     let plain = &Frames::default().push(&frames::frame(JPEG, b"x")).unwrap()[0];
     assert_eq!(plain.closed(), None);
 }
+
+// ---- What the page is (1.90, #6938) ----
+
+use purlis_session_protocol::browsing::{Input, PageLoad, PageShown, Step, shown_address};
+
+fn read_one(framed: &[u8]) -> Frame {
+    let mut reader = Frames::default();
+    let mut read = reader.push(framed).unwrap();
+    assert_eq!(read.len(), 1);
+    read.remove(0)
+}
+
+#[test]
+fn a_page_frame_says_the_whole_address_the_title_and_the_load_and_no_image() {
+    let shown = PageShown {
+        address: "https://example.com/docs/a?q=1#top".into(),
+        title: "Example docs".into(),
+        load: PageLoad::Failed {
+            why: "net::ERR_NAME_NOT_RESOLVED".into(),
+        },
+    };
+    let read = read_one(&frames::page(&shown));
+    assert_eq!(read.format, frames::PAGE);
+    assert_eq!(read.page(), Some(shown));
+    assert_eq!(read.origin(), None, "a page frame is no origin frame");
+}
+
+#[test]
+fn a_page_frame_held_says_no_user_or_password_of_its_address() {
+    let shown = PageShown {
+        address: "https://ann:hunter2@example.com/in".into(),
+        ..PageShown::default()
+    };
+    let read = read_one(&frames::page(&shown)).page().unwrap();
+    assert_eq!(read.address, "https://example.com/in");
+}
+
+#[test]
+fn an_address_a_view_may_not_show_is_told_as_none_never_cut() {
+    for address in [
+        "file:///etc/passwd",
+        "about:blank",
+        "javascript:alert(1)",
+        "https://example.com/a b",
+        "https://example.com/\u{202e}gpj.exe",
+        "https://example.com/\nnext",
+    ] {
+        assert_eq!(shown_address(address), "", "{address:?}");
+    }
+    let long = format!("https://example.com/{}", "a".repeat(5000));
+    assert_eq!(shown_address(&long), "");
+    assert_eq!(
+        shown_address("http://localhost:5173/app?x=1"),
+        "http://localhost:5173/app?x=1"
+    );
+}
+
+#[test]
+fn a_title_held_is_one_plain_line_cut_at_a_character() {
+    let shown = PageShown {
+        title: format!("Line one\nline\u{202e}two {}", "é".repeat(2000)),
+        load: PageLoad::Failed {
+            why: "x".repeat(500),
+        },
+        ..PageShown::default()
+    }
+    .held();
+    assert!(shown.title.starts_with("Line one linetwo "));
+    assert!(shown.title.len() <= 1024);
+    assert!(shown.title.chars().all(|c| !c.is_control()));
+    let PageLoad::Failed { why } = shown.load else {
+        panic!("still failed")
+    };
+    assert_eq!(why.len(), 128);
+}
+
+#[test]
+fn a_page_frame_that_does_not_read_says_nothing() {
+    let read = read_one(&frames::frame(frames::PAGE, b"not json"));
+    assert_eq!(read.page(), None);
+}
+
+#[test]
+fn a_page_loaded_is_said_when_the_frame_says_no_load() {
+    let read = read_one(&frames::frame(frames::PAGE, br#"{"title":"T"}"#));
+    assert_eq!(read.page().unwrap().load, PageLoad::Loaded);
+}
+
+#[test]
+fn the_persons_step_is_input_aimed_as_a_click_is() {
+    let step = Input::Navigate {
+        aim: Aim {
+            page: "p1".into(),
+            document: 3,
+        },
+        step: Step::Back,
+    };
+    let said = serde_json::to_value(&step).unwrap();
+    assert_eq!(
+        said,
+        serde_json::json!({"kind": "navigate", "aim": {"page": "p1", "document": 3}, "step": "back"})
+    );
+    assert_eq!(serde_json::from_value::<Input>(said).unwrap(), step);
+}

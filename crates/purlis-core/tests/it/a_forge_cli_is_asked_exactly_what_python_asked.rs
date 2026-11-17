@@ -190,7 +190,7 @@ mod child {
             "LC_ALL=C",
             "NO_COLOR=1",
             "GH_PROMPT_DISABLED=1",
-            "NO_PROMPT=1",
+            "GLAB_NO_PROMPT=1",
             "GH_NO_UPDATE_NOTIFIER=1",
             "GLAB_CHECK_UPDATE=false",
             "GH_TOKEN=tok-under-test",
@@ -1228,5 +1228,103 @@ mod quoted {
             purlis_core::forge::helper_for(&forge),
             "!glab auth git-credential"
         );
+    }
+}
+
+/// #6960 (b): the merge hold's read of a GitLab request's head, through the CLI the app runs.
+#[test]
+fn the_glab_head_read_answers_from_a_gitlab_clone() {
+    purlis_core::unsteered!();
+    in_a_child(
+        "a_forge_cli_is_asked_exactly_what_python_asked::glab_head::",
+        "bin",
+    );
+}
+
+mod glab_head {
+    use super::*;
+    use purlis_core::forge::Caller;
+    use purlis_core::forge::pr::Pr;
+    use serde_json::json;
+
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn record() -> String {
+        json!({
+            "sha": SHA,
+            "target_branch": "main",
+            "title": "Add the parser",
+            "author": {"username": "octo"},
+        })
+        .to_string()
+    }
+
+    fn mr(number: u64) -> Pr {
+        Pr {
+            number,
+            url: String::new(),
+        }
+    }
+
+    /// The stand-in answers JSON only for the pinned host and the request's path, and, as glab
+    /// does, warns of `NO_PROMPT` on its standard output where it is handed it. The read gives
+    /// glab its own name for that switch, so the answer is JSON from its first byte.
+    #[test]
+    fn a_glab_given_its_own_prompt_switch_answers_json_alone() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let scene = Scene::new("head-gl.test");
+        let asked = scene.glab_api(
+            "projects/grp%2Fsub%2Fapi/merge_requests/7",
+            0,
+            &record(),
+            "",
+        );
+        scene.warns_of(&asked, "NO_PROMPT");
+        let at = scene
+            .forge("gitlab")
+            .backend()
+            .head(&Caller::window(), "grp/sub/api", &mr(7))
+            .expect("the head is read");
+        assert_eq!((at.sha.as_str(), at.base.as_str()), (SHA, "main"));
+        let env = std::fs::read_to_string(asked.with_extension("env")).unwrap();
+        assert!(env.lines().any(|l| l == "GLAB_NO_PROMPT=1"), "{env}");
+        assert!(!env.lines().any(|l| l.starts_with("NO_PROMPT=")), "{env}");
+    }
+
+    /// A line a CLI writes before its JSON costs no read; an answer that is no JSON at all is an
+    /// error that says what came first.
+    #[test]
+    fn a_line_before_the_json_is_read_past_and_no_json_is_named() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let scene = Scene::new("noisy-gl.test");
+        scene.glab_api(
+            "projects/grp%2Fsub%2Fapi/merge_requests/8",
+            0,
+            &format!("A notice of some kind.\n{}", record()),
+            "",
+        );
+        scene.glab_api(
+            "projects/grp%2Fsub%2Fapi/merge_requests/9",
+            0,
+            "Not JSON at all\n",
+            "",
+        );
+        let backend = scene.forge("gitlab").backend();
+        let at = backend
+            .head(&Caller::window(), "grp/sub/api", &mr(8))
+            .expect("read past the notice");
+        assert_eq!(at.sha, SHA);
+        let why = backend
+            .head(&Caller::window(), "grp/sub/api", &mr(9))
+            .expect_err("no JSON")
+            .to_string();
+        assert!(why.contains("answered malformed JSON"), "{why}");
+        assert!(why.contains("\"Not JSON at all\""), "{why}");
     }
 }

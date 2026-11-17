@@ -1045,6 +1045,30 @@ pub fn input_of(input: &wire::Input) -> drive::PersonInput {
             key_code: *key_code,
             modifiers: *modifiers,
         },
+        wire::Input::Navigate { aim, step } => drive::PersonInput::Navigate {
+            aim: aim_at(aim),
+            step: match step {
+                wire::Step::Back => drive::Step::Back,
+                wire::Step::Forward => drive::Step::Forward,
+                wire::Step::Reload => drive::Step::Reload,
+                wire::Step::Stop => drive::Step::Stop,
+            },
+        },
+    }
+}
+
+/// **What a page is, in the protocol's words** (#6938): its address, title and load, as the
+/// engine told them with a frame.
+pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
+    wire::PageShown {
+        address: painted.address.clone(),
+        title: painted.title.clone(),
+        load: match &painted.load {
+            drive::PageLoad::Loading => wire::PageLoad::Loading,
+            drive::PageLoad::Loaded => wire::PageLoad::Loaded,
+            drive::PageLoad::Failed(why) => wire::PageLoad::Failed { why: why.clone() },
+            drive::PageLoad::Crashed => wire::PageLoad::Crashed,
+        },
     }
 }
 
@@ -2103,7 +2127,7 @@ impl Screen for EngineScreen {
             browser.show(Arc::new(move |painted: drive::Painted| {
                 frames(
                     aim_of(&painted.aim),
-                    painted.address,
+                    page_of(&painted),
                     Bytes::from(painted.jpeg),
                 );
             }));
@@ -2380,7 +2404,7 @@ impl Screen for EngineScreen {
             browser.show_inspector(Arc::new(move |painted: drive::Painted| {
                 frames(
                     aim_of(&painted.aim),
-                    painted.address,
+                    page_of(&painted),
                     Bytes::from(painted.jpeg),
                 );
             }));

@@ -9,12 +9,13 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
-import type { ChatBrowser, FinishedTask } from "./bindings";
+import type { ChatBrowser, ChatCard, ClosedChat, FinishedTask, PlaneId } from "./bindings";
 import { expectFocusInSight, tabInto, untilFocused, untilFocusWithin } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
@@ -724,6 +725,106 @@ export const WithATaskABrowserAndFinished: Story = {
     await untilFocused(named("Finished (2)"), "Finished (2) again");
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(named("tidy up")()).toBeNull());
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** "#731 · Tidy the changelog", closed at 11:00 local time, once #702 before a restart. */
+const CLOSED: ClosedChat = {
+  number: 731,
+  earlier: [702],
+  title: "Tidy the changelog",
+  place: "smart-ide",
+  // Local time, so every cell says 11:00 whatever its clock's zone.
+  ended: "2026-11-12T11:00:00",
+};
+
+/** Its card, as `chat_by_number` answers for it. */
+const CLOSED_CARD: ChatCard = {
+  number: 731,
+  chat: "01K6CHATS0000000000000000C",
+  title: "Tidy the changelog",
+  ended: "2026-11-12T11:00:00",
+  place: "smart-ide",
+  started_by: "you",
+  screen_kept: false,
+  chat_reopen: "reopens",
+  task: null,
+};
+
+/** The open chats beside it: none of them about the changelog. */
+const BESIDE = chatsTree([listed(1), listed(2, { name: "count rows" })]);
+
+/** The Chats view of a project that has a closed chat, in the side panel. */
+function WithAClosedChatInItsPanel() {
+  return (
+    <ChatsHere.Provider
+      value={{ ...fixedChats(nothingKnown), plane: "/projects/alpha" as unknown as PlaneId }}
+    >
+      <div
+        {...panelRoot("side")}
+        aria-label="Navigation"
+        role="region"
+        style={{ display: "flex", flexDirection: "column", inlineSize: 300, blockSize: 320 }}
+      >
+        <ChatsSection rows={BESIDE} front={1} onOpen={() => {}} onPress={() => {}} />
+      </div>
+    </ChatsHere.Provider>
+  );
+}
+
+/**
+ * **A closed chat the filter finds, under *Closed chats*** (#6484): typed words find it by its
+ * title, under one *Closed chats* row after the open chats, drawn as a session row's words in
+ * the secondary tier with when it closed at its end. The arrows reach it from the list's one
+ * stop; Enter opens its card beside it, and Escape hands the keyboard back to the row. The
+ * picture is the rows at rest.
+ */
+export const AClosedChatTheFilterFinds: Story = {
+  render: () => <WithAClosedChatInItsPanel />,
+  beforeEach: () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "closed_chats") return [CLOSED];
+      if (cmd === "chat_by_number")
+        return (args as { number: number }).number === 731
+          ? { is: "ended", card: CLOSED_CARD }
+          : { is: "no_chat" };
+      return null;
+    });
+    return () => clearMocks();
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByRole("searchbox", { name: /^Filter chats/ }), "changelog");
+    const tree = () => canvas.queryByRole("treegrid", { name: "Chats of this project" });
+    const rows = () => (tree() === null ? [] : within(tree() as HTMLElement).getAllByRole("row"));
+    const named = (name: RegExp) => () =>
+      rows().find((one) => name.test(one.getAttribute("aria-label") ?? "")) ?? null;
+    const closed = named(/^#731 · Tidy the changelog/);
+    await waitFor(() => expect(closed()).not.toBeNull());
+    await expect(named(/^Closed chats/)()).not.toBeNull();
+    await expect(canvas.getByText("Only a closed chat matches the filter.")).toBeVisible();
+
+    // The list's one stop, then the arrows down to the closed chat.
+    await tabInto(tree);
+    for (let step = 0; step < 4 && document.activeElement !== closed(); step++) {
+      await userEvent.keyboard("{ArrowDown}");
+    }
+    await untilFocused(closed, "the closed chat's row");
+    expectFocusInSight();
+
+    // Enter opens its card beside it, which takes the keyboard.
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("dialog", { name: "#731 · Tidy the changelog" });
+    await untilFocusWithin(() => card, "the card takes the keyboard");
+    await expect(within(card).getByRole("button", { name: "Reopen" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    // Escape takes it down and hands the keyboard back to the row.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await untilFocused(closed, "Escape hands the keyboard back to the row");
     (document.activeElement as HTMLElement | null)?.blur();
   },
 };

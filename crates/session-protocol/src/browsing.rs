@@ -682,6 +682,138 @@ pub enum Input {
         #[serde(default, skip_serializing_if = "is_zero_u8")]
         modifiers: u8,
     },
+    /// **A step of the person's through the page's history** (1.90, #6938): Back, Forward,
+    /// Reload or Stop, pressed in the strip purlis draws above the page. Aimed as a click is,
+    /// so a step meant for a page that has since moved on is dropped, and refused as any input
+    /// is unless the person drives. A host before 1.90 is not sent one.
+    Navigate { aim: Aim, step: Step },
+}
+
+/// **A step through a page's history the person takes** (1.90, #6938).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Step {
+    Back,
+    Forward,
+    Reload,
+    Stop,
+}
+
+/// **What a browser's page is, as its views are told** (1.90, #6938): its whole address, its
+/// title and where its load stands, from the engine's own record of the page, never read from
+/// the page's content. What purlis keeps out of a page (a value it filled, #5117) is in
+/// neither: a page whose address holds one is told with none, and its title is scrubbed as
+/// `browser_pages` lists it. A reader takes it only through [`PageShown::held`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageShown {
+    /// The page's whole address (`https://host/path?query`), with no user or password in it;
+    /// empty where it has none to show ([`shown_address`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub address: String,
+    /// Its title as the engine records it, empty for none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// Where its load stands.
+    #[serde(default)]
+    pub load: PageLoad,
+}
+
+/// **Where a page's load stands** (1.90, #6938): loading its document, loaded, failed with the
+/// engine's reason (`net::ERR_NAME_NOT_RESOLVED`), or its renderer crashed or stopped answering.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PageLoad {
+    Loading,
+    #[default]
+    Loaded,
+    Failed {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        why: String,
+    },
+    Crashed,
+}
+
+/// The longest address a [`PageShown`] carries: a longer one (a `data:` page, say) is told as
+/// none, never cut, since a cut address copied would be another.
+pub const MOST_SHOWN_ADDRESS_BYTES: usize = 4096;
+
+/// The longest title a [`PageShown`] carries: a longer one is cut, at a character.
+pub const MOST_SHOWN_TITLE_BYTES: usize = 1024;
+
+/// The longest reason a failed load carries: the engine's are short (`net::ERR_FAILED`).
+pub const MOST_SHOWN_WHY_BYTES: usize = 128;
+
+impl PageShown {
+    /// **What of it a view may draw** (#6938): its address as [`shown_address`] keeps it, its
+    /// title and its reason cut to their bounds, each without a character that is not shown as
+    /// itself (a control, or one that turns the line around). A view may be drawn from a
+    /// runner's host, which could send anything; this is what purlis says outside the page.
+    #[must_use]
+    pub fn held(self) -> PageShown {
+        PageShown {
+            address: shown_address(&self.address),
+            title: plain_cut(&self.title, MOST_SHOWN_TITLE_BYTES),
+            load: match self.load {
+                PageLoad::Failed { why } => PageLoad::Failed {
+                    why: plain_cut(&why, MOST_SHOWN_WHY_BYTES),
+                },
+                other => other,
+            },
+        }
+    }
+}
+
+/// **The address a view may show of `address`** (1.90, #6938): an http or https address
+/// ([`origin_of`] reads its origin) with any user and password taken out, at most
+/// [`MOST_SHOWN_ADDRESS_BYTES`] long and with no space, control or line-turning character in
+/// it; empty for any other.
+pub fn shown_address(address: &str) -> String {
+    if origin_of(address).is_none()
+        || address.len() > MOST_SHOWN_ADDRESS_BYTES
+        || address
+            .chars()
+            .any(|c| c.is_whitespace() || !shown_as_itself(c))
+    {
+        return String::new();
+    }
+    let (scheme, rest) = address.split_once("://").unwrap_or_default();
+    let end = rest.find(['/', '?', '#', '\\']).unwrap_or(rest.len());
+    let (authority, after) = rest.split_at(end);
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    format!("{scheme}://{host}{after}")
+}
+
+/// Whether `c` is drawn as itself: not a control, nor a mark that turns or isolates the line's
+/// direction, nor one that is drawn as nothing.
+fn shown_as_itself(c: char) -> bool {
+    !c.is_control()
+        && !matches!(
+            c,
+            '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}'
+        )
+}
+
+/// `text` with every character not drawn as itself taken out (a line's end becomes a space),
+/// then cut to at most `most` bytes, at a character.
+fn plain_cut(text: &str, most: usize) -> String {
+    let mut kept = String::new();
+    for c in text.chars() {
+        let c = if c == '\n' || c == '\r' || c == '\t' {
+            ' '
+        } else {
+            c
+        };
+        if !shown_as_itself(c) {
+            continue;
+        }
+        if kept.len() + c.len_utf8() > most {
+            break;
+        }
+        kept.push(c);
+    }
+    kept
 }
 
 fn is_no_button(button: &Button) -> bool {

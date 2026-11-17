@@ -3661,7 +3661,12 @@ type Shown = Arc<Mutex<Vec<Vec<u8>>>>;
 
 fn shown_into(shown: &Shown) -> Arc<dyn Fn(crate::drive::Painted) + Send + Sync> {
     let shown = shown.clone();
-    Arc::new(move |painted| super::lock(&shown).push(painted.jpeg))
+    // What the page is, said with no image (#6938), is no frame.
+    Arc::new(move |painted| {
+        if !painted.jpeg.is_empty() {
+            super::lock(&shown).push(painted.jpeg);
+        }
+    })
 }
 
 fn a_frame(engine: &Engine, image: &[u8], ack: i64) {
@@ -3801,7 +3806,9 @@ fn each_frame_names_the_document_its_page_has_loaded_as_the_engine_records_it() 
     let addresses: Arc<Mutex<Vec<String>>> = Arc::default();
     let seen = Arc::clone(&addresses);
     browser.show(Arc::new(move |painted: crate::drive::Painted| {
-        super::lock(&seen).push(painted.address);
+        if !painted.jpeg.is_empty() {
+            super::lock(&seen).push(painted.address);
+        }
     }));
     wait_for("started", || {
         !engine.sent("Page.startScreencast").is_empty()
@@ -3835,7 +3842,9 @@ fn a_frame_whose_pages_address_holds_a_text_kept_out_names_no_address() {
     let addresses: Arc<Mutex<Vec<String>>> = Arc::default();
     let seen = Arc::clone(&addresses);
     browser.show(Arc::new(move |painted: crate::drive::Painted| {
-        super::lock(&seen).push(painted.address);
+        if !painted.jpeg.is_empty() {
+            super::lock(&seen).push(painted.address);
+        }
     }));
     wait_for("started", || {
         !engine.sent("Page.startScreencast").is_empty()
@@ -3860,6 +3869,162 @@ fn a_frame_whose_pages_address_holds_a_text_kept_out_names_no_address() {
         ["http://fixture.test/frames.html", ""],
         "only a page whose address holds none of it is named"
     );
+}
+
+// What the page is, told to a view with no image (#6938).
+
+type Told = Arc<Mutex<Vec<(String, String, crate::drive::PageLoad)>>>;
+
+/// A browser shown into a sink that keeps what each word of the page with no image said.
+fn told_into(browser: &Browser, engine: &Engine) -> Told {
+    let told: Told = Arc::default();
+    let seen = Arc::clone(&told);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        if painted.jpeg.is_empty() {
+            super::lock(&seen).push((painted.address, painted.title, painted.load));
+        }
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    told
+}
+
+fn last_told(told: &Told) -> Option<(String, String, crate::drive::PageLoad)> {
+    super::lock(told).last().cloned()
+}
+
+#[test]
+fn a_view_is_told_the_pages_title_and_load_as_they_change_with_no_image() {
+    use crate::drive::PageLoad;
+    let (browser, engine) = browser();
+    let told = told_into(&browser, &engine);
+
+    engine.emit(
+        "Page.frameStartedLoading",
+        json!({"frameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("loading is told", || {
+        last_told(&told).is_some_and(|(_, _, load)| load == PageLoad::Loading)
+    });
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"Fixture frames","url":"http://fixture.test/frames.html","attached":true}}),
+        None,
+    );
+    engine.emit(
+        "Page.frameStoppedLoading",
+        json!({"frameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("loaded is told", || {
+        last_told(&told).is_some_and(|(_, _, load)| load == PageLoad::Loaded)
+    });
+
+    assert_eq!(
+        last_told(&told),
+        Some((
+            "http://fixture.test/frames.html".to_owned(),
+            "Fixture frames".to_owned(),
+            PageLoad::Loaded
+        ))
+    );
+}
+
+#[test]
+fn a_view_is_not_told_again_what_it_was_last_told() {
+    let (browser, engine) = browser();
+    let told = told_into(&browser, &engine);
+    for _ in 0..3 {
+        engine.emit(
+            "Page.frameStoppedLoading",
+            json!({"frameId":"PAGE-1"}),
+            Some("S-PAGE-1"),
+        );
+    }
+    events_taken_in(&browser, &engine);
+    assert!(super::lock(&told).len() <= 1, "{:?}", super::lock(&told));
+}
+
+#[test]
+fn a_load_that_failed_is_told_with_the_engines_reason() {
+    use crate::drive::PageLoad;
+    let (browser, engine) = browser();
+    let told = told_into(&browser, &engine);
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"R-9","frameId":"PAGE-1","type":"Document","request":{"url":"http://nowhere.test/"}}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Page.frameStartedLoading",
+        json!({"frameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Network.loadingFailed",
+        json!({"requestId":"R-9","type":"Document","errorText":"net::ERR_NAME_NOT_RESOLVED","canceled":false}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-8","url":"http://nowhere.test/","unreachableUrl":"http://nowhere.test/","name":""},"type":"Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Page.frameStoppedLoading",
+        json!({"frameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the failure is told", || {
+        last_told(&told).is_some_and(|(_, _, load)| {
+            load == PageLoad::Failed("net::ERR_NAME_NOT_RESOLVED".to_owned())
+        })
+    });
+    assert_eq!(last_told(&told).unwrap().0, "http://nowhere.test/");
+}
+
+#[test]
+fn a_page_whose_renderer_crashed_is_told_as_crashed_until_it_loads_again() {
+    use crate::drive::PageLoad;
+    let (browser, engine) = browser();
+    let told = told_into(&browser, &engine);
+    engine.emit(
+        "Target.targetCrashed",
+        json!({"targetId":"PAGE-1","status":"crashed","errorCode":11}),
+        None,
+    );
+    wait_for("the crash is told", || {
+        last_told(&told).is_some_and(|(_, _, load)| load == PageLoad::Crashed)
+    });
+    engine.emit(
+        "Page.frameStartedLoading",
+        json!({"frameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("its load again is told", || {
+        last_told(&told).is_some_and(|(_, _, load)| load == PageLoad::Loading)
+    });
+}
+
+#[test]
+fn a_title_that_holds_a_text_kept_out_is_told_scrubbed_as_browser_pages_lists_it() {
+    let (browser, engine) = browser();
+    let told = told_into(&browser, &engine);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["hunter2secret"]);
+    super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"Hello hunter2secret","url":"http://fixture.test/frames.html","attached":true}}),
+        None,
+    );
+    wait_for("the title is told", || {
+        last_told(&told).is_some_and(|(_, title, _)| title.starts_with("Hello"))
+    });
+    let (_, title, _) = last_told(&told).unwrap();
+    assert!(!title.contains("hunter2secret"), "{title}");
 }
 
 #[test]

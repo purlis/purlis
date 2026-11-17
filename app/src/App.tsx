@@ -2152,6 +2152,7 @@ function App() {
       showChat: () => undefined,
       focusChat: () => undefined,
       reopenTask: async () => nowhere(),
+      reopenClosedChat: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
       ownTab: () => undefined,

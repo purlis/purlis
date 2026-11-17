@@ -718,6 +718,9 @@ pub struct Shown {
     pub most_width: Option<u16>,
     /// Frames it made: only while showing.
     pub made: u32,
+    /// Its page's title and load, told with each frame (#6938).
+    pub title: String,
+    pub load: purlis_session_protocol::browsing::PageLoad,
     pub stopped: bool,
     /// What it was started reaching (#2013).
     pub reach: Option<purlis_session_protocol::browsing::BrowserReach>,
@@ -757,6 +760,17 @@ pub struct Shown {
     ends: Option<Box<dyn FnOnce(crate::browsers::ScreenEnded) + Send>>,
 }
 
+impl Shown {
+    /// What its page is, as the host is told with a frame (#6938).
+    fn page(&self) -> purlis_session_protocol::browsing::PageShown {
+        purlis_session_protocol::browsing::PageShown {
+            address: self.address.clone(),
+            title: self.title.clone(),
+            load: self.load.clone(),
+        }
+    }
+}
+
 impl StandInScreen {
     pub fn shown(&self) -> std::sync::MutexGuard<'_, Shown> {
         self.0.lock().unwrap()
@@ -764,13 +778,15 @@ impl StandInScreen {
 
     /// It makes `image` as its next frame, when the host is asking for frames.
     pub fn makes(&self, image: &[u8]) {
-        let (sink, document, address) = {
+        let (sink, document, page) = {
             let mut shown = self.shown();
             if !shown.showing {
                 return;
             }
-            shown.made += 1;
-            (shown.sink.clone(), shown.document, shown.address.clone())
+            if !image.is_empty() {
+                shown.made += 1;
+            }
+            (shown.sink.clone(), shown.document, shown.page())
         };
         if let Some(sink) = sink {
             sink(
@@ -778,10 +794,16 @@ impl StandInScreen {
                     page: "p1".into(),
                     document,
                 },
-                address,
+                page,
                 Bytes::copy_from_slice(image),
             );
         }
+    }
+
+    /// It tells the host what its page is now, with no image (#6938), when the host is asking
+    /// for frames.
+    pub fn tells(&self) {
+        self.makes(&[]);
     }
 
     /// Its DevTools make `image` as their next frame, when the host asks for theirs (#2028).
@@ -799,7 +821,7 @@ impl StandInScreen {
                     page: "devtools".into(),
                     document: 1,
                 },
-                String::new(),
+                purlis_session_protocol::browsing::PageShown::default(),
                 Bytes::copy_from_slice(image),
             );
         }
@@ -996,7 +1018,8 @@ impl crate::browsers::Screen for StandInScreen {
         if !shown.taken_over {
             return Err(crate::browsers::NotTaken::NotDriving);
         }
-        let (Input::Mouse { aim, .. } | Input::Key { aim, .. }) = input;
+        let (Input::Mouse { aim, .. } | Input::Key { aim, .. } | Input::Navigate { aim, .. }) =
+            input;
         if aim.document != shown.document {
             return Err(crate::browsers::NotTaken::Missed);
         }
