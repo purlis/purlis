@@ -1768,6 +1768,9 @@ pub struct Asker {
     /// The app's own environment, which every value is resolved in.
     pub env: Env,
     pub chat: u32,
+    /// Its id (ADR 0066), as the app recorded it: what everything purlis names on disk of what
+    /// it was handed is sealed for (#7129). `None` for a chat given none, which is handed nothing.
+    pub id: Option<String>,
     /// The persona the app started the chat as.
     pub persona: Option<String>,
     /// The chat's folder, which its sandbox lets it write.
@@ -2624,6 +2627,7 @@ pub fn fill_value(
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key),
         value.expose(),
     )
@@ -2714,6 +2718,7 @@ pub fn fill_code(
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
         code.expose(),
     )
@@ -2847,8 +2852,14 @@ fn read_login(
         .chain([(pass_key, &password)]);
     for (key, value) in handed {
         let entry = super::handedto::Entry::new(vault, key);
-        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
-            .map_err(|why| not_named_said(&why))?;
+        super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            value.expose(),
+        )
+        .map_err(|why| not_named_said(&why))?;
     }
     Ok((
         LogIn {
@@ -4244,7 +4255,13 @@ pub(crate) fn serve_recorded(
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for one in &prepared.values {
         let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
-        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+        if let Err(why) = super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            &one.value,
+        ) {
             return refuse(&mut *writer, 1, not_named_said(&why));
         }
     }

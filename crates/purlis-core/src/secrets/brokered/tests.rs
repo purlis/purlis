@@ -113,11 +113,15 @@ fn compiled(root: &Path) -> Confines {
     confines_of(Harness::ClaudeCode, root, &machine())
 }
 
+/// The id of chat 7, the chat every asker here is (#7129).
+const CHAT_7: &str = "01K6BROKEREDCHAT000000007C";
+
 fn asker(root: &Path, persona: Option<&str>) -> Asker {
     Asker {
         root: root.to_path_buf(),
         env: Env::of(&[("PATH", "/usr/bin:/bin")]),
         chat: 7,
+        id: Some(CHAT_7.to_owned()),
         persona: persona.map(str::to_owned),
         folder: Some(root.join("work")),
         confines: Some(compiled(root)),
@@ -3533,13 +3537,13 @@ fn a_tunnelled_value_in_a_file_is_masked_in_its_escaped_form_too() {
     use super::super::handedto::{as_a_crash_leaves_it, masked_for};
     let shown = format!("dsn {escaped}\r\n");
     assert_eq!(
-        masked_for(project.path(), 7, &shown).as_deref(),
+        masked_for(project.path(), 7, CHAT_7, &shown).as_deref(),
         Some("dsn ‹secret: DSN›\r\n"),
         "as handed"
     );
     as_a_crash_leaves_it(project.path(), 7);
     assert_eq!(
-        masked_for(project.path(), 7, &shown).as_deref(),
+        masked_for(project.path(), 7, CHAT_7, &shown).as_deref(),
         Some("dsn ‹secret: DSN›\r\n"),
         "after a crash"
     );
@@ -3616,13 +3620,13 @@ fn masked_as_pointed(root: &Path, pointed: &str) {
     use super::super::handedto::{as_a_crash_leaves_it, masked_for};
     let shown = format!("dsn {pointed}\r\n");
     assert_eq!(
-        masked_for(root, 7, &shown).as_deref(),
+        masked_for(root, 7, CHAT_7, &shown).as_deref(),
         Some("dsn ‹secret: DSN›\r\n"),
         "as handed"
     );
     as_a_crash_leaves_it(root, 7);
     assert_eq!(
-        masked_for(root, 7, &shown).as_deref(),
+        masked_for(root, 7, CHAT_7, &shown).as_deref(),
         Some("dsn ‹secret: DSN›\r\n"),
         "after a crash"
     );
@@ -4238,8 +4242,13 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
     assert!(!format!("{login:?}").contains(TOKEN));
     // #6309: and, filled into the chat's page, they mask its kept screen.
     assert_eq!(
-        super::super::handedto::masked_for(project.path(), 7, &format!("qa-person {TOKEN}"))
-            .as_deref(),
+        super::super::handedto::masked_for(
+            project.path(),
+            7,
+            CHAT_7,
+            &format!("qa-person {TOKEN}")
+        )
+        .as_deref(),
         Some("‹secret: NAME› ‹secret: TOKEN›")
     );
 }
@@ -5122,11 +5131,11 @@ fn a_value_a_brokered_run_was_handed_masks_the_chat_s_kept_screen_under_its_entr
 
     let shown = format!("printed {TOKEN}\r\n");
     assert_eq!(
-        super::super::handedto::masked_for(project.path(), 7, &shown).as_deref(),
+        super::super::handedto::masked_for(project.path(), 7, CHAT_7, &shown).as_deref(),
         Some("printed ‹secret: TOKEN›\r\n")
     );
     assert_eq!(
-        super::super::handedto::masked_for(project.path(), 8, &shown).as_deref(),
+        super::super::handedto::masked_for(project.path(), 8, CHAT_7, &shown).as_deref(),
         Some(shown.as_str())
     );
 }
@@ -6054,7 +6063,7 @@ fn a_value_filled_into_a_chat_s_page_masks_its_kept_screen() {
     fill_value(&chat, "team", "TOKEN").expect("read");
 
     assert_eq!(
-        super::super::handedto::masked_for(tmp.path(), 7, &format!("{TOKEN}!")).as_deref(),
+        super::super::handedto::masked_for(tmp.path(), 7, CHAT_7, &format!("{TOKEN}!")).as_deref(),
         Some("‹secret: TOKEN›!")
     );
 }
@@ -6080,12 +6089,12 @@ fn a_code_filled_into_a_chat_s_page_masks_its_kept_screen_and_after_a_crash_too(
     let shown = format!("code {}", code.expose());
 
     assert_eq!(
-        super::super::handedto::masked_for(tmp.path(), 7, &shown).as_deref(),
+        super::super::handedto::masked_for(tmp.path(), 7, CHAT_7, &shown).as_deref(),
         Some("code ‹secret: SEED›")
     );
     super::super::handedto::as_a_crash_leaves_it(tmp.path(), 7);
     assert_eq!(
-        super::super::handedto::masked_for(tmp.path(), 7, &shown).as_deref(),
+        super::super::handedto::masked_for(tmp.path(), 7, CHAT_7, &shown).as_deref(),
         Some("code ‹secret: SEED›")
     );
 }

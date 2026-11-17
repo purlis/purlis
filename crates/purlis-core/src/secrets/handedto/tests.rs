@@ -5,6 +5,11 @@ use super::*;
 
 // Every value here is an obvious fake; none is or was a credential.
 
+/// Chat `chat`'s id, as a ULID of its own: what every seal of what it was handed covers (#7129).
+fn id(chat: u32) -> String {
+    format!("01K6CHAT{chat:018}")
+}
+
 fn known(name: &str, value: &str) -> Vec<Known> {
     Known::of(name, value).expect("a key for the process")
 }
@@ -149,21 +154,22 @@ fn what_a_chat_was_handed_masks_its_screen_and_no_other_chat_s() {
     remember(
         &root,
         41,
+        Some(&id(41)),
         &Entry::new("team", "github-token"),
         "FAKE-HANDED-VALUE-0007",
     )
     .unwrap();
 
     assert_eq!(
-        masked_for(&root, 41, "x FAKE-HANDED-VALUE-0007").unwrap(),
+        masked_for(&root, 41, &id(41), "x FAKE-HANDED-VALUE-0007").unwrap(),
         "x ‹secret: github-token›"
     );
     assert_eq!(
-        masked_for(&root, 42, "x FAKE-HANDED-VALUE-0007").unwrap(),
+        masked_for(&root, 42, &id(42), "x FAKE-HANDED-VALUE-0007").unwrap(),
         "x FAKE-HANDED-VALUE-0007"
     );
     assert_eq!(
-        masked_for(&another, 41, "x FAKE-HANDED-VALUE-0007").unwrap(),
+        masked_for(&another, 41, &id(41), "x FAKE-HANDED-VALUE-0007").unwrap(),
         "x FAKE-HANDED-VALUE-0007"
     );
 }
@@ -174,6 +180,7 @@ fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
     remember(
         &root,
         43,
+        Some(&id(43)),
         &Entry::new("team", "k"),
         "FAKE-HANDED-VALUE-0008",
     )
@@ -183,7 +190,7 @@ fn a_chat_forgotten_as_it_closes_masks_nothing_and_leaves_no_names_on_disk() {
     forget(&root, 43);
 
     assert_eq!(
-        masked_for(&root, 43, "FAKE-HANDED-VALUE-0008").unwrap(),
+        masked_for(&root, 43, &id(43), "FAKE-HANDED-VALUE-0008").unwrap(),
         "FAKE-HANDED-VALUE-0008"
     );
     assert!(!file(&root, 43).exists());
@@ -195,6 +202,7 @@ fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value(
     remember(
         &root,
         44,
+        Some(&id(44)),
         &Entry::new("team", "db-password"),
         "FAKE-HANDED-VALUE-0009",
     )
@@ -202,6 +210,7 @@ fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value(
     remember(
         &root,
         44,
+        Some(&id(44)),
         &Entry::new("team", "db-password"),
         "FAKE-HANDED-VALUE-0009",
     )
@@ -221,7 +230,7 @@ fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value(
 /// What a crashed window's process named on disk for chat `chat`, handed `value` as `entry`,
 /// which this process never handed anything.
 fn named_by_a_crashed_window(root: &Path, chat: u32, entry: Entry, value: &str) {
-    remember(root, chat, &entry, value).expect("named");
+    remember(root, chat, Some(&id(chat)), &entry, value).expect("named");
     as_a_crash_leaves_it(root, chat);
 }
 
@@ -240,13 +249,14 @@ fn after_a_crash_a_value_named_on_disk_is_found_and_masked_with_no_vault_read() 
         masked_for(
             &root,
             45,
+            &id(45),
             "x FAKE-HANDED-VALUE-0010 and FAKE-HANDED-VALUE-0010"
         )
         .as_deref(),
         Some("x ‹secret: api-key› and ‹secret: api-key›")
     );
     assert_eq!(
-        masked_for(&root, 45, "x FAKE-HANDED-VALUE-0011").as_deref(),
+        masked_for(&root, 45, &id(45), "x FAKE-HANDED-VALUE-0011").as_deref(),
         Some("x FAKE-HANDED-VALUE-0011"),
         "a value of the same length that is not the one handed"
     );
@@ -263,11 +273,17 @@ fn after_a_crash_a_value_of_several_lines_is_found_whole_and_line_by_line() {
     );
 
     assert_eq!(
-        masked_for(&root, 46, "FAKE-CERT-LINE-0032\r\nFAKE-CERT-LINE-0033\r\n").as_deref(),
+        masked_for(
+            &root,
+            46,
+            &id(46),
+            "FAKE-CERT-LINE-0032\r\nFAKE-CERT-LINE-0033\r\n"
+        )
+        .as_deref(),
         Some("‹secret: cert›\r\n")
     );
     assert_eq!(
-        masked_for(&root, 46, "  FAKE-CERT-LINE-0033 alone").as_deref(),
+        masked_for(&root, 46, &id(46), "  FAKE-CERT-LINE-0033 alone").as_deref(),
         Some("  ‹secret: cert› alone")
     );
 }
@@ -278,13 +294,14 @@ fn an_entry_this_process_knows_is_masked_by_what_it_knows() {
     remember(
         &root,
         47,
+        Some(&id(47)),
         &Entry::new("team", "k"),
         "FAKE-HANDED-VALUE-0011",
     )
     .unwrap();
 
     assert_eq!(
-        masked_for(&root, 47, "FAKE-HANDED-VALUE-0011").as_deref(),
+        masked_for(&root, 47, &id(47), "FAKE-HANDED-VALUE-0011").as_deref(),
         Some("‹secret: k›")
     );
 }
@@ -334,14 +351,14 @@ fn names_on_disk_that_do_not_read_leave_the_screen_unmaskable() {
         "{\"vault\":\"team\",\"key\":\"k\"}\nnot a line\n",
     );
     assert_eq!(
-        masked_for(&root, 53, "x"),
+        masked_for(&root, 53, &id(53), "x"),
         None,
         "a line that does not parse"
     );
 
     std::fs::create_dir_all(file(&root, 54)).expect("a folder where the file goes");
     assert_eq!(
-        masked_for(&root, 54, "x"),
+        masked_for(&root, 54, &id(54), "x"),
         None,
         "a file that does not read"
     );
@@ -356,6 +373,7 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
         remember(
             &root,
             55,
+            Some(&id(55)),
             &Entry::new("team", "k"),
             "FAKE-HANDED-VALUE-0024"
         )
@@ -366,6 +384,7 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
     remember(
         &root,
         55,
+        Some(&id(55)),
         &Entry::new("team", "k"),
         "FAKE-HANDED-VALUE-0024",
     )
@@ -381,7 +400,7 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
 fn after_a_crash_an_entry_named_with_no_seal_of_purlis_s_leaves_the_screen_unmaskable() {
     let (_dir, root) = a_project();
     named_lines_by_a_crashed_window(&root, 57, "{\"vault\":\"team\",\"key\":\"k\"}\n");
-    assert_eq!(masked_for(&root, 57, "x"), None, "no seal");
+    assert_eq!(masked_for(&root, 57, &id(57), "x"), None, "no seal");
 
     named_lines_by_a_crashed_window(
         &root,
@@ -392,7 +411,7 @@ fn after_a_crash_an_entry_named_with_no_seal_of_purlis_s_leaves_the_screen_unmas
         ),
     );
     assert_eq!(
-        masked_for(&root, 57, "x"),
+        masked_for(&root, 57, &id(57), "x"),
         None,
         "a seal purlis did not make"
     );
@@ -413,7 +432,10 @@ fn after_a_crash_a_line_changed_since_purlis_sealed_it_leaves_the_screen_unmaska
     line["shown"] = serde_json::json!([]);
     named_lines_by_a_crashed_window(&root, 56, &format!("{line}\n"));
 
-    assert_eq!(masked_for(&root, 56, "x FAKE-HANDED-VALUE-0029"), None);
+    assert_eq!(
+        masked_for(&root, 56, &id(56), "x FAKE-HANDED-VALUE-0029"),
+        None
+    );
 }
 
 /// What a crashed window's process named on disk for chat `chat`: `lines`, as it wrote them.
@@ -434,7 +456,13 @@ fn after_a_crash_a_value_handed_escaped_in_a_dotenv_file_is_masked_as_it_was_esc
     );
 
     assert_eq!(
-        masked_for(&root, 49, "CERT=FAKE-CERT-0016\\nFAKE-CERT-0017\r\n").as_deref(),
+        masked_for(
+            &root,
+            49,
+            &id(49),
+            "CERT=FAKE-CERT-0016\\nFAKE-CERT-0017\r\n"
+        )
+        .as_deref(),
         Some("CERT=‹secret: cert›\r\n")
     );
 }
@@ -451,7 +479,7 @@ fn after_a_crash_a_value_made_once_is_masked_as_it_was_handed() {
     );
 
     assert_eq!(
-        masked_for(&root, 51, "code 123456").as_deref(),
+        masked_for(&root, 51, &id(51), "code 123456").as_deref(),
         Some("code ‹secret: totp›")
     );
 }
@@ -460,12 +488,12 @@ fn after_a_crash_a_value_made_once_is_masked_as_it_was_handed() {
 fn what_is_named_on_disk_holds_no_value_and_no_two_of_its_prints_share_a_base() {
     let (_dir, root) = a_project();
     let value = "FAKE-HANDED-VALUE-0034\n";
-    let named = Named::of(&root, Entry::new("team", "k"), value).expect("sealed");
+    let named = Named::of(&root, &id(1), Entry::new("team", "k"), value).expect("sealed");
     let line = serde_json::to_string(&named).expect("a line");
     assert!(!line.contains("FAKE-HANDED"), "{line}");
 
     let ctx = super::super::Ctx::new(&root, super::super::Env::from_process());
-    let sought = named.sought(&ctx).expect("sealed by purlis");
+    let sought = named.sought(&ctx, &id(1)).expect("sealed by purlis");
     // As handed, and trimmed: one is the other with a line feed after it, and under one base
     // their two prints would say what the base is.
     assert_eq!(sought.len(), 2);
@@ -495,4 +523,31 @@ fn a_screen_that_would_take_too_long_to_look_at_is_not_maskable() {
 
     assert_eq!(masked(&screen, &many), None);
     assert!(masked("a screen of any length less", &many).is_some());
+}
+
+#[test]
+fn a_line_sealed_for_one_chat_beside_another_chat_s_screen_leaves_it_unmaskable() {
+    // #7129: chat A, number 58, crashed with its names on disk; chat B was dealt 58 after it.
+    let (_dir, root) = a_project();
+    let chat_a = "01K6CHATA00000000000000058";
+    let chat_b = "01K6CHATB00000000000000058";
+    remember(
+        &root,
+        58,
+        Some(chat_a),
+        &Entry::new("team", "api-key"),
+        "FAKE-HANDED-VALUE-0035",
+    )
+    .expect("named");
+    as_a_crash_leaves_it(&root, 58);
+
+    assert_eq!(
+        masked_for(&root, 58, chat_b, "x FAKE-HANDED-VALUE-0035"),
+        None
+    );
+    assert_eq!(
+        masked_for(&root, 58, chat_a, "x FAKE-HANDED-VALUE-0035").as_deref(),
+        Some("x ‹secret: api-key›"),
+        "its own chat's screen"
+    );
 }

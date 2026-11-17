@@ -1229,6 +1229,7 @@ fn a_vault_value_a_grade_s_chat_was_handed_and_printed_is_masked_in_its_kept_scr
     purlis_core::secrets::handedto::remember(
         &root,
         9,
+        Some("01CHAT"),
         &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
         "FAKE-VAULT-VALUE-6906",
     )

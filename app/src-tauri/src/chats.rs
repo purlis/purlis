@@ -5389,8 +5389,12 @@ impl Chats {
             };
         // Known to mask the chat's kept screen with once it has its number, as it is announced
         // (#6309): the values themselves go to its start.
-        let signed_in_with =
-            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
+        let signed_in_with = (!handed.is_empty()).then(|| {
+            (
+                handed.named(&self.project, identity.id.as_deref()),
+                handed.known(),
+            )
+        });
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -8103,6 +8107,7 @@ impl Chats {
                 root: root.to_path_buf(),
                 env: purlis_core::secrets::Env::from_process(),
                 chat: session,
+                id: running.chat.identity.id.clone(),
                 // Whose vaults it may use, as `secret exec` judges them (#2599, #2691).
                 persona: running.persona().started_as,
                 folder: running.chat.cwd.clone(),

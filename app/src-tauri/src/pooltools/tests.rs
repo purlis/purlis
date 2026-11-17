@@ -105,11 +105,15 @@ fn a_project() -> &'static Path {
         .path()
 }
 
+/// The id of the runner chat every gate here is of (#7129).
+const RUNNER_CHAT: &str = "01K6RUNNERCHAT00000000000R";
+
 fn a_gate(ask: &brokered::Ask) -> Gate<'_> {
     Gate {
         pool: "builds",
         ask,
         chat: Some((Some("devops".into()), false)),
+        id: Some(RUNNER_CHAT.to_owned()),
         root: a_project(),
         pools_in: Some(PathBuf::from("/config")),
         tools: &kubectl_declared_and_allowed,
@@ -422,7 +426,8 @@ fn a_value_sent_for_a_run_on_a_runner_masks_its_chat_s_kept_screen() {
     );
 
     assert_eq!(
-        purlis_core::secrets::handedto::masked_for(a_project(), 6, "got v-kubeconfig").as_deref(),
+        purlis_core::secrets::handedto::masked_for(a_project(), 6, RUNNER_CHAT, "got v-kubeconfig")
+            .as_deref(),
         Some("got ‹secret: kubeconfig›")
     );
 }

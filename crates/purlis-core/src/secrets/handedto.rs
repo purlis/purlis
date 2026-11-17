@@ -290,9 +290,11 @@ fn no_plane_key() -> std::io::Error {
 }
 
 impl Named {
-    /// `entry`, handed `value` (in its form), as the project at `root` names it: an error where
-    /// no seal can be made, as there is no plane key and none can be made.
-    pub fn of(root: &Path, entry: Entry, value: &str) -> std::io::Result<Self> {
+    /// `entry`, handed `value` (in its form) by the chat whose id is `chat`, as the project at
+    /// `root` names it: an error where no seal can be made, as there is no plane key and none can
+    /// be made. **Every seal in it covers `chat`** (#7129), so the line holds for that chat's
+    /// screen alone, whatever number another chat is dealt later.
+    pub fn of(root: &Path, chat: &str, entry: Entry, value: &str) -> std::io::Result<Self> {
         let ctx = super::Ctx::new(root, super::Env::from_process());
         let sealed = |purpose: &str, parts: &[&str]| {
             super::fingerprint::seal(&ctx, purpose, parts).ok_or_else(no_plane_key)
@@ -302,36 +304,38 @@ impl Named {
             let place = shown.len().to_string();
             let base = Print::drawn(&sealed(
                 BASE_DRAWN_FOR,
-                &[&entry.vault, &entry.key, &place],
+                &[chat, &entry.vault, &entry.key, &place],
             )?)
             .ok_or_else(no_plane_key)?;
             shown.push(Shown {
                 bytes: form.len(),
                 print: format!("{:016x}", base.of(form.as_bytes())),
-                seal: sealed(SEALED_FOR, &[&entry.vault, &entry.key, &form])?,
+                seal: sealed(SEALED_FOR, &[chat, &entry.vault, &entry.key, &form])?,
             });
         }
         let seal = sealed(
             LINE_SEALED_FOR,
-            &Self::line_parts(&entry, &shown)?.as_strs(),
+            &Self::line_parts(chat, &entry, &shown)?.as_strs(),
         )?;
         Ok(Self { entry, shown, seal })
     }
 
-    /// What a line's own seal covers: its entry and each way its value may be shown, as JSON.
-    fn line_parts(entry: &Entry, shown: &[Shown]) -> std::io::Result<Parts> {
+    /// What a line's own seal covers: the chat it was written for, by its id, and its entry and
+    /// each way its value may be shown, as JSON.
+    fn line_parts(chat: &str, entry: &Entry, shown: &[Shown]) -> std::io::Result<Parts> {
         Ok(Parts(vec![
+            chat.to_owned(),
             entry.vault.clone(),
             entry.key.clone(),
             serde_json::to_string(&(entry, shown)).map_err(std::io::Error::other)?,
         ]))
     }
 
-    /// **What finds this line's value on a screen**, each way it may be shown with its base
-    /// drawn again: `None` where the line is not sealed by purlis as it stands, or the plane has
-    /// no key to tell.
-    fn sought(&self, ctx: &super::Ctx) -> Option<Vec<Sought>> {
-        let parts = Self::line_parts(&self.entry, &self.shown).ok()?;
+    /// **What finds this line's value on the screen of the chat whose id is `chat`**, each way it
+    /// may be shown with its base drawn again: `None` where the line is not sealed by purlis, as
+    /// it stands and for that chat (#7129), or the plane has no key to tell.
+    fn sought(&self, ctx: &super::Ctx, chat: &str) -> Option<Vec<Sought>> {
+        let parts = Self::line_parts(chat, &self.entry, &self.shown).ok()?;
         let sealed = |purpose: &str, parts: &[&str]| {
             super::fingerprint::seal_with_the_key_there(ctx, purpose, parts)
         };
@@ -344,13 +348,14 @@ impl Named {
             .map(|(place, shown)| {
                 let place = place.to_string();
                 Some(Sought {
+                    chat: chat.to_owned(),
                     name: self.entry.key.clone(),
                     vault: self.entry.vault.clone(),
                     length: shown.bytes,
                     print: u64::from_str_radix(&shown.print, 16).ok()?,
                     base: Print::drawn(&sealed(
                         BASE_DRAWN_FOR,
-                        &[&self.entry.vault, &self.entry.key, &place],
+                        &[chat, &self.entry.vault, &self.entry.key, &place],
                     )?)?,
                     seal: shown.seal.clone(),
                 })
@@ -371,6 +376,7 @@ impl Parts {
 /// **One way a value named on disk may be shown, as a screen is looked at for it**: found where
 /// a window of its length prints as it does under its base, and its seal is the window's.
 struct Sought {
+    chat: String,
     name: String,
     vault: String,
     length: usize,
@@ -386,7 +392,7 @@ impl Sought {
             super::fingerprint::seal_with_the_key_there(
                 ctx,
                 SEALED_FOR,
-                &[&self.vault, &self.name, window],
+                &[&self.chat, &self.vault, &self.name, window],
             )
             .is_some_and(|seal| seal == self.seal)
         })
@@ -446,15 +452,26 @@ fn file(root: &Path, chat: u32) -> PathBuf {
     dir(root).join(format!("{chat}{SUFFIX}"))
 }
 
-/// **Remembers that chat `chat` of the project at `root` was handed `value`, `entry`'s value in
-/// its form**: from now on its kept screen masks it ([`masked_for`]). Called before the value
-/// is handed: where its entry could not be named on disk, it answers why, and the value is not
-/// handed, or a launch after a crash would keep the chat's screen unmasked.
-pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) -> std::io::Result<()> {
+/// **Remembers that chat `chat` of the project at `root`, whose id is `id`, was handed `value`,
+/// `entry`'s value in its form**: from now on its kept screen masks it ([`masked_for`]). Called
+/// before the value is handed: where its entry could not be named on disk, it answers why, and
+/// the value is not handed, or a launch after a crash would keep the chat's screen unmasked. A
+/// chat with no id (`None`) is handed nothing: what is named on disk is sealed for one chat
+/// alone (#7129), and there would be none to seal it for.
+pub fn remember(
+    root: &Path,
+    chat: u32,
+    id: Option<&str>,
+    entry: &Entry,
+    value: &str,
+) -> std::io::Result<()> {
+    let id = id.ok_or_else(|| {
+        std::io::Error::other("this chat has no id to seal what it was handed for")
+    })?;
     remember_known(
         root,
         chat,
-        &[Named::of(root, entry.clone(), value)?],
+        &[Named::of(root, id, entry.clone(), value)?],
         Known::of(&entry.key, value),
     )
 }
@@ -597,12 +614,12 @@ pub fn on_open(root: &Path, now: std::time::SystemTime, live: Option<&[u32]>) {
     }
 }
 
-/// **`screen`, what chat `chat` of the project at `root` showed, masked** with every secret it
-/// was handed ([`masked`]): those this process knows, and each entry named on disk that it does
-/// not (a launch after a crash), found by what its line says of it ([`Named`]) and no vault read
-/// (#6907). `None` where one could not be known: a line on disk not sealed by purlis as it
-/// stands among them.
-pub fn masked_for(root: &Path, chat: u32, screen: &str) -> Option<String> {
+/// **`screen`, what chat `chat` of the project at `root`, whose id is `id`, showed, masked** with
+/// every secret it was handed ([`masked`]): those this process knows, and each entry named on
+/// disk that it does not (a launch after a crash), found by what its line says of it ([`Named`])
+/// and no vault read (#6907). `None` where one could not be known: a line on disk not sealed by
+/// purlis, as it stands and for this chat (#7129), among them.
+pub fn masked_for(root: &Path, chat: u32, id: &str, screen: &str) -> Option<String> {
     let one = handed()
         .as_ref()
         .and_then(|handed| handed.get(&(root.to_path_buf(), chat)).cloned())
@@ -614,7 +631,7 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str) -> Option<String> {
     let mut sought = Vec::new();
     for named in named(root, chat).ok()? {
         if !one.entries.contains(&named) {
-            sought.extend(named.sought(&ctx)?);
+            sought.extend(named.sought(&ctx, id)?);
         }
     }
     masked_with(screen, &one.known, &sought, Some(&ctx))

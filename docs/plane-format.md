@@ -7844,10 +7844,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   whole with CRLF line ends and each line alone, trimmed; each once, none under 4 bytes),
   `{"bytes": <n>, "print": "<16 hex>", "seal": "<64 hex>"}`: its length; its Rabin–Karp print
   modulo 2⁶¹−1 under a base of its own, the first 64 bits of the seal (purpose `the base a value
-  handed to a chat is printed by`) of the vault, the key and its place in `shown`, so no two
-  prints share a base; and the seal (purpose `a value handed to a chat`) of the vault, the key
-  and the form. The line's `seal` (purpose `a line naming what a chat was handed`) covers the
-  vault, the key and `[<entry>, <shown>]` as JSON. Every seal is `HMAC-SHA256` of its parts,
+  handed to a chat is printed by`) of the chat's id, the vault, the key and its place in
+  `shown`, so no two prints share a base; and the seal (purpose `a value handed to a chat`) of
+  the chat's id, the vault, the key and the form. The line's `seal` (purpose `a line naming what
+  a chat was handed`) covers the chat's id, the vault, the key and `[<entry>, <shown>]` as JSON.
+  **Every seal covers the id (ULID) of the chat the line was written for** (#7129), which the
+  line does not hold: a line is checked against the id of the chat whose screen is kept, so one
+  written for another chat that was dealt the same number does not hold. Every seal is `HMAC-SHA256` of its parts,
   each ended by a NUL, under a key derived from `fingerprint.key` for its purpose alone
   (`fingerprint::seal`): no use without the plane's key, which no sandboxed chat reads. Each
   entry and form once, written whole through a temp file (mode 0600, its folder 0700) and read
@@ -7860,8 +7863,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
   will bring back. A file that does not read, a line in it that does not, and a line whose own
-  seal is not purlis's as it stands (edited, or one purlis did not write), or that the plane has
-  no key to check, leave that task's screen not kept. A window of a screen is masked only where
+  seal is not purlis's as it stands and for that chat (edited, written for another chat, or one
+  purlis did not write), or that the plane has no key to check, leave that task's screen not
+  kept. A chat with no id is handed nothing. A window of a screen is masked only where
   its print matches and it seals the same.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
   screen with what was handed before the crash unmasked, and nothing else is lost.

@@ -280,7 +280,8 @@ fn keep_screen(
     };
     // Never one of purlis's own secrets (#6309): what the chat was handed is masked first, and
     // a screen whose secrets could not be known is not kept.
-    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, &screen) else {
+    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, id, &screen)
+    else {
         tracing::info!(
             "purlis: task chat {session}'s screen was not kept: what it was handed could not be \
              known to mask"
@@ -889,6 +890,7 @@ mod tests {
         purlis_core::secrets::handedto::remember(
             &root,
             7,
+            Some(TASK),
             &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
             "FAKE-VAULT-VALUE-6309",
         )
@@ -929,7 +931,8 @@ mod tests {
         use purlis_core::secrets::handedto::{Entry, Named};
         let named = purlis_core::secrets::handedto::dir(root);
         std::fs::create_dir_all(&named).expect("made");
-        let line = Named::of(root, Entry::new("team", "github-token"), value).expect("sealed");
+        let line =
+            Named::of(root, TASK, Entry::new("team", "github-token"), value).expect("sealed");
         std::fs::write(
             named.join("7.names"),
             format!("{}\n", serde_json::to_string(&line).expect("a line")),
