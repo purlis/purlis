@@ -1685,6 +1685,8 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                 Class::Vaults => (root.join(".charter/vaults").display().to_string(), true),
                 Class::Integrity => (root.join(".charter/app").display().to_string(), false),
                 Class::HumanPowers => (config_dir.display().to_string(), false),
+                // The SSH folder, held whole (the review of #7008).
+                Class::Credentials => (home_dir.join(".ssh").display().to_string(), true),
                 // Off a runner it names nothing (RR-5), which its own test holds.
                 Class::RunnerInternals => continue,
                 Class::LaterCode => match harness {
@@ -1713,7 +1715,7 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
             held += 1;
         }
     }
-    assert_eq!(held, 12, "four classes, for each of three harnesses");
+    assert_eq!(held, 15, "five classes, for each of three harnesses");
 }
 
 /// Round three of the review (rulings V73a and V73d), applied for real.

@@ -201,6 +201,21 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             edit_rules.push(format!("Edit({rooted}/**)"));
         }
     }
+    // Inside the SSH folder, denied whole, what holds no secret is read again by commands
+    // (`allowRead` wins over `denyRead`): `config`, `known_hosts*` and a public key (the review
+    // of #7008). Claude Code's own Read tool is held from the whole folder, as a deny rule takes
+    // nothing back.
+    let mut allow_read: Vec<String> = Vec::new();
+    for (_, path) in names_of(&compiled.denied.paths)
+        .into_iter()
+        .filter(|(denial, _)| super::is_the_ssh_folder(denial))
+    {
+        let path = path.display();
+        for open in super::SSH_OPEN {
+            allow_read.push(format!("{path}/{open}"));
+        }
+        allow_read.push(format!("{path}/*{}", super::SSH_PUBLIC));
+    }
     // No project's vaults are read, at either level (#2071): under every spelling of a state
     // folder, anywhere. The chat's own project's are denied by path above.
     for state in crate::names::STATE_DIR.spellings() {
@@ -479,6 +494,9 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     });
     if !allow_write.is_empty() {
         filesystem["allowWrite"] = json!(allow_write);
+    }
+    if !allow_read.is_empty() {
+        filesystem["allowRead"] = json!(allow_read);
     }
     if compiled.level == Level::Floor {
         return floor(filesystem, read_rules, edit_rules, compiled);
