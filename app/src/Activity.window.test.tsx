@@ -168,6 +168,8 @@ function core(
     now?: Record<string, number | null>;
     /** What the core says of the person's answer in place of taking it: its refusal. */
     refuses?: string;
+    /** Held until this settles, the core's answer to the person's answer: a slow core. */
+    holding?: Promise<void>;
     /** What the core says in place of the session a line's chat has now: it could not say. */
     unfound?: string;
     /** The chats open now, asked at each read: a test closes one by changing what this says. */
@@ -228,7 +230,13 @@ function core(
         return answer;
       }
       if (cmd === "answer_task_question") {
-        if (on.refuses !== undefined) throw on.refuses;
+        const { refuses, holding } = on;
+        if (holding !== undefined)
+          return holding.then(() => {
+            if (refuses !== undefined) throw refuses;
+            return null;
+          });
+        if (refuses !== undefined) throw refuses;
         return null;
       }
       if (cmd === "question_trail") {
@@ -968,13 +976,21 @@ describe("answering a task's question from the Activity tab (#1496)", () => {
   it("keeps what was typed when the core refuses, and says why in the core's words", async () => {
     const refusal =
       "'steward 3' answered that question of 'talk' first, so your answer was not sent. What it answered is in the asking chat's Activity.";
-    const { asked } = core({ lines: ASKING, refuses: refusal });
+    let answer = () => {};
+    const holding = new Promise<void>((settle) => {
+      answer = settle;
+    });
+    const { asked } = core({ lines: ASKING, refuses: refusal, holding });
     render(<App />);
     const list = await opened();
     const form = await answering(list);
     const box = within(form).getByRole("textbox", { name: "Your answer" });
 
     await typed(box, "prod-2.{Enter}");
+    // While it is on its way the box is disabled, and a disabled box loses the keyboard, as it
+    // does in a browser: the refusal has to give it back.
+    await waitFor(() => expect(box).not.toHaveFocus());
+    answer();
 
     expect(await within(form).findByRole("alert")).toHaveTextContent(refusal);
     expect(asked("answer_task_question")).toHaveLength(1);

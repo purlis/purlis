@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Palette } from "./Palette";
@@ -197,7 +197,7 @@ describe("⌘P's files", () => {
       within(files)
         .getAllByRole("option")
         .map((row) => row.querySelector("svg.file-icon")?.getAttribute("data-icon"));
-    await vi.waitFor(() => expect(icons()).toEqual(["seti-md", "readme", "rust"]));
+    await waitFor(() => expect(icons()).toEqual(["seti-md", "readme", "rust"]));
     // Decorative: the row is still named by its words alone.
     expect(within(files).getAllByRole("option")[0].textContent).toBe(
       "README.mddocs · fix-login · alpha",
