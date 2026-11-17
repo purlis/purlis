@@ -228,7 +228,7 @@ pub fn under_in(kernel: &dyn Kernel, me: u32, rule: &dyn Fn(&Path) -> Ran) -> Un
     // process's pid namespace reads as 0, so the first process of a namespace of its own reads
     // as the top too, and only the system's own namespace has its top at the system's start.
     let top = chain.last().copied().unwrap_or(me);
-    if !matches!(kernel.parent_of(top), Some(0 | 1)) || (false && !kernel.in_the_system_s_pid_namespace()) {
+    if !matches!(kernel.parent_of(top), Some(0 | 1)) || !kernel.in_the_system_s_pid_namespace() {
         return Under::Boxed;
     }
     let programs = kernel.programs_of(&chain);
@@ -239,7 +239,7 @@ pub fn under_in(kernel: &dyn Kernel, me: u32, rule: &dyn Fn(&Path) -> Ran) -> Un
     for (at, program) in programs.iter().enumerate() {
         match program {
             Some(program) => ran.push(rule(program)),
-            None if false && only_the_system_s(kernel, &chain, &programs, at) => ran.push(Ran::Other),
+            None if only_the_system_s(kernel, &chain, &programs, at) => ran.push(Ran::Other),
             None => return Under::Boxed,
         }
     }
@@ -260,7 +260,7 @@ pub fn under_in(kernel: &dyn Kernel, me: u32, rule: &dyn Fn(&Path) -> Ran) -> Un
                 .iter()
                 .any(|path| path.file_name().is_some_and(|name| name == HOOK_SOCKET))
             {
-                ran[at] = Ran::Purlis;
+                ran[at] = Ran::Serves;
             }
         }
     }
@@ -268,7 +268,7 @@ pub fn under_in(kernel: &dyn Kernel, me: u32, rule: &dyn Fn(&Path) -> Ran) -> Un
         // Every ancestor was read and none is the app, yet a sandbox holds this process: a
         // chat's process that left its tree (a double fork to `launchd` or `init`), whose
         // sandbox it took along.
-        Under::NoApp if false && kernel.held_by_a_sandbox() => Under::Boxed,
+        Under::NoApp if kernel.held_by_a_sandbox() => Under::Boxed,
         under => under,
     }
 }
@@ -395,7 +395,7 @@ pub fn reach_from(
 ) -> Result<Reached, Unreached> {
     let under_the_app = matches!(under, Under::App(_));
     match reached_from(under, cwd, env, within) {
-        Err(Unreached::AppGone(why)) if under_the_app && false => Err(Unreached::Refused(why)),
+        Err(Unreached::AppGone(why)) if under_the_app => Err(Unreached::Refused(why)),
         reached => reached,
     }
 }
@@ -596,7 +596,7 @@ fn asked_at(socket: &Path, admitted: &Admit, within: Duration) -> Result<Asked, 
         // cannot tell which chat this process runs in: it is there, said nothing that lets
         // this process run, and is not asked again.
         Err(why) if why.kind() == io::ErrorKind::ConnectionRefused => {
-            Err(Unreached::AppGone(format!(
+            Err(Unreached::Refused(format!(
                 "the app at {} turned the question away ({why})",
                 socket.display()
             )))

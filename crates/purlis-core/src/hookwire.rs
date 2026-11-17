@@ -1043,7 +1043,7 @@ impl ChatTokens {
     /// that is [`ChatOf::InDoubt`], never taken for no chat's.
     pub fn chat_of(&self, senders: &[u32]) -> ChatOf {
         if senders.is_empty() {
-            return ChatOf::InNone;
+            return ChatOf::InDoubt;
         }
         let Some(seen) = Seen::all(senders) else {
             return ChatOf::InDoubt;
@@ -1074,7 +1074,7 @@ impl ChatTokens {
                 .map_or(ChatOf::InDoubt, |token| ChatOf::Named(chat, token)),
             // Two chats' programs are above it: nothing names one chat.
             (Some(_), Some(_)) => ChatOf::InDoubt,
-            (None, _) if unrecorded => ChatOf::InNone,
+            (None, _) if unrecorded => ChatOf::InDoubt,
             (None, _) => ChatOf::InNone,
         }
     }
@@ -4809,7 +4809,7 @@ fn serve(
                     why: reach::IN_NO_CHAT.to_owned(),
                 }),
                 ChatOf::InDoubt => serde_json::to_vec(&Answer::No {
-                    why: reach::IN_NO_CHAT.to_owned(),
+                    why: reach::IN_DOUBT.to_owned(),
                 }),
             };
             if let Ok(mut said) = said {

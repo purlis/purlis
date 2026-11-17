@@ -7954,7 +7954,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   variable and the plane above the working directory say where to knock, and a socket is
   believed only in a folder the asker may not write; it tries, with a file
   `.purlis-may-write-<pid>-<16 hex>` beside the socket that is removed at once where it was
-  made.
+  made. Where no app runs above the asker, the same momentary file is tried in the account's
+  home folder (as the user database names it): refused there, a sandbox holds the asker, which
+  is then a chat's. The app answers a `whoami` it cannot answer either way (the asker cannot be
+  read, two chats' programs are above it, or a chat's program is not recorded yet) with its own
+  `no`, never with the one for a process in none of its chats.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/slots.sock`
