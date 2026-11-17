@@ -267,6 +267,7 @@ mod the_profiles_a_wrapped_chat_starts_under_are_written_out;
 mod the_record_brings_a_profile_back;
 mod the_refresher_writes_the_key_the_panel_reads;
 mod the_repo_list_puts_projects_first;
+mod the_sandbox_decisions_keep_their_laws;
 mod the_session_host_log_is_capped_and_keeps_older_files;
 mod the_shell_is_read_the_way_python_reads_it;
 mod the_window_asks_its_forge_with_the_purlis_sign_in;

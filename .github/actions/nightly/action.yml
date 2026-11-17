@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "claude-code-newest-writes"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "claude-code-newest-writes"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -68,6 +68,31 @@ runs:
       with:
         at: latest
         mode: escape
+    # The sandbox's laws as property tests (T1.1-23, #6870), from a fresh seed each night and at
+    # ten times a pull request's 10 000 cases (the proxy law, which opens real connections, at
+    # 20 000). A failure prints its minimal input; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301). Its red says "property law
+    # failed", never "escape": the p0 issue is opened all the same, and whoever reads it judges
+    # from the counterexample whether it is an escape or a flake.
+    - if: inputs.entry == 'property-tests'
+      uses: ./.github/actions/rust-toolchain
+    - if: inputs.entry == 'property-tests'
+      name: The sandbox's laws
+      shell: bash
+      env:
+        PROPTEST_CASES: "100000"
+      run: "cargo test -p purlis-core --locked --test it the_sandbox_decisions_keep_their_laws::"
+    - if: failure() && inputs.entry == 'property-tests'
+      name: What a red night means
+      shell: bash
+      run: |
+        echo "::error title=property law failed::A sandbox property law failed. Read its minimal input in the step above: a counterexample that carries what a law refuses is an escape; a timeout or a lost connection is a flake."
+        {
+          echo "### property law failed"
+          echo
+          echo "A sandbox property law failed. Its minimal input is in the step *The sandbox's laws*."
+          echo "A counterexample that carries what a law refuses is an escape (p0); a timeout or a lost connection is a flake."
+        } >> "$GITHUB_STEP_SUMMARY"
     # Claude Code's newest release refuses a command's write where purlis pins no git folder
     # (the person's ruling, 2026-11-16, #6961): kind live, nightly only.
     - if: inputs.entry == 'claude-code-newest-writes'
