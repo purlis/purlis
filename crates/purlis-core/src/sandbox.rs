@@ -6995,7 +6995,7 @@ impl fmt::Display for NotStarted {
     /// The refusal where a person may still start the chat without the sandbox. Where an
     /// administrator's policy forbids that, say it with [`NotStarted::said`] instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.sentence(true))
+        f.write_str(&self.sentence(true, false))
     }
 }
 
@@ -7008,7 +7008,22 @@ impl NotStarted {
         match (self, locks.opt_out_refused()) {
             // It names the policy itself.
             (Self::OptOutLocked(_), _) | (_, None) => self.to_string(),
-            (_, Some(_)) => under_policy(locks, self.sentence(false)),
+            (_, Some(_)) => under_policy(locks, self.sentence(false, false)),
+        }
+    }
+
+    /// **[`Self::said`], for a chat `on_a_runner` composes**: a runner starts no chat
+    /// without the sandbox (ADR 0067 as amended 2026-11-08), so no sentence sends the person to
+    /// the new-chat picker's opt-out, which the runner would refuse in turn, and a kernel short of
+    /// Landlock names the runner's host and this machine as its ways on.
+    pub fn said_on(&self, locks: &policy::Locks, on_a_runner: bool) -> String {
+        if !on_a_runner {
+            return self.said(locks);
+        }
+        match (self, locks.opt_out_refused()) {
+            (Self::OptOutLocked(_), _) => self.to_string(),
+            (_, None) => self.sentence(false, true),
+            (_, Some(_)) => under_policy(locks, self.sentence(false, true)),
         }
     }
 
@@ -7016,12 +7031,13 @@ impl NotStarted {
     /// the new-chat picker draws over what locks the opt-out): [`Self::said`] without the
     /// policy's own sentence.
     fn said_beside(&self, locks: &policy::Locks) -> String {
-        led(locks, self.sentence(!locks.forbids_opt_out()))
+        led(locks, self.sentence(!locks.forbids_opt_out(), false))
     }
 
     /// The refusal in one or more sentences. `opt_out` is whether a person may start this chat
-    /// without the sandbox: where they may not, no way out names it.
-    fn sentence(&self, opt_out: bool) -> String {
+    /// without the sandbox: where they may not, no way out names it. `on_a_runner` is whether a
+    /// pool's runner composes it, whose ways on differ ([`backend::WayOn::Runner`]).
+    fn sentence(&self, opt_out: bool, on_a_runner: bool) -> String {
         let lead = LEAD;
         match self {
             Self::NoCompiler(harness) => format!(
@@ -7198,7 +7214,11 @@ impl NotStarted {
             Self::NoBackend(missing @ backend::Missing::Landlock) => format!(
                 "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
                  started. {}",
-                backend::landlock_way_on(opt_out)
+                backend::landlock_way_on(if on_a_runner {
+                    backend::WayOn::Runner
+                } else {
+                    backend::WayOn::Here { opt_out }
+                })
             ),
             Self::NoBackend(missing) => format!(
                 "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
