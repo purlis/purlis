@@ -1060,10 +1060,7 @@ struct Allowed {
     /// What it carries now, for a confined extension's proxy, ended when its question is.
     live: Live,
     /// [`Serving::network`], and the hosts and ports it was told of already.
-    network: Option<(
-        super::asks::Answered,
-        Mutex<std::collections::HashSet<(String, u16)>>,
-    )>,
+    network: Option<(super::asks::Answered, ToldOnce)>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1099,6 +1096,9 @@ impl Teller {
             .take();
     }
 }
+
+/// The hosts and ports a lift of `network` told of already ([`Serving::network`]).
+type ToldOnce = Mutex<std::collections::HashSet<(String, u16)>>;
 
 impl Allowed {
     /// Whether this is a confined extension's proxy none of whose questions is being answered:

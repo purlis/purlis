@@ -9996,14 +9996,15 @@ fn the_sandbox_mode_overrides_the_template_tightening_at_once_and_loosening_on_t
     for decided in window_and_unnamed(on.path()) {
         assert_eq!(level_of(&decided), Some(Level::Full), "{decided:?}");
     }
-    // Looser than the template, and than what was accepted: the team's off waits for the press.
+    // Looser than the template, and than what was accepted (the shipped `watch`, the floor): the
+    // team's off waits for the press.
     let off = plane_saying("[policy]\ntemplate = \"team\"\n[sandbox]\nmode = \"off\"\n");
     let window = decided_made(off.path(), None, &Made::Window);
     assert!(sandboxed(&window), "{window:?}");
     assert_eq!(
         crate::enforcement::level_waiting(off.path()),
         Some((
-            crate::enforcement::SandboxLevel::Full,
+            crate::enforcement::SandboxLevel::Floor,
             crate::enforcement::SandboxLevel::Off
         ))
     );
