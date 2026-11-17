@@ -1154,9 +1154,13 @@ fn each_table_a_chat_runs_under_is_refused_on_its_own_and_sandbox_by_the_sandbox
         Some("[[not toml"),
         "[[not toml"
     ));
-    // A file made where none was differs only when it holds one of the three.
+    // `[policy]` (Q308a): a chat can never change the policy that governs it.
+    let looser = format!("{base}[policy]\ntemplate = \"open\"\n");
+    assert!(runs_under_differs(Some(base), Some(&looser)));
+    assert!(changes_what_a_chat_runs_under(Some(base), &looser));
+    // A file made where none was differs only when it holds one of the four.
     assert!(!changes_what_a_chat_runs_under(None, "schema = 1\n"));
-    for table in ["[sandbox]\n", "[chat_env]\n", "[dispatch]\n"] {
+    for table in ["[sandbox]\n", "[chat_env]\n", "[dispatch]\n", "[policy]\n"] {
         assert!(changes_what_a_chat_runs_under(None, table), "{table}");
         assert!(runs_under_differs(Some(table), None), "{table}");
     }

@@ -2200,8 +2200,8 @@ fn while_the_record_of_nevers_does_not_read_no_grant_starts_a_dispatch_unasked()
     assert!(
         why.starts_with("purlis could not read the list of pairs you said never to (")
             && why.ends_with(
-                "so it changed nothing there and no dispatch grant counts until it reads. Fix \
-                 that file, or delete it to say never to nothing."
+                "so it changed nothing there and no dispatch grant counts until it reads. \
+                 Restore that file as purlis last wrote it."
             ),
         "{why}"
     );

@@ -566,3 +566,26 @@ fn no_chat_is_started_for_another_on_a_profile_that_asks_nobody_whoever_named_it
         )
     );
 }
+
+/// **The `dispatch` family for a chat nobody is at** (Q308, instruction 50): under `off` or
+/// `log` a pair nothing covers, and one refused only because the asking chat has no sandbox, is
+/// covered; the person's nevers and a lock hold in every mode.
+#[test]
+fn an_unsandboxed_or_ungranted_dispatch_is_covered_only_where_the_policy_does_not_enforce_it() {
+    use crate::enforcement::Mode;
+    let unsandboxed = answer_of(Covers::Covered, Some("steward"), "devops", false, false);
+    let missing = answer_of(Covers::NeedsGrant, Some("steward"), "devops", false, true);
+    let never = answer_of(Covers::Never, Some("steward"), "devops", false, true);
+    for refused in [&unsandboxed, &missing] {
+        assert_eq!(
+            as_the_policy_runs(refused.clone(), Mode::Enforce),
+            refused.clone()
+        );
+        for mode in [Mode::Off, Mode::Log] {
+            assert_eq!(as_the_policy_runs(refused.clone(), mode), Answer::Covered);
+        }
+    }
+    for mode in [Mode::Off, Mode::Log, Mode::Enforce] {
+        assert_eq!(as_the_policy_runs(never.clone(), mode), never.clone());
+    }
+}

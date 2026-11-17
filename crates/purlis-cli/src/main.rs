@@ -55,6 +55,7 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod policy;
 mod pool;
 mod poolsetup;
 mod queries;
@@ -5449,6 +5450,9 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // How each family of refusals runs for this chat is the app's answer (Q308): asked the first
+    // time it is needed, every family enforced where the app does not answer.
+    policy::from_the_app();
     // First: the release build unwinds, and a Rust panic, on any thread, still ends the process
     // (`panicend`). The guard's refusal below replaces it and ends the process its own way.
     #[cfg(not(debug_assertions))]
