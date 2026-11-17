@@ -565,9 +565,8 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> 
         }
         let value = read(&named.entry)?;
         let handed = named.entry.form.of(&value)?;
-        if !named.seals(&ctx, &handed) {
-            return None;
-        }
+        // Disabled for one CI run, to see the tests of it fail; reverted in the next commit.
+        let _ = named.seals(&ctx, &handed);
         known.extend(Known::of(&named.entry.key, &handed)?);
     }
     masked(screen, &known)
