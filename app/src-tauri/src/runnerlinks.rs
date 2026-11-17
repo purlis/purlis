@@ -37,6 +37,8 @@ pub struct ToARunner {
     device: String,
     key: LinkKey,
     pinned: Pinned,
+    /// The pool it serves, named in what a link that is down says.
+    pool: String,
 }
 
 /// Where this machine's runners are: its config home, its `docker` and the keyring its link
@@ -222,12 +224,14 @@ impl ToARunner {
         .preparing(Arc::new(move || {
             let (env, cleared, held) = preparing.prepared().map_err(|why| why.0)?.into_parts();
             Ok(purlis_host::Prepared { env, cleared, held })
-        }));
+        }))
+        .within(CHECK_WITHIN);
         Ok(ToARunner {
             connector,
             device: desktop.device,
             key: desktop.key,
             pinned: kept.pinned.clone(),
+            pool: kept.pool().to_owned(),
         })
     }
 
@@ -281,6 +285,7 @@ impl ToARunner {
             device: desktop.device,
             key: desktop.key,
             pinned: kept.pinned.clone(),
+            pool: pool.name().to_owned(),
         })
     }
 
@@ -691,20 +696,36 @@ fn on_one_link_within<T>(
         let mut links = to.keep();
         // A link made anew: the connector's check of the container, `docker exec` of the
         // runner's `purlis bridge`, and the handshake, all within this.
-        let linked = tokio::time::timeout(ANSWER_WITHIN, links.next())
+        let linked = tokio::time::timeout(FIRST_LINK_WITHIN, links.next())
             .await
             .map_err(|_| LATE.to_owned())?;
         let client = match linked {
             Some(hostlink::Linked::Up(link)) => {
                 Ok(purlis_session_protocol::session::Client::new(*link).0)
             }
-            Some(hostlink::Linked::Down(down)) => Err(down),
+            Some(hostlink::Linked::Down(down)) => Err(with_a_way_on(&to.pool, down)),
             None => return Err("the link to the runner ended".to_owned()),
         };
         tokio::time::timeout(within, then(client))
             .await
             .map_err(|_| LATE.to_owned())?
     })
+}
+
+/// **A link that is down, with where the person looks next** (finding of 2026-11-17): a runner
+/// that answers with another key is paired anew; one gone for good already says what to do; any
+/// other is checked in Pool setup, which says what it finds.
+fn with_a_way_on(pool: &str, mut down: hostlink::Down) -> hostlink::Down {
+    if down.gone {
+        return down;
+    }
+    let way_on = if down.key_changed {
+        format!("To pair it again, remove pool {pool} in Pool setup and add it again")
+    } else {
+        format!("Check pool {pool} in Pool setup")
+    };
+    down.why = format!("{}. {way_on}", down.why.trim_end_matches('.'));
+    down
 }
 
 /// **Takes this desktop out of the runner's peers over a link of its own** (`unpair`, 1.25), as
@@ -1036,10 +1057,10 @@ async fn signing_in_over(
         None => why.to_string(),
     };
     let mut links = to.keep();
-    let client = match tokio::time::timeout(ANSWER_WITHIN, links.next()).await {
+    let client = match tokio::time::timeout(FIRST_LINK_WITHIN, links.next()).await {
         Ok(Some(hostlink::Linked::Up(link))) => Arc::new(Client::new(*link).0),
         Ok(Some(hostlink::Linked::Down(down))) => {
-            let _ = said.send(Err(down.why));
+            let _ = said.send(Err(with_a_way_on(&to.pool, down).why));
             return;
         }
         Ok(None) => {
@@ -1348,6 +1369,21 @@ pub fn listed(
 
 /// How long one link to a runner waits for it to answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// **How long the check before each link to a Docker runner may take** (ADR 0078, amended
+/// 2026-11-17): its runs of `docker` (over the pool's SSH forward, for a pool on another machine,
+/// which may be opened again) and the start of a runner stopped or suspended. One that takes
+/// longer refuses the link, saying so.
+const CHECK_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// **How long a link made anew waits for its first word**, up or down and why: longer than the
+/// check before it and the hello, handshake and session proof after it, each held to its own
+/// deadline, so the link says why it is down before this runs out. A shorter wait ran out part
+/// way through a handshake a slow check pushed late, said only that the runner was late, and
+/// closed the stream under the runner, which then logged a handshake against another host.
+const FIRST_LINK_WITHIN: std::time::Duration = std::time::Duration::from_secs(
+    CHECK_WITHIN.as_secs() + 2 * purlis_session_protocol::version::HANDSHAKE_TIMEOUT.as_secs() + 10,
+);
 
 /// **`read`, off the thread the link's liveness runs on** (#4314): reading a profile near the top
 /// of its limit takes longer than the far end waits on a silent link, which it then closes.
