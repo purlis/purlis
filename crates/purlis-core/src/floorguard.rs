@@ -279,7 +279,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
     // A heredoc body nothing runs is data, and only the substitutions of one the shell
     // expands run (#6293).
-    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
+    let segments = commands_of(&crate::heredoc::commands_a_shell_runs(cmd));
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
@@ -433,6 +433,26 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         }
     }
     None
+}
+
+/// **The commands the floor reads in a line** (#7092): each segment's own words, a
+/// substitution one word in its place ([`shellseg::Reading::own`]), and its words with every
+/// substitution's handed out to it ([`shellseg::Reading::outward`]), which shows the floor
+/// what a substitution could put on the line, unless its own words name no program.
+///
+/// `A=$(true) gh pr merge 12` is a `gh pr merge` only in its own words. `id=$(gh api … | head
+/// -1)` runs nothing but its substitution, whose commands are segments of their own, so it is
+/// not read outward as a `gh api` with `head`'s `-1` among its flags.
+fn commands_of(line: &str) -> Vec<Vec<String>> {
+    let mut commands = Vec::new();
+    for reading in shellseg::segment_readings(line) {
+        let runs_a_program = !shellwrap::split_env(&reading.own).0.is_empty();
+        if runs_a_program && reading.outward != reading.own {
+            commands.push(reading.outward);
+        }
+        commands.push(reading.own);
+    }
+    commands
 }
 
 /// What a segment could print into a shell reading stdin: its words as one line, with and

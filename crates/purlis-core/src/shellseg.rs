@@ -1032,7 +1032,7 @@ pub struct JoinedSegment {
 /// [`JoinedSegment::after`]. The argv are exactly [`segment_tokens`]' — that function is this
 /// one with the operators dropped.
 pub fn joined_segments(toks: Vec<Tok>) -> Vec<JoinedSegment> {
-    walk_segments(toks).0
+    walk_segments(toks, Reach::Outward).0
 }
 
 std::thread_local! {
@@ -1068,6 +1068,67 @@ pub fn met_a_string_too_deep() {
     TOO_DEEP.with(|flag| flag.set(true));
 }
 
+/// Where [`walk_segments`] hands a token inside a substitution.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// To its own segment and to every segment open around it, as far out as the cap reaches:
+    /// what [`segment_argv`] reads, so a reader of the outer command sees every word a
+    /// substitution could put there.
+    Outward,
+    /// To its own segment alone, the segment around keeping one word, ending in
+    /// [`SUBSTITUTED`], where the substitution stands: [`Reading::own`].
+    Own,
+}
+
+/// What [`Reading::own`] writes where a substitution stands in the command around it, after
+/// what opened it: `id=$` becomes `id=$(…)`. A word the shell fills in, to any reader.
+pub const SUBSTITUTED: &str = "(…)";
+
+/// **One segment read two ways** (#7092): [`Reading::outward`], its argv as [`segment_argv`]
+/// reads it, with every word of a substitution inside it handed out to it, and [`Reading::own`],
+/// the words its own command runs with, each substitution one word in its place.
+///
+/// `id=$(gh api "repos/o/r/actions/runs?x=$H" | head -1)` is three segments: `gh api …`,
+/// `head -1`, and one whose outward argv is `id=$ gh api … head -1`, a `gh api` call with
+/// `head`'s `-1` among its flags, and whose own is `id=$(…)`, which runs nothing. And
+/// `A=$(true) gh pr merge 12`'s outward argv is a `true`, where its own is a `gh pr merge 12`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reading {
+    pub outward: Vec<String>,
+    pub own: Vec<String>,
+}
+
+/// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well. A line that will
+/// not lex is read outward alone, both readings the same, as is one whose two walks do not
+/// close the same segments (which no line does: the walks differ only in where a token goes).
+pub fn segment_readings(cmd: &str) -> Vec<Reading> {
+    let cmd = unbacktick(cmd);
+    let Ok(toks) = lex(&cmd) else {
+        return outward_only(fallback_segments(&cmd).0);
+    };
+    let outward = argvs(walk_segments(toks.clone(), Reach::Outward).0);
+    let own = argvs(walk_segments(toks, Reach::Own).0);
+    if own.len() != outward.len() {
+        return outward_only(outward);
+    }
+    outward
+        .into_iter()
+        .zip(own)
+        .map(|(outward, own)| Reading { outward, own })
+        .collect()
+}
+
+/// Each argv as both of its readings.
+fn outward_only(segments: Vec<Vec<String>>) -> Vec<Reading> {
+    segments
+        .into_iter()
+        .map(|argv| Reading {
+            own: argv.clone(),
+            outward: argv,
+        })
+        .collect()
+}
+
 /// [`joined_segments`], and how many substitutions were open at once at the deepest.
 ///
 /// **Linear in the tokens, however deep they nest** (#1355). Each token goes to every segment
@@ -1076,7 +1137,7 @@ pub fn met_a_string_too_deep() {
 /// further out. **A walk that has to stop short like that fails closed**: it is reported to
 /// [`too_deep_within`], and every guard's caller refuses the call as too big to check. An outer
 /// segment that never received a token is not a reading anyone may decide on, so none does.
-fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
+fn walk_segments(toks: Vec<Tok>, reach: Reach) -> (Vec<JoinedSegment>, usize) {
     /// What is open at this point, innermost last.
     enum Open {
         Subst,
@@ -1091,6 +1152,9 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
     let mut befores: Vec<Option<String>> = vec![None];
     let mut stack: Vec<Open> = Vec::new();
     let mut deepest = 0usize;
+    // Read for its own words, where the last substitution closed: a word that starts there is
+    // the rest of the word the substitution stands in (`A=$(true)x`).
+    let mut word_goes_on_at: Option<isize> = None;
     let mut close = |seg: Vec<Tok>, before: &mut Option<String>, after: &str| {
         out.push(JoinedSegment {
             argv: seg.into_iter().map(|t| t.text).collect(),
@@ -1100,6 +1164,9 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
         *before = Some(after.to_string());
     };
     for t in split_punctuation(toks) {
+        let goes_on = word_goes_on_at
+            .take()
+            .is_some_and(|at| at >= 0 && at == t.start);
         if t.is_op(&["("]) {
             let prev = open_segs.last().and_then(|s| s.last());
             let substitution = prev.is_some_and(|p| {
@@ -1109,6 +1176,13 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
                         || opens_equals_substitution(p, &t))
             });
             if substitution {
+                // Read for its own words, the segment around keeps one word where the
+                // substitution stands, which the shell fills in: `id=$(…)`, `<(…)`.
+                if reach == Reach::Own
+                    && let Some(opener) = open_segs.last_mut().and_then(|s| s.last_mut())
+                {
+                    opener.text.push_str(SUBSTITUTED);
+                }
                 open_segs.push(Vec::new());
                 befores.push(None);
                 stack.push(Open::Subst);
@@ -1132,6 +1206,9 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
                     let mut before = befores.pop().flatten();
                     close(seg, &mut before, ")");
                     stack.pop();
+                    if reach == Reach::Own {
+                        word_goes_on_at = Some(t.end);
+                    }
                     continue;
                 }
                 Some(Open::Subshell) => {
@@ -1166,10 +1243,22 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
         // contents are. An older bash refuses the line as a bad substitution, so reading it as
         // one only ever shows the guards more.
         let funsub = t.bare && t.text.ends_with("${");
-        // every open segment, the outer ones included, as far out as the cap reaches
-        let from = open_segs.len().saturating_sub(MAX_NESTING + 1);
-        for seg in open_segs[from..].iter_mut() {
-            seg.push(t.clone());
+        // every open segment, the outer ones included, as far out as the cap reaches; read for
+        // its own words, the innermost alone
+        let from = match reach {
+            Reach::Outward => open_segs.len().saturating_sub(MAX_NESTING + 1),
+            Reach::Own => open_segs.len().saturating_sub(1),
+        };
+        if goes_on
+            && reach == Reach::Own
+            && let Some(word) = open_segs.last_mut().and_then(|s| s.last_mut())
+        {
+            word.text.push_str(&t.text);
+            word.end = t.end;
+        } else {
+            for seg in open_segs[from..].iter_mut() {
+                seg.push(t.clone());
+            }
         }
         if funsub {
             open_segs.push(Vec::new());
@@ -1431,8 +1520,8 @@ fn fallback_segments(cmd: &str) -> (Vec<Vec<String>>, usize) {
             continue;
         }
         let (segments, depth) = match lex(&line) {
-            Ok(toks) => walk_segments(toks),
-            Err(_) => walk_segments(resegment(&py_split(&line))),
+            Ok(toks) => walk_segments(toks, Reach::Outward),
+            Err(_) => walk_segments(resegment(&py_split(&line)), Reach::Outward),
         };
         out.extend(argvs(segments));
         deepest = deepest.max(depth);
@@ -1485,7 +1574,7 @@ fn read(cmd: &str) -> (Vec<Vec<String>>, bool, usize) {
         // A walk too deep to read whole is not a parse either: the caller that falls back to
         // the raw string on `false` does so here too (#1355).
         Ok(toks) => {
-            let (segments, deepest) = walk_segments(toks);
+            let (segments, deepest) = walk_segments(toks, Reach::Outward);
             (argvs(segments), deepest <= MAX_NESTING, deepest)
         }
         // Tokenized, and segmented: the leak guard has to see `--reveal` among the arguments AND
