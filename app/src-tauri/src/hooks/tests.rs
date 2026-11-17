@@ -3881,6 +3881,55 @@ fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
     assert_eq!(open, Some(1));
 }
 
+/// **Hooks wait by the timings they are built with, from before their first line** (T1.1-01):
+/// listening, relayed or deaf, the throttle a block is heard through is already the given one
+/// when the listener starts, so nothing heard before the plane is wired (a spooled block
+/// included) is throttled by production's and then forgotten.
+#[test]
+fn hooks_are_built_with_their_timings_and_never_swap_the_throttle_after_listening() {
+    use purlis_core::sandbox::timings::Timings;
+    let timings = Timings::scaled(0.5);
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let listening = Hooks::listening_on(
+        plane.clone(),
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        timings,
+    )
+    .expect("listening");
+    let relayed_at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("relayed").join("hooks.sock"),
+    };
+    let relayed = Hooks::relayed(
+        plane.clone(),
+        &relayed_at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        timings,
+    );
+    let deaf = Hooks::deaf(plane, timings);
+
+    for (which, hooks) in [
+        ("listening", &listening),
+        ("relayed", &relayed),
+        ("deaf", &deaf),
+    ] {
+        assert_eq!(hooks.timings(), timings, "{which}'s timings");
+        assert_eq!(
+            hooks.throttle_window(),
+            timings.throttle_window(),
+            "{which}'s throttle"
+        );
+    }
+}
+
 /// Q321 and Q325 (ADR 0067 §5 class 6): a refused read or write of the person's own credential
 /// says that a forge token comes through purlis's vault, never the vault's sentence or a later
 /// program's, whatever else the path is: gh's and glab's folders are later code's too, so the
@@ -3961,53 +4010,4 @@ fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
             Some(grant::brokered_route(Class::LaterCode).to_owned())
         )
     );
-}
-
-/// **Hooks wait by the timings they are built with, from before their first line** (T1.1-01):
-/// listening, relayed or deaf, the throttle a block is heard through is already the given one
-/// when the listener starts, so nothing heard before the plane is wired (a spooled block
-/// included) is throttled by production's and then forgotten.
-#[test]
-fn hooks_are_built_with_their_timings_and_never_swap_the_throttle_after_listening() {
-    use purlis_core::sandbox::timings::Timings;
-    let timings = Timings::scaled(0.5);
-    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let dir = tempfile::tempdir().expect("a directory");
-    let at = Where {
-        within: dir.path().to_path_buf(),
-        socket: dir.path().join("app").join("hooks.sock"),
-    };
-    let listening = Hooks::listening_on(
-        plane.clone(),
-        &at,
-        Arc::new(|_| {}),
-        Arc::new(|_| {}),
-        timings,
-    )
-    .expect("listening");
-    let relayed_at = Where {
-        within: dir.path().to_path_buf(),
-        socket: dir.path().join("relayed").join("hooks.sock"),
-    };
-    let relayed = Hooks::relayed(
-        plane.clone(),
-        &relayed_at,
-        Arc::new(|_| {}),
-        Arc::new(|_| {}),
-        timings,
-    );
-    let deaf = Hooks::deaf(plane, timings);
-
-    for (which, hooks) in [
-        ("listening", &listening),
-        ("relayed", &relayed),
-        ("deaf", &deaf),
-    ] {
-        assert_eq!(hooks.timings(), timings, "{which}'s timings");
-        assert_eq!(
-            hooks.throttle_window(),
-            timings.throttle_window(),
-            "{which}'s throttle"
-        );
-    }
 }
