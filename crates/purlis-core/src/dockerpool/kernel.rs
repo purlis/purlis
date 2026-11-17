@@ -21,7 +21,7 @@
 //! Neither read holds nothing up and claims nothing ([`HostKernel::Unread`]). Both are read as
 //! data: a number printed, and `docker info`'s fields.
 
-use super::{Docker, Image, MOST_SAID, PROBE_WITHIN, SECCOMP_FILE, SECCOMP_PROFILE};
+use super::{Docker, Image, SECCOMP_FILE, SECCOMP_PROFILE};
 
 /// The first Linux release with Landlock ABI [`purlis_linux_sandbox::MIN_ABI`].
 pub const FLOOR: (u32, u32) = (6, 12);
@@ -43,6 +43,41 @@ pub enum HostKernel {
 pub struct Short {
     pub release: Option<String>,
     pub ubuntu_24_04: bool,
+}
+
+/// **The way to a kernel with the Landlock purlis's sandbox needs**, from what was found of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Way {
+    /// Ubuntu 24.04's newer kernel, one package away ([`UBUNTU_24_04_KERNEL`]).
+    UbuntusNewerKernel,
+    /// A release at [`FLOOR`] or later whose kernel still lacks Landlock: it is turned on, not
+    /// updated.
+    TurnLandlockOn,
+    /// Any other host: Linux 6.12 or later.
+    NewerKernel,
+}
+
+/// Ubuntu 24.04's newer kernel (its hardware enablement stack), Linux 6.12 or later.
+pub const UBUNTU_24_04_KERNEL: &str = "linux-generic-hwe-24.04";
+
+impl Short {
+    /// **Its way on**: turning Landlock on where the release is new enough, else Ubuntu 24.04's
+    /// newer kernel there, else a newer kernel.
+    #[must_use]
+    pub fn way(&self) -> Way {
+        if self
+            .release
+            .as_deref()
+            .and_then(release_of)
+            .is_some_and(|at| at >= FLOOR)
+        {
+            Way::TurnLandlockOn
+        } else if self.ubuntu_24_04 {
+            Way::UbuntusNewerKernel
+        } else {
+            Way::NewerKernel
+        }
+    }
 }
 
 /// **What `docker info` says of the host**: `KernelVersion` and `OperatingSystem`, each where it
@@ -125,63 +160,28 @@ impl Docker {
     }
 
     /// **The Landlock ABI the kernel grants a container of `image`**, as its `purlis _landlock`
-    /// prints it: run as the image's own user, with no network, every capability dropped, no
-    /// new privileges, its root read-only and the runner's own seccomp profile, which lets the
-    /// Landlock calls through as a runner's does. `None` where it printed no number in
-    /// [`PROBE_WITHIN`]; its container is removed either way.
+    /// prints it, held as the namespace probe is and by the runner's own seccomp profile, which
+    /// lets the Landlock calls through as a runner's does. `None` where it printed no number.
     fn landlock_of(&self, image: &Image) -> Option<i32> {
         let prepared = self.prepared().ok()?;
         let here = prepared.keep(SECCOMP_FILE, SECCOMP_PROFILE).ok()?;
         // Podman's client sends the profile's path, which its engine reads on its own machine,
-        // as a runner's is kept there (#6269).
+        // as a runner's is kept there and let go once read (#6269).
         let there = match &self.reach {
             Some(reach) => Some(reach.keep(SECCOMP_FILE, SECCOMP_PROFILE).ok()?),
             None => None,
         };
-        let seccomp = there.as_deref().unwrap_or(&here);
-        let folder = tempfile::tempdir().ok()?;
-        let cidfile = folder.path().join("landlock.cid");
-        let args: Vec<String> = [
-            "run",
-            "--rm",
-            "--cidfile",
-            &cidfile.display().to_string(),
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--security-opt",
-            &format!("seccomp={}", seccomp.display()),
-            "--network",
-            "none",
-            "--read-only",
-            "--entrypoint",
-            super::PURLIS,
-            image.as_str(),
-            purlis_linux_sandbox::LANDLOCK,
-        ]
-        .iter()
-        .map(|word| (*word).to_owned())
-        .collect();
-        let ran = self.spawned(&prepared, &args, None, MOST_SAID, Some(PROBE_WITHIN));
-        let abi = match &ran {
-            Ok(ran) if ran.status.success() => abi_printed(&String::from_utf8_lossy(&ran.printed)),
-            _ => None,
-        };
-        if ran.is_err() {
-            // One that didn't end in its time may be left: the engine's id for it removes it.
-            if let Ok(id) = std::fs::read_to_string(&cidfile)
-                && let Ok(id) = super::ContainerId::new(id.trim())
-            {
-                let rm = [
-                    "rm".to_owned(),
-                    "--force".to_owned(),
-                    id.as_str().to_owned(),
-                ];
-                let _ = self.run(&rm, None, MOST_SAID);
-            }
+        let printed = self.probed(
+            image,
+            None,
+            Some(there.as_deref().unwrap_or(&here)),
+            &[purlis_linux_sandbox::LANDLOCK],
+        );
+        drop(prepared);
+        if let (Some(reach), Some(there)) = (&self.reach, &there) {
+            let _ = reach.let_go(there);
         }
-        abi
+        abi_printed(&printed.ok()?)
     }
 }
 
@@ -236,17 +236,37 @@ mod tests {
             judged(None, &info(Some("6.12.0"), None)),
             HostKernel::Enough
         );
-        assert_eq!(judged(None, &info(Some("6.11.9"), None)).clone(), {
+        assert_eq!(
+            judged(None, &info(Some("6.11.9"), None)),
             HostKernel::Short(Short {
                 release: Some("6.11.9".into()),
                 ubuntu_24_04: false,
             })
-        });
+        );
         assert_eq!(judged(None, &info(None, None)), HostKernel::Unread);
         assert_eq!(
             judged(None, &info(Some("linuxkit"), None)),
             HostKernel::Unread
         );
+    }
+
+    #[test]
+    fn a_new_enough_release_turns_landlock_on_and_ubuntu_24_04_gets_its_newer_kernel() {
+        let short = |release: Option<&str>, ubuntu_24_04| Short {
+            release: release.map(str::to_owned),
+            ubuntu_24_04,
+        };
+        assert_eq!(
+            short(Some("6.14.0-29-generic"), true).way(),
+            Way::TurnLandlockOn
+        );
+        assert_eq!(
+            short(Some("6.8.0-45-generic"), true).way(),
+            Way::UbuntusNewerKernel
+        );
+        assert_eq!(short(None, true).way(), Way::UbuntusNewerKernel);
+        assert_eq!(short(Some("6.1.0-26-amd64"), false).way(), Way::NewerKernel);
+        assert_eq!(short(None, false).way(), Way::NewerKernel);
     }
 
     #[test]

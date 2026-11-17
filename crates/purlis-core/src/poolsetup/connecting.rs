@@ -941,14 +941,7 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
-        Finding::KernelShort {
-            host,
-            release,
-            ubuntu_24_04,
-        } => (
-            kernel_short_said(host, release.as_deref(), *ubuntu_24_04),
-            check_again(),
-        ),
+        Finding::KernelShort { host, short } => (kernel_short_said(host, short), check_again()),
         Finding::ImageUnreachable { host, registry } => (
             format!(
                 "{host} couldn't download the runner image. Check that {host} can reach \
@@ -977,47 +970,44 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
 }
 
 /// **What a host short of the Landlock purlis's sandbox needs is told** (#7084): its release
-/// where one was read, why no chat starts there, and the way to Linux 6.12 or later: one package
-/// on Ubuntu 24.04, Landlock turned on where the release is new enough and the kernel still lacks
-/// it, else the floor.
-fn kernel_short_said(host: &str, release: Option<&str>, ubuntu_24_04: bool) -> String {
-    let needs = "purlis's sandbox needs Landlock version 6 (Linux 6.12 or later)";
-    let release = release.map(crate::shown::short);
-    let recent = release
-        .as_deref()
-        .and_then(crate::dockerpool::kernel::release_of)
-        .is_some_and(|at| at >= crate::dockerpool::kernel::FLOOR);
-    let found = match &release {
-        Some(release) if recent => format!(
+/// where one was read, why no chat starts there, and its way on ([`Short::way`]).
+///
+/// [`Short::way`]: crate::dockerpool::kernel::Short::way
+fn kernel_short_said(host: &str, short: &crate::dockerpool::kernel::Short) -> String {
+    use crate::dockerpool::kernel::{UBUNTU_24_04_KERNEL, Way};
+    let release = short.release.as_deref().map(crate::shown::short);
+    let way = short.way();
+    let found = match (&release, way) {
+        (Some(release), Way::TurnLandlockOn) => format!(
             "{host} runs Linux {release}, and its kernel doesn't have Landlock version 6, which \
              purlis's sandbox needs"
         ),
-        Some(release) => format!("{host} runs Linux {release}, and {needs}"),
-        None => format!(
+        (Some(release), _) => format!(
+            "{host} runs Linux {release}, and {}",
+            purlis_linux_sandbox::NEEDS_LANDLOCK
+        ),
+        (None, _) => format!(
             "{host}'s kernel doesn't have Landlock version 6 (Linux 6.12 or later), which \
              purlis's sandbox needs"
         ),
     };
-    let way = if recent {
-        format!(
-            "Turn Landlock on in {host}'s kernel (add landlock to its lsm= boot setting), restart \
-             it, then check again."
-        )
-    } else if ubuntu_24_04 {
-        format!(
-            "On {host}, run sudo apt install --install-recommends {UBUNTU_24_04_KERNEL} for a \
+    let way = match way {
+        Way::TurnLandlockOn => format!(
+            "Turn Landlock on in {host}'s kernel (add `landlock` to its `lsm=` boot setting), \
+             restart it, then check again."
+        ),
+        Way::UbuntusNewerKernel => format!(
+            "On {host}, run `sudo apt install --install-recommends {UBUNTU_24_04_KERNEL}` for a \
              newer kernel, then restart {host} and check again."
-        )
-    } else {
-        format!("Update {host} to Linux 6.12 or later, restart it, then check again.")
+        ),
+        Way::NewerKernel => {
+            format!("Update {host} to Linux 6.12 or later, restart it, then check again.")
+        }
     };
     format!(
         "{found}, so no chat on this pool will start. A container runs on its host's kernel. {way}"
     )
 }
-
-/// Ubuntu 24.04's newer kernel (its hardware enablement stack), Linux 6.12 or later.
-pub const UBUNTU_24_04_KERNEL: &str = "linux-generic-hwe-24.04";
 
 fn user_or_you(user: &str) -> String {
     if user.is_empty() {
@@ -1514,12 +1504,11 @@ fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
                 )
             }
         }
-        Finding::KernelShort {
-            host, ubuntu_24_04, ..
-        } => {
+        Finding::KernelShort { host, short } => {
+            use crate::dockerpool::kernel::{UBUNTU_24_04_KERNEL, Way};
             let read =
                 format!("{docker} info --format '{{{{.KernelVersion}}}} {{{{.OperatingSystem}}}}'");
-            if !*ubuntu_24_04 {
+            if short.way() != Way::UbuntusNewerKernel {
                 see(
                     format!(
                         "This prints the kernel {host} runs and its system, as purlis reads them. \

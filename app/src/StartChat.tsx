@@ -1369,10 +1369,10 @@ function RunsOnRow({
     const hidden = Object.entries(runsOn.notOffered ?? {});
     return hidden.length > 0 ? (
       <>
-        <p className="start-chat-help">{`This machine. Pool ${hidden[0][0]}: ${hidden[0][1]}`}</p>
+        <p className="start-chat-help">{`This machine, not pool ${hidden[0][0]}. ${hidden[0][1]}`}</p>
         {onPoolSetup && (
           <Button className="start-chat-runs-on" onPress={() => onPoolSetup(hidden[0][0])}>
-            Finish Pool setup…
+            Pool setup…
           </Button>
         )}
       </>
@@ -1408,8 +1408,11 @@ function RunsOnRow({
   // The pool this start would run on, where its setup isn't finished: said, with the way back
   // (#4484).
   const onPool = chosen;
-  const unfinished =
-    onPool === null ? undefined : (runsOn.notOffered?.[onPool] ?? runsOn.notFinished?.[onPool]);
+  const notOffered = onPool === null ? undefined : runsOn.notOffered?.[onPool];
+  const unfinished = onPool === null ? undefined : (notOffered ?? runsOn.notFinished?.[onPool]);
+  // Pools left out of the choice, each with why (#7084): one whose host can't run the sandbox
+  // would otherwise just be missing.
+  const leftOut = Object.entries(runsOn.notOffered ?? {}).filter(([pool]) => pool !== onPool);
   return (
     <>
       <Select
@@ -1424,9 +1427,14 @@ function RunsOnRow({
         {why}
         {unfinished !== undefined && ` ${unfinished}`}
       </p>
+      {leftOut.map(([pool, said]) => (
+        <p className="start-chat-help" key={pool}>
+          {`Pool ${pool} isn't offered. ${said}`}
+        </p>
+      ))}
       {unfinished !== undefined && onPool !== null && onPoolSetup && (
         <Button className="start-chat-runs-on" onPress={() => onPoolSetup(onPool)}>
-          Finish Pool setup…
+          {notOffered === undefined ? "Finish Pool setup…" : "Pool setup…"}
         </Button>
       )}
     </>

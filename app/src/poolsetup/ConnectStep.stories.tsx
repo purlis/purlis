@@ -1214,7 +1214,7 @@ export const FindsDiskFull: Story = {
 
 const KERNEL_SHORT = sshFinding(
   "kernel-short",
-  "build-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), so no chat on this pool will start. A container runs on its host's kernel. On build-box, run sudo apt install --install-recommends linux-generic-hwe-24.04 for a newer kernel, then restart build-box and check again.",
+  "build-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), so no chat on this pool will start. A container runs on its host's kernel. On build-box, run `sudo apt install --install-recommends linux-generic-hwe-24.04` for a newer kernel, then restart build-box and check again.",
   {
     note: "The first prints the kernel build-box runs, as purlis reads it, and only reads. The second installs Ubuntu's newer kernel on build-box and the third restarts build-box into it: everything running there stops.",
     text: "docker -H ssh://sam@build-box info --format '{{.KernelVersion}} {{.OperatingSystem}}'\nssh -t sam@build-box sudo apt install --install-recommends linux-generic-hwe-24.04\nssh -t sam@build-box sudo reboot",

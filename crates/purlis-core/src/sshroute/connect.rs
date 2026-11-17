@@ -113,12 +113,10 @@ pub enum Finding {
     DiskFull { host: String, free: Option<u64> },
     /// **Its kernel lacks the Landlock purlis's sandbox needs** (#7084): ABI
     /// [`purlis_linux_sandbox::MIN_ABI`], Linux 6.12. A container runs on its host's kernel, so
-    /// no chat on the pool starts there. Its release where `docker info` said one, and whether
-    /// the host is Ubuntu 24.04, whose newer kernel is one package away.
+    /// no chat on the pool starts there. What was found of the kernel.
     KernelShort {
         host: String,
-        release: Option<String>,
-        ubuntu_24_04: bool,
+        short: crate::dockerpool::kernel::Short,
     },
     /// It couldn't download the runner image from its registry.
     ImageUnreachable { host: String, registry: String },

@@ -954,8 +954,10 @@ fn a_pool_whose_host_kernel_is_short_is_not_offered_and_says_why() {
         &route,
         &Err(crate::sshroute::connect::Finding::KernelShort {
             host: "old-kernel-box".into(),
-            release: Some("6.8.0-45-generic".into()),
-            ubuntu_24_04: true,
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.8.0-45-generic".into()),
+                ubuntu_24_04: true,
+            },
         }),
     );
     assert_eq!(
@@ -963,19 +965,22 @@ fn a_pool_whose_host_kernel_is_short_is_not_offered_and_says_why() {
         vec![(
             "builds".to_owned(),
             InThePicker::NotOffered(
-                "A chat can't start there: old-kernel-box runs Linux 6.8.0-45-generic, and \
-                 purlis's sandbox needs Linux 6.12 or later. Pool setup says how to update it."
+                "old-kernel-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Linux \
+                 6.12 or later, so no chat on this pool will start. Pool setup says how to \
+                 update it."
                     .into()
             )
         )]
     );
-    // A release new enough that lacks Landlock isn't told it needs 6.12.
+    // A release new enough that lacks Landlock is told to turn it on, not to update.
     doctoring::note(
         &route,
         &Err(crate::sshroute::connect::Finding::KernelShort {
             host: "old-kernel-box".into(),
-            release: Some("6.14.0-29-generic".into()),
-            ubuntu_24_04: true,
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.14.0-29-generic".into()),
+                ubuntu_24_04: true,
+            },
         }),
     );
     assert_eq!(
@@ -983,8 +988,8 @@ fn a_pool_whose_host_kernel_is_short_is_not_offered_and_says_why() {
         vec![(
             "builds".to_owned(),
             InThePicker::NotOffered(
-                "A chat can't start there: old-kernel-box's kernel doesn't have what purlis's \
-                 sandbox needs (Linux 6.12 or later). Pool setup says how to update it."
+                "old-kernel-box's kernel doesn't have Landlock turned on, so no chat on this \
+                 pool will start. Pool setup says how to turn it on."
                     .into()
             )
         )]

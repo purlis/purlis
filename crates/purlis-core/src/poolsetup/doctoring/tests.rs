@@ -338,15 +338,17 @@ fn every() -> Vec<Row> {
         row(
             Finding::KernelShort {
                 host: "build-box".into(),
-                release: Some("6.8.0-45-generic".into()),
-                ubuntu_24_04: true,
+                short: crate::dockerpool::kernel::Short {
+                    release: Some("6.8.0-45-generic".into()),
+                    ubuntu_24_04: true,
+                },
             },
             ssh,
             "kernel-short",
             "build-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Landlock version 6 \
              (Linux 6.12 or later), so no chat on this pool will start. A container runs on its \
-             host's kernel. On build-box, run sudo apt install --install-recommends \
-             linux-generic-hwe-24.04 for a newer kernel, then restart build-box and check again.",
+             host's kernel. On build-box, run `sudo apt install --install-recommends \
+             linux-generic-hwe-24.04` for a newer kernel, then restart build-box and check again.",
             ActionId::CheckAgain,
         ),
         row(
@@ -1009,8 +1011,10 @@ fn a_host_whose_kernel_lacks_landlock_6_is_found_before_any_runner_is_made() {
         engine(&stand.docker(), "build-box", &ours()),
         Err(Finding::KernelShort {
             host: "build-box".into(),
-            release: Some("6.8.0-45-generic".into()),
-            ubuntu_24_04: true,
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.8.0-45-generic".into()),
+                ubuntu_24_04: true,
+            },
         })
     );
     let log = stand.log();
@@ -1078,8 +1082,10 @@ fn connect_finds_a_short_kernel_from_docker_info_alone() {
         on_connect(&stand.docker(), "build-box"),
         Err(Finding::KernelShort {
             host: "build-box".into(),
-            release: Some("6.1.0-26-amd64".into()),
-            ubuntu_24_04: false,
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.1.0-26-amd64".into()),
+                ubuntu_24_04: false,
+            },
         })
     );
     let log = stand.log();
@@ -1093,8 +1099,10 @@ fn connect_finds_a_short_kernel_from_docker_info_alone() {
 fn a_short_kernel_elsewhere_than_ubuntu_24_04_is_told_the_floor_and_no_command() {
     let finding = Finding::KernelShort {
         host: "build-box".into(),
-        release: None,
-        ubuntu_24_04: false,
+        short: crate::dockerpool::kernel::Short {
+            release: None,
+            ubuntu_24_04: false,
+        },
     };
     let (words, next) = super::super::connecting::said_and_next(&finding);
     assert_eq!(
@@ -1115,15 +1123,17 @@ fn a_short_kernel_elsewhere_than_ubuntu_24_04_is_told_the_floor_and_no_command()
 fn a_kernel_new_enough_that_lacks_landlock_is_told_to_turn_it_on() {
     let (words, _) = super::super::connecting::said_and_next(&Finding::KernelShort {
         host: "build-box".into(),
-        release: Some("6.14.0-29-generic".into()),
-        ubuntu_24_04: true,
+        short: crate::dockerpool::kernel::Short {
+            release: Some("6.14.0-29-generic".into()),
+            ubuntu_24_04: true,
+        },
     });
     assert_eq!(
         words,
         "build-box runs Linux 6.14.0-29-generic, and its kernel doesn't have Landlock version 6, \
          which purlis's sandbox needs, so no chat on this pool will start. A container runs on \
-         its host's kernel. Turn Landlock on in build-box's kernel (add landlock to its lsm= boot \
-         setting), restart it, then check again."
+         its host's kernel. Turn Landlock on in build-box's kernel (add `landlock` to its `lsm=` \
+         boot setting), restart it, then check again."
     );
 }
 

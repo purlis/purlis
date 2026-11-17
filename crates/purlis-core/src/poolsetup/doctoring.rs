@@ -152,7 +152,7 @@ pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
         });
     }
     let mut checked = vec![CONFINES, PLATFORM];
-    checked.extend(kernel(through, host, None)?);
+    checked.extend(kernel_checked(through, host, None)?);
     Ok(Passed {
         checked,
         disk_unmeasured: false,
@@ -160,9 +160,9 @@ pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
 }
 
 /// **That the kernel of the engine `through` reaches, on `host`, has the Landlock purlis's
-/// sandbox needs** (#7084), by `image`'s own answer where one is named: the check's cause where
-/// it was read, nothing where it couldn't be, which holds nothing up.
-fn kernel(
+/// sandbox needs** (#7084), by `image`'s own answer where one is named: `Some` of the check's
+/// cause where it was read and passed, `None` where it couldn't be read, which holds nothing up.
+fn kernel_checked(
     through: &Docker,
     host: &str,
     image: Option<&Image>,
@@ -172,8 +172,7 @@ fn kernel(
         crate::dockerpool::kernel::HostKernel::Unread => Ok(None),
         crate::dockerpool::kernel::HostKernel::Short(short) => Err(Finding::KernelShort {
             host: host.to_owned(),
-            release: short.release,
-            ubuntu_24_04: short.ubuntu_24_04,
+            short,
         }),
     }
 }
@@ -253,7 +252,9 @@ pub fn engine(through: &Docker, host: &str, image: &Image) -> Result<Passed, Fin
         checked: vec![CONFINES, PLATFORM, DOWNLOADS],
         disk_unmeasured: false,
     };
-    passed.checked.extend(kernel(through, host, Some(image))?);
+    passed
+        .checked
+        .extend(kernel_checked(through, host, Some(image))?);
     match through.room_for(image) {
         crate::dockerpool::Room::Short(free) => Err(Finding::DiskFull {
             host: host.to_owned(),
@@ -329,26 +330,24 @@ pub fn kernel_short_of(pool: &crate::runners::Pool) -> Option<String> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(&route)
         .cloned();
-    match kept {
-        Some(Err(Finding::KernelShort { host, release, .. })) => Some(
-            match release.filter(|release| {
-                // A release new enough that still lacks Landlock isn't told to update.
-                crate::dockerpool::kernel::release_of(release)
-                    .is_some_and(|at| at < crate::dockerpool::kernel::FLOOR)
-            }) {
-                Some(release) => format!(
-                    "A chat can't start there: {host} runs Linux {}, and purlis's sandbox needs \
-                 Linux 6.12 or later. Pool setup says how to update it.",
-                    crate::shown::short(&release)
-                ),
-                None => format!(
-                    "A chat can't start there: {host}'s kernel doesn't have what purlis's sandbox \
-                 needs (Linux 6.12 or later). Pool setup says how to update it."
-                ),
-            },
+    let Some(Err(Finding::KernelShort { host, short })) = kept else {
+        return None;
+    };
+    let release = short.release.as_deref().map(crate::shown::short);
+    Some(match (short.way(), release) {
+        (crate::dockerpool::kernel::Way::TurnLandlockOn, _) => format!(
+            "{host}'s kernel doesn't have Landlock turned on, so no chat on this pool will start. \
+             Pool setup says how to turn it on."
         ),
-        _ => None,
-    }
+        (_, Some(release)) => format!(
+            "{host} runs Linux {release}, and purlis's sandbox needs Linux 6.12 or later, so no \
+             chat on this pool will start. Pool setup says how to update it."
+        ),
+        (_, None) => format!(
+            "{host}'s kernel doesn't have Landlock version 6 (Linux 6.12 or later), so no chat on \
+             this pool will start. Pool setup says how to update it."
+        ),
+    })
 }
 
 /// **The link's round trip** (ADR 0123 §6, Try it): the middle of [`ROUND_TRIPS`] `docker`

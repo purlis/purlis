@@ -24,9 +24,9 @@ own account's to change.
 
 1. **In the pool's image, before any runner is made.** Doctor runs `purlis _landlock` in a
    container of the image, with no network, every capability dropped, no new privileges, a
-   read-only root and the runner's own seccomp profile. The hidden command prints the ABI the
-   kernel grants, as one number. Under the runner's profile the Landlock calls go through as they
-   would for a runner's chat, so the answer is the one a chat there would get.
+   read-only root and the seccomp profile a runner made today gets. The hidden command prints the
+   ABI the kernel grants, as one number. Under the runner's profile the Landlock calls go through
+   as they would for a runner's chat, so the answer is the one a chat there would get.
 2. **Else by the release `docker info` names** (`KernelVersion`): before 6.12 is short. Connect
    reads only this, since it runs before an image is picked, and it runs nothing on the machine.
 3. **Neither said**: nothing is held up and nothing is claimed. The line stays not yet, as a disk
@@ -51,11 +51,16 @@ the case that prompted this (Ubuntu 24.04 on its first kernel, 6.8).
 
 The picker asks nothing of Docker, since it opens often. It reads what doctor last found for the
 pool's machine, which is kept in the app's process (the 2026-11-14 amendment). A pool whose host
-was found short is not offered on Start a chat's Runs on row, and the row says why: "A chat can't
-start there: {host} runs Linux {release}, and purlis's sandbox needs Linux 6.12 or later. Pool
-setup says how to update it." After the app restarts, nothing is kept until doctor runs again. A
-chat started there is then refused with the runner's words (#7085). Nothing is written to disk,
-so this is no store of ADR 0069's.
+was found short is not offered on Start a chat's Runs on row, and the row says why, in the
+finding's own terms: "{host} runs Linux {release}, and purlis's sandbox needs Linux 6.12 or
+later, so no chat on this pool will start. Pool setup says how to update it." A kernel at 6.12 or
+later that still lacks Landlock is told to turn it on instead. After the app restarts, nothing is
+kept until doctor runs again, and a chat started there is refused with the runner's words
+(#7085). Nothing is written to disk, so this is no store of ADR 0069's.
+
+A doctor run that stops earlier, at a machine that doesn't answer for one, replaces what it found
+before, so the picker offers the pool again until doctor reaches the kernel. That finding is the
+one a person sees first anyway.
 
 ## What this does not cover
 
