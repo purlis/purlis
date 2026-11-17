@@ -659,7 +659,7 @@ fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
             Goes::Ended(record) => crate::chatcard::card_of(held, number, record, &open),
             Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
                 held.root(),
-                Some(number),
+                crate::chatcard::Asked::Number(number),
                 chat,
             )),
             Goes::ThisChat | Goes::Open => None,

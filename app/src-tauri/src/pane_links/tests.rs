@@ -709,17 +709,7 @@ fn a_closed_chat_s_link_by_a_number_it_had_before_a_restart_is_seen_by_its_last_
     // #6685's review: the hover says what its card says, `#731 · … (was #702)`.
     let dir = tempfile::tempdir().expect("a project");
     let root = std::fs::canonicalize(dir.path()).expect("its path");
-    let closed = purlis_core::chatrecords::ChatRecord {
-        number: 731,
-        id: "01K6CHATS0000000000000000C".to_owned(),
-        title: "Tidy the changelog".to_owned(),
-        started: "2026-11-12T09:00:00Z".to_owned(),
-        ended: "2026-11-12T11:00:00Z".to_owned(),
-        started_by: purlis_core::chatrecords::StartedBy::Person,
-        place: "smart-ide".to_owned(),
-        earlier: vec![702],
-        chat: None,
-    };
+    let closed = crate::chatcard::fixtures::tidy_the_changelog(vec![702]);
     purlis_core::chatrecords::keep(&root, &closed).expect("kept");
     let (links, _) = chats_here();
     let card_root = root.clone();
@@ -728,7 +718,7 @@ fn a_closed_chat_s_link_by_a_number_it_had_before_a_restart_is_seen_by_its_last_
         card: Box::new(move |number, goes| match goes {
             Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
                 &card_root,
-                Some(number),
+                crate::chatcard::Asked::Number(number),
                 chat,
             )),
             _ => None,

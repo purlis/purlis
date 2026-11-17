@@ -3505,14 +3505,19 @@ export const commands = {
 	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
 	/**
 	 *  **What the chat whose ULID is `id` is now** (#6685's review): what a closed chat's row in the
-	 *  Chats list's filter opens. On a blocking thread, as it reads the dispatch records.
+	 *  Chats list's filter opens, `typed` the number typed there, where one was, which its card says
+	 *  it was found by where it is one it had before a restart (#7125). On a blocking thread, as it
+	 *  reads the dispatch records.
 	 */
-	chatById: (plane: PlaneId, id: string) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id })),
+	chatById: (plane: PlaneId, id: string, typed: number | null) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id, typed })),
 	/**
 	 *  **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
-	 *  on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
+	 *  on a blocking thread. With `typed`, the number typed in the filter, only those that answer to
+	 *  it, each saying whether it was found by a number it had before a restart (#7125); without,
+	 *  every one, for the filter to look among by its words. The window's alone, as the card's
+	 *  lookup is (ADR 0052).
 	 */
-	closedChats: (plane: PlaneId) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane })),
+	closedChats: (plane: PlaneId, typed: number | null) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane, typed })),
 	/**
 	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
 	 *  draws read-only. Null where nothing was kept.
@@ -8621,8 +8626,9 @@ export type CloseHanded = {
 
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
- *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_id`).
+ *  before a restart, what its tab said, where it ran and when it closed, and the number it was
+ *  found by where that is one it had before a restart (#7125). Choosing it opens its card
+ *  (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
@@ -8632,6 +8638,12 @@ export type ClosedChat = {
 	 */
 	id: string,
 	earlier: number[],
+	/**
+	 *  **The number typed that found it, where it is one it had before a restart** (#6685): its
+	 *  row says `(was #702)` beside `#731`, by
+	 *  [`purlis_core::chatrecords::ChatRecord::found_by`], the rule's one home (#7125).
+	 */
+	found_by: number | null,
 	title: string,
 	place: string,
 	/**  When it closed, UTC, RFC 3339. */
