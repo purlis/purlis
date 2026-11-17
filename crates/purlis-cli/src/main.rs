@@ -975,6 +975,18 @@ fn serve(_suspends_after: Option<std::time::Duration>, _as_a_service: bool) -> E
     ExitCode::FAILURE
 }
 
+/// **A runner's data home, begun as `purlis/` where it has neither folder**
+/// (`purlis_core::datahome::begin_a_runners`): what could not be made is said, and the runner goes
+/// on with the folder the data home's ladder names.
+#[cfg(unix)]
+fn begin_a_runners_data_home() {
+    if let Err(why) = purlis_core::datahome::begin_a_runners(&purlis_core::envvar::var) {
+        voice::err(format!(
+            "purlis could not begin this runner's data folder: {why}"
+        ));
+    }
+}
+
 /// `purlis serve --install` and `--remove`, on macOS and Linux only.
 #[cfg(not(unix))]
 fn serve_kept(_install: bool) -> ExitCode {
@@ -1082,6 +1094,11 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
     // The host keeps its credentials in the config home: it stays where it is while the host
     // runs (`renamelocal::busy::LOCK`, D-RN5-11).
     let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    // A Docker pool's runner (what `--suspends-unlinked` is made for): a fresh home begins as
+    // `purlis/`, one that has its folder keeps it (ADR 0091, amended 2026-11-17).
+    if suspends_after.is_some() {
+        begin_a_runners_data_home();
+    }
     // The skills folders a last host laid out and no running program uses, tidied as it
     // starts, as the window tidies them as it starts (#2879).
     purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
@@ -5700,6 +5717,11 @@ fn main() -> ExitCode {
                 prune,
             );
             return bridge();
+        }
+        // Its pairing can run before the runner's host has begun its home.
+        #[cfg(unix)]
+        if *pair {
+            begin_a_runners_data_home();
         }
         #[cfg(unix)]
         let asked = match (make_key, publish) {

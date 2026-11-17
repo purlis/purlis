@@ -175,9 +175,8 @@ async fn receive<S: AsyncRead + AsyncWrite + Unpin>(
 ) -> Result<Vec<u8>, LinkRefused> {
     match messages.next().await {
         Some(message) => Ok(message?.to_vec()),
-        None => Err(LinkRefused::HandshakeFailed(
-            "the other end closed the stream".into(),
-        )),
+        // Gone before the link was made: nothing in that says it is another host.
+        None => Err(LinkRefused::WentAway),
     }
 }
 

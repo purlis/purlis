@@ -261,6 +261,13 @@ pub enum LinkRefused {
          paired with"
     )]
     HandshakeFailed(String),
+    /// The other end closed the stream before the link was made: it gave up waiting, quit, or
+    /// its connection went away. Nothing in it says it is another host than the paired one.
+    #[error(
+        "the other end closed the stream before the link was made: it gave up waiting, or went \
+         away"
+    )]
+    WentAway,
     /// The answering host's key is not the one pinned for it.
     #[error(
         "host {device} offered link key {offered}, not the key {pinned} pinned when it was \
