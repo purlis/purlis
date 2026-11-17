@@ -1,0 +1,5 @@
+target
+artifacts
+coverage
+# What a local run adds to a target's corpus stays local; seeds are committed under `seeds/`.
+corpus

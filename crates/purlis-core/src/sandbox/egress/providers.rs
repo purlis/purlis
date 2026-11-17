@@ -61,12 +61,7 @@ struct Seen {
 impl ProviderAddresses {
     /// The addresses `names` resolve to, looked up by the system's resolver.
     pub fn of(names: Vec<String>) -> Self {
-        let resolve: Resolve = Arc::new(|name: &str, port: u16| {
-            std::net::ToSocketAddrs::to_socket_addrs(&(name, port))
-                .map(Iterator::collect)
-                .unwrap_or_default()
-        });
-        Self::resolving(names, resolve)
+        Self::resolving(names, Arc::new(super::system_resolve))
     }
 
     /// The addresses `names` resolve to, looked up by `resolve`.
@@ -76,6 +71,13 @@ impl ProviderAddresses {
             resolve,
             seen: Mutex::new(Seen::default()),
         }
+    }
+
+    /// **The same names, looked up by `resolve`** (a scenario's resolver seam, T1.1-02), with
+    /// nothing remembered of what they answered before.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn resolving_by(&self, resolve: Resolve) -> Self {
+        Self::resolving(self.names.clone(), resolve)
     }
 
     /// Looks `name` up on `port` as these addresses are looked up: what a confined proxy resolves

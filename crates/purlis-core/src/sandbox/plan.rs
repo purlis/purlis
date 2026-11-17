@@ -21,6 +21,7 @@ use super::egress;
 use super::internal::Internal;
 use super::localport;
 use super::reach::{By, Reach, Written};
+use super::timings::Timings;
 use super::{Confinement, tunnel};
 
 /// **A chat's confinement, planned** (module docs).
@@ -65,12 +66,32 @@ pub struct Here<'a> {
 }
 
 /// Who hears what a chat's proxy does: what it refused, what it carried, and its board of live
-/// asks (#1663, #1664, #1666). Nobody, by default.
-#[derive(Default)]
+/// asks (#1663, #1664, #1666), and the timings it waits by. Nobody, by default, at production's
+/// timings.
 pub struct Telling {
     pub refusals: egress::Refusals,
     pub reached: Option<egress::Reached>,
     pub asks: Option<Arc<Asks>>,
+    /// The one value every timer of the confinement waits by (T1.1-01): its proxy's, and its
+    /// board's where [`Hearing::here`] made it.
+    pub timings: Timings,
+    /// **A scenario's resolver seam** (T1.1-06), a test build's alone: where the proxy looks
+    /// names up and dials ([`super::names`]). None asks the system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub names: Option<Arc<super::names::Names>>,
+}
+
+impl Default for Telling {
+    fn default() -> Self {
+        Self {
+            refusals: egress::Refusals::default(),
+            reached: None,
+            asks: None,
+            timings: Timings::production(),
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
+        }
+    }
 }
 
 /// **Who hears what a chat's proxy does, before its board is made** (#1999): what the window
@@ -78,7 +99,6 @@ pub struct Telling {
 /// [`Telling`] ([`Self::here`]); started in the session host, the host's proxy tells the window,
 /// and the window tells these, so a refusal, a connection and an ask reach the window by the
 /// same closures wherever the proxy runs.
-#[derive(Default)]
 pub struct Hearing {
     /// Told each host refused, once heard ([`egress::Refusals::telling_once_heard`]).
     pub refusals: egress::Refusals,
@@ -88,6 +108,22 @@ pub struct Hearing {
     pub reached: Option<egress::Reached>,
     /// Its board of live asks' hearing, where its proxy asks live.
     pub asks: Option<Asking>,
+    /// The one value the confinement's timers wait by (T1.1-01), where it is started here: the
+    /// window's own ([`Self::here`]).
+    pub timings: Timings,
+}
+
+impl Default for Hearing {
+    /// Nobody hears anything, at production's timings.
+    fn default() -> Self {
+        Self {
+            refusals: egress::Refusals::default(),
+            more: None,
+            reached: None,
+            asks: None,
+            timings: Timings::production(),
+        }
+    }
 }
 
 /// What a chat's board of live asks is made of (#1666): who hears an ask, when one may be
@@ -102,9 +138,9 @@ pub struct Asking {
 }
 
 impl Asking {
-    /// The board these make.
-    pub fn board(self) -> Arc<Asks> {
-        let board = Asks::new(self.tell)
+    /// The board these make, holding as `timings` say.
+    pub fn board(self, timings: &Timings) -> Arc<Asks> {
+        let board = Asks::new(self.tell, timings)
             .asking_while(self.askable)
             .knowing(self.known);
         Arc::new(match self.answered {
@@ -117,13 +153,17 @@ impl Asking {
 impl Hearing {
     /// What a proxy started in this process tells.
     pub fn here(self) -> Telling {
+        let timings = self.timings;
         Telling {
             refusals: match self.more {
                 Some(more) => self.refusals.telling_more(more),
                 None => self.refusals,
             },
             reached: self.reached,
-            asks: self.asks.map(Asking::board),
+            asks: self.asks.map(|asking| asking.board(&timings)),
+            timings,
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
         }
     }
 }
@@ -290,7 +330,9 @@ impl Plan {
             refusals: telling.refusals,
             reached: telling.reached,
             asks: telling.asks,
-            ..egress::Serving::of(reach)
+            #[cfg(any(test, feature = "test-support"))]
+            names: telling.names,
+            ..egress::Serving::of(reach, &telling.timings)
         }
     }
 

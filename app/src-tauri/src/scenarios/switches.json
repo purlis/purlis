@@ -1,0 +1,1996 @@
+{
+  "covers": {
+    "host-process": "The separately built purlis-app host process (`in_a_host_process_at`, Linux, `PURLIS_HOST_APP`): neither `fenced` nor `test-support`, and no `cfg(test)`.",
+    "linux-release-profile": "Ticket 54's Linux release-profile job: a hook fired and a wrap refusal on the release bundle, where none of these switches exist.",
+    "macos-live-check": "A live check in ticket 37's brief, run by ticket 44 on a macOS release-profile build."
+  },
+  "substitutions": [
+    {
+      "name": "the in-process host over an in-memory link",
+      "reason": "Production runs the session host as a separate purlis-app process over a socket; the scenario host runs the host's own code in-process over the in-memory link (`hostedsessions::tests::in_memory`), so the socket, the process boundary and the host's own environment are not exercised.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the Tauri mock runtime",
+      "reason": "The window's `Planes` are managed by `tauri::test::mock_builder()`; the real webview, its event loop and the ACL over real IPC are not exercised (the ACL is `ipc.rs`'s own tests).",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the hand-built kit in place of `Composes::shipped()`'s discovery",
+      "reason": "`Composes::shipped()` finds its `purlis` beside the executable, its plugin in Tauri's resource folder and its git hooks in the real data folder; the scenario host names each itself (`scenarios::host::Kit`), so that discovery is not exercised.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    }
+  ],
+  "switches": [
+    {
+      "file": "app/src-tauri/src/agentidentity.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/autosave.rs",
+      "at": "let _counted = running::Counted::on(&root);",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/branchwatch.rs",
+      "at": "if let Some(latch) = held_by {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/branchwatch.rs",
+      "at": "let held_by: Option<Latch>;",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/branchwatch.rs",
+      "at": "refind_held: None,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/branchwatch.rs",
+      "at": "refind_held: Option<Latch>,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/branchwatch.rs",
+      "at": "{",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "crate::sandboxing::the_app_program_wraps_for_tests(&mut held);",
+      "kind": "switch",
+      "reason": "A test build wraps a chat with this build's own app program, never the test binary; production wraps with the shipped binary.",
+      "forced": {
+        "how": "The scenario host calls `sandboxing::scenarios_wrap_with` with the `purlis` built apart from the test build (`PURLIS_BINARY`), so every chat is wrapped by a binary with neither `fenced` nor `test-support`.",
+        "test": "the_scenario_kit_is_what_the_app_ships"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "deciding: None,",
+      "kind": "switch",
+      "reason": "The test build's field for a test's own sandbox decision (`deciding`), and its unset default: nothing is decided by it unless a test sets it.",
+      "forced": {
+        "how": "The scenario host never sets `deciding`.",
+        "test": "a_linux_claude_chat_in_the_scenario_host_is_sandboxed"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "deciding: Option<Deciding>,",
+      "kind": "switch",
+      "reason": "The test build's field for a test's own sandbox decision (`deciding`), and its unset default: nothing is decided by it unless a test sets it.",
+      "forced": {
+        "how": "The scenario host never sets `deciding`.",
+        "test": "a_linux_claude_chat_in_the_scenario_host_is_sandboxed"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "let decided = match &self.deciding {",
+      "kind": "switch",
+      "reason": "A test build decides a chat-on-no-profile's sandbox by a test's `deciding` or `claude_left_unsandboxed_here`, which can leave a Linux Claude Code chat unsandboxed; production decides it by the project and your level alone.",
+      "forced": {
+        "how": "The scenario host never sets `deciding`, writes every project's `[sandbox]` itself and starts its chats on a sandbox-only profile, so a chat is decided as production decides it.",
+        "test": "a_linux_claude_chat_in_the_scenario_host_is_sandboxed"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "let decided = self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why));",
+      "kind": "switch",
+      "reason": "A test build decides a chat-on-no-profile's sandbox by a test's `deciding` or `claude_left_unsandboxed_here`, which can leave a Linux Claude Code chat unsandboxed; production decides it by the project and your level alone.",
+      "forced": {
+        "how": "The scenario host never sets `deciding`, writes every project's `[sandbox]` itself and starts its chats on a sandbox-only profile, so a chat is decided as production decides it.",
+        "test": "a_linux_claude_chat_in_the_scenario_host_is_sandboxed"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "lock(&self.taken).push(coming[at].number);",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "taken: Mutex::new(Vec::new()),",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
+      "at": "taken: Mutex<Vec<u32>>,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/clonevouch.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/dispatched.rs",
+      "at": "clocked: std::sync::atomic::AtomicBool,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/dispatched.rs",
+      "at": "if !held",
+      "count": 2,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/dispatched.rs",
+      "at": "woke_later::done();",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/dispatched.rs",
+      "at": "woke_later::started();",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/doctor.rs",
+      "at": "let config_root = (!purlis_core::fence::FENCED)",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/firstrun.rs",
+      "at": "{",
+      "count": 2,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/forgeaccounts.rs",
+      "at": "if purlis_core::fence::FENCED && !on_a_fake_forge {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/forgeaccounts.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "count": 2,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/forgeaccounts.rs",
+      "at": "let endpoint = (!purlis_core::fence::FENCED).then(oauth::Https::new);",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/forgepkce.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/gitbroker.rs",
+      "at": "{",
+      "count": 4,
+      "kind": "switch",
+      "reason": "A test build's brokered git reads no identity and signs with no key (`Isolated::default()`); production's reads the operator's identity and signing key. Isolation from the chat's own configuration is the same in both.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/handoff.rs",
+      "at": "held.memory",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/hooks.rs",
+      "at": "pub(crate) const A_SPOOL_IS_LOOKED_AT_AFTER: std::time::Duration = if cfg!(test) {",
+      "kind": "switch",
+      "reason": "The window's look at a chat's hook spool runs 20 ms after a line in a test build, the host's interval in production. In the scenario host the host owns the hook channel and looks at its spools at production's interval.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/hostsaving.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "const BINDINGS: &str = concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../src/bindings.ts\");",
+      "kind": "switch",
+      "reason": "The TypeScript bindings' export (`src/bindings.ts`) in a test or a debug build: no scenario path runs it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "fn typescript() -> specta_typescript::Typescript {",
+      "kind": "switch",
+      "reason": "The TypeScript bindings' export (`src/bindings.ts`) in a test or a debug build: no scenario path runs it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "if !install::refreshes_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions)) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "if let Some(gate) = gate {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "let gate = off_the_main_thread::gate::of(what);",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "{",
+      "count": 2,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/planes.rs",
+      "at": "(self.building)(&root);",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/planes.rs",
+      "at": "building: Arc::new(|_| {}),",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/planes.rs",
+      "at": "building: Sweep,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/planewatch.rs",
+      "at": "let config = config.with_poll_interval(Duration::from_millis(50));",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/poolfollow.rs",
+      "at": "if !purlis_core::updates::checks_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions))",
+      "count": 2,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/projectsettings.rs",
+      "at": "before_chat: Option<Box<dyn Fn() + Send>>,",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/projectsettings.rs",
+      "at": "{",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/remotequestion.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/restoring.rs",
+      "at": "if cfg!(test) {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/restoring.rs",
+      "at": "if let Some(gate) = ONE_GATE_IN_THIS_TEST.with_borrow(Clone::clone) {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/restoring.rs",
+      "at": "most_seen: (usize, usize),",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/restoring.rs",
+      "at": "{",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/secretasksteps.rs",
+      "at": "Told::Written(done) => {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/secretasksteps.rs",
+      "at": "Written(std::sync::mpsc::Sender<()>),",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/staleclones.rs",
+      "at": "&& !purlis_core::fence::FENCED",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/themewatch.rs",
+      "at": "let config = config.with_poll_interval(Duration::from_millis(50));",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/updates.rs",
+      "at": "if !purlis_core::updates::checks_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions))",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/watchset.rs",
+      "at": "if refuse::refused(path) {",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/appstate.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/artifact/approval.rs",
+      "at": "const RUNS: bool = SCRIPT_RUNS_HERE || cfg!(all(unix, any(test, feature = \"test-support\")));",
+      "kind": "switch",
+      "reason": "Whether an artifact's approval script runs here: a fenced or test build runs it on any unix; no scenario path approves an artifact.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/browserlimits.rs",
+      "at": "if !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/browsers.rs",
+      "at": "if !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/createproject.rs",
+      "at": "if let Some(to) = &self.push_to {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/createproject.rs",
+      "at": "pub push_to: Option<PathBuf>,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/createproject.rs",
+      "at": "push_to: None,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/extension/capability.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/extension/cli.rs",
+      "at": "if crate::fence::FENCED { PROBE } else { &[] }",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/fence.rs",
+      "at": "pub const FENCED: bool = cfg!(feature = \"fenced\");",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/fence.rs",
+      "at": "pub const TEST_SUPPORT: bool = cfg!(feature = \"test-support\");",
+      "kind": "switch",
+      "reason": "What this build says it was built with, which `purlis _built-with` alone prints for the scenario host's check of its kit (T1.1-06); it decides nothing.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/fence.rs",
+      "at": "pub fn hold(_act: Act, _root: &Path) {}",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/accounts.rs",
+      "at": "let remembering = if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/agentidentity.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/apptoken.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/apptoken.rs",
+      "at": "if tokens.is_empty() || crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/device.rs",
+      "at": "crate::fence::FENCED && matches!(authority.host(), \"127.0.0.1\" | \"localhost\")",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/gitcredential.rs",
+      "at": "crate::fence::FENCED && protocol == \"http\" && {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/http.rs",
+      "at": "cfg!(any(test, feature = \"fenced\")) && matches!(host, \"127.0.0.1\" | \"localhost\" | \"[::1]\");",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/route.rs",
+      "at": "if let Some(through) = &self.native_through {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/route.rs",
+      "at": "native_through: None,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/route.rs",
+      "at": "native_through: Option<NativeThrough>,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "if let Some(native) = &host.native_through {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "if let Some(root) = &host.root {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "native_through: None,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "native_through: Option<super::route::NativeThrough>,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "root: None,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/signin.rs",
+      "at": "root: Option<super::http::ApiRoot>,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/getproject.rs",
+      "at": "StandIn,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/getproject.rs",
+      "at": "Transport::StandIn => {}",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/hoststart.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/linkkey.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/machine.rs",
+      "at": ".filter(|found| !crate::fence::FENCED || crate::fence::inside(found, &crate::fence::fence()))",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/names/window.rs",
+      "at": "if !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/netlog.rs",
+      "at": "if crate::fence::FENCED && !crate::fence::inside(&resolved(&root), &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/profilestore.rs",
+      "at": "if crate::fence::FENCED && !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/publishproject.rs",
+      "at": "if let Some(to) = &self.push_to {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/publishproject.rs",
+      "at": "if self.push_to.is_some() {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/publishproject.rs",
+      "at": "pub push_to: Option<PathBuf>,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/publishproject.rs",
+      "at": "push_to: None,",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/renamelocal/busy.rs",
+      "at": "if cfg!(feature = \"fenced\") {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/repocmd/clone/landing.rs",
+      "at": "if let Some(stall) = cloning::stall_of_a_scenario() {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/report.rs",
+      "at": ".filter(|root| !crate::fence::FENCED || crate::fence::inside(root, &crate::fence::fence()))",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/report/intake.rs",
+      "at": "if let Some(said) = crate::envvar::var_os(\"PURLIS_REPORT_INTAKE_DSN\") {",
+      "kind": "switch",
+      "reason": "A forge, clone, publish or report stand-in only a fenced build honours (a local forge, a push target, a stalled clone, a report intake address). No scenario path reaches a forge or a report.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/runners.rs",
+      "at": "if !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox.rs",
+      "at": "!cfg!(feature = \"fenced\") || crate::fence::inside(config_root, &crate::fence::fence())",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox.rs",
+      "at": "names: None,",
+      "count": 2,
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/browser_reach.rs",
+      "at": "if let Some(names) = &served.names {",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/browser_reach.rs",
+      "at": "names: None,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/browser_reach.rs",
+      "at": "names: Option<Arc<super::names::Names>>,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "if let Some(names) = &self.names {",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "let providers = match (&serving.names, serving.providers) {",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "let providers = serving.providers;",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "names: None,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "names: Option<Arc<super::names::Names>>,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "names: serving.names,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "pub names: Option<Arc<super::names::Names>>,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/egress.rs",
+      "at": "super::names::asking_the_system(host);",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/hosted.rs",
+      "at": ") -> Result<Hosted, String> {",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/hosted.rs",
+      "at": "None,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/hosted.rs",
+      "at": "names,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/local.rs",
+      "at": "if crate::fence::FENCED && !crate::fence::inside(&home, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/local.rs",
+      "at": "if let Some(file) = TEST_EVERYWHERE.with(|file| file.borrow().clone()) {",
+      "kind": "switch",
+      "reason": "A test build reads what is allowed for every project from this thread's file where a test set one, else the machine's (`everywhere_path`); the scenario host sets none, so it reads its own config home's as production does.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/nat64.rs",
+      "at": "const ASK_AGAIN_AFTER_A_FAILURE: std::time::Duration = std::time::Duration::from_secs(30);",
+      "kind": "switch",
+      "reason": "A test build takes the NAT64 prefixes from this thread's list (none unless a test sets them) and never reads the system's; production reads them every 300 s. No CI runner has a NAT64 prefix.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/nat64.rs",
+      "at": "const READ_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(300);",
+      "kind": "switch",
+      "reason": "A test build takes the NAT64 prefixes from this thread's list (none unless a test sets them) and never reads the system's; production reads them every 300 s. No CI runner has a NAT64 prefix.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/nat64.rs",
+      "at": "fn read() -> Option<Vec<Nat64>> {",
+      "kind": "switch",
+      "reason": "A test build takes the NAT64 prefixes from this thread's list (none unless a test sets them) and never reads the system's; production reads them every 300 s. No CI runner has a NAT64 prefix.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/nat64.rs",
+      "at": "fn read_now_and_then() -> Vec<Nat64> {",
+      "kind": "switch",
+      "reason": "A test build takes the NAT64 prefixes from this thread's list (none unless a test sets them) and never reads the system's; production reads them every 300 s. No CI runner has a NAT64 prefix.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/nat64.rs",
+      "at": "{",
+      "count": 2,
+      "kind": "switch",
+      "reason": "A test build takes the NAT64 prefixes from this thread's list (none unless a test sets them) and never reads the system's; production reads them every 300 s. No CI runner has a NAT64 prefix.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/plan.rs",
+      "at": "names: None,",
+      "count": 2,
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/plan.rs",
+      "at": "names: telling.names,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/plan.rs",
+      "at": "pub names: Option<Arc<super::names::Names>>,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/policy.rs",
+      "at": "let locks = Self::read(Path::new(MACHINE_FILE));",
+      "kind": "switch",
+      "reason": "A test build reads this thread's `TEST_LOCKS` in place of the machine's policy file (`/Library/Application Support/purlis/policy.toml` or `/etc/purlis/policy.toml`). No CI runner has that file, so both read no locks; the release build reads the file.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/policy.rs",
+      "at": "let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());",
+      "kind": "switch",
+      "reason": "A test build reads this thread's `TEST_LOCKS` in place of the machine's policy file (`/Library/Application Support/purlis/policy.toml` or `/etc/purlis/policy.toml`). No CI runner has that file, so both read no locks; the release build reads the file.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/tunnel.rs",
+      "at": "if let Some(names) = &carrying.names {",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/tunnel.rs",
+      "at": "names: Option<Arc<super::names::Names>>,",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/tunnel.rs",
+      "at": "names: super::names::tunnels(),",
+      "kind": "seam",
+      "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/identity.rs",
+      "at": "fn signature_required() -> bool {",
+      "count": 2,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/keyhold.rs",
+      "at": "const _: () = assert!(crate::fence::FENCED);",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/keyhold.rs",
+      "at": "if crate::fence::FENCED {",
+      "count": 2,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/keyring.rs",
+      "at": "if crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/keyring.rs",
+      "at": "if let Ok(mut asks) = STUB_ASKS.lock() {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/keyring.rs",
+      "at": "if let Ok(mut reads) = STUB_READS.lock() {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/program.rs",
+      "at": "!crate::fence::FENCED,",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/program.rs",
+      "at": "fn temp_counts() -> bool {",
+      "count": 2,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "if !super::keyhold::is_the_app() || crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129) on the dispatch-grant seal key (Q306): a fenced build never reads the login keychain for it, as no test touches the person's keychain; a release build reads it, in the app alone.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/setup.rs",
+      "at": "if !crate::fence::inside(&home, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/skills.rs",
+      "at": "!crate::fence::FENCED || crate::fence::inside(config, &crate::fence::fence())",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/skills.rs",
+      "at": ".filter(|sets| !crate::fence::FENCED || crate::fence::inside(sets, &crate::fence::fence()))",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/youreditor.rs",
+      "at": "if crate::fence::FENCED && !crate::fence::inside(&config, &crate::fence::fence()) {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    }
+  ]
+}

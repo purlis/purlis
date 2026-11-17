@@ -1,0 +1,28 @@
+{
+  "harness": "claude",
+  "version": "2.1.325",
+  "recording": "asks-recording.json",
+  "conditions": {
+    "harness_asks": "allowed once, 1 times",
+    "permission_mode": "default",
+    "sessionend_budget": "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000",
+    "summary": "Full sandbox, Claude Code's own prompts kept (permission mode default) and each allowed once"
+  },
+  "turns": [
+    {
+      "prompt": "ASKS-SCRIPT: make the call the stand-in asks for, once it is allowed.",
+      "calls": [
+        {
+          "step": "asked-write",
+          "tool": "Write",
+          "input": {
+            "file_path": "<work>/asked.txt",
+            "content": "asked"
+          },
+          "response": 1
+        }
+      ],
+      "says": "Covering script done."
+    }
+  ]
+}

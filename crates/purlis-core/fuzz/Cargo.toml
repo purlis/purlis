@@ -1,0 +1,87 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The parsers' fuzz targets** (T1.1-47, `docs/fuzzing.md`): cargo-fuzz's own layout, a crate of
+# its own outside the workspace, so libFuzzer's build never reaches a plain `cargo build`.
+[package]
+name = "purlis-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+purlis-core = { path = "..", features = ["fuzzing"] }
+
+# Its own workspace: never a member of the repository's.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+# Overflow and the standard library's own checks stay on: a panic is what a target finds.
+debug-assertions = true
+overflow-checks = true
+
+[[bin]]
+name = "fuzz_proxy_request_head"
+path = "fuzz_targets/fuzz_proxy_request_head.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_connect_authority"
+path = "fuzz_targets/fuzz_connect_authority.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_socks_handshake"
+path = "fuzz_targets/fuzz_socks_handshake.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_host_pattern"
+path = "fuzz_targets/fuzz_host_pattern.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_hook_stdin"
+path = "fuzz_targets/fuzz_hook_stdin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_door_host_origin"
+path = "fuzz_targets/fuzz_door_host_origin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_browser_reach_request_head"
+path = "fuzz_targets/fuzz_browser_reach_request_head.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "differential_host_parse_against_curl_and_node"
+path = "fuzz_targets/differential_host_parse_against_curl_and_node.rs"
+test = false
+doc = false
+bench = false

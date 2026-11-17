@@ -641,6 +641,11 @@ struct Carrying {
     open: AtomicUsize,
     /// Set as the tunnel ends: what it accepts after that is closed, not carried.
     ended: AtomicBool,
+    /// **A scenario's resolver seam** (T1.1-06), a test build's alone: where each connection
+    /// looks its target up and dials it ([`super::names::Names::carry_tunnels`]). None asks the
+    /// system.
+    #[cfg(any(test, feature = "test-support"))]
+    names: Option<Arc<super::names::Names>>,
 }
 
 impl Carrying {
@@ -672,11 +677,15 @@ impl Tunnel {
             reach,
             word: decision.word(),
             reached,
-            tally: Mutex::new(Tally::default()),
+            // A database route is not one of a chat's confinement's timers (T1.1-01 names the
+            // proxy, the board, the throttle and the tally): it keeps production's.
+            tally: Mutex::new(Tally::new(&super::timings::Timings::production())),
             live: Mutex::new(Vec::new()),
             next: AtomicU64::new(0),
             open: AtomicUsize::new(0),
             ended: AtomicBool::new(false),
+            #[cfg(any(test, feature = "test-support"))]
+            names: super::names::tunnels(),
         });
         let shared = Arc::clone(&carrying);
         std::thread::Builder::new()
@@ -774,7 +783,8 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let _held = Held(carrying, id);
     let own = super::hosts::own_addresses();
     let target = egress::host_and_port(&carrying.host, carrying.port);
-    let upstream = match egress::connect(&carrying.host, carrying.port, &carrying.reach, &own) {
+    let patience = super::timings::Timings::production().patience();
+    let upstream = match connect(carrying, &own, patience) {
         egress::Connected::To(upstream) => upstream,
         egress::Connected::OnlyLocal | egress::Connected::AtAModel => {
             carrying.tell(|tally| tally.heard(&target, "refused", Instant::now()));
@@ -790,6 +800,33 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let _ = upstream.set_write_timeout(Some(IDLE));
     let _ = client.set_write_timeout(Some(IDLE));
     egress::splice(client, upstream, u64::MAX, IDLE);
+}
+
+/// The connection to a tunnel's target: through a scenario's resolver seam where it holds one
+/// (T1.1-06), otherwise as a chat's proxy connects ([`egress::connect`]).
+fn connect(
+    carrying: &Carrying,
+    own: &[std::net::IpAddr],
+    patience: std::time::Duration,
+) -> egress::Connected {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(names) = &carrying.names {
+        return egress::connect_through(
+            names,
+            &carrying.host,
+            carrying.port,
+            &carrying.reach,
+            own,
+            patience,
+        );
+    }
+    egress::connect(
+        &carrying.host,
+        carrying.port,
+        &carrying.reach,
+        own,
+        patience,
+    )
 }
 
 /// **The ssh route of a chat** (#1667): an ssh configuration that sends every ssh connection
