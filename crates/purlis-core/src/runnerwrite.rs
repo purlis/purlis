@@ -25,8 +25,8 @@ pub enum RunnerAsk {
 /// with one line saying it would have been held. The app asks it before it holds anything.
 pub fn held_for_the_person(root: &std::path::Path, ask: RunnerAsk) -> bool {
     let rule = match ask {
-        RunnerAsk::Dispatch => "runner.dispatch",
-        RunnerAsk::Write => "runner.write",
+        RunnerAsk::Dispatch => crate::enforcement::RULE_RUNNER_DISPATCH,
+        RunnerAsk::Write => crate::enforcement::RULE_RUNNER_WRITE,
     };
     crate::enforcement::judged(
         root,

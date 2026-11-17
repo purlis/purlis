@@ -589,7 +589,11 @@ pub fn asked_by_a_chat(
             asking.identity.id.as_deref(),
             crate::enforcement::Family::Limits,
             crate::enforcement::mode(root, crate::enforcement::Family::Limits),
-            &format!("dispatch.{}", limit.word()),
+            &format!(
+                "{}{}",
+                crate::enforcement::RULE_DISPATCH_LIMIT,
+                limit.word()
+            ),
             None,
             (),
         )

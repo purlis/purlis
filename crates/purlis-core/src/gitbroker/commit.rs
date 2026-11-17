@@ -457,7 +457,7 @@ fn pace_under(
             None,
             crate::enforcement::Family::Limits,
             mode,
-            "commit.rate",
+            crate::enforcement::RULE_COMMIT_RATE,
             None,
             why,
         )

@@ -383,7 +383,7 @@ pub fn bypass_refusal_in(
         chat,
         crate::enforcement::Family::HarnessMode,
         crate::enforcement::mode(root, crate::enforcement::Family::HarnessMode),
-        "dispatch.prompts-off",
+        crate::enforcement::RULE_PROMPTS_OFF,
         None,
         refused,
     )

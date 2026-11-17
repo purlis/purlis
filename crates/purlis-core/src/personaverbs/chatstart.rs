@@ -201,7 +201,7 @@ pub fn unenforced(root: &Path, persona: &str, harness: Option<Harness>) -> Optio
         None,
         crate::enforcement::Family::Tools,
         crate::enforcement::mode(root, crate::enforcement::Family::Tools),
-        "persona.disallowed-tools",
+        crate::enforcement::RULE_DENY_LIST,
         None,
         unenforced_said(persona, &super::def_rel(root, persona), harness),
     )

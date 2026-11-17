@@ -3487,7 +3487,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
         Ask::Policy(purlis_core::hookwire::PolicyAsk { chat }),
         Ask::PolicyLog(purlis_core::hookwire::PolicyLogAsk {
             chat,
-            family: "guards.git".to_owned(),
+            family: "guards.plane".to_owned(),
             rule: "A3".to_owned(),
             host: None,
         }),
@@ -15932,9 +15932,10 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
         rule: rule.to_owned(),
         host: host.map(str::to_owned),
     };
+    // A3 is `guards.plane`'s (Q308b).
     let guard = purlis_core::toolgate::Arm::PlaneRootBranch.id();
 
-    policy_line(&held, &line(asking, "guards.git", guard, None)).expect("kept");
+    policy_line(&held, &line(asking, "guards.plane", guard, None)).expect("kept");
     policy_line(
         &held,
         &line(
@@ -15973,7 +15974,7 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
             ),
             "a port",
         ),
-        (line(asking + 1000, "guards.git", guard, None), "a chat"),
+        (line(asking + 1000, "guards.plane", guard, None), "a chat"),
     ] {
         assert!(policy_line(&held, &refused).is_err(), "{why}");
     }

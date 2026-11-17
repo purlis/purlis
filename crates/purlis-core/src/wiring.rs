@@ -136,7 +136,7 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
         .is_none()
     };
     if let Some(state) = crate::profiletrust::profile_approval_needed(root, p)
-        && !waived("profile.approval")
+        && !waived(crate::enforcement::RULE_PROFILE_APPROVAL)
     {
         return Some((
             format!(
@@ -148,7 +148,7 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
         ));
     }
     crate::profiletrust::declaration_approval_needed_in(root, p, declared)
-        .filter(|_| !waived("declaration.approval"))
+        .filter(|_| !waived(crate::enforcement::RULE_DECLARATION_APPROVAL))
         .map(|(state, d)| {
             (
                 format!(

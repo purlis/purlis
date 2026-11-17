@@ -115,6 +115,7 @@ fn named(cell: &str) -> Result<&str, String> {
 
 #[test]
 fn every_inventory_row_maps_to_exactly_one_family() {
+    purlis_core::unsteered!();
     let rows = rows(&document());
     let mut wrong = Vec::new();
     let mut per_section: BTreeMap<&str, usize> = BTreeMap::new();
@@ -158,6 +159,7 @@ fn every_inventory_row_maps_to_exactly_one_family() {
 
 #[test]
 fn a_row_with_no_family_two_families_or_an_unknown_one_is_refused() {
+    purlis_core::unsteered!();
     assert_eq!(named("`limits`"), Ok("limits"));
     assert_eq!(named("`fixed`"), Ok("fixed"));
     assert!(named("limits").is_err());

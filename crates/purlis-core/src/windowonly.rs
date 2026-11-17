@@ -121,7 +121,7 @@ pub fn asks(root: &Path) -> bool {
         None,
         crate::enforcement::Family::Consents,
         crate::enforcement::mode(root, crate::enforcement::Family::Consents),
-        "window-only.ask",
+        crate::enforcement::RULE_WINDOW_ONLY_ASK,
         None,
         (),
     )

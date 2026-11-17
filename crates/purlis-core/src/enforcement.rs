@@ -999,6 +999,26 @@ pub const RULE_MASK: &str = "mask";
 pub const RULE_MERGE_HOLD: &str = "merge-hold";
 /// The rule id of the guard on a branch folder another chat holds.
 pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
+/// The rule id of `forge_milestones`' bound to the chat's own workspace (`guards.forge`).
+pub const RULE_FORGE_WORKSPACE: &str = "forge.milestones.workspace";
+/// The rule id of a dispatched chat on a profile that switches the prompts off (`mode`).
+pub const RULE_PROMPTS_OFF: &str = "dispatch.prompts-off";
+/// The rule id of a persona's deny-list its harness cannot carry (`tools`).
+pub const RULE_DENY_LIST: &str = "persona.disallowed-tools";
+/// The rule id of a profile's command nobody approved here (`trust`).
+pub const RULE_PROFILE_APPROVAL: &str = "profile.approval";
+/// The rule id of a harness declaration nobody approved here (`trust`).
+pub const RULE_DECLARATION_APPROVAL: &str = "declaration.approval";
+/// The rule id of a runner chat's dispatch held for the person (`runners`).
+pub const RULE_RUNNER_DISPATCH: &str = "runner.dispatch";
+/// The rule id of a runner chat's write held for the person (`runners`).
+pub const RULE_RUNNER_WRITE: &str = "runner.write";
+/// The rule id of a window-only refusal raised as an ask (`consents`).
+pub const RULE_WINDOW_ONLY_ASK: &str = "window-only.ask";
+/// The rule id of the brokered commit's rate (`limits`).
+pub const RULE_COMMIT_RATE: &str = "commit.rate";
+/// The prefix of a dispatch limit's rule id, before the limit's word (`limits`).
+pub const RULE_DISPATCH_LIMIT: &str = "dispatch.";
 
 /// **Whether `rule` is one of purlis's rules of `family`** (the re-review of #6992, S3): an arm
 /// of the Bash guard, a rule of the commit and push scan, or one of the rules named above. What
@@ -1013,7 +1033,17 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_VAULT_READ | RULE_MASK => Some(Family::Secrets),
         RULE_MERGE_HOLD => Some(Family::GuardsMerge),
         RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
-        _ => None,
+        RULE_FORGE_WORKSPACE => Some(Family::GuardsForge),
+        RULE_PROMPTS_OFF => Some(Family::HarnessMode),
+        RULE_DENY_LIST => Some(Family::Tools),
+        RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),
+        RULE_RUNNER_DISPATCH | RULE_RUNNER_WRITE => Some(Family::Runners),
+        RULE_WINDOW_ONLY_ASK => Some(Family::Consents),
+        RULE_COMMIT_RATE => Some(Family::Limits),
+        _ => rule
+            .strip_prefix(RULE_DISPATCH_LIMIT)
+            .and_then(crate::dispatchlimits::Limit::of_word)
+            .map(|_| Family::Limits),
     };
     if let Some(named) = named {
         return named == family;

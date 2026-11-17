@@ -14,7 +14,7 @@ row names no family, two, or one purlis does not know, or where a section's coun
 
 ## How to read it
 
-- **A family** is one of the 24 keys of `[policy]` (`docs/plane-format.md`, `[policy]`).
+- **A family** is one of the keys of `[policy]` (`docs/plane-format.md`, `[policy]`).
 - **`fixed`** marks what Q308b keeps outside the policy, enforced in every mode, `open`
   included:
   - **the kill switch** (the person's emergency stop);

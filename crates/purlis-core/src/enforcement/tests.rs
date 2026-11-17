@@ -921,3 +921,28 @@ fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults(
         );
     }
 }
+
+#[test]
+fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
+    // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
+    for (family, rule) in [
+        (Family::GuardsForge, RULE_FORGE_WORKSPACE),
+        (Family::HarnessMode, RULE_PROMPTS_OFF),
+        (Family::Tools, RULE_DENY_LIST),
+        (Family::Trust, RULE_PROFILE_APPROVAL),
+        (Family::Trust, RULE_DECLARATION_APPROVAL),
+        (Family::Runners, RULE_RUNNER_DISPATCH),
+        (Family::Runners, RULE_RUNNER_WRITE),
+        (Family::Consents, RULE_WINDOW_ONLY_ASK),
+        (Family::Limits, RULE_COMMIT_RATE),
+        (Family::Limits, "dispatch.depth"),
+        (Family::Limits, "dispatch.running-per-chat"),
+        (Family::GuardsPlane, "A3"),
+        (Family::GuardsShape, "caps"),
+    ] {
+        assert!(known_rule(family, rule), "{} {rule}", family.key());
+        assert!(!known_rule(Family::Dispatch, rule), "{rule}");
+    }
+    assert!(!known_rule(Family::Limits, "dispatch.anything"));
+    assert!(!known_rule(Family::GuardsGit, "A3"));
+}

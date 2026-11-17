@@ -1634,7 +1634,7 @@ fn milestones_workspace(root: &Path, ws: &str, args: &Map<String, Value>, chat: 
                 Some(chat),
                 crate::enforcement::Family::GuardsForge,
                 crate::enforcement::mode(root, crate::enforcement::Family::GuardsForge),
-                "forge.milestones.workspace",
+                crate::enforcement::RULE_FORGE_WORKSPACE,
                 None,
                 (),
             )
