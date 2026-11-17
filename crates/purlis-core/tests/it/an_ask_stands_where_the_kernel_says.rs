@@ -26,6 +26,8 @@ struct Shown {
     programs: HashMap<u32, PathBuf>,
     owners: HashMap<u32, u32>,
     sockets: HashMap<u32, Vec<PathBuf>>,
+    /// Whether listing the sockets fails, as an `lsof` that cannot run does.
+    unlisted: bool,
     namespace: bool,
     sandboxed: bool,
 }
@@ -44,6 +46,7 @@ impl Shown {
             programs: HashMap::new(),
             owners: [(ME, USER)].into_iter().collect(),
             sockets: HashMap::new(),
+            unlisted: false,
             namespace: true,
             sandboxed: false,
         };
@@ -96,10 +99,14 @@ impl Kernel for Shown {
     fn this_user(&self) -> u32 {
         USER
     }
-    fn sockets_held_by(&self, pids: &[u32]) -> Vec<Vec<PathBuf>> {
-        pids.iter()
+    fn sockets_held_by(&self, pids: &[u32]) -> std::io::Result<Vec<Vec<PathBuf>>> {
+        if self.unlisted {
+            return Err(std::io::Error::other("lsof did not run"));
+        }
+        Ok(pids
+            .iter()
             .map(|pid| self.sockets.get(pid).cloned().unwrap_or_default())
-            .collect()
+            .collect())
     }
     fn held_by_a_sandbox(&self) -> bool {
         self.sandboxed
@@ -154,6 +161,21 @@ fn a_shipped_build_takes_the_app_by_its_program_s_name_and_purlis_only_where_it_
         shipped(&Shown::chain(&serve, 1).holding(20, "/plane/.purlis/app/other.sock")),
         Under::NoApp
     );
+}
+
+#[test]
+fn a_purlis_above_whose_sockets_cannot_be_listed_is_a_doubt_never_no_app() {
+    purlis_core::unsteered!();
+    // `purlis serve` above a shell: whether it serves is in its sockets, and a listing that
+    // fails says nothing of them, so this process is never taken for the person's terminal.
+    let serve = [(10, Some(SHELL), USER), (20, Some(HOST), USER)];
+    let mut unlisted = Shown::chain(&serve, 1).holding(20, "/plane/.purlis/app/hooks.sock");
+    unlisted.unlisted = true;
+    assert_eq!(shipped(&unlisted), Under::Boxed);
+    // With no `purlis` above, nothing is listed, and nothing fails.
+    let mut terminal = Shown::chain(&[(10, Some(SHELL), USER)], 1);
+    terminal.unlisted = true;
+    assert_eq!(shipped(&terminal), Under::NoApp);
 }
 
 #[test]

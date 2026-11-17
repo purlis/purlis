@@ -219,6 +219,8 @@ const DENIED: &str = "REACH_TEST_DENIED_FOLDER";
 fn a_folder_a_sandbox_keeps_this_process_from_writing_is_believed() {
     if let Some(denied) = std::env::var_os(DENIED) {
         assert!(may_not_write(Path::new(&denied)));
+        // The same refusal, read as "is this process sandboxed": it is.
+        assert!(held_by_a_sandbox_at(Some(Path::new(&denied))));
         return;
     }
     let tmp = tempfile::tempdir().unwrap();
@@ -308,4 +310,92 @@ fn whoami_and_its_answer_are_the_lines_the_app_and_the_asker_read() {
         !format!("{you:?}").contains("ab"),
         "its Debug never shows the token"
     );
+}
+
+#[test]
+fn under_the_app_a_socket_the_environment_names_narrows_the_ask_only_for_a_chat_it_names() {
+    let held = || {
+        vec![
+            vec![PathBuf::from("/a/.purlis/app/hooks.sock")],
+            vec![
+                PathBuf::from("/b/.purlis/app/hooks.sock"),
+                PathBuf::from("/b/.purlis/app/other.sock"),
+            ],
+        ]
+    };
+    let both = vec![
+        PathBuf::from("/a/.purlis/app/hooks.sock"),
+        PathBuf::from("/b/.purlis/app/hooks.sock"),
+    ];
+    let b = || Some(PathBuf::from("/b/.purlis/app/hooks.sock"));
+    // A chat named: the socket the app handed it, alone.
+    assert_eq!(
+        to_ask_under_the_app(held(), b(), true),
+        vec![PathBuf::from("/b/.purlis/app/hooks.sock")]
+    );
+    // No chat named: another plane's socket, whose listener truthfully knows nothing of this
+    // process, never answers alone; every socket the app holds is asked.
+    assert_eq!(to_ask_under_the_app(held(), b(), false), both);
+    assert_eq!(to_ask_under_the_app(held(), None, false), both);
+    // A chat named, at a socket the app is not seen to hold: asked, and believed only where
+    // the app's own process listens there.
+    let made_up = || Some(PathBuf::from("/c/hooks.sock"));
+    assert_eq!(
+        to_ask_under_the_app(held(), made_up(), true),
+        vec![PathBuf::from("/c/hooks.sock")]
+    );
+    assert_eq!(to_ask_under_the_app(held(), made_up(), false), both);
+}
+
+#[test]
+fn is_this_process_sandboxed_reads_every_doubt_as_a_sandbox_by_the_real_probe() {
+    use std::os::unix::fs::PermissionsExt;
+    // No entry in the user database.
+    assert!(held_by_a_sandbox_at(None));
+    let tmp = tempfile::tempdir().unwrap();
+    // A home this process may write: the file is made, so no sandbox holds it, and it is gone.
+    assert!(!held_by_a_sandbox_at(Some(tmp.path())));
+    assert_eq!(
+        std::fs::read_dir(tmp.path()).unwrap().count(),
+        0,
+        "the try is removed"
+    );
+    // A home that is not there, or not a folder.
+    assert!(held_by_a_sandbox_at(Some(&tmp.path().join("gone"))));
+    let file = tmp.path().join("a-file");
+    std::fs::write(&file, "").unwrap();
+    assert!(held_by_a_sandbox_at(Some(&file)));
+    // A home whose mode closes it: no proof either way, so a sandbox's, where a socket there
+    // is still never believed.
+    for mode in [0o555, 0o600] {
+        let folder = tmp.path().join(format!("closed-{mode:o}"));
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(mode)).unwrap();
+        let boxed = held_by_a_sandbox_at(Some(&folder));
+        let believed = may_not_write(&folder);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(boxed, "{mode:o}: boxed");
+        assert!(!believed, "{mode:o}: a socket there is not believed");
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn is_this_process_sandboxed_reads_a_home_closed_by_a_flag_as_a_sandbox() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("uchg");
+    std::fs::create_dir(&folder).unwrap();
+    let chflags = |flag: &str| {
+        crate::forklock::status(
+            std::process::Command::new("/usr/bin/chflags")
+                .arg(flag)
+                .arg(&folder),
+        )
+        .unwrap()
+        .success()
+    };
+    assert!(chflags("uchg"));
+    let boxed = held_by_a_sandbox_at(Some(&folder));
+    assert!(chflags("nouchg"));
+    assert!(boxed);
 }

@@ -670,53 +670,64 @@ pub fn executables_of(
 }
 
 /// **The unix sockets each of `pids` holds bound at a path** (#6995): listening, or accepted
-/// from one. Empty for one this process may not read.
+/// from one. An error where the listing fails, for any of them: a listing that could not be
+/// read is never taken for one that holds no socket, so the caller reads it as a doubt.
 ///
 /// - **Linux:** `/proc/net/unix`'s sockets bound at a path, by inode, met with the links in
-///   `/proc/<pid>/fd`.
-/// - **macOS:** `lsof`'s unix sockets for each, one run for them all.
+///   `/proc/<pid>/fd`. A descriptor that closes while it is read is skipped; a table or folder
+///   that cannot be read is an error.
+/// - **macOS:** `lsof`'s unix sockets for each, one run for them all. `lsof` exits 1, saying
+///   nothing on its error output, when a process it was asked for holds no unix socket; any
+///   other exit, or one that says something there, is an error.
 pub fn sockets_held_by(
     pids: &[u32],
     run: impl FnOnce(&mut Command) -> io::Result<Output>,
-) -> Vec<Vec<PathBuf>> {
+) -> io::Result<Vec<Vec<PathBuf>>> {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let _ = run;
-        let table = std::fs::read_to_string("/proc/net/unix").unwrap_or_default();
+        let table = std::fs::read_to_string("/proc/net/unix")?;
         let bound: Vec<(u64, String)> = bound_sockets(&table);
         pids.iter()
             .map(|pid| {
-                let Ok(fds) = std::fs::read_dir(format!("/proc/{pid}/fd")) else {
-                    return Vec::new();
-                };
-                let held: Vec<u64> = fds
-                    .filter_map(|fd| std::fs::read_link(fd.ok()?.path()).ok())
-                    .filter_map(|link| socket_inode(&link))
-                    .collect();
+                let mut held: Vec<u64> = Vec::new();
+                for fd in std::fs::read_dir(format!("/proc/{pid}/fd"))? {
+                    if let Ok(link) = std::fs::read_link(fd?.path())
+                        && let Some(inode) = socket_inode(&link)
+                    {
+                        held.push(inode);
+                    }
+                }
                 let mut paths: Vec<PathBuf> = bound
                     .iter()
                     .filter(|(inode, _)| held.contains(inode))
                     .map(|(_, path)| PathBuf::from(path))
                     .collect();
                 paths.dedup();
-                paths
+                Ok(paths)
             })
             .collect()
     }
     #[cfg(target_os = "macos")]
     {
         if pids.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mut lsof = Command::new("/usr/sbin/lsof");
-        lsof.args(["-nP", "-a", "-p", &joined(pids), "-U", "-F", "pn"])
+        lsof.args(["-w", "-nP", "-a", "-p", &joined(pids), "-U", "-F", "pn"])
             .env_clear()
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        let listed = run(&mut lsof)
-            .map(|out| lsof_by_process(&String::from_utf8_lossy(&out.stdout)))
-            .unwrap_or_default();
-        pids.iter()
+            .stdin(std::process::Stdio::null());
+        let out = run(&mut lsof)?;
+        if !lsof_listed(&out) {
+            return Err(io::Error::other(format!(
+                "lsof did not list the sockets of {} ({})",
+                joined(pids),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        let listed = lsof_by_process(&String::from_utf8_lossy(&out.stdout));
+        Ok(pids
+            .iter()
             .map(|pid| {
                 listed
                     .iter()
@@ -724,13 +735,21 @@ pub fn sockets_held_by(
                     .map(|(_, names)| names.iter().map(PathBuf::from).collect())
                     .unwrap_or_default()
             })
-            .collect()
+            .collect())
     }
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
     {
         let _ = run;
-        vec![Vec::new(); pids.len()]
+        Err(io::Error::other(
+            "this system has no way to list a process's sockets",
+        ))
     }
+}
+
+/// Whether `lsof -w`'s run `out` is a listing: it exited 0, or 1 with nothing on its error
+/// output, which is how it says a process it was asked for has no file it selects.
+pub fn lsof_listed(out: &Output) -> bool {
+    out.status.success() || (out.status.code() == Some(1) && out.stderr.is_empty())
 }
 
 /// `/proc/net/unix`'s sockets bound at a path, listening or not: each inode and its path.

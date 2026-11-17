@@ -41,8 +41,8 @@ mod ancestry;
 pub use ancestry::{
     MOST_GENERATIONS, NotOurHost, Parents, admit_host, boot_time_in, executables_of,
     holds_a_socket_at, inside_a_chat, judge, listening_at, lsof_by_process, lsof_command,
-    lsof_executables_command, lsof_names, session_of, socket_holder, sockets_held_by, stat_parent,
-    time_of_day, undeleted, walk,
+    lsof_executables_command, lsof_listed, lsof_names, session_of, socket_holder, sockets_held_by,
+    stat_parent, time_of_day, undeleted, walk,
 };
 
 /// A user id.

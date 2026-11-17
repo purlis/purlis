@@ -183,8 +183,9 @@ pub trait Kernel {
     fn owner_of(&self, pid: u32) -> Option<u32>;
     /// The user this process runs as.
     fn this_user(&self) -> u32;
-    /// The unix sockets each of `pids` holds ([`purlis_same_user::sockets_held_by`]).
-    fn sockets_held_by(&self, pids: &[u32]) -> Vec<Vec<PathBuf>>;
+    /// The unix sockets each of `pids` holds ([`purlis_same_user::sockets_held_by`]), or an
+    /// error where they could not be listed.
+    fn sockets_held_by(&self, pids: &[u32]) -> io::Result<Vec<Vec<PathBuf>>>;
     /// Whether a sandbox's rule holds this process ([`held_by_a_sandbox`]).
     fn held_by_a_sandbox(&self) -> bool;
 }
@@ -211,7 +212,7 @@ impl Kernel for TheKernel {
     fn this_user(&self) -> u32 {
         purlis_same_user::Uid::effective().as_raw()
     }
-    fn sockets_held_by(&self, pids: &[u32]) -> Vec<Vec<PathBuf>> {
+    fn sockets_held_by(&self, pids: &[u32]) -> io::Result<Vec<Vec<PathBuf>>> {
         purlis_same_user::sockets_held_by(pids, crate::forklock::output)
     }
     fn held_by_a_sandbox(&self) -> bool {
@@ -254,7 +255,12 @@ pub fn under_in(kernel: &dyn Kernel, me: u32, rule: &dyn Fn(&Path) -> Ran) -> Un
         .collect();
     if !purlises.is_empty() {
         let pids: Vec<u32> = purlises.iter().map(|at| chain[*at]).collect();
-        let held = kernel.sockets_held_by(&pids);
+        // Sockets that could not be listed say nothing about whether a `purlis` above serves:
+        // a doubt, never a `purlis` that holds none.
+        let held = match kernel.sockets_held_by(&pids) {
+            Ok(held) if held.len() == pids.len() => held,
+            _ => return Under::Boxed,
+        };
         for (at, sockets) in purlises.into_iter().zip(held) {
             if sockets
                 .iter()
@@ -294,12 +300,24 @@ fn only_the_system_s(
             })
 }
 
-/// **Whether a sandbox's rule holds this process** (#6995): it may not make a file in this
-/// account's own home folder, as the user database names it ([`may_not_write`]), which nothing
-/// but a sandbox keeps its owner from. A person's terminal may; a chat's sandbox, which grants
-/// only the folders it works in, refuses it.
+/// **Whether a sandbox's rule holds this process** (#6995): unless it made a file in this
+/// account's own home folder, as the user database names it, which nothing but a sandbox keeps
+/// its owner from. A person's terminal may; a chat's sandbox, which grants only the folders it
+/// works in, refuses it.
+///
+/// This is [`may_not_write`]'s probe read the other way: there, only a sandbox's refusal is
+/// believed, and every doubt reads as a socket not to believe; here, only a file made is
+/// believed, and every doubt reads as a sandbox ([`held_by_a_sandbox_at`]).
 pub fn held_by_a_sandbox() -> bool {
-    purlis_same_user::account_home().is_some_and(|home| may_not_write(&home))
+    held_by_a_sandbox_at(purlis_same_user::account_home().as_deref())
+}
+
+/// [`held_by_a_sandbox`], for the home folder `home`: false only where this process made a
+/// file there and removed it. No entry in the user database (`None`), a folder that is not
+/// this user's, whose mode, flag or access list closes it, no name to try, or a refusal of any
+/// kind all read as a sandbox's.
+pub fn held_by_a_sandbox_at(home: Option<&Path>) -> bool {
+    home.is_none_or(|home| write_probe(home) != Probe::Made)
 }
 
 /// What an ancestor's program is to an ask (#6995), read from the program alone.
@@ -417,28 +435,20 @@ fn reached_from(
             });
         }
         Under::App(app) => {
-            let held = purlis_same_user::sockets_held_by(&app, crate::forklock::output);
-            let mut sockets: Vec<PathBuf> = held
-                .into_iter()
-                .flatten()
-                .filter(|path| path.file_name().is_some_and(|name| name == HOOK_SOCKET))
-                .collect();
-            sockets.dedup();
-            // The one the environment names, alone, where the app holds it: the socket the app
-            // handed this chat, so no other plane's is asked. Where it names none, every socket
-            // the app holds is asked, so a socket made up never spares a chat the app's
-            // question. Whichever is asked, only the app's own process above this one is
-            // believed there.
-            if let Some(hinted) = env(super::SOCKET_ENV).filter(|it| !it.is_empty()) {
-                let hinted = PathBuf::from(hinted);
-                if sockets.iter().any(|socket| same_socket(socket, &hinted)) {
-                    sockets.retain(|socket| same_socket(socket, &hinted));
-                } else if claimed.is_some() {
-                    // Not one the app is seen to hold: asked all the same, and believed only
-                    // where what listens there is the app's own process, above this one.
-                    sockets = vec![hinted];
-                }
-            }
+            // The app is above: sockets of its that could not be listed refuse the ask, never
+            // read as an app that holds none.
+            let held = purlis_same_user::sockets_held_by(&app, crate::forklock::output).map_err(
+                |why| {
+                    Unreached::Refused(format!(
+                        "the sockets of the app this process runs under could not be listed \
+                         ({why})"
+                    ))
+                },
+            )?;
+            let hinted = env(super::SOCKET_ENV)
+                .filter(|it| !it.is_empty())
+                .map(PathBuf::from);
+            let sockets = to_ask_under_the_app(held, hinted, claimed.is_some());
             (sockets, Admit::Ancestors(app))
         }
         Under::Boxed => {
@@ -507,6 +517,36 @@ fn reached_from(
             "the app at {} went away ({why})",
             socket.display()
         ))),
+    }
+}
+
+/// **The sockets an ask under the app knocks at** (#6995): the hook sockets `held` by the app's
+/// processes, and the one the environment names, `hinted`, where it names one.
+///
+/// Where the environment names a chat (`claimed`), the hinted socket alone, where the app holds
+/// it: the socket the app handed this chat, so no other plane's is asked. One the app is not
+/// seen to hold is asked all the same, and believed only where what listens there is the app's
+/// own process, above this one. Where it names no chat, the hint narrows nothing: every socket
+/// the app holds is asked, and each must say this process is in none of its chats, so one
+/// plane's listener that truthfully knows nothing of this process never answers for another's.
+fn to_ask_under_the_app(
+    held: Vec<Vec<PathBuf>>,
+    hinted: Option<PathBuf>,
+    claimed: bool,
+) -> Vec<PathBuf> {
+    let mut sockets: Vec<PathBuf> = held
+        .into_iter()
+        .flatten()
+        .filter(|path| path.file_name().is_some_and(|name| name == HOOK_SOCKET))
+        .collect();
+    sockets.dedup();
+    match hinted.filter(|_| claimed) {
+        Some(hinted) if sockets.iter().any(|socket| same_socket(socket, &hinted)) => {
+            sockets.retain(|socket| same_socket(socket, &hinted));
+            sockets
+        }
+        Some(hinted) => vec![hinted],
+        None => sockets,
     }
 }
 
@@ -763,18 +803,37 @@ fn admit(socket: &UnixStream, path: &Path, admitted: &Admit) -> Result<(), NotTh
 /// error a sandbox gives: Seatbelt's `EPERM` on macOS, Landlock's `EACCES` on Linux. A
 /// read-only mount is not one: a chat can make one of its own folders in a namespace of its own.
 pub fn may_not_write(folder: &Path) -> bool {
+    write_probe(folder) == Probe::SandboxRefused
+}
+
+/// What trying to make a file in a folder showed ([`write_probe`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Probe {
+    /// The file was made, and removed: no sandbox's rule holds this process there.
+    Made,
+    /// A folder this user owns and may write by its mode, which nothing else closes, refused
+    /// it with the error a sandbox gives.
+    SandboxRefused,
+    /// Anything else: the folder cannot be read, is not this user's, its mode, a flag or an
+    /// access list closes it, no name could be drawn, or it refused with another error.
+    Doubt,
+}
+
+/// Tries to make a file in `folder`, with a name no one else uses, and removes it at once
+/// where it was made ([`may_not_write`] says what each answer proves).
+fn write_probe(folder: &Path) -> Probe {
     use std::os::unix::fs::MetadataExt;
     let Ok(meta) = std::fs::metadata(folder) else {
-        return false;
+        return Probe::Doubt;
     };
     let ours = meta.is_dir() && meta.uid() == purlis_same_user::Uid::effective().as_raw();
     if !ours || !its_mode_lets_its_owner_write(meta.mode()) || closed_by_more_than_its_mode(folder)
     {
-        return false;
+        return Probe::Doubt;
     }
     let mut bytes = [0u8; 8];
     if getrandom::fill(&mut bytes).is_err() {
-        return false;
+        return Probe::Doubt;
     }
     let name: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
     let probe = folder.join(format!(".purlis-may-write-{}-{name}", std::process::id()));
@@ -785,9 +844,10 @@ pub fn may_not_write(folder: &Path) -> bool {
     {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe);
-            false
+            Probe::Made
         }
-        Err(why) => why.raw_os_error().is_some_and(a_sandbox_s_refusal),
+        Err(why) if why.raw_os_error().is_some_and(a_sandbox_s_refusal) => Probe::SandboxRefused,
+        Err(_) => Probe::Doubt,
     }
 }
 
