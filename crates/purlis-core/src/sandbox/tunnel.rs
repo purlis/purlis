@@ -906,7 +906,14 @@ impl SshRoute {
     /// files, and `first`, a persona's tools folder, before it where the chat has one, since a
     /// chat is handed one such file. It sets nothing else: no key, no agent and no value of a
     /// vault's; signing stays the chat's own ssh's.
-    pub fn write_claude_env(&self, first: Option<&Path>) -> io::Result<PathBuf> {
+    ///
+    /// `more`, where given, is said after the route: what the chat's sandboxed commands alone
+    /// are handed, such as the project's compile cache ([`super::compile_cache::script`]).
+    pub fn write_claude_env(
+        &self,
+        first: Option<&Path>,
+        more: Option<&str>,
+    ) -> io::Result<PathBuf> {
         let folders: Vec<String> = first
             .into_iter()
             .map(Path::to_path_buf)
@@ -917,8 +924,9 @@ impl SshRoute {
             "# Written by purlis as a chat starts (#1667). Claude Code reads this before each command\n\
              # (CLAUDE_ENV_FILE): this chat's ssh leaves through its SOCKS port, and a persona's\n\
              # tools, where it has any, go before it. Edits here are overwritten.\n\
-             PATH={}:\"$PATH\"\nexport PATH\n",
-            folders.join(":")
+             PATH={}:\"$PATH\"\nexport PATH\n{}",
+            folders.join(":"),
+            more.unwrap_or_default()
         );
         let file = self.dir.join(CLAUDE_ENV_NAME);
         // Written beside, then moved into place, so a command starting now reads a whole file.

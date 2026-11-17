@@ -154,15 +154,45 @@ pub struct CacheHome {
     /// [`crate::leftovers::HOME_NOTE`] says, so the home can be removed once the project is
     /// gone (#1364). Empty where it is not known, and then no note is written.
     pub project: PathBuf,
+    /// The project's compile cache, where its `[sandbox]` turns it on and this machine has an
+    /// sccache a chat may be handed ([`super::compile_cache`]). Its folder is one of
+    /// [`Self::trees`].
+    pub sccache: Option<super::compile_cache::Declared>,
 }
 
 impl CacheHome {
+    /// This home with the project's compile cache for a chat at `level` running as `persona` on
+    /// `machine` ([`super::compile_cache`]): that persona's folder at that level among the trees a
+    /// chat writes. As it was where the persona's name may not name a folder. The program is
+    /// found and judged at each start ([`super::compile_cache::Declared::program`]).
+    #[must_use]
+    pub fn with_compile_cache(
+        mut self,
+        machine: &Machine,
+        level: super::Level,
+        persona: Option<&str>,
+    ) -> Self {
+        let Some(declared) =
+            super::compile_cache::Declared::of(&self.root, machine, level, persona)
+        else {
+            return self;
+        };
+        if !self.trees.contains(&declared.dir) {
+            self.trees.push(declared.dir.clone());
+        }
+        self.sccache = Some(declared);
+        self
+    }
+
     /// Every folder purlis makes before the chat starts, outermost first.
     pub fn folders(&self) -> Vec<PathBuf> {
         let mut out = vec![self.root.clone()];
         let cargo = self.root.join("cargo");
         out.push(cargo.clone());
         out.push(cargo.join("git"));
+        if let Some(declared) = &self.sccache {
+            out.extend(declared.above.iter().cloned());
+        }
         out.extend(self.trees.iter().cloned());
         out.extend(self.bare.iter().cloned());
         out.sort();
@@ -189,6 +219,7 @@ impl CacheHome {
             .iter()
             .chain(&self.files)
             .chain([&self.cargo_config_path()])
+            .chain(self.sccache.iter().map(|declared| &declared.conf))
         {
             if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink()) {
                 let _ = std::fs::remove_file(path);
@@ -228,6 +259,11 @@ impl CacheHome {
         write_beside(&config, self.cargo_config.as_bytes())
             .map_err(|err| unwritable(&config, &err))?;
         self.seed_gradle()?;
+        // The compile cache's config, empty: sccache reads nothing of the person's
+        // ([`super::compile_cache`]). At the top of the home, which no chat writes.
+        if let Some(declared) = &self.sccache {
+            write_beside(&declared.conf, b"").map_err(|err| unwritable(&declared.conf, &err))?;
+        }
         self.note_the_project();
         Ok(())
     }
@@ -367,6 +403,7 @@ pub fn home_of(machine: &Machine, root: &Path, denied: &Denied) -> Option<CacheH
         gradle_properties: gradle_properties(&person_gradle_properties(machine)),
         // As [`super::Homes::project_key`] names the home for it.
         project: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+        sccache: None,
     };
     home.trees
         .splice(0..0, CARGO_TREES.iter().map(|tree| cargo.join(tree)));

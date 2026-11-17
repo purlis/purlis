@@ -679,7 +679,7 @@ mod claude_route {
     fn its_env_file_puts_the_route_first_on_each_commands_path() {
         let root = tempfile::tempdir().expect("a project");
         let (_dir, route) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
-        let file = route.write_claude_env(None).expect("written");
+        let file = route.write_claude_env(None, None).expect("written");
         assert_eq!(file.file_name().unwrap(), CLAUDE_ENV_NAME);
         assert!(file.starts_with(route.config().parent().unwrap()));
         let text = std::fs::read_to_string(&file).expect("its text");
@@ -707,7 +707,7 @@ mod claude_route {
         let root = tempfile::tempdir().expect("a project");
         let (_dir, route) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
         let tools = Path::new("/p/.purlis/app/tools/devops/it's bin");
-        let file = route.write_claude_env(Some(tools)).expect("written");
+        let file = route.write_claude_env(Some(tools), None).expect("written");
         let text = std::fs::read_to_string(file).expect("its text");
         assert_eq!(
             path_line(&text),
@@ -717,7 +717,7 @@ mod claude_route {
             )
         );
         // Written again, as a chat reopens: the same file, its text replaced.
-        let again = route.write_claude_env(None).expect("written");
+        let again = route.write_claude_env(None, None).expect("written");
         assert_eq!(
             path_line(&std::fs::read_to_string(again).unwrap()),
             format!("PATH='{}':\"$PATH\"", route.bin().display())
