@@ -62,7 +62,8 @@
 //!     "may-run-at-once": 3,
 //!     "allow": false,
 //!     "locked": [{ "from": "steward", "to": "devops" }]
-//!   }
+//!   },
+//!   "enforcement": ["guards.merge", "network"]
 //! }
 //! ```
 //!
@@ -135,6 +136,9 @@
 //!   it carries whatever internal address the name resolves to, so a resolver someone else can
 //!   change widens it. A cloud metadata service is never carried. It gives nothing to a chat
 //!   this machine plans itself, and `hosts` gives nothing to a relayed one.
+//! - `enforcement`: the families of purlis's refusals locked enforced on this machine (Q308a,
+//!   [`crate::enforcement`]), whatever a project's `[policy]` says. Every other lock above keeps
+//!   its own family enforced too ([`Locks::enforcement_floor`]).
 //! - `dispatch.allow`: `false` forbids one chat dispatching to another at all (#1437), a chat's
 //!   own persona included.
 //! - `dispatch.locked`: the pairs no chat may dispatch across, each a `from` persona and a `to`
@@ -233,6 +237,8 @@ pub struct Locks {
     /// [`holding_to_its_folder`]): its commands then write no temp folder but the one it is
     /// handed.
     to_its_folder: bool,
+    /// The families the policy's `enforcement` list locks, each always enforced (Q308a).
+    enforcement: std::collections::BTreeSet<crate::enforcement::Family>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -370,6 +376,7 @@ impl Locks {
             dispatch_locked: Vec::new(),
             team_never: false,
             to_its_folder: false,
+            enforcement: std::collections::BTreeSet::new(),
         }
     }
 
@@ -822,6 +829,58 @@ impl Locks {
         Some(format!("{why} {}", self.locked_by()))
     }
 
+    /// **Whether `family` is locked enforced on this machine** (Q308a): `Some(Mode::Enforce)`
+    /// where a lock holds it, whatever a project's `[policy]` says. The policy's own
+    /// `enforcement` list names families outright; every other lock of a family, set on purpose,
+    /// keeps that family enforced; and a policy file that is refused locks every family, as it
+    /// sets every lock.
+    pub fn enforcement_floor(
+        &self,
+        family: crate::enforcement::Family,
+    ) -> Option<crate::enforcement::Mode> {
+        use crate::enforcement::{Family, Mode};
+        let locked = self.refused_because().is_some()
+            || self.enforcement.contains(&family)
+            || match family {
+                Family::Sandbox => self.forbids_opt_out() || self.no_write_grants,
+                Family::Network => {
+                    self.presets.is_some()
+                        || self.hosts.is_some()
+                        || self.no_personal_hosts
+                        || self.no_persona_hosts
+                        || self.no_live_asks
+                        || !self.never_hosts.is_empty()
+                }
+                Family::Ports => self.no_socket_grants,
+                Family::Dispatch => {
+                    self.no_dispatch
+                        || !self.dispatch_locked.is_empty()
+                        || !self.dispatch.is_unset()
+                }
+                Family::Vaults => {
+                    self.no_vault_grants
+                        || self.no_undeclared_secret_asks
+                        || self.no_run_grants
+                        || self.no_persona_tools
+                }
+                _ => false,
+            };
+        locked.then_some(Mode::Enforce)
+    }
+
+    /// A test's locks that hold `family` enforced (Q308a), and nothing else.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn locking_enforcement(family: crate::enforcement::Family) -> Self {
+        let mut locks = Self::none();
+        locks.enforcement.insert(family);
+        locks.source = Some(Source {
+            file: Path::new(MACHINE_FILE).to_path_buf(),
+            owner: None,
+            refused: None,
+        });
+        locks
+    }
+
     /// Why no chat may start without the sandbox, where policy forbids it.
     pub fn opt_out_refused(&self) -> Option<String> {
         if self.no_opt_out {
@@ -863,7 +922,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         .ok_or_else(|| "it is not a JSON object".to_owned())?;
     if let Some(key) = top
         .keys()
-        .find(|key| !["owner", "sandbox", "dispatch"].contains(&key.as_str()))
+        .find(|key| !["owner", "sandbox", "dispatch", "enforcement"].contains(&key.as_str()))
     {
         return Err(format!(
             "it says \"{}\", which purlis does not know",
@@ -1000,7 +1059,33 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         dispatch_locked,
         team_never: false,
         to_its_folder: false,
+        enforcement: enforcement(top.get("enforcement"))?,
     })
+}
+
+/// **The families a policy's `enforcement` list locks** (Q308a): each always enforced on this
+/// machine, whatever a project's `[policy]` says. A word that is no family refuses the file, as
+/// any word purlis does not know does.
+fn enforcement(
+    value: Option<&serde_json::Value>,
+) -> Result<std::collections::BTreeSet<crate::enforcement::Family>, String> {
+    use crate::enforcement::Family;
+    let items = match value {
+        None => return Ok(std::collections::BTreeSet::new()),
+        Some(serde_json::Value::Array(items)) => items,
+        Some(_) => return Err("its \"enforcement\" is not a list".to_owned()),
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str().and_then(Family::of_key).ok_or_else(|| {
+                format!(
+                    "its enforcement names \"{}\", which is not a family purlis knows",
+                    clip(&item.to_string())
+                )
+            })
+        })
+        .collect()
 }
 
 /// **What a policy's `relayed-internal` lists** (#2530): each entry it takes, and a sentence for

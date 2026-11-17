@@ -95,6 +95,11 @@ pub fn start(
             },
             askable: Arc::new(move || askable()),
             known: Arc::new(move |host| super::grant::allowed_already(&root, host).map(By::from)),
+            // The `asks` family off or logged (Q308): answered Allow. The host knows the chat by
+            // its plan alone, so a logged one is let through with no line.
+            answered: (crate::enforcement::mode(project_path, crate::enforcement::Family::Asks)
+                != crate::enforcement::Mode::Enforce)
+                .then(|| -> super::asks::Answered { Arc::new(|_: &str, _: u16| {}) }),
         }
         .board()
     });

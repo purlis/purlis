@@ -61,12 +61,13 @@ fn every() -> Vec<Row> {
         row(
             Finding::NotMet {
                 host: "build-box".into(),
-                said: "kex_exchange_identification: Connection closed".into(),
+                said: "root@build-box: Permission denied (publickey).".into(),
             },
             ssh,
             "not-met",
-            "purlis couldn't reach SSH on build-box (it said: kex_exchange_identification: \
-             Connection closed). Check that SSH is running there, then check again.",
+            "purlis reached SSH on build-box but couldn't record the host key it shows (it said: \
+             root@build-box: Permission denied (publickey).). Run the command under See what \
+             this does to watch SSH sign in, or use Get help.",
             ActionId::CheckAgain,
         ),
         row(

@@ -138,6 +138,33 @@ fn a_machine_is_met_by_the_key_its_sshd_holds_and_trusted_with_its_engine() {
     forward::let_go("met");
 }
 
+/// macOS keeps purlis's data under `~/Library/Application Support`, and ssh reads
+/// `UserKnownHostsFile` as a list of files split at spaces: the key met was written to a stray
+/// `~/Library/Application` and the run's own file stayed empty.
+#[test]
+fn a_machine_is_met_and_signed_in_to_from_a_settings_folder_whose_path_has_a_space() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let settings_in = fixture.folders.path().join("Application Support").join("s");
+    std::fs::create_dir_all(&settings_in).expect("the settings folder");
+    let key = connect::meet(&fixture.ssh, &fixture.route, &settings_in).expect("met");
+    assert_eq!(key, sshd_key(&fixture));
+    assert!(
+        !fixture.folders.path().join("Application").exists(),
+        "ssh wrote the key it met beside the settings folder"
+    );
+    let found = connect::probe(
+        &fixture.ssh,
+        &fixture.route,
+        "spaced",
+        &key,
+        &settings_in,
+        "pool",
+    )
+    .expect("signed in against the pinned key");
+    assert_eq!(found.socket(), Some("/var/run/docker.sock"));
+}
+
 /// Puts the sshd's original key back, however the test ends.
 struct KeyBack<'a>(&'a Fixture);
 

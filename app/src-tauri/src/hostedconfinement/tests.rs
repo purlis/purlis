@@ -106,6 +106,7 @@ fn hearing(heard: &Arc<Heard_>) -> Hearing {
             })
         }),
         asks: Some(Asking {
+            answered: None,
             tell: {
                 let heard = Arc::clone(heard);
                 Arc::new(move |one| heard.asked.lock().unwrap().push(one))

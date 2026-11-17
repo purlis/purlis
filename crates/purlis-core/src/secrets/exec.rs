@@ -635,8 +635,14 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     }
     let out = out_reader.join().unwrap_or_default();
     let err = err_reader.join().unwrap_or_default();
-    let out = super::redact(&out, &prepared.secret_values());
-    let err = super::redact(&err, &prepared.secret_values());
+    let secret_values = prepared.secret_values();
+    let masked = super::masked_of(
+        &ctx.root,
+        crate::enforcement::this_chat().as_deref(),
+        &secret_values,
+    );
+    let out = super::redact(&out, masked);
+    let err = super::redact(&err, masked);
     if !out.is_empty() {
         io.out(&out);
     }

@@ -13,7 +13,7 @@ import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
 import { shareTheReads } from "./sharedReads";
 import { watchForStalls } from "./slowLog";
-import { watchTheFrames } from "./whenDrawing";
+import { watchTheFramesOutsideScenarioTests } from "./whenDrawing";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import {
   DEFAULT_THEME,
@@ -26,6 +26,7 @@ import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
 import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
 import { drawNatively } from "./theme/native";
+import { arriveAtOnceInScenarioTests } from "./theme/motion";
 import { partsLand } from "./theme/partsLater";
 import { watchWindowErrors } from "./windowErrors";
 
@@ -71,6 +72,9 @@ listenForSizeKeys(window);
 // In a scenario-test build only, WebdriverIO's window-side plugin, which its Tauri service
 // looks for. `vite build --mode e2e` is the only build that sets this.
 if (import.meta.env.VITE_E2E) void import("@wdio/tauri-plugin");
+// And in that build an overlay is drawn at once, not faded in: WebKit suspends a fade while the
+// window is hidden, which would leave a dialog unseen and a popover that never goes (#4351).
+arriveAtOnceInScenarioTests(document.documentElement, Boolean(import.meta.env.VITE_E2E));
 
 // The seam `tools/bench.mjs` measures the window through, in that same build and no other.
 attach();
@@ -101,8 +105,9 @@ if (frame !== undefined) void partsLand(frame);
 watchForStalls();
 
 // Whether the window is being drawn, so what the core tells a window hidden, or dark with the
-// display asleep or the screen locked, is caught up once it is drawn again (`whenDrawing.ts`).
-watchTheFrames();
+// display asleep or the screen locked, is caught up once it is drawn again (`whenDrawing.ts`). Not
+// in a scenario-test build, whose window is often behind another and must still hear (#4351).
+watchTheFramesOutsideScenarioTests(Boolean(import.meta.env.VITE_E2E));
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

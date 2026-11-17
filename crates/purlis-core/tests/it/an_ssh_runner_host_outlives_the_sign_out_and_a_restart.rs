@@ -110,7 +110,8 @@ fn verified(bytes: &[u8], target: runnerinstall::Target) -> Verified {
 /// What `command` printed on the runner, run there through the pinned route.
 fn there(reach: &Reach, command: &str, input: Option<&str>) -> sshroute::Ran {
     let (_folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
-    let mut args = sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts);
+    let mut args =
+        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
     args.pop();
     args.push(command.to_owned());
     sshroute::run_giving(&reach.ssh, &args, input, 256 * 1024).expect("ssh runs")
@@ -177,7 +178,8 @@ async fn linked(
     tokio::task::JoinHandle<()>,
 ) {
     let (folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
-    let mut args = sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts);
+    let mut args =
+        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
     args.pop();
     args.push(format!("{binary} bridge"));
     let connector = CommandConnector::new(reach.ssh.clone(), args, Arc::new(|| Ok(())));

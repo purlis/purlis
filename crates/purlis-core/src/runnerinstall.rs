@@ -699,7 +699,8 @@ fn run_there(
         said,
     };
     let (_folder, known_hosts) = reach.known_hosts_for_a_run().map_err(unreached)?;
-    let mut args = sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts);
+    let mut args =
+        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).map_err(unreached)?;
     args.pop();
     args.push(command);
     sshroute::run_giving_bytes(&reach.ssh, &args, input, most, within).map_err(unreached)
