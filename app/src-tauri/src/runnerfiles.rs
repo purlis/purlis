@@ -75,7 +75,7 @@ pub(crate) enum ReadThere {
     Text(String),
     /// Not text, `size` bytes long.
     Binary(u64),
-    /// Past 2 MiB, `size` bytes long.
+    /// Past [`MOST_FILE_READ`], `size` bytes long.
     TooLarge(u64),
 }
 

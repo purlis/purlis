@@ -13,14 +13,14 @@
 //!   file is in the chat's workspace there; one that is not asks first, as a file outside the
 //!   workspace on this machine does, naming the runner.
 //! - **Only a plain file of text links**: what the runner does not find, or finds to be a
-//!   folder, a device or a pipe, says nothing; a binary file or one past 2 MiB is no link and
-//!   says why. A runner that does not answer in time says nothing either: the window waits on
+//!   folder, a device or a pipe, says nothing; a binary file or one past the largest read
+//!   (`MOST_FILE_READ`) is no link and says why. A runner that does not answer in time says nothing either: the window waits on
 //!   no runner to draw a pane.
 //! - **`~` is never asked**: on a runner it is the runner's home, which holds its sign-ins.
 
 use std::path::{Path, PathBuf};
 
-use purlis_session_protocol::session::FileRead;
+use purlis_session_protocol::session::{FileRead, MOST_FILE_READ};
 
 use super::file::{at_line, at_suffix, on_this_machine};
 use super::{
@@ -40,9 +40,13 @@ pub trait RunnerFiles: Send + Sync {
 pub const RUNNER_BINARY: &str =
     "purlis opens a runner's file only as text, and this one is not text";
 
-/// What a hover over a runner's file past the largest read says.
-pub const RUNNER_TOO_LARGE: &str =
-    "purlis opens a runner's file only up to 2 MiB, and this one is larger";
+/// What a hover over a runner's file past the largest read ([`MOST_FILE_READ`]) says.
+pub fn runner_too_large() -> String {
+    format!(
+        "purlis opens a runner's file only up to {} MiB, and this one is larger",
+        MOST_FILE_READ >> 20
+    )
+}
 
 /// **A file path a runner chat printed** (#6387): read on its runner through `files`.
 pub struct RunnerFile {
@@ -96,7 +100,7 @@ impl LinkKind for RunnerFile {
             }) => (path, from_workspace, home),
             Some(FileRead::Binary { .. }) => return Resolved::NotALink(RUNNER_BINARY.into()),
             Some(FileRead::TooLarge { .. }) => {
-                return Resolved::NotALink(RUNNER_TOO_LARGE.into());
+                return Resolved::NotALink(runner_too_large());
             }
             Some(FileRead::NotThere | FileRead::NotPlain { .. } | FileRead::Outside { .. })
             | None => return Resolved::Quiet,
