@@ -404,6 +404,8 @@ pub fn said(reason: &str) -> String {
 ///   as a merge ([`crate::mergehold::held`]) is not A4's, attended or not. The hook refuses it
 ///   all the same and asks the person to merge the request, or refuses it as a block where it
 ///   cannot name the request; it never runs.
+/// - **A help is no publish** (#6960): a line [`crate::mergehold::asks_for_help`] reads as
+///   only asking a merge command for its help is let through, attended or not.
 /// - **A harness the app did not start** has no fact, and no hold: its own `permission_mode`
 ///   is all there is ([`crate::attendance::of_a_line`]), as the recorded charter answered.
 fn release_floor(
@@ -412,6 +414,11 @@ fn release_floor(
     permission_mode: Option<&str>,
     launched: Launched<'_>,
 ) -> Option<String> {
+    // A line that only asks a merge command for its help merges nothing (#6960 (d)), read as
+    // strictly as the hold reads it: it runs unattended.
+    if crate::mergehold::asks_for_help(cmd) {
+        return None;
+    }
     let harness = Harness::of_chat(harness);
     let Some(attending) = launched.attendance else {
         let unattended = crate::attendance::of_a_line(None, harness, permission_mode);

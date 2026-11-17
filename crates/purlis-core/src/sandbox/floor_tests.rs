@@ -13,7 +13,9 @@ use std::io::Write as _;
 fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a project");
     let root = dir.path().canonicalize().expect("a real folder");
-    // Today's floor, explicitly (Q308: under the default, `watch`, programs are let out).
+    // Today's floor, explicitly, so these tests keep proving enforcement (Q308). The floor's
+    // refusal of programs holds under every template (the review of #6992, B1; the last test
+    // here).
     std::fs::write(
         root.join("charter.toml"),
         "schema = 1\n[policy]\ntemplate = \"strict\"\n",

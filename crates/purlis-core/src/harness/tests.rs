@@ -1201,6 +1201,7 @@ fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_
         made_folders: Vec::new(),
         pins: Vec::new(),
         persons_roots: Vec::new(),
+        compile_cache: false,
     };
     let text = super::claude::armed_settings_for_tests(&settings);
     let armed: serde_json::Value = serde_json::from_str(&text).expect("JSON");

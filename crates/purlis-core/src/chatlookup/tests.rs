@@ -84,6 +84,7 @@ fn open_chat(number: u32, id: &str) -> OpenChat {
     OpenChat {
         number,
         id: Some(id.to_owned()),
+        earlier: Vec::new(),
     }
 }
 
@@ -228,6 +229,8 @@ fn closed_702() -> ChatRecord {
         ended: "2026-11-12T09:40:00Z".to_owned(),
         started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
+        chat: None,
     }
 }
 
@@ -350,6 +353,8 @@ fn closed_641() -> ChatRecord {
             name: "steward 3".to_owned(),
         },
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
+        chat: None,
     }
 }
 
@@ -415,5 +420,65 @@ fn a_closed_handoff_is_found_by_its_ulid_closed_again_under_a_later_number() {
     assert_eq!(
         by_number_in(&root, 641, &[]),
         Found::Closed(Box::new(later))
+    );
+}
+
+// #6486: a restart deals a new number and keeps the ULID, so every number a chat had answers.
+
+#[test]
+fn an_open_chat_is_found_under_every_number_it_had_before_a_restart() {
+    let (_dir, root) = project();
+    let restarted = OpenChat {
+        earlier: vec![702, 715],
+        ..open_chat(731, ORDINARY_ID)
+    };
+    for was in [702, 715] {
+        assert_eq!(
+            by_number_in(&root, was, std::slice::from_ref(&restarted)),
+            Found::Restarted { now: 731 },
+            "chat {was}"
+        );
+    }
+    assert_eq!(
+        by_number_in(&root, 716, std::slice::from_ref(&restarted)),
+        Found::NoChat
+    );
+}
+
+#[test]
+fn a_closed_chat_is_found_under_every_number_it_had_before_a_restart() {
+    let (_dir, root) = project();
+    let closed = ChatRecord {
+        number: 731,
+        earlier: vec![702, 715],
+        ..closed_702()
+    };
+    chatrecords::keep(&root, &closed).unwrap();
+    for was in [702, 715, 731] {
+        assert_eq!(
+            by_number_in(&root, was, &[]),
+            Found::Closed(Box::new(closed.clone())),
+            "chat {was}"
+        );
+    }
+}
+
+// #6484: the Chats list's filter finds a closed chat among those not open again.
+
+#[test]
+fn the_closed_chats_are_every_record_but_those_open_again() {
+    const OTHER_ID: &str = "01K6CHATS0000000000000000D";
+    let reopened = ChatRecord {
+        number: 650,
+        id: OTHER_ID.to_owned(),
+        ..closed_702()
+    };
+    let chats = vec![closed_702(), reopened];
+
+    let closed = closed_now(&chats, &[open_chat(731, OTHER_ID)]);
+
+    assert_eq!(
+        closed.iter().map(|chat| chat.number).collect::<Vec<_>>(),
+        [702]
     );
 }

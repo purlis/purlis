@@ -2229,6 +2229,48 @@ fn start_fresh_starts_nothing_and_clears_the_record_but_keeps_every_number_dealt
     );
 }
 
+/// A chat numbered `number` with ULID `id`, as a quit recorded it.
+fn a_numbered_chat(number: u32, id: &str, label: &str) -> purlis_core::reopen::Chat {
+    purlis_core::reopen::Chat {
+        program: "/bin/echo".to_owned(),
+        name: format!("steward {number}"),
+        number: Some(number),
+        label: Some(label.to_owned()),
+        identity: purlis_core::reopen::Identity {
+            id: Some(id.to_owned()),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_chat_dropped_at_start_fresh_keeps_its_closed_record() {
+    // #6487: the chat ends for good at the choice, so its number opens its card after it.
+    const ID: &str = "01K6CHATS0000000000000000C";
+    let dir = tempfile::tempdir().expect("a directory");
+    let (planes, root, _held) = launched_with_one_chat(dir.path());
+    reopen::write(
+        &root,
+        &reopen::Record {
+            chats: vec![a_numbered_chat(7, ID, "Tidy the changelog")],
+            dealt: 7,
+            ..Default::default()
+        },
+    )
+    .expect("the record is written");
+
+    planes.relaunch(Choice::StartFresh, &[]);
+
+    let kept = purlis_core::chatrecords::every(&root);
+    assert_eq!(
+        kept.iter()
+            .map(|one| (one.number, one.id.as_str(), one.title.as_str()))
+            .collect::<Vec<_>>(),
+        [(7, ID, "Tidy the changelog")]
+    );
+}
+
 #[test]
 fn the_choice_is_made_once_and_a_reloaded_window_asking_again_changes_nothing() {
     // A webview reload runs the window's launch path a second time. The chats are already

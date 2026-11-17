@@ -178,7 +178,7 @@ describe("the chat strip when it holds more than it has room for", () => {
   async function fourChats() {
     const made = core([chat(1), chat(2), chat(3), chat(4)]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2", "ide.3", "ide.4"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2", "ide.3", "ide.4"]));
     return made;
   }
 
@@ -199,7 +199,7 @@ describe("the chat strip when it holds more than it has room for", () => {
 
     // No button, not a disabled one: the whole point is that it is the first thing on the
     // strip that SAYS there are more, so it must not be there when there are not.
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
     expect(screen.queryByRole("button", { name: /the strip is not showing/ })).toBeNull();
   });
 
@@ -282,7 +282,7 @@ describe("the chat strip when it holds more than it has room for", () => {
 
     await userEvent.click(screen.getByRole("menuitem", { name: /ide\.3/ }));
 
-    await vi.waitFor(() => expect(screen.getAllByTestId("pane")[0]).toHaveTextContent("session 3"));
+    await waitFor(() => expect(screen.getAllByTestId("pane")[0]).toHaveTextContent("session 3"));
     expect(tabNames()).toEqual(["ide.3"]);
     expect(within(strip()).getByRole("button", { name: "Close ide.3" })).toBeInTheDocument();
   });
@@ -293,7 +293,7 @@ describe("the chat strip when it holds more than it has room for", () => {
     // one. A close ends nothing (#4756), and the strip's last tab keeps one empty pane.
     const { ended } = await fourChats();
     room.roomFor(2);
-    await vi.waitFor(() => expect(closers()).toHaveLength(2));
+    await waitFor(() => expect(closers()).toHaveLength(2));
 
     for (let pressed = 0; pressed < 4; pressed++) {
       const drawn = closers();
@@ -396,7 +396,7 @@ describe("the chat strip when it holds more than it has room for", () => {
 
       room.roomFor(3);
 
-      await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2"]));
+      await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2"]));
       expect(
         await screen.findByRole("button", { name: "Show 2 tabs the strip is not showing" }),
       ).toBeInTheDocument();

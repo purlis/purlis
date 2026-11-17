@@ -210,8 +210,13 @@ pub enum Held {
 
 /// **Whether `cmd` is held**, and which request it merges where that can be read: `None` for a
 /// command the release floor does not read as a merge.
+///
+/// **A help is no merge** (#6960): a line that [`asks_for_help`] is not held in any mode.
 pub fn held(cmd: &str) -> Option<Held> {
     crate::floorguard::merge_reason(cmd)?;
+    if asks_for_help(cmd) {
+        return None;
+    }
     let segments = crate::shellseg::segment_argv(cmd);
     if segments.iter().any(|toks| lands(toks)) {
         return Some(Held::Land);
@@ -222,6 +227,104 @@ pub fn held(cmd: &str) -> Option<Held> {
         _ => Held::Unreadable,
     })
 }
+
+/// **Whether `cmd` only asks a merge command for its help** (#6960): one `gh pr merge`, `glab
+/// mr merge` or `glab mr accept` with a literal `--help` or `-h`, or `gh help pr merge` / `glab
+/// help mr merge`, and nothing else that could make it merge. Such a line merges nothing: the
+/// merge hold does not hold it and the release floor lets it run unattended.
+///
+/// **Read strictly, and anything else is a merge.** The line is one command, at most behind
+/// `env` and variable assignments (no `xargs`, no other wrapper), with no character the shell
+/// expands or redirects on, and every other argument a plain word or a boolean flag of that
+/// command ([`HELP_MAY_STAND_BESIDE`]) spelled on its own. A cluster is never read: pflag gives a
+/// value-taking shorthand at a cluster's end the next argument, so `gh pr merge 12 -st -h`
+/// squash-merges with the subject `-h`.
+pub fn asks_for_help(cmd: &str) -> bool {
+    // The quotes are written as escapes: a bare double quote in a char literal is read as a
+    // string's start by the readers that scan this source for messages (`windowControls.test.ts`).
+    if cmd.contains([
+        '$', '{', '}', '*', '?', '[', '`', '\\', '(', ')', '<', '>', '~', '\u{27}', '\u{22}',
+    ]) {
+        return false;
+    }
+    let segments = crate::shellseg::segment_argv(cmd);
+    let [toks] = &segments[..] else {
+        return false;
+    };
+    let mut toks: Vec<&str> = toks.iter().map(String::as_str).collect();
+    if toks.first() == Some(&"env") {
+        toks.remove(0);
+    }
+    let start = toks
+        .iter()
+        .position(|tok| !crate::shellwrap::is_env_assignment(tok))
+        .unwrap_or(toks.len());
+    let Some((prog, args)) = toks[start..].split_first() else {
+        return false;
+    };
+    let Some((_, noun, verbs, booleans)) =
+        HELP_MAY_STAND_BESIDE.iter().find(|(cli, ..)| cli == prog)
+    else {
+        return false;
+    };
+    let mut words = Vec::new();
+    let mut help = false;
+    for arg in args {
+        match *arg {
+            "--help" | "-h" => help = true,
+            flag if flag.starts_with('-') => {
+                if !booleans.contains(&flag) {
+                    return false;
+                }
+            }
+            word => words.push(word),
+        }
+    }
+    match words[..] {
+        ["help", n, verb] => n == *noun && verbs.contains(&verb),
+        [n, verb, ..] => help && n == *noun && verbs.contains(&verb),
+        _ => false,
+    }
+}
+
+/// For each CLI: its merge noun and verbs, and the boolean flags of its merge that a help may
+/// stand beside in [`asks_for_help`]. A flag that takes a value is never here, nor is `-R`.
+const HELP_MAY_STAND_BESIDE: &[(&str, &str, &[&str], &[&str])] = &[
+    (
+        "gh",
+        "pr",
+        &["merge"],
+        &[
+            "--admin",
+            "--auto",
+            "-d",
+            "--delete-branch",
+            "--disable-auto",
+            "-m",
+            "--merge",
+            "-r",
+            "--rebase",
+            "-s",
+            "--squash",
+        ],
+    ),
+    (
+        "glab",
+        "mr",
+        &["merge", "accept"],
+        &[
+            "--auto-merge",
+            "-d",
+            "--remove-source-branch",
+            "-r",
+            "--rebase",
+            "-s",
+            "--squash",
+            "-y",
+            "--yes",
+        ],
+    ),
+];
 
 /// Whether one segment is `purlis change land` (or its older name, `charter change land`).
 fn lands(toks: &[String]) -> bool {
@@ -256,7 +359,8 @@ const VALUE_FLAGS: &[&str] = &[
 ];
 
 /// One segment's merge: `None` where it is no `gh pr merge`, `glab mr merge` or `glab mr
-/// accept`; `Some(None)` where it is one whose request cannot be read.
+/// accept`; the request it merges where that can be read, or `Some(None)`. A flag's value is
+/// never read as a word. A help is [`asks_for_help`]'s to read, never this one's.
 fn merge_of(toks: &[String]) -> Option<Option<Request>> {
     let (prog, _, argv) = crate::shellwrap::split_env(toks);
     let base = crate::shellwrap::base_lower(&prog);
@@ -314,8 +418,49 @@ pub enum AppSaid<'a> {
     Held(&'a str),
     /// The app raised no ask, in its words.
     Refused(&'a str),
+    /// The app could not read the hand-over ([`crate::hookwire::UNKNOWN_LINE`]): it and this
+    /// purlis are different builds, so nobody was asked (#6960).
+    OtherBuild,
     /// No app answered in time, or none was there.
     Unheard,
+}
+
+/// **A way out a merge refusal names** (#6960): what the chat, or the person, does next. Each
+/// leads to an ask or a run, never to another refusal; [`ways_out`] lists a refusal's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WayOut {
+    /// The chat runs a merge of one request on its own ([`WayOut::forms`]), which is held as a
+    /// [`Held::Request`] and asks the person in Asks.
+    MergeOnItsOwn,
+    /// The chat asks the person in words, who merges on their press, in Asks or the window. A
+    /// yes in the chat merges nothing.
+    AskThePerson,
+    /// The person restarts purlis, or updates the purlis plugin of the chat's harness, so the app
+    /// and the chat's purlis are one build: then the same merge asks them in Asks.
+    OneBuild,
+}
+
+impl WayOut {
+    /// The commands this way out names, `<number>` for the request's: none where it is said in
+    /// words only.
+    pub fn forms(self) -> &'static [&'static str] {
+        match self {
+            WayOut::MergeOnItsOwn => &["gh pr merge <number>", "glab mr merge <number>"],
+            WayOut::AskThePerson | WayOut::OneBuild => &[],
+        }
+    }
+}
+
+/// **The ways out the refusal of `held` names**, with what the app said: none where the person
+/// is asked already.
+pub fn ways_out(held: &Held, app: &AppSaid<'_>) -> &'static [WayOut] {
+    match (held, app) {
+        (Held::Request(_), AppSaid::Held(_)) => &[],
+        (Held::Request(_), AppSaid::Refused(_) | AppSaid::Unheard) => &[WayOut::AskThePerson],
+        (Held::Request(_), AppSaid::OtherBuild) => &[WayOut::OneBuild, WayOut::AskThePerson],
+        (Held::Unreadable, _) => &[WayOut::MergeOnItsOwn],
+        (Held::Land, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
+    }
 }
 
 /// **The trace reason the hook refuses `held` with**, by what the app said (Q239): a hold only
@@ -335,17 +480,29 @@ pub fn reason(held: &Held, app: &AppSaid<'_>) -> &'static str {
 pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
     const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
                          person's press. Nothing was merged.";
+    // #6960: what the person says in the chat is no press.
+    const NO_YES: &str = "A yes in this chat merges nothing: only the person's press of Merge \
+                          in Asks does.";
     match (held, app) {
-        (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said}"),
+        (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said} {NO_YES}"),
         (Held::Request(request), AppSaid::Refused(why)) => format!(
             "{OPENS} Nobody was asked to merge {}{}: {why} Ask the person to merge it in the \
-             window. Do not merge it another way.",
+             window. Do not merge it another way. {NO_YES}",
+            request.number_said(),
+            request.repo_said()
+        ),
+        (Held::Request(request), AppSaid::OtherBuild) => format!(
+            "{OPENS} The app that started this chat could not read purlis's hand-over of {}{}: \
+             the app and this purlis are different builds, so nobody was asked. Ask the person \
+             to restart purlis, or to update the purlis plugin of this chat's harness, so both \
+             are one build: then this same merge asks them in Asks. Until then, ask them to \
+             merge it in the window. Do not merge it another way. {NO_YES}",
             request.number_said(),
             request.repo_said()
         ),
         (Held::Request(request), AppSaid::Unheard) => format!(
             "{OPENS} The app was not heard from about {}{}, so nobody was asked: ask the person \
-             to merge it in the window. Do not merge it another way.",
+             to merge it in the window. Do not merge it another way. {NO_YES}",
             request.number_said(),
             request.repo_said()
         ),
@@ -358,7 +515,7 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
         (Held::Unreadable, _) => format!(
             "{OPENS} purlis cannot tell which request this merges, so nobody was asked. Run `gh \
              pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is asked \
-             to merge it in Asks."
+             to merge it in Asks. {NO_YES}"
         ),
     }
 }

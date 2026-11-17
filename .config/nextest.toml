@@ -54,6 +54,14 @@ filter = "package(purlis-app) & test(/^behaviour::pool_journey::in_a_docker_pool
 slow-timeout = { period = "60s", terminate-after = 15 }
 retries = 0
 
+# A runner's host kept by systemd, through a restart of its machine and then beside newer versions:
+# an old version's host waits its minute idle before it stops itself, and the one with a live chat
+# is watched past that minute to see that it does not (#6704). About four minutes of waiting that
+# is the test's own, so it is given ten before it is called hung.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.
 # Compiles purlis-core (check) without test-support, cold on a fresh runner (T1.1-02).

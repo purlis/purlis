@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChatCard, ChatGo } from "./bindings";
-import { readItOffer, reopenTaskOffer, showLinkedChatOffer, type Offer } from "./actions";
+import { readItOffer, reopenOffer, showLinkedChatOffer, type Offer } from "./actions";
 import { ClosedChatCardPopover } from "./ClosedChatCard";
 import { placed } from "./PaneLinkSurfaces";
 import type { LinkPlace } from "./paneLinks";
@@ -15,7 +15,7 @@ import type { LinkPlace } from "./paneLinks";
  *
  * - **It runs as the pane's rows run** (`onRun`, the pane's menu's `onPress`): the chat is
  *   shown by the window's `showChat`, and the card's *Read it* and *Reopen* by the offers the
- *   palette's card runs (`readItOffer`, `reopenTaskOffer`). Nothing here starts a program;
+ *   palette's card runs (`readItOffer`, `reopenOffer`). Nothing here starts a program;
  *   *Reopen* does only on the person's press.
  * - **Apart from the link surfaces** (`PaneLinkSurfaces.tsx`), which a screen that must reach
  *   no core draws too: this reaches the window's actions, and only a pane that has them uses it.
@@ -57,7 +57,7 @@ export function usePaneLinkChats(onRun: ((offer: Offer) => void) | undefined): {
           if (!isOpen) setCarded(null);
         }}
         onRead={() => press(readItOffer(carded.card))}
-        onReopen={() => press(reopenTaskOffer(carded.card))}
+        onReopen={() => press(reopenOffer(carded.card))}
       />
     </>
   );

@@ -133,6 +133,34 @@ fn the_unit_starts_with_the_user_manager_whether_or_not_anyone_has_a_desktop() {
     assert!(unit.contains("version 0.9.0-rc.1"), "{unit}");
 }
 
+/// #6700: a stop reaches the host alone, which ends its chats as a quit and exits; only then
+/// is what is left killed. `KillMode=mixed` sends `SIGTERM` to the main process only and
+/// `SIGKILL` to the rest of the control group once it has gone or the timeout has passed;
+/// launchd sends `SIGTERM` to the job alone on a bootout, and `SIGKILL` after `ExitTimeOut`.
+#[test]
+fn a_stop_reaches_the_host_first_with_time_to_end_its_chats_as_a_quit() {
+    let unit = unit(&versioned());
+    assert!(unit.contains("\nKillMode=mixed\n"), "{unit}");
+    assert!(
+        unit.contains(&format!("\nTimeoutStopSec={STOPS_WITHIN_SECONDS}\n")),
+        "{unit}"
+    );
+    let agent = plist::Value::from_reader_xml(
+        plist(&versioned(), Path::new("/Users/runner/serve.log")).as_bytes(),
+    )
+    .unwrap()
+    .into_dictionary()
+    .unwrap();
+    assert_eq!(
+        agent["ExitTimeOut"].as_signed_integer(),
+        Some(i64::try_from(STOPS_WITHIN_SECONDS).unwrap())
+    );
+    assert!(
+        std::time::Duration::from_secs(STOPS_WITHIN_SECONDS) >= purlis_host::ENDS_WITHIN * 4,
+        "the host's own wait for its programs fits well inside the manager's"
+    );
+}
+
 #[test]
 fn the_unit_and_the_agent_pin_the_config_home_install_resolved() {
     let unit = unit(&versioned());
@@ -751,4 +779,52 @@ fn a_service_that_cannot_be_removed_says_so_so_its_version_is_kept() {
     install(&here, &versioned(), &nobody).unwrap();
     ran.fails("systemctl --user daemon-reload", "Failed to connect to bus");
     assert!(remove_version(&here, "0.9.0-rc.1").is_err());
+}
+
+#[test]
+fn a_versions_service_is_started_at_boot_only_while_enabled_or_its_agent_is_there() {
+    // What tells an older version's host a newer one takes over from it (#6704), read from disk
+    // and never by running the manager.
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let systemd = here(Keeper::SystemdUser, home.path(), &ran);
+    let service = Service {
+        binary: PathBuf::from("/x/purlis"),
+        version: Some("2.0.0".into()),
+        config_home: None,
+    };
+    let unit = systemd.unit_path(&service);
+    std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
+    std::fs::write(&unit, super::unit(&service)).unwrap();
+    assert!(
+        !version_started_at_boot(&systemd, "2.0.0"),
+        "a unit written and not enabled starts at no boot"
+    );
+    let wants = systemd.user_units.join("default.target.wants");
+    std::fs::create_dir_all(&wants).unwrap();
+    std::os::unix::fs::symlink(&unit, wants.join(service.unit_name())).unwrap();
+    assert!(version_started_at_boot(&systemd, "2.0.0"), "enabled");
+    assert!(
+        !version_started_at_boot(&systemd, "1.0.0"),
+        "another version's"
+    );
+    std::fs::remove_file(&unit).unwrap();
+    assert!(
+        !version_started_at_boot(&systemd, "2.0.0"),
+        "a link left naming a unit that is gone starts nothing"
+    );
+
+    let launchd = here(Keeper::Launchd, home.path(), &ran);
+    assert!(!version_started_at_boot(&launchd, "2.0.0"));
+    let agent = launchd.plist_path(&service);
+    std::fs::create_dir_all(agent.parent().unwrap()).unwrap();
+    std::fs::write(&agent, "").unwrap();
+    assert!(
+        version_started_at_boot(&launchd, "2.0.0"),
+        "its agent is there"
+    );
+
+    let foreground = here(Keeper::Foreground(Why::Container), home.path(), &ran);
+    assert!(!version_started_at_boot(&foreground, "2.0.0"));
+    assert!(ran.take().is_empty(), "no manager was run");
 }

@@ -901,6 +901,11 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
             at = value.start() + named;
             continue;
         }
+        if let Some(placeholder) = curl_placeholder_len(text, value.start()) {
+            // A placeholder is at least five characters, so this always advances.
+            at = value.start() + placeholder;
+            continue;
+        }
         let line_end = text[value.start()..]
             .find('\n')
             .map_or(text.len(), |n| value.start() + n);
@@ -919,6 +924,46 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
         return Some((whole.start()..line_end, key.range()));
     }
     None
+}
+
+/// How many bytes of the value at `at` are a curl placeholder, or `None` when it is not one
+/// (#6962): `{{NAME}}`, with `NAME` a variable's name (`[A-Za-z_][A-Za-z0-9_]*`), holding the
+/// field alone (the text, its line or the word ends after it, or a quote or `&` closes the
+/// field), where an argument of `curl` on the same line, before any `#` comment, reads `NAME`
+/// from somewhere that keeps its value off the line: `--variable %NAME` (the environment) or
+/// `--variable NAME@…` (a file). curl fills it in from that variable, which is how the secrets
+/// guide hands a vault's value to curl, so it holds a name and not a value. `--variable
+/// NAME=…` and `--variable %NAME=…` put a value on the line, so they qualify nothing.
+/// Any other `{{…}}` is read as a value.
+///
+/// A future policy key, `secrets.curl_placeholders` (default `true`), may turn this off (Q307).
+fn curl_placeholder_len(text: &str, at: usize) -> Option<usize> {
+    static PLACEHOLDER: OnceLock<Regex> = OnceLock::new();
+    let placeholder = PLACEHOLDER.get_or_init(|| {
+        Regex::new(r#"\A\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}(?:\z|[\s'"&])"#)
+            .expect("a pattern this module wrote")
+    });
+    let caps = placeholder.captures(&text[at..])?;
+    let name = caps.get(1).expect("the pattern has a name group").as_str();
+    let line_start = text[..at].rfind('\n').map_or(0, |n| n + 1);
+    let line_end = text[at..].find('\n').map_or(text.len(), |n| at + n);
+    let line = &text[line_start..line_end];
+    // The line's words up to a `#` comment; a `--variable` counts only after a `curl` word.
+    let words: Vec<&str> = line
+        .split_whitespace()
+        .take_while(|w| !w.starts_with('#'))
+        .collect();
+    let after_curl = words
+        .iter()
+        .position(|w| *w == "curl" || w.ends_with("/curl"))
+        .map_or(&[][..], |at| &words[at + 1..]);
+    let named = after_curl.windows(2).any(|pair| {
+        let spec = pair[1].trim_matches(['\'', '"']);
+        pair[0] == "--variable"
+            && (spec.strip_prefix('%') == Some(name)
+                || spec.strip_prefix(name).is_some_and(|f| f.starts_with('@')))
+    });
+    named.then_some(2 + name.len() + 2)
 }
 
 /// The KIND of credential `text` holds by a rule that code does not trip, or `None` — what a

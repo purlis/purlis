@@ -237,6 +237,7 @@ impl Wrap {
             // Its own sandbox is off: purlis's wrap holds every path (#4083).
             pins: Vec::new(),
             persons_roots: Vec::new(),
+            compile_cache: false,
         }
     }
 

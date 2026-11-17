@@ -147,6 +147,11 @@ pub struct Settings {
     /// The folders the person's own and the administrators' Claude Code settings let a command
     /// write, read as the chat starts ([`persons_write_roots`]): places a pin is kept in too.
     pub persons_roots: Vec<String>,
+    /// Whether a chat's builds go through the project's compile cache
+    /// ([`super::compile_cache`]): on macOS, where Claude Code's sandbox grants a socket by path,
+    /// for a project whose cache home has an sccache. The chat is then let bind and connect to
+    /// its own server's socket, and no other ([`Self::serving_compile_cache`]).
+    pub compile_cache: bool,
 }
 
 /// The folders above each name of [`super::MAY_LIFT`] in `home`, outermost first, `home` and the
@@ -542,6 +547,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         made_folders: Vec::new(),
         pins,
         persons_roots: persons_write_roots(compiled),
+        compile_cache: compile_cache(compiled),
     }
     .tidied()
 }
@@ -596,8 +602,20 @@ fn floor(
         },
         pins,
         persons_roots: persons_write_roots(compiled),
+        compile_cache: compile_cache(compiled),
     }
     .tidied()
+}
+
+/// Whether `compiled` puts a chat's builds through the project's compile cache
+/// ([`Settings::compile_cache`]).
+fn compile_cache(compiled: &Compiled) -> bool {
+    compiled.os == Os::MacOs
+        && compiled
+            .widened
+            .caches
+            .as_ref()
+            .is_some_and(|caches| caches.sccache.is_some())
 }
 
 impl Settings {
@@ -753,6 +771,29 @@ impl Settings {
         let [http, socks] = ports;
         out.sandbox["network"]["httpProxyPort"] = json!(http);
         out.sandbox["network"]["socksProxyPort"] = json!(socks);
+        out
+    }
+
+    /// These settings for a chat whose sccache server listens on `socket`, in its own temp
+    /// folder ([`super::compile_cache::socket_in`]): that one path added to
+    /// `network.allowUnixSockets`, which lets the chat bind it and connect to it, and nothing
+    /// else. As compiled where the chat's builds go through no compile cache.
+    pub fn serving_compile_cache(&self, socket: &Path) -> Settings {
+        let mut out = self.clone();
+        if !self.compile_cache {
+            return out;
+        }
+        let mut sockets: Vec<Value> = out.sandbox["network"]["allowUnixSockets"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for name in both_names(socket) {
+            let name = json!(name.display().to_string());
+            if !sockets.contains(&name) {
+                sockets.push(name);
+            }
+        }
+        out.sandbox["network"]["allowUnixSockets"] = json!(sockets);
         out
     }
 

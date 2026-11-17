@@ -100,6 +100,7 @@ mod a_gone_project_is_located;
 mod a_grades_chat_has_only_purlis_s_plugin_on;
 mod a_grades_chat_holds_none_of_the_persons_kept_allows;
 mod a_grades_chat_runs_on_the_model_picked;
+mod a_guard_names_its_real_cause;
 mod a_handoff_todo_is_recorded_once_per_piece_of_work;
 mod a_harness_is_found_the_way_a_shell_finds_it;
 mod a_help_chat_holds_no_cluster_sign_in;

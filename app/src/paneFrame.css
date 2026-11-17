@@ -846,6 +846,15 @@
   padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
 }
 
+/* **A browser's site and secrets are its view's first row** (#6937): at the header's row, the
+   same step from the top and the same height, keeping the grip's and the actions' room. */
+.pane-frame.pane-viewed .view-body > .browser-view > .browser-head:first-child {
+  box-sizing: content-box;
+  min-block-size: var(--size-chrome);
+  padding-block: calc(var(--space-2) * 2) var(--space-2);
+  padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
+}
+
 /* ---------------------------------------------------------------------------------------------
    The terminal.
    --------------------------------------------------------------------------------------------- */

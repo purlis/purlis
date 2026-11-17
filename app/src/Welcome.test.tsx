@@ -14,7 +14,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 /** The project the status line names, found by its directory: the line draws the project's
  *  name, and its directory is the item's tooltip (qw357). */
 const projectAt = (directory: string) =>
-  vi.waitFor(() => {
+  waitFor(() => {
     const item = document.querySelector<HTMLElement>(
       `[data-testid="status-project"][data-directory="${directory}"]`,
     );
@@ -475,9 +475,7 @@ describe("the welcome's way in by path and recents", () => {
     render(<App />);
     const person = userEvent.setup();
     // The tab's mark says what the chat's row says (#4935): queued, it needs you.
-    await vi.waitFor(() =>
-      expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument());
     await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
     await person.click(
@@ -539,9 +537,7 @@ describe("the welcome's way in by path and recents", () => {
     render(<App />);
     const person = userEvent.setup();
     // The tab's mark says what the chat's row says (#4935): queued, it needs you.
-    await vi.waitFor(() =>
-      expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument());
     await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
     await person.click(
@@ -618,7 +614,7 @@ describe("the welcome's way in by path and recents", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
 
     await person.click(screen.getByRole("row", { name: /elsewhere/ }));
-    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("is not a plane"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("is not a plane"));
     expect(screen.getByRole("alert")).not.toHaveTextContent("could not be opened");
   });
 });
