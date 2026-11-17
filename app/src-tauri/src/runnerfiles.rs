@@ -108,7 +108,7 @@ impl ReadsOnRunner {
                 None if tried < 2 => {}
                 None => {
                     return Err(format!(
-                        "the file kept changing on runner {} while purlis read it: open it again in a moment",
+                        "The file kept changing on runner {} while purlis read it. Open it again in a moment.",
                         self.runner
                     ));
                 }

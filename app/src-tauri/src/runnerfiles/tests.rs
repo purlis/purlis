@@ -128,7 +128,8 @@ fn a_file_that_keeps_changing_is_given_up_saying_so() {
     *runner.versions.lock().unwrap() = vec!["v1", "v2", "v3", "v4", "v5"];
 
     let said = reads(&runner).read("moving.txt", None).unwrap_err();
-    assert!(said.contains("kept changing"), "{said}");
+    assert!(said.starts_with("The file kept changing"), "{said}");
+    assert!(said.ends_with("Open it again in a moment."), "{said}");
     assert!(said.contains("pool/runner-1"), "{said}");
 }
 
