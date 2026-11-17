@@ -4554,8 +4554,17 @@ export const commands = {
 	 *  goes. Where that is no longer so, or the other way round, nothing is done (#4325).
 	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
 	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
+	 *  A pool on another machine that doesn't answer is removed not at all: the answer says so, and
+	 *  the window offers to forget it here.
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	/**
+	 *  **Forgets pool `name` on this machine without contacting its machine**: the window's Forget it
+	 *  here, offered where Remove found that machine doesn't answer. Its runners stay there, and the
+	 *  answer says what stays and the commands that remove it there. Refused for a pool on this
+	 *  machine's Docker, which is removed, never only forgotten.
+	 */
+	forgetDockerPool: (name: string) => typedError<string, string>(__TAURI_INVOKE("forget_docker_pool", { name })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.
@@ -14467,6 +14476,17 @@ export type PoolProfiles = {
 	 */
 	fresh_claim: boolean,
 };
+
+/**
+ *  **What a pool's Remove came to**: removed, with what could not be removed where something
+ *  stays; or nothing removed because the pool's machine doesn't answer, in Pool setup's words,
+ *  so the window offers to forget it here ([`forget_docker_pool`]).
+ */
+export type PoolRemoval = 
+/**  It is gone, or what of it stays is said in `left`. */
+{ state: "removed"; left: string | null } | 
+/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
+{ state: "unreachable"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
