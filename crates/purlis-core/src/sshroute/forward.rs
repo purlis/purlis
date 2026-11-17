@@ -11,6 +11,12 @@
 //! has let go. **A forward that dropped is opened again** by the next [`hold`], before anything
 //! links over it, and ssh checks the pinned key as it does.
 //!
+//! **The lock never outlives the forward** (ADR 0123, amended 2026-11-17): the holder lets go of
+//! its socket and its lock the moment its ssh ends ([`watch`]), not when it next looks at the
+//! pool, which it may never do. And a second process uses a forward another holds only while its
+//! socket answers: a lock held over a socket nothing answers is waited out, and the forward
+//! opened anew once it is let go.
+//!
 //! **It ends with the process holding it**: the window ends every forward as it quits
 //! ([`let_go_of_all`]), and a process that goes any other way closes the pipe its forward's
 //! session waits on, which ends the whole connection there ([`super::HELD_BY`]).
@@ -26,13 +32,14 @@ use super::{FORWARD_WITHIN, HELD, HostKey, Route};
 
 /// **One running forward.** Ending it (dropping it) ends ssh and removes its socket.
 pub struct Forward {
-    child: Child,
+    /// Its ssh, its socket and its lock, let go of together.
+    lease: Arc<Mutex<Lease>>,
+    /// The process id of its ssh.
+    pid: u32,
     /// purlis's end of the pipe the forward's session waits on ([`super::HELD_BY`]): closed as
     /// this process goes, which ends the forward.
     _held_by: Option<std::process::ChildStdin>,
     socket: PathBuf,
-    /// The lock that says this process holds the pool's forward.
-    _held: std::fs::File,
     /// The run folder its pinned `known_hosts` is in, removed with it.
     _settings: crate::dockerpool::settings::RunFolder,
     /// What ssh said, kept to be shown where it ends.
@@ -70,10 +77,74 @@ pub struct Opening<'a> {
     pub settings_in: &'a Path,
 }
 
+/// **What a running forward holds**: its ssh, its socket and the pool's lock, let go of together
+/// and once, so the lock is never held over a socket nothing answers.
+struct Lease {
+    child: Child,
+    socket: PathBuf,
+    /// The lock that says this process holds the pool's forward; `None` once let go.
+    held: Option<std::fs::File>,
+}
+
+impl Lease {
+    /// Whether its ssh has ended.
+    fn ended(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// Ends ssh, removes the socket, then lets go of the lock: in that order, so another process
+    /// that takes the lock next never has its own socket removed by this one.
+    fn let_go(&mut self) {
+        let Some(held) = self.held.take() else {
+            return;
+        };
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_file(&self.socket);
+        drop(held);
+    }
+}
+
+/// How often a forward's watch asks whether its ssh has ended.
+const WATCHED_EVERY: Duration = Duration::from_millis(200);
+
+/// **Lets go of a forward the moment its ssh ends** (ADR 0123, amended 2026-11-17), from a thread
+/// of its own: the process holding it may not look at the pool again for hours, and another
+/// process of the person's waits on its lock meanwhile. Ends with the forward.
+fn watch(lease: &Arc<Mutex<Lease>>) {
+    let lease = Arc::downgrade(lease);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(WATCHED_EVERY);
+            let Some(lease) = lease.upgrade() else {
+                return;
+            };
+            let mut lease = lease
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if lease.held.is_none() {
+                return;
+            }
+            if lease.ended() {
+                lease.let_go();
+                return;
+            }
+        }
+    });
+}
+
 impl Forward {
-    /// **Whether it still forwards**: ssh is running and its socket is there.
+    fn lease(&self) -> std::sync::MutexGuard<'_, Lease> {
+        self.lease
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// **Whether it still forwards**: ssh is running, it still holds the lock, and its socket is
+    /// there.
     pub fn alive(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None)) && std::fs::symlink_metadata(&self.socket).is_ok()
+        let mut lease = self.lease();
+        lease.held.is_some() && !lease.ended() && std::fs::symlink_metadata(&self.socket).is_ok()
     }
 
     /// The local socket.
@@ -85,15 +156,13 @@ impl Forward {
     /// The process id of the ssh holding it.
     #[must_use]
     pub fn ssh(&self) -> u32 {
-        self.child.id()
+        self.pid
     }
 }
 
 impl Drop for Forward {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_file(&self.socket);
+        self.lease().let_go();
     }
 }
 
@@ -115,16 +184,8 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
         .write(true)
         .open(folder.join(HELD))
         .map_err(|why| format!("purlis could not hold {}: {why}", folder.display()))?;
-    match held.try_lock() {
-        Ok(()) => {}
-        Err(std::fs::TryLockError::WouldBlock) => {
-            // Another process holds it, and keeps its socket while it does.
-            return wait_for(&socket, FORWARD_WITHIN, &mut || Ok(true))
-                .map(|()| Held::Shared(socket.clone()));
-        }
-        Err(std::fs::TryLockError::Error(why)) => {
-            return Err(format!("purlis could not hold {}: {why}", folder.display()));
-        }
+    if !held_or_shared(&held, &socket, from.pool, folder)? {
+        return Ok(Held::Shared(socket));
     }
     // What the person's settings add that would ride on it is refused before ssh runs.
     super::connect::resolve(from.ssh, from.route)
@@ -164,23 +225,28 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
         });
     }
     let held_by = child.stdin.take();
-    let mut forward = Forward {
-        child,
+    let pid = child.id();
+    let forward = Forward {
+        lease: Arc::new(Mutex::new(Lease {
+            child,
+            socket: socket.clone(),
+            held: Some(held),
+        })),
+        pid,
         _held_by: held_by,
         socket: socket.clone(),
-        _held: held,
         _settings: settings,
         said,
     };
-    let waited = wait_for(&socket, FORWARD_WITHIN, &mut || {
-        Ok(matches!(forward.child.try_wait(), Ok(None)))
-    });
+    let waited = wait_for(&socket, FORWARD_WITHIN, &mut || Ok(!forward.lease().ended()));
     match waited {
-        Ok(()) => Ok(Held::Own(forward)),
+        Ok(()) => {
+            watch(&forward.lease);
+            Ok(Held::Own(forward))
+        }
         Err(why) => {
             // Its stderr is read to its end once ssh has ended.
-            let _ = forward.child.kill();
-            let _ = forward.child.wait();
+            forward.lease().let_go();
             std::thread::sleep(Duration::from_millis(50));
             let said = forward
                 .said
@@ -220,6 +286,48 @@ fn wait_for(
     }
 }
 
+/// **Takes the pool's lock, or answers that another process's forward is to be used**: `true`
+/// where this process now holds it, `false` where another holds it and its socket answers. A
+/// lock held over a socket nothing answers is the forward of a process whose ssh ended and that
+/// has not let go yet: waited out up to [`FORWARD_WITHIN`], and refused after that.
+fn held_or_shared(
+    held: &std::fs::File,
+    socket: &Path,
+    pool: &str,
+    folder: &Path,
+) -> Result<bool, String> {
+    let until = Instant::now() + FORWARD_WITHIN;
+    loop {
+        match held.try_lock() {
+            Ok(()) => return Ok(true),
+            Err(std::fs::TryLockError::WouldBlock) if answers(socket) => return Ok(false),
+            Err(std::fs::TryLockError::WouldBlock) => {}
+            Err(std::fs::TryLockError::Error(why)) => {
+                return Err(format!("purlis could not hold {}: {why}", folder.display()));
+            }
+        }
+        if Instant::now() >= until {
+            return Err(format!(
+                "another purlis process holds pool {pool}'s SSH forward, and nothing has answered \
+                 on it for {} seconds. Quit that process, or the purlis window, and try again",
+                FORWARD_WITHIN.as_secs()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// **Whether something answers on `socket`**: an ssh still forwarding listens there; the file a
+/// killed one left does not.
+fn answers(socket: &Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket).is_ok()
+}
+
+/// **Whether another process holds the forward at `socket` and it still forwards.**
+fn shared_alive(socket: &Path) -> bool {
+    another_holds(socket) && answers(socket)
+}
+
 /// The forwards this process holds, by pool.
 static HELD_HERE: Mutex<BTreeMap<String, Held>> = Mutex::new(BTreeMap::new());
 
@@ -237,10 +345,8 @@ pub fn hold_noting(from: &Opening<'_>) -> Result<(PathBuf, bool), String> {
     if let Some(kept) = held.get_mut(from.pool) {
         let alive = match kept {
             Held::Own(forward) => forward.alive(),
-            // Another process's: still holding while its socket is there and it holds the lock.
-            Held::Shared(socket) => {
-                std::fs::symlink_metadata(&*socket).is_ok() && another_holds(socket)
-            }
+            // Another process's: still holding while it holds the lock and its socket answers.
+            Held::Shared(socket) => shared_alive(socket),
         };
         if alive {
             return Ok((kept.socket().to_path_buf(), false));
@@ -272,7 +378,7 @@ pub fn dropped(pool: &str) -> bool {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     match held.get_mut(pool) {
         Some(Held::Own(forward)) => !forward.alive(),
-        Some(Held::Shared(socket)) => !another_holds(socket),
+        Some(Held::Shared(socket)) => !shared_alive(socket),
         None => false,
     }
 }
