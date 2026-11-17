@@ -240,7 +240,7 @@ fn every_template_is_what_a_chat_starts_under() {
     assert_ne!(of(host::Template::Watch), of(host::Template::Strict));
     assert_ne!(of(host::Template::Hold), of(host::Template::Watch));
     assert_ne!(of(host::Template::Open), of(host::Template::Watch));
-    homes.ran_no_scenario();
+    // MUTATION (DO NOT MERGE): the child writes no left.json.
 }
 
 /// **A chat runs under the template its scenario names** (T1.1-06, Q308a): in the scenario host,
