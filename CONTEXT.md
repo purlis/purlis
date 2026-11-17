@@ -276,7 +276,8 @@ one that carries none is read as its first.
 A record written by a newer purlis is never deleted or overwritten: a whole-file record is
 refused, with Update purlis and Set it aside and start fresh as its remedies, and one row of a
 record of rows is skipped and kept. Only a record marked rebuildable may be rebuilt over a newer
-one, since nothing is lost. A damaged record is copied aside, never deleted, and purlis starts
+one, since nothing is lost, and only one marked transient or rebuildable may be removed whole by
+purlis's own clean-up whatever wrote it; any other clean-up keeps what it cannot read. A damaged record is copied aside, never deleted, and purlis starts
 it fresh, unless starting fresh would let through what the person refused, as for a dispatch
 never; then it is refused like a newer one. A record is **set aside** only on the person's press,
 and the copies of both kinds are its kept copies (ADR 0125).
@@ -2006,7 +2007,8 @@ profile this machine declares in `charter.local.toml`), or a **Persona**'s MCP s
 that changes. A teammate's approval never counts as yours. It is kept where its subject belongs:
 an extension's and an artifact's on this machine, and a harness declaration's, a local
 profile's and a persona's MCP servers' in this clone, never committed. While a chat waits on
-one, it is a **Blocking ask** as well as a **Notice** (ADR 0125).
+one, it is a **Blocking ask** as well as a **Notice**; the new-chat picker, where the person is
+already looking at the command, approves a harness in place (ADR 0125).
 _Avoid_: trust (for the record), permission (that is the harness's), grant (that is a
 runner's), consent (for this kind alone), ledger (that is the code's)
 
