@@ -1414,34 +1414,106 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
 /// on its `--settings` with `onFailure` as its project's policy runs them
 /// ([`purlis_core::harness::claude::under_policy`]). Here the settings an ordinary chat is armed
 /// with, loosened to a policy, are handed to Claude Code with a `purlis` that answers every hook
-/// but the Bash guard, which `fails`. The stand-in's one Bash call writes a file: whether the
-/// file is there is whether the tool ran. Unix only: the stand-in `purlis` is a shell script.
+/// but one guard, which fails. The stand-in's one call is that guard's tool: a Bash call that
+/// writes a file, or a Read of a file holding [`READ_MARK`]. Whether the file is there, or the
+/// mark came back, is whether the tool ran. Unix only: the stand-in `purlis` is a shell script.
+///
+/// **`#[ignore]`d, and red without `PURLIS_CLAUDE_CODE`**: they answer only for a real Claude
+/// Code, so the suite lists them as skipped rather than passing them with nothing run, and CI's
+/// two Claude Code steps (`ci.yml`) run them with the ignored ones, where a missing program fails
+/// them.
 #[cfg(unix)]
 mod a_guard_that_fails {
     use super::*;
     use purlis_core::enforcement::{Mode, Resolved, Settings};
     use purlis_core::harness::{Kit, StateHooks};
 
-    /// How the Bash guard fails: a `sleep` past its timeout of 10 seconds, or a kill by signal.
+    /// How a guard fails: a `sleep` past its timeout (10 seconds for Bash's, 5 for Read's), or a
+    /// kill by signal.
     const TIMES_OUT: &str = "sleep 30";
     const DIES: &str = "kill -KILL $$";
 
-    /// Whether the stand-in's Bash call ran, with the Bash guard failing as `fails` does, under
-    /// `policy`. `None` where no `PURLIS_CLAUDE_CODE` names a Claude Code to run.
-    fn the_tool_ran(fails: &str, policy: &Resolved) -> Option<bool> {
-        let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from)?;
+    /// What the file the Read guard's case reads holds, and only that file.
+    const READ_MARK: &str = "the read went through 7067";
+
+    /// Which guard fails, and so which tool the stand-in calls.
+    #[derive(Clone, Copy)]
+    enum Guard {
+        Bash,
+        Read,
+    }
+
+    impl Guard {
+        fn word(self) -> &'static str {
+            match self {
+                Self::Bash => "pretooluse",
+                Self::Read => "pretooluse-read",
+            }
+        }
+    }
+
+    /// A stand-in for the Messages API whose first turn is one call of `tool` with `input`, and
+    /// every later one an end. What the call's result said is kept in `results`.
+    struct OneCall {
+        tool: &'static str,
+        input: Value,
+        results: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl Respond for OneCall {
+        fn respond(&self, request: &Request) -> ResponseTemplate {
+            let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+            let model = body["model"].as_str().unwrap_or("stand-in").to_owned();
+            let stream = body["stream"] == true;
+            if let Some(result) = result_of(&body, CALL) {
+                self.results.lock().expect("results").push(result);
+                let done = json!({ "type": "text", "text": "done" });
+                return answer(&model, &done, "end_turn", stream);
+            }
+            let offered = body["tools"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == self.tool));
+            if !offered {
+                let words = json!({ "type": "text", "text": "ok" });
+                return answer(&model, &words, "end_turn", stream);
+            }
+            let call = json!({
+                "type": "tool_use",
+                "id": CALL,
+                "name": self.tool,
+                "input": self.input,
+            });
+            answer(&model, &call, "tool_use", stream)
+        }
+    }
+
+    /// The Claude Code CI names, or a failure: a case run without one would prove nothing.
+    fn claude_code() -> PathBuf {
+        std::env::var_os("PURLIS_CLAUDE_CODE")
+            .map(PathBuf::from)
+            .expect(
+                "PURLIS_CLAUDE_CODE names no Claude Code: these cases run the real one, as CI's \
+                 Claude Code steps do",
+            )
+    }
+
+    /// Whether the stand-in's call of `guard`'s tool ran, with `guard` failing as `fails` does,
+    /// under `policy`.
+    fn the_tool_ran(guard: Guard, fails: &str, policy: &Resolved) -> bool {
+        let program = claude_code();
         let scratch = tempfile::tempdir().expect("a folder");
         let out = scratch.path().canonicalize().expect("a real folder");
         let (home, tmp, root) = (out.join("home"), out.join("tmp"), out.join("project"));
         for folder in [home.join(".claude"), tmp.clone(), root.clone()] {
             fs::create_dir_all(folder).expect("a folder");
         }
-        // The `purlis` every hook runs: the Bash guard fails, and every other hook says nothing.
+        // The `purlis` every hook runs: `guard` fails, and every other hook says nothing.
         let purlis = out.join("purlis");
         fs::write(
             &purlis,
             format!(
-                "#!/bin/sh\ncat >/dev/null\nif [ \"$2\" = pretooluse ]; then {fails}; fi\nexit 0\n"
+                "#!/bin/sh\ncat >/dev/null\nif [ \"$2\" = {} ]; then {fails}; fi\nexit 0\n",
+                guard.word()
             ),
         )
         .expect("the stand-in purlis");
@@ -1475,9 +1547,19 @@ mod a_guard_that_fails {
         let settings = out.join("settings.json");
         fs::write(&settings, &args[at]).expect("the settings");
         let ran = root.join("ran");
+        let read = root.join("read-me");
+        fs::write(&read, READ_MARK).expect("the file to read");
         let results = Arc::new(Mutex::new(Vec::new()));
-        let stand_in = StandIn {
-            command: format!("touch '{}'", ran.display()),
+        let (tool, input) = match guard {
+            Guard::Bash => (
+                "Bash",
+                json!({ "command": format!("touch '{}'", ran.display()), "description": "Touch" }),
+            ),
+            Guard::Read => ("Read", json!({ "file_path": read.display().to_string() })),
+        };
+        let stand_in = OneCall {
+            tool,
+            input,
             results: results.clone(),
         };
         let (status, said) = started_as(
@@ -1495,63 +1577,82 @@ mod a_guard_that_fails {
         let results = results.lock().expect("results").clone();
         assert!(
             !results.is_empty(),
-            "the Bash call never came back to the stand-in ({status}):\n{said}"
+            "the {tool} call never came back to the stand-in ({status}):\n{said}"
         );
-        Some(ran.exists())
+        match guard {
+            Guard::Bash => ran.exists(),
+            Guard::Read => results.iter().any(|result| result.contains(READ_MARK)),
+        }
     }
 
     fn strict() -> Resolved {
         Resolved::all(Mode::Enforce)
     }
 
-    fn open() -> Resolved {
+    fn under(template: &str) -> Resolved {
         Resolved::of(
-            &Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
+            &Settings::from_text(Some(&format!("[policy]\ntemplate = \"{template}\"\n"))),
             &purlis_core::sandbox::policy::Locks::none(),
         )
     }
 
+    /// One case: `guard` failing as `fails` does under `policy`, and whether its tool should run.
+    fn case(guard: Guard, fails: &str, policy: &Resolved, runs: bool) {
+        purlis_core::unsteered!();
+        assert_eq!(
+            the_tool_ran(guard, fails, policy),
+            runs,
+            "{} failing with `{fails}` under {policy:?}",
+            guard.word()
+        );
+    }
+
     #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_times_out_refuses_the_tool_on_claude_code() {
-        purlis_core::unsteered!();
-        if let Some(ran) = the_tool_ran(TIMES_OUT, &strict()) {
-            assert!(
-                !ran,
-                "the Bash call ran past a guard that timed out under strict"
-            );
-        }
+        case(Guard::Bash, TIMES_OUT, &strict(), false);
     }
 
     #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_dies_refuses_the_tool_on_claude_code() {
-        purlis_core::unsteered!();
-        if let Some(ran) = the_tool_ran(DIES, &strict()) {
-            assert!(
-                !ran,
-                "the Bash call ran past a guard that died under strict"
-            );
-        }
+        case(Guard::Bash, DIES, &strict(), false);
     }
 
     #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_times_out_runs_the_tool_on_claude_code_under_open() {
-        purlis_core::unsteered!();
-        if let Some(ran) = the_tool_ran(TIMES_OUT, &open()) {
-            assert!(
-                ran,
-                "the Bash call was refused by a guard that timed out under open"
-            );
-        }
+        case(Guard::Bash, TIMES_OUT, &under("open"), true);
     }
 
     #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_dies_runs_the_tool_on_claude_code_under_open() {
-        purlis_core::unsteered!();
-        if let Some(ran) = the_tool_ran(DIES, &open()) {
-            assert!(
-                ran,
-                "the Bash call was refused by a guard that died under open"
-            );
-        }
+        case(Guard::Bash, DIES, &under("open"), true);
+    }
+
+    /// `watch` enforces `secrets` and `guards.credential`, which the Bash guard judges.
+    #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
+    fn a_bash_guard_that_dies_refuses_the_tool_on_claude_code_under_watch() {
+        case(Guard::Bash, DIES, &under("watch"), false);
+    }
+
+    #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
+    fn a_read_guard_that_dies_refuses_the_read_on_claude_code() {
+        case(Guard::Read, DIES, &strict(), false);
+    }
+
+    #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
+    fn a_read_guard_that_times_out_refuses_the_read_on_claude_code_under_watch() {
+        case(Guard::Read, TIMES_OUT, &under("watch"), false);
+    }
+
+    #[test]
+    #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
+    fn a_read_guard_that_dies_lets_the_read_through_on_claude_code_under_open() {
+        case(Guard::Read, DIES, &under("open"), true);
     }
 }
