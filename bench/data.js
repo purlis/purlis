@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794921901748,
+  "lastUpdate": 1794924972899,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50736,6 +50736,48 @@ window.BENCHMARK_DATA = {
             "value": 101.791537,
             "unit": "ms",
             "extra": "median of 5 runs: 101.627, 101.689, 101.792, 101.881, 103.315 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "258e724903f363370516588ccd4a8a3c5fed43cf",
+          "message": "A runner short of Landlock 6 names only ways out that exist (#7085)\n\n* A runner short of Landlock 6 names only ways out that exist\n\nA Claude Code chat on a Docker pool whose host kernel lacks Landlock 6 was\ntold to start on a Claude Code profile (in the same wrap on Linux since\nADR 0067 as amended 2026-11-10) or without the sandbox (refused on a runner\nsince 2026-11-08). Cause: the runner worded its refusal with `said`, which\nignores where it runs, and `landlock_way_on` predated both amendments.\n\nlandlock_way_on now takes a WayOn (here, runner, unknown) and names no\nharness; NotStarted::said_on drops the opt-out for a runner's chat; Start a\nchat hides \"Start without the sandbox\" while Runs on is a pool. Pool setup\nchecking the host kernel up front is #7084.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7MCSXA996D1NFGS06EH9814\nPurlis-Persona: steward\n\n* A Claude Code chat on a person's own Linux without Landlock 6 is told no other profile helps\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7MCSXA996D1NFGS06EH9814\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T13:28:35Z",
+          "tree_id": "1808decb637d816b481be3af206321d9c184e597",
+          "url": "https://github.com/purlis/purlis/commit/258e724903f363370516588ccd4a8a3c5fed43cf"
+        },
+        "date": 1794924965852,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5501285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.541, 0.545, 0.550, 0.556, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.122441,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.096, 16.118, 16.122, 16.192, 17.042 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8954105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.444, 100.632, 101.895, 102.406, 104.595 ms"
           }
         ]
       }
