@@ -219,6 +219,9 @@ export const CameBackUnmatched: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await userEvent.click(await page.findByRole("button", { name: "Create the GitHub App" }));
+    await userEvent.click(
+      await page.findByRole("button", { name: "Finish with the address your browser ended on" }),
+    );
     await expect(await page.findByLabelText("The address your browser ended on")).toBeTruthy();
   },
 };

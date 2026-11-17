@@ -370,15 +370,14 @@ function Start({
  * never reached purlis. The box is a secret's, since the address holds GitHub's one-time code: it
  * is never in React's state or drawn.
  */
-function PasteAddress({ onFinish, open }: { onFinish: (address: string) => void; open?: boolean }) {
+function PasteAddress({ onFinish }: { onFinish: (address: string) => void }) {
   const box = useRef<HTMLInputElement>(null);
   const [filled, setFilled] = useState(false);
   return (
     <Disclosure
-      label="Browser stuck on a purlis page?"
+      label="Finish with the address your browser ended on"
       level={3}
       className="agent-identity-fold"
-      defaultExpanded={open}
     >
       <div className="agent-identity-fold-body">
         <p className="agent-identity-term">
@@ -796,7 +795,7 @@ export function AgentIdentityFlow({
         onDismiss={dismiss}
         take={take}
         extra={extra}
-        paste={tried && <PasteAddress onFinish={fromAddress} open={trouble !== null} />}
+        paste={tried && <PasteAddress onFinish={fromAddress} />}
       />
     );
   if (screen.at === "pasted")

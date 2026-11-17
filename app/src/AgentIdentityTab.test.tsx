@@ -98,6 +98,9 @@ describe("Agent identity", () => {
     render(<AgentIdentityTab plane="p" />);
     await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
     expect(await screen.findByText(/couldn't match/)).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Finish with the address your browser ended on" }),
+    );
     const box = await screen.findByLabelText("The address your browser ended on");
     await userEvent.click(box);
     await userEvent.paste(pasted);
@@ -118,7 +121,7 @@ describe("Agent identity", () => {
     render(<AgentIdentityTab plane="p" />);
     await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Browser stuck on a purlis page?" }),
+      await screen.findByRole("button", { name: "Finish with the address your browser ended on" }),
     );
     await userEvent.click(screen.getByLabelText("The address your browser ended on"));
     await userEvent.paste("not it");
@@ -133,7 +136,9 @@ describe("Agent identity", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
     expect(await screen.findByText(/GitHub makes the App the moment you press it/)).toBeTruthy();
     expect(screen.getByText(/stops after 15 minutes/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Browser stuck on a purlis page?" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Finish with the address your browser ended on" }),
+    ).toBeTruthy();
   });
 
   it("resumes at Finish with the exact lines, and adds them on that one press", async () => {
