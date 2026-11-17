@@ -1263,13 +1263,13 @@ export const commands = {
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
 	/**
-	 *  The pools' runners whose links are down now, for `plane`'s chats (#ISSUE): read as a window
+	 *  The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window
 	 *  is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
 	 *  to link again that failed for another reason says so there.
 	 */
 	runnerLinksDown: (plane: PlaneId) => typedError<RunnerLinkDown[], string>(__TAURI_INVOKE("runner_links_down", { plane })),
 	/**
-	 *  **Try now** (#ISSUE): pool `pool`'s runner, whose link is down, is tried again at once rather
+	 *  **Try now** (#7134): pool `pool`'s runner, whose link is down, is tried again at once rather
 	 *  than after the pause between tries. Answered before the try: what it finds is said as ever,
 	 *  on `chats-reconnecting`.
 	 */
@@ -16936,7 +16936,7 @@ export type RunnerImageOffered =
 { state: "local_build" };
 
 /**
- *  **A pool's runner whose link is down, and why** (#ISSUE): what the window says once its
+ *  **A pool's runner whose link is down, and why** (#7134): what the window says once its
  *  chats have said Reconnecting… for longer than a blip.
  */
 export type RunnerLinkDown = {

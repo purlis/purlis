@@ -48,7 +48,7 @@ pub struct ChatsReconnecting {
     pub reconnection: Reconnection,
 }
 
-/// **Why the link to a runner is down, as its host last said** (#ISSUE): what ended it, or what
+/// **Why the link to a runner is down, as its host last said** (#7134): what ended it, or what
 /// the last try to link again found, and when it first went.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct LinkDown {
@@ -58,7 +58,7 @@ pub struct LinkDown {
     pub since: u32,
 }
 
-/// **A pool's runner whose link is down, and why** (#ISSUE): what the window says once its
+/// **A pool's runner whose link is down, and why** (#7134): what the window says once its
 /// chats have said Reconnecting… for longer than a blip.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct RunnerLinkDown {
@@ -70,7 +70,7 @@ pub struct RunnerLinkDown {
     pub since: u32,
 }
 
-/// The pools' runners whose links are down now, for `plane`'s chats (#ISSUE): read as a window
+/// The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window
 /// is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
 /// to link again that failed for another reason says so there.
 #[tauri::command]
@@ -82,7 +82,7 @@ pub fn runner_links_down(
     Ok(planes.held(&plane)?.chats().sessions().runners_down())
 }
 
-/// **Try now** (#ISSUE): pool `pool`'s runner, whose link is down, is tried again at once rather
+/// **Try now** (#7134): pool `pool`'s runner, whose link is down, is tried again at once rather
 /// than after the pause between tries. Answered before the try: what it finds is said as ever,
 /// on `chats-reconnecting`.
 #[tauri::command]

@@ -191,7 +191,7 @@ export function openSetupOf(pool: string) {
   set((was) => ({ ...was, adding: true, kind: "docker", setupOf: pool }));
 }
 
-/** **Check pool `pool`** (#ISSUE): its own setup, where a Docker pool's runner is checked step by
+/** **Check pool `pool`** (#7134): its own setup, where a Docker pool's runner is checked step by
  *  step, once this machine's pools are read. A cluster pool has no such setup: Pools shows it in
  *  its row. */
 export async function checkPool(pool: string) {

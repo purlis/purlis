@@ -11,7 +11,7 @@ import { RECONNECTING } from "./reconnecting";
 import { QUIET_FOR_MS, RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 
 /**
- * **A runner's link that stays down past a short while is said in a window Notice** (#ISSUE,
+ * **A runner's link that stays down past a short while is said in a window Notice** (#7134,
  * ADR 0078 as amended 2026-11-18): its panes say Reconnecting… quietly at first; past
  * {@link QUIET_FOR_MS} the window says why, in the core's words, with Try now and Check pool, and that purlis
  * keeps linking to it again. It goes once the link is back.

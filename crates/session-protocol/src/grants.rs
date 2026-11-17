@@ -366,7 +366,7 @@ pub enum Power {
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.
     NameWindow,
-    /// `link_now` (1.91, #ISSUE): the window asks its own host to link to the runner it relays
+    /// `link_now` (1.91, #7134): the window asks its own host to link to the runner it relays
     /// the window's link to again now. The window's alone.
     LinkNow,
     /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.

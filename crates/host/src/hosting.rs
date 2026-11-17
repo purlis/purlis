@@ -4398,7 +4398,7 @@ impl session::Host for Hosting {
             // The window takes its own chats back with `programs_of`: a host that relays
             // nothing has nothing to do with its name (#2623).
             Command::NameWindow { .. } => Ok(Answer::Done),
-            // A host that relays nothing keeps no link to link again (#ISSUE).
+            // A host that relays nothing keeps no link to link again (#7134).
             Command::LinkNow => Ok(Answer::Done),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),

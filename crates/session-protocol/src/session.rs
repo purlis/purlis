@@ -587,7 +587,7 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
 ///
-/// 1.91 has a relaying host link again now when the window asks (`link_now`, #ISSUE), its Try
+/// 1.91 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
 /// now while the link to a runner is down; and say `link_down` again while it is down each time
 /// why changes, so the window says what the last try found. A host before 1.91 is sent no
 /// `link_now`.
@@ -596,7 +596,7 @@ pub const VERSION: Version = Version {
     minor: 91,
 };
 
-/// The version that first links again when the window asks (`link_now`, #ISSUE): none is sent
+/// The version that first links again when the window asks (`link_now`, #7134): none is sent
 /// to a host before.
 pub const KNOWS_LINK_NOW: Version = Version {
     major: 1,
@@ -1328,7 +1328,7 @@ pub enum Command {
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
     /// The window asks the host that relays its link to link to the other host again now (1.91,
-    /// #ISSUE): its Try now, while that link is down, rather than once the pause between tries
+    /// #7134): its Try now, while that link is down, rather than once the pause between tries
     /// has passed. Answered [`Answer::Done`] at once, before the try: whether it links is said
     /// as ever, `link_back` or `link_down` again. A host that relays nothing has nothing to
     /// link. The window's alone ([`crate::grants::Power::LinkNow`]), never sent on.
@@ -3019,7 +3019,7 @@ pub enum Pushed {
     /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
     /// send on is refused; nothing is sent later in its place. Pushed once for each time the
     /// link goes down, to every subscriber of the relaying host, and again while it is down
-    /// each time `why` changes (#ISSUE): a try to link again that failed for another reason
+    /// each time `why` changes (#7134): a try to link again that failed for another reason
     /// than the one told. A client before that takes the second as the first.
     LinkDown {
         why: String,

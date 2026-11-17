@@ -1608,7 +1608,7 @@ fn read_on_from(shared: &Shared, device: &str) -> Option<u64> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reconnect {
     /// The host says the link to the runner is down, and why: what ended it, or what the last
-    /// try to link again found, said again each time that changes (#ISSUE).
+    /// try to link again found, said again each time that changes (#7134).
     Started(Arc<str>),
     /// The host says it is back; or the window cannot tell any more, because it fell behind and
     /// subscribed again from now, or its link to the host ended.
@@ -3488,7 +3488,7 @@ pub struct HostedSessions {
 struct Dimmed {
     chats: std::collections::BTreeSet<u32>,
     tell: Option<Reconnecting>,
-    /// Why the link to the runner is down, while it is, and since when (#ISSUE): none once it
+    /// Why the link to the runner is down, while it is, and since when (#7134): none once it
     /// is back, or once a changed key or a runner gone says it in a Notice of its own.
     down: Option<crate::reconnecting::LinkDown>,
 }

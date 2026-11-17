@@ -12086,7 +12086,7 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
-      {/* **A runner's link that stays down past a blip** (#ISSUE): said once for each pool, with
+      {/* **A runner's link that stays down past a blip** (#7134): said once for each pool, with
           why, Try now and Check pool, while its chats' panes say Reconnecting…. */}
       <RunnerLinkDownNotice
         plane={plane}

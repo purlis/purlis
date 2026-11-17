@@ -2830,7 +2830,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     assert!(hosted.sessions.reconnecting().is_empty());
 }
 
-/// A runner whose link stays down says why (#ISSUE): the last reason its host told, which a try
+/// A runner whose link stays down says why (#7134): the last reason its host told, which a try
 /// to link again that failed changes, from when the link first went, and nothing once it is back.
 #[test]
 fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
@@ -3321,7 +3321,7 @@ fn named_in(config: &Path, root: &Path) -> (HostedSessions, HostTold, tokio::run
     (HostedSessions::new(connection, root), told, runtime)
 }
 
-/// Try now (#ISSUE): the window asks the host that relays the project's link to link to its
+/// Try now (#7134): the window asks the host that relays the project's link to link to its
 /// runner again now, on the project's own link.
 #[test]
 fn try_now_asks_the_host_on_the_projects_link_to_link_again_now() {

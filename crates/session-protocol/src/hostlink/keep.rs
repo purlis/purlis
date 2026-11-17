@@ -112,7 +112,7 @@ impl Links {
         self.moved.send_replace(self.ups);
     }
 
-    /// **Try now** (#ISSUE): a link that is down is tried again at once, rather than once the
+    /// **Try now** (#7134): a link that is down is tried again at once, rather than once the
     /// pause between tries has passed. A try under way finishes first; one asked for while a
     /// link is up skips the first pause after it next goes down.
     pub fn try_now(&self) {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A pool's runner whose link stays down past a blip** (#ISSUE, ADR 0078 as amended 2026-11-18):
+ * **A pool's runner whose link stays down past a blip** (#7134, ADR 0078 as amended 2026-11-18):
  * the window's Notice that says for how long and why, in the host's own words, that purlis keeps
  * linking, and offers Try now, Check pool and Dismiss. Drawn in every cell of the theme matrix,
  * light and dark among them, each held to axe and walked by the keyboard. The core is faked at

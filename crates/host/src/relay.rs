@@ -121,7 +121,7 @@ trait Taken: Send {
     /// The relay has moved to the last link it was told is up.
     fn moved(&self);
 
-    /// The window asked to link now (#ISSUE): a pause between tries ends. One dial has none.
+    /// The window asked to link now (#7134): a pause between tries ends. One dial has none.
     fn try_now(&self) {}
 }
 
@@ -446,7 +446,7 @@ struct Relayed {
     standing: watch::Receiver<Standing>,
     /// A command found the links over: take links anew.
     again: Arc<Notify>,
-    /// The window asked to link now (`link_now`, #ISSUE): the links being taken try at once.
+    /// The window asked to link now (`link_now`, #7134): the links being taken try at once.
     try_now: Arc<Notify>,
     keeper: AbortHandle,
 }
@@ -497,7 +497,7 @@ impl Relayed {
         }
     }
 
-    /// **Try now** (`link_now`, #ISSUE): links being taken try again at once, and links that
+    /// **Try now** (`link_now`, #7134): links being taken try again at once, and links that
     /// are over are taken anew, as a command that finds them over takes them.
     fn link_now(&self) {
         if matches!(*self.standing.borrow(), Standing::Over(_)) {
@@ -696,7 +696,7 @@ impl LinkTold {
     /// No link is up, for `why`: the client is told, unless it was told already. A link that
     /// went down and then finds the other host gone for good is told again, gone (#4149): the
     /// container removed while a link was up first ends that link. A link that stays down for
-    /// another reason than the one told is told again, with it (#ISSUE): what the window says
+    /// another reason than the one told is told again, with it (#7134): what the window says
     /// of an outage is what the last try found, not what ended the link.
     fn down(&mut self, client: &ClientLink, down: &Down) {
         let (tell, was_gone) = match &*self {
@@ -1587,7 +1587,7 @@ impl session::Host for Relay {
         if let Command::NameWindow { name } = &command {
             return self.name(name, peer);
         }
-        // Try now (#ISSUE): answered at once; whether it links is said as ever.
+        // Try now (#7134): answered at once; whether it links is said as ever.
         if command == Command::LinkNow {
             self.relayed(peer)?.link_now();
             return Ok(Answer::Done);

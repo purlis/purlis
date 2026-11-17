@@ -9,7 +9,7 @@ import { RECONNECTING } from "./reconnecting";
 import { counted } from "./shownState";
 
 /**
- * How long a runner's link may be down before the window says why (#ISSUE, ADR 0078 as amended
+ * How long a runner's link may be down before the window says why (#7134, ADR 0078 as amended
  * 2026-11-18). Until then its chats' panes say Reconnecting… and nothing more, since most drops
  * come back within a few tries.
  */
@@ -20,7 +20,7 @@ export const QUIET_FOR_MS = 30_000;
 const SAID_AGAIN_MS = 15_000;
 
 /**
- * **A pool's runner whose link stays down** (#ISSUE, ADR 0078 as amended 2026-11-18): the Notice
+ * **A pool's runner whose link stays down** (#7134, ADR 0078 as amended 2026-11-18): the Notice
  * the window shows, at its own level and not on each chat's pane, once the link has been down
  * for longer than {@link QUIET_FOR_MS}.
  *

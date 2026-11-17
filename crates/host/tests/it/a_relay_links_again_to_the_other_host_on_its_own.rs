@@ -445,7 +445,7 @@ async fn the_window_is_told_that_the_link_is_down_again_only_when_why_changes_an
     };
     assert!(!said.is_empty());
     // Host A tries again, and the window is told the link is still down for another reason
-    // once: what the try that failed said (#ISSUE).
+    // once: what the try that failed said (#7134).
     match window.pushed().await {
         Pushed::LinkDown { why, .. } => {
             assert_ne!(why, said);
@@ -469,7 +469,7 @@ async fn the_window_is_told_that_the_link_is_down_again_only_when_why_changes_an
     assert_eq!(snapshot(&mut again).await, b"ready> ");
 }
 
-/// Try now (#ISSUE): the window asks host A to link again at once (`link_now`), rather than once
+/// Try now (#7134): the window asks host A to link again at once (`link_now`), rather than once
 /// its pause between tries has passed.
 #[tokio::test]
 async fn a_window_that_asks_to_link_now_is_linked_without_waiting_out_the_pause() {
