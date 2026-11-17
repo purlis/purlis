@@ -7,15 +7,17 @@
 //! the merge hold stands too, a merge is the hold's: the person is asked, and A4 does not refuse
 //! it first.
 //!
-//! Tested at the core seam, [`purlis_core::toolgate::verdict`], which `purlis hook pretooluse`
-//! asks with the fact it asked the app for ([`Launched::attendance`]).
+//! Tested at the core seam, [`purlis_core::toolgate::judged`] under the `strict` template, set
+//! explicitly (Q308), which `purlis hook pretooluse` asks with the fact it asked the app for
+//! ([`Launched::attendance`]).
 
 use purlis_core::attendance::{Begun, ClaudeCodeMode, Fact};
 use purlis_core::dispatchunattended::Attendance;
+use purlis_core::enforcement::Template;
 use purlis_core::handoffguard::Caller;
 use purlis_core::harness::Harness;
 use purlis_core::mergehold::{self, Held, Request};
-use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, verdict};
+use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, judged};
 
 /// A publish A4 refuses an unattended chat.
 const RELEASE: &str = "gh release create v1.0.0";
@@ -67,7 +69,9 @@ fn refused_by(
             permission_mode: mode,
         },
     };
-    verdict(&call, Some(&plane)).and_then(|said| said.arm)
+    judged(&call, Some(&plane), &|family| Template::Strict.mode(family))
+        .refused
+        .and_then(|said| said.arm)
 }
 
 #[test]
@@ -276,6 +280,42 @@ fn the_fact_a4_reads_is_kept_across_a_relaunch() {
     let prior = Fact::kept(Attendance::Attended);
     let relaunched = Fact::resumed(prior, Begun::Person, Some(Harness::ClaudeCode), &[]);
     assert_eq!(relaunched.attendance(), Attendance::Attended);
+}
+
+/// S1 of #6962's review, the orchestrator's ruling: a release or a tag made through `gh api`
+/// is A4's like `gh release create`, `git tag` and `git push`. Attended, it runs; in a chat
+/// nobody is at, the floor refuses it.
+#[test]
+fn a_release_or_tag_through_gh_api_runs_attended_and_is_refused_unattended() {
+    purlis_core::unsteered!();
+    let attended = Fact::at_start(Begun::Person, Some(Harness::ClaudeCode), &[]);
+    let unattended = Fact::at_start(Begun::Task, Some(Harness::ClaudeCode), &[]);
+    for cmd in [
+        "gh api -X POST repos/o/r/releases -f tag_name=v1.2.3",
+        "gh api -X POST repos/o/r/git/refs -f ref=refs/tags/v1.2.3 -f sha=abc",
+        "gh api -X POST repos/o/r/git/tags -f tag=v1.2.3 -f object=abc -f type=commit -f message=m",
+    ] {
+        assert_eq!(
+            refused_by(
+                cmd,
+                Some(attended.attendance()),
+                Some("claude"),
+                Some("default")
+            ),
+            None,
+            "attended: {cmd}"
+        );
+        assert_eq!(
+            refused_by(
+                cmd,
+                Some(unattended.attendance()),
+                Some("claude"),
+                Some("default")
+            ),
+            Some(Arm::ReleaseFloor),
+            "unattended: {cmd}"
+        );
+    }
 }
 
 /// #6960 (d): a line that is one merge asking for its help merges nothing, so the release floor

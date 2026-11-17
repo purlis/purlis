@@ -419,6 +419,12 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 {
                     return Some(said);
                 }
+                // A commit to the default branch through the API is a push, said whole (#6962).
+                if !only_merges()
+                    && let Some(said) = merge::default_branch_push(args)
+                {
+                    return Some(said);
+                }
                 let why = merge::forge_reason(&name, args, cmd, unattended, depth);
                 if let Some(why) = why {
                     return Some(format!("{fix}{why}"));

@@ -509,10 +509,14 @@ pub(crate) fn refuse_on_a_crash(tell_the_host: fn(&str, bool)) {
         let mut err = std::io::stderr().lock();
         let unanswered = info.payload().downcast_ref::<&str>() == Some(&UNANSWERED);
         if unanswered {
+            // The time limit's own words (#6962): a short line on a busy machine runs out of
+            // time too, so this never blames the line's length or nesting, whose caps say so
+            // themselves (`guardcaps::refusal`).
             let _ = writeln!(
                 err,
                 "purlis guard: this tool call is refused because purlis could not check it in \
-                 time: the command is too long or too deeply nested, so split it into smaller \
+                 time: the check ran out of its time limit, which a busy machine can cause, and \
+                 nothing ran. Try it again; if it runs out of time again, split it into smaller \
                  commands."
             );
         } else {

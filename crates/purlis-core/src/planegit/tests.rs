@@ -742,6 +742,32 @@ fn a_secret_in_any_staged_file_stops_the_save_and_names_its_path_and_line() {
     }
 }
 
+/// **A `curl --variable` placeholder is a name, not a credential** (#6962): the password grant
+/// the secrets guide teaches saves, and the same field holding a value still stops the save.
+#[test]
+fn a_curl_variable_placeholder_is_not_a_credential_to_purlis_save() {
+    let path = "personas/steward/memory/login.md";
+    let fixture = Fixture::plane();
+    let (code, said) = fixture.save_with(
+        path,
+        b"# the login\n\ncurl --variable %AUTH_PASSWORD --expand-data \
+          'grant_type=password&username=me&password={{AUTH_PASSWORD}}' https://id.example.com/token\n",
+    );
+    assert_eq!(code, 0, "{said}");
+
+    let fixture = Fixture::plane();
+    let (code, said) = fixture.save_with(
+        path,
+        b"# the login\n\ncurl --variable %AUTH_PASSWORD --expand-data \
+          'grant_type=password&username=me&password=hunter2is' https://id.example.com/token\n",
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(&format!("{path}:3  (credential assignment)")),
+        "{said}"
+    );
+}
+
 #[test]
 fn a_bare_token_in_a_memory_files_prose_stops_the_save() {
     // No assignment names it, so only the prefix rule sees it.

@@ -998,7 +998,9 @@ purlis never lets it come to that:
   that wait, so on Claude Code and Codex a call made in those first seconds after an update may
   still meet the harness's timeout.
 - **A decision not made in time is a refusal**: exit 2, with one sentence on stderr — purlis
-  could not check the call in time, the command is too long or too deeply nested, so split it.
+  could not check the call in time because the check ran out of its time limit (a busy machine
+  can cause it), so try again, and split the command if it runs out of time again (#6962). The
+  words for a command too long or too deeply nested belong to the caps below, never to time.
   A payload that has not all arrived within the budget is refused the same way; it is never
   judged as an empty command.
 - **Before any guard reads a command, three caps are checked**, each in one pass, and a command
