@@ -246,3 +246,30 @@ async fn a_browser_views_frames_name_the_page_and_document_they_show() {
     assert_eq!(shown, aim(4));
     assert_eq!(&image[..], b"\xff\xd8 a page");
 }
+
+#[tokio::test]
+async fn the_persons_step_through_history_reaches_the_browser_only_while_they_drive() {
+    // 1.90 (#6938): Back, Forward, Reload and Stop are the person's input, aimed and refused
+    // as a key is.
+    let back = Input::Navigate {
+        aim: aim(1),
+        step: purlis_session_protocol::browsing::Step::Back,
+    };
+    let hosted = hosted();
+    let (client, _views) = window(&hosted.hosting, hosted.project.path()).await;
+    let (program, screen) = a_browser(&client, &hosted.browsers).await;
+    screen.shown().document = 1;
+
+    let early = client
+        .browser_input(&program, back.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(early.refusal().unwrap().code, session::NOT_DRIVING);
+
+    client.take_over(&program).await.unwrap();
+    client
+        .browser_input(&program, back.clone())
+        .await
+        .expect("the step reaches the browser");
+    assert_eq!(screen.shown().inputs, [back]);
+}

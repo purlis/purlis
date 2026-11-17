@@ -11,7 +11,7 @@ use serde_json::json;
 
 use super::{a_frame, browser, focus_on, id, ref_of, snapshot, wait_for};
 use crate::drive::{
-    Aim, Call, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput, Refusal,
+    Aim, Call, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput, Refusal, Step,
 };
 
 /// What the browser's first page shows now, as a frame of it would say.
@@ -308,8 +308,10 @@ fn each_frame_names_the_page_and_document_it_shows() {
     let (browser, engine) = browser();
     let shown: Arc<Mutex<Vec<Painted>>> = Arc::default();
     let into = Arc::clone(&shown);
-    browser.show(Arc::new(move |painted| {
-        super::super::lock(&into).push(painted);
+    browser.show(Arc::new(move |painted: Painted| {
+        if !painted.jpeg.is_empty() {
+            super::super::lock(&into).push(painted);
+        }
     }));
     wait_for("started", || {
         !engine.sent("Page.startScreencast").is_empty()
@@ -2168,4 +2170,112 @@ fn the_hand_back_reads_its_fields_and_its_pages_within_its_limit_in_all() {
         "the hand-back took {:?}",
         started.elapsed()
     );
+}
+
+// ---- The person's steps through the page's history (#6938) ----
+
+fn step(aim: &Aim, step: Step) -> PersonInput {
+    PersonInput::Navigate {
+        aim: aim.clone(),
+        step,
+    }
+}
+
+#[test]
+fn a_step_of_the_persons_is_refused_unless_they_drive() {
+    let (browser, engine) = browser();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&step(&aim, Step::Reload)),
+        Err(Refusal::NotDriving)
+    );
+    assert!(engine.sent("Page.reload").is_empty());
+}
+
+#[test]
+fn the_persons_back_and_forward_go_to_the_entry_before_or_after_the_one_shown() {
+    let (browser, engine) = browser();
+    super::super::lock(&engine.model).history = json!({"currentIndex":1,"entries":[
+        {"id":4,"url":"http://fixture.test/index.html","title":""},
+        {"id":5,"url":"http://fixture.test/frames.html","title":""},
+        {"id":6,"url":"http://fixture.test/more.html","title":""}]});
+    browser.take_over();
+    let aim = aim_now(&browser);
+
+    browser.person_input(&step(&aim, Step::Back)).unwrap();
+    browser.person_input(&step(&aim, Step::Forward)).unwrap();
+
+    let went: Vec<_> = engine
+        .sent("Page.navigateToHistoryEntry")
+        .iter()
+        .map(|sent| sent.params["entryId"].clone())
+        .collect();
+    assert_eq!(went, [json!(4), json!(6)]);
+}
+
+#[test]
+fn the_persons_back_with_nothing_before_or_forward_with_nothing_after_is_refused_in_words() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&step(&aim, Step::Back)),
+        Err(Refusal::NoEarlierPage)
+    );
+    assert_eq!(
+        browser.person_input(&step(&aim, Step::Forward)),
+        Err(Refusal::NoLaterPage)
+    );
+    assert!(engine.sent("Page.navigateToHistoryEntry").is_empty());
+}
+
+#[test]
+fn the_persons_step_never_goes_to_an_address_that_carries_a_value_kept_out() {
+    // #5117: going there would send the value again, whoever drives.
+    let (browser, engine) = browser();
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["hunter2secret"]);
+    super::super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    super::super::lock(&engine.model).history = json!({"currentIndex":1,"entries":[
+        {"id":4,"url":"http://fixture.test/login?pw=hunter2secret","title":""},
+        {"id":5,"url":"http://fixture.test/frames.html","title":""}]});
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&step(&aim, Step::Back)),
+        Err(Refusal::EarlierHoldsKept)
+    );
+    assert!(engine.sent("Page.navigateToHistoryEntry").is_empty());
+}
+
+#[test]
+fn the_persons_reload_and_stop_go_to_the_page_they_saw() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&step(&aim, Step::Reload)).unwrap();
+    browser.person_input(&step(&aim, Step::Stop)).unwrap();
+    assert_eq!(
+        engine.sent("Page.reload")[0].session.as_deref(),
+        Some("S-PAGE-1")
+    );
+    assert_eq!(engine.sent("Page.stopLoading").len(), 1);
+}
+
+#[test]
+fn a_step_aimed_at_what_the_page_no_longer_shows_is_dropped() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let seen = aim_now(&browser);
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-9","url":"http://fixture.test/next.html","name":""}}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the page moved on", || aim_now(&browser) != seen);
+    assert_eq!(
+        browser.person_input(&step(&seen, Step::Reload)),
+        Err(Refusal::Missed)
+    );
+    assert!(engine.sent("Page.reload").is_empty());
 }
