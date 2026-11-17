@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794905233909,
+  "lastUpdate": 1794908719810,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50568,6 +50568,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8489525,
             "unit": "ms",
             "extra": "median of 5 runs: 100.837, 101.323, 101.849, 102.022, 102.488 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3bf6ee6d5b55eecdecffcde4f26751e3dfabaace",
+          "message": "PoolSetupTab's tests start from no pools read, and every timer count fakes only its own kind (#6982) (#7072)\n\nThe pools store (src/pools.ts) outlives a render. The Sign-ins test's\ndocker_pools answer had no defaults, and markPoolOwned read it into the\nstore. A view mounted next draws what is held before it subscribes (the\nsubscribe that resets it runs after the first render), so a later test's\nNewPoolOptions read read.defaults.cpus off that answer and threw: the\nOptions and work-done-elsewhere tests rendered empty. forgetPools() puts\nthe store back to nothing read, and PoolSetupTab.test runs it after each\ntest. Shuffle seeds 1 to 8 pass. Before, seed 2 failed 8 tests and seed 3\nfailed 4.\n\nwhileShown.test fakes only setInterval/clearInterval and themeGallery's\nbusy-painter test only setTimeout/clearTimeout, so jsdom 31's own\nfocus-fixup setInterval is never in vi.getTimerCount(), as #6967 did for\nthe name-keeping test.\n\nCarried from #7066 (bf66e4d390) onto main, without #6967's commit, which\nmain has through #7059.\n\nCloses #6982\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M5YWABC0A93BTSCH31E8RC\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T09:06:07Z",
+          "tree_id": "b3ed7b6694524171c2c9c62063c386db491bb9e6",
+          "url": "https://github.com/purlis/purlis/commit/3bf6ee6d5b55eecdecffcde4f26751e3dfabaace"
+        },
+        "date": 1794908714773,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5509585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.548, 0.551, 0.556, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.243084,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.124, 16.162, 16.243, 16.258, 16.748 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.62990099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.227, 101.293, 101.630, 101.751, 106.612 ms"
           }
         ]
       }
