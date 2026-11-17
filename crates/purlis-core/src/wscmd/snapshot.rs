@@ -35,7 +35,7 @@ pub struct Request<'a> {
     pub description: Option<&'a str>,
     pub force: bool,
     /// The instant `updated_at` is stamped with, so a test can pin it.
-    pub now: chrono::DateTime<chrono::Utc>,
+    pub now: jiff::Timestamp,
 }
 
 /// `charter workspace snapshot [<name>] [--description …] [--force]`, and its exit code.
@@ -139,7 +139,7 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
     map.insert("repos".into(), Value::Array(rows.clone()));
     map.insert(
         "updated_at".into(),
-        Value::String(now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()),
+        Value::String(now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()),
     );
     map.insert("updated_by".into(), Value::String(author));
 

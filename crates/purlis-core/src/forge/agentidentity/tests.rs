@@ -170,9 +170,12 @@ fn a_redirect_with_the_right_state_gets_the_app_and_any_other_request_gets_nothi
             assert!(page.contains("form-action https://github.com"), "{page}");
             let action = after(&page, "action=\"");
             let state = action.split("state=").nth(1).expect("a state").to_owned();
-            // A forged redirect is refused, and the flow goes on waiting.
-            assert!(get(port, "/purlis/agent-identity/back?code=evil&state=wrong").contains("404"));
-            assert!(get(port, "/purlis/agent-identity/back?code=evil").contains("404"));
+            // A request without a code is refused, and the flow goes on waiting. (One that
+            // carries a code without this try's state ends the wait: ADR 0077, amended
+            // 2026-11-17, and `github_coming_back_without_this_try_s_state_…` below.)
+            assert!(get(port, "/purlis/agent-identity/back?state=wrong").contains("404"));
+            assert!(get(port, "/purlis/agent-identity/back").contains("404"));
+            assert!(get(port, "/purlis/agent-identity/elsewhere?code=evil").contains("404"));
             let back = get(
                 port,
                 &format!("/purlis/agent-identity/back?code=abc123&state={state}"),
@@ -739,5 +742,193 @@ fn the_project_s_forge_hosts_are_read_from_its_clones_with_a_host_it_knows_no_fo
             ("github.com", Some(crate::forge::Kind::GitHub)),
         ],
         "each host once, a forge purlis knows by its kind, and nothing that isn't a host"
+    );
+}
+
+/// **A browser through the whole flow, with no socket** (the report of 2026-11-17): it loads the start
+/// page, reads the `state` its form posts to GitHub, and comes back as `back` says, given that
+/// state. The clock moves only while the listener rests, so a flow that keeps waiting runs out its
+/// whole time at once. Answers what the flow said and the page the browser was shown.
+fn through_a_browser(back: &dyn Fn(&str) -> String) -> (Result<Created, String>, String) {
+    use crate::forge::loopback::standin::{Queue, Visit, get};
+    use std::sync::Arc;
+    const PORT: u16 = 59526;
+    let queue = Arc::new(Mutex::new(Queue::default()));
+    let start: Mutex<Option<Visit>> = Mutex::new(None);
+    let came_back: Mutex<Option<Visit>> = Mutex::new(None);
+    let started = std::time::Instant::now();
+    let passed = Mutex::new(Duration::ZERO);
+    let now = || started + *passed.lock().unwrap();
+    let rest = |wait: Duration| {
+        *passed.lock().unwrap() += wait;
+        // GitHub's part: once the start page is answered, the browser comes back, once.
+        let start = start.lock().unwrap();
+        let mut came_back = came_back.lock().unwrap();
+        if let (Some(page), None) = (start.as_ref(), came_back.as_ref()) {
+            let page = page.answer();
+            let state = after(&page, "action=\"")
+                .split("state=")
+                .nth(1)
+                .expect("a state")
+                .to_owned();
+            *came_back = Some(queue.lock().unwrap().visit(&back(&state)));
+        }
+    };
+    let open = |address: &str| {
+        let path = address
+            .strip_prefix(&format!("http://127.0.0.1:{PORT}"))
+            .expect("the listener's own address");
+        *start.lock().unwrap() = Some(queue.lock().unwrap().visit(&get(path, PORT)));
+        Ok(())
+    };
+    let bind = || Ok(Listening::over(Box::new(queue.clone()), PORT));
+    let conversions = Conversions::say(201, &app_answer("acme", "Organization"));
+    let said = create_app(
+        &acme(),
+        &AtomicBool::new(false),
+        &Ways {
+            bind: &bind,
+            open: &open,
+            exchange: &conversions,
+            clock: loopback::Clock {
+                now: &now,
+                rest: &rest,
+            },
+        },
+    );
+    let shown = came_back
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(Visit::answer)
+        .unwrap_or_default();
+    (said, shown)
+}
+
+/// A browser's `GET` of `target`, with `more` header lines, as Chromium sends it.
+fn browser_get(target: &str, more: &str) -> String {
+    format!(
+        "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:59526\r\nConnection: keep-alive\r\n\
+         Upgrade-Insecure-Requests: 1\r\nUser-Agent: Mozilla/5.0 (Macintosh) Chrome/131\r\n\
+         Accept: text/html\r\nSec-Fetch-Site: cross-site\r\nSec-Fetch-Mode: navigate\r\n\
+         Referer: https://github.com/\r\n{more}\r\n"
+    )
+}
+
+#[test]
+fn github_s_redirect_with_this_try_s_state_makes_the_app() {
+    let (made, shown) = through_a_browser(&|state| {
+        browser_get(&format!("{BACK_PATH}?code=abc123&state={state}"), "")
+    });
+    assert_eq!(made.expect("made").app, "Iv23liExample");
+    assert!(shown.contains("GitHub made the App"), "{shown}");
+}
+
+#[test]
+fn a_browser_that_carries_many_cookies_for_this_machine_still_gets_through() {
+    // Cookies are kept per host, not per port, so every local server a developer runs adds to
+    // what the browser sends here.
+    let cookies = format!("Cookie: {}\r\n", "session=x; ".repeat(1200));
+    let (made, shown) = through_a_browser(&|state| {
+        browser_get(&format!("{BACK_PATH}?code=abc123&state={state}"), &cookies)
+    });
+    assert!(made.is_ok(), "{made:?}");
+    assert!(shown.contains("GitHub made the App"), "{shown}");
+}
+
+#[test]
+fn github_coming_back_without_this_try_s_state_ends_the_wait_and_says_where_the_app_is() {
+    for back in [
+        format!("{BACK_PATH}?code=abc123&state=an-earlier-try"),
+        format!("{BACK_PATH}?code=abc123"),
+    ] {
+        let (made, shown) = through_a_browser(&|_| browser_get(&back, ""));
+        let why = made.expect_err("nothing is converted without the state");
+        // Not the 15 minutes' time-out: the flow ends on the redirect itself.
+        assert!(!why.contains("in time"), "{back}: {why}");
+        assert!(why.contains("pressed Create"), "{back}: {why}");
+        assert!(why.contains("couldn't match"), "{back}: {why}");
+        assert!(
+            why.contains("https://github.com/organizations/acme/settings/apps"),
+            "{back}: {why}"
+        );
+        assert!(why.contains("paste"), "{back}: {why}");
+        assert!(!why.contains("abc123"), "the code is never said");
+        // And the browser is told to go back to purlis, not that there is nothing here.
+        assert!(!shown.contains("Nothing to see here"), "{back}: {shown}");
+        assert!(shown.contains("Return to purlis"), "{back}: {shown}");
+        assert!(
+            !shown.contains("abc123"),
+            "a page holds nothing of the request"
+        );
+    }
+}
+
+#[test]
+fn an_address_the_person_pasted_finishes_the_app_without_the_state() {
+    let conversions = Conversions::say(201, &app_answer("acme", "Organization"));
+    let made = create_from_address(
+        &conversions,
+        "  http://127.0.0.1:59526/purlis/agent-identity/back?code=abc123&state=an-earlier-try\n",
+        &acme(),
+    )
+    .expect("made");
+    assert_eq!(made.app, "Iv23liExample");
+    assert_eq!(
+        *conversions.asked.lock().unwrap(),
+        ["https://api.github.com/app-manifests/abc123/conversions"]
+    );
+}
+
+#[test]
+fn a_pasted_address_is_still_held_to_the_owner_chosen() {
+    let refused = create_from_address(
+        &Conversions::say(201, &app_answer("evil", "Organization")),
+        "http://127.0.0.1:59526/purlis/agent-identity/back?code=abc123",
+        &acme(),
+    );
+    assert!(refused.unwrap_err().contains("another account"));
+}
+
+#[test]
+fn a_pasted_address_that_is_not_github_s_redirect_sends_nothing_and_says_nothing_of_it() {
+    let conversions = Conversions::say(201, &app_answer("acme", "Organization"));
+    for pasted in [
+        "",
+        "abc123",
+        "https://127.0.0.1:59526/purlis/agent-identity/back?code=abc123",
+        "http://127.0.0.1.evil.example:1/purlis/agent-identity/back?code=abc123",
+        "http://127.0.0.1:59526/purlis/signin?code=abc123",
+        "http://127.0.0.1:59526/purlis/agent-identity/back?state=s",
+        "http://127.0.0.1:59526/purlis/agent-identity/back?error=access_denied&code=abc123",
+        "http://127.0.0.1:x/purlis/agent-identity/back?code=abc123",
+    ] {
+        let why = create_from_address(&conversions, pasted, &acme()).unwrap_err();
+        assert!(why.contains("isn't the address"), "{pasted}: {why}");
+        assert!(!why.contains("abc123"), "{pasted}: {why}");
+    }
+    assert!(conversions.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn the_apps_page_is_the_owner_s_own() {
+    assert_eq!(
+        apps_page(&Owner::Organisation("acme".into())),
+        "https://github.com/organizations/acme/settings/apps"
+    );
+    assert_eq!(
+        apps_page(&Owner::Personal("me".into())),
+        "https://github.com/settings/apps"
+    );
+}
+
+#[test]
+fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
+    let (made, _) = through_a_browser(&|_| browser_get("/favicon.ico", ""));
+    let why = made.unwrap_err();
+    assert!(why.contains("within 15 minutes"), "{why}");
+    assert!(
+        why.contains("https://github.com/organizations/acme/settings/apps"),
+        "{why}"
     );
 }

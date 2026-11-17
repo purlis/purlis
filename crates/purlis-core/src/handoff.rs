@@ -206,11 +206,11 @@ pub fn read_brief(bytes: Option<&[u8]>, is_terminal: bool) -> Result<String, NoB
 /// Minutes, not seconds: the stamp is read by a person deciding whether this message is the
 /// one they approved a moment ago, and a second's precision answers no question they have.
 /// Local time, because the reader is in it.
-pub fn stamp(chat: &str, place: &Place, when: chrono::NaiveDateTime) -> String {
+pub fn stamp(chat: &str, place: &Place, when: jiff::civil::DateTime) -> String {
     STAMP
         .replace("{chat}", chat)
         .replace("{place}", &place_words(place))
-        .replace("{when}", &when.format("%Y-%m-%d %H:%M").to_string())
+        .replace("{when}", &when.strftime("%Y-%m-%d %H:%M").to_string())
 }
 
 /// A first message read back: the stamp's facts, and the brief after the blank line.
@@ -419,7 +419,7 @@ ends the task. The chat that asked can tell or cancel it at any time";
 /// The first message of a task: the stamp, the note, a blank line, the brief verbatim.
 ///
 /// `from` is the asking chat by the name the person sees it under, `place` where it works.
-pub fn task_message(from: &str, place: &Place, when: chrono::NaiveDateTime, brief: &str) -> String {
+pub fn task_message(from: &str, place: &Place, when: jiff::civil::DateTime, brief: &str) -> String {
     task_message_noting(from, place, when, brief, None)
 }
 
@@ -429,7 +429,7 @@ pub fn task_message(from: &str, place: &Place, when: chrono::NaiveDateTime, brie
 pub fn task_message_noting(
     from: &str,
     place: &Place,
-    when: chrono::NaiveDateTime,
+    when: jiff::civil::DateTime,
     brief: &str,
     note: Option<&str>,
 ) -> String {
@@ -445,14 +445,14 @@ pub fn task_message_noting(
 pub fn task_message_telling(
     from: &str,
     place: &Place,
-    when: chrono::NaiveDateTime,
+    when: jiff::civil::DateTime,
     brief: &str,
     note: Option<&str>,
     whole: &[String],
 ) -> String {
     let line = TASK_STAMP
         .replace("{place}", &place_words(place))
-        .replace("{when}", &when.format("%Y-%m-%d %H:%M").to_string())
+        .replace("{when}", &when.strftime("%Y-%m-%d %H:%M").to_string())
         // Last, so a name that happened to spell `{when}` is not filled in again.
         .replace("{from}", &in_a_span(from));
     format!(
@@ -504,7 +504,7 @@ dispatch report --outcome done \"<what you did and found>\"`, or `--outcome bloc
 pub fn person_task_message(
     on: &str,
     place: &Place,
-    when: chrono::NaiveDateTime,
+    when: jiff::civil::DateTime,
     asked: &str,
 ) -> String {
     person_task_message_noting(on, place, when, asked, None)
@@ -516,7 +516,7 @@ pub fn person_task_message(
 pub fn person_task_message_noting(
     on: &str,
     place: &Place,
-    when: chrono::NaiveDateTime,
+    when: jiff::civil::DateTime,
     asked: &str,
     note: Option<&str>,
 ) -> String {
@@ -529,14 +529,14 @@ pub fn person_task_message_noting(
 pub fn person_task_message_telling(
     on: &str,
     place: &Place,
-    when: chrono::NaiveDateTime,
+    when: jiff::civil::DateTime,
     asked: &str,
     note: Option<&str>,
     whole: &[String],
 ) -> String {
     let line = PERSON_TASK_STAMP
         .replace("{place}", &place_words(place))
-        .replace("{when}", &when.format("%Y-%m-%d %H:%M").to_string())
+        .replace("{when}", &when.strftime("%Y-%m-%d %H:%M").to_string())
         // Last, for [`task_message`]'s reason.
         .replace("{from}", &in_a_span(on));
     format!(
@@ -800,7 +800,7 @@ pub fn quote(word: &str) -> String {
 mod tests {
     use super::*;
 
-    fn at(text: &str) -> chrono::NaiveDateTime {
+    fn at(text: &str) -> jiff::civil::DateTime {
         text.parse().unwrap()
     }
 

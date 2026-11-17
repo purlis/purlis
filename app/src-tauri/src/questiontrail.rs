@@ -34,10 +34,10 @@ pub struct QuestionStep {
 /// `events`. Empty for a chat a record names by number alone (`#<n>`): the log knows chats by
 /// id, so no event is that chat's.
 fn trail(events: &[eventlog::Event], key: &str, at: &str) -> Vec<QuestionStep> {
-    let Ok(asked) = chrono::DateTime::parse_from_rfc3339(at) else {
+    let Ok(asked) = str::parse::<jiff::Timestamp>(at) else {
         return Vec::new();
     };
-    let asked_ms = u64::try_from(asked.timestamp_millis()).unwrap_or(0);
+    let asked_ms = u64::try_from(asked.as_millisecond()).unwrap_or(0);
     questions::trail_of(events, key, asked_ms)
         .into_iter()
         .map(|said| {
@@ -46,8 +46,8 @@ fn trail(events: &[eventlog::Event], key: &str, at: &str) -> Vec<QuestionStep> {
             QuestionStep {
                 at: i64::try_from(said.at_ms)
                     .ok()
-                    .and_then(chrono::DateTime::from_timestamp_millis)
-                    .map(|when| when.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .map(|when| when.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
                     .unwrap_or_default(),
                 step: said.step.kind().trim_start_matches("question.").to_owned(),
                 noted: body

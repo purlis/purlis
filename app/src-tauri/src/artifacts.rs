@@ -739,7 +739,7 @@ fn read_asked(
     name: &str,
 ) -> purlis_core::catalogue::Answer {
     use purlis_core::catalogue::{Answer, ErrorKind};
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     if !approved_now(config, of, snapshot) {
         return Answer::error(ErrorKind::NotApproved, now);
     }
@@ -2333,9 +2333,7 @@ mod tests {
             params: None,
             live: None,
         };
-        let at = chrono::DateTime::parse_from_rfc3339("2026-11-09T12:00:00Z")
-            .unwrap()
-            .into();
+        let at = str::parse::<jiff::Timestamp>("2026-11-09T12:00:00Z").unwrap();
         let answer = purlis_core::catalogue::Answer::data(
             serde_json::json!({ "title": "</script><script>alert(1)</script>\u{2028}" }),
             at,

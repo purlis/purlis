@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{NaiveDate, TimeZone};
 use serde_json::json;
 
 use super::*;
@@ -19,15 +18,16 @@ fn project() -> tempfile::TempDir {
     dir
 }
 
-fn at() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc.with_ymd_and_hms(2026, 11, 9, 12, 0, 0).unwrap()
+fn at() -> jiff::Timestamp {
+    jiff::civil::date(2026, 11, 9)
+        .at(12, 0, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
-fn now() -> chrono::NaiveDateTime {
-    NaiveDate::from_ymd_opt(2026, 11, 9)
-        .unwrap()
-        .and_hms_opt(12, 0, 0)
-        .unwrap()
+fn now() -> jiff::civil::DateTime {
+    crate::wallclock::day(2026, 11, 9).unwrap().at(12, 0, 0, 0)
 }
 
 fn query(name: &str) -> &'static Query {

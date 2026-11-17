@@ -89,7 +89,7 @@ fn record(asker: ChatRef, worker: ChatRef) -> dispatchrecord::Record {
             brief: "Do the work.".to_owned(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a record")
 }
@@ -325,7 +325,7 @@ fn stored(root: &std::path::Path, ms: u64, asker: ChatRef, worker: ChatRef) {
             brief: "Do the work.".to_owned(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a record");
 }
@@ -359,7 +359,7 @@ fn the_older_chain_is_read_from_at_most_the_newest_records_and_no_further() {
             chat_ref(10, None, Some("qa")),
         );
     }
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let three = older(2, 2, Some("qa"), QA);
     assert_eq!(
         recovered_from(root, 3, &[(3, &three)], None, 5, now),

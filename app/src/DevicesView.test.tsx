@@ -148,7 +148,7 @@ beforeEach(() => {
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
       discarded.push(a.discarding);
-      return removeSays;
+      return { state: "removed", left: removeSays };
     }
     if (cmd === "docker_pool_remove_held_runner") {
       heldRemoved.push(a.runner ?? "");

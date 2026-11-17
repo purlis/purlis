@@ -36,7 +36,7 @@ impl StudioJob {
         skill: Option<String>,
         level: Level,
         job: StudioWork,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> StudioJob {
         StudioJob {
             skill,
@@ -50,7 +50,7 @@ impl StudioJob {
 
     /// Marks its job stopped `now`, where it had not already: a second stop keeps the first's
     /// time. Whether anything changed.
-    pub fn finish(&mut self, now: chrono::DateTime<chrono::Utc>) -> bool {
+    pub fn finish(&mut self, now: jiff::Timestamp) -> bool {
         if self.finished.is_some() {
             return false;
         }
@@ -70,13 +70,13 @@ impl StudioJob {
 }
 
 /// `now` as the record keeps a time: RFC 3339, in UTC, to the second.
-pub fn time(now: chrono::DateTime<chrono::Utc>) -> String {
-    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+pub fn time(now: jiff::Timestamp) -> String {
+    now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 /// Whether `said` reads as an RFC 3339 time, as the record keeps one.
 pub(super) fn reads_as_time(said: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(said).is_ok()
+    str::parse::<jiff::Timestamp>(said).is_ok()
 }
 
 /// `said` where it reads as an RFC 3339 time, and `None` for anything else.

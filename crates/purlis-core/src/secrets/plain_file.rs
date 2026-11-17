@@ -287,7 +287,7 @@ pub fn set(
     vault: &Vault,
     key: &str,
     value: &str,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> Result<(), VaultError> {
     let p = file_path(ctx, vault)?;
     let mut data = load(ctx, vault, "secret")?;
@@ -303,12 +303,12 @@ fn json_text(data: Map<String, Value>) -> String {
 
 /// The date `key` was set, in the rotation record beside the vault file at `p` — which is also
 /// what tells a vault that was written to from one never created ([`gone`]).
-pub fn stamp(ctx: &Ctx, p: &Path, key: &str, today: chrono::NaiveDate) -> Result<(), VaultError> {
+pub fn stamp(ctx: &Ctx, p: &Path, key: &str, today: jiff::civil::Date) -> Result<(), VaultError> {
     let mut meta = load_meta(ctx, p);
     let mut stamp = Map::new();
     stamp.insert(
         "set_at".into(),
-        Value::String(today.format("%Y-%m-%d").to_string()),
+        Value::String(today.strftime("%Y-%m-%d").to_string()),
     );
     meta.insert(key.to_string(), Value::Object(stamp));
     write_vault(ctx, &meta_path(p), &json_text(meta))
@@ -352,7 +352,7 @@ pub fn linked_on_the_way(ctx: &Ctx, p: &Path) -> Option<VaultError> {
 pub fn ages(
     ctx: &Ctx,
     vault: &Vault,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> Result<Vec<(String, Option<i64>)>, VaultError> {
     let p = file_path(ctx, vault)?;
     let meta = load_meta(ctx, &p);
@@ -364,8 +364,8 @@ pub fn ages(
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
         let age = set_at
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-            .map(|d| (today - d).num_days());
+            .and_then(|s| jiff::civil::Date::strptime("%Y-%m-%d", s).ok())
+            .map(|d| i64::from((today - d).get_days()));
         out.push((k, age));
     }
     Ok(out)

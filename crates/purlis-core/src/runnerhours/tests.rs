@@ -218,18 +218,21 @@ fn a_stop_with_no_start_before_it_counts_nothing_and_other_runners_count_apart()
 
 #[test]
 fn this_week_begins_on_monday_at_midnight_in_local_time() {
-    use chrono::TimeZone as _;
     // Wednesday 2026-10-28 10:00 at UTC+02:00 began its week on Monday 00:00 there,
     // which is Sunday 22:00 UTC.
-    let east = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
-    let wednesday = east.with_ymd_and_hms(2026, 10, 28, 10, 0, 0).unwrap();
+    let at = |day: i8, hour: i8, minute: i8, second: i8, zone: jiff::tz::TimeZone| {
+        jiff::civil::date(2026, 10, day)
+            .at(hour, minute, second, 0)
+            .to_zoned(zone)
+            .unwrap()
+    };
+    let east = jiff::tz::TimeZone::fixed(jiff::tz::offset(2));
+    let wednesday = at(28, 10, 0, 0, east);
     assert_eq!(week_began(&wednesday), MONDAY - 2 * HOUR);
     // Monday at midnight is its own week's start; Sunday night is the week before's.
-    let monday = chrono::Utc.with_ymd_and_hms(2026, 10, 26, 0, 0, 0).unwrap();
+    let monday = at(26, 0, 0, 0, jiff::tz::TimeZone::UTC);
     assert_eq!(week_began(&monday), MONDAY);
-    let sunday = chrono::Utc
-        .with_ymd_and_hms(2026, 10, 25, 23, 59, 59)
-        .unwrap();
+    let sunday = at(25, 23, 59, 59, jiff::tz::TimeZone::UTC);
     assert_eq!(week_began(&sunday), MONDAY - 7 * 24 * HOUR);
 }
 
@@ -448,65 +451,17 @@ fn a_field_a_later_purlis_wrote_is_kept_through_a_write() {
     assert!(after.contains(later.trim_end()), "{after}");
 }
 
-/// A test time zone whose clocks go forward from 00:00 to 01:00 on Monday 2026-10-26.
-#[derive(Debug, Clone, Copy)]
-struct SkipsMondayMidnight;
-
-impl SkipsMondayMidnight {
-    fn switch() -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 26)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-    }
-
-    fn offset(summer: bool) -> chrono::FixedOffset {
-        chrono::FixedOffset::east_opt(if summer { 3600 } else { 0 }).unwrap()
-    }
-}
-
-impl chrono::TimeZone for SkipsMondayMidnight {
-    type Offset = chrono::FixedOffset;
-
-    fn from_offset(_: &chrono::FixedOffset) -> Self {
-        SkipsMondayMidnight
-    }
-
-    fn offset_from_local_date(
-        &self,
-        _: &chrono::NaiveDate,
-    ) -> chrono::MappedLocalTime<chrono::FixedOffset> {
-        chrono::MappedLocalTime::None
-    }
-
-    fn offset_from_local_datetime(
-        &self,
-        local: &chrono::NaiveDateTime,
-    ) -> chrono::MappedLocalTime<chrono::FixedOffset> {
-        let switch = Self::switch();
-        if *local < switch {
-            chrono::MappedLocalTime::Single(Self::offset(false))
-        } else if *local < switch + chrono::Duration::hours(1) {
-            chrono::MappedLocalTime::None
-        } else {
-            chrono::MappedLocalTime::Single(Self::offset(true))
-        }
-    }
-
-    fn offset_from_utc_date(&self, _: &chrono::NaiveDate) -> chrono::FixedOffset {
-        Self::offset(false)
-    }
-
-    fn offset_from_utc_datetime(&self, utc: &chrono::NaiveDateTime) -> chrono::FixedOffset {
-        Self::offset(*utc >= Self::switch())
-    }
+/// A test time zone whose clocks go forward from 00:00 to 01:00 on Monday 2026-10-26, the
+/// fourth Monday of October.
+fn skips_monday_midnight() -> jiff::tz::TimeZone {
+    jiff::tz::TimeZone::posix("STD0DST,M10.4.1/0,M12.5.0/0").unwrap()
 }
 
 #[test]
 fn a_week_whose_monday_has_no_midnight_begins_at_its_first_hour() {
-    use chrono::TimeZone as _;
-    let wednesday = SkipsMondayMidnight
-        .with_ymd_and_hms(2026, 10, 28, 10, 0, 0)
+    let wednesday = jiff::civil::date(2026, 10, 28)
+        .at(10, 0, 0, 0)
+        .to_zoned(skips_monday_midnight())
         .unwrap();
     // Monday 01:00 there, the first hour it has, is 00:00 UTC.
     assert_eq!(week_began(&wednesday), MONDAY);

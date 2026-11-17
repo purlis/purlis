@@ -28,7 +28,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::pieces::{self, Declaration, Event, Who};
@@ -96,7 +96,7 @@ pub fn add(
     vet: Option<worktree::Vet<'_>>,
     hosts: Option<&[String]>,
     who: &Who,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));
@@ -227,7 +227,7 @@ pub fn declare(
     cwd: &Path,
     what: Declaration<'_>,
     who: &Who,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     let Some(here) = worktree::locate(plane, cwd) else {
@@ -300,7 +300,7 @@ pub fn list(
     plane: &Path,
     ws: &str,
     repo: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));

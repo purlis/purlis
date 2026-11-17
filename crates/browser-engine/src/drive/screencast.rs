@@ -19,6 +19,7 @@
 //! down to a width, as a view over a link between hosts wants them; a change of it starts the
 //! screencast again at the new width.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
@@ -28,7 +29,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::browser::Inner;
-use super::{PageLoad, Painted, lock};
+use super::{DownloadInfo, ListedPage, PageLoad, Painted, lock};
 
 /// Where each frame goes: its image, and what it showed.
 pub(crate) type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
@@ -38,6 +39,10 @@ pub const QUALITY: u8 = 60;
 
 /// How often the screencast looks whether the current page has changed.
 const LOOK: Duration = Duration::from_millis(250);
+
+/// How often a view is told at most how far a download under way came (#6990): the engine says
+/// it far more often than a person reads it.
+const PROGRESS_TOLD_EVERY: Duration = Duration::from_millis(250);
 
 enum Ask {
     Show,
@@ -52,17 +57,37 @@ enum Ask {
 pub(crate) struct Screencast {
     sink: Mutex<Option<Sink>>,
     told: Mutex<Option<Told>>,
+    /// When the sink was last told what the page is with no image (#6990): what a download's
+    /// progress is paced by.
+    told_at: Mutex<Option<Instant>>,
+    /// A download's progress was left untold for its pace: the thread tells it once the pace
+    /// allows, so the view is never left behind by an engine that has gone quiet.
+    owed: AtomicBool,
     asks: Mutex<Option<Sender<Ask>>>,
 }
 
-/// What the sink was last told the page is: its address, title and load (#6938).
-type Told = (String, String, PageLoad);
+/// What the sink was last told the page is: its address, title and load (#6938), and the
+/// browser's pages (#6989) and downloads (#6990).
+type Told = (String, String, PageLoad, Vec<ListedPage>, Vec<DownloadInfo>);
+
+/// What `shown` tells a view, besides its image and its aim.
+fn told(shown: &Painted) -> Told {
+    (
+        shown.address.clone(),
+        shown.title.clone(),
+        shown.load.clone(),
+        shown.pages.clone(),
+        shown.downloads.clone(),
+    )
+}
 
 impl Screencast {
     pub(crate) fn new() -> Self {
         Self {
             sink: Mutex::new(None),
             told: Mutex::new(None),
+            told_at: Mutex::new(None),
+            owed: AtomicBool::new(false),
             asks: Mutex::new(None),
         }
     }
@@ -113,11 +138,7 @@ impl Screencast {
         let Some(sink) = lock(&self.sink).clone() else {
             return;
         };
-        let now = (
-            shown.address.clone(),
-            shown.title.clone(),
-            shown.load.clone(),
-        );
+        let now = told(&shown);
         {
             let mut told = lock(&self.told);
             if told.as_ref() == Some(&now) {
@@ -125,7 +146,26 @@ impl Screencast {
             }
             *told = Some(now);
         }
+        *lock(&self.told_at) = Some(Instant::now());
         sink(shown);
+    }
+
+    /// **Whether a download's progress may be told now** (#6990): not where the sink was told
+    /// what the page is within [`PROGRESS_TOLD_EVERY`], and then it is owed, for the thread to
+    /// tell once the pace allows.
+    pub(crate) fn progress_may_be_told(&self) -> bool {
+        if lock(&self.told_at).is_some_and(|at| at.elapsed() < PROGRESS_TOLD_EVERY) {
+            self.owed.store(true, Ordering::SeqCst);
+            return false;
+        }
+        true
+    }
+
+    /// Whether progress is owed and its pace now allows it, which then is owed no more.
+    fn owed_now(&self) -> bool {
+        self.owed.load(Ordering::SeqCst)
+            && !lock(&self.told_at).is_some_and(|at| at.elapsed() < PROGRESS_TOLD_EVERY)
+            && self.owed.swap(false, Ordering::SeqCst)
     }
 
     /// A `Page.screencastFrame` event, from the event reader: handed over while shown, with
@@ -143,11 +183,7 @@ impl Screencast {
             return;
         };
         if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(data) {
-            *lock(&self.told) = Some((
-                shown.address.clone(),
-                shown.title.clone(),
-                shown.load.clone(),
-            ));
+            *lock(&self.told) = Some(told(&shown));
             sink(Painted { jpeg, ..shown });
         }
         self.ask(Ask::Frame {
@@ -223,6 +259,10 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
             }
             Err(RecvTimeoutError::Disconnected) => return,
         }
+        // A download's progress left untold for its pace (#6990).
+        if showing && inner.cast.owed_now() {
+            inner.tell_now();
+        }
         if let (Some(due), Some((session, ack))) = (
             waiting
                 .as_ref()
@@ -242,7 +282,7 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
 }
 
 /// Casts the current page, no wider than `most_width`: stops the screencast on a page that is
-/// no longer current, and starts it on the one that is.
+/// no longer current, and starts it on the one that is, and tells its views so.
 fn follow(inner: &Inner, on: &mut Option<String>, most_width: Option<u16>) {
     let current = inner.current_session();
     if *on == current {
@@ -265,4 +305,8 @@ fn follow(inner: &Inner, on: &mut Option<String>, most_width: Option<u16>) {
             *on = Some(session);
         }
     }
+    // Another page is current, whatever made it so (a call, a page it opened, a login, the
+    // person's pick): its views are told at once which, before it paints, and whether it paints
+    // at all (#6989).
+    inner.tell_now();
 }

@@ -61,7 +61,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::active::{self, Asking, Ids, PlaneRoot, WorkspaceRung};
@@ -226,7 +226,7 @@ pub struct Ambient<'a> {
     /// This process's own directory, for the payload that does not carry one.
     pub cwd: &'a Path,
     /// The instant ages are measured from.
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     /// charter's config home, where the extension record is — `None` draws no extension's
     /// badges (charter-app#340).
     pub config: Option<&'a Path>,
@@ -296,7 +296,7 @@ fn badge_rows(
     config: &Path,
     built_in: &crate::extension::BuiltIn,
     workspace: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Vec<String> {
     use crate::extension::{facts, project::Choices};
     let read = facts::gather(
@@ -446,7 +446,7 @@ fn workspace_count(plane: &Path) -> String {
 
 /// The identity row's piece cell — counts, and the oldest silence. `None` when the workspace
 /// has no pieces, exactly as the todo count is dropped at zero.
-fn piece_cell(plane: &Path, ws: &str, look: &Look, now: DateTime<Utc>) -> Option<String> {
+fn piece_cell(plane: &Path, ws: &str, look: &Look, now: Timestamp) -> Option<String> {
     let summary = crate::pieces::summary(plane, ws, now)?;
     let mut parts = vec![format!("{DIM}pieces{R} {}", summary.total)];
     if summary.done > 0 {

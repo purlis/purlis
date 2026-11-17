@@ -34,10 +34,10 @@ pub const DIR_NAME: &str = "_skills";
 
 /// `personas/_skills/<YYYY-MM>.<device>.jsonl` — `skilluse.path_for`; `<device>` is
 /// [`crate::machine::log_name`]'s (FD-25).
-pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
+pub fn path_for(root: &Path, when: jiff::Timestamp, device: &str) -> PathBuf {
     root.join("personas")
         .join(DIR_NAME)
-        .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
+        .join(format!("{}.{device}.jsonl", when.strftime("%Y-%m")))
 }
 
 /// **Logs the start of skill run `run`**, by `persona`: the row the event log's writer adds as
@@ -49,7 +49,7 @@ pub fn started(
     root: &Path,
     run: &Starting<'_>,
     persona: Option<&str>,
-    when: chrono::DateTime<chrono::Utc>,
+    when: jiff::Timestamp,
     device: &str,
 ) -> Option<PathBuf> {
     let skill = crate::memstore::py_strip(run.skill);
@@ -397,7 +397,7 @@ pub fn ended(
     root: &Path,
     run: &Closed,
     tokens: Option<u64>,
-    when: chrono::DateTime<chrono::Utc>,
+    when: jiff::Timestamp,
     device: &str,
 ) -> Option<PathBuf> {
     ended_as(
@@ -434,7 +434,7 @@ pub struct Ending<'a> {
 pub fn ended_as(
     root: &Path,
     run: &Ending<'_>,
-    when: chrono::DateTime<chrono::Utc>,
+    when: jiff::Timestamp,
     device: &str,
 ) -> Option<PathBuf> {
     if !writable(root) {
@@ -525,9 +525,9 @@ impl Run {
 
     /// When it started, in seconds since 1970, where its row's stamp can be read.
     pub fn started_secs(&self) -> Option<u64> {
-        chrono::DateTime::parse_from_rfc3339(&self.started)
+        str::parse::<jiff::Timestamp>(&self.started)
             .ok()
-            .and_then(|at| u64::try_from(at.timestamp()).ok())
+            .and_then(|at| u64::try_from(at.as_second()).ok())
     }
 }
 
@@ -775,7 +775,7 @@ pub struct Missing<'a> {
 pub fn missed(
     root: &Path,
     miss: &Missing<'_>,
-    when: chrono::DateTime<chrono::Utc>,
+    when: jiff::Timestamp,
     device: &str,
 ) -> Option<PathBuf> {
     let skill = crate::memstore::py_strip(miss.skill);

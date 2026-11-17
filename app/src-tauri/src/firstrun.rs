@@ -761,12 +761,7 @@ pub async fn import_instructions(
 ) -> Result<u32, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        imported(
-            &root,
-            &workspace,
-            &chosen,
-            chrono::Local::now().naive_local(),
-        )
+        imported(&root, &workspace, &chosen, jiff::Zoned::now().datetime())
     })
     .await
     .map_err(|err| format!("purlis could not add them to memory: {err}"))?
@@ -792,7 +787,7 @@ fn imported(
     root: &Path,
     workspace: &str,
     chosen: &[ChosenInstruction],
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<u32, String> {
     let chosen: Vec<repoinstructions::Shown> = chosen
         .iter()
@@ -1546,8 +1541,8 @@ mod tests {
             file: "AGENTS.md".into(),
             text: "Run make check.\n".into(),
         }];
-        let stamp = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)
-            .and_then(|d| d.and_hms_opt(9, 0, 0))
+        let stamp = purlis_core::wallclock::day(2026, 10, 1)
+            .map(|d| d.at(9, 0, 0, 0))
             .expect("a time");
         assert_eq!(imported(&root, "widget", &chosen, stamp), Ok(1));
 

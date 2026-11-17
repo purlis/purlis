@@ -1957,7 +1957,7 @@ pub async fn extension_facts(
     // (charter-app#343, `heard.rs`).
     let missed = heard.notes_for(&root);
     let mut read = tauri::async_runtime::spawn_blocking(move || {
-        facts_in(&config, &root, workspace.as_deref(), chrono::Utc::now())
+        facts_in(&config, &root, workspace.as_deref(), jiff::Timestamp::now())
     })
     .await
     .map_err(|err| format!("reading this project's extension facts did not finish: {err}"))?;
@@ -1970,7 +1970,7 @@ fn facts_in(
     config: &std::path::Path,
     root: &std::path::Path,
     workspace: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> ExtensionFacts {
     use extension::facts;
     let read = facts::gather(
@@ -2428,7 +2428,7 @@ mod tests {
                   "repo-columns":[{"id":"open","title":"PRs","fresh_seconds":600}]}}"#,
         )
         .expect("a manifest");
-        let now = chrono::Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         std::fs::write(
             at.join("state").join(extension::facts::FILE),
             format!(
@@ -2450,7 +2450,7 @@ mod tests {
         let (_dir, config) = facts_made();
         let plane = test_plane("", "", true);
 
-        let said = facts_in(&config, plane.path(), Some("alpha"), chrono::Utc::now());
+        let said = facts_in(&config, plane.path(), Some("alpha"), jiff::Timestamp::now());
         assert_eq!(said.badges.len(), 1);
         let badge = &said.badges[0];
         assert_eq!(
@@ -2485,9 +2485,9 @@ mod tests {
         )
         .expect("a workspace manifest");
 
-        let off = facts_in(&config, plane.path(), Some("alpha"), chrono::Utc::now());
+        let off = facts_in(&config, plane.path(), Some("alpha"), jiff::Timestamp::now());
         assert!(off.columns.is_empty() && off.badges.is_empty(), "{off:?}");
-        let project = facts_in(&config, plane.path(), None, chrono::Utc::now());
+        let project = facts_in(&config, plane.path(), None, jiff::Timestamp::now());
         assert_eq!(project.columns.len(), 1, "the project has it on");
     }
 

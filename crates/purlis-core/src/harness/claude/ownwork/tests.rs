@@ -4,8 +4,8 @@
 use super::*;
 
 /// 14:00:30 on 2026-10-29, a Thursday, on the chat's own wall clock.
-fn now() -> NaiveDateTime {
-    NaiveDateTime::parse_from_str("2026-10-29 14:00:30", "%Y-%m-%d %H:%M:%S").expect("a time")
+fn now() -> DateTime {
+    jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", "2026-10-29 14:00:30").expect("a time")
 }
 
 /// Seconds from [`now`] to `when` (`HH:MM` today, or `YYYY-MM-DD HH:MM`).
@@ -16,8 +16,8 @@ fn in_secs(when: &str) -> u32 {
         when.to_owned()
     };
     let at =
-        NaiveDateTime::parse_from_str(&format!("{full}:00"), "%Y-%m-%d %H:%M:%S").expect("a time");
-    u32::try_from((at - now()).num_seconds()).expect("ahead")
+        jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", format!("{full}:00")).expect("a time");
+    u32::try_from(at.duration_since(now()).as_secs()).expect("ahead")
 }
 
 const LATE: u32 = 300;
@@ -156,7 +156,7 @@ fn an_unreadable_payload_waits_on_nothing() {
 fn what_it_reads_is_seconds_from_now_on_the_chat_s_clock_whatever_the_day() {
     // The same schedule read at the same wall time on any day says the same: no time zone and
     // no time of day leave the chat.
-    let later = now() + Duration::days(40);
+    let later = now() + SignedDuration::from_hours(40 * 24);
     let one = read(Some(&stop(&[], &[("*/20 * * * *", true)])), now());
     let other = read(Some(&stop(&[], &[("*/20 * * * *", true)])), later);
     assert_eq!(one, other);

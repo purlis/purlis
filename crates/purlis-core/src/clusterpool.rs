@@ -1632,8 +1632,8 @@ impl Kubectl {
                         let made = item
                             .pointer("/metadata/creationTimestamp")
                             .and_then(serde_json::Value::as_str)
-                            .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-                            .and_then(|at| u64::try_from(at.timestamp()).ok());
+                            .and_then(|at| str::parse::<jiff::Timestamp>(at).ok())
+                            .and_then(|at| u64::try_from(at.as_second()).ok());
                         Some(ClaimListed {
                             name,
                             seen: ClaimSeen::of(item),

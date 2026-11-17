@@ -1101,7 +1101,7 @@ dependencies = [
 name = "check-probe"
 version = "0.5.2"
 dependencies = [
- "chrono",
+ "jiff",
  "purlis-core",
  "serde_json",
  "tempfile",
@@ -2264,7 +2264,7 @@ dependencies = [
 name = "extension-probe"
 version = "0.5.2"
 dependencies = [
- "chrono",
+ "jiff",
  "purlis-core",
  "serde_json",
  "tempfile",
@@ -6057,7 +6057,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "persona-statistics"
 version = "0.5.2"
 dependencies = [
- "chrono",
+ "jiff",
  "purlis-core",
  "serde_json",
  "tempfile",
@@ -6639,9 +6639,9 @@ dependencies = [
  "bytes",
  "cairo-rs",
  "changelog",
- "chrono",
  "dunce",
  "getrandom 0.4.3",
+ "jiff",
  "notify",
  "objc2",
  "objc2-app-kit",
@@ -6688,8 +6688,8 @@ name = "purlis-browser-engine"
 version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
- "chrono",
  "hmac 0.13.0",
+ "jiff",
  "minisign",
  "nix 0.31.3",
  "num_threads",
@@ -6719,9 +6719,9 @@ version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
  "changelog",
- "chrono",
  "clap",
  "flate2",
+ "jiff",
  "portable-pty",
  "purlis-core",
  "purlis-host",
@@ -6753,7 +6753,6 @@ dependencies = [
  "bytes",
  "cedar-policy",
  "changelog",
- "chrono",
  "curve25519-dalek 5.0.0",
  "data-encoding",
  "dhat",
@@ -6773,6 +6772,7 @@ dependencies = [
  "idna",
  "ignore",
  "imagesize",
+ "jiff",
  "keyring",
  "libc",
  "log",
@@ -7533,10 +7533,11 @@ dependencies = [
 name = "scale-project"
 version = "0.5.2"
 dependencies = [
- "chrono",
  "clap",
+ "jiff",
  "purlis-core",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "ulid",
 ]

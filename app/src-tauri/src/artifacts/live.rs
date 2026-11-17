@@ -207,7 +207,7 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
         let every = match admitted {
             Ok(every) => every,
             Err(kind) => {
-                let answer = Answer::error(kind, chrono::Utc::now());
+                let answer = Answer::error(kind, jiff::Timestamp::now());
                 if let Some(webview) = app.get_webview(&ask.label) {
                     let _ = webview.eval(delivery(&ask, &answer));
                 }
@@ -332,7 +332,7 @@ fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
         let id = key.query.rsplit_once('@').map_or("", |(id, _)| id);
         return super::queried::ask(app, &key.plane, &key.workspace, id, &params);
     }
-    let at = chrono::Utc::now();
+    let at = jiff::Timestamp::now();
     let root = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(&key.plane).ok())
@@ -350,7 +350,7 @@ fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
         &params,
         &calls::as_the_person(),
         at,
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
     )
 }
 
@@ -381,7 +381,7 @@ fn hand<R: Runtime>(app: &tauri::AppHandle<R>, who: &Who, answer: &Answer) {
         let _ = webview.eval(delivery(&ask, answer));
     } else {
         artifacts.live().hub.unsubscribe(|w| w == who);
-        let refused = Answer::error(ErrorKind::NotApproved, chrono::Utc::now());
+        let refused = Answer::error(ErrorKind::NotApproved, jiff::Timestamp::now());
         let _ = webview.eval(delivery(&ask, &refused));
     }
 }
@@ -538,7 +538,7 @@ mod tests {
             };
             live.hub.subscribe(key.clone(), who, t);
             live.hub
-                .finished(key, Answer::data(json!({}), chrono::Utc::now()), t);
+                .finished(key, Answer::data(json!({}), jiff::Timestamp::now()), t);
         }
         let later = t + live::MIN_INTERVAL;
         let runs = |todo: Vec<Do<Key, Who>>| -> Vec<Key> {
@@ -554,8 +554,11 @@ mod tests {
             runs(chats_todo(&mut live, &plane, Some(&named), later)),
             std::slice::from_ref(&alpha)
         );
-        live.hub
-            .finished(&alpha, Answer::data(json!({}), chrono::Utc::now()), later);
+        live.hub.finished(
+            &alpha,
+            Answer::data(json!({}), jiff::Timestamp::now()),
+            later,
+        );
         // A chat that closed: every chats feed of its project, and no other feed.
         let mut every = runs(chats_todo(
             &mut live,
@@ -583,12 +586,12 @@ mod tests {
             };
             live.hub.subscribe(key.clone(), who, t);
             live.hub
-                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), t);
+                .finished(&key, Answer::data(json!({}), jiff::Timestamp::now()), t);
             let later = t + live::MIN_INTERVAL;
             live.hub.moved(later, |k| *k == key);
-            let again = live
-                .hub
-                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), later);
+            let again =
+                live.hub
+                    .finished(&key, Answer::data(json!({}), jiff::Timestamp::now()), later);
             assert_eq!(
                 again.iter().any(|d| matches!(d, Do::Hand(..))),
                 handed_again,
@@ -626,7 +629,7 @@ mod tests {
             ),
             1
         );
-        let answer = Answer::data(json!({ "milestones": [] }), chrono::Utc::now());
+        let answer = Answer::data(json!({ "milestones": [] }), jiff::Timestamp::now());
         let done = artifacts.live().hub.finished(&key, answer.clone(), t);
         assert!(done.contains(&Do::WakeAt(t + fresh)), "{done:?}");
         // Asked again once its freshness has passed, and not before.

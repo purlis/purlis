@@ -16,12 +16,14 @@ const SRC = join(process.cwd(), "src");
 
 /** Every secret's box in the window, by file: the vault's token and a secret's value, the vault
  *  sign-in's token, the forge sign-in's token, and a secret's one notice's value, drawn once per
- *  field: a Secret ask's (#5068) and each a run's notice asks for (#5242, #5080). */
+ *  field: a Secret ask's (#5068) and each a run's notice asks for (#5242, #5080); and the address a
+ *  GitHub App's finish ended on, whose one-time code makes the App for an hour (#7121). */
 const SECRET_BOXES: Record<string, number> = {
   "VaultTab.tsx": 2,
   "VaultSignIn.tsx": 1,
   "ForgeTokenSignIn.tsx": 1,
   "SecretAskNotice.tsx": 1,
+  "AgentIdentityFlow.tsx": 1,
 };
 
 function views(dir = SRC): string[] {

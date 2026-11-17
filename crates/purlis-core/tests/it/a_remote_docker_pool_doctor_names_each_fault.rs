@@ -367,9 +367,10 @@ fn connect_checks_the_engine_before_the_pool_is_kept() {
     };
     doctoring::lay_over(&mut connect);
     assert_eq!(connect.finding, None);
+    // The CI host runs Linux 6.12 or later, as every runner's host must (#7084).
     assert_eq!(
         connect.checked,
-        vec!["unconfined", "unsupported-architecture"]
+        vec!["unconfined", "unsupported-architecture", "kernel-short"]
     );
 }
 

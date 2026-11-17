@@ -301,6 +301,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "agent_identity_create",
     "agent_identity_create_cancel",
     "agent_identity_reopen",
+    "agent_identity_create_from_address",
     "agent_identity_stand",
     "agent_identity_lines",
     "agent_identity_finish",
@@ -1050,6 +1051,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_get_help",
     "add_docker_pool",
     "remove_docker_pool",
+    // Forget it here, offered where Remove found the pool's machine doesn't answer: the person's
+    // press alone.
+    "forget_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
     // Which pools' runners were removed outside purlis, and making one again (#4149): it makes

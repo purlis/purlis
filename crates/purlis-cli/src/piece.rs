@@ -179,7 +179,7 @@ pub enum WorktreeCommand {
 
 pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
     let root = here.plane.root().to_path_buf();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch
     // folder it holds, and another chat's lets nothing go.
     let who = Who::here(
@@ -420,7 +420,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             // In a chat the app started, the app prunes, by the route its removal takes (ADR
             // 0110): never forced, each folder held to its claim against the chats it has.
             // Its wait is on a silence: the app says it is alive as it reads each folder.
-            let since = chrono::Utc::now();
+            let since = jiff::Timestamp::now();
             let forwarded = match crate::gitask::forwarded(
                 &ws,
                 GitWork::WorktreePrune {
@@ -720,7 +720,7 @@ fn no_app_to_tell(
     if crate::session::chat_number().is_none() {
         return Ok(());
     }
-    purlis_core::piececlaim::take(root, at, who, None, act, chrono::Utc::now())
+    purlis_core::piececlaim::take(root, at, who, None, act, jiff::Timestamp::now())
 }
 
 /// The piece `at` names, in the project at `root`.

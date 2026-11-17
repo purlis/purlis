@@ -602,7 +602,7 @@ impl Workspace {
     }
 
     /// Record one todo as its own timestamp-prefixed file, and index it.
-    pub fn add_todo(&self, text: &str, stamp: chrono::NaiveDateTime) -> io::Result<PathBuf> {
+    pub fn add_todo(&self, text: &str, stamp: jiff::civil::DateTime) -> io::Result<PathBuf> {
         self.writable(&self.dir.join("todos"))?;
         let dir = self.dir.join("todos");
         memstore::ensure_index(
@@ -632,7 +632,7 @@ impl Workspace {
     pub fn record_todo(
         &self,
         text: &str,
-        stamp: chrono::NaiveDateTime,
+        stamp: jiff::civil::DateTime,
     ) -> Result<PathBuf, RecordRefused> {
         if text.trim().is_empty() {
             return Err(RecordRefused::Empty);
@@ -699,7 +699,7 @@ impl Workspace {
     /// file into `todos/archive/` and drop its index line (ADR 0106, amending ADR 0004). A done
     /// todo stays, listed by [`Self::done_todos`], until [`Self::reopen_todo`] brings it back
     /// or [`Self::forget_todo`] deletes it.
-    pub fn close_todo(&self, slug: &str, stamp: chrono::NaiveDateTime) -> io::Result<()> {
+    pub fn close_todo(&self, slug: &str, stamp: jiff::civil::DateTime) -> io::Result<()> {
         self.writable(&self.dir.join("todos"))?;
         let dir = self.dir.join("todos");
         let path = memstore::resolve(&self.plane_root, &dir, slug).map_err(|e| {
@@ -774,7 +774,7 @@ impl Workspace {
     }
 
     /// Record one durable fact in the workspace's journal.
-    pub fn remember(&self, text: &str, stamp: chrono::NaiveDateTime) -> io::Result<PathBuf> {
+    pub fn remember(&self, text: &str, stamp: jiff::civil::DateTime) -> io::Result<PathBuf> {
         self.remember_titled(text, None, stamp)
     }
 
@@ -786,7 +786,7 @@ impl Workspace {
         &self,
         text: &str,
         title: Option<&str>,
-        stamp: chrono::NaiveDateTime,
+        stamp: jiff::civil::DateTime,
     ) -> io::Result<PathBuf> {
         self.writable(&self.dir.join("memory"))?;
         let dir = self.dir.join("memory");
@@ -964,11 +964,7 @@ impl Workspace {
     /// **Swallows its own failure**, like Python's: this runs from a launch path where
     /// raising would cost the operator their tab, and a manifest that could not be written
     /// leaves the workspace exactly as it was for `structure_status` to go on reporting.
-    pub fn scaffold_manifest(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        author: &str,
-    ) -> io::Result<()> {
+    pub fn scaffold_manifest(&self, now: jiff::Timestamp, author: &str) -> io::Result<()> {
         // The look and the write under one lock: a clone recording its first repo in between
         // would otherwise be written over by a manifest that does not name it.
         let _held = self.manifest_lock()?;
@@ -980,11 +976,7 @@ impl Workspace {
 
     /// The document [`Self::scaffold_manifest`] writes, unwritten: the clones already here,
     /// and when and by whom.
-    pub fn birth_manifest(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        author: &str,
-    ) -> serde_json::Value {
+    pub fn birth_manifest(&self, now: jiff::Timestamp, author: &str) -> serde_json::Value {
         let members: Vec<serde_json::Value> = crate::repos::clones(&self.plane_root, &self.name)
             .map(|found| {
                 found
@@ -998,7 +990,7 @@ impl Workspace {
             "name": self.name,
             "description": "",
             "repos": members,
-            "updated_at": now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
+            "updated_at": now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
             "updated_by": author,
         })
     }
@@ -1399,7 +1391,7 @@ mod read_only_tests {
         )
         .unwrap();
         let ws = Plane::open(&root).workspace("demo").unwrap();
-        let stamp = chrono::NaiveDateTime::default();
+        let stamp = jiff::civil::date(1970, 1, 1).at(0, 0, 0, 0);
         let refusals = [
             ws.add_todo("Port the picker", stamp).err(),
             ws.set_vision("Ship it").err(),
@@ -1474,7 +1466,7 @@ mod manifest_lock_tests {
                 Plane::open(&root)
                     .workspace("demo")
                     .unwrap()
-                    .scaffold_manifest(chrono::Utc::now(), "t")
+                    .scaffold_manifest(jiff::Timestamp::now(), "t")
             })
         };
         std::thread::sleep(std::time::Duration::from_millis(300));
@@ -1508,7 +1500,7 @@ mod manifest_lock_tests {
                 Plane::open(&root)
                     .workspace("demo")
                     .unwrap()
-                    .scaffold_manifest(chrono::Utc::now(), "t")
+                    .scaffold_manifest(jiff::Timestamp::now(), "t")
             })
         };
         std::thread::sleep(std::time::Duration::from_millis(300));
@@ -1549,7 +1541,7 @@ mod manifest_lock_tests {
             "workspace 'demo' is a link to another folder, and purlis writes its \
              workspace.json only in a real folder"
         );
-        let scaffolded = ws.scaffold_manifest(chrono::Utc::now(), "t");
+        let scaffolded = ws.scaffold_manifest(jiff::Timestamp::now(), "t");
         assert!(scaffolded.is_err());
         assert!(!elsewhere.join("workspace.json").exists());
     }

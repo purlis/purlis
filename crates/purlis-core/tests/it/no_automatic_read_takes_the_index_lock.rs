@@ -141,7 +141,7 @@ fn every_automatic_read(f: &support::Fixture) {
             cwd: &f.plane,
             payload: &payload,
             env: &no_env,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             attendance: purlis_core::dispatchunattended::Attendance::Attended,
         },
         None,
@@ -153,7 +153,7 @@ fn every_automatic_read(f: &support::Fixture) {
         &purlis_core::footer::Ambient {
             env: &no_env,
             cwd: &f.plane,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             config: None,
             built_in: purlis_core::extension::BuiltIn::none(),
         },

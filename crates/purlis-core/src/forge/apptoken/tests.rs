@@ -295,9 +295,7 @@ fn a_refused_mint_says_github_s_words_and_hands_nothing() {
 
 #[test]
 fn a_token_is_kept_until_ten_minutes_before_it_expires_and_never_past_its_hour() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-29T14:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let now = str::parse::<jiff::Timestamp>("2026-10-29T14:00:00Z").unwrap();
     let minutes = |d: Duration| d.as_secs() / 60;
     assert_eq!(minutes(kept_for(Some("2026-10-29T15:00:00Z"), now)), 50);
     assert_eq!(minutes(kept_for(Some("2026-10-29T14:30:00Z"), now)), 20);
@@ -309,9 +307,7 @@ fn a_token_is_kept_until_ten_minutes_before_it_expires_and_never_past_its_hour()
 
 #[test]
 fn a_token_lives_until_github_says_it_expires_and_never_past_its_hour() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-29T14:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let now = str::parse::<jiff::Timestamp>("2026-10-29T14:00:00Z").unwrap();
     let minutes = |d: Duration| d.as_secs() / 60;
     assert_eq!(minutes(lives_for(Some("2026-10-29T15:00:00Z"), now)), 60);
     assert_eq!(minutes(lives_for(Some("2026-10-29T14:30:00Z"), now)), 30);
@@ -338,7 +334,7 @@ fn a_revoke_github_refuses_says_github_s_words() {
 
 /// Keeps `token` for `chat` of `root`, reused for `reused` from now and alive for `alive`.
 fn keep(root: &str, chat: u32, token: &str, reused: Duration, alive: Duration) -> bool {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     super::keep_one(
         asked(root, chat, token),
         super::ends_so_far(),
@@ -414,8 +410,8 @@ fn a_token_minted_while_its_chat_ended_is_kept_for_nobody() {
         asked(root, 4, "raced"),
         seen,
         zeroize::Zeroizing::new("raced".to_owned()),
-        super::after(chrono::Utc::now(), hour),
-        super::after(chrono::Utc::now(), hour),
+        super::after(jiff::Timestamp::now(), hour),
+        super::after(jiff::Timestamp::now(), hour),
     );
     assert!(!raced, "found open before the chat ended: not kept");
     assert!(
@@ -859,7 +855,7 @@ fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
             .collect::<Vec<_>>(),
         ["acme/api"]
     );
-    let hour = super::after(chrono::Utc::now(), Duration::from_secs(3600));
+    let hour = super::after(jiff::Timestamp::now(), Duration::from_secs(3600));
     assert!(super::keep_one(
         super::Asked {
             root: root.to_path_buf(),
@@ -1059,7 +1055,7 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
     let recorded = crate::forge::gitcredential::read_push_remotes(config.path());
     let remotes = remotes_of_workspace(root, Some(&ws), &[], Some(&started), &recorded).unwrap();
     assert_eq!(remotes.len(), 1, "{remotes:?}");
-    let hour = super::after(chrono::Utc::now(), Duration::from_secs(3600));
+    let hour = super::after(jiff::Timestamp::now(), Duration::from_secs(3600));
     assert!(super::keep_one(
         super::Asked {
             root: root.to_path_buf(),

@@ -44,7 +44,7 @@ pub struct Row {
     pub owner: String,
     /// Its title, after the shape scanner.
     pub title: String,
-    pub date: Option<chrono::NaiveDate>,
+    pub date: Option<jiff::civil::Date>,
     /// BM25, lower is better; `0.0` for a listing with no query.
     pub score: f64,
 }
