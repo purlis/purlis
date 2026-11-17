@@ -2534,12 +2534,15 @@ pub enum FileReach {
 #[serde(tag = "found", rename_all = "snake_case")]
 pub enum FileRead {
     /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
-    /// workspace, `/` between its parts, for one in it; `version` names it as it is now, so a
-    /// read in pieces is of one file. With an `at`, the piece from there.
+    /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
+    /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
+    /// `at`, the piece from there.
     Plain {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from_workspace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        home: Option<FileHome>,
         size: u64,
         version: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2556,6 +2559,15 @@ pub enum FileRead {
     TooLarge { path: String, size: u64 },
     /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
     Outside { path: String },
+}
+
+/// **What a chat counts as its own on the host** (1.90, [`FileRead::Plain`]): its workspace,
+/// named, or the project for a chat at the project's root; and its folder there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileHome {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub folder: String,
 }
 
 /// **A piece of a file** (1.90): its bytes from `at`.

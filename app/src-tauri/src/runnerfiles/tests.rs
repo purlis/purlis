@@ -65,6 +65,7 @@ impl AsksRunner for Fake {
         Ok(FileRead::Plain {
             path: format!("/w/{path}"),
             from_workspace: Some(path.to_owned()),
+            home: None,
             size,
             version: version.to_owned(),
             piece,
@@ -174,6 +175,7 @@ fn pieces_that_run_past_the_files_size_are_refused() {
     runner.answer = Some(FileRead::Plain {
         path: "/w/a".into(),
         from_workspace: Some("a".into()),
+        home: None,
         size: 2,
         version: "v1".into(),
         piece: Some(FilePiece {
@@ -207,6 +209,7 @@ fn a_file_opened_on_an_answer_is_read_anywhere_while_it_is_still_that_file() {
     runner.answer = Some(FileRead::Plain {
         path: "/etc/hosts".into(),
         from_workspace: None,
+        home: None,
         size: 3,
         version: "8:42:3:1.0".into(),
         piece: Some(FilePiece {
@@ -227,6 +230,7 @@ fn a_file_opened_on_an_answer_and_since_replaced_is_not_read_and_says_to_open_it
     let replaced = |path: &str, version: &str| FileRead::Plain {
         path: path.into(),
         from_workspace: None,
+        home: None,
         size: 3,
         version: version.into(),
         piece: Some(FilePiece {
@@ -352,10 +356,10 @@ mod in_a_pane {
     use purlis_core::panelinks::{
         Asks, Candidate, Kind, LocalFile, Pane, Resolver, RunnerFile, Runs,
     };
-    use purlis_session_protocol::session::FileRead;
+    use purlis_session_protocol::session::{FileHome, FileRead};
 
     use super::{Fake, fake};
-    use crate::pane_links::{LinkAsk, LinkFileAt, LinkOpened, answer};
+    use crate::pane_links::{LinkAsk, LinkFileAt, LinkHome, LinkOpened, answer};
     use crate::runnerfiles::ReadsOnRunner;
 
     fn on_runner() -> Pane {
@@ -419,6 +423,10 @@ mod in_a_pane {
         runner.answer = Some(FileRead::Plain {
             path: "/etc/hosts".into(),
             from_workspace: None,
+            home: Some(FileHome {
+                workspace: Some("app".into()),
+                folder: "/w".into(),
+            }),
             size: 1,
             version: "8:42:1:0.0".into(),
             piece: None,
@@ -431,9 +439,12 @@ mod in_a_pane {
         };
         assert_eq!(
             about,
-            LinkAsk::FileOutside {
-                home: None,
-                runner: Some("pool/runner-1".into())
+            LinkAsk::FileOnRunner {
+                runner: "pool/runner-1".into(),
+                home: Some(LinkHome::Workspace {
+                    name: "app".into(),
+                    folder: "/w".into(),
+                }),
             }
         );
         assert!(matches!(

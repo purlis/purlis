@@ -452,7 +452,6 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
             name: "smart-ide",
             folder: "/Users/you/projects/plane/workspaces/smart-ide",
           },
-          runner: null,
         },
       }}
       candidate={{ kind: "file", text: "/etc/hosts:3" }}
@@ -495,19 +494,27 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
 
 /**
  * **A runner chat's file outside its workspace on the runner** (#6387): asked as a file outside
- * the workspace on this machine is, naming the runner the file is on, and opened read-only, read
- * there. It starts on *Open file*, as that ask does (D9).
+ * the workspace on this machine is, with the runner the file is on in its own row, and opened
+ * read-only, read there. It starts on *Open file*, as that ask does (D9).
  */
 export const RunnerFileOutsideTheWorkspace: StoryObj<typeof meta> = {
   render: () => (
     <Answer
       answer={{
         answer: "ask",
-        reason: "outside the chat's workspace on runner docker/runner-1",
+        reason: "outside app on runner docker/runner-1",
         shown: "/etc/hosts:3",
         target: "/etc/hosts:3",
         token: "a-one-use-token",
-        about: { about: "file-outside", home: null, runner: "docker/runner-1" },
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: {
+            is: "workspace",
+            name: "app",
+            folder: "/home/purlis/projects/smart-ide/workspaces/app",
+          },
+        },
       }}
       candidate={{ kind: "file", text: "/etc/hosts:3" }}
       chat={{ number: 641, title: "Fix the login form" }}
@@ -518,11 +525,9 @@ export const RunnerFileOutsideTheWorkspace: StoryObj<typeof meta> = {
     const dialog = await page.findByRole("dialog", {
       name: "Open a file outside this workspace?",
     });
-    await expect(dialog).toHaveTextContent(
-      "This chat's output names a file on runner docker/runner-1 that is not in its workspace there.",
-    );
+    await expect(dialog).toHaveTextContent("This chat's output names a file that is not in app.");
     await expect(dialog).toHaveTextContent("docker/runner-1");
-    await expect(dialog).toHaveTextContent("It opens read-only in an editor tab. Nothing is run.");
+    await expect(dialog).toHaveTextContent("/home/purlis/projects/smart-ide/workspaces/app");
     const open = within(dialog).getByRole("button", { name: "Open file" });
     await untilFocused(() => open, "It starts on Open file (D9)");
     expectFocusInSight();

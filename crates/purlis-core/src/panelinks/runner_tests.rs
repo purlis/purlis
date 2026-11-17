@@ -4,11 +4,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use purlis_session_protocol::session::FileRead;
+use purlis_session_protocol::session::{FileHome, FileRead};
 
 use super::super::{
-    Asks, Candidate, Hover, Kind, LocalFile, Opening, Pane, ReadFrom, Resolved, Resolver, Runs,
-    Target,
+    Asks, Candidate, Home, HomeIs, Hover, Kind, LocalFile, Opening, Pane, ReadFrom, Resolved,
+    Resolver, Runs, Target,
 };
 use super::{RunnerFile, RunnerFiles};
 
@@ -41,10 +41,24 @@ impl RunnerFiles for Fake {
 
 const MAIN: &str = "/home/purlis/projects/p/workspaces/app/repos/web/src/main.rs";
 
+const APP: &str = "/home/purlis/projects/p/workspaces/app";
+
+/// The chat's workspace on the runner, `app`.
+fn in_app() -> Home {
+    Home {
+        is: HomeIs::Workspace("app".into()),
+        folder: PathBuf::from(APP),
+    }
+}
+
 fn plain(path: &str, from_workspace: Option<&str>) -> FileRead {
     FileRead::Plain {
         path: path.to_owned(),
         from_workspace: from_workspace.map(str::to_owned),
+        home: Some(FileHome {
+            workspace: Some("app".into()),
+            folder: APP.into(),
+        }),
         size: 13,
         version: "1:2:13:0.0".into(),
         piece: None,
@@ -125,7 +139,8 @@ fn a_file_in_the_runner_chats_workspace_links_and_opens_at_its_line_without_aski
     assert_eq!(
         at.read_from,
         ReadFrom::Runner {
-            runner: "docker-1".into()
+            runner: "docker-1".into(),
+            home: Some(in_app()),
         }
     );
     assert_eq!((at.line, at.column), (Some(42), Some(7)));
@@ -169,8 +184,16 @@ fn a_file_outside_the_runner_chats_workspace_asks_first_naming_the_runner() {
     else {
         panic!("expected an ask");
     };
-    assert!(reason.contains("docker-1"), "{reason}");
+    assert_eq!(reason, "outside app on runner docker-1");
     assert_eq!(file_at(&target).short(), "/etc/hosts");
+    assert_eq!(
+        file_at(&target).read_from,
+        ReadFrom::Runner {
+            runner: "docker-1".into(),
+            home: Some(in_app()),
+        },
+        "the ask names the chat's workspace on the runner"
+    );
     assert!(
         asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
             .is_none()

@@ -23,7 +23,9 @@ use std::path::{Path, PathBuf};
 use purlis_session_protocol::session::FileRead;
 
 use super::file::{at_line, at_suffix, on_this_machine};
-use super::{Asks, FileAt, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs, Target};
+use super::{
+    Asks, FileAt, Home, HomeIs, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs, Target,
+};
 
 /// **How the window asks one runner about its chat's files**: one adapter per kind of runner.
 pub trait RunnerFiles: Send + Sync {
@@ -85,12 +87,13 @@ impl LinkKind for RunnerFile {
         if named.starts_with('~') {
             return Resolved::Quiet;
         }
-        let (path, from_workspace) = match self.files.look(&named) {
+        let (path, from_workspace, home) = match self.files.look(&named) {
             Some(FileRead::Plain {
                 path,
                 from_workspace,
+                home,
                 ..
-            }) => (path, from_workspace),
+            }) => (path, from_workspace, home),
             Some(FileRead::Binary { .. }) => return Resolved::NotALink(RUNNER_BINARY.into()),
             Some(FileRead::TooLarge { .. }) => {
                 return Resolved::NotALink(RUNNER_TOO_LARGE.into());
@@ -110,6 +113,10 @@ impl LinkKind for RunnerFile {
             column,
             read_from: ReadFrom::Runner {
                 runner: self.files.runner().to_owned(),
+                home: home.map(|home| Home {
+                    is: home.workspace.map_or(HomeIs::Project, HomeIs::Workspace),
+                    folder: PathBuf::from(home.folder),
+                }),
             },
             in_home: from_workspace.is_some(),
             shown,
@@ -124,9 +131,13 @@ impl LinkKind for RunnerFile {
         if file.in_home {
             return Opening::Open(target);
         }
+        let ReadFrom::Runner { home, .. } = &file.read_from else {
+            return Opening::Refused("purlis does not open that as a runner's file".into());
+        };
         Opening::Ask {
             reason: format!(
-                "outside the chat's workspace on runner {}",
+                "outside {} on runner {}",
+                home.as_ref().map_or("the chat's workspace", Home::said),
                 self.files.runner()
             ),
             shown: text.to_owned(),
@@ -142,7 +153,7 @@ impl LinkKind for RunnerFile {
         let Target::File(file) = target else {
             return;
         };
-        let ReadFrom::Runner { runner } = &file.read_from else {
+        let ReadFrom::Runner { runner, .. } = &file.read_from else {
             return;
         };
         let Some(path) = Path::new(&file.path).to_str() else {

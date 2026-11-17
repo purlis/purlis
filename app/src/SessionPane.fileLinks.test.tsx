@@ -510,12 +510,16 @@ describe("a file a runner chat printed (#6387)", () => {
     expect(jumps).toEqual([]);
   });
 
-  it("asks first outside the chat's workspace on its runner, naming the runner", async () => {
+  it("asks first outside the chat's workspace on its runner as it does here, naming the runner", async () => {
     opens = [
       {
         ...ASKS,
-        reason: "outside the chat's workspace on runner docker/runner-1",
-        about: { about: "file-outside", home: null, runner: "docker/runner-1" },
+        reason: "outside app on runner docker/runner-1",
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: { is: "workspace", name: "app", folder: "/home/purlis/p/workspaces/app" },
+        },
       },
     ];
     const { drawn } = await pane(`wrote ${HOSTS} now`);
@@ -526,11 +530,36 @@ describe("a file a runner chat printed (#6387)", () => {
     const ask = await screen.findByRole("dialog", {
       name: "Open a file outside this workspace?",
     });
-    expect(ask).toHaveTextContent(
-      "This chat's output names a file on runner docker/runner-1 that is not in its workspace there.",
-    );
+    expect(ask).toHaveTextContent("This chat's output names a file that is not in app.");
     expect(within(ask).getByText("Runner")).toBeInTheDocument();
+    expect(ask).toHaveTextContent("docker/runner-1");
+    expect(within(ask).getByText("Workspace")).toBeInTheDocument();
+    expect(ask).toHaveTextContent("/home/purlis/p/workspaces/app");
     expect(ask).toHaveTextContent(HOSTS);
-    expect(ask).toHaveTextContent("It opens read-only in an editor tab. Nothing is run.");
+    expect(ask).toHaveTextContent("It opens in an editor tab. Nothing is run.");
+  });
+
+  it("asks about the project for a runner chat at the project's root", async () => {
+    opens = [
+      {
+        ...ASKS,
+        reason: "outside the project on runner docker/runner-1",
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: { is: "project", folder: "/home/purlis/p" },
+        },
+      },
+    ];
+    const { drawn } = await pane(`wrote ${HOSTS} now`);
+    hover(drawn, 8, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const ask = await screen.findByRole("dialog", {
+      name: "Open a file outside the project?",
+    });
+    expect(ask).toHaveTextContent("This chat's output names a file that is not in the project.");
+    expect(within(ask).getByText("Project")).toBeInTheDocument();
   });
 });

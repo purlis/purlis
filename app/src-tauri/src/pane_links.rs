@@ -350,11 +350,13 @@ impl From<Home> for LinkHome {
 pub enum LinkAsk {
     /// A link, asked about in general words.
     Link,
-    /// A file outside the chat's home (the prototype's S7), and that home where it has one; or
-    /// outside its workspace on the runner it runs on, named (#6387).
-    FileOutside {
+    /// A file outside the chat's home (the prototype's S7), and that home where it has one.
+    FileOutside { home: Option<LinkHome> },
+    /// A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+    /// that home there, as the runner said it.
+    FileOnRunner {
+        runner: String,
         home: Option<LinkHome>,
-        runner: Option<String>,
     },
 }
 
@@ -469,7 +471,7 @@ fn file_at(file: &FileAt) -> LinkFileAt {
         ReadFrom::Outside => LinkFileAt::Outside {
             path: file.path.display().to_string(),
         },
-        ReadFrom::Runner { runner } => LinkFileAt::Runner {
+        ReadFrom::Runner { runner, .. } => LinkFileAt::Runner {
             runner: runner.clone(),
             path: file.path.display().to_string(),
         },
@@ -480,13 +482,12 @@ fn file_at(file: &FileAt) -> LinkFileAt {
 fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
     match target {
         Target::File(file) => match &file.read_from {
-            ReadFrom::Runner { runner } => LinkAsk::FileOutside {
-                home: None,
-                runner: Some(runner.clone()),
+            ReadFrom::Runner { runner, home } => LinkAsk::FileOnRunner {
+                runner: runner.clone(),
+                home: home.clone().map(LinkHome::from),
             },
             _ => LinkAsk::FileOutside {
                 home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
-                runner: None,
             },
         },
         Target::Url(_) | Target::Chat(_) => LinkAsk::Link,

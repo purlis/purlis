@@ -84,8 +84,9 @@ pub enum ReadFrom {
     Project { path: String },
     /// Not in the project: read only once an ask for it was answered.
     Outside,
-    /// On the runner the chat runs on, read from there (#6387): by its path there.
-    Runner { runner: String },
+    /// On the runner the chat runs on, read from there (#6387): by its path there. `home` is
+    /// what the chat counts as its own there, as the runner said it, for an ask to name.
+    Runner { runner: String, home: Option<Home> },
 }
 
 /// **What a chat counts as its own**: its workspace, or the project for a chat at the project's

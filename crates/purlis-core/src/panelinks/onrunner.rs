@@ -30,7 +30,7 @@ use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 use purlis_session_protocol::session::{
-    FilePiece, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
+    FileHome, FilePiece, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
 };
 
 /// **What the window asked to read**: the chat's project and folder here, the path as the chat
@@ -70,8 +70,10 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if SYSTEMS_OWN.iter().any(|own| resolved.starts_with(own)) {
         return FileRead::NotPlain { path };
     }
-    let from_workspace =
-        workspace_of(asked).and_then(|workspace| slashed(resolved.strip_prefix(workspace).ok()?));
+    let home = home_of(asked);
+    let from_workspace = home
+        .as_ref()
+        .and_then(|(_, workspace)| slashed(resolved.strip_prefix(workspace).ok()?));
     if asked.reach == FileReach::Workspace && from_workspace.is_none() {
         return FileRead::Outside { path };
     }
@@ -118,23 +120,32 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     FileRead::Plain {
         path,
         from_workspace,
+        home: home.and_then(|(workspace, folder)| {
+            Some(FileHome {
+                workspace,
+                folder: folder.to_str()?.to_owned(),
+            })
+        }),
         size: read,
         version: version_of(&meta, read),
         piece,
     }
 }
 
-/// **The chat's workspace here, resolved**: its workspace's folder in its project, or the
-/// project for a chat at its root or with no folder.
-fn workspace_of(asked: &Asked<'_>) -> Option<PathBuf> {
+/// **The chat's workspace here, resolved**: its workspace's name and folder in its project, or
+/// no name and the project for a chat at its root or with no folder.
+fn home_of(asked: &Asked<'_>) -> Option<(Option<String>, PathBuf)> {
     let project = std::fs::canonicalize(asked.project).ok()?;
     let in_a_workspace = asked
         .cwd
         .and_then(|cwd| std::fs::canonicalize(cwd).ok())
         .and_then(|cwd| crate::active::workspace_of_tree(&project, &cwd));
     Some(match in_a_workspace {
-        Some(ws) => std::fs::canonicalize(project.join("workspaces").join(ws)).ok()?,
-        None => project,
+        Some(ws) => {
+            let folder = std::fs::canonicalize(project.join("workspaces").join(&ws)).ok()?;
+            (Some(ws), folder)
+        }
+        None => (None, project),
     })
 }
 

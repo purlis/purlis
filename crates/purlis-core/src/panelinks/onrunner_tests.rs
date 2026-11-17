@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_session_protocol::session::{
-    FilePiece, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
+    FileHome, FilePiece, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
 };
 
 use super::{Asked, read_for_window};
@@ -429,4 +429,46 @@ fn a_files_identity_is_its_device_and_number_whatever_its_size_and_time() {
     );
     assert_eq!(super::identity_of("13:1700000000"), None);
     assert_eq!(super::identity_of(""), None);
+}
+
+/// The chat's home as the runner said it with a plain file.
+fn home(read: &FileRead) -> Option<&FileHome> {
+    match read {
+        FileRead::Plain { home, .. } => home.as_ref(),
+        other => panic!("expected a plain file, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_plain_file_comes_with_the_chats_workspace_there_for_the_ask() {
+    let r = runner();
+
+    let read = r.look_anywhere(&r.shown(&r.outside));
+
+    assert_eq!(
+        home(&read),
+        Some(&FileHome {
+            workspace: Some("app".into()),
+            folder: r.shown(&r.project.join("workspaces/app")),
+        })
+    );
+}
+
+#[test]
+fn a_chat_at_the_projects_root_says_its_project_for_the_ask() {
+    let r = runner();
+    let path = r.shown(&r.outside);
+    let base = r.asked(&path, FileReach::Anywhere, None);
+    let asked = Asked {
+        cwd: Some(&r.project),
+        ..base
+    };
+
+    assert_eq!(
+        home(&read_for_window(&asked)),
+        Some(&FileHome {
+            workspace: None,
+            folder: r.shown(&r.project),
+        })
+    );
 }

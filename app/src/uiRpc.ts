@@ -8451,11 +8451,13 @@ export type LinesShown = {
 export type LinkAsk = 
 /**  A link, asked about in general words. */
 { about: "link" } | 
+/**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
+{ about: "file-outside"; home: LinkHome | null } | 
 /**
- *  A file outside the chat's home (the prototype's S7), and that home where it has one; or
- *  outside its workspace on the runner it runs on, named (#6387).
+ *  A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+ *  that home there, as the runner said it.
  */
-{ about: "file-outside"; home: LinkHome | null; runner: string | null };
+{ about: "file-on-runner"; runner: string; home: LinkHome | null };
 
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
