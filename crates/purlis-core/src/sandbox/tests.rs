@@ -9944,3 +9944,91 @@ fn the_wrapper_is_judged_against_every_folder_the_compiled_sandbox_writes() {
         assert!(covered(StdPath::new(plain)), "{written} is not judged");
     }
 }
+
+// ---- The Q308 follow-up, item 1: the sandbox level as one switch -----------------------------
+
+/// [`decided_made`] in the window, and as a start that names no way it was made.
+fn window_and_unnamed(plane: &std::path::Path) -> [Result<Option<Decided>, NotStarted>; 2] {
+    [
+        decided_made(plane, None, &Made::Window),
+        decided_made(plane, None, &Made::Unnamed),
+    ]
+}
+
+/// The person's press on the project's `[policy]` as its file stands.
+fn pressed(plane: &std::path::Path) {
+    crate::enforcement::press(plane, &crate::enforcement::digest_of(plane)).expect("pressed");
+}
+
+#[test]
+fn the_team_template_starts_every_chat_at_the_full_sandbox_with_no_sandbox_mode() {
+    let _home = local::OwnConfigHome::new();
+    let plane = plane_saying("[policy]\ntemplate = \"team\"\n");
+    for decided in window_and_unnamed(plane.path()) {
+        assert_eq!(level_of(&decided), Some(Level::Full), "{decided:?}");
+    }
+}
+
+#[test]
+fn the_open_template_turns_the_sandbox_off_only_once_the_person_presses() {
+    let _home = local::OwnConfigHome::new();
+    let plane = plane_saying("[policy]\ntemplate = \"open\"\n");
+    // A loosening of what this person accepted (the shipped `watch`, the floor) waits.
+    for decided in window_and_unnamed(plane.path()) {
+        assert_eq!(level_of(&decided), Some(Level::Floor), "{decided:?}");
+    }
+    pressed(plane.path());
+    let [window, unnamed] = window_and_unnamed(plane.path());
+    assert!(
+        matches!(window, Ok(Some(Decided::Unsandboxed(_)))),
+        "{window:?}"
+    );
+    // A start that cannot say how it was made never runs without the sandbox.
+    assert_eq!(level_of(&unnamed), Some(Level::Floor), "{unnamed:?}");
+}
+
+#[test]
+fn the_sandbox_mode_overrides_the_template_tightening_at_once_and_loosening_on_the_press() {
+    let _home = local::OwnConfigHome::new();
+    // Stricter than the template: at once, before any press.
+    let on = plane_saying("[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n");
+    for decided in window_and_unnamed(on.path()) {
+        assert_eq!(level_of(&decided), Some(Level::Full), "{decided:?}");
+    }
+    // Looser than the template, and than what was accepted: the team's off waits for the press.
+    let off = plane_saying("[policy]\ntemplate = \"team\"\n[sandbox]\nmode = \"off\"\n");
+    let window = decided_made(off.path(), None, &Made::Window);
+    assert!(sandboxed(&window), "{window:?}");
+    assert_eq!(
+        crate::enforcement::level_waiting(off.path()),
+        Some((
+            crate::enforcement::SandboxLevel::Full,
+            crate::enforcement::SandboxLevel::Off
+        ))
+    );
+    pressed(off.path());
+    let window = decided_made(off.path(), None, &Made::Window);
+    assert!(
+        matches!(window, Ok(Some(Decided::Unsandboxed(_)))),
+        "{window:?}"
+    );
+    assert_eq!(crate::enforcement::level_waiting(off.path()), None);
+}
+
+#[test]
+fn a_sandbox_mode_taken_out_keeps_the_full_sandbox_until_the_press() {
+    let _home = local::OwnConfigHome::new();
+    let plane = plane_saying(ON);
+    assert_eq!(
+        level_of(&decided_made(plane.path(), None, &Made::Window)),
+        Some(Level::Full)
+    );
+    std::fs::write(plane.path().join("charter.toml"), "").expect("charter.toml");
+    for decided in window_and_unnamed(plane.path()) {
+        assert_eq!(level_of(&decided), Some(Level::Full), "{decided:?}");
+    }
+    pressed(plane.path());
+    for decided in window_and_unnamed(plane.path()) {
+        assert_eq!(level_of(&decided), Some(Level::Floor), "{decided:?}");
+    }
+}

@@ -565,6 +565,7 @@ fn planned() -> Confine {
             given: Vec::new(),
         },
         asks: true,
+        lifted: Vec::new(),
     }
 }
 

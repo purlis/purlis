@@ -1851,3 +1851,57 @@ fn a_timed_out_hold_tells_the_chat_it_is_a_block_and_a_retry_asks_again() {
          is now a block. Run the command again to ask again."
     );
 }
+
+// ---- The Q308 follow-up, item 5: the `network` family ----------------------------------------
+
+/// A proxy whose project's `[policy]` does not enforce `network`, and what it was told.
+fn lifting() -> (Proxy, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let proxy = Proxy::serving(super::Serving {
+        network: Some({
+            let told = std::sync::Arc::clone(&told);
+            std::sync::Arc::new(move |host: &str, port: u16| {
+                told.lock().unwrap().push(super::host_and_port(host, port));
+            })
+        }),
+        ..super::Serving::of(none())
+    })
+    .expect("a proxy");
+    (proxy, told)
+}
+
+#[test]
+fn with_network_not_enforced_a_host_nothing_lists_is_carried_and_told_once() {
+    let (proxy, told) = lifting();
+    // Tried, so answered 502: `.invalid` never resolves. Refused would be 403, with no try.
+    for _ in 0..2 {
+        let said = status(
+            &mut to(&proxy),
+            "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+        );
+        assert_eq!(said, "HTTP/1.1 502 Bad Gateway");
+    }
+    assert_eq!(*told.lock().unwrap(), ["unlisted.invalid:443"]);
+    // Enforced, as before: refused without a try.
+    let enforced = Proxy::serving(super::Serving::of(none())).expect("a proxy");
+    let said = status(
+        &mut to(&enforced),
+        "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+}
+
+#[test]
+fn with_network_not_enforced_this_machine_is_still_refused() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let (proxy, told) = lifting();
+    let said = status(
+        &mut to(&proxy),
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "the proxy reached this machine");
+    assert!(told.lock().unwrap().is_empty());
+}

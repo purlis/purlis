@@ -22,7 +22,7 @@ guards.release = "log"     # one family, apart from the template
 
 ## Templates
 
-| Template | What runs | Sandbox (wired in a later release; today `[sandbox]` decides) |
+| Template | What runs | Sandbox (a committed `[sandbox] mode` overrides it) |
 |---|---|---|
 | `open` | nothing | none |
 | `watch` (the default) | everything logs; `secrets`, `vaults` and `guards.credential` are enforced | the floor |
@@ -32,8 +32,9 @@ guards.release = "log"     # one family, apart from the template
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
-the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
-nothing covers starts with no grant) and `asks` (a host is answered Allow) switch; every other
+the git, merge, release, save and credential guards, `secrets`, the sandbox level, `network`,
+`ports` (off or enforce only), `dispatch` (a pair nothing covers starts with no grant) and
+`asks` (a host and a folder are answered Allow; a socket only under `off`) switch; every other
 family is a key already and stays enforced until it is wired. Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
 
