@@ -11,6 +11,8 @@
 //! * a forge API call whose effect on a merge **cannot be read off the command line** is refused
 //!   too. This fails closed: what charter cannot read, it treats as a merge;
 //! * a **push option that sets auto-merge** is refused, however git is handed it;
+//! * a forge API call that **moves the default branch's ref** (`git/refs/heads/main`, or a new
+//!   `refs/heads/main`), or one whose branch cannot be read, is refused (Q330);
 //! * an **alias** is the command it stands for, and making one that stands for a held command,
 //!   or for the start of one, is refused.
 //!
@@ -112,7 +114,7 @@ const HELD_BEYOND_THE_TABLE: &[(&str, &[&str])] = &[
 
 /// Every held command of one CLI, by its leading words: the `PUBLISH_FORGE` rows and their
 /// aliases, and [`HELD_BEYOND_THE_TABLE`]. An alias may not stand for one, or for its start.
-fn held_commands(name: &str) -> Vec<Vec<&'static str>> {
+pub(super) fn held_commands(name: &str) -> Vec<Vec<&'static str>> {
     let table = super::PUBLISH_FORGE
         .iter()
         .filter(|(cli, _, _)| *cli == name)
@@ -505,6 +507,10 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         if is_merge_path(&segs) {
             return Some(MERGES.to_owned());
         }
+        // Moving the default branch's ref lands code as a merge does (Q330).
+        if let Some(why) = default_branch_ref_reason(&segs, &call) {
+            return Some(why.to_owned());
+        }
         // A release or a tag is no merge: the merge hold leaves it to the floor (#6962).
         if !super::only_merges()
             && let Some(why) = publish_reason(&segs, &call)
@@ -526,6 +532,46 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The sentence a refusal of a write to the default branch's ref ends with (Q330).
+const MOVES_THE_DEFAULT_BRANCH: &str = "Updating, making or deleting the default branch's ref \
+     through the API lands code as a merge does. Push a branch of its own instead.";
+
+/// The sentence a refusal ends with where a ref write's branch cannot be read (Q330).
+const REF_BRANCH_UNREADABLE: &str = "purlis can't read which branch this ref write moves, so it \
+     is treated as a move of the default branch. Write the ref out literally.";
+
+/// **A write to the default branch's ref through the API** (Q330): a `PATCH`, `POST` or
+/// `DELETE` on `git/refs/heads/<branch>` of one of [`DEFAULT_BRANCHES`], or a new ref
+/// (`git/refs`) named `refs/heads/<branch>` of one, is the act a merge is, and held as one. A
+/// branch the call does not let purlis read (a `ref` the shell or gh fills in, no `ref`, a body
+/// purlis does not see) could be the default, so it fails closed. Any other branch is left
+/// alone. The floor reads no forge, so the default branch is `main` or `master` here, the
+/// forge's own answer unknown.
+fn default_branch_ref_reason(segs: &[String], call: &ApiCall) -> Option<&'static str> {
+    let rest: Vec<&str> = under_repository(segs)?.iter().map(String::as_str).collect();
+    match rest[..] {
+        // The ref as one path, whichever `/` was written as `%2F`: `heads%2Fmain` is `heads/main`.
+        ["git", "refs", ref path @ ..] if !path.is_empty() => {
+            let path = path.join("/");
+            let branch = path.strip_prefix("heads/")?;
+            DEFAULT_BRANCHES
+                .contains(&branch)
+                .then_some(MOVES_THE_DEFAULT_BRANCH)
+        }
+        ["git", "refs"] => {
+            let refs: Vec<&Field> = call.fields.iter().filter(|f| f.key == "ref").collect();
+            if call.opaque_body || refs.is_empty() || refs.iter().any(|f| f.value_opaque()) {
+                return Some(REF_BRANCH_UNREADABLE);
+            }
+            refs.iter()
+                .filter_map(|f| f.value.strip_prefix("refs/heads/"))
+                .any(|branch| DEFAULT_BRANCHES.contains(&branch))
+                .then_some(MOVES_THE_DEFAULT_BRANCH)
+        }
+        _ => None,
+    }
 }
 
 /// The refusal for a write that would make a release or a tag, by the forges' own endpoint

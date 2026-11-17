@@ -108,6 +108,36 @@ fn the_gate_refuses_each_unattended() {
     }
 }
 
+/// **Both readings of a segment come from one walk** (#7118's review). Each line was read
+/// with the own reading of one segment paired with the outward reading of another, or with no
+/// own reading at all, or with a redirection glued into the word a substitution stands in.
+#[test]
+fn a_merge_or_a_tag_push_beside_a_process_substitution_or_a_redirection_is_refused() {
+    purlis_core::unsteered!();
+    // zsh's `=(…)` after a quoted `=` set the two walks one segment apart, so the outward
+    // `git push $(echo --tags)` was paired with another segment's own words and dropped.
+    let tags = r#": $(true)<(true) ; git push $(echo --tags) ; X=1 ; : $(true)"="(N)"#;
+    assert!(
+        release_floor_reason(tags, true).is_some(),
+        "not floored: {tags}"
+    );
+    for cmd in [
+        // A redirection right after the `)` was glued to the word: `A=$(…)>`.
+        "A=$(true)>/dev/null gh pr merge 12",
+        "A=$(true)</dev/null gh pr merge 12",
+        "A=$(true)>>/tmp/x gh pr merge 12",
+        // A process substitution later on the line gave the two walks different counts, and the
+        // line was read outward alone.
+        "A=$(true) gh pr merge 12; echo $(true)<(true)",
+    ] {
+        assert!(mergehold::held(cmd).is_some(), "not held: {cmd}");
+        assert!(
+            release_floor_reason(cmd, true).is_some(),
+            "not floored: {cmd}"
+        );
+    }
+}
+
 /// What a substitution's output is put into still reads as before: a word it fills into the
 /// command is a word the shell fills in, and nothing that merges nothing is refused.
 #[test]
