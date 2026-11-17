@@ -640,8 +640,7 @@ pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
 pub fn choice_of(level: crate::enforcement::SandboxLevel) -> Choice {
     use crate::enforcement::SandboxLevel;
     match level {
-        SandboxLevel::Off => Choice::Off,
-        SandboxLevel::Floor => Choice::Floor,
+        SandboxLevel::Off | SandboxLevel::Floor => Choice::Floor,
         SandboxLevel::Full => Choice::On,
     }
 }

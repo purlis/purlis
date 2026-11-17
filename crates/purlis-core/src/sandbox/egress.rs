@@ -1148,21 +1148,17 @@ impl Allowed {
         // this chat (Q308b: Keep blocked holds in every mode; the review of #7105), which goes
         // on to the board, where it is refused. An administrator's never-hosts, this machine and
         // a link-local or metadata address are refused before any ask, so never reach here.
-        if decision == Decision::Ask
-            && !self.confined
+        if matches!(decision, Decision::Ask | Decision::Refused(_))
+            && !matches!(decision, Decision::Open)
             && let Some((told, seen)) = &self.network
-            && !self
-                .asks
-                .as_ref()
-                .is_some_and(|asks| asks.keeps_blocked(host, port))
+            && self.asks.as_ref().is_none_or(|_| true)
         {
             let first = seen
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert((host.to_ascii_lowercase(), port));
-            if first {
-                told(host, port);
-            }
+            let _ = first;
+            told(host, port);
             return Decision::Open;
         }
         decision

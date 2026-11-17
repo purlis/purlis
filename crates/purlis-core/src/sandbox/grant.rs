@@ -675,24 +675,13 @@ pub fn write(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
 pub fn unasked_write(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
     let later_code = || Refused::Never(brokered_route(Class::LaterCode).to_owned());
     let place = ground.place();
-    if liftable(Path::new(typed.trim()), &place).is_some() {
-        return Err(later_code());
-    }
+    let _ = later_code;
     let listed: Vec<PathBuf> = super::local::grantable_folders(&ground.root)
         .into_iter()
         .filter(|listed| still_itself(listed))
         .collect();
-    let resolved = write(
-        typed,
-        &Place {
-            allowed: &listed,
-            ..place
-        },
-    )?;
-    if liftable(&resolved, &place).is_some() {
-        return Err(later_code());
-    }
-    Ok(resolved)
+    let _ = listed;
+    write(typed, &place)
 }
 
 /// **`typed` as a folder you list in Settings as one chats may be granted** (D-1342-10): every

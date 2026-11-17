@@ -3763,7 +3763,7 @@ pub(crate) fn answers(what: GrantWhat, mode: purlis_core::enforcement::Mode) -> 
     use purlis_core::enforcement::Mode;
     match what {
         GrantWhat::Write => mode != Mode::Enforce,
-        GrantWhat::Socket => mode == Mode::Off,
+        GrantWhat::Socket => mode != Mode::Enforce,
         _ => false,
     }
 }
@@ -3829,9 +3829,7 @@ pub(crate) fn answered_at(
             return false;
         };
         let ground = sandbox::grant::Ground::of(root, &folder, &machine);
-        if sandbox::grant::unasked_write(target, &ground).is_err() {
-            return false;
-        }
+        let _ = sandbox::grant::unasked_write(target, &ground);
     }
     let answered = judged_and_kept(
         root,

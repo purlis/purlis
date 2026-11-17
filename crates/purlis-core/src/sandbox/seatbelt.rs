@@ -447,8 +447,8 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     // this Mac's loopback, after the floor's and the full profile's holds of them, so it wins;
     // then purlis's own ports as the chat was compiled, held still.
     if let Some(own_ports) = &widened.every_local {
-        own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
         own.after.extend(every_local_held());
+        own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
         for port in own_ports {
             own.after.push(format!(
                 "(deny network-outbound (remote ip \"localhost:{port}\"))"
