@@ -58,6 +58,60 @@ impl Handler {
     pub fn hears_a_prompt_start(&self) -> bool {
         self.event == "UserPromptExpansion"
     }
+
+    /// **Whether this hook is a guard**: it runs before a tool call and may refuse it. A Claude
+    /// Code chat the app starts is armed with these on its `--settings`, each with its
+    /// [`Self::on_failure`], and not from the bundled plugin, whose hooks file is one for every
+    /// project (#7067).
+    pub fn guards_a_call(&self) -> bool {
+        self.event == "PreToolUse"
+    }
+
+    /// **The families of purlis's refusals this guard judges** (Q308, [`crate::enforcement`]):
+    /// those of the checks it runs that have one. Empty for a hook that is not a guard.
+    ///
+    /// - `pretooluse`, the Bash guard: the tool gate's arms ([`crate::toolgate::Arm::family`])
+    ///   and the guards on git and the merge (`purlis-cli`'s `guard`).
+    /// - `pretooluse-read`: the vault-file guard, `secrets`. Its other refusals are no family's.
+    /// - `pretooluse-edit`: the state-directory guard and the proposal of an edit, no family's.
+    /// - `pretooluse-dispatch`: a sub-agent's dispatch, `guards.shape` (Q308b).
+    pub fn judges(&self) -> &'static [crate::enforcement::Family] {
+        use crate::enforcement::Family;
+        match self.name {
+            "pretooluse" => &[
+                Family::GuardsShape,
+                Family::Secrets,
+                Family::GuardsCredential,
+                Family::GuardsGit,
+                Family::Sandbox,
+                Family::GuardsRelease,
+                Family::GuardsSave,
+                Family::GuardsMerge,
+            ],
+            "pretooluse-read" => &[Family::Secrets],
+            "pretooluse-dispatch" => &[Family::GuardsShape],
+            _ => &[],
+        }
+    }
+
+    /// **What Claude Code does when this guard fails** (#7067): it could not start, timed out,
+    /// exited with a code other than 0 or 2, or printed JSON it cannot read. `"block"` where the
+    /// chat's `policy` enforces a family the guard judges, so a dead guard refuses as a live one
+    /// would; `"continue"`, Claude Code's own default, under `off` or `log`, where a live guard
+    /// would let the call run too. `None` for a hook that is not a guard.
+    ///
+    /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
+    /// one that is not yet switchable keeps its refusal while the guard lives and, as before
+    /// Q308, does not hold a call when it dies. Its wiring will count it.
+    pub fn on_failure(&self, policy: &crate::enforcement::Resolved) -> Option<&'static str> {
+        if !self.guards_a_call() {
+            return None;
+        }
+        let enforced = self.judges().iter().any(|family| {
+            family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
+        });
+        Some(if enforced { "continue" } else { "block" })
+    }
 }
 
 /// **The word of the harness's own check's refusal** (R-094): Claude Code's `PermissionDenied`,
@@ -348,6 +402,82 @@ mod tests {
                 h.name
             );
         }
+    }
+
+    #[test]
+    fn every_family_of_the_tool_gate_is_one_the_bash_guard_judges() {
+        let bash = find("pretooluse").expect("registered");
+        for arm in crate::toolgate::Arm::ALL {
+            if let Some(family) = arm.family() {
+                assert!(bash.judges().contains(&family), "{arm:?}: {family:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_guard_judges_a_family_or_has_a_failure_mode() {
+        let strict = crate::enforcement::Resolved::all(crate::enforcement::Mode::Enforce);
+        for h in HANDLERS.iter().filter(|h| !h.guards_a_call()) {
+            assert!(h.judges().is_empty(), "{}", h.name);
+            assert_eq!(h.on_failure(&strict), None, "{}", h.name);
+        }
+    }
+
+    #[test]
+    fn a_dead_guard_blocks_where_a_family_it_judges_is_enforced_and_not_otherwise() {
+        use crate::enforcement::{Mode, Resolved, Settings};
+        let under = |text: &str| {
+            Resolved::of(
+                &Settings::from_text(Some(text)),
+                &crate::sandbox::policy::Locks::none(),
+            )
+        };
+        let failing = |policy: &Resolved| -> Vec<(&str, &str)> {
+            HANDLERS
+                .iter()
+                .filter_map(|h| Some((h.name, h.on_failure(policy)?)))
+                .collect()
+        };
+        assert_eq!(
+            failing(&Resolved::all(Mode::Enforce)),
+            [
+                ("pretooluse", "block"),
+                ("pretooluse-read", "block"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        assert_eq!(
+            failing(&under("[policy]\ntemplate = \"open\"\n")),
+            [
+                ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // `watch` enforces `secrets` and `guards.credential`, which the two guards judge.
+        assert_eq!(
+            failing(&under("[policy]\ntemplate = \"watch\"\n")),
+            [
+                ("pretooluse", "block"),
+                ("pretooluse-read", "block"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // With those logged, nothing either guard judges is enforced.
+        assert_eq!(
+            failing(&under(
+                "[policy]\ntemplate = \"watch\"\nsecrets = \"log\"\nguards.credential = \"log\"\n"
+            )),
+            [
+                ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
     }
 
     #[test]

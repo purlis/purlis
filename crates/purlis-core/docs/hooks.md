@@ -10,7 +10,10 @@ the app extends with its bundle's directory.
 The app ships a Claude Code plugin in its bundle and loads it into each chat it starts, with
 `claude --plugin-dir`, so the hooks arrive with the chat and there is nothing to install per
 project or per machine. Its hooks name the app's `purlis` through `$CHARTER_HOOK_BINARY`,
-which the app sets in the chat's environment. A Codex chat is armed with the state hooks, the
+which the app sets in the chat's environment. The four guards before a tool runs
+(`pretooluse`, `pretooluse-read`, `pretooluse-edit`, `pretooluse-dispatch`) are not in that
+plugin: they ride on the chat's `--settings`, by the binary's path, beside the permission hook
+(#7067). A Codex chat is armed with the state hooks, the
 Bash guard and the block word after a command as `-c hooks.<Event>=…` flags. Both are for that session alone; see
 [harnesses.md](harnesses.md#per-profile--armed-at-launch).
 
@@ -48,6 +51,19 @@ silent exit 0 and the window keeps the last state it was told.
 tool call is the only safe thing a program that checked nothing can do; answering `allow`
 for a guard it has not got would be a hole that looks like a guard. Every word the plugin
 wires is answered, so this only ever meets a word nobody has invented yet.
+
+**A guard that dies refuses where the project's policy enforces what it judges** (#7067). A
+guard that cannot start, times out, is killed or exits with a code other than 0 or 2 is a
+failure, which Claude Code takes as its hook's `onFailure` says. A chat the app starts arms
+each guard with `"block"`, and its start loosens one to Claude Code's default, `"continue"`,
+where no family of `[policy]` that the guard judges is at `enforce` (`hookreg::Handler::judges`,
+[ADR 0125](../../../docs/adr/0125-blocks-are-off-by-default-and-opt-in-per-family.md)). So under
+`watch`, which enforces `secrets` and `guards.credential`, a dead Bash or Read guard refuses the
+call, and under `open` none does. A family `[policy]` does not switch yet does not count. The
+permission hook keeps `"continue"` under every policy: when it dies, nothing is allowed, and the
+pane asks. Codex has no such option (0.147, 0.169): a guard that dies there lets the call run, a
+declared gap. A chat outside the app, on the copy `purlis plugin install` writes, keeps its guards
+in that copy, with Claude Code's default.
 
 ## The guards
 

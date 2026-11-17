@@ -504,6 +504,26 @@ fn started(
     env: &[(&str, &Path)],
     stand_in: impl Respond + 'static,
 ) -> (std::process::ExitStatus, String) {
+    started_as(
+        program, home, tmp, root, settings, sources, what, env, stand_in, true,
+    )
+}
+
+/// [`started`], `bare` or not: `--bare` skips every hook a setting or a plugin defines, which
+/// the probes of a sandbox want and a guard's test does not.
+#[allow(clippy::too_many_arguments)]
+fn started_as(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    env: &[(&str, &Path)],
+    stand_in: impl Respond + 'static,
+    bare: bool,
+) -> (std::process::ExitStatus, String) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -529,7 +549,8 @@ fn started(
         .current_dir(root)
         .env("ANTHROPIC_BASE_URL", server.uri())
         .env("ANTHROPIC_API_KEY", NOT_A_CREDENTIAL)
-        .args(["-p", "Run the sandbox probes.", "--bare"])
+        .args(["-p", "Run the sandbox probes."])
+        .args(bare.then_some("--bare"))
         .args(sources)
         .arg("--settings")
         .arg(settings)
@@ -1386,5 +1407,154 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
             "{workspace} on {os}: {:?}",
             names(workspace)
         );
+    }
+}
+
+/// **A guard that dies, run by the real Claude Code** (#7067): a Claude Code chat's guards ride
+/// on its `--settings` with `onFailure` as its project's policy runs them
+/// ([`purlis_core::harness::claude::under_policy`]). Here the settings an ordinary chat is armed
+/// with, loosened to a policy, are handed to Claude Code with a `purlis` that answers every hook
+/// but the Bash guard, which `fails`. The stand-in's one Bash call writes a file: whether the
+/// file is there is whether the tool ran.
+mod a_guard_that_fails {
+    use super::*;
+    use purlis_core::enforcement::{Mode, Resolved, Settings};
+    use purlis_core::harness::{Kit, StateHooks};
+
+    /// How the Bash guard fails: a `sleep` past its timeout of 10 seconds, or a kill by signal.
+    const TIMES_OUT: &str = "sleep 30";
+    const DIES: &str = "kill -KILL $$";
+
+    /// Whether the stand-in's Bash call ran, with the Bash guard failing as `fails` does, under
+    /// `policy`. `None` where no `PURLIS_CLAUDE_CODE` names a Claude Code to run.
+    fn the_tool_ran(fails: &str, policy: &Resolved) -> Option<bool> {
+        let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from)?;
+        let scratch = tempfile::tempdir().expect("a folder");
+        let out = scratch.path().canonicalize().expect("a real folder");
+        let (home, tmp, root) = (out.join("home"), out.join("tmp"), out.join("project"));
+        for folder in [home.join(".claude"), tmp.clone(), root.clone()] {
+            fs::create_dir_all(folder).expect("a folder");
+        }
+        // The `purlis` every hook runs: the Bash guard fails, and every other hook says nothing.
+        let purlis = out.join("purlis");
+        fs::write(
+            &purlis,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nif [ \"$2\" = pretooluse ]; then {fails}; fi\nexit 0\n"
+            ),
+        )
+        .expect("the stand-in purlis");
+        let made = Command::new("/bin/chmod")
+            .arg("+x")
+            .arg(&purlis)
+            .status()
+            .expect("chmod");
+        assert!(made.success());
+        let StateHooks::ThisSessionOnly { args, .. } = Harness::ClaudeCode.state_hooks(
+            Kit {
+                binary: &purlis,
+                plugin: Some(&out),
+                persona: None,
+                skills: None,
+                graded: false,
+                judging: false,
+                writes_its_piece: false,
+                runs_a_shell: false,
+                own: &[],
+                laid_out: None,
+            },
+            Some(&root),
+            &purlis_core::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("a Claude Code chat is armed");
+        };
+        let args = purlis_core::harness::claude::under_policy(args, policy);
+        let at = args
+            .iter()
+            .position(|word| word == "--settings")
+            .expect("--settings")
+            + 1;
+        let settings = out.join("settings.json");
+        fs::write(&settings, &args[at]).expect("the settings");
+        let ran = root.join("ran");
+        let results = Arc::new(Mutex::new(Vec::new()));
+        let stand_in = StandIn {
+            command: format!("touch '{}'", ran.display()),
+            results: results.clone(),
+        };
+        let (status, said) = started_as(
+            &program,
+            &home,
+            &tmp,
+            &root,
+            &settings,
+            &[],
+            "a guard that fails",
+            &[],
+            stand_in,
+            false,
+        );
+        let results = results.lock().expect("results").clone();
+        assert!(
+            !results.is_empty(),
+            "the Bash call never came back to the stand-in ({status}):\n{said}"
+        );
+        Some(ran.exists())
+    }
+
+    fn strict() -> Resolved {
+        Resolved::all(Mode::Enforce)
+    }
+
+    fn open() -> Resolved {
+        Resolved::of(
+            &Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
+            &purlis_core::sandbox::policy::Locks::none(),
+        )
+    }
+
+    #[test]
+    fn a_hook_that_times_out_refuses_the_tool_on_claude_code() {
+        purlis_core::unsteered!();
+        if let Some(ran) = the_tool_ran(TIMES_OUT, &strict()) {
+            assert!(
+                !ran,
+                "the Bash call ran past a guard that timed out under strict"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hook_that_dies_refuses_the_tool_on_claude_code() {
+        purlis_core::unsteered!();
+        if let Some(ran) = the_tool_ran(DIES, &strict()) {
+            assert!(
+                !ran,
+                "the Bash call ran past a guard that died under strict"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hook_that_times_out_runs_the_tool_on_claude_code_under_open() {
+        purlis_core::unsteered!();
+        if let Some(ran) = the_tool_ran(TIMES_OUT, &open()) {
+            assert!(
+                ran,
+                "the Bash call was refused by a guard that timed out under open"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hook_that_dies_runs_the_tool_on_claude_code_under_open() {
+        purlis_core::unsteered!();
+        if let Some(ran) = the_tool_ran(DIES, &open()) {
+            assert!(
+                ran,
+                "the Bash call was refused by a guard that died under open"
+            );
+        }
     }
 }
