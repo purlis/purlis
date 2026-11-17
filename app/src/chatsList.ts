@@ -285,6 +285,12 @@ export function matchesFinished(task: FinishedTask, filter: Filter): boolean {
 }
 
 /**
+ * **A closed chat the filter found** (#6484), with `was`, the number typed where it is one the
+ * chat had before a restart (#6685): its row and card say it beside the number it closed under.
+ */
+export type FoundClosed = ClosedChat & { was: number | null };
+
+/**
  * **The closed chats a filter finds** (#6484), newest close first, as `closed` came: by the
  * number typed, `702` or `#702`, which a chat had as it closed or before a restart, and by
  * nothing else then; otherwise by every word in its title or where it ran. Never by a chip, nor
@@ -295,16 +301,21 @@ export function closedFound(
   closed: readonly ClosedChat[],
   filter: Filter,
   drawn: ReadonlySet<number>,
-): ClosedChat[] {
+): FoundClosed[] {
   if (filter.ranks.length > 0 || filter.text.trim() === "") return [];
   const number = chatNumberIn(filter.text);
-  return closed.filter(
-    (chat) =>
-      !drawn.has(chat.number) &&
-      (number === undefined
-        ? inFields(filter.text, [chat.title, chat.place])
-        : chat.number === number || chat.earlier.includes(number)),
-  );
+  return closed
+    .filter(
+      (chat) =>
+        !drawn.has(chat.number) &&
+        (number === undefined
+          ? inFields(filter.text, [chat.title, chat.place])
+          : chat.number === number || chat.earlier.includes(number)),
+    )
+    .map((chat) => ({
+      ...chat,
+      was: number !== undefined && number !== chat.number ? number : null,
+    }));
 }
 
 /**

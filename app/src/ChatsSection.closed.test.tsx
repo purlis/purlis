@@ -60,6 +60,7 @@ const CARD: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
+  was: null,
 };
 
 function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => unknown } = {}) {
@@ -78,7 +79,10 @@ function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => 
     if (cmd === "chat_by_number") {
       const { number } = args as { number: number };
       if (answers.byNumber !== undefined) return answers.byNumber(number);
-      return number === 731 ? { is: "ended", card: CARD } : { is: "no_chat" };
+      if (number === 731) return { is: "ended", card: CARD };
+      // Found by the number it had before a restart, the card says so (#6685).
+      if (number === 702) return { is: "ended", card: { ...CARD, was: 702 } };
+      return { is: "no_chat" };
     }
     return null;
   });
@@ -133,10 +137,23 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     expect(pressed[0].does).toEqual({ verb: "reopenClosedChat", number: 731 });
   });
 
-  it("is found by a number it had before a restart", async () => {
+  it("is found by a number it had before a restart, and its row and card say that number (#6685)", async () => {
     draw();
     await typeInTheFilter("702");
-    expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
+    const row = await findRow(await theTree(), /^#731 · Tidy the changelog \(was #702\)/);
+
+    await userEvent.click(row);
+
+    expect(
+      await screen.findByRole("dialog", { name: "#731 · Tidy the changelog (was #702)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("found by the number it closed under, says no other (#6685)", async () => {
+    draw();
+    await typeInTheFilter("731");
+    const row = await findRow(await theTree(), /^#731 · Tidy the changelog/);
+    expect(row).not.toHaveTextContent("was");
   });
 
   it("says so when the closed chats could not be read", async () => {
