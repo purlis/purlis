@@ -1177,7 +1177,6 @@ fn started(chats: &crate::chats::Chats, dir: &std::path::Path, names: &[&str]) -
                     depth: 1,
                     root: None,
                     above: None,
-                    policy: None,
                     by_person: false,
                     long: false,
                     policy: None,
