@@ -513,7 +513,10 @@ fn guards_failing(args: &[String]) -> Vec<(String, String)> {
         .map(|hook| {
             let command = hook["command"].as_str().unwrap_or_default();
             (
-                command.rsplit_once(" hook ").map_or("", |(_, w)| w).to_owned(),
+                command
+                    .rsplit_once(" hook ")
+                    .map_or("", |(_, w)| w)
+                    .to_owned(),
                 hook["onFailure"].as_str().unwrap_or_default().to_owned(),
             )
         })
@@ -559,11 +562,7 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
     let _home = crate::sandbox::local::OwnConfigHome::new();
     let tmp = tempfile::tempdir().unwrap();
     let root = plane_in(&tmp);
-    std::fs::write(
-        root.join("charter.toml"),
-        "[policy]\ntemplate = \"open\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("charter.toml"), "[policy]\ntemplate = \"open\"\n").unwrap();
     let failing = |pairs: [(&str, &str); 4]| -> Vec<(String, String)> {
         pairs
             .iter()
