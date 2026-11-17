@@ -1,0 +1,13 @@
+diff --git a/crates/purlis-core/src/hookwire.rs b/crates/purlis-core/src/hookwire.rs
+index 93a1e5675..4ae49428f 100644
+--- a/crates/purlis-core/src/hookwire.rs
++++ b/crates/purlis-core/src/hookwire.rs
+@@ -3301,7 +3301,7 @@ impl Output {
+                 ch if u32::from(ch) < 0x20 => 6,
+                 ch => ch.len_utf8(),
+             };
+-            if at + ch.len_utf8() > most || written > most_written {
++            if at > most || written > most_written {
+                 break;
+             }
+             end = at + ch.len_utf8();

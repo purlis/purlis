@@ -561,31 +561,18 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
                 .filter_map(|path| path.as_str().map(std::path::PathBuf::from))
                 .collect()
         };
-        let tools = |tool: &str| -> Vec<std::path::PathBuf> {
-            let opens = format!("{tool}(/");
-            settings
-                .deny
-                .iter()
-                .filter_map(|rule| rule.strip_prefix(opens.as_str())?.strip_suffix("/**)"))
-                .map(std::path::PathBuf::from)
-                .collect()
-        };
-        let (tools_read, tools_edit) = (tools("Read"), tools("Edit"));
         for file in &files {
             // As the kernel names it, which is what the compiler hands the harness.
             let named = super::real(file);
             assert!(under(&listed("denyRead"), &named), "{os:?}: {named:?}");
             assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
-            assert!(
-                under(&tools_read, &named),
-                "{os:?}: {named:?}: {:?}",
-                settings.deny
-            );
-            assert!(
-                under(&tools_edit, &named),
-                "{os:?}: {named:?}: {:?}",
-                settings.deny
-            );
+            for tool in ["Read", "Edit"] {
+                assert!(
+                    claude::tool_holds(&settings.deny, tool, &format!("/{}", named.display())),
+                    "{os:?}: {tool}: {named:?}: {:?}",
+                    settings.deny
+                );
+            }
         }
 
         // Codex and opencode run inside purlis's own wrap, on macOS and on Linux (#1040).
@@ -670,10 +657,10 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
     for store in &stores {
         // As the kernel names it, which is what the compiler hands the harness.
         let named = super::real(store).display().to_string();
-        assert!(listed("denyRead").contains(&named), "{named}");
-        assert!(listed("denyWrite").contains(&named), "{named}");
+        assert!(claude::list_holds(&listed("denyRead"), &named), "{named}");
+        assert!(claude::list_holds(&listed("denyWrite"), &named), "{named}");
         assert!(
-            settings.deny.contains(&format!("Read(/{named}/**)")),
+            claude::tool_holds(&settings.deny, "Read", &format!("/{named}/**")),
             "{named}: {:?}",
             settings.deny
         );
@@ -925,9 +912,7 @@ fn every_harness_denies_a_chat_the_record_of_what_was_refused_while_nobody_was_t
             assert!(under(&listed("denyRead"), &named), "{os:?}: {named:?}");
             assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
             assert!(
-                settings
-                    .deny
-                    .contains(&format!("Read(/{}/**)", folder.display())),
+                claude::tool_holds(&settings.deny, "Read", &format!("/{}/**", folder.display())),
                 "{os:?}: {named:?}: {:?}",
                 settings.deny
             );
@@ -1041,9 +1026,7 @@ fn every_harness_denies_a_chat_the_store(
             assert!(under(&listed("denyRead"), &named), "{os:?}: {named:?}");
             assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
             assert!(
-                settings
-                    .deny
-                    .contains(&format!("Read(/{}/**)", folder.display())),
+                claude::tool_holds(&settings.deny, "Read", &format!("/{}/**", folder.display())),
                 "{os:?}: {named:?}: {:?}",
                 settings.deny
             );
@@ -1195,9 +1178,9 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                     .collect();
                 for path in &held {
                     let named = super::real(path).display().to_string();
-                    assert!(deny_write.contains(&named.as_str()), "{named}");
+                    assert!(claude::list_holds(&deny_write, &named), "{named}");
                     assert!(
-                        settings.deny.contains(&format!("Edit(/{named})")),
+                        claude::tool_holds(&settings.deny, "Edit", &format!("/{named}")),
                         "{named}: {:?}",
                         settings.deny
                     );
@@ -1316,9 +1299,9 @@ fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
                     .collect();
                 for path in &records {
                     let named = super::real(path).display().to_string();
-                    assert!(deny_write.contains(&named.as_str()), "{named}");
+                    assert!(claude::list_holds(&deny_write, &named), "{named}");
                     assert!(
-                        settings.deny.contains(&format!("Edit(/{named})")),
+                        claude::tool_holds(&settings.deny, "Edit", &format!("/{named}")),
                         "{named}: {:?}",
                         settings.deny
                     );
@@ -1573,9 +1556,9 @@ fn every_harness_denies_a_chat_making_purlis_s_state_records_under_another_spell
                         .collect();
                     for path in &records {
                         let cased = claude::either_case(&super::real(path).display().to_string());
-                        assert!(deny_write.contains(&cased.as_str()), "{cased} missing");
+                        assert!(claude::list_holds(&deny_write, &cased), "{cased} missing");
                         assert!(
-                            settings.deny.contains(&format!("Edit(/{cased}/**)")),
+                            claude::tool_holds(&settings.deny, "Edit", &format!("/{cased}/**")),
                             "Edit(/{cased}/**) missing"
                         );
                     }
@@ -1590,9 +1573,9 @@ fn every_harness_denies_a_chat_making_purlis_s_state_records_under_another_spell
                     for state in [".charter", ".purlis"] {
                         let path = super::real(&plane.path().join(state).join("handbacks"));
                         let cased = claude::either_case(&path.display().to_string());
-                        assert!(deny_read.contains(&cased.as_str()), "{cased} read");
+                        assert!(claude::list_holds(&deny_read, &cased), "{cased} read");
                         assert!(
-                            settings.deny.contains(&format!("Read(/{cased}/**)")),
+                            claude::tool_holds(&settings.deny, "Read", &format!("/{cased}/**")),
                             "Read(/{cased}/**) missing"
                         );
                     }
@@ -1818,10 +1801,10 @@ fn a_chat_whose_hooks_run_outside_is_handed_what_waits_denied_for_reading_and_wr
     for store in &stores {
         // As the kernel names it, which is what the compiler hands the harness.
         let named = super::real(store).display().to_string();
-        assert!(listed("denyRead").contains(&named), "{named}");
-        assert!(listed("denyWrite").contains(&named), "{named}");
+        assert!(claude::list_holds(&listed("denyRead"), &named), "{named}");
+        assert!(claude::list_holds(&listed("denyWrite"), &named), "{named}");
         assert!(
-            settings.deny.contains(&format!("Read(/{named}/**)")),
+            claude::tool_holds(&settings.deny, "Read", &format!("/{named}/**")),
             "{named}: {:?}",
             settings.deny
         );
@@ -2157,7 +2140,7 @@ fn claude_code_and_codex_both_deny_a_chat_the_forge_etag_store() {
         "{read_denied}"
     );
     assert!(
-        settings.deny.contains(&format!("Read(/{etags}/**)")),
+        claude::tool_holds(&settings.deny, "Read", &format!("/{etags}/**")),
         "{:?}",
         settings.deny
     );
@@ -2516,9 +2499,9 @@ fn a_claude_code_chat_is_held_from_writing_a_program_held_by_its_own_name() {
     .expect("compiles");
     let deny_write = deny_write(&settings);
     let program = program.display().to_string();
-    assert!(deny_write.contains(&program), "{deny_write:?}");
+    assert!(claude::list_holds(&deny_write, &program), "{deny_write:?}");
     assert!(
-        settings.deny.contains(&format!("Edit(/{program})")),
+        claude::tool_holds(&settings.deny, "Edit", &format!("/{program}")),
         "{:?}",
         settings.deny
     );
@@ -2630,14 +2613,10 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
             vec!["/p/.charter/vaults".to_owned()]
         )
     );
+    // One rule a tool: Claude Code holds what is below a path its rule names (#6961).
     assert_eq!(
         by_path(&settings.deny)[3..],
-        [
-            "Read(//p/.charter/vaults)",
-            "Read(//p/.charter/vaults/**)",
-            "Edit(//p/.charter/vaults)",
-            "Edit(//p/.charter/vaults/**)",
-        ]
+        ["Read(//p/.charter/vaults)", "Edit(//p/.charter/vaults)"]
     );
 }
 
@@ -2655,10 +2634,7 @@ fn a_path_denied_to_write_stays_readable() {
         filesystem_by_path(&settings),
         (Vec::new(), vec!["/p/.charter/app".to_owned()])
     );
-    assert_eq!(
-        by_path(&settings.deny)[3..],
-        ["Edit(//p/.charter/app)", "Edit(//p/.charter/app/**)"]
-    );
+    assert_eq!(by_path(&settings.deny)[3..], ["Edit(//p/.charter/app)"]);
 }
 
 /// A Claude Code sandbox's `denyWrite`, the later-code class's included.
@@ -2677,14 +2653,8 @@ fn a_claude_code_chat_is_held_from_writing_every_later_code_name_at_any_depth() 
     let deny_write = deny_write(&settings);
     let held = |glob: &str| {
         deny_write.iter().any(|it| it == glob)
-            && settings
-                .deny
-                .iter()
-                .any(|it| *it == format!("Edit({glob})"))
-            && settings
-                .deny
-                .iter()
-                .any(|it| *it == format!("Edit({glob}/**)"))
+            && claude::tool_holds(&settings.deny, "Edit", glob)
+            && claude::tool_holds(&settings.deny, "Edit", &format!("{glob}/**"))
     };
     // Every name the class holds with what is below it, for the commands Claude Code's sandbox
     // runs and for its own Edit and Write tools. A name that holds only itself (`.git`) is the
@@ -2693,7 +2663,7 @@ fn a_claude_code_chat_is_held_from_writing_every_later_code_name_at_any_depth() 
         let glob = format!("**/{}", planted.path);
         match planted.reach {
             Reach::AndBelow => assert!(held(&glob), "{glob} is not held: {settings:?}"),
-            Reach::Itself => assert!(!deny_write.contains(&glob), "{glob}"),
+            Reach::Itself => assert!(!claude::list_holds(&deny_write, &glob), "{glob}"),
         }
     }
     // Each harness's project config that can start code or change a server's command or
@@ -3081,7 +3051,7 @@ fn claude_code_is_denied_submodule_git_config_and_hook_managers_at_any_depth() {
         "**/.githooks",
     ] {
         assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
-        assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
+        assert!(claude::tool_holds(&settings.deny, "Edit", glob), "{glob}");
     }
 }
 
@@ -3106,7 +3076,7 @@ fn a_clone_the_app_made_for_a_chat_keeps_its_git_config_hooks_and_editor_setting
         "**/.git/modules/**/info/attributes",
     ] {
         assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
-        assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
+        assert!(claude::tool_holds(&settings.deny, "Edit", glob), "{glob}");
     }
 }
 
@@ -3124,7 +3094,7 @@ fn a_git_folders_glab_settings_and_older_remote_definitions_are_denied_to_every_
         "**/.git/modules/**/glab-cli",
     ] {
         assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
-        assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
+        assert!(claude::tool_holds(&settings.deny, "Edit", glob), "{glob}");
     }
     for path in [
         "/p/repo/.git/glab-cli/config.yml",
@@ -3595,7 +3565,10 @@ fn every_harness_is_compiled_against_the_plane_as_the_kernel_names_it() {
     };
     let write = settings.sandbox["filesystem"]["denyWrite"].to_string();
     assert!(
-        write.contains(&real.join(".charter/app").display().to_string()),
+        claude::list_holds(
+            &deny_write(settings),
+            &real.join(".charter/app").display().to_string()
+        ),
         "{write}"
     );
     assert!(!write.contains(&linked.display().to_string()), "{write}");
@@ -3782,7 +3755,7 @@ fn a_project_root_whose_git_is_a_file_keeps_it_as_it_was() {
     let settings = claude_settings_in(&root, &root);
     let path = root.join(".git").display().to_string();
     assert!(
-        !settings.deny.contains(&format!("Edit(/{path}/**)")),
+        !claude::tool_holds(&settings.deny, "Edit", &format!("/{path}/**")),
         "{:?}",
         settings.deny
     );
@@ -3827,9 +3800,9 @@ fn a_project_root_whose_git_is_a_link_records_no_held_git() {
 /// Whether `settings` deny writing `path`, to Claude Code's sandbox and to its Edit tool.
 fn claude_holds(settings: &claude::Settings, path: &Path) -> bool {
     let path = path.display().to_string();
-    deny_write(settings).contains(&path)
-        && settings.deny.contains(&format!("Edit(/{path})"))
-        && settings.deny.contains(&format!("Edit(/{path}/**)"))
+    claude::list_holds(&deny_write(settings), &path)
+        && claude::tool_holds(&settings.deny, "Edit", &format!("/{path}"))
+        && claude::tool_holds(&settings.deny, "Edit", &format!("/{path}/**"))
 }
 
 #[test]
@@ -4657,7 +4630,7 @@ fn claude_code_allows_a_chat_no_unix_socket_but_its_hook_socket() {
         without.deny.split_off(settings.deny.len()),
         folders
             .iter()
-            .flat_map(|folder| [format!("Edit(/{folder})"), format!("Edit(/{folder}/**)")])
+            .map(|folder| format!("Edit(/{folder})"))
             .collect::<Vec<_>>()
     );
     assert_eq!(without, settings);
@@ -6311,7 +6284,7 @@ fn a_denied_path_is_denied_under_its_data_volume_spelling_too() {
         for name in [written, twin] {
             assert!(deny_write(&settings).iter().any(|it| it == name), "{name}");
             assert!(
-                settings.deny.contains(&format!("Edit(/{name})")),
+                claude::tool_holds(&settings.deny, "Edit", &format!("/{name}")),
                 "{name}: {:?}",
                 settings.deny
             );
@@ -6620,10 +6593,7 @@ fn the_reporting_socket_s_folder_is_denied_under_every_name_it_has() {
         deny_write(&reporting).split_off(deny_write(&settings).len()),
         names
     );
-    let edits: Vec<String> = names
-        .iter()
-        .flat_map(|name| [format!("Edit(/{name})"), format!("Edit(/{name}/**)")])
-        .collect();
+    let edits: Vec<String> = names.iter().map(|name| format!("Edit(/{name})")).collect();
     assert_eq!(reporting.deny.split_off(settings.deny.len()), edits);
     // The one socket a chat may reach is still the one the kernel names.
     assert_eq!(
@@ -8194,13 +8164,16 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
                         .unwrap_or_default()
                 };
                 let deny_write = listed("denyWrite");
-                assert!(deny_write.contains(&named), "{named}: {deny_write:?}");
+                assert!(
+                    claude::list_holds(&deny_write, &named),
+                    "{named}: {deny_write:?}"
+                );
                 assert!(
                     deny_write.contains(&claude::either_case(&named)),
                     "{named} in either case: {deny_write:?}"
                 );
                 assert!(
-                    settings.deny.contains(&format!("Edit(/{named})")),
+                    claude::tool_holds(&settings.deny, "Edit", &format!("/{named}")),
                     "{named}: {:?}",
                     settings.deny
                 );
@@ -8354,6 +8327,8 @@ impl Repositories {
     /// The settings a Claude Code chat in the plane starts with, compiled as a start compiles
     /// them, at the full sandbox; and at the floor, from the same denials.
     fn claude_settings(&self) -> Vec<(Level, claude::Settings)> {
+        // No Claude Code settings of this machine's: the write roots are purlis's alone.
+        claude::TEST_PERSONS_FILES.with(|it| *it.borrow_mut() = Some(Vec::new()));
         let machine = machine(Os::MacOs);
         let applied =
             compiled_anyway(Harness::ClaudeCode, self.plane.path(), &machine).expect("compiles");
@@ -8457,14 +8432,35 @@ fn a_claude_code_chat_denies_a_path_in_each_repository_s_git_folder() {
     let repositories = Repositories::laid_out();
     for (level, settings) in repositories.claude_settings() {
         let deny_write = deny_write_as_written(&settings);
+        // Where a command may write: the chat's folder (the plane) and what it is allowed.
+        let mut roots = vec![repositories.plane.path().to_path_buf()];
+        roots.push(super::real(repositories.plane.path()));
+        roots.extend(
+            settings.sandbox["filesystem"]["allowWrite"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|it| it.as_str())
+                .map(std::path::PathBuf::from),
+        );
         for pin in repositories.pins() {
             // As a plain path, never a glob: Claude Code pins every folder above a denied path,
-            // so the git folder and the folders that hold it stay where they are.
+            // so the git folder and the folders that hold it stay where they are. Only where a
+            // command may write: elsewhere Claude Code refuses every write, and the pin holds
+            // nothing more (the person's ruling, 2026-11-16, #6961).
             for name in [pin.clone(), super::real(&pin)] {
+                let written = roots.iter().any(|root| name.starts_with(root));
                 let name = name.display().to_string();
-                assert!(deny_write.contains(&name), "{level:?}: {name} not denied");
-                for rule in [format!("Edit(/{name})"), format!("Edit(/{name}/**)")] {
-                    assert!(settings.deny.contains(&rule), "{level:?}: {rule}");
+                assert_eq!(
+                    claude::list_holds(&deny_write, &name),
+                    written,
+                    "{level:?}: {name} denied where a command may write it, and only there"
+                );
+                for rule in [format!("/{name}"), format!("/{name}/**")] {
+                    assert!(
+                        claude::tool_holds(&settings.deny, "Edit", &rule),
+                        "{level:?}: Edit({rule})"
+                    );
                 }
             }
         }

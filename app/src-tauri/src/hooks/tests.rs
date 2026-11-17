@@ -7,7 +7,7 @@ use super::*;
 fn asking(session: u32) -> Hooks {
     // Spelled the way a window hands one back; only the registry mints one for real.
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     hooks.board().opened(session, None, None);
     assert!(
         apply(
@@ -69,7 +69,7 @@ fn ours() -> purlis_core::hookwire::Speaker {
 fn claude_code_chat(session: u32) -> Hooks {
     use purlis_core::state::{Event, Waits};
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     hooks.board().opened(
         session,
         Some(purlis_core::harness::Harness::ClaudeCode),
@@ -368,6 +368,7 @@ fn a_harness_started_by_hand_in_a_shell_tab_is_told_to_the_window_with_its_plane
         &at,
         Arc::new(|_| panic!("a harness started by hand moves no chat")),
         Arc::new(move |told| tx.lock().unwrap().send(told).unwrap()),
+        purlis_core::sandbox::timings::Timings::production(),
     )
     .expect("listening");
 
@@ -404,8 +405,14 @@ fn a_permission_prompt_is_told_to_the_window_and_the_window_s_answer_goes_back_o
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::listening_on(plane.clone(), &at, Arc::new(|_| {}), Arc::new(|_| {}))
-        .expect("listening");
+    let hooks = Hooks::listening_on(
+        plane.clone(),
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let (tx, told) = std::sync::mpsc::channel();
     let tx = Mutex::new(tx);
     hooks.tell_asks_to(Arc::new(move |asking| {
@@ -474,8 +481,14 @@ fn a_harness_prompt_is_written_raised_and_answered_with_the_answer_the_registry_
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -552,8 +565,14 @@ fn every_hook_call_the_channel_hears_is_one_event_in_the_hosts_log() {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -698,7 +717,9 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
 #[test]
 fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
     use purlis_core::hookwire::SandboxBlocked;
-    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    ));
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::new(Mutex::new(Vec::new()));
     let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
         let told = Arc::clone(&told);
@@ -734,8 +755,10 @@ fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
 #[test]
 fn the_repeats_held_back_are_told_once_their_minute_is_over() {
     use purlis_core::hookwire::SandboxBlocked;
-    use purlis_core::sandboxblock::{Repeated, THROTTLE_WINDOW};
-    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+    use purlis_core::sandboxblock::Repeated;
+    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    ));
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
     let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
         let told = Arc::clone(&told);
@@ -768,7 +791,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
         &slot,
         &repeated,
         other.into(),
-        now + THROTTLE_WINDOW,
+        now + purlis_core::sandbox::timings::Timings::production().throttle_window(),
     );
     let counted = counted.lock().unwrap();
     assert_eq!(
@@ -787,7 +810,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
 fn held_back_repeats_are_told_as_a_chat_ends_and_as_the_project_is_let_go_of() {
     use purlis_core::sandboxblock::Repeated;
     let plane: PlaneId = serde_json::from_value(serde_json::json!("/tmp/repeats")).unwrap();
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     let counted: Arc<Mutex<Vec<Repeated>>> = Arc::default();
     hooks.when_repeated({
         let counted = Arc::clone(&counted);
@@ -827,7 +850,9 @@ fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
-    let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::default()));
+    let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    )));
     let slot: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(Some({
         let told = Arc::clone(&told);
         Arc::new(move |block| told.lock().unwrap().push(block))
@@ -1851,8 +1876,14 @@ fn a_touched_path_reaches_the_window_and_no_file_the_host_writes() {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -1944,8 +1975,14 @@ fn what_a_chat_is_doing_reaches_the_window_from_its_hooks_and_no_file_the_host_w
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -2079,6 +2116,7 @@ fn a_refused_commit_puts_the_chat_in_the_queue_saying_why() {
         &at,
         Arc::new(move |moved| tx.lock().unwrap().send(moved).unwrap()),
         Arc::new(|_| panic!("a refused commit is not a harness started by hand")),
+        purlis_core::sandbox::timings::Timings::production(),
     )
     .expect("listening");
     hooks.board().opened(3, Some(Harness::ClaudeCode), None);
@@ -2122,6 +2160,7 @@ fn a_chat_refused_an_update_of_the_root_raises_nothing_for_the_person() {
         &at,
         Arc::new(move |moved| tx.lock().unwrap().send(moved).unwrap()),
         Arc::new(|_| panic!("a refused update is not a harness started by hand")),
+        purlis_core::sandbox::timings::Timings::production(),
     )
     .expect("listening");
     hooks.board().opened(3, Some(Harness::ClaudeCode), None);
@@ -2178,7 +2217,7 @@ use purlis_core::hookwire::Conversation;
 /// A board holding chat 7 running `harness`, under `conversation` where charter chose one.
 fn running(harness: Harness, conversation: Option<&str>) -> Hooks {
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     hooks
         .board()
         .opened(7, Some(harness), conversation.map(str::to_owned));
@@ -2311,8 +2350,14 @@ fn a_line_spooled_while_no_host_listened_is_recorded_when_the_project_is_opened_
     };
     // The app issued chat 7 its token and quit; the chat's hook spooled its call.
     {
-        let gone = Hooks::listening_on(plane.clone(), &at, Arc::new(|_| {}), Arc::new(|_| {}))
-            .expect("listening");
+        let gone = Hooks::listening_on(
+            plane.clone(),
+            &at,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            purlis_core::sandbox::timings::Timings::production(),
+        )
+        .expect("listening");
         let token = gone.token_for(7);
         gone.stop();
         let delivered =
@@ -2320,8 +2365,14 @@ fn a_line_spooled_while_no_host_listened_is_recorded_when_the_project_is_opened_
         assert_eq!(delivered, purlis_core::hookwire::Delivered::Spooled(1));
     }
 
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -2363,8 +2414,14 @@ fn a_closed_chats_spool_is_drained_into_the_log_and_its_key_does_not_outlive_it(
         at_ms: 0,
         skill: None,
     };
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -2424,8 +2481,14 @@ fn an_open_with_no_event_log_drops_an_ended_chats_key_unless_its_line_waits() {
     let spooling = spool::dir_for(&at.socket);
     let id = |token: &purlis_core::hookwire::ChatToken| spool::SpoolKey::of(token).id();
     let (idle, waiting) = {
-        let gone = Hooks::listening_on(plane.clone(), &at, Arc::new(|_| {}), Arc::new(|_| {}))
-            .expect("listening");
+        let gone = Hooks::listening_on(
+            plane.clone(),
+            &at,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            purlis_core::sandbox::timings::Timings::production(),
+        )
+        .expect("listening");
         let tokens = (gone.token_for(7), gone.token_for(8));
         gone.stop();
         tokens
@@ -2446,8 +2509,14 @@ fn an_open_with_no_event_log_drops_an_ended_chats_key_unless_its_line_waits() {
     };
     spool::append(&spooling, 8, &waiting, &call).expect("spooled");
 
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     hooks.drain_spool();
 
     let keys = std::fs::read_to_string(spooling.join(spool::KEYS)).expect("the keys");
@@ -2482,8 +2551,14 @@ fn a_running_chats_spooled_line_is_recorded_once_the_chat_is_heard_from_again() 
         at_ms: 0,
         skill: None,
     };
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -2550,8 +2625,14 @@ fn the_run_a_clear_begins_is_told_with_the_conversation_it_moved_to() {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -2624,6 +2705,7 @@ fn a_codex_chat_is_followed_onto_the_conversation_it_names_before_the_window_is_
             let _ = tx.lock().unwrap().send(known.lock().unwrap().clone());
         }),
         Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
     )
     .expect("listening");
     let into = Arc::clone(&followed);
@@ -2665,8 +2747,14 @@ fn a_clear_begins_a_run_the_record_is_told_even_with_no_event_log() {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let (tx, rx) = std::sync::mpsc::channel();
     let tx = Mutex::new(tx);
     hooks.when_it_follows(Arc::new(move |_, id, run| {
@@ -3135,7 +3223,13 @@ fn a_secret_exec_that_waited_for_the_board_reads_input_handed_on_while_it_is_hea
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    let hooks = Hooks::relayed(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    );
     hooks.exec_secrets_with(Arc::new(|_ask, reader, mut writer, _told| {
         for line in reader.lines() {
             let _ = writeln!(writer, "ran {}", line.unwrap_or_default());
@@ -3405,7 +3499,13 @@ fn routed_hearing() -> (Hooks, Arc<Relayed>, Arc<Relayed>) {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    let hooks = Hooks::relayed(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    );
     hooks.exec_secrets_with(Arc::new(|ask, reader, mut writer, _told| {
         let _ = writeln!(writer, "chat {}", ask.chat);
         for line in reader.lines() {
@@ -3590,7 +3690,13 @@ fn a_window_that_takes_the_hosts_board_is_handed_what_each_chat_last_said() {
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    let hooks = Hooks::relayed(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    );
     let taken: Arc<Mutex<Vec<ChatSaid>>> = Arc::default();
     hooks.when_said_taken({
         let taken = Arc::clone(&taken);
@@ -3625,8 +3731,14 @@ fn a_human_edit_is_one_event_in_the_log_of_its_file_and_lines_and_never_its_cont
         socket: dir.path().join("app").join("hooks.sock"),
     };
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks =
-        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
     let logs = dir.path().join("events");
     hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
@@ -3710,7 +3822,7 @@ fn a_secret_ask_raised_before_the_event_log_opens_is_written_before_its_answer()
     use purlis_core::secrets::ask::{Answer, Asks};
     let dir = tempfile::tempdir().expect("a directory");
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     let asks = Asks::new(dir.path());
     asks.telling(hooks.secret_asks_told(dir.path()));
     asks.hold(secret_need(), std::time::Duration::ZERO, &mut |_| {});
@@ -3745,7 +3857,7 @@ fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
     use purlis_core::secrets::ask::Asks;
     let dir = tempfile::tempdir().expect("a directory");
     let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-    let hooks = Hooks::deaf(plane);
+    let hooks = Hooks::deaf(plane, purlis_core::sandbox::timings::Timings::production());
     let asks = Arc::new(Asks::new(dir.path()));
     let (heard, hearing) = std::sync::mpsc::channel();
     // A host that, while it writes, reads the window's asks back: it must not wait on them.
@@ -3767,6 +3879,55 @@ fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
         .expect("the host heard the raise, and read the asks back, without waiting on them");
     assert_eq!(kind, "secret_ask.raised");
     assert_eq!(open, Some(1));
+}
+
+/// **Hooks wait by the timings they are built with, from before their first line** (T1.1-01):
+/// listening, relayed or deaf, the throttle a block is heard through is already the given one
+/// when the listener starts, so nothing heard before the plane is wired (a spooled block
+/// included) is throttled by production's and then forgotten.
+#[test]
+fn hooks_are_built_with_their_timings_and_never_swap_the_throttle_after_listening() {
+    use purlis_core::sandbox::timings::Timings;
+    let timings = Timings::scaled(0.5);
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let listening = Hooks::listening_on(
+        plane.clone(),
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        timings,
+    )
+    .expect("listening");
+    let relayed_at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("relayed").join("hooks.sock"),
+    };
+    let relayed = Hooks::relayed(
+        plane.clone(),
+        &relayed_at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        timings,
+    );
+    let deaf = Hooks::deaf(plane, timings);
+
+    for (which, hooks) in [
+        ("listening", &listening),
+        ("relayed", &relayed),
+        ("deaf", &deaf),
+    ] {
+        assert_eq!(hooks.timings(), timings, "{which}'s timings");
+        assert_eq!(
+            hooks.throttle_window(),
+            timings.throttle_window(),
+            "{which}'s throttle"
+        );
+    }
 }
 
 /// Q321 and Q325 (ADR 0067 §5 class 6): a refused read or write of the person's own credential

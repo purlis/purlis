@@ -885,6 +885,9 @@ pub struct Chats {
     /// 2026-10-16): their program's end is no end of the chat, and is taken as none.
     replacing: Mutex<std::collections::HashSet<u32>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// How much each chat's harness settings weighed where they were past
+    /// `limits.harness_settings_bytes` as it started, by session (#6961): what its tab says once.
+    heavy_settings: Mutex<HashMap<u32, usize>>,
     /// The chats told what their settings left out on the way to a runner, by session, so a chat
     /// started again says it once (#3867).
     left_out_told: Mutex<std::collections::HashSet<u32>>,
@@ -927,6 +930,9 @@ pub struct Chats {
     never_started: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
     /// What the app ships that a chat is armed with: its own `charter` and its own plugin.
     shipped: crate::Shipped,
+    /// The one value its chats' confinements wait by where the window starts them (T1.1-01):
+    /// the project's, as its hooks hold it ([`Self::timed_by`]).
+    timings: purlis_core::sandbox::timings::Timings,
     open: Mutex<HashMap<u32, Running>>,
     /// The open chats whose program has ended, their tabs still open (#4202).
     ended: Mutex<std::collections::HashSet<u32>>,
@@ -1860,6 +1866,7 @@ impl Chats {
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            heavy_settings: Mutex::new(HashMap::new()),
             left_out_told: Mutex::new(std::collections::HashSet::new()),
             older_asks: purlis_core::burst::Burst::default(),
             level_asks: purlis_core::burst::Burst::default(),
@@ -1877,6 +1884,7 @@ impl Chats {
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
+            timings: purlis_core::sandbox::timings::Timings::production(),
             open: Mutex::new(HashMap::new()),
             ended: Mutex::new(std::collections::HashSet::new()),
             front: Mutex::new(None),
@@ -2065,6 +2073,14 @@ impl Chats {
     /// An older Claude Code's sentence among them is said, from now on, for this process
     /// (#1699): marked here, as the tab shows it, so a chat that never reached its tab does not
     /// use the one telling up.
+    /// How much chat `session`'s harness settings weighed where they were past
+    /// `limits.harness_settings_bytes` as it started (#6961), taken once: what its tab says.
+    pub fn heavy_settings(&self, session: u32) -> Option<u32> {
+        lock(&self.heavy_settings)
+            .remove(&session)
+            .map(|bytes| u32::try_from(bytes).unwrap_or(u32::MAX))
+    }
+
     pub fn start_notes(&self, session: u32) -> Vec<String> {
         if let Some(version) = lock(&self.older_in_notes).remove(&session) {
             purlis_core::sandbox::older_shown(version);
@@ -2611,6 +2627,18 @@ impl Chats {
     /// different program's idea of these events.
     pub fn arming_with(&mut self, shipped: crate::Shipped) {
         self.shipped = shipped;
+    }
+
+    /// **Its chats' confinements wait by `timings`** (T1.1-01): the project's one value, the
+    /// same its hooks' throttle and the window's end of a hold read. Set before any chat starts.
+    pub fn timed_by(&mut self, timings: purlis_core::sandbox::timings::Timings) {
+        self.timings = timings;
+    }
+
+    /// The one value its chats' confinements wait by (T1.1-01).
+    #[cfg(test)]
+    pub fn timings(&self) -> purlis_core::sandbox::timings::Timings {
+        self.timings
     }
 
     /// Keeps each open chat's skill stamp in `skills_now`, which the app's sweep of the levels'
@@ -5071,6 +5099,7 @@ impl Chats {
         }
         // Taken back as a start that did not happen: what was announced of it goes.
         lock(&self.late_notes).remove(&session);
+        lock(&self.heavy_settings).remove(&session);
         lock(&self.skills_missing).remove(&session);
         lock(&self.older_in_notes).remove(&session);
         if let Some(gone) = lock(&self.never_started).as_ref() {
@@ -5768,11 +5797,15 @@ impl Chats {
             )),
             reached: Some(reached),
             asks,
+            timings: self.timings,
         };
         // On a runner, the runner confines it, and its proxy is heard as the one it names.
         let (hearing, composed_hearing) = if on_the_runner {
             (
-                purlis_core::sandbox::plan::Hearing::default(),
+                purlis_core::sandbox::plan::Hearing {
+                    timings: self.timings,
+                    ..purlis_core::sandbox::plan::Hearing::default()
+                },
                 Some(hearing),
             )
         } else {
@@ -5947,6 +5980,9 @@ impl Chats {
         // What a start needs the gate for is done: the session host's answer is waited for
         // with no place held (felt speed round 2, H4).
         crate::restoring::hand_back_here();
+        // Settings past `limits.harness_settings_bytes` are said on the chat's tab (#6961): near
+        // its check's limit, a harness's auto mode refuses unasked what it would have checked.
+        let heavy = purlis_core::hoststart::settings_past_the_budget(&all).filter(|_| !reattaching);
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
             Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
@@ -6299,6 +6335,9 @@ impl Chats {
         }
         if !late.is_empty() && !reattaching {
             lock(&self.late_notes).insert(session, late);
+        }
+        if let Some(bytes) = heavy {
+            lock(&self.heavy_settings).insert(session, bytes);
         }
         match skills_missing {
             Some(missing) => lock(&self.skills_missing).insert(session, missing),

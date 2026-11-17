@@ -1,0 +1,13 @@
+#!/bin/sh
+# The fake harness, as `opencode` on the PATH (T1.1-04): purlis starts it with the words it starts the
+# real one with, and asks it `--version` with none of the chat's variables, so where they are not
+# set it finds the built fake and the pinned version's turn script itself.
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../../.." && pwd)
+bin=${FAKE_HARNESS_BIN:-$repo/target/debug/fake-harness}
+script=$FAKE_HARNESS_SCRIPT
+if [ -z "$script" ]; then
+  version=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$repo/tests/fixtures/harness-versions/opencode.txt" | head -1)
+  script=$repo/tests/recordings/recorded/opencode/$version/turns.json
+fi
+exec "$bin" --script "$script" --dialect opencode "$@"

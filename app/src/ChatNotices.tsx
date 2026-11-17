@@ -165,7 +165,46 @@ export function ByHandBanner({
 
 /** What a chat's start found to say (ADR 0085, V35): its lines, and the branches whose
  *  `AGENTS.md` they name as the operator's and hidden by charter's line (NO-4). */
-export type StartNotes = { notes: readonly string[]; agentsMd: readonly TheirAgentsMd[] };
+export type StartNotes = {
+  notes: readonly string[];
+  agentsMd: readonly TheirAgentsMd[];
+  /** How many bytes its harness settings weigh, where that is past what purlis keeps them under
+   *  (`limits.harness_settings_bytes`, #6961). */
+  heavySettings?: number;
+};
+
+/** The cause of {@link SettingsNearTheLimitNotice}: what its dismissal is kept by. */
+export const SETTINGS_NEAR_THE_LIMIT = "harness-settings-near-limit";
+
+/**
+ * **A chat whose harness settings near the limit of its auto mode's check** (#6961, Sentry
+ * PURLIS-APP-J): a harness's auto mode hands what the settings say to a check whose input has a
+ * limit, and past it every action the check would decide is refused, nobody asked. What weighs
+ * them is the plane: each branch folder and workspace is a path the chat is held from. So the way
+ * out is fewer of them, said in the line, and Dismiss.
+ */
+export function SettingsNearTheLimitNotice({
+  bytes,
+  onDismiss,
+}: {
+  bytes: number;
+  onDismiss: () => void;
+}) {
+  const kb = Math.round(bytes / 1024);
+  return (
+    <Notice
+      cause={SETTINGS_NEAR_THE_LIMIT}
+      at="pane"
+      tone="trouble"
+      label="This chat's settings near their limit"
+      onDismiss={onDismiss}
+    >
+      This chat&apos;s settings weigh {kb} KB, near the limit of what its harness&apos;s auto mode
+      checks. Past it, auto mode refuses what it would have checked, without asking. Remove the
+      branch folders you no longer need, then start the chat again.
+    </Notice>
+  );
+}
 
 /** `held` with `note` said on chat `session`'s tab after its start's own lines, once (#2013):
  *  a line purlis has to say while the chat runs, such as its browsers ending. */
@@ -377,6 +416,8 @@ export function ChatNotices({
   /** The blocks an Allow on this pane answered: what that Allow said stands, though the
    *  registry lists the block no more. */
   const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
+  /** Whether the person dismissed what its settings' weight says (#6961): for this chat. */
+  const [heavyDismissed, setHeavyDismissed] = useState(false);
   // A block that is an ask is drawn while the registry lists it among the pane's, or once this
   // pane answered it; one that asks nothing (purlis's own, policy's) is said as it comes.
   const shown = (blocks ?? []).filter((block) => {
@@ -429,8 +470,14 @@ export function ChatNotices({
         }
       />
       {byHand && <ByHandBanner note={byHand} onAnswer={onByHand} />}
-      {startNotes && (
+      {startNotes && (startNotes.notes.length > 0 || startNotes.agentsMd.length > 0) && (
         <StartNotice plane={plane} found={startNotes} onDismiss={onDismissStartNote} />
+      )}
+      {startNotes?.heavySettings !== undefined && !heavyDismissed && (
+        <SettingsNearTheLimitNotice
+          bytes={startNotes.heavySettings}
+          onDismiss={() => setHeavyDismissed(true)}
+        />
       )}
       <PersonaGrantsNotice
         plane={plane}

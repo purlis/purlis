@@ -1313,6 +1313,24 @@ fn recorded(
 /// level of which it is denied writing, goes through a file.
 pub const SETTINGS_IN_A_WORD: usize = 120 * 1024;
 
+/// **The most a chat's harness settings should weigh** (T1.1-71, #6961): 256 KB. A harness may
+/// send what its settings say to a check of its own whose input has a limit (Claude Code's auto
+/// mode takes about a megabyte in all, its own lists among it); past it, the check is off for the
+/// chat and every action that needs it is refused unasked. A quarter of that leaves its own lists
+/// room. The future policy key `limits.harness_settings_bytes`, default 256 KB (Q307 Q6, #6969).
+pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
+
+/// **How much the `--settings` JSON on `args` weighs, where it is past
+/// [`HARNESS_SETTINGS_BYTES`]**: what the chat's tab says, with a way out (#6961). `None` for
+/// lighter settings, a path, or none at all.
+pub fn settings_past_the_budget(args: &[String]) -> Option<usize> {
+    let at = args.iter().position(|word| word == "--settings")? + 1;
+    args.get(at)
+        .filter(|json| json.starts_with('{'))
+        .map(String::len)
+        .filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
+}
+
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
 /// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
 /// integrity path.

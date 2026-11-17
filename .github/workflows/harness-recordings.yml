@@ -1,0 +1,58 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: harness recordings
+
+# **The real harnesses, recorded against the stand-in model** (M74.1, T1.1-03): on a pull request
+# into `phase-1-proven`, each harness at its pinned version runs the covering script under
+# purlis's wrap at Full (`.github/actions/harness-recordings`). The run uploads what it recorded,
+# so a changed recording is checked in from the run that made it, never by hand
+# (`tests/recordings/README.md`). It fails when a harness did not record. The nightly re-records,
+# at the pinned versions and at each harness's latest release, are entries of
+# `.github/nightly-on-phase-1-proven.txt`.
+
+on:
+  pull_request:
+    branches: [phase-1-proven]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: harness-recordings-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  record:
+    name: harness recording (${{ matrix.harness }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [claude, codex, opencode]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Twice, and the two the same: a recording is deterministic, or it flaps as false drift.
+      - name: The recording
+        uses: ./.github/actions/harness-recordings
+        with:
+          harnesses: ${{ matrix.harness }}
+          twice: "true"
+      - name: What it recorded
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: harness-recording-${{ matrix.harness }}
+          path: |
+            target/recordings/
+            target/recordings-again/
+          if-no-files-found: ignore

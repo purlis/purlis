@@ -3,22 +3,22 @@
 
 use super::*;
 
-/// What each harness answered `--version` with, recorded on 2026-10-15.
+/// What each harness answered `--version` with, recorded on 2026-11-16.
 const RECORDED: [(&str, &str, &str); 3] = [
     (
         "claude",
         include_str!("../../../../../tests/fixtures/harness-versions/claude.txt"),
-        "2.1.300",
+        "2.1.325",
     ),
     (
         "codex",
         include_str!("../../../../../tests/fixtures/harness-versions/codex.txt"),
-        "0.147.0",
+        "0.169.0",
     ),
     (
         "opencode",
         include_str!("../../../../../tests/fixtures/harness-versions/opencode.txt"),
-        "1.18.33",
+        "1.19.5",
     ),
 ];
 

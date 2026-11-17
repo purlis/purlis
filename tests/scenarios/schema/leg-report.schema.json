@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One record of a leg's report (T1.1-05)",
+  "description": "Every leg writes one record per entry it ran (ticket 6 writes them, ticket 8 judges them), one JSON object per line. A cell or an escape names its dialect and protection; a fixture or an e2e entry names its test; not_run says why (skipped-for-timing among the reasons).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "row", "os", "leg", "verdict"],
+  "properties": {
+    "kind": {"enum": ["cell", "escape", "fixture", "e2e"]},
+    "row": {"description": "The matrix row or escape entry id.", "type": "string", "minLength": 1},
+    "test": {"description": "The fixture test's or e2e spec's name.", "type": "string", "minLength": 1},
+    "dialect": {"enum": ["claude", "codex", "opencode"]},
+    "protection": {"enum": ["none", "basic", "full"]},
+    "os": {"enum": ["linux", "macos"]},
+    "leg": {"enum": ["fake", "claude_sandbox", "real_wrap", "live", "fixture", "e2e"]},
+    "timings": {"enum": ["scaled", "production"]},
+    "verdict": {"enum": ["pass", "fail", "expected_fail", "not_run"]},
+    "reason": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"enum": ["cell", "escape"]}}},
+      "then": {"required": ["dialect", "protection"]}
+    },
+    {
+      "if": {"properties": {"kind": {"enum": ["fixture", "e2e"]}}},
+      "then": {"required": ["test"]}
+    },
+    {
+      "description": "An escape's failure means the refused action happened: it is never pinned (Q301).",
+      "if": {"properties": {"kind": {"const": "escape"}}},
+      "then": {"properties": {"verdict": {"not": {"const": "expected_fail"}}}}
+    },
+    {
+      "if": {"properties": {"verdict": {"const": "not_run"}}},
+      "then": {"required": ["reason"]}
+    }
+  ]
+}

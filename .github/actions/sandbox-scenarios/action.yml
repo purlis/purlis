@@ -1,0 +1,76 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The sandbox scenarios on this runner** (M74.1, T1.1-09), Linux or macOS: what the scenarios
+# need, the test build, then each set asked for through `tools/sandbox-scenarios.sh`, with no
+# retries. `sandbox-scenarios.yml`'s jobs and `.github/actions/nightly` run it; the job's checkout
+# comes first, and a red run's artifacts are the caller's to upload (`target/sandbox-scenarios/`,
+# `target/nextest/ci/junit.xml`).
+name: Sandbox scenarios
+description: Builds purlis-app's tests and runs the sandbox scenario sets asked for, with no retries.
+inputs:
+  suite:
+    description: "true to run the suite (every scenario but the production-timing entries)."
+    required: false
+    default: "true"
+  production-timings:
+    description: "true to run the production-timing entries (ticket 54)."
+    required: false
+    default: "false"
+  stress:
+    description: "true to run each set 20 times under a CPU stress (the stress-x20 label)."
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    # Tauri's build dependencies for purlis-app's test binary, and the programs a sandboxed chat
+    # runs through on Linux (bubblewrap and socat, as the `rust` job installs them).
+    - name: Tauri's Linux build dependencies, and the sandbox's programs
+      if: runner.os == 'Linux'
+      uses: ./.github/actions/linux-packages
+      with:
+        tauri: true
+        packages: bubblewrap socat${{ inputs.stress == 'true' && ' stress-ng' || '' }}
+    - name: The CPU stress
+      if: runner.os == 'macOS' && inputs.stress == 'true'
+      shell: bash
+      run: brew install stress-ng
+    - uses: ./.github/actions/rust-toolchain
+    # Only `main` saves a Rust cache: restore what its `rust` job (Linux) or `app` job (macOS) saved.
+    # The `rust` job keys its cache by its id, so `rust` here is that key.
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: ${{ runner.os == 'macOS' && 'app' || 'rust' }}
+        save-if: false
+    # The same nextest `ci.yml`'s NEXTEST_VERSION names (`sandbox-scenarios.test.mjs` holds them equal).
+    - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      with:
+        tool: cargo-nextest@0.9.146
+    # tauri::generate_context! reads the built frontend, so it has to exist before a build. Built
+    # in a step of its own, so the step timings say how much of the job is the build.
+    #
+    # On Linux the build is the `rust` job's own (`--workspace`), so the features Cargo resolves,
+    # and so the objects its cache holds, are the same. The scenarios run with the same packages
+    # (`CARGO_PACKAGES`, `tools/sandbox-scenarios.sh`), so the run builds nothing more.
+    - name: Build the scenarios
+      shell: bash
+      env:
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+      run: |
+        mkdir -p app/dist
+        cargo nextest run $CARGO_PACKAGES --locked --no-run
+    - name: The sandbox scenarios
+      if: inputs.suite == 'true'
+      shell: bash
+      env:
+        STRESS: ${{ inputs.stress }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+      run: tools/sandbox-scenarios.sh suite
+    - name: The production-timing entries
+      if: inputs.production-timings == 'true'
+      shell: bash
+      env:
+        STRESS: ${{ inputs.stress }}
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios' }}
+      run: tools/sandbox-scenarios.sh production-timings

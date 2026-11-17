@@ -28,6 +28,7 @@ use super::hosts::Host;
 use super::internal::Internal;
 use super::plan::{Asking, Here, Plan, Telling};
 use super::reach::{By, by_of, layer_of};
+use super::timings::Timings;
 
 /// Who hears what a confinement's proxy does: the host, which pushes it to the window.
 pub type Tell = Arc<dyn Fn(SandboxTold) + Send + Sync + 'static>;
@@ -67,7 +68,8 @@ pub struct Hosted {
 /// telling `tell` what it does, and holding a connection while the person is asked only while
 /// `askable` says so; a host already allowed in the project's files is found as the window's
 /// board finds one. Or why it was not started, in a sentence. `alone` is what the window allowed
-/// a chat the host composes for it alone ([`Planned::Composed`]); nothing, for any other.
+/// a chat the host composes for it alone ([`Planned::Composed`]); nothing, for any other. Every
+/// timer of the confinement, its board's and its proxy's, waits by `timings` (T1.1-01).
 pub fn start(
     project_path: &Path,
     confine: &session::Confine,
@@ -75,6 +77,7 @@ pub fn start(
     alone: &[u16],
     tell: Tell,
     askable: Askable,
+    timings: &Timings,
 ) -> Result<Hosted, String> {
     let planned_as = Plan::from_wire(&confine.plan)?;
     let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
@@ -101,7 +104,7 @@ pub fn start(
                 != crate::enforcement::Mode::Enforce)
                 .then(|| -> super::asks::Answered { Arc::new(|_: &str, _: u16| {}) }),
         }
-        .board()
+        .board(timings)
     });
     let telling = Telling {
         refusals: egress::Refusals::telling({
@@ -140,6 +143,7 @@ pub fn start(
             },
         )),
         asks: board.clone(),
+        timings: *timings,
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),

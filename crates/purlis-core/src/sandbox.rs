@@ -5449,7 +5449,12 @@ impl Applied {
     /// each folder from `cwd` up to the project root denied too ([`manifests_held`], #1336).
     /// The one form a chat is armed with and opened under, so both name the same folders.
     pub fn form_in(&self, cwd: Option<&Path>) -> Form {
-        self.with(self.chain(cwd))
+        let mut form = self.with(self.chain(cwd));
+        // Each git folder pin written only where a command in `cwd` may write (#6961).
+        if let (Form::ClaudeCode(settings), Some(cwd)) = (&mut form, cwd) {
+            *settings = settings.written_in(cwd);
+        }
+        form
     }
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
@@ -5587,6 +5592,7 @@ impl Applied {
                     refusals,
                     reached,
                     asks,
+                    timings: timings::Timings::production(),
                 })
             })
             .transpose()
@@ -5638,6 +5644,7 @@ impl Applied {
                 refusals,
                 reached,
                 asks: None,
+                timings: timings::Timings::production(),
             },
         )
     }
@@ -6000,7 +6007,7 @@ impl Confinement {
     pub fn start_keeping(hosts: Vec<String>, refusals: egress::Refusals) -> std::io::Result<Self> {
         Self::serving(egress::Serving {
             refusals,
-            ..egress::Serving::of(reach::Reach::open(hosts))
+            ..egress::Serving::of(reach::Reach::open(hosts), &timings::Timings::production())
         })
     }
 
@@ -8704,6 +8711,9 @@ pub mod compile_cache;
 pub mod confined;
 pub mod door;
 pub mod egress;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod grant;
 pub mod held;
 pub mod hosted;
@@ -8713,6 +8723,8 @@ pub mod kubeconfig;
 pub mod level_why;
 pub mod local;
 pub mod localport;
+#[cfg(any(test, feature = "test-support"))]
+pub mod names;
 pub mod nat64;
 pub mod opencode;
 pub mod persona;
@@ -8729,6 +8741,7 @@ pub mod services;
 pub mod signin;
 pub mod sshproxy;
 pub mod team;
+pub mod timings;
 pub mod tools;
 pub mod tunnel;
 #[cfg(unix)]

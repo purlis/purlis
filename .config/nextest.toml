@@ -64,5 +64,10 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.
+# Compiles purlis-core (check) without test-support, cold on a fresh runner (T1.1-02).
+[[profile.ci.overrides]]
+filter = "package(purlis-scenarios) & binary(resolver_seam) & test(=the_resolver_seam_does_not_compile_without_test_support)"
+slow-timeout = { period = "60s", terminate-after = 15 }
+
 [profile.ci.junit]
 path = "junit.xml"

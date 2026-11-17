@@ -137,7 +137,10 @@ fn the_floor_still_denies_the_vaults_and_what_a_later_program_runs() {
     let full = Denied::of(&root, &machine);
     for denial in full.paths.iter().filter(|d| d.access == Access::ReadWrite) {
         let path = denial.path.display().to_string();
-        assert!(deny_read.contains(&path), "{path} in {deny_read:?}");
+        assert!(
+            claude::list_holds(&deny_read, &path),
+            "{path} in {deny_read:?}"
+        );
     }
     for name in [".git/hooks", ".claude/settings.json"] {
         assert!(
@@ -446,7 +449,10 @@ fn the_homes_docker_folders_are_never_written_by_a_chat_and_a_projects_own_docke
     let deny_write = strings(&settings_of(&floor).sandbox["filesystem"]["denyWrite"]);
     for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
         let path = home.join(folder).display().to_string();
-        assert!(deny_write.contains(&path), "{path} in {deny_write:?}");
+        assert!(
+            claude::list_holds(&deny_write, &path),
+            "{path} in {deny_write:?}"
+        );
     }
     assert!(
         deny_write.contains(&kept.display().to_string()),
@@ -538,7 +544,7 @@ fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entr
     // Claude Code holds what is below a path it is given, so a holder held as an entry alone is
     // not given to it: what is beside each `bin` stays written.
     let holder = home.join(".docker").display().to_string();
-    assert!(!deny_write.contains(&holder), "{deny_write:?}");
+    assert!(!claude::list_holds(&deny_write, &holder), "{deny_write:?}");
 }
 
 /// The checked copies of Docker's settings purlis makes for each run of `docker` hold the
@@ -1226,9 +1232,7 @@ fn every_projects_purlis_files_are_held_by_name_and_no_projects_vault_is_read() 
             "{state}"
         );
         assert!(
-            settings
-                .deny
-                .contains(&format!("Read(//**/{state}/vaults/**)")),
+            claude::tool_holds(&settings.deny, "Read", &format!("//**/{state}/vaults/**")),
             "{state}"
         );
     }
@@ -1297,7 +1301,7 @@ fn the_persons_own_claude_code_settings_are_never_written_at_either_level() {
         for file in ["settings.json", "settings.local.json"] {
             let path = format!("/nonexistent-home/op/.claude/{file}");
             // Its commands: not writable, by name or because nothing grants the home.
-            let named = deny_write.contains(&path);
+            let named = claude::list_holds(&deny_write, &path);
             let granted = allow_write
                 .iter()
                 .any(|allowed| allowed == "/" || path.starts_with(&format!("{allowed}/")));
@@ -1308,7 +1312,7 @@ fn the_persons_own_claude_code_settings_are_never_written_at_either_level() {
             // Its Edit tool: refused by name.
             let rule = format!("Edit(/{path})");
             assert!(
-                settings.deny.contains(&rule),
+                claude::rule_holds(&settings.deny, &rule),
                 "{level:?}: no {rule} in {:?}",
                 settings.deny
             );
@@ -1509,9 +1513,11 @@ fn the_floor_holds_the_plugin_and_git_hooks_a_chat_is_armed_with() {
                         "{deny_write:?}"
                     );
                     assert!(
-                        settings
-                            .deny
-                            .contains(&format!("Edit(/{}/**)", folder.display())),
+                        claude::tool_holds(
+                            &settings.deny,
+                            "Edit",
+                            &format!("/{}/**", folder.display())
+                        ),
                         "{:?}",
                         settings.deny
                     );

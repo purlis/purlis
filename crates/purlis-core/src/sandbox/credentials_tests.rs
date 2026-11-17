@@ -316,7 +316,6 @@ fn credentials_is_the_sixth_class_and_lifted_with_the_others() {
 fn a_claude_code_chat_held_from_credentials_never_reads_one() {
     let (_dir, home) = home();
     let machine = machine(&home, Os::MacOs);
-    let ssh = home.join(".ssh").display().to_string();
     for manifest in HELD {
         let (_plane, _cwd, applied) = started(manifest, Harness::ClaudeCode, &machine);
         let level = applied.level();
@@ -342,15 +341,10 @@ fn a_claude_code_chat_held_from_credentials_never_reads_one() {
                 denied(&secret) && !read_again(&secret),
                 "{manifest}: {secret} is read: {deny_read:?} {allow_read:?}"
             );
-            // And its own Read tool, which Claude Code's sandbox does not hold.
-            let held_by = if secret.starts_with(&format!("{ssh}/")) {
-                format!("{}/**", &ssh[1..])
-            } else {
-                secret[1..].to_owned()
-            };
+            // And its own Read tool, which Claude Code's sandbox does not hold: a rule on it or
+            // on a folder above it, as Claude Code reads one (#6961).
             assert!(
-                deny.iter()
-                    .any(|rule| rule.starts_with("Read(") && rule.contains(&held_by)),
+                claude::tool_holds(&deny, "Read", &format!("/{secret}")),
                 "{level:?}: no Read rule for {secret}"
             );
         }
