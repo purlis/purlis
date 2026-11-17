@@ -15,8 +15,9 @@
 //! writes to the chat's settings file ([`crate::hoststart::settings_in_a_file`]). The plane is
 //! shaped like a large real one: many workspaces, each with clones and many branch folders (each
 //! a repository whose git folder a chat is denied), personas, and the plane's state under both of
-//! its spellings, at the full sandbox. On macOS each denied path also has its
-//! `/System/Volumes/Data` name, and every path held under each spelling its either-case copy.
+//! its spellings, under the `strict` template (Q308) at the full sandbox. On macOS each denied
+//! path also has its `/System/Volumes/Data` name, and every path held under each spelling its
+//! either-case copy.
 
 use std::fs;
 use std::path::Path;
@@ -65,15 +66,15 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
-/// A large plane at `root`, at the full sandbox: [`WORKSPACES`] workspaces of two clones and
-/// [`BRANCH_FOLDERS`] branch folders each, [`PERSONAS`] personas, and the plane's state under
-/// both spellings. What is denied in the state is denied by path, there or not, so its folders
-/// alone.
+/// A large plane at `root`, under the `strict` template (Q308) at the full sandbox:
+/// [`WORKSPACES`] workspaces of two clones and [`BRANCH_FOLDERS`] branch folders each,
+/// [`PERSONAS`] personas, and the plane's state under both spellings. What is denied in the state
+/// is denied by path, there or not, so its folders alone.
 pub(crate) fn a_large_plane(root: &Path) {
     fs::write(root.join("charter.toml"), "").unwrap();
     fs::write(
         root.join("purlis.toml"),
-        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n",
+        "[policy]\ntemplate = \"strict\"\n\n[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n",
     )
     .unwrap();
     for state in [".purlis", ".charter"] {
