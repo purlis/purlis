@@ -9709,9 +9709,9 @@ nav.piece-files-head {
   flex: 0 0 auto;
 }
 
-/* **A narrow head keeps the site readable** (#6989, #6990): the counts of pages and downloads
-   say their numbers alone ("2 of 3", "3"), each still named whole, so the site keeps room for
-   its host beside the pane's own actions. */
+/* **A narrow head keeps the site readable** (#6989, #6990): the counts of pages, downloads and
+   secrets say their numbers alone ("2 of 3", "3"), each still named whole, so the site keeps
+   room for its host beside the pane's own actions. */
 .browser-head {
   container: browser-head / inline-size;
 }

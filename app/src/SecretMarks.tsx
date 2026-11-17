@@ -71,8 +71,12 @@ export function SecretMarks({ secrets }: { secrets: readonly SecretFilled[] }) {
             icon={<KeyRound />}
             tooltip="Names only: purlis never shows a value."
             data-testid="secret-marks"
+            // Named whole, while a narrow head shows its number alone (#6990,
+            // `browser-count-word`).
+            aria-label={secretsCounted(secrets.length)}
           >
-            {secretsCounted(secrets.length)}
+            {secrets.length}
+            <span className="browser-count-word"> secrets</span>
           </Button>
           <PopoverDialog aria-label="Secrets purlis filled on this site">
             <ul className="browser-secrets-list">
