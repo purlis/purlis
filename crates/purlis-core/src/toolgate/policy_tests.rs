@@ -184,15 +184,21 @@ fn the_arms_that_exist_because_of_the_wrap_hold_under_every_template() {
             ))),
             &crate::sandbox::policy::Locks::none(),
         );
+        let modes = |family| resolved.mode(family);
+        let gate = super::Gate {
+            modes: &modes,
+            logged: std::cell::RefCell::default(),
+        };
         for arm in [
             Arm::RootUpdate,
             Arm::CloneUpdate,
             Arm::ProjectGit,
             Arm::BranchGit,
         ] {
-            let family = arm.family().expect("a family");
+            // Even where the template's level is no sandbox (`open`): a person's own level may
+            // still wrap the chat (the review of #7105).
             assert_eq!(
-                resolved.mode(family),
+                gate.mode(arm),
                 Mode::Enforce,
                 "{} {}",
                 template.word(),

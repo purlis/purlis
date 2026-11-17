@@ -590,8 +590,9 @@ use crate::view::{Limits, Views};
 /// 1.91 has a window name the families its resolution of the project's policy does not enforce
 /// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
 /// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
-/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host before
-/// 1.91 reads no families, and enforces both, as before.
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. An older
+/// host reads no families, and enforces both, as before; a runner applies its own locks over
+/// them.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 91,

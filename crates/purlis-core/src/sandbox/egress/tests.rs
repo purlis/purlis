@@ -2000,9 +2000,15 @@ fn with_network_not_enforced_a_host_kept_blocked_is_refused_on_the_next_attempt(
 /// reaches it.
 #[test]
 fn with_network_not_enforced_a_confined_proxy_still_refuses_a_host_nothing_lists() {
+    // One of its questions is being answered, so it is not quiet: what it refuses, it refuses
+    // for what the question names.
     let (proxy, told) = lifting_with(none(), |serving| super::Serving {
-        confined: true,
-        ..serving
+        network: serving.network,
+        asking: Some(std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1))),
+        ..super::Serving::confined(
+            Vec::new(),
+            std::sync::Arc::new(super::ProviderAddresses::of(Vec::new())),
+        )
     });
     let said = status(
         &mut to(&proxy),

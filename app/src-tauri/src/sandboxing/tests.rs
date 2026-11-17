@@ -3640,10 +3640,15 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
     let dir = tempfile::tempdir().expect("a project");
     let root = dir.path().canonicalize().expect("real");
     std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("its manifest");
-    let planes = crate::planes::Planes::telling(
-        std::sync::Arc::new(|_| {}),
-        crate::Shipped::default(),
-        None,
+    // Every grant is audited before it is kept: an event log to write it in.
+    let events = tempfile::tempdir().expect("an event log's folder");
+    let planes = keeping_events_for_tests(
+        crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        ),
+        &events.path().join("events"),
     );
     let plane = planes.open(&root);
     let held = planes.held(&plane).expect("it is open");
