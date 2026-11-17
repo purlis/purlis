@@ -28,7 +28,8 @@ const HELD: &[&str] = &[
     "gh api -X POST repos/o/r/git/refs -f sha=abc123",
     "gh api -X POST repos/o/r/git/refs --input body.json",
     "gh api -X PATCH repos/o/r/git/refs/heads/$B -f sha=abc123",
-    "glab api -X PATCH projects/1/git/refs/heads/main -f sha=abc123",
+    "glab api -X DELETE projects/1/repository/branches/main",
+    "glab api -X POST projects/1/repository/commits -f branch=main -f commit_message=m",
     "x=$(gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc123 | head -1)",
 ];
 

@@ -335,6 +335,15 @@ fn segment_reason(
     {
         return Some(said);
     }
+    // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
+    // command with any words after it, so it is unreadable outright (#7131).
+    if program_built_by_the_shell(&prog) {
+        return Some(format!(
+            "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
+             command this is. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
+    }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
     if prog.contains(['$', '`']) {
@@ -401,18 +410,21 @@ fn segment_reason(
             if args.iter().any(|a| a == "--tags" || a == "--follow-tags") {
                 return Some(format!("{fix}`--tags`/`--follow-tags` pushes tags."));
             }
-            // A flag whose name the shell fills in could be `--tags` (#7124).
-            if let Some(flag) = args.iter().find(|a| flag_name_filled_in(a)) {
+            // A flag whose name the shell fills in could be `--tags` (#7124), and one whose
+            // value it fills in is no better read (#7131).
+            if let Some(flag) = args.iter().find(|a| push_flag_filled_in(a)) {
                 return Some(format!(
                     "{fix}The flag `{flag}` is filled in by the shell, and could push tags. \
                      {WRITE_IT_OUT}"
                 ));
             }
-            // Defence in depth: a tag that already existed locally.
-            if args.iter().any(|a| a.starts_with("refs/tags/")) {
+            // Defence in depth: a tag that already existed locally, or a refspec whose
+            // destination is a tag (`HEAD:refs/tags/v1`, #7131).
+            let ends: Vec<&str> = words.iter().skip(1).map(|w| refspec_end(w)).collect();
+            if ends.iter().any(|end| end.starts_with("refs/tags/")) {
                 return Some(format!("{fix}This pushes a tag ref."));
             }
-            if words.iter().skip(1).any(|w| version_tag_re().is_match(w)) {
+            if ends.iter().any(|end| version_tag_re().is_match(end)) {
                 return Some(format!("{fix}This pushes what looks like a version tag."));
             }
         }
@@ -536,10 +548,57 @@ fn filled_in_command_word<'a>(name: &str, words: &[&'a str]) -> Option<&'a str> 
     }
 }
 
-/// Whether a word is a flag whose name, before any `=`, the shell fills in: `--$(echo tags)`,
-/// but not `--force-with-lease=main:$SHA` (#7124).
-fn flag_name_filled_in(word: &str) -> bool {
-    word.starts_with('-') && merge::opaque(word.split('=').next().unwrap_or(word))
+/// Whether a `git push` flag is one the shell fills in, its name (`--$(echo tags)`, #7124) or
+/// its value (`--repo=$T`, #7131). `--force-with-lease=main:$SHA` only says what the remote
+/// must hold, so its value may be filled in.
+fn push_flag_filled_in(word: &str) -> bool {
+    word.starts_with('-') && !word.starts_with("--force-with-lease=") && merge::opaque(word)
+}
+
+/// The refs a refspec pushes to, as the remote reads it: `HEAD:refs/tags/v1` is `refs/tags/v1`,
+/// `+main:main` is `main`, and a ref with no `:` is its own destination (#7131).
+fn refspec_end(spec: &str) -> &str {
+    spec.rsplit(':')
+        .next()
+        .unwrap_or(spec)
+        .trim_start_matches('+')
+}
+
+/// Whether a program is one the shell builds, so its words cannot be read (#7131): its last
+/// path component holds a command substitution (`$(echo gh pr)`, `` `echo gh` ``), a brace
+/// expansion (`{gh,pr,merge,12}`) or a glob (`g[h]`). `$(git rev-parse --show-toplevel)/x.sh`
+/// is a path to `x.sh`, and `[` and `[[` are the test builtins.
+fn program_built_by_the_shell(prog: &str) -> bool {
+    if prog == "[" || prog == "[[" {
+        return false;
+    }
+    let mut last = String::new();
+    let mut chars = prog.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '/' => last.clear(),
+            '$' if chars.peek() == Some(&'(') => {
+                let mut depth = 0;
+                for c in chars.by_ref() {
+                    depth += match c {
+                        '(' => 1,
+                        ')' => -1,
+                        _ => 0,
+                    };
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                last.push('\u{0}');
+            }
+            '`' => {
+                chars.by_ref().find(|c| *c == '`');
+                last.push('\u{0}');
+            }
+            c => last.push(c),
+        }
+    }
+    last.contains('\u{0}') || last.contains(['*', '?', '[']) || merge::brace_expansion(&last)
 }
 
 /// **The commands the floor reads in a line** (#7092): each segment's own words, a

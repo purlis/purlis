@@ -12,3 +12,11 @@
   `POST git/refs` move `main` with no request, and were let through. A write to `main` or
   `master`, or to a ref whose branch purlis can't read, is now held in every mode; a feature
   branch's ref is not (Q330).
+- **More routes to the default branch and to a tag are held** (#7131). A ref path gh fills in
+  (`git/refs/heads/{branch}`), a GraphQL mutation that touches a ref, a branch or a tag
+  (`updateRef`, `createRef`, `createCommitOnBranch`, branch protection), a program the shell
+  builds (`$(echo gh pr) merge 12`, `{gh,} pr merge 12`, `g[h] pr merge 12`), renaming `main`,
+  making another branch the default, GitLab's branch delete, commit and protection endpoints,
+  `git push origin HEAD:refs/tags/v1`, and a `git push` flag whose value the shell fills in are
+  now held or refused unattended. This reading is an early warning; the forge credential is the
+  lock (#7133).
