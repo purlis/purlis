@@ -946,6 +946,7 @@ export const commands = {
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
 	agentIdentityReopen: __WINDOW_ONLY_RESULT,
+	agentIdentityCreateFromAddress: __WINDOW_ONLY_RESULT,
 	agentIdentityStand: __WINDOW_ONLY_RESULT,
 	agentIdentityLines: __WINDOW_ONLY_RESULT,
 	agentIdentityFinish: __WINDOW_ONLY_RESULT,

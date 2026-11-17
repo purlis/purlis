@@ -377,6 +377,7 @@ macro_rules! app_commands {
                 agentidentity::agent_identity_create,
                 agentidentity::agent_identity_create_cancel,
                 agentidentity::agent_identity_reopen,
+                agentidentity::agent_identity_create_from_address,
                 agentidentity::agent_identity_stand,
                 agentidentity::agent_identity_lines,
                 agentidentity::agent_identity_finish,
