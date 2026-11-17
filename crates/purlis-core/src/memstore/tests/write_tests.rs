@@ -6,7 +6,7 @@ use super::*;
 // The expectations here are what `charter.memstore.write` produced in a temp plane with
 // `stamp=datetime(2026, 3, 2, 9, 14)`.
 
-fn stamp() -> chrono::NaiveDateTime {
+fn stamp() -> jiff::civil::DateTime {
     "2026-03-02T09:14:00".parse().unwrap()
 }
 

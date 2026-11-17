@@ -1997,7 +1997,7 @@ pub fn note_if_signed(piece: &Piece, config: &Path) {
         host: repo.forge.host,
         repo: repo.path,
         commit: tip.to_owned(),
-        at: chrono::Utc::now().timestamp(),
+        at: jiff::Timestamp::now().as_second(),
     };
     if let Err(why) = crate::signingsetup::note_signed_push(config, push) {
         tracing::warn!("purlis: a signed push was not noted for the signing check: {why}");

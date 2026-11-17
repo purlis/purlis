@@ -630,7 +630,8 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
     }
     let title = words::scanned(&crate::memstore::title_in(path, &text));
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let date = crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
+    let date =
+        crate::memstore::memory_date(&text, &name).map(|d| d.strftime("%Y-%m-%d").to_string());
     Some(Change::Write {
         was: was.map(|was| was.id),
         row: Row {

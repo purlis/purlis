@@ -14,10 +14,8 @@ fn project() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 const ASKER_ID: &str = "01K6ASKER0000000000000000A";
@@ -480,5 +478,89 @@ fn the_closed_chats_are_every_record_but_those_open_again() {
     assert_eq!(
         closed.iter().map(|chat| chat.number).collect::<Vec<_>>(),
         [702]
+    );
+}
+
+// #6685's review: a row of the Chats list's filter opens its own chat, by its ULID, never by the
+// number typed, which more than one record may answer to where a number was dealt twice (#6740).
+
+#[test]
+fn a_closed_chat_is_found_by_its_ulid_where_a_newer_record_answers_to_its_number() {
+    let (_dir, root) = project();
+    const RESTARTED_ID: &str = "01K6CHATS0000000000000000D";
+    let restarted = ChatRecord {
+        number: 731,
+        id: RESTARTED_ID.to_owned(),
+        earlier: vec![702],
+        ended: "2026-11-12T11:00:00Z".to_owned(),
+        ..closed_702()
+    };
+    chatrecords::keep_all(&root, &[restarted.clone(), closed_702()]).unwrap();
+    assert_eq!(
+        by_number_in(&root, 702, &[]),
+        Found::Closed(Box::new(restarted.clone())),
+        "the newest record answers to the number"
+    );
+
+    assert_eq!(
+        by_id_in(&root, ORDINARY_ID, &[]),
+        Found::Closed(Box::new(closed_702()))
+    );
+    assert_eq!(
+        by_id_in(&root, RESTARTED_ID, &[]),
+        Found::Closed(Box::new(restarted))
+    );
+}
+
+#[test]
+fn a_closed_chat_is_found_by_its_ulid_where_a_task_s_record_names_its_number() {
+    // A task's chat 641 finished; another chat closed under 641 too.
+    let (_dir, root) = project();
+    let id = task_641(&root);
+    dispatchrecord::close(
+        &root,
+        &id,
+        report(Outcome::Done, "ok"),
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
+    let closed = ChatRecord {
+        number: 641,
+        ..closed_702()
+    };
+    chatrecords::keep(&root, &closed).unwrap();
+    assert!(matches!(by_number_in(&root, 641, &[]), Found::Ended(_)));
+
+    assert_eq!(
+        by_id_in(&root, ORDINARY_ID, &[]),
+        Found::Closed(Box::new(closed))
+    );
+}
+
+#[test]
+fn a_finished_task_s_chat_is_found_by_its_ulid_ended_with_its_record() {
+    let (_dir, root) = project();
+    let id = task_641(&root);
+    dispatchrecord::close(
+        &root,
+        &id,
+        report(Outcome::Done, "ok"),
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
+    assert!(matches!(by_id_in(&root, WORKER_ID, &[]), Found::Ended(_)));
+}
+
+#[test]
+fn a_chat_open_again_is_found_by_its_ulid_under_its_new_number() {
+    let (_dir, root) = project();
+    chatrecords::keep(&root, &closed_702()).unwrap();
+    assert_eq!(
+        by_id_in(&root, ORDINARY_ID, &[open_chat(760, ORDINARY_ID)]),
+        Found::Restarted { now: 760 }
+    );
+    assert_eq!(
+        by_id_in(&root, "01K6CHATS0000000000000000Z", &[]),
+        Found::NoChat
     );
 }

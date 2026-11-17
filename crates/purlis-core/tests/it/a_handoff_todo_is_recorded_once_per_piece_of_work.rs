@@ -17,7 +17,7 @@ fn alpha(tmp: &tempfile::TempDir) -> Workspace {
     Plane::open(tmp.path()).workspace("alpha").unwrap()
 }
 
-fn at() -> chrono::NaiveDateTime {
+fn at() -> jiff::civil::DateTime {
     "2026-05-04T11:32:17".parse().unwrap()
 }
 

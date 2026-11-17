@@ -56,7 +56,7 @@ fn send_after_the_hold() {
 /// Sends every held draft whose hold ended, and tells the windows if one left or came back.
 pub fn send_due() {
     let before = Reports::here(None).held();
-    Reports::here(None).send_held_due(chrono::Utc::now());
+    Reports::here(None).send_held_due(jiff::Timestamp::now());
     if Reports::here(None).held() != before {
         changed();
     }

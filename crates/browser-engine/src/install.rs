@@ -47,7 +47,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -136,7 +136,7 @@ pub struct Manifest {
     /// Chrome for Testing's version, such as `155.0.8059.79`.
     pub version: String,
     /// When this version was last known current.
-    pub issued: DateTime<Utc>,
+    pub issued: Timestamp,
     /// Each platform's archive.
     pub downloads: Vec<Download>,
 }
@@ -646,7 +646,7 @@ impl Engines {
         &self,
         settings: &EngineSettings,
         fetch: &dyn Fetch,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Ready, Refused> {
         if let EngineChoice::Machine(path) = &settings.engine {
             if !path.is_file() {
@@ -689,7 +689,7 @@ impl Engines {
         signature: &str,
         settings: &EngineSettings,
         fetch: &dyn Fetch,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Ready, Refused> {
         self.signer
             .verify(manifest, signature)
@@ -727,7 +727,7 @@ impl Engines {
         &self,
         settings: &EngineSettings,
         fetch: &dyn Fetch,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Ready, Refused> {
         let (manifest, bundle) = Self::published(fetch)?;
         self.update(&manifest, &bundle, settings, fetch, now)
@@ -900,11 +900,11 @@ fn private_dir(dir: &Path) -> io::Result<()> {
 }
 
 /// How long since `manifest` was issued; nothing when the clock reads earlier.
-fn behind(manifest: &Manifest, now: DateTime<Utc>) -> Duration {
-    (now - manifest.issued).to_std().unwrap_or_default()
+fn behind(manifest: &Manifest, now: Timestamp) -> Duration {
+    Duration::try_from(now.duration_since(manifest.issued)).unwrap_or_default()
 }
 
-fn age(manifest: &Manifest, settings: &EngineSettings, now: DateTime<Utc>) -> Age {
+fn age(manifest: &Manifest, settings: &EngineSettings, now: Timestamp) -> Age {
     let behind = behind(manifest, now);
     if behind < settings.warn_after {
         Age::Current

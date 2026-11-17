@@ -215,9 +215,8 @@ fn a_deprecated_skill_is_listed_after_the_rest() {
 fn logged(root: &Path, skill: &str, at: u64) {
     let dir = root.join("personas/_skills");
     std::fs::create_dir_all(&dir).unwrap();
-    let ts = crate::dispatch::stamp(
-        chrono::DateTime::from_timestamp(i64::try_from(at).unwrap(), 0).unwrap(),
-    );
+    let ts =
+        crate::dispatch::stamp(jiff::Timestamp::from_second(i64::try_from(at).unwrap()).unwrap());
     let row = serde_json::json!({
         "run": format!("run-{skill}"), "skill": skill, "started_by": "skill-tool", "ts": ts,
         "level": "project", "workspace": null,

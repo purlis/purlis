@@ -349,7 +349,7 @@ pub fn perform(
     root: &Path,
     asker: &Asker,
     write: &Write,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<Written, String> {
     if write.says_lines() {
         return Err(format!(
@@ -372,7 +372,7 @@ pub fn answer(
     root: &Path,
     asker: &Asker,
     write: &Write,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<Done, String> {
     if let crate::compat::Compat::ReadOnly(why) = crate::compat::read(root) {
         return Err(format!("nothing was written: {why}"));
@@ -461,9 +461,8 @@ pub fn answer(
             let relative = crate::files::named(root, branch, file).map_err(|e| e.to_string())?;
             let path = crate::checks::store_path(root, ws.name(), repo, piece.as_deref());
             guard(root, &path, None)?;
-            let when = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
-                .single()
-                .map_or_else(chrono::Utc::now, |local| local.with_timezone(&chrono::Utc));
+            let when = crate::wallclock::single(&jiff::tz::TimeZone::system(), now)
+                .unwrap_or_else(jiff::Timestamp::now);
             let done = match reporter {
                 None => crate::checks::report_inside(root, branch, &relative, when)?,
                 Some(reporter) => {
@@ -506,7 +505,7 @@ fn credit(
     write: &Write,
     to: &str,
     path: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) {
     let chat = asker.chat.to_string();
     crate::trace::record(
@@ -581,7 +580,7 @@ fn upkeep(
     root: &Path,
     asker: &Asker,
     write: &Write,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<Option<Upkept>, String> {
     use crate::memscope::Scope;
     use crate::personaverbs::upkeep as persona;
@@ -791,9 +790,8 @@ fn upkeep(
         Write::WorkspaceSnapshot { description, force } => {
             let ws = own_workspace(root, asker)?;
             guard(root, &ws.dir().join(crate::settings::workspace::FILE), None)?;
-            let when = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
-                .single()
-                .map_or_else(chrono::Utc::now, |local| local.with_timezone(&chrono::Utc));
+            let when = crate::wallclock::single(&jiff::tz::TimeZone::system(), now)
+                .unwrap_or_else(jiff::Timestamp::now);
             let code = crate::wscmd::snapshot::snapshot(
                 &crate::wscmd::snapshot::Request {
                     root,
@@ -847,12 +845,11 @@ fn create_workspace(
     root: &Path,
     name: &str,
     vision: Option<&str>,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     say: &mut dyn FnMut(crate::repocmd::Say),
 ) -> Result<u8, String> {
-    let now = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
-        .earliest()
-        .map_or_else(chrono::Utc::now, |at| at.with_timezone(&chrono::Utc));
+    let now = crate::wallclock::earliest(&jiff::tz::TimeZone::system(), now)
+        .unwrap_or_else(jiff::Timestamp::now);
     create_workspace_at(root, name, vision, &[], None, now, say)
 }
 
@@ -865,7 +862,7 @@ pub(crate) fn create_workspace_at(
     vision: Option<&str>,
     repos: &[String],
     hosts: Option<&[String]>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     say: &mut dyn FnMut(crate::repocmd::Say),
 ) -> Result<u8, String> {
     let shown_name = crate::shown::short(name);
@@ -912,7 +909,7 @@ pub fn remember_persona(
     owner: &str,
     text: &str,
     title: Option<&str>,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<PathBuf, String> {
     if owner != crate::contain::SHARED_PERSONA
         && let Some(refused) = crate::personas::name_refusal(root, owner)
@@ -947,7 +944,7 @@ fn held_persona_write(
     owner: &str,
     text: &str,
     title: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<PathBuf, String> {
     use crate::held::{Make, Store, Who};
     let link = |below: &str| {
@@ -996,7 +993,7 @@ fn held_persona_write(
     _owner: &str,
     _text: &str,
     _title: &str,
-    _now: chrono::NaiveDateTime,
+    _now: jiff::civil::DateTime,
 ) -> Result<PathBuf, String> {
     Err("persona memory is not written on this platform yet".to_owned())
 }

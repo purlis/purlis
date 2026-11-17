@@ -1260,7 +1260,7 @@ fn guidance_for(
         crate::active::WORKSPACE_ENV => Some(workspace.clone()),
         _ => None,
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let note = crate::briefing::piece_announcement(
         root,
         &serde_json::json!({"cwd": piece.display().to_string()}),

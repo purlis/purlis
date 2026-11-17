@@ -95,7 +95,7 @@ impl World {
             None,
             None,
             &Who::here(None, None, None),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             &mut |_| {},
         );
         assert_eq!(code, 0, "{name} was not cut");
@@ -130,7 +130,7 @@ impl World {
                 },
             },
             &git::Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         let said = match &answer {
             Answer::Said { lines, .. } => lines
@@ -223,7 +223,7 @@ fn a_folder_whose_branch_landed_by_a_squash_merge_is_removed_and_its_branch_kept
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "the lane was not cut");
@@ -310,7 +310,7 @@ fn a_squashed_branch_whose_folder_changed_since_is_kept() {
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0);
@@ -381,7 +381,7 @@ fn cut_from(world: &World, base: &str) -> PathBuf {
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "the lane was not cut");

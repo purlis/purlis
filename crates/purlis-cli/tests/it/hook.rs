@@ -1567,9 +1567,14 @@ fn every_hook_the_bundled_plugin_wires_answers_an_ordinary_call_with_exit_zero()
     // binary does not answer would refuse a tool call — or keep a session from ending — in
     // every chat. So each command is run exactly as the generated `hooks.json` spells it,
     // through `/bin/sh -c` as Claude Code runs it, with the variable the app sets.
+    // The guards ride on a chat's `--settings` since #7067, by the same word: the file of the
+    // whole registry holds them all, as the installed copy does.
     let plane = a_plane();
-    let doc: serde_json::Value =
-        serde_json::from_str(&purlis_core::plugin::hooks_json()).expect("the hooks file");
+    let doc: serde_json::Value = serde_json::from_str(&purlis_core::plugin::hooks_json_running(
+        purlis_core::plugin::plugin_command,
+        "",
+    ))
+    .expect("the hooks file");
     let mut ran = 0;
     for (event, groups) in doc["hooks"].as_object().expect("events") {
         for group in groups.as_array().expect("groups") {
@@ -1628,9 +1633,12 @@ fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_o
     // and no version from before the event has been run with the generated file (an open
     // measurement). So the `PermissionDenied` hook is an event of its own, holding that
     // word alone, and an older version that drops it keeps every other hook, the Bash guard
-    // first among them, which still answers.
-    let mut doc: serde_json::Value =
-        serde_json::from_str(&purlis_core::plugin::hooks_json()).expect("the hooks file");
+    // first among them, which still answers. Read in the file of the whole registry, as the
+    // installed copy holds it: an app chat's guards ride on its `--settings` (#7067).
+    let mut doc: serde_json::Value = serde_json::from_str(
+        &purlis_core::plugin::hooks_json_running(purlis_core::plugin::plugin_command, ""),
+    )
+    .expect("the hooks file");
     let words = |hooks: &serde_json::Value| -> Vec<String> {
         hooks
             .as_object()

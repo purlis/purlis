@@ -225,10 +225,9 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     }
 
     // 2. Every tool purlis's MCP server offers a chat.
-    let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 12)
+    let now = purlis_core::wallclock::day(2026, 10, 12)
         .unwrap()
-        .and_hms_opt(9, 0, 0)
-        .unwrap();
+        .at(9, 0, 0, 0);
     let place = Place::Workspace("alpha".into());
     let mut called = 0;
     for tool in &purlis_core::chattools::TOOLS {

@@ -4474,3 +4474,16 @@ fn a_podman_answering_dockers_client_is_told_by_its_engines_name() {
         "template: :1: can't evaluate field Components"
     ));
 }
+
+#[test]
+fn a_runner_container_has_no_restart_policy_so_the_next_chat_starts_it() {
+    // A runner that suspends itself exits as it means to (#2051), and Docker's `unless-stopped`
+    // or `always` would start it again at once, and on every boot of its machine, linked or not.
+    // A runner stopped by its machine's restart is started by the next chat's link instead
+    // (`Docker::resumed`), as a suspended one is (ADR 0078, amended 2026-11-17).
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
+    assert!(
+        !args.iter().any(|arg| arg.starts_with("--restart")),
+        "{args:?}"
+    );
+}

@@ -764,7 +764,7 @@ pub fn save_text(
 
 /// The manifest a workspace gets when it has none, as charter's own scaffold writes it.
 fn birth(ws: &Workspace) -> Map<String, Json> {
-    match ws.birth_manifest(chrono::Utc::now(), &crate::wscmd::ensure::author()) {
+    match ws.birth_manifest(jiff::Timestamp::now(), &crate::wscmd::ensure::author()) {
         Json::Object(doc) => doc,
         _ => Map::new(),
     }

@@ -1900,7 +1900,7 @@ fn create_it(root: &std::path::Path, ws: &str, vision: &str) -> Result<(), Strin
     if wscmd::workspace_dir_exists(root, ws) {
         return Err(format!("workspace '{ws}' already exists"));
     }
-    wscmd::ensure::ensure(root, ws, chrono::Utc::now(), &wscmd::ensure::author())?;
+    wscmd::ensure::ensure(root, ws, jiff::Timestamp::now(), &wscmd::ensure::author())?;
     // The vision is written into the workspace `ensure` just scaffolded.
     let plane_on_disk = purlis_core::workspaces::Plane::open(root);
     if let Ok(workspace) = plane_on_disk.workspace(ws) {
@@ -2319,7 +2319,9 @@ pub const KEPT_BLOCKED_LISTED: usize = 50;
 
 /// A time as the dispatch records write one: RFC 3339, in UTC, to the second.
 fn now_stamp() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 impl HeldDispatches {
@@ -2824,7 +2826,7 @@ fn dispatch_noting(
     // handoff's is the command's own stamp, with the asking chat named the way the person
     // sees it; where it works is the workspace that stamp's command named, so it has no line
     // of `on_a_branch` (D-T61-2).
-    let when = chrono::Local::now().naive_local();
+    let when = jiff::Zoned::now().datetime();
     let message = match (&wanted.moved, wanted.by) {
         (Some(moved), _) => handoff::delivered_noting(&moved.message, &asker, note.as_deref())
             .expect("the stamp was read a moment ago"),
@@ -3454,7 +3456,7 @@ fn dispatch_noting(
         )
         // By its stable id too: what its branch folder's one live writer is named by (#3901).
         .for_chat(held.chats().id_of(arrived.session));
-        if purlis_core::chatpiece::claim(root, cut, &who, chrono::Utc::now()).is_none() {
+        if purlis_core::chatpiece::claim(root, cut, &who, jiff::Timestamp::now()).is_none() {
             tracing::warn!("purlis: a dispatch's worktree was not logged as claimed");
         }
     }
@@ -3559,7 +3561,7 @@ fn held_handoff_todo(held: &Held, moved: &Moved) -> Option<String> {
         return None;
     }
     target
-        .add_todo(&text, chrono::Local::now().naive_local())
+        .add_todo(&text, jiff::Zoned::now().datetime())
         .err()
         .map(|why| {
             format!(

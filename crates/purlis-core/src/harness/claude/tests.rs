@@ -968,9 +968,12 @@ fn the_project_s_deny_and_ask_rules_are_carried_and_nothing_else_of_it() {
         assert!(rules("deny").contains(&"Bash(rm -rf *)".to_owned()));
         assert!(rules("ask").contains(&"Bash(git push *)".to_owned()));
         assert!(!rules("allow").contains(&"Bash(make *)".to_owned()));
-        // purlis's own hook only, and its own sandbox as compiled.
+        // purlis's own hooks only, and its own sandbox as compiled.
         let hooks = settings["hooks"].as_object().expect("hooks");
-        assert_eq!(hooks.keys().collect::<Vec<_>>(), ["PermissionRequest"]);
+        assert_eq!(
+            hooks.keys().collect::<Vec<_>>(),
+            ["PermissionRequest", "PreToolUse"]
+        );
         assert_eq!(settings["sandbox"]["enabled"], true);
     }
 }
@@ -2044,4 +2047,117 @@ fn project_settings_auto_mode_rules_leave_a_task_in_auto() {
         config.path().display().to_string(),
     )];
     assert!(settings_keep_auto_from_a_task(&settings_in(&chat), &[]).is_none());
+}
+
+/// The `--settings` an ordinary chat in an empty folder is armed with.
+fn armed_args() -> Vec<String> {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/purlis"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: false,
+            judging: false,
+            writes_its_piece: false,
+            runs_a_shell: false,
+            own: &[],
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    args
+}
+
+/// Each guard's word and its `onFailure`, in the order `args`'s `--settings` arms them.
+fn guards_failing(args: &[String]) -> Vec<(String, String)> {
+    let at = args
+        .iter()
+        .position(|word| word == "--settings")
+        .expect("--settings")
+        + 1;
+    let settings: serde_json::Value = serde_json::from_str(&args[at]).expect("JSON");
+    settings["hooks"]["PreToolUse"]
+        .as_array()
+        .expect("the guards")
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().expect("hooks").iter())
+        .map(|hook| {
+            let command = hook["command"].as_str().expect("a command");
+            (
+                command.rsplit(' ').next().unwrap_or_default().to_owned(),
+                hook["onFailure"].as_str().unwrap_or("absent").to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn pairs(list: [(&str, &str); 4]) -> Vec<(String, String)> {
+    list.iter()
+        .map(|(word, failure)| ((*word).to_owned(), (*failure).to_owned()))
+        .collect()
+}
+
+#[test]
+fn a_start_that_skips_the_policy_arms_every_guard_failing_closed() {
+    // #7067: a start that never loosens the guards to its policy runs them as `strict` does.
+    assert_eq!(
+        guards_failing(&armed_args()),
+        pairs([
+            ("pretooluse", "block"),
+            ("pretooluse-read", "block"),
+            ("pretooluse-edit", "block"),
+            ("pretooluse-dispatch", "block"),
+        ])
+    );
+}
+
+#[test]
+fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
+    use crate::enforcement::{Mode, Resolved, Settings};
+    let open = Resolved::of(
+        &Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
+        &crate::sandbox::policy::Locks::none(),
+    );
+    assert_eq!(
+        guards_failing(&under_policy(armed_args(), &open)),
+        pairs([
+            ("pretooluse", "continue"),
+            ("pretooluse-read", "continue"),
+            ("pretooluse-edit", "continue"),
+            ("pretooluse-dispatch", "continue"),
+        ])
+    );
+    assert_eq!(
+        guards_failing(&under_policy(armed_args(), &Resolved::all(Mode::Enforce))),
+        pairs([
+            ("pretooluse", "block"),
+            ("pretooluse-read", "block"),
+            ("pretooluse-edit", "continue"),
+            ("pretooluse-dispatch", "continue"),
+        ])
+    );
+}
+
+#[test]
+fn the_permission_hook_fails_open_under_every_policy() {
+    // #7067: a dead permission hook allows nothing; the pane asks, as with no answer.
+    let args = under_policy(
+        armed_args(),
+        &crate::enforcement::Resolved::all(crate::enforcement::Mode::Enforce),
+    );
+    let at = args
+        .iter()
+        .position(|word| word == "--settings")
+        .expect("--settings")
+        + 1;
+    let settings: serde_json::Value = serde_json::from_str(&args[at]).expect("JSON");
+    let hook = &settings["hooks"]["PermissionRequest"][0]["hooks"][0];
+    assert_eq!(hook["command"], "'/bin/purlis' hook permissionrequest");
+    assert!(hook.get("onFailure").is_none(), "{hook}");
 }

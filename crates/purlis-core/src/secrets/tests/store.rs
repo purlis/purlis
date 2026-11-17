@@ -55,8 +55,8 @@ fn vault(name: &str, provider: &str, config: Value) -> registry::Vault {
     }
 }
 
-fn day(s: &str) -> chrono::NaiveDate {
-    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn day(s: &str) -> jiff::civil::Date {
+    jiff::civil::Date::strptime("%Y-%m-%d", s).unwrap()
 }
 
 // ---------------------------------------------------------------------------------------------

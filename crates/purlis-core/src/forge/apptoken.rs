@@ -649,11 +649,11 @@ struct Kept {
 }
 
 /// A time by the wall clock.
-type Wall = chrono::DateTime<chrono::Utc>;
+type Wall = jiff::Timestamp;
 
 /// `from` and `left` later.
 fn after(from: Wall, left: Duration) -> Wall {
-    from + chrono::Duration::from_std(left).unwrap_or(chrono::Duration::zero())
+    from + jiff::SignedDuration::try_from(left).unwrap_or(jiff::SignedDuration::ZERO)
 }
 
 /// The tokens kept, over every chat.
@@ -679,10 +679,10 @@ pub fn ends_so_far() -> u64 {
 
 /// How long a token minted now is kept: until [`MINTED_AGAIN_BEFORE`] before `expires_at`, and
 /// at most [`KEPT_AT_MOST`].
-fn kept_for(expires_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Duration {
+fn kept_for(expires_at: Option<&str>, now: jiff::Timestamp) -> Duration {
     expires_at
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-        .and_then(|at| (at.with_timezone(&chrono::Utc) - now).to_std().ok())
+        .and_then(|at| str::parse::<jiff::Timestamp>(at).ok())
+        .and_then(|at| Duration::try_from(at.duration_since(now)).ok())
         .map_or(KEPT_AT_MOST, |left| {
             left.saturating_sub(MINTED_AGAIN_BEFORE).min(KEPT_AT_MOST)
         })
@@ -690,13 +690,12 @@ fn kept_for(expires_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Dur
 
 /// How long a token minted now lives: until GitHub's `expires_at`, and at most an hour, the
 /// most GitHub gives one.
-fn lives_for(expires_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Duration {
+fn lives_for(expires_at: Option<&str>, now: jiff::Timestamp) -> Duration {
     let hour = KEPT_AT_MOST + MINTED_AGAIN_BEFORE;
     expires_at
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .and_then(|at| str::parse::<jiff::Timestamp>(at).ok())
         .map_or(hour, |at| {
-            (at.with_timezone(&chrono::Utc) - now)
-                .to_std()
+            Duration::try_from(at.duration_since(now))
                 .unwrap_or(Duration::ZERO)
                 .min(hour)
         })
@@ -727,7 +726,7 @@ fn keep_one(
     if ended_since {
         return false;
     }
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     kept.retain(|one| one.alive > now);
     // Past this many, one is let go and revoked: one no longer handed out first, else the
     // oldest.
@@ -760,7 +759,7 @@ fn taken_at_end(root: &Path, chat: Option<u32>) -> Vec<Zeroizing<String>> {
 /// [`taken_at_end`], only the tokens of the App `app` where one is named.
 fn taken_of(root: &Path, chat: Option<u32>, app: Option<&str>) -> Vec<Zeroizing<String>> {
     let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     {
         let mut ended = ENDED.lock().unwrap_or_else(|e| e.into_inner());
         // A mint takes a few minutes at most: an hour-old end can race none.
@@ -894,7 +893,7 @@ pub fn app_removed(root: &Path, app: &str, within: Duration) -> usize {
 /// so what a chat's end does with it can be seen.
 #[cfg(feature = "test-support")]
 pub fn keep_for_a_test(root: &Path, chat: u32, token: &str) {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let hour = after(now, KEPT_AT_MOST + MINTED_AGAIN_BEFORE);
     keep_one(
         Asked {
@@ -973,7 +972,7 @@ pub fn token_for(
     };
     {
         let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         kept.retain(|one| one.alive > now);
         if let Some(one) = kept
             .iter()
@@ -987,8 +986,8 @@ pub fn token_for(
         host: HOST.to_owned(),
     };
     let key = read_key()?;
-    let now = chrono::Utc::now();
-    let jwt = jwt(&key, &mint.app, u64::try_from(now.timestamp()).unwrap_or(0))?;
+    let now = jiff::Timestamp::now();
+    let jwt = jwt(&key, &mint.app, u64::try_from(now.as_second()).unwrap_or(0))?;
     drop(key);
     let transport = jwt_transport::to_github_com(&jwt)?;
     drop(jwt);
@@ -1039,7 +1038,7 @@ pub fn token_in_cluster(
     };
     {
         let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         kept.retain(|one| one.alive > now);
         if let Some(one) = kept
             .iter()
@@ -1051,7 +1050,7 @@ pub fn token_in_cluster(
     let Some(minted) = mint(&app.app)? else {
         return Ok(None);
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     tracing::info!(
         "purlis: chat {chat} was handed a token of GitHub App {} the cluster's operator minted for \
          {}",

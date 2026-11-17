@@ -4,16 +4,18 @@
 use super::*;
 
 /// 2026-10-07 14:00 UTC, in UTC.
-fn now() -> chrono::DateTime<chrono::FixedOffset> {
-    chrono::DateTime::parse_from_rfc3339("2026-10-07T14:00:00+00:00").expect("a time")
+fn now() -> jiff::Zoned {
+    str::parse::<jiff::Timestamp>("2026-10-07T14:00:00+00:00")
+        .expect("a time")
+        .to_zoned(jiff::tz::TimeZone::fixed(jiff::tz::Offset::UTC))
 }
 
 /// Seconds since 1970 for a time on 2026-10-07, UTC.
 fn at_time(hour: u32, minute: u32) -> Option<i64> {
     Some(
-        chrono::DateTime::parse_from_rfc3339(&format!("2026-10-07T{hour:02}:{minute:02}:00+00:00"))
+        str::parse::<jiff::Timestamp>(&format!("2026-10-07T{hour:02}:{minute:02}:00+00:00"))
             .expect("a time")
-            .timestamp(),
+            .as_second(),
     )
 }
 
@@ -69,7 +71,7 @@ fn told_at_start(known: &[Known], chat: u32) -> Told {
 
 fn turn(known: &[Known], chat: u32, told: &mut Told) -> Option<String> {
     let working = answer(known, chat, Tell::Turn, told).expect("an open chat");
-    update(&working, now())
+    update(&working, &now())
 }
 
 #[test]
@@ -80,7 +82,7 @@ fn the_briefing_of_a_second_chat_of_a_persona_names_the_first_with_its_workspace
     ];
 
     let picture = picture(&known, 2).expect("an open chat");
-    let said = briefing(&picture, now()).expect("something to say");
+    let said = briefing(&picture, &now()).expect("something to say");
 
     assert!(
         said.contains(
@@ -102,7 +104,7 @@ fn a_chat_nobody_asked_for_whose_persona_works_nowhere_else_is_briefed_nothing()
 
     for chat in [1, 2, 3] {
         let picture = picture(&known, chat).expect("an open chat");
-        assert_eq!(briefing(&picture, now()), None, "chat {chat}");
+        assert_eq!(briefing(&picture, &now()), None, "chat {chat}");
     }
 }
 
@@ -119,7 +121,7 @@ fn a_chat_is_told_who_asked_for_it_and_which_other_tasks_that_chat_asked_for() {
         a_chat(4, "ci 4", Some("ci"), "ops"),
     ];
 
-    let said = briefing(&picture(&known, 2).expect("open"), now()).expect("something to say");
+    let said = briefing(&picture(&known, 2).expect("open"), &now()).expect("something to say");
 
     assert!(
         said.contains("- 'steward 1' asked for this chat, as a handoff."),
@@ -165,7 +167,7 @@ fn a_parent_that_has_closed_is_named_as_it_was_and_said_to_be_closed() {
         "steward 1",
     )];
 
-    let said = briefing(&picture(&known, 2).expect("open"), now()).expect("something to say");
+    let said = briefing(&picture(&known, 2).expect("open"), &now()).expect("something to say");
 
     assert!(
         said.contains("- 'steward 1' (now closed) asked for this chat, as a handoff."),
@@ -319,7 +321,7 @@ fn an_answer_lists_so_many_chats_and_counts_the_rest_so_it_always_fits_on_one_li
     let line = serde_json::to_vec(&crate::hookwire::Answer::Working(Box::new(working.clone())))
         .expect("json");
     assert!(line.len() < 65_536, "{} bytes", line.len());
-    let said = update(&working, now()).expect("a line");
+    let said = update(&working, &now()).expect("a line");
     assert!(
         said.ends_with(
             "; and 40 more changes (`purlis persona where` shows where you are working now)."
@@ -327,7 +329,7 @@ fn an_answer_lists_so_many_chats_and_counts_the_rest_so_it_always_fits_on_one_li
         "{said}"
     );
     assert!(
-        briefing(&working.picture, now())
+        briefing(&working.picture, &now())
             .expect("something to say")
             .contains("- And 40 more chats, not listed."),
     );
@@ -457,14 +459,14 @@ fn the_listing_says_who_asked_the_sibling_tasks_and_the_same_personas_chats() {
         a_chat(5, "verify v2.48", Some("devops"), "runners"),
     ];
     known[3].started = Some(
-        chrono::DateTime::parse_from_rfc3339("2026-10-06T09:12:00+00:00")
+        str::parse::<jiff::Timestamp>("2026-10-06T09:12:00+00:00")
             .expect("a time")
-            .timestamp(),
+            .as_second(),
     );
     known[3].state = State::Waiting;
 
     assert_eq!(
-        listing(&picture(&known, 2).expect("open"), now()),
+        listing(&picture(&known, 2).expect("open"), &now()),
         "This chat is 'check prod', working as devops in ops (running, started 12:40).\n\
          Asked for by: 'steward 1', as a handoff\n\
          Sibling tasks:\n  'lint' as ci in runners (running, started 12:40)\n\
@@ -482,7 +484,7 @@ fn the_listing_of_a_chat_alone_says_so() {
     }];
 
     assert_eq!(
-        listing(&picture(&known, 2).expect("open"), now()),
+        listing(&picture(&known, 2).expect("open"), &now()),
         "This chat is 'devops 2', working as devops in ops (open).\n\
          Asked for by: no chat (a person started it)\n\
          No other chat is running as devops in this project.\n\
@@ -507,9 +509,9 @@ fn a_chat_brought_back_says_when_its_current_run_began_not_when_it_was_first_sta
         ulid::Ulid::from_parts(ms, 7).to_string()
     };
     // First started on Oct 1, and started again today at 12:40.
-    let first = chrono::DateTime::parse_from_rfc3339("2026-10-01T09:00:00+00:00")
+    let first = str::parse::<jiff::Timestamp>("2026-10-01T09:00:00+00:00")
         .unwrap()
-        .timestamp();
+        .as_second();
     let identity = crate::reopen::Identity {
         id: Some(ulid_at(Some(first))),
         run: Some(ulid_at(at_time(12, 40))),
@@ -550,26 +552,26 @@ fn a_chat_is_told_how_it_was_asked_for_and_whether_its_report_is_awaited() {
             owed: true,
         })
     );
-    let said = briefing(&picture, now()).expect("something to say");
+    let said = briefing(&picture, &now()).expect("something to say");
     assert!(
         said.contains("- 'steward 1' asked for this chat, as a task, and waits on its report."),
         "{said}"
     );
     assert!(
-        listing(&picture, now())
+        listing(&picture, &now())
             .contains("Asked for by: 'steward 1', as a task, and waits on its report\n"),
     );
 
     // Reported: nothing is owed. And a chat that asked and has closed waits on nothing.
     known[1].from.as_mut().expect("asked").owes = false;
-    let said = briefing(&picture_of(&known, 2), now()).expect("something to say");
+    let said = briefing(&picture_of(&known, 2), &now()).expect("something to say");
     assert!(
         said.contains("- 'steward 1' asked for this chat, as a task."),
         "{said}"
     );
     known[1].from.as_mut().expect("asked").owes = true;
     known.remove(0);
-    let said = briefing(&picture_of(&known, 2), now()).expect("something to say");
+    let said = briefing(&picture_of(&known, 2), &now()).expect("something to say");
     assert!(
         said.contains("- 'steward 1' (now closed) asked for this chat, as a task."),
         "{said}"
@@ -925,7 +927,7 @@ fn a_roster_says_whether_each_task_is_alive_and_marks_an_orphan_by_restart() {
             })
         })
         .with_orphans([(7, "forms".to_owned())]);
-    let said = update(&working, now()).expect("a roster");
+    let said = update(&working, &now()).expect("a roster");
     assert!(
         said.contains(
             "chat 4 'check prod' running (its program is running, last sent a note 1m ago, \
@@ -946,7 +948,7 @@ fn an_orphan_found_only_in_dispatch_records_is_named_without_a_number_it_does_no
     let working = answer(&known, 1, Tell::Turn, &mut told)
         .expect("open")
         .with_orphans([(crate::dispatched::NO_NUMBER_KNOWN, "forms".to_owned())]);
-    let said = update(&working, now()).expect("a roster");
+    let said = update(&working, &now()).expect("a roster");
     assert!(
         said.contains(
             "chat 5 'lint' running; 'forms', under a chat number no longer known, orphaned by \

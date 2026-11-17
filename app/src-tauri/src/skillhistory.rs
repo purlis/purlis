@@ -163,7 +163,8 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                 .versions
                 .into_iter()
                 .map(|version| SkillVersion {
-                    at: chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
+                    at: jiff::Timestamp::from_second(i64::try_from(version.at).unwrap_or(0))
+                        .ok()
                         .map(purlis_core::dispatch::stamp)
                         .unwrap_or_default(),
                     runs: stats_row(StatsGroup::Named(version.commit.clone()), version.runs),

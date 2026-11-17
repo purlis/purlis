@@ -104,7 +104,7 @@ pub(crate) fn folder(root: &Path, cwd: &Path) -> String {
 /// #1453). A record that could not be written is said in the app's log and costs the dispatch
 /// nothing: the chat is open.
 pub(crate) fn opened(held: &Held, id: Option<String>, opening: Opening) {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let brief = opening.brief.clone();
     let written = match id {
         Some(id) => dispatchrecord::open_as(held.root(), id, opening, now),
@@ -131,7 +131,7 @@ pub(crate) fn opened(held: &Held, id: Option<String>, opening: Opening) {
 /// one, and the cut goes on as it did before.
 pub(crate) fn before_the_cut(held: &Held, id: &str, opening: Opening) {
     if let Err(why) =
-        dispatchrecord::open_as(held.root(), id.to_owned(), opening, chrono::Utc::now())
+        dispatchrecord::open_as(held.root(), id.to_owned(), opening, jiff::Timestamp::now())
     {
         tracing::warn!("purlis: a worktree task's record was not opened before its cut ({why})");
     }
@@ -321,7 +321,7 @@ fn kept_on(
     text: &str,
     answers: Option<u32>,
 ) -> bool {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     match dispatchrecord::said_by(held.root(), id, kind, by, text, now) {
         Ok(Taken::Kept(kept)) => crate::activity::said(held, &kept, answers),
         // Counted, and past what a record keeps the text of: the tab is told how many, and
@@ -417,7 +417,7 @@ pub(crate) fn reported_again(
         return false;
     };
     let ending = ending_of(held, session, &record, outcome, text, changed);
-    match dispatchrecord::reported_again(held.root(), &record.id, ending, chrono::Utc::now()) {
+    match dispatchrecord::reported_again(held.root(), &record.id, ending, jiff::Timestamp::now()) {
         Ok(true) => crate::activity::ended(held, &record.id),
         Ok(false) => {}
         Err(why) => tracing::warn!("purlis: a dispatch's record was not given its report ({why})"),
@@ -676,7 +676,14 @@ fn close(
             Err(why) => tracing::warn!("purlis: a dispatch's record was not updated ({why})"),
         }
     }
-    match dispatchrecord::close_as(held.root(), &record.id, ending, by, way, chrono::Utc::now()) {
+    match dispatchrecord::close_as(
+        held.root(),
+        &record.id,
+        ending,
+        by,
+        way,
+        jiff::Timestamp::now(),
+    ) {
         // An open Activity tab hears of the report it ended with (#1495).
         Ok(true) => {
             crate::activity::ended(held, &record.id);
@@ -818,11 +825,7 @@ pub(crate) struct OpenChat {
 }
 
 /// `record` as its row, given the chats open now and the time.
-pub(crate) fn row(
-    record: &Record,
-    open: &[OpenChat],
-    now: chrono::DateTime<chrono::Utc>,
-) -> DispatchRow {
+pub(crate) fn row(record: &Record, open: &[OpenChat], now: jiff::Timestamp) -> DispatchRow {
     let worker = &record.worker.chat;
     // By the chat's id, which a restart keeps; by its number only for a record with no id.
     let open_session = open
@@ -902,12 +905,8 @@ pub(crate) fn row(
 
 /// How long `record`'s dispatch ran, or has run by `now`: `45s`, `4m 30s`, `2h 5m`. Empty for
 /// a record whose times do not read.
-fn lasted(record: &Record, now: chrono::DateTime<chrono::Utc>) -> String {
-    let at = |stamp: &str| {
-        chrono::DateTime::parse_from_rfc3339(stamp)
-            .ok()
-            .map(|read| read.with_timezone(&chrono::Utc))
-    };
+fn lasted(record: &Record, now: jiff::Timestamp) -> String {
+    let at = |stamp: &str| str::parse::<jiff::Timestamp>(stamp).ok();
     let Some(started) = at(&record.started) else {
         return String::new();
     };
@@ -918,7 +917,7 @@ fn lasted(record: &Record, now: chrono::DateTime<chrono::Utc>) -> String {
         },
         None => now,
     };
-    let seconds = (ended - started).num_seconds().max(0);
+    let seconds = ended.duration_since(started).as_secs().max(0);
     let (hours, minutes, secs) = (seconds / 3600, seconds % 3600 / 60, seconds % 60);
     if hours > 0 {
         format!("{hours}h {minutes}m")
@@ -1064,7 +1063,7 @@ pub(crate) fn open_chats(held: &Held) -> Vec<OpenChat> {
 /// will not.
 pub(crate) fn rows(held: &Held) -> Dispatches {
     let open = open_chats(held);
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let drawn = dispatchrecord::drawn(held.root());
     Dispatches {
         rows: drawn
@@ -1483,7 +1482,7 @@ pub(crate) struct DispatchMade {
 /// is the chats the app has open now ([`open_chats`]), which is what says a dispatch that has
 /// not ended is running.
 pub(crate) fn made_on(root: &Path, path: &str, open: &[OpenChat]) -> Vec<DispatchMade> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     dispatchrecord::listed_on(root, path)
         .iter()
         .map(|record| {

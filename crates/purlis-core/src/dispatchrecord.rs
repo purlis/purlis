@@ -590,11 +590,7 @@ pub fn mint() -> String {
 }
 
 /// Opens the record of a dispatch that started at `now`, and answers it.
-pub fn open(
-    root: &Path,
-    opening: Opening,
-    now: chrono::DateTime<chrono::Utc>,
-) -> io::Result<Record> {
+pub fn open(root: &Path, opening: Opening, now: jiff::Timestamp) -> io::Result<Record> {
     open_as(root, mint(), opening, now)
 }
 
@@ -610,7 +606,7 @@ pub fn open_as(
     root: &Path,
     id: String,
     opening: Opening,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<Record> {
     if !an_id(&id) {
         return Err(io::Error::new(
@@ -729,7 +725,7 @@ pub fn said(
     id: &str,
     kind: crate::dispatchtalk::Kind,
     text: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<Taken> {
     said_by(root, id, kind, None, text, now)
 }
@@ -859,7 +855,7 @@ pub fn said_by(
     kind: crate::dispatchtalk::Kind,
     by: Option<By>,
     text: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<Taken> {
     let mut taken = Taken::Nothing;
     change(root, id, |record| {
@@ -903,7 +899,7 @@ pub fn said_by(
 /// its words where the record kept them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastNote {
-    pub at: chrono::DateTime<chrono::Utc>,
+    pub at: jiff::Timestamp,
     /// `None` where the record did not keep this note's words: past what it keeps ([`cut`],
     /// [`MOST_SAID_BYTES`]), left out as a secret ([`Said::left_out`]), or expired since.
     pub text: Option<String>,
@@ -917,9 +913,7 @@ pub struct LastNote {
 /// are never read as the newer one's.
 pub fn last_note_of(record: &Record) -> Option<LastNote> {
     let stamp = record.last_note.as_deref()?;
-    let at = chrono::DateTime::parse_from_rfc3339(stamp)
-        .ok()?
-        .with_timezone(&chrono::Utc);
+    let at = str::parse::<jiff::Timestamp>(stamp).ok()?;
     let whole = usize::try_from(record.messages).is_ok_and(|sent| sent == record.talk.len());
     let text = record
         .talk
@@ -977,20 +971,20 @@ pub fn answer_unread(root: &Path, id: &str) -> io::Result<bool> {
 }
 
 /// How long after a dispatch ended its record keeps what the two chats said (D-1495-12).
-pub const TALK_KEPT_FOR: chrono::Duration = chrono::Duration::days(30);
+pub const TALK_KEPT_FOR: jiff::SignedDuration = jiff::SignedDuration::from_hours(24 * 30);
 
 /// How far past `now` a recorded end may stand before it is taken as not a real end: a clock
 /// a little ahead of this one.
-const END_SKEW: chrono::Duration = chrono::Duration::minutes(5);
+const END_SKEW: jiff::SignedDuration = jiff::SignedDuration::from_mins(5);
 
 /// Whether `record` ended [`TALK_KEPT_FOR`] or longer before `now`. A record that has not
 /// ended has not. **One whose end does not read as a time, or stands in the future, is due**
 /// (#1520): when it ended cannot be told, so the days cannot be counted, and its words are not
 /// kept on without end.
-fn talk_is_due(record: &Record, now: chrono::DateTime<chrono::Utc>) -> bool {
+fn talk_is_due(record: &Record, now: jiff::Timestamp) -> bool {
     record.ended.as_deref().is_some_and(|ended| {
-        chrono::DateTime::parse_from_rfc3339(ended).map_or(true, |ended| {
-            let ago = now.signed_duration_since(ended);
+        str::parse::<jiff::Timestamp>(ended).map_or(true, |ended| {
+            let ago = now.duration_since(ended);
             ago >= TALK_KEPT_FOR || ago < -END_SKEW
         })
     })
@@ -999,8 +993,8 @@ fn talk_is_due(record: &Record, now: chrono::DateTime<chrono::Utc>) -> bool {
 /// Whether `ended` is no earlier than `started`, where both read as times.
 fn in_order(started: &str, ended: &str) -> bool {
     match (
-        chrono::DateTime::parse_from_rfc3339(started),
-        chrono::DateTime::parse_from_rfc3339(ended),
+        str::parse::<jiff::Timestamp>(started),
+        str::parse::<jiff::Timestamp>(ended),
     ) {
         (Ok(started), Ok(ended)) => ended >= started,
         _ => false,
@@ -1009,7 +1003,7 @@ fn in_order(started: &str, ended: &str) -> bool {
 
 /// Whether `text` reads as a time, as [`crate::dispatch::stamp`] writes one (RFC 3339).
 fn a_time(text: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(text).is_ok()
+    str::parse::<jiff::Timestamp>(text).is_ok()
 }
 
 /// **Takes the text out of every message of a dispatch that ended [`TALK_KEPT_FOR`] ago or
@@ -1023,18 +1017,14 @@ fn a_time(text: &str) -> bool {
 /// comes back at launch ([`crate::retention`]), and what was said in it is not. The app runs
 /// this when it opens a project, once a day while the project is open (#1556), and before it
 /// reads a timeline.
-pub fn expire_talk(root: &Path, now: chrono::DateTime<chrono::Utc>) -> Vec<String> {
+pub fn expire_talk(root: &Path, now: jiff::Timestamp) -> Vec<String> {
     expire_in(root, &mut list(root), now)
 }
 
 /// [`expire_talk`], over `records`, which were read from the store at `root` already (#1520):
 /// what a timeline reads once is expired from that one read, and each record changed on the
 /// disk is changed in `records` too. The ids of those changed.
-pub fn expire_in(
-    root: &Path,
-    records: &mut [Record],
-    now: chrono::DateTime<chrono::Utc>,
-) -> Vec<String> {
+pub fn expire_in(root: &Path, records: &mut [Record], now: jiff::Timestamp) -> Vec<String> {
     let due = |record: &Record| {
         talk_is_due(record, now) && record.talk.iter().any(|said| !said.text.is_empty())
     };
@@ -1075,12 +1065,7 @@ pub fn expire_in(
 
 /// Closes dispatch `id` at `now`. `false` for a record that is not there or has already
 /// ended: a dispatch ends once, and its first ending is the one kept.
-pub fn close(
-    root: &Path,
-    id: &str,
-    ending: Ending,
-    now: chrono::DateTime<chrono::Utc>,
-) -> io::Result<bool> {
+pub fn close(root: &Path, id: &str, ending: Ending, now: jiff::Timestamp) -> io::Result<bool> {
     close_by(root, id, ending, None, now)
 }
 
@@ -1091,7 +1076,7 @@ pub fn close_by(
     id: &str,
     ending: Ending,
     by: Option<EndedBy>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<bool> {
     close_as(root, id, ending, by, None, now)
 }
@@ -1104,7 +1089,7 @@ pub fn close_as(
     ending: Ending,
     by: Option<EndedBy>,
     way: Option<EndedWay>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<bool> {
     change(root, id, |record| end(record, ending, by, way, now))
 }
@@ -1116,7 +1101,7 @@ fn end(
     ending: Ending,
     by: Option<EndedBy>,
     way: Option<EndedWay>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> bool {
     if !record.running() {
         return false;
@@ -1141,7 +1126,7 @@ pub fn reported_again(
     root: &Path,
     id: &str,
     ending: Ending,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<bool> {
     change(root, id, |record| {
         let (Some(at), Some(report)) = (record.ended.clone(), record.report.clone()) else {
@@ -1260,7 +1245,7 @@ pub fn did_not_start(
     id: &str,
     why: &str,
     attempts: u32,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<bool> {
     let report = capped_report(&Report {
         outcome: Outcome::Failed,
@@ -1840,13 +1825,9 @@ fn ids(root: &Path) -> Vec<String> {
 /// named at the time it opened, so one dated later (beyond a clock a little ahead of this one)
 /// was not, and a file of that name cannot push the real records out of the read. It is still
 /// read where there is room after them.
-pub fn newest(
-    root: &Path,
-    most: usize,
-    now: chrono::DateTime<chrono::Utc>,
-) -> (Vec<Record>, usize) {
+pub fn newest(root: &Path, most: usize, now: jiff::Timestamp) -> (Vec<Record>, usize) {
     let mut ids = ids(root);
-    let latest = (now + END_SKEW).timestamp_millis();
+    let latest = (now + END_SKEW).as_millisecond();
     let ahead = |id: &String| {
         ulid::Ulid::from_string(id).map_or(true, |minted| {
             i64::try_from(minted.timestamp_ms()).map_or(true, |minted| minted > latest)
@@ -2282,11 +2263,7 @@ pub fn listed_on(root: &Path, path: &str) -> Vec<Record> {
 /// **A task whose asking chat `still_open` does not answer for either is cleared and forgotten
 /// as it ends** ([`clear_forgetting`], #1556), as one that ends after its asking chat closed
 /// is while the app runs: nobody is left to see its row, so nothing would clear it.
-pub fn settle(
-    root: &Path,
-    still_open: impl Fn(&ChatRef) -> bool,
-    now: chrono::DateTime<chrono::Utc>,
-) -> usize {
+pub fn settle(root: &Path, still_open: impl Fn(&ChatRef) -> bool, now: jiff::Timestamp) -> usize {
     settle_asked(
         root,
         &still_open,
@@ -2303,7 +2280,7 @@ pub fn settle_asked(
     root: &Path,
     still_open: impl Fn(&ChatRef) -> bool,
     asker_back: impl Fn(&Record) -> bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> usize {
     running(root)
         .into_iter()
@@ -2336,12 +2313,7 @@ pub fn settle_asked(
 /// settles one whose chat is gone, at `now`. Failed as [`ENDED_WITHOUT_A_REPORT`] where it owed a
 /// report, and kept as owed to its asking chat ([`Undelivered`]), which the window hands it when
 /// it is back; its row is kept, since the chat that asked may still be at work. How many ended.
-pub fn ended_unwatched(
-    root: &Path,
-    id: &str,
-    number: u32,
-    now: chrono::DateTime<chrono::Utc>,
-) -> usize {
+pub fn ended_unwatched(root: &Path, id: &str, number: u32, now: jiff::Timestamp) -> usize {
     settle_asked(
         root,
         |worker| !named(worker, Some(id), Some(number)),
@@ -2360,7 +2332,7 @@ pub fn ended_unwatched(
 /// the project opens, before any chat is put back**: what puts chats back, and what decides
 /// whether a dispatched chat resumes as a task, reads these records after it and finds the
 /// newer shape (#1513).
-pub fn settle_on_open(root: &Path, now: chrono::DateTime<chrono::Utc>) -> usize {
+pub fn settle_on_open(root: &Path, now: jiff::Timestamp) -> usize {
     let Ok(reopen) = crate::reopen::read_strictly(root) else {
         return 0;
     };
@@ -2500,12 +2472,11 @@ pub(crate) fn aged_from(
     if record.undelivered.is_some() {
         return Some(written);
     }
-    let latest = chrono::DateTime::<chrono::Utc>::from(now) + END_SKEW;
+    let latest = crate::wallclock::instant(now) + END_SKEW;
     let ended = record
         .ended
         .as_deref()
-        .and_then(|ended| chrono::DateTime::parse_from_rfc3339(ended).ok())
-        .map(|ended| ended.with_timezone(&chrono::Utc))
+        .and_then(|ended| str::parse::<jiff::Timestamp>(ended).ok())
         .filter(|ended| *ended <= latest);
     Some(ended.map_or(written, std::time::SystemTime::from))
 }

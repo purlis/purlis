@@ -1380,7 +1380,7 @@ pub fn call(
     place: &Place,
     tool: &str,
     args: &Map<String, Value>,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<String, String> {
     let Some(spec) = TOOLS.iter().find(|t| t.name == tool) else {
         return Err(format!("purlis has no tool {}", crate::shown::short(tool)));
@@ -1443,7 +1443,7 @@ fn run(
     _place: &Place,
     _tool: &str,
     _args: &Map<String, Value>,
-    _now: chrono::NaiveDateTime,
+    _now: jiff::civil::DateTime,
 ) -> Result<String, String> {
     // Fail closed: the stores are held through descriptors that refuse links, which only the
     // unix build does yet.
@@ -1456,7 +1456,7 @@ fn run(
     place: &Place,
     tool: &str,
     args: &Map<String, Value>,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<String, String> {
     match tool {
         QUERIES => {
@@ -2084,7 +2084,7 @@ fn write_entry(
     store: &held::Store,
     header: &str,
     text: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<String, String> {
     let text = crate::memstore::py_strip(text);
     if text.is_empty() {
@@ -2218,7 +2218,7 @@ pub(crate) fn done_todos(store: &held::Store) -> Result<Vec<crate::workspaces::E
 }
 
 #[cfg(unix)]
-fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Result<String, String> {
+fn todo_list(store: &held::Store, ws: &str, now: jiff::civil::DateTime) -> Result<String, String> {
     let open = open_todos(store)?;
     if open.is_empty() {
         return Ok(format!("No open todos in '{ws}'."));
@@ -2227,11 +2227,11 @@ fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Resul
     Ok(open
         .iter()
         .map(|todo| {
-            let age = chrono::NaiveDate::parse_from_str(
-                todo.stamp.split_whitespace().next().unwrap_or_default(),
+            let age = jiff::civil::Date::strptime(
                 "%Y-%m-%d",
+                todo.stamp.split_whitespace().next().unwrap_or_default(),
             )
-            .map_or(0, |d| (today - d).num_days());
+            .map_or(0, |d| i64::from((today - d).get_days()));
             format!(
                 "{}  {age}d  {}",
                 todo.slug,

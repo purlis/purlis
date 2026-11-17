@@ -182,7 +182,7 @@ fn the_line_survives_reinit_and_every_rewrite_of_the_block() {
     assert_eq!(saved(root, "alpha"), only_alpha, "refresh_live_block");
 
     let mut said = Vec::new();
-    wscmd::reinit::reinit(root, Scope::All, chrono::Utc::now(), &mut |say| {
+    wscmd::reinit::reinit(root, Scope::All, jiff::Timestamp::now(), &mut |say| {
         said.push(say)
     });
     assert_eq!(saved(root, "alpha"), only_alpha, "reinit: {said:?}");

@@ -140,7 +140,7 @@ pub struct RanAs<'a> {
 /// run's, its end row as [`super::ended`] does. Nothing is logged where the plane may not be
 /// written, or the line's time is not one.
 pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>, device: &str) -> Option<PathBuf> {
-    let when = chrono::DateTime::from_timestamp_millis(i64::try_from(relayed.at_ms).ok()?)?;
+    let when = jiff::Timestamp::from_millisecond(i64::try_from(relayed.at_ms).ok()?).ok()?;
     // Once each (#4219): a window that reads a runner's log on from where it last logged here may
     // hear again a line it logged before it closed.
     let path = super::path_for(root, when, device);

@@ -141,10 +141,9 @@ impl Plane {
                 body: BODY,
                 facts: &Facts {
                     place: Place::Workspace("alpha".to_owned()),
-                    at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
+                    at: purlis_core::wallclock::day(2026, 9, 28)
                         .unwrap()
-                        .and_hms_opt(14, 3, 12)
-                        .unwrap(),
+                        .at(14, 3, 12, 0),
                     chat: Some(ChatFacts {
                         number: 3,
                         name: Some("steward 3".to_owned()),
@@ -422,10 +421,9 @@ fn a_plane_root_record_resumes_at_the_plane_root() {
             body: BODY,
             facts: &Facts {
                 place: Place::PlaneRoot,
-                at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
+                at: purlis_core::wallclock::day(2026, 9, 28)
                     .unwrap()
-                    .and_hms_opt(8, 0, 0)
-                    .unwrap(),
+                    .at(8, 0, 0, 0),
                 chat: Some(ChatFacts {
                     number: 1,
                     name: None,
@@ -653,10 +651,9 @@ fn a_plane_root_record_resumes_in_the_plane_root_directory_it_names() {
             body: BODY,
             facts: &Facts {
                 place: Place::PlaneRoot,
-                at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
+                at: purlis_core::wallclock::day(2026, 9, 28)
                     .unwrap()
-                    .and_hms_opt(8, 0, 0)
-                    .unwrap(),
+                    .at(8, 0, 0, 0),
                 chat: Some(ChatFacts {
                     number: 1,
                     name: None,

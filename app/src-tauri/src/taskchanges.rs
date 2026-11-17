@@ -938,7 +938,7 @@ mod tests {
                 brief: "Rotate it.".to_owned(),
                 report_owed: true,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         let ending = dispatchrecord::Ending {
@@ -952,7 +952,7 @@ mod tests {
             }),
             usage: None,
         };
-        assert!(dispatchrecord::close(&root, &opened.id, ending, chrono::Utc::now()).unwrap());
+        assert!(dispatchrecord::close(&root, &opened.id, ending, jiff::Timestamp::now()).unwrap());
         let record = dispatchrecord::read(&root, &opened.id).expect("it reads");
 
         assert_eq!(

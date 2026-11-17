@@ -190,7 +190,7 @@ pub fn write(
     timestamped: bool,
     kind: &str,
     index: bool,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> std::io::Result<std::path::PathBuf> {
     let text = py_strip(text);
     if text.is_empty() {
@@ -235,7 +235,7 @@ pub fn write(
     // the same free name, and the second replaced the first.
     let _held = crate::rewrite::Lock::bounded(dir)?;
     let prefix = if timestamped {
-        stamp.format("%Y%m%d-%H%M%S-").to_string()
+        stamp.strftime("%Y%m%d-%H%M%S-").to_string()
     } else {
         String::new()
     };
@@ -301,12 +301,12 @@ pub(crate) fn memory_body(
     title: &str,
     kind: &str,
     text: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> String {
     format!(
         "# {}\n\n_{} · {kind}_\n\n{text}\n",
         one_line(title),
-        stamp.format("%Y-%m-%d %H:%M")
+        stamp.strftime("%Y-%m-%d %H:%M")
     )
 }
 
@@ -1397,7 +1397,7 @@ pub fn rank(found: Vec<Found>, query: &str, limit: usize) -> Vec<(Found, usize)>
 /// date followed by a space or a `T`. Only the first such line is asked — charter's
 /// `re.search` stops there, so a stamp that does not parse falls straight to the filename
 /// rather than to a later stamp. Then a `YYYYMMDD-` filename prefix. `None` for neither.
-pub fn memory_date(text: &str, filename: &str) -> Option<chrono::NaiveDate> {
+pub fn memory_date(text: &str, filename: &str) -> Option<jiff::civil::Date> {
     let mut starts = vec![0];
     starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
     for start in starts {
@@ -1415,8 +1415,8 @@ pub fn memory_date(text: &str, filename: &str) -> Option<chrono::NaiveDate> {
         let n = |range: std::ops::Range<usize>| -> Option<u32> {
             digits[range].iter().collect::<String>().parse().ok()
         };
-        return chrono::NaiveDate::from_ymd_opt(n(0..4)? as i32, n(4..6)?, n(6..8)?)
-            .filter(|d| (1..=9999).contains(&chrono::Datelike::year(d)));
+        return crate::wallclock::day(n(0..4)? as i32, n(4..6)?, n(6..8)?)
+            .filter(|d| (1..=9999).contains(&d.year()));
     }
     None
 }
@@ -1452,7 +1452,7 @@ fn stamp_at(line: &str) -> Option<&str> {
 }
 
 /// `date.fromisoformat` for `YYYY-MM-DD` in ASCII digits, year 1 to 9999.
-fn iso_date(text: &str) -> Option<chrono::NaiveDate> {
+fn iso_date(text: &str) -> Option<jiff::civil::Date> {
     let b = text.as_bytes();
     if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
         return None;
@@ -1467,7 +1467,7 @@ fn iso_date(text: &str) -> Option<chrono::NaiveDate> {
     {
         return None;
     }
-    chrono::NaiveDate::from_ymd_opt(y, m, d)
+    crate::wallclock::day(y, m, d)
 }
 
 /// A memory's content with its `# title` and `_stamp_` lines dropped and every run of
@@ -2011,7 +2011,7 @@ pub(crate) fn moved_name(
     name: &str,
     text: &str,
     timestamped: bool,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> String {
     let bare = unstamped(name);
     if !timestamped {
@@ -2026,10 +2026,10 @@ pub(crate) fn moved_name(
         .and_then(|(_, line)| {
             let inner = line.strip_prefix('_')?;
             let when = inner.split(" · ").next()?;
-            chrono::NaiveDateTime::parse_from_str(py_strip(when), "%Y-%m-%d %H:%M").ok()
+            jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M", py_strip(when)).ok()
         })
         .unwrap_or(now);
-    format!("{}{bare}", stamped.format("%Y%m%d-%H%M%S-"))
+    format!("{}{bare}", stamped.strftime("%Y%m%d-%H%M%S-"))
 }
 
 /// The name a memory called `name`, whose whole text is `text`, takes when it moves: `restore_as`
@@ -2046,7 +2046,7 @@ fn moved_as(
     name: &str,
     text: &str,
     timestamped: bool,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> std::io::Result<String> {
     let dest = moved_name(name, text, timestamped, now);
@@ -2080,9 +2080,9 @@ fn real_stamp(name: &str, bare: &str) -> bool {
     else {
         return false;
     };
-    // chrono reads a second of `60` as a leap second; no journal name is stamped with one.
-    chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d-%H%M%S")
-        .is_ok_and(|when| chrono::Timelike::nanosecond(&when) < 1_000_000_000)
+    // `stamp` is `%Y%m%d-%H%M%S` whole, so its last two digits are the second. A second of `60`
+    // is a leap second, which jiff reads as `59`; no journal name is stamped with one.
+    !stamp.ends_with("60") && jiff::civil::DateTime::strptime("%Y%m%d-%H%M%S", stamp).is_ok()
 }
 
 /// Why a move found its target store taken.
@@ -2122,7 +2122,7 @@ pub fn move_one(
     to: &std::path::Path,
     timestamped: bool,
     header: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> std::io::Result<std::path::PathBuf> {
     one_segment(ident)?;
@@ -2154,7 +2154,7 @@ fn move_by_path(
     to: &std::path::Path,
     timestamped: bool,
     header: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> std::io::Result<std::path::PathBuf> {
     let file = resolve_exact(root, from, ident).ok_or_else(|| no_such(ident))?;

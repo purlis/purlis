@@ -771,7 +771,7 @@ fn a_large_plane(
 ) -> tempfile::TempDir {
     let dir = a_plane();
     let root = dir.path();
-    let stamp: chrono::NaiveDateTime = "2026-10-02T09:00:00".parse().expect("a stamp");
+    let stamp: jiff::civil::DateTime = "2026-10-02T09:00:00".parse().expect("a stamp");
     let plane = purlis_core::workspaces::Plane::open(root);
     for w in 0..workspaces {
         let name = format!("ws{w:03}");

@@ -394,12 +394,12 @@ pub enum PersonaCommand {
 }
 
 /// The clock a write stamps itself with: `--now` in a test, the local clock otherwise.
-pub fn stamp(now: Option<&str>) -> Result<chrono::NaiveDateTime, String> {
+pub fn stamp(now: Option<&str>) -> Result<jiff::civil::DateTime, String> {
     match now {
         Some(text) => text
             .parse()
             .map_err(|e| format!("--now is not a local naive timestamp: {e}")),
-        None => Ok(chrono::Local::now().naive_local()),
+        None => Ok(jiff::Zoned::now().datetime()),
     }
 }
 
@@ -575,7 +575,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, CliError> {
             None => "yet".to_string(),
         };
         let when = since
-            .map(|d| format!(" recorded since {}", d.format("%Y-%m-%d")))
+            .map(|d| format!(" recorded since {}", d.strftime("%Y-%m-%d")))
             .unwrap_or_default();
         voice::info(format!("No memories {what} across {place}{when}{skipped}."));
         if got.undated > 0 {
@@ -591,7 +591,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, CliError> {
         .iter()
         .map(|h| {
             h.date
-                .map(|d| d.format("%Y-%m-%d").to_string())
+                .map(|d| d.strftime("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| "—".to_string())
         })
         .collect();
@@ -1070,7 +1070,7 @@ pub fn move_memory(
         }
         _ => {}
     }
-    let now = chrono::Local::now().naive_local();
+    let now = jiff::Zoned::now().datetime();
     let (code, changed) = purlis_core::wscmd::memory::move_memory(
         plane,
         from,
@@ -1428,7 +1428,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, CliE
                 plane.root(),
                 name.as_deref(),
                 recent_days,
-                chrono::Local::now().date_naive(),
+                jiff::Zoned::now().date(),
                 &mut sink,
             ))
         }
@@ -1755,7 +1755,7 @@ fn persona_remember(
     shared: bool,
     ephemeral: bool,
     no_sync: bool,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<Code, CliError> {
     let root = plane.root();
     if !persona_ok(root, name) {

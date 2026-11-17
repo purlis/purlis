@@ -12,8 +12,8 @@ use crate::pieces::dir_for;
 const FIRST: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
 const SECOND: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2B";
 
-fn now() -> DateTime<Utc> {
-    DateTime::from_timestamp(1_772_000_000, 0).unwrap()
+fn now() -> Timestamp {
+    jiff::Timestamp::from_second(1_772_000_000).unwrap()
 }
 
 fn a_plane() -> (tempfile::TempDir, PathBuf) {

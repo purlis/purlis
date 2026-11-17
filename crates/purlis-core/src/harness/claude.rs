@@ -25,10 +25,10 @@ impl HarnessAdapter for ClaudeCode {
     }
 
     /// **The bundled plugin, loaded for this session alone** (`crate::plugin` has the
-    /// measurements). Its `hooks.json` holds every hook — the six that report state and the
-    /// Bash guard — and names the binary by `$CHARTER_HOOK_BINARY`, so that is handed over in
-    /// the environment. Without the plugin there is nothing to arm: a chat reads `unknown`,
-    /// rather than being half-armed from a second place.
+    /// measurements). Its `hooks.json` holds every hook that reports, and names the binary by
+    /// `$CHARTER_HOOK_BINARY`, so that is handed over in the environment; the guards ride on
+    /// `--settings` ([`guards`], #7067). Without the plugin there is nothing to arm: a chat reads
+    /// `unknown`, rather than being half-armed from a second place.
     ///
     /// Its skills take [`crate::skills::Route::Plugin`]: the built-in skills of its set
     /// ([`crate::skills::for_chat`]) are the plugin's own `skills/`, which `--plugin-dir`
@@ -719,10 +719,11 @@ pub(crate) fn reporting_on(
 /// when the chat ends, and cleaned up again after an app that crashed. What is in it is a
 /// plugin id and a path — nothing secret, so `ps` showing it costs nothing.
 ///
-/// **One hook, the permission hook, and no other.** Every hook that reports or guards is the
-/// bundled plugin's (`hooks/hooks.json`), so a chat has one place those are declared and none is
-/// armed twice. The permission hook ([`permission_hook`]) can allow, so it is never put in a
-/// file a chat can write; it rides on this argument instead.
+/// **The permission hook and the guards, and no other.** Every hook that reports is the bundled
+/// plugin's (`hooks/hooks.json`), so none is armed twice. The permission hook
+/// ([`permission_hook`]) can allow, so it is never put in a file a chat can write; it rides on
+/// this argument instead. The guards ([`guards`]) ride here because what one that dies does is
+/// the project's policy (#7067), and the plugin's file is one for every project.
 #[allow(clippy::too_many_arguments)]
 fn settings(
     binary: &std::path::Path,
@@ -969,8 +970,85 @@ fn settings(
         permissions["defaultMode"] = serde_json::json!(DEFAULT_MODE);
     }
     settings.insert("permissions".to_owned(), permissions);
-    settings.insert("hooks".to_owned(), permission_hook(binary));
+    let mut hooks = permission_hook(binary);
+    hooks["PreToolUse"] = guards(binary);
+    settings.insert("hooks".to_owned(), hooks);
     serde_json::Value::Object(settings).to_string()
+}
+
+/// **The guards, each failing closed** (#7067): every hook of the registry that may refuse a
+/// tool call ([`crate::hookreg::Handler::guards_a_call`]), with `"onFailure": "block"`, so a
+/// guard that cannot start, times out, dies or prints what Claude Code cannot read refuses the
+/// call. Claude Code 2.1.300 has the field; without it, the call runs.
+///
+/// Armed as strict as `strict` and loosened only at the start, to the chat's own policy
+/// ([`under_policy`]): a start that does not ask keeps every guard failing closed, as purlis
+/// runs where the app does not answer. On the argument and not in the bundled plugin, whose
+/// hooks file is one for every project.
+fn guards(binary: &std::path::Path) -> serde_json::Value {
+    crate::hookreg::HANDLERS
+        .iter()
+        .filter(|h| h.guards_a_call())
+        .map(|h| {
+            serde_json::json!({
+                "matcher": h.matcher,
+                "hooks": [{
+                    "type": "command",
+                    "command": crate::plugin::command_at(binary, h.name),
+                    "timeout": h.timeout,
+                    "onFailure": "block",
+                }]
+            })
+        })
+        .collect()
+}
+
+/// **`armed` with each guard's failure as `policy` runs it** (#7067,
+/// [`crate::hookreg::Handler::on_failure`]): `"block"` where a family the guard judges is
+/// enforced, Claude Code's own `"continue"` under `off` or `log`. `policy` is what the chat's
+/// start resolved ([`crate::enforcement::at_start`]), the same its hooks are handed.
+///
+/// Only ever looser where `policy` is: a `--settings` this adapter did not write, or a guard it
+/// cannot name, is left as it is.
+pub fn under_policy(mut armed: Vec<String>, policy: &crate::enforcement::Resolved) -> Vec<String> {
+    let Some(at) = armed
+        .iter()
+        .position(|word| word == "--settings")
+        .map(|flag| flag + 1)
+        .filter(|&at| at < armed.len())
+    else {
+        return armed;
+    };
+    let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(&armed[at]) else {
+        return armed;
+    };
+    let Some(groups) = settings
+        .pointer_mut("/hooks/PreToolUse")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return armed;
+    };
+    for hook in groups
+        .iter_mut()
+        .filter_map(|group| {
+            group
+                .get_mut("hooks")
+                .and_then(serde_json::Value::as_array_mut)
+        })
+        .flatten()
+    {
+        let failure = hook
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|command| command.rsplit_once(" hook "))
+            .and_then(|(_, word)| crate::hookreg::find(word))
+            .and_then(|handler| handler.on_failure(policy));
+        if let Some(failure) = failure {
+            hook["onFailure"] = failure.into();
+        }
+    }
+    armed[at] = settings.to_string();
+    armed
 }
 
 /// [`settings`] for a chat holding `sandbox`, with nothing else asked of it.
@@ -1407,6 +1485,11 @@ fn project_settings_files(cwd: Option<&std::path::Path>) -> Vec<std::path::PathB
 /// **Armed on the argument, never in the plugin.** A hook that can allow a permission must not
 /// be taken from a file a chat can write (`plugin::tests`). Nothing it does allows by itself:
 /// with no answer from the window it prints nothing, and the pane asks as it always did.
+///
+/// **It fails open, whatever the policy** (#7067): no `onFailure`, so Claude Code's own
+/// `continue`. A permission request is already a question to the person, and a hook that dies
+/// allows nothing: the pane asks, as it does with no answer. `block` would refuse the call
+/// instead of asking, which no family's enforcement asks for.
 fn permission_hook(binary: &std::path::Path) -> serde_json::Value {
     serde_json::json!({
         "PermissionRequest": [{

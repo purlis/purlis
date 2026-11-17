@@ -141,7 +141,7 @@ fn a_piece_cut_through_the_cli_is_claimed_and_counted() {
     let claim = claims.get(&key("p1")).expect("the cut is claimed");
     assert_eq!(claim["event"], "claimed");
     assert_eq!(claim["session"], "session-under-test");
-    let summary = pieces::summary(&p.root, "alpha", chrono::Utc::now()).expect("one piece");
+    let summary = pieces::summary(&p.root, "alpha", jiff::Timestamp::now()).expect("one piece");
     assert_eq!(summary.total, 1);
     assert_eq!(summary.quiet.len(), 1, "cut and not yet declared: silent");
 }
@@ -203,7 +203,7 @@ fn done_declares_the_piece_it_is_run_from() {
     assert!(out.status.success(), "{}", said(&out));
     let declared = pieces::declarations(&p.root, "alpha");
     assert_eq!(declared[&key("p1")]["event"], "done");
-    let summary = pieces::summary(&p.root, "alpha", chrono::Utc::now()).unwrap();
+    let summary = pieces::summary(&p.root, "alpha", jiff::Timestamp::now()).unwrap();
     assert_eq!((summary.total, summary.done), (1, 1));
     assert!(summary.quiet.is_empty());
 }

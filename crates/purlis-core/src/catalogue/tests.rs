@@ -1,7 +1,5 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
-
-use chrono::TimeZone;
 use serde_json::json;
 
 use super::*;
@@ -39,9 +37,11 @@ fn the_error_kinds_are_exactly_the_six_adr_0122_names() {
 
 #[test]
 fn an_answer_is_data_at_and_a_cursor_only_when_there_is_one() {
-    let at = chrono::Utc
-        .with_ymd_and_hms(2026, 11, 9, 13, 32, 0)
-        .unwrap();
+    let at = jiff::civil::date(2026, 11, 9)
+        .at(13, 32, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp();
     assert_eq!(
         Answer::data(json!("No open todos in 'alpha'."), at).to_json(),
         json!({ "data": "No open todos in 'alpha'.", "at": "2026-11-09T13:32:00Z" })
@@ -54,9 +54,11 @@ fn an_answer_is_data_at_and_a_cursor_only_when_there_is_one() {
 
 #[test]
 fn an_error_answer_carries_its_kind_and_no_data() {
-    let at = chrono::Utc
-        .with_ymd_and_hms(2026, 11, 9, 13, 32, 0)
-        .unwrap();
+    let at = jiff::civil::date(2026, 11, 9)
+        .at(13, 32, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp();
     assert_eq!(
         Answer::error(ErrorKind::NeedsExtension, at).to_json(),
         json!({ "error": { "kind": "needs-extension" }, "at": "2026-11-09T13:32:00Z" })
@@ -243,9 +245,11 @@ fn forge_milestones_reads_a_repo_of_the_workspace_and_names_repo_as_widening() {
 
 #[test]
 fn an_error_may_carry_a_sentence_for_the_reader_beside_its_kind() {
-    let at = chrono::Utc
-        .with_ymd_and_hms(2026, 11, 9, 13, 32, 0)
-        .unwrap();
+    let at = jiff::civil::date(2026, 11, 9)
+        .at(13, 32, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp();
     let said = "purlis could not reach GitHub for the milestones of acme/api. It asks again in a \
                 minute.";
     assert_eq!(

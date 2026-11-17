@@ -45,10 +45,10 @@ impl Where {
 
 /// The instant a hook acts at: `--now` (a LOCAL naive stamp, as everywhere in this binary),
 /// else the clock.
-pub fn instant(now: Option<&str>) -> chrono::DateTime<chrono::Utc> {
-    now.and_then(|text| text.parse::<chrono::NaiveDateTime>().ok())
-        .and_then(|naive| chrono::TimeZone::from_local_datetime(&chrono::Local, &naive).single())
-        .map_or_else(chrono::Utc::now, |local| local.with_timezone(&chrono::Utc))
+pub fn instant(now: Option<&str>) -> jiff::Timestamp {
+    now.and_then(|text| purlis_core::wallclock::reading(text).ok())
+        .and_then(|naive| purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive))
+        .unwrap_or_else(jiff::Timestamp::now)
 }
 
 fn env(name: &str) -> Option<String> {
