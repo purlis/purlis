@@ -363,7 +363,7 @@ fn every_test_only_switch_on_a_scenario_path_is_forced_or_listed() {
                 "covers": {"linux": [], "macos": []},
             })),
             Some(entry) if entry.count != *count => wrong.push(format!(
-                "{file} `{at}`: listed {} time(s), found {count}",
+                "{file} `{at}`: its entry's count is {}, and the scan found {count}",
                 entry.count
             )),
             Some(_) => {}

@@ -501,6 +501,7 @@ test("no file that holds the repository's root reads an agent's steering file by
 const WALK_ONLY_CODE = {
   "app/src-tauri/src/savefix/tests.rs":
     "crates/ and app/src-tauri/ sources; its app/src walk is in WINDOW_WALK_MISSES (#3609)",
+  "app/src-tauri/src/scenarios/switches.rs": "crates/*/src and app/src-tauri/src Rust (T1.1-06)",
   "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
   "app/src/community.test.ts": "root files and .github/, which run everything",
   "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
