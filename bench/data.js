@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794902186750,
+  "lastUpdate": 1794905233909,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50526,6 +50526,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5278785,
             "unit": "ms",
             "extra": "median of 5 runs: 101.990, 102.216, 102.528, 102.998, 103.388 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "590e555dff48fdd473a1b970ac0c5114a830b6a1",
+          "message": "Q308 review fixes: the held root, one HEAD read, a checked policy log, an owned seal key (#7061)\n\n* Q308a: the floor's process rules follow [policy] processes; existing suites that prove today's blocking run strict explicitly; the recorded answers carry the new override note\n\nThe recorded scenario pretooluse-outside-a-plane-the-charter-prose-guard-still-refuses moves on\npurpose: outside any plane the shipped default, watch, logs A6 (guards.save) instead of refusing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7J2NPK8357TGZZ7MCZGCE1M\nPurlis-Persona: steward\n\n* Q308: the loosening press in the window, dispatch and host asks follow [policy], Q308b's families are keys, docs for [policy]\n\n- ProjectPolicyNotice: Accept (window-only accept_project_policy) for a loosening, and the\n  values [policy] holds that purlis could not read, each enforced meanwhile.\n- dispatch: under off/log a pair nothing covers starts with no grant, and an unsandboxed or\n  unattended chat's dispatch is not refused for that; locks and the person's nevers hold.\n- asks: under off/log a host nothing lists is answered Allow for the chat and logged; Keep\n  blocked holds.\n- guards.forge, guards.shape, guards.plane, mode, tools, trust, runners, consents and limits are\n  keys with their template defaults; the shape arms (caps, A7-A7e, A10) are guards.shape's.\n- strict leaves the sandbox level to [sandbox], as today (Q316).\n- ADR 0125, docs/policy.md, plane-format and the changelog fragment for [policy].\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7J2NPK8357TGZZ7MCZGCE1M\nPurlis-Persona: steward\n\n* Q308: the recorded pretooluse scenarios run strict through PURLIS_POLICY, not the shared fixture planes; Prettier on the policy Notice\n\nAdding [policy] to tests/fixtures/planes moved 21 save, doctor and statusline scenarios that read\nthat file. The 38 pretooluse scenarios now carry PURLIS_POLICY with every family enforced\ninstead, which can only tighten.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7J2NPK8357TGZZ7MCZGCE1M\nPurlis-Persona: steward\n\n* Q308: fixes from the security review of #6992 and the M75 rounds\n\n- B1: the floor's refusal of programs that would run outside the wrap holds under every\n  [policy]; processes is held.\n- B2/S1/S3: only the app resolves [policy]. A hook, a git hook or secret exec asks the app over\n  the hook socket (Ask::Policy) and runs every family enforced where it does not answer; no\n  folder or variable a chat names is read for it. Log lines go to the app (Ask::PolicyLog).\n- S2: the committed file is read at HEAD, and the press is bound to the digest it showed.\n- S4: the nevers file carries a sealed presence marker; deleted or edited behind the app's back,\n  it reads as unread.\n- S5: A3c, A3d, A9 and A9b are the sandbox's, kept whenever a wrap is applied.\n- S6: any bad value means strict.\n- Ratchet: the app keeps every tightening it sees; the acceptance's newest seal is anchored in\n  the keychain by the plane's real path before the record is written; with an anchor, a record\n  missing, edited, older or under a new clone key denies every family and every cross-persona\n  dispatch until the person presses again, which the Notice offers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7J2NPK8357TGZZ7MCZGCE1M\nPurlis-Persona: steward\n\n* Q308 review fixes: the held root, one HEAD read, a checked policy log, an owned seal key\n\nThe final security re-review of #6992, its should-fix items and nits:\n- S1: the brokered commit's scan runs under the project the app holds, never one found from\n  the folder.\n- S2: the press digests the resolved modes (HEAD, the local file, the locks) from one read.\n- S3: the core validators and the log's line cap; the app's handler still writes as before,\n  so its test is seen red in CI first.\n- S4 (option C): the seal key is used only once the app shows it owns the item; #7007 for\n  the access-rule check.\n- Nits: a HEAD git cannot read is strict; a sealed record with no anchor is broken; the\n  floor tests' stale comment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JVNMEYYX8BS55KH5Y7RB0C\nPurlis-Persona: steward\n\n* Q308 review fixes, S3: the app checks a handed log line before it writes it\n\nA line a chat's process hands over is refused for a chat this app has no open record of, a\nfamily or rule purlis does not have, or a host that is no host:port; nothing goes to\nunknown.jsonl for an unidentified caller. Its test was red on the previous head in CI.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7JVNMEYYX8BS55KH5Y7RB0C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T08:04:56Z",
+          "tree_id": "ba911ba112ab0c03750304516f6ed096dc34ab6b",
+          "url": "https://github.com/purlis/purlis/commit/590e555dff48fdd473a1b970ac0c5114a830b6a1"
+        },
+        "date": 1794905227632,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3580165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.344, 0.353, 0.358, 0.359, 0.377 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.380509,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.322, 16.342, 16.381, 16.516, 16.706 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8489525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.837, 101.323, 101.849, 102.022, 102.488 ms"
           }
         ]
       }
