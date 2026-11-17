@@ -171,6 +171,8 @@ fn every_text_of_the_project_is_masked_as_asking_the_scanner_whole_and_by_line_m
 /// `generated.sha256`, one `<sha256>  <path>` line each, as `shasum -a 256` writes them. A change
 /// of time crate, or of anything else, that moves one byte of a record names that record here.
 /// Set `SCALE_PROJECT_BLESS=1` to write the file from this build instead, then read its diff.
+/// In a sandboxed chat (`PURLIS_SANDBOXED=1`) no `workspace.json` is written (#2046), so bless
+/// and compare with `PURLIS_SANDBOXED=0`, as CI and a person's machine run.
 #[test]
 fn a_project_is_written_with_the_bytes_it_had_before_the_move_to_jiff() {
     use sha2::{Digest, Sha256};

@@ -64,6 +64,7 @@ e4e1ca1edaeebde9f3ff61a12d13e07f25a33bda6c4a2c5a18a78836cd96d763  workspaces/ws-
 b18491a8bcf4863cea497715efb93b05a9364354f3bd563a885801e6d3fb59cc  workspaces/ws-0001/todos/20260930-120852-search-record-regression-persona-milestone-1.md
 f68ceac7bbdf577672ec0e69f11ac05ffc3a6ebcf564585a9845519b9dd7b965  workspaces/ws-0001/todos/20261003-155149-api-persona-colour-2.md
 2ba1dbe7aefe5019064522cd4bcc15466f43cdbad4fa46bbb2feab63fe48964c  workspaces/ws-0001/todos/MEMORY.md
+ea8cc44e859ba66c4a391d2622e25428f6c683314f16d2545537bb83d5763bdc  workspaces/ws-0001/workspace.json
 d51ae980a11a9553108b25e9aedb769d5f5e340fbc10572c3c3d07fca5ce2b0b  workspaces/ws-0001/workspace.md
 22e7bf9210c0c192011b01413a8f706f9df18d3d88d90abcf71cc1c6b5e093cd  workspaces/ws-0002/.claude/settings.json
 748a19a13e554cb7b9bb698f7282ee3047fe0d6daa40203b1948671b49938f63  workspaces/ws-0002/.purlis-generated
@@ -86,6 +87,7 @@ f877c055f8113b10e6d56e33f487f6bdefae38b877f37d59e68c9d7a781dd420  workspaces/ws-
 1dbd31963df8c05436478d0a053d6f24e0cd271ffeea8a85288a8f7e0085e860  workspaces/ws-0002/todos/20260914-021754-service-window-rollout-1.md
 5be1a7d6b28d007e8fb8230c1340653527dbd60d831848f53a422e23291d47e9  workspaces/ws-0002/todos/20261030-070120-open-backup-worker-2.md
 ad44b232b52eac9225b1d05299ff2bb347ee8c31fe821bb35dc1f04e915c03b4  workspaces/ws-0002/todos/MEMORY.md
+e4346d93321af605d9c53013825070f4d1c276f046e6014510d1ef3b3d6d10f0  workspaces/ws-0002/workspace.json
 db627991179d1076dfd151541e8a2ed2a9b7c4c059ff951f10789e3e9d81d4a2  workspaces/ws-0002/workspace.md
 22e7bf9210c0c192011b01413a8f706f9df18d3d88d90abcf71cc1c6b5e093cd  workspaces/ws-0003/.claude/settings.json
 748a19a13e554cb7b9bb698f7282ee3047fe0d6daa40203b1948671b49938f63  workspaces/ws-0003/.purlis-generated
@@ -108,4 +110,5 @@ d13a6024b7369055addf20bb1cd8dc5fefccbfa9c846cf93d2be704b2c10f168  workspaces/ws-
 146bc54040de890a6d4661a65df1520dfdc2b425d71cc901fa173806dde15e76  workspaces/ws-0003/todos/20260923-192136-rebase-vault-agent-client-colour-decision-upgrad.md
 6b31df68ae0291ab69ef70b69c546c4abdd72801bef73977568e46c15d6e1006  workspaces/ws-0003/todos/20261024-023657-read-seed-record-limit-1.md
 2450a74991e3b35069b818ce112c8e69a06a0a684d162de16cdba14075034686  workspaces/ws-0003/todos/MEMORY.md
+5bf16ef5ec6bd73b31c3869366cc6e711c6e6c07c11a434735596082c2029fef  workspaces/ws-0003/workspace.json
 fe656d82c8b974c167d4f1c1b185ce8075160d7344be7f2308464e0605004298  workspaces/ws-0003/workspace.md
