@@ -934,7 +934,10 @@ fn a_blob_git_cannot_read_at_head_is_strict_and_only_a_missing_path_is_no_file()
 
     // A file on disk and never committed, and one in no commit at all: no file at `HEAD`.
     let uncommitted = a_committed_plane("");
-    let ran = git_in(uncommitted.path(), &["rm", "-q", "--cached", "charter.toml"]);
+    let ran = git_in(
+        uncommitted.path(),
+        &["rm", "-q", "--cached", "charter.toml"],
+    );
     assert!(ran.status.success(), "{ran:?}");
     let ran = git_in(
         uncommitted.path(),
@@ -1027,7 +1030,10 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     crate::secrets::seal::set_foreign_for_this_test(false);
     let why = refused.expect_err("nothing accepted").to_string();
     assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
-    assert!(why.contains("security delete-generic-password -s purlis-seal"), "{why}");
+    assert!(
+        why.contains("security delete-generic-password -s purlis-seal"),
+        "{why}"
+    );
     press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
     assert!(!broken(root.path()));
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);

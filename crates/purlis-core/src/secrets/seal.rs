@@ -529,7 +529,10 @@ mod tests {
         let mut cache = KeyCache::default();
         assert!(matches!(cache.found(false, &items), Found::Foreign));
         items.forget(SERVICE);
-        assert!(matches!(cache.found(false, &items), Found::Foreign), "kept until a press");
+        assert!(
+            matches!(cache.found(false, &items), Found::Foreign),
+            "kept until a press"
+        );
         let made = held(cache.found(true, &items));
         assert_eq!(items.value(SERVICE), Some(crate::extension::hex(&made)));
         // The app's own key is never read again, whatever is put where it was.

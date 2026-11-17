@@ -1148,7 +1148,10 @@ fn append(root: &Path, path: &Path, line: &Logged) -> std::io::Result<()> {
     let mut text = serde_json::to_string(line).map_err(std::io::Error::other)?;
     text.push('\n');
     file.write_all(text.as_bytes())?;
-    counts.insert(path.to_path_buf(), Counted::of(&file.metadata()?, lines + 1));
+    counts.insert(
+        path.to_path_buf(),
+        Counted::of(&file.metadata()?, lines + 1),
+    );
     Ok(())
 }
 

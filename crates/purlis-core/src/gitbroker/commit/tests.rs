@@ -1330,9 +1330,11 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
         common: t.here.common.clone(),
         clone: t.here.clone.clone(),
     };
-    git::isolated(&plain, || made(&held.1, 4, Some(ID), &ask, &here, &identity))
-        .map_err(|refused| refused.why)
-        .expect("a logged finding is let through");
+    git::isolated(&plain, || {
+        made(&held.1, 4, Some(ID), &ask, &here, &identity)
+    })
+    .map_err(|refused| refused.why)
+    .expect("a logged finding is let through");
     let logged = crate::enforcement::read_log(&held.1, ID);
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!(logged[0].family, "guards.credential");
