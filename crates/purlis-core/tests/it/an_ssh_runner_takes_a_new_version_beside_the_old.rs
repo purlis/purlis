@@ -69,7 +69,13 @@ fn fixture() -> Option<Fixture> {
         .expect("a folder");
     let ssh = sshroute::ssh_here().expect("the system's ssh");
     // The machine met with nothing signed in, and the key it presented pinned: Trust this machine.
-    let key = connect::meet(&ssh, &route, settings.path()).expect("the machine is met");
+    let key = connect::meet(
+        &ssh,
+        &route,
+        &connect::resolve(&ssh, &route).expect("resolved"),
+        settings.path(),
+    )
+    .expect("the machine is met");
     let reach = |route: Route, name: &str| Reach {
         ssh: ssh.clone(),
         route,
