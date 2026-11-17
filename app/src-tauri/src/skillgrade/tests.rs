@@ -1213,3 +1213,54 @@ fn a_scorecard_shows_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
         "a teammate's row can say anything"
     );
 }
+
+/// #6906: a grade's chat is handed vault values as a task's is, through the same brokered paths,
+/// so what its kept screen shows of one is masked as a task's is (#6309), never kept as it was.
+#[test]
+fn a_vault_value_a_grade_s_chat_was_handed_and_printed_is_masked_in_its_kept_screen() {
+    // An obvious fake: no credential is or was this.
+    use crate::host::SessionHost;
+    let host = crate::host::pretend::Pretend::default();
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = std::fs::canonicalize(dir.path()).expect("canonical");
+    host.open(Some(9), &crate::host::Opening::default(), &|_| {})
+        .expect("running");
+    host.shows(9, "token: FAKE-VAULT-VALUE-6906\r\n");
+    purlis_core::secrets::handedto::remember(
+        &root,
+        9,
+        &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
+        "FAKE-VAULT-VALUE-6906",
+    )
+    .expect("named");
+    let of = grades::kept::Of::Skill("deploy".to_owned());
+
+    keep_grade_screen(&root, &host, 9, &of, "01GRADE", "01CHAT");
+
+    assert_eq!(
+        grades::kept::kept_of(&root, &of, "01GRADE", "01CHAT").as_deref(),
+        Some("token: ‹secret: github-token›\r\n")
+    );
+}
+
+/// #6906: a grade's chat whose secrets could not be known to mask keeps no screen, as a task's
+/// keeps none (#6309): never one kept unmasked.
+#[test]
+fn a_grade_s_chat_whose_secrets_cannot_be_known_keeps_no_screen() {
+    use crate::host::SessionHost;
+    let host = crate::host::pretend::Pretend::default();
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = std::fs::canonicalize(dir.path()).expect("canonical");
+    host.open(Some(9), &crate::host::Opening::default(), &|_| {})
+        .expect("running");
+    host.shows(9, "token: FAKE-VAULT-VALUE-6906\r\n");
+    // Names on disk that do not read: what the chat was handed is not known.
+    let names = purlis_core::secrets::handedto::dir(&root);
+    std::fs::create_dir_all(&names).expect("made");
+    std::fs::write(names.join("9.names"), "not a line\n").expect("written");
+    let of = grades::kept::Of::Skill("deploy".to_owned());
+
+    keep_grade_screen(&root, &host, 9, &of, "01GRADE", "01CHAT");
+
+    assert_eq!(grades::kept::kept_of(&root, &of, "01GRADE", "01CHAT"), None);
+}

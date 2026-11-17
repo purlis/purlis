@@ -2772,14 +2772,14 @@ impl InChats<'_> {
         }
         // What its terminal showed as it ended, kept to open from the scorecard (SK-59).
         if let (Some(chat), Some(of)) = (id.as_deref(), self.keeps.as_ref()) {
-            match screen_of(self.held.chats().sessions(), session) {
-                Some(screen) => {
-                    if let Err(why) = grades::kept::keep_of(&root, of, self.grade, chat, &screen) {
-                        tracing::warn!("purlis: a grade's chat {session} was not kept ({why})");
-                    }
-                }
-                None => tracing::warn!("purlis: a grade's chat {session} showed nothing to keep"),
-            }
+            keep_grade_screen(
+                &root,
+                self.held.chats().sessions(),
+                session,
+                of,
+                self.grade,
+                chat,
+            );
         }
         watching.unwatch(session);
         if let Err(why) = self.held.chats().close(session) {
@@ -2815,6 +2815,38 @@ fn router_did_not_route(chats: &crate::chats::Chats, session: u32) -> Option<Str
         Some(one) if one.routed.record.fell_back.is_none() => None,
         Some(one) => Some(one.routed.said()),
         None => Some("its start asked no router, so it measured the built-in router".to_owned()),
+    }
+}
+
+/// **Keeps what grade chat `session`, chat `chat` of `of`'s grade `grade`, showed as it ended**
+/// (SK-59), to open from the scorecard: **masked first** with every secret purlis handed it, as
+/// a task's kept screen is (#6906, #6309), since a grade's chat is handed vault values through
+/// the same paths. A screen whose secrets could not be known is not kept, never kept unmasked;
+/// either way the log says why.
+pub(crate) fn keep_grade_screen(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    session: u32,
+    of: &grades::kept::Of,
+    grade: &str,
+    chat: &str,
+) {
+    let Some(screen) = screen_of(host, session) else {
+        tracing::warn!("purlis: a grade's chat {session} showed nothing to keep");
+        return;
+    };
+    let read_again = purlis_core::secrets::handedto::read_again(root);
+    let Some(screen) =
+        purlis_core::secrets::handedto::masked_for(root, session, &screen, &read_again)
+    else {
+        tracing::warn!(
+            "purlis: a grade's chat {session} was not kept: what it was handed could not be \
+             known to mask"
+        );
+        return;
+    };
+    if let Err(why) = grades::kept::keep_of(root, of, grade, chat, &screen) {
+        tracing::warn!("purlis: a grade's chat {session} was not kept ({why})");
     }
 }
 
