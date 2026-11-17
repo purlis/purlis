@@ -2153,6 +2153,17 @@ pub fn strip_reader_heredocs(cmd: &str) -> String {
 /// For a guard that reads a line by its segments ([`shellseg::joined_argv`]), whose lexer knows
 /// no heredoc and would read every line of a body as a command.
 pub fn commands_a_shell_runs(cmd: &str) -> String {
+    shell_runs(cmd, true)
+}
+
+/// [`commands_a_shell_runs`] without the substitutions of a body nothing runs: the lines a
+/// shell runs as commands of their own, where a word's place on the line still says what it is
+/// (#7131). A substitution in a body is read by its own body's text.
+pub fn lines_a_shell_runs(cmd: &str) -> String {
+    shell_runs(cmd, false)
+}
+
+fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
     if !cmd.contains("<<") {
         return cmd.to_owned();
     }
@@ -2171,7 +2182,7 @@ pub fn commands_a_shell_runs(cmd: &str) -> String {
         let len = line.text.chars().count();
         if !line.body || line.executed {
             out.push(line.text);
-        } else if line.expands {
+        } else if line.expands && with_body_substitutions {
             out.extend(
                 substitutions()
                     .iter()

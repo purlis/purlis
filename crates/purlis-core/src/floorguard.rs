@@ -293,6 +293,20 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
         }
     }
+    // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
+    // command with any words after it, so it is unreadable outright (#7131). Read only where a
+    // shell runs the line as a command: a heredoc body's substitution is data in its place.
+    let lines = crate::heredoc::lines_a_shell_runs(cmd);
+    for reading in shellseg::segment_readings(&lines) {
+        let (prog, ..) = shellwrap::split_env(&reading.own);
+        if program_built_by_the_shell(&prog) {
+            return Some(format!(
+                "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
+                 command this is. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+    }
     for toks in &segments {
         let said = segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin);
         if said.is_some() {
@@ -334,15 +348,6 @@ fn segment_reason(
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
     {
         return Some(said);
-    }
-    // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
-    // command with any words after it, so it is unreadable outright (#7131).
-    if program_built_by_the_shell(&prog) {
-        return Some(format!(
-            "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
-             command this is. {WRITE_IT_OUT}",
-            merge::UNREADABLE
-        ));
     }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
@@ -598,7 +603,14 @@ fn program_built_by_the_shell(prog: &str) -> bool {
             c => last.push(c),
         }
     }
-    last.contains('\u{0}') || last.contains(['*', '?', '[']) || merge::brace_expansion(&last)
+    // `[` opens a glob only where a `]` closes it.
+    let glob_class = last
+        .find('[')
+        .is_some_and(|open| last[open + 1..].contains(']'));
+    last.contains('\u{0}')
+        || last.contains(['*', '?'])
+        || glob_class
+        || merge::brace_expansion(&last)
 }
 
 /// **The commands the floor reads in a line** (#7092): each segment's own words, a

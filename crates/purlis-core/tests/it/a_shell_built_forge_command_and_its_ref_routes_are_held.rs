@@ -105,6 +105,8 @@ fn a_program_a_substitution_builds_is_held_whatever_follows() {
     assert_passes(&[
         "$(git rev-parse --show-toplevel)/tools/check.sh",
         "\"$(dirname \"$0\")/run.sh\" --fast",
+        "gh pr create --body-file - <<BODY\na `env` b\nBODY\n",
+        "cat <<DOC\n$(cat notes.md)\nDOC",
     ]);
 }
 
