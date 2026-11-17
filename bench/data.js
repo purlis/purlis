@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794947550964,
+  "lastUpdate": 1794952506071,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50862,6 +50862,48 @@ window.BENCHMARK_DATA = {
             "value": 101.57510450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.123, 101.447, 101.575, 101.763, 101.985 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ca48013cb69a28a8ed0a83fbd99aa60f335ac63c",
+          "message": "A kept task screen masks the secrets purlis handed its chat (#6309) (#6847)\n\n* Mask the secrets purlis handed a task chat in its kept screen (#6309)\n\nEach value handed is known per chat as its entry's name and keyed digest\n(secrets::handedto), and keep_screen masks the screen's visible text with them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* Add secrets::handedto, its tests and the changelog fragment (#6309)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A launch after a crash masks a left task's screen by the entries named on disk (#6309)\n\nEach chat's handed entries are named, by vault and key and never a value, in\n<state>/app/chat-handed/<chat>.names (Clone state, denied to every sandboxed chat,\ngone as the chat closes for good, swept after 30 days). A launch reads those\nentries again where that asks nobody; one it cannot read leaves the screen not kept.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A run's handed values are one list of entry and value, and a profile sign-in value is always read with its entry (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A value of several lines is masked in a kept screen, whole and line by line (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A launch after a crash masks a value in the form it was handed: escaped for a dotenv file, pointed at a tunnel, or not at all where it was made once (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A runner run's values and a page's fills are recorded where they are read, each recording point held by a test (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* What a chat is handed is named on disk before it is handed, or not handed; names that do not read keep no screen, and a returning chat's names are kept past 30 days (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A launch after a crash reads a linked entry again only where the vault it reads through asks nobody (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A browser login's values mask the chat's kept screen, as a fill's do (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A kept screen is looked at in steps of its length times the lengths looked for, and one that would take more than a bound is not kept (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* Format the kept-screen masking code and tests (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* The plane format and changelog name what a kept screen is masked with, the forms named on disk, and the 4-byte floor (#6309)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A launch after a crash reads an entry again only where reading its value asks nobody, so a reference vault's entry, or one linked into it, leaves the screen not kept (#6309)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* A tunnelled value in a credential file is masked as a dotenv file escapes it, in the process and after a crash, under test (#6309)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* Each entry a chat was handed is named on disk with a seal of its value under the plane's key, and a launch after a crash keeps no screen whose entry does not seal the same again (#6309)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* Disable the check of a named entry's seal after a crash, for one CI run of its tests (#6309)\n\nReverted in the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* Revert \"Disable the check of a named entry's seal after a crash, for one CI run of its tests (#6309)\"\n\nThis reverts commit 07541456af98112f87034eb95af08a1c8ae290ab. With it, CI failed\nafter_a_crash_an_entry_changed_since_it_was_handed_leaves_the_screen_unmaskable and\nafter_a_crash_an_entry_named_with_no_seal_of_purlis_s_leaves_the_screen_unmaskable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n* The crashed-window screen tests name what was handed with its seal, as purlis names it (#6309)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7GB6J9GPN9SDGK3G718NQAX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T19:46:54Z",
+          "tree_id": "825e211a2aa249c62a5e333649b7500a92318255",
+          "url": "https://github.com/purlis/purlis/commit/ca48013cb69a28a8ed0a83fbd99aa60f335ac63c"
+        },
+        "date": 1794952499265,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5373875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.537, 0.537, 0.557, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.194335000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.129, 16.168, 16.194, 16.205, 16.384 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 99.7348615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.665, 99.707, 99.735, 100.640, 100.745 ms"
           }
         ]
       }
