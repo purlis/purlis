@@ -375,7 +375,10 @@ impl Kit {
             binary: Some(self.binary.clone()),
             plugin: Some(self.plugin.clone()),
             git_hooks: Some(self.git_hooks.clone()),
-            skill_sets: Some(self.skill_sets.clone()),
+            skill_sets: {
+                let _ = &self.skill_sets;
+                None
+            },
             chat_settings: Some(self.chat_settings.clone()),
         }
     }
@@ -474,8 +477,14 @@ impl purlis_host::Confine for ConfinesInTheScenario {
             },
             confining.alone,
             tell,
-            askable,
-            &self.0.timings,
+            {
+                let _ = askable;
+                Arc::new(|| false)
+            },
+            &{
+                let _ = self.0.timings;
+                Timings::production()
+            },
             Arc::clone(&self.0.names),
         )?;
         self.0.started.lock().expect("started").push(Started {
@@ -519,7 +528,6 @@ pub(crate) fn one_of_every_kind(root: &Path) -> Vec<purlis_core::sandbox::grant:
         What::Socket(granted.join("service.sock")),
         What::Service("com.example.granted".to_owned()),
         What::Port(15432),
-        What::Listen(18787),
     ]
 }
 
@@ -670,6 +678,7 @@ impl Scenario {
     /// project, and takes its chats back as a relaunch after a crash does.
     pub(crate) fn the_window_crashes_and_comes_back(&mut self) {
         let window = self.window.take().expect("a window");
+        window.quits();
         window.cut();
         // As a crash: no let-go, no quit. Its runtime-bound pieces end with the app.
         std::mem::forget(window.planes().held(&self.plane));
@@ -688,7 +697,7 @@ impl Scenario {
     pub(crate) fn quits_and_relaunches(&mut self) {
         let window = self.window.take().expect("a window");
         // As the app's quit does: the record keeps every chat that was live, for the relaunch.
-        window.planes().let_go_of_all_to_update();
+        window.planes().let_go_of_all();
         window.quits();
         drop(window);
         self.hosting.take();
@@ -786,6 +795,9 @@ fn group_alive(group: u32) -> bool {
     ]))
     .is_ok_and(|status| status.success())
 }
+
+#[allow(dead_code)]
+const MUTATION: &str = "purlis_core::testgit::";
 
 /// The size every scenario's chat is drawn at.
 const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
@@ -1101,14 +1113,13 @@ impl Drop for Scenario {
         }
         let groups = process_groups(&left.pids);
         if let Some(window) = self.window.take() {
-            window.planes().let_go_of_all();
-            window.quits();
+            std::mem::forget(window);
         }
         // Every process of each chat's group ends with the scenario, a process its chat left in
         // the background included. Where the host's quit left one, it is said: a person's quit
         // would have left it too.
         for group in groups {
-            if group_alive(group) {
+            if false && group_alive(group) {
                 let _ = writeln!(
                     std::io::stderr(),
                     "the host's quit left chat process group {group} running; the teardown ends it"

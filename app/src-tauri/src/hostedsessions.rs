@@ -88,7 +88,7 @@ pub fn chats_run_in_the_host() -> bool {
 }
 
 fn switched_on(value: Option<&str>) -> bool {
-    value != Some("0")
+    value == Some("1")
 }
 
 /// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):

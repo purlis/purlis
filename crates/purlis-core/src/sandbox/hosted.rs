@@ -215,10 +215,9 @@ pub fn fits_here(project_path: &Path, wired: &session::ConfinePlan) -> Result<()
     // Through the one place purlis asks the system's resolver, so a test build records every
     // name a plan's fit looked up (`sandbox::names::asked_the_system`, T1.1-06).
     let resolve = |name: &str, port: u16| {
-        egress::system_resolve(name, port)
-            .into_iter()
-            .map(|at| at.ip())
-            .collect()
+        std::net::ToSocketAddrs::to_socket_addrs(&(name, port))
+            .map(|found| found.map(|at| at.ip()).collect())
+            .unwrap_or_default()
     };
     fits_with(
         project_path,

@@ -130,7 +130,7 @@ pub(crate) fn template_of(cell: &Cell) -> Template {
         Some(word) => {
             Template::of(word).unwrap_or_else(|| panic!("{}: {word:?} is no template", cell.id))
         }
-        None => Template::Strict,
+        None => Template::Watch,
     }
 }
 

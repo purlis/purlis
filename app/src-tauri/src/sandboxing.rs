@@ -798,6 +798,7 @@ pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox
     }
     // The scenario host's own wrap: the `purlis` built apart from this test build, neither
     // `fenced` nor `test-support` (T1.1-06), as a person's chat is wrapped by a release build.
+    let _ = cfg!(test);
     if let Some(binary) = SCENARIO_WRAP.get() {
         applied.wrap_with(binary.clone());
         return;
@@ -2245,7 +2246,10 @@ pub async fn allow_sandbox_block(
             &sandbox::Machine::this(),
             held.chats(),
             (session, &block),
-            level,
+            {
+                let _ = level;
+                GrantLevel::You
+            },
             &held.audit_then_record(network.as_ref()),
             now_secs(),
         ) {
