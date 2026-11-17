@@ -398,7 +398,7 @@ export const PlainTcpRefused: Story = {
 
 /** What Connect asks the engine before the pool is made (#6272): it confines runners, and its
  *  platform has a runner image. The image's download and the disk wait for the pool. */
-const ON_CONNECT = ["unconfined", "unsupported-architecture"];
+const ON_CONNECT = ["unconfined", "unsupported-architecture", "kernel-short"];
 const EVERY_ENGINE_CHECK = [...ON_CONNECT, "image-unreachable", "disk-full"];
 
 const DONE = connect({
