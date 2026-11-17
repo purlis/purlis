@@ -1150,7 +1150,6 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::TaskQuestion => "A task asks you a question",
         AskSource::SignIn => "Asks you to sign a profile in",
         AskSource::SandboxOnly => "Asks you to make a sandbox-only profile",
-        AskSource::OldHarnessPlugins => "Old harness plugin settings, ignored now",
         AskSource::Signing => "Lanes wait on signed commits",
         AskSource::PoolSetup => "Your cluster is ready for Pool setup",
         AskSource::Browser => "Asks what its browser may reach",

@@ -73,7 +73,6 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
-      "Previews",
     ]);
     expect(box().compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -184,7 +183,6 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
-      "Previews",
     ]);
     expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(count()).toHaveTextContent(/^$/);
@@ -221,7 +219,6 @@ describe("filtering the Settings tab by name", () => {
       "Pools",
       "Accounts",
       "Profiles",
-      "Previews",
     ]);
   });
 });

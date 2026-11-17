@@ -355,6 +355,7 @@ describe("a menu on screen", () => {
     expect(menu).toHaveAccessibleName(`Chat ${NAME}`);
     expect(rowsIn(menu).map(rowName)).toEqual([
       "Rename chat…",
+      "Use skill…",
       "Ask",
       // Where it is drawn, by the keys (#4764).
       "Move…",
@@ -624,7 +625,7 @@ describe("a menu on screen", () => {
       expect(within(menu).getByRole("menuitem", { name: "Rename chat…" })).toHaveFocus(),
     );
     await user.keyboard("{ArrowDown}");
-    expect(within(menu).getByRole("menuitem", { name: "Ask" })).toHaveFocus();
+    expect(within(menu).getByRole("menuitem", { name: "Use skill…" })).toHaveFocus();
     await user.keyboard("{ArrowUp}");
     // Type-ahead reads a row's words, not its note.
     await user.keyboard("a");

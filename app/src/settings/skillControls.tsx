@@ -5,7 +5,7 @@
  * **Settings › Skill sources** (#6031, `prototype/skill-policy` A): the project's
  * `[skill_policy]` read only, one row per key, each saying where it is set, and the skill acts
  * this machine recorded as a table under it. Kept in the shared file, which the team changes by a
- * reviewed change: nothing here writes it. Behind the Skill studio's flag.
+ * reviewed change: nothing here writes it.
  */
 import { useEffect, useState } from "react";
 import {

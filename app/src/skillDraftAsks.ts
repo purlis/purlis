@@ -25,7 +25,7 @@ const NONE: readonly SkillDraft[] = [];
  *
  * The core says a draft came when the project's asks move (`asks-changed`), so the studio and a
  * chat's tab read the drafts again then, and after the person's own press. Nothing is asked while
- * `asked` is false: a chat's tab asks only while the studio's flag is on.
+ * `asked` is false: the window asks for its studio chats only while the studio has one open.
  */
 export function useSkillDrafts(
   plane: string,

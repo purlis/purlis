@@ -11,7 +11,7 @@ import { studioPage, studioMore, studioSkill } from "../studio.js";
 
 /**
  * **A persona's own skills, changed in the Skill studio** (SK-32, #3003), in the built app
- * against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * against the real core.
  *
  * The spec opens the studio on a chat as `steward` from its page, makes a skill there with New
  * skill, which lands in `steward`'s own skills, renames it, deletes it after Delete has said that

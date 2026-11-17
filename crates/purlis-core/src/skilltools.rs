@@ -36,8 +36,8 @@
 //! copy (its level), and run in the chat's own place. A run whose row does not say which copy it
 //! is of (written before this) is no copy's, and is not shown.
 //!
-//! Behind the `skill-studio` flag until its finish line (#2786): the server lists them only
-//! while the flag is on.
+//! The server lists them only where the plane's skills reach the chat
+//! ([`crate::skills::reach_chats_here`]).
 
 use std::path::Path;
 

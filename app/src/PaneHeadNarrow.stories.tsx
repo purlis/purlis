@@ -326,21 +326,15 @@ function UsingHeads() {
 export const UsingDropsInOrder: Story = {
   render: () => <UsingHeads />,
   beforeEach: () => {
-    // The studio is on, and a browser's view is never attached, so each thumbnail is drawn as
-    // its mark, as `BrowsersGridTab`'s are: a picture with no frame to race.
-    mockIPC((cmd) =>
-      cmd === "skill_studio_on"
-        ? true
-        : cmd === "watch_browser"
-          ? new Promise(() => undefined)
-          : null,
-    );
+    // A browser's view is never attached, so each thumbnail is drawn as its mark, as
+    // `BrowsersGridTab`'s are: a picture with no frame to race.
+    mockIPC((cmd) => (cmd === "watch_browser" ? new Promise(() => undefined) : null));
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const at = (width: number) =>
       canvasElement.querySelector<HTMLElement>(`[data-width="${width}"]`);
     const goes = (part: string) => HEAD_DROPS.find((drop) => drop.part === part)?.below ?? 0;
-    // The chip waits on the studio saying it is on: wait for it, so the picture never races it.
+    // Wait for the chip, so the picture never races it.
     await waitFor(() => expect(at(450)?.querySelector(".pane-skill-run") ?? null).not.toBeNull());
     for (const width of WIDTHS) {
       const chips = at(width);

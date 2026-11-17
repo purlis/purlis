@@ -4,44 +4,28 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::machine::Flags;
-
-const ON: Flags = Flags { skill_studio: true };
 
 #[test]
-fn the_skill_studio_flag_is_off_until_this_machine_turns_it_on() {
-    let unset = |_: &str| None;
-    assert!(!studio_on(&Flags::default(), &unset));
-    assert!(studio_on(&ON, &unset));
+fn a_projects_skills_reach_its_chats_with_nothing_turned_on_on_this_machine() {
+    // A project that has not moved its skills (#2784): no manifest requiring them, no store, no
+    // variable. The studio has no flag (#2786), so its chats get them all the same.
+    let plane = tempfile::tempdir().unwrap();
+    assert!(reach_chats_here(plane.path()));
 }
 
 #[test]
-fn turning_the_skill_studio_on_is_kept_in_this_machines_store_and_off_again() {
-    let config = tempfile::tempdir().unwrap();
-
-    set_studio_on(config.path(), true).unwrap();
-    assert!(crate::machine::read(config.path()).store.flags.skill_studio);
-    set_studio_on(config.path(), false).unwrap();
-    assert!(!crate::machine::read(config.path()).store.flags.skill_studio);
-}
-
-#[test]
-fn the_variable_turns_the_skill_studio_flag_on_or_off_over_what_the_machine_says() {
-    let set =
-        |value: &'static str| move |name: &str| (name == STUDIO_ENV).then(|| value.to_owned());
-    for flags in [Flags::default(), ON] {
-        assert!(studio_on(&flags, &set("1")), "{flags:?}");
-        assert!(!studio_on(&flags, &set("0")), "{flags:?}");
-        // A value it does not know leaves the machine to decide.
-        assert_eq!(
-            studio_on(&flags, &set("yes")),
-            flags.skill_studio,
-            "{flags:?}"
-        );
-    }
-    // Under its old name too, as every product variable is read.
-    let old = |name: &str| (name == "CHARTER_SKILL_STUDIO").then(|| "1".to_owned());
-    assert!(studio_on(&Flags::default(), &old));
+fn only_a_start_that_said_no_keeps_a_chat_from_the_projects_skills() {
+    let set = |value: &'static str| {
+        move |name: &str| (name == PLANE_SKILLS_ENV).then(|| value.to_owned())
+    };
+    assert!(started_with(&|_: &str| None));
+    assert!(started_with(&set("1")));
+    assert!(!started_with(&set("0")));
+    // A value it does not know is not a "no".
+    assert!(started_with(&set("off")));
+    // The old variable that turned the studio on or off says nothing now.
+    let old = |name: &str| (name == "PURLIS_SKILL_STUDIO").then(|| "0".to_owned());
+    assert!(started_with(&old));
 }
 
 #[test]
@@ -366,7 +350,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
     let tmp = tempfile::tempdir().unwrap();
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
-    // The host arms a Claude Code chat as the window would, with the Skill studio on.
+    // The host arms a Claude Code chat as the window would.
     let (args, env) = crate::hoststart::armed(&crate::hoststart::Arming {
         root: &plane,
         kit: &kit,

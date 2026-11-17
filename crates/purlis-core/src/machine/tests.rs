@@ -2463,35 +2463,26 @@ fn the_choice_of_this_machines_chrome_survives_a_write_and_a_read_and_anything_e
     }
 }
 
-// The ninth (#2764): the flags turned on on this machine.
+// The ninth (#2764): the flags turned on on this machine, none since the Skill studio's went
+// (#2786).
 
 #[test]
-fn a_flag_survives_a_write_and_a_read_and_is_absent_until_turned_on() {
+fn an_old_skill_studio_flag_is_read_as_nothing_and_left_out_at_the_next_write() {
     let machine = machine();
-    let mut store = one_plane();
-    write(machine.path(), &store).unwrap();
-    let text = std::fs::read_to_string(file(machine.path())).unwrap();
-    assert!(!text.contains("flags"), "nothing on yet: {text}");
-    assert!(!read(machine.path()).store.flags.skill_studio);
+    write(machine.path(), &one_plane()).unwrap();
+    let before = read(machine.path()).store;
+    let path = file(machine.path());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    doc["flags"] = serde_json::json!({ "skill-studio": true });
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
 
-    store.flags.skill_studio = true;
-    write(machine.path(), &store).unwrap();
+    // The planes it held are read as before: the old table breaks nothing.
+    update(machine.path(), |_| {}).unwrap();
 
-    let text = std::fs::read_to_string(file(machine.path())).unwrap();
-    assert!(text.contains(r#""skill-studio": true"#), "{text}");
-    assert!(read(machine.path()).store.flags.skill_studio);
-}
-
-#[test]
-fn a_flag_that_is_not_true_or_not_known_reads_as_off() {
-    for raw in [
-        serde_json::json!({ "flags": { "skill-studio": "yes" } }),
-        serde_json::json!({ "flags": { "skill-studio": 1 } }),
-        serde_json::json!({ "flags": { "skill_studio": true, "another": true } }),
-        serde_json::json!({ "flags": true }),
-    ] {
-        assert_eq!(flags_of(raw.get("flags")), Flags::default(), "{raw}");
-    }
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("flags"), "{text}");
+    assert_eq!(read(machine.path()).store, before);
 }
 
 #[test]

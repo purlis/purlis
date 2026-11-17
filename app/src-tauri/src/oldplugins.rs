@@ -7,20 +7,19 @@
 //! never rewritten behind the person's back
 //! ([`purlis_core::harness_plugin::old`]).
 //!
-//! - **One Ask in the Inbox** ([`notice_of`], drawn by `asking::old_harness_plugins`, so it
-//!   costs a project switch no read of its own) says which files hold them, until the person
-//!   answers it once: the Ask's **Dismiss**, or an **Apply** or a **Dismiss** on a change its
-//!   Remove held. The answer is kept in this machine's state for the project, where no chat
-//!   writes, so the Ask never comes back for it.
+//! - **One item of the Skill studio's Needs you** ([`notice_of`]) says which files hold them, until
+//!   the person answers it once: its **Dismiss**, or an **Apply** or a **Dismiss** on a change its
+//!   Remove held. The answer is kept in this machine's state for the project, where no chat writes,
+//!   so the item never comes back for it.
 //! - **Remove is an edit the person approves** ([`remove_old_harness_plugins`]): each file that
 //!   holds them, the project's two and each workspace's manifest (#3486), gets a proposed change
 //!   that takes the table out, held as purlis's own ([`crate::proposals::BY_PURLIS`]) and drawn,
 //!   shown whole and applied as a chat's proposal is. Nothing is written until the person
 //!   presses Apply on it, and a manifest is then written by its own writer, keeping its stamp.
-//!   While one of those changes waits, the Ask stays out of the Inbox: the change is what is
+//!   While one of those changes waits, the item stays out of Needs you: the change is what is
 //!   asked.
 //! - **A change that went stale asks again** (#3569): one whose file moved before Apply, or that
-//!   can no longer be made, is no answer. Once it is dismissed, the Ask comes back with Remove
+//!   can no longer be made, is no answer. Once it is dismissed, the item comes back with Remove
 //!   while its file still holds the keys ([`purlis_change_dismissed`]).
 
 use std::path::{Path, PathBuf};

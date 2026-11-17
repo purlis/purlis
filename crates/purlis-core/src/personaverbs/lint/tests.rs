@@ -26,11 +26,10 @@ fn plane(personas: &[(&str, &str)]) -> Plane {
 
 fn linter(plane: &Plane) -> Linter<'_> {
     // No `$HOME`, so no plugin cache and no skill check, unless a test gives one; no bundle,
-    // so no built-in skill; and the Skill studio's flag off, whatever this machine says.
+    // so no built-in skill.
     Linter::new(plane.root(), plane.root())
         .with_home(None)
         .with_built_in(None)
-        .with_studio(false)
 }
 
 fn messages(issues: &[Issue]) -> Vec<(Level, &str)> {
@@ -88,12 +87,12 @@ fn a_key_that_only_fed_the_retired_sub_agent_is_a_warning_that_names_its_ticket(
     )]);
     let issues = linter(&p).definition("r");
     let said: Vec<&str> = issues.iter().map(|i| i.message.as_str()).collect();
-    // Three, not four: `dispatch-isolation` is read again (#1453), as the persona's default
-    // place to work when a dispatch names none. Nor is `skills` retired (#2768): with the Skill
-    // studio's flag off it is said to be read only with it on (#2934).
-    assert_eq!(issues.len(), 3, "{said:#?}");
+    // Two, not four: `dispatch-isolation` is read again (#1453), as the persona's default
+    // place to work when a dispatch names none. Nor is `skills` retired (#2768): it is checked
+    // as a chat's start reads it (#2934), and with no home to look in, `deploy` is not said to
+    // be missing.
+    assert_eq!(issues.len(), 2, "{said:#?}");
     assert!(issues.iter().all(|i| i.level == Level::Warn));
-    assert!(said.contains(&SKILLS_UNREAD), "{said:#?}");
     assert_eq!(
         crate::personaverbs::retired::key_notice("skills", "deploy"),
         None
@@ -689,8 +688,7 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
     );
     let l = Linter::new(p.root(), p.root())
         .with_home(Some(home.path().to_path_buf()))
-        .with_built_in(Some(bundle.path().join("skills")))
-        .with_studio(true);
+        .with_built_in(Some(bundle.path().join("skills")));
     assert_eq!(
         messages(&l.definition("s")),
         vec![
@@ -740,7 +738,7 @@ fn a_skills_entry_naming_a_workspace_or_a_workspace_skill_that_is_not_there_is_a
     let p = naming(
         "workspaces/ws:triage, workspaces/gone:triage, workspaces/ws:nope, workspaces/a/b:x",
     );
-    let l = linter(&p).with_built_in(None).with_studio(true);
+    let l = linter(&p).with_built_in(None);
     assert_eq!(
         messages(&l.definition("s")),
         vec![
@@ -772,9 +770,7 @@ fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine()
     let bundle = tempfile::tempdir().unwrap();
     skill_folder(&bundle.path().join("skills"), "purlis-handoff");
     let p = naming("ghost, sp:gone, purlis:nope");
-    let l = linter(&p)
-        .with_built_in(Some(bundle.path().join("skills")))
-        .with_studio(true);
+    let l = linter(&p).with_built_in(Some(bundle.path().join("skills")));
     assert_eq!(
         messages(&l.definition("s")),
         vec![(
@@ -795,7 +791,6 @@ fn a_persona_naming_a_skill_its_program_reads_itself_is_not_warned() {
     let issues = Linter::new(p.root(), p.root())
         .with_home(Some(home.path().to_path_buf()))
         .with_built_in(None)
-        .with_studio(true)
         .definition("s");
     let said = messages(&issues);
     assert!(
@@ -808,30 +803,6 @@ fn a_persona_naming_a_skill_its_program_reads_itself_is_not_warned() {
     );
 }
 
-/// #4344: a moved project's chats read the list with the flag off, so lint checks it.
-#[test]
-fn with_the_skill_studio_off_a_moved_projects_skills_line_is_still_checked() {
-    let p = naming("purlis:nope");
-    std::fs::write(
-        p.root().join(crate::plane::MANIFEST),
-        "requires = [{ feature = \"project-skills\" }]\n",
-    )
-    .unwrap();
-    let issues = linter(&p).definition("s");
-    let said = messages(&issues);
-    assert!(!said.contains(&(Level::Warn, SKILLS_UNREAD)), "{said:#?}");
-}
-
-#[test]
-fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked() {
-    let p = naming("ghost, :x");
-    assert_eq!(
-        messages(&linter(&p).definition("s")),
-        vec![(Level::Warn, SKILLS_UNREAD)]
-    );
-    assert_eq!(messages(&linter(&naming("")).definition("s")), vec![]);
-}
-
 #[test]
 fn a_skills_entry_by_a_built_in_skills_old_name_still_resolves_and_is_a_warning_5724() {
     let bundle = tempfile::tempdir().unwrap();
@@ -840,8 +811,7 @@ fn a_skills_entry_by_a_built_in_skills_old_name_still_resolves_and_is_a_warning_
     let p = naming("purlis:compact, purlis-update, purlis:purlis-upgrade");
     let l = Linter::new(p.root(), p.root())
         .with_home(None)
-        .with_built_in(Some(bundle.path().join("skills")))
-        .with_studio(true);
+        .with_built_in(Some(bundle.path().join("skills")));
     assert_eq!(
         messages(&l.definition("s")),
         vec![
@@ -884,8 +854,7 @@ fn a_skills_entry_naming_the_retired_building_skill_says_it_was_removed_5725() {
         let p = naming(written);
         let l = Linter::new(p.root(), p.root())
             .with_home(Some(home.path().to_path_buf()))
-            .with_built_in(Some(bundle.path().join("skills")))
-            .with_studio(true);
+            .with_built_in(Some(bundle.path().join("skills")));
         let said = removed(written);
         assert_eq!(
             messages(&l.definition("s")),

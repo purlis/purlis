@@ -107,7 +107,6 @@ impl Project {
             .env("TMPDIR", std::env::temp_dir())
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
             .env("PURLIS_DATA_HOME", self.at.join("data"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("CHARTER_NO_BACKGROUND_CHECKS", "1")
             .env("NO_COLOR", "1")
             .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));

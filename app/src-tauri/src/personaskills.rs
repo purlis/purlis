@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A persona's Skills summary** (SK-5, #2768): the block its view draws it in, in the panel
-//! vocabulary every view answers in, behind the Skill studio's flag. The skills themselves are
+//! vocabulary every view answers in. The skills themselves are
 //! listed, added and removed in the Skill studio filtered to the persona (`skillstudio`).
 
 use std::path::Path;

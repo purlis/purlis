@@ -23,7 +23,6 @@ import { Choice, Field } from "./components";
 import type { LiveSetting, Setting, SettingsGroup } from "./groups";
 import { thisMachineGroup } from "./thisMachine";
 import { browserLimitsGroup } from "./browserLimits";
-import { previewsGroup } from "./previews";
 import { poolsGroup } from "./pools";
 import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
@@ -96,7 +95,6 @@ export function youGroups(plane?: string): SettingsGroup[] {
     poolsGroup(plane),
     accountsGroup(),
     profilesGroup(plane),
-    previewsGroup(),
   ];
 }
 
