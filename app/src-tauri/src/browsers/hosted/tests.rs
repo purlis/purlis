@@ -1200,6 +1200,7 @@ fn a_browser_view_is_told_what_its_page_is_with_no_user_in_its_address() {
             title: Some("Docs home".into()),
             load: crate::browsers::PageLoadSaid::Loading,
             pages: Vec::new(),
+            downloads: Vec::new(),
         }
     );
 }
@@ -1259,6 +1260,50 @@ fn a_browser_view_is_told_the_browsers_pages_and_which_is_current() {
                 current: true,
             },
         ]
+    );
+}
+
+#[test]
+fn a_browser_view_is_told_the_browsers_downloads_and_how_far_each_came() {
+    // #6990: as `browser_downloads` names them, never their file.
+    use purlis_session_protocol::browsing::{DownloadShown, DownloadState, PageShown};
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let pages: Arc<Mutex<Vec<PageShown>>> = Arc::default();
+    let heard = Arc::clone(&pages);
+    window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(|_| {}),
+            Box::new(move |page| heard.lock().unwrap().push(page)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+
+    screen.shown().downloads = vec![DownloadShown {
+        id: "d1".into(),
+        name: "report.pdf".into(),
+        state: DownloadState::TooLarge,
+        received: 300,
+        total: None,
+    }];
+    screen.makes(b"\xff\xd8 one");
+    until("its downloads", || !pages.lock().unwrap().is_empty());
+
+    let told = crate::browsers::ShownPage::of(pages.lock().unwrap()[0].clone());
+    assert_eq!(
+        told.downloads,
+        [crate::browsers::DownloadListed {
+            id: "d1".into(),
+            name: "report.pdf".into(),
+            state: crate::browsers::DownloadStateSaid::TooLarge,
+            received: 300.0,
+            total: None,
+        }]
     );
 }
 

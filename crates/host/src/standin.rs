@@ -723,6 +723,8 @@ pub struct Shown {
     pub load: purlis_session_protocol::browsing::PageLoad,
     /// The browser's pages, told with each frame (#6989).
     pub pages: Vec<purlis_session_protocol::browsing::ListedPage>,
+    /// The browser's downloads, told with each frame (#6990).
+    pub downloads: Vec<purlis_session_protocol::browsing::DownloadShown>,
     pub stopped: bool,
     /// What it was started reaching (#2013).
     pub reach: Option<purlis_session_protocol::browsing::BrowserReach>,
@@ -770,6 +772,7 @@ impl Shown {
             title: self.title.clone(),
             load: self.load.clone(),
             pages: self.pages.clone(),
+            downloads: self.downloads.clone(),
         }
     }
 }

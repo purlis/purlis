@@ -56,6 +56,7 @@ import { Select } from "./ui/select/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
+import { BrowserDownloads } from "./BrowserDownloads";
 import { BrowserPages } from "./BrowserPages";
 import { SecretMarks, marksOn } from "./SecretMarks";
 import { onAMac } from "./tabKeys";
@@ -612,6 +613,8 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         {shownPage?.address != null && <CopyAddress address={shownPage.address} />}
         {/* Its other pages, and a way to watch another (#6989). */}
         <BrowserPages pages={shownPage?.pages ?? []} onWatch={watchPage} />
+        {/* What its pages downloaded (#6990): saving one stays the chat's. */}
+        <BrowserDownloads downloads={shownPage?.downloads ?? []} />
         <SecretMarks secrets={marks} />
       </div>
       {(theirs || handed) && (

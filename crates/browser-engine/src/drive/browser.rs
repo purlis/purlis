@@ -308,10 +308,11 @@ fn pastes(event: &Value) -> bool {
 /// **What a view is told of a page** (#6938), from [`State::shown_now`], with no image: where its
 /// address holds a text kept out, it is named by none, since what a view is told of it is written
 /// where a chat can read it (the person's ruling of 2026-11-06). Worked out with no lock held.
-/// With it, the browser's pages as [`Inner::pages_told`] lists them (#6989).
+/// With it, the browser's pages as [`Inner::pages_told`] lists them (#6989), and its downloads
+/// as [`Inner::downloads_told`] does (#6990).
 fn told_of(
     (aim, mut address, title, load, kept): (Aim, String, String, PageLoad, Kept),
-    pages: Vec<ListedPage>,
+    (pages, downloads): (Vec<ListedPage>, Vec<super::DownloadInfo>),
 ) -> Painted {
     if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
         address.clear();
@@ -322,6 +323,7 @@ fn told_of(
         title,
         load,
         pages,
+        downloads,
         jpeg: Vec::new(),
     }
 }
@@ -6289,7 +6291,8 @@ impl Inner {
     /// where any of them changed. A page that is loading may paint nothing for a while, and its
     /// view still says so.
     ///
-    /// The browser's pages are told with it (#6989): a page opened, gone or retitled.
+    /// The browser's pages are told with it (#6989): a page opened, gone or retitled; and its
+    /// downloads (#6990): one begun or moved on.
     fn tell_page_now(&self, method: &str) {
         if matches!(
             method,
@@ -6303,6 +6306,8 @@ impl Inner {
                 | "Target.targetDestroyed"
                 | "Target.attachedToTarget"
                 | "Target.detachedFromTarget"
+                | "Browser.downloadWillBegin"
+                | "Browser.downloadProgress"
         ) {
             self.tell_now();
         }
@@ -6323,7 +6328,7 @@ impl Inner {
                 .and_then(|target| state.shown_now(target))
         };
         if let Some(shown) = shown {
-            self.cast.page_now(told_of(shown, self.pages_told()));
+            self.cast.page_now(told_of(shown, self.browser_told()));
         }
     }
 
@@ -6352,7 +6357,7 @@ impl Inner {
                 self.cast.frame(
                     &event.params,
                     event.session_id.as_deref(),
-                    told_of(shown, self.pages_told()),
+                    told_of(shown, self.browser_told()),
                 );
             }
             return;

@@ -421,3 +421,66 @@ fn the_persons_pick_of_a_page_to_watch_is_input_aimed_as_a_click_is() {
     );
     assert_eq!(serde_json::from_value::<Input>(said).unwrap(), watch);
 }
+
+// ---- The browser's downloads (1.91, #6990) ----
+
+use purlis_session_protocol::browsing::{DownloadShown, DownloadState};
+
+fn download(id: &str, name: &str, received: u64, total: Option<u64>) -> DownloadShown {
+    DownloadShown {
+        id: id.into(),
+        name: name.into(),
+        state: DownloadState::Going,
+        received,
+        total,
+    }
+}
+
+#[test]
+fn a_page_frame_lists_the_browsers_downloads_and_how_far_each_came() {
+    let shown = PageShown {
+        downloads: vec![
+            download("d1", "report.pdf", 2048, Some(4096)),
+            download("d2", "data.csv", 10, None),
+        ],
+        ..PageShown::default()
+    };
+    let said = serde_json::to_value(&shown).unwrap();
+    assert_eq!(
+        said["downloads"][0],
+        serde_json::json!({"id": "d1", "name": "report.pdf", "state": "going", "received": 2048, "total": 4096})
+    );
+    let read = read_one(&frames::page(&shown)).page().unwrap();
+    assert_eq!(read.downloads, shown.downloads);
+}
+
+#[test]
+fn downloads_held_have_plain_ids_names_cut_at_a_character_and_no_more_received_than_their_size() {
+    let shown = PageShown {
+        downloads: vec![
+            download("d1", &format!("{}.pdf", "é".repeat(400)), 9000, Some(100)),
+            download("d 2", "spaced id", 0, None),
+            download("d3", "inv\u{202e}fdp.exe", 0, None),
+        ],
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(shown.downloads.len(), 2);
+    assert!(shown.downloads[0].name.len() <= 512);
+    assert!(
+        shown.downloads[0]
+            .name
+            .is_char_boundary(shown.downloads[0].name.len())
+    );
+    assert_eq!(shown.downloads[0].received, 100);
+    // Left for the window to mark, never dropped unseen (#2020).
+    assert_eq!(shown.downloads[1].name, "inv\u{202e}fdp.exe");
+    let many = PageShown {
+        downloads: (0..100)
+            .map(|n| download(&format!("d{n}"), "x", 0, None))
+            .collect(),
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(many.downloads.len(), 64);
+}

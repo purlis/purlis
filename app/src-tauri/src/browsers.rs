@@ -75,7 +75,7 @@ pub struct BrowserWatching {
 ///
 /// Or, with `shown` and no image, what the browser's page is (#6938): its whole address, its
 /// title and where its load stands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 pub struct BrowserFrame {
     pub aim: String,
     pub jpeg: String,
@@ -100,7 +100,7 @@ pub struct BrowserFrame {
 /// is none to show (no page, a page that is not on the web, or one whose address holds a value
 /// purlis keeps out); its title, `null` for none; and where its load stands. Drawn by purlis
 /// outside the page, so a page cannot fake it (#2024).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 pub struct ShownPage {
     pub address: Option<String>,
     pub title: Option<String>,
@@ -108,6 +108,33 @@ pub struct ShownPage {
     /// **The browser's pages** (#6989), as `browser_pages` lists them to its chat, in the order
     /// they opened: empty from a host before 1.91, and the view then lists none.
     pub pages: Vec<PageListed>,
+    /// **The browser's downloads** (#6990), as `browser_downloads` lists them to its chat, in the
+    /// order they began: empty from a host before 1.91, and the view then counts none.
+    pub downloads: Vec<DownloadListed>,
+}
+
+/// **One download of a browser's, as its view is told** (#6990): its id (`d1`), its name as
+/// `browser_downloads` names it (which the view draws with every character a reader does not see
+/// marked, #2020), how far it came, and its size in bytes, `null` where the site did not say.
+/// Bytes are `f64`, so they are a `number` in TypeScript and not a `bigint`: whole up to 2⁵³.
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
+pub struct DownloadListed {
+    pub id: String,
+    pub name: String,
+    pub state: DownloadStateSaid,
+    pub received: f64,
+    pub total: Option<f64>,
+}
+
+/// **How far a download came** (#6990): under way, done, cancelled by the page or the engine,
+/// or cancelled by purlis for its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStateSaid {
+    Going,
+    Done,
+    Cancelled,
+    TooLarge,
 }
 
 /// **One of a browser's pages, as its view is told** (#6989): its id (`p2`), what the person's
@@ -136,7 +163,7 @@ impl ShownPage {
     /// What the view is told of `page`, already held to what a view may draw
     /// ([`purlis_session_protocol::browsing::PageShown::held`]).
     pub(crate) fn of(page: purlis_session_protocol::browsing::PageShown) -> ShownPage {
-        use purlis_session_protocol::browsing::PageLoad;
+        use purlis_session_protocol::browsing::{DownloadState, PageLoad};
         let some = |text: String| (!text.is_empty()).then_some(text);
         ShownPage {
             address: some(page.address),
@@ -155,6 +182,22 @@ impl ShownPage {
                     title: some(listed.title),
                     origin: some(listed.origin),
                     current: listed.current,
+                })
+                .collect(),
+            downloads: page
+                .downloads
+                .into_iter()
+                .map(|one| DownloadListed {
+                    id: one.id,
+                    name: one.name,
+                    state: match one.state {
+                        DownloadState::Going => DownloadStateSaid::Going,
+                        DownloadState::Done => DownloadStateSaid::Done,
+                        DownloadState::Cancelled => DownloadStateSaid::Cancelled,
+                        DownloadState::TooLarge => DownloadStateSaid::TooLarge,
+                    },
+                    received: one.received as f64,
+                    total: one.total.map(|total| total as f64),
                 })
                 .collect(),
         }

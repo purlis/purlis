@@ -1353,6 +1353,7 @@ fn front_end_event(
                     title: String::new(),
                     load: PageLoad::Loaded,
                     pages: Vec::new(),
+                    downloads: Vec::new(),
                     jpeg,
                 });
             }

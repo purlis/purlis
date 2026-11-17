@@ -591,15 +591,18 @@ use crate::view::{Limits, Views};
 /// page frame lists the browser's pages as `browser_pages` lists them to its chat
 /// ([`crate::browsing::PageShown::pages`]: each one's id, scrubbed title and origin, and which is
 /// current), and `browser_input` may carry the person's pick of one
-/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. A view
-/// of a link before 1.91 is sent no list, and a host before 1.91 is sent no pick.
+/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. It
+/// lists the browser's downloads too, as `browser_downloads` lists them to its chat
+/// ([`crate::browsing::PageShown::downloads`]: each one's id, name, state and how far it came,
+/// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
+/// pick.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 91,
 };
 
-/// The version that first lists a browser's pages to its views and takes the person's pick of
-/// one to watch (#6989): none is sent to a host before.
+/// The version that first lists a browser's pages and downloads to its views and takes the
+/// person's pick of a page to watch (#6989, #6990): none is sent to a host before.
 pub const KNOWS_PAGES_LISTED: Version = Version {
     major: 1,
     minor: 91,

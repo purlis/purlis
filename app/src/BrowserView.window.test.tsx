@@ -1254,6 +1254,7 @@ describe("what the page is, and the person's steps through its history (#6938)",
     title: "Getting started",
     load: { state: "loaded" },
     pages: [],
+    downloads: [],
     ...more,
   });
 
@@ -1365,6 +1366,7 @@ describe("the browser's other pages, and the person watching another (#6989)", (
       { id: "p2", title: "Sign in", origin: "https://id.example.test", current: current === "p2" },
       { id: "p3", title: null, origin: null, current: current === "p3" },
     ],
+    downloads: [],
   });
 
   async function drawn(input?: (args: Record<string, unknown>) => unknown) {
@@ -1444,5 +1446,74 @@ describe("the browser's other pages, and the person watching another (#6989)", (
     await userEvent.click(await screen.findByRole("button", { name: "Page 1 of 3" }));
     await userEvent.click(await screen.findByRole("menuitemradio", { name: "Sign in" }));
     await waitFor(() => expect(barSaid()).toHaveTextContent("cannot show another of its pages"));
+  });
+});
+
+describe("the browser's downloads (#6990)", () => {
+  const withDownloads = (downloads: ShownPage["downloads"]): ShownPage => ({
+    address: "https://docs.example.test/guide",
+    title: "Guide",
+    load: { state: "loaded" },
+    pages: [],
+    downloads,
+  });
+
+  async function drawn() {
+    const { BrowserView } = await import("./BrowserView");
+    const { ProjectShownProvider } = await import("./projectShown");
+    const host = core(undefined, false);
+    render(
+      <ProjectShownProvider value={true}>
+        <BrowserView plane={PLANE} program="B1" />
+      </ProjectShownProvider>,
+    );
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==", "p1:7");
+    return host;
+  }
+
+  it("counts none for a browser that downloaded nothing, or from a host that lists none", async () => {
+    const host = await drawn();
+    host.shown(withDownloads([]));
+    await waitFor(() => expect(screen.getByTestId("browser-title")).toHaveTextContent("Guide"));
+    expect(screen.queryByTestId("browser-downloads")).toBeNull();
+  });
+
+  it("counts the downloads, and lists each by its name with how far it came", async () => {
+    const host = await drawn();
+    host.shown(
+      withDownloads([
+        { id: "d1", name: "data.csv", state: "going", received: 1500, total: 3000 },
+        { id: "d2", name: "notes.txt", state: "done", received: 800, total: null },
+        { id: "d3", name: "big.iso", state: "too_large", received: 0, total: null },
+      ]),
+    );
+    const count = await screen.findByRole("button", { name: "3 downloads" });
+    count.focus();
+    await userEvent.keyboard("{Enter}");
+    const list = await screen.findByRole("dialog", { name: "This browser's downloads" });
+    const rows = within(list).getAllByTestId("browser-download");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "data.csvDownloading, 1.5 KB of 3.0 KB",
+      "notes.txtDownloaded, 800 B",
+      "big.isoCancelled by purlis: larger than a browser may download",
+    ]);
+    expect(list).toHaveTextContent("Only the chat saves a download into the project.");
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(count).toHaveFocus());
+  });
+
+  it("marks a character in a name that a reader would not see", async () => {
+    const host = await drawn();
+    host.shown(
+      withDownloads([
+        { id: "d1", name: "invoice\u202Efdp.exe", state: "done", received: 10, total: 10 },
+      ]),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "1 download" }));
+    const row = await screen.findByTestId("browser-download");
+    expect(row).toHaveTextContent("invoice⟦U+202E⟧fdp.exe");
+    expect(row.textContent).not.toContain("\u202E");
   });
 });

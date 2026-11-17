@@ -788,3 +788,67 @@ async fn a_view_of_a_link_before_1_91_is_told_what_its_page_is_and_no_list_of_pa
     );
     assert_eq!(listed(&frames), [""]);
 }
+
+/// What a view's page frames listed of the browser's downloads, in order: `id:name:received`
+/// (1.91, #6990).
+fn downloads_listed(frames: &[Frame]) -> Vec<String> {
+    frames
+        .iter()
+        .filter_map(Frame::page)
+        .map(|page| {
+            page.downloads
+                .iter()
+                .map(|one| format!("{}:{}:{}", one.id, one.name, one.received))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_view_is_told_the_browsers_downloads_as_they_move_on_and_a_1_90_view_none() {
+    use purlis_session_protocol::browsing::{DownloadShown, DownloadState};
+    let one = |received| DownloadShown {
+        id: "d1".into(),
+        name: "report.pdf".into(),
+        state: DownloadState::Going,
+        received,
+        total: Some(100),
+    };
+    let soon = || Instant::now() + Duration::from_millis(300);
+
+    let mut linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+    screen.shown().downloads = vec![one(10)];
+    screen.makes(b"one");
+    assert_eq!(
+        downloads_listed(&every_frame_until(&mut reader, soon()).await),
+        ["d1:report.pdf:10"]
+    );
+    // It moves on with no new image: the view is told it alone.
+    screen.shown().downloads = vec![one(60)];
+    screen.tells();
+    assert_eq!(
+        downloads_listed(&every_frame_until(&mut reader, soon()).await),
+        ["d1:report.pdf:60"]
+    );
+
+    let before = purlis_session_protocol::version::Speaks::new([
+        purlis_session_protocol::version::Version {
+            major: 1,
+            minor: 90,
+        },
+    ]);
+    let mut old = linked_speaking(before).await;
+    let (program, screen) = old.browser().await;
+    let (_, mut reader) = old.watch(&program, ViewRole::Focused).await;
+    screen.shown().downloads = vec![one(10)];
+    screen.makes(b"one");
+    screen.shown().downloads = vec![one(60)];
+    screen.tells();
+    assert_eq!(
+        downloads_listed(&every_frame_until(&mut reader, soon()).await),
+        [""]
+    );
+}

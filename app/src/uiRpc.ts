@@ -6324,6 +6324,26 @@ export type Doing = {
 	over: boolean,
 };
 
+/**
+ *  **One download of a browser's, as its view is told** (#6990): its id (`d1`), its name as
+ *  `browser_downloads` names it (which the view draws with every character a reader does not see
+ *  marked, #2020), how far it came, and its size in bytes, `null` where the site did not say.
+ *  Bytes are `f64`, so they are a `number` in TypeScript and not a `bigint`: whole up to 2⁵³.
+ */
+export type DownloadListed = {
+	id: string,
+	name: string,
+	state: DownloadStateSaid,
+	received: number | null,
+	total: number | null,
+};
+
+/**
+ *  **How far a download came** (#6990): under way, done, cancelled by the page or the engine,
+ *  or cancelled by purlis for its size.
+ */
+export type DownloadStateSaid = "going" | "done" | "cancelled" | "too_large";
+
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
 /**  It left, to `to`, and where it was kept. */
@@ -14833,6 +14853,11 @@ export type ShownPage = {
 	 *  they opened: empty from a host before 1.91, and the view then lists none.
 	 */
 	pages: PageListed[],
+	/**
+	 *  **The browser's downloads** (#6990), as `browser_downloads` lists them to its chat, in the
+	 *  order they began: empty from a host before 1.91, and the view then counts none.
+	 */
+	downloads: DownloadListed[],
 };
 
 /**

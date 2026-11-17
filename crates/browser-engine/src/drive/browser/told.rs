@@ -382,6 +382,20 @@ impl Browser {
 }
 
 impl Inner {
+    /// **What a view is told of the browser beside its page** (#6989, #6990): its pages and its
+    /// downloads. Taken with no lock held.
+    pub(super) fn browser_told(&self) -> (Vec<ListedPage>, Vec<DownloadInfo>) {
+        (self.pages_told(), self.downloads_told())
+    }
+
+    /// **The browser's downloads, as its views are told** (#6990): every one, named as
+    /// `browser_downloads` names it to the chat ([`Inner::names_kept_out`]), so a name never
+    /// holds a value purlis keeps out. Taken with no lock held.
+    pub(super) fn downloads_told(&self) -> Vec<DownloadInfo> {
+        let all = lock(&self.state).downloads.all();
+        self.names_kept_out(all)
+    }
+
     /// **The browser's pages, as its views are told** (#6989): listed as `browser_pages` lists
     /// them to the chat, through the same way out ([`Inner::with_kept_off_told`], then
     /// [`Inner::kept_out`]), each address then cut to its origin: none where the address held

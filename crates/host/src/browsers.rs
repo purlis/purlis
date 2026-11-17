@@ -79,7 +79,7 @@ pub struct Reads {
     pub aims: bool,
     pub origins: bool,
     pub pages: bool,
-    /// It is sent the browser's pages with what its page is (1.91, #6989).
+    /// It is sent the browser's pages and downloads with what its page is (1.91, #6989, #6990).
     pub lists: bool,
     pub between_hosts: bool,
 }
@@ -474,7 +474,8 @@ impl Browsers for NoBrowsers {
 #[derive(Clone)]
 enum Latest {
     Nothing,
-    Frame(Shown),
+    /// Boxed: with its pages and downloads (#6989, #6990) it is far larger than the others.
+    Frame(Box<Shown>),
     Ended,
 }
 
@@ -513,12 +514,13 @@ impl Latest {
             framed.extend_from_slice(&origin(shown.origin.as_deref()));
         }
         // A view of a link before 1.91 is sent what the page is with no list of the browser's
-        // pages (#6989), as it was before.
+        // pages (#6989) or downloads (#6990), as it was before.
         let page = if reads.lists {
             shown.page.clone()
         } else {
             PageShown {
                 pages: Vec::new(),
+                downloads: Vec::new(),
                 ..shown.page.clone()
             }
         };
@@ -603,13 +605,13 @@ impl Hub {
                             Latest::Frame(was) => (image, was.painted + 1),
                             Latest::Nothing => (image, 1),
                         };
-                        *now = Latest::Frame(Shown {
+                        *now = Latest::Frame(Box::new(Shown {
                             aim,
                             origin: at,
                             page,
                             image,
                             painted,
-                        });
+                        }));
                         true
                     });
                 }));

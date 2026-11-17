@@ -296,6 +296,9 @@ pub struct Painted {
     /// **The browser's pages, as `browser_pages` lists them to its chat** (#6989): each one's
     /// id, its title scrubbed as there, and its origin alone, and which is current.
     pub pages: Vec<ListedPage>,
+    /// **The browser's downloads, as `browser_downloads` lists them to its chat** (#6990): each
+    /// one named as an answer names it, so a name never holds what purlis keeps out.
+    pub downloads: Vec<DownloadInfo>,
     /// The image; empty where only what the page is changed, with no new image (#6938).
     pub jpeg: Vec<u8>,
 }

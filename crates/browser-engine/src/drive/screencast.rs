@@ -28,7 +28,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::browser::Inner;
-use super::{ListedPage, PageLoad, Painted, lock};
+use super::{DownloadInfo, ListedPage, PageLoad, Painted, lock};
 
 /// Where each frame goes: its image, and what it showed.
 pub(crate) type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
@@ -56,8 +56,8 @@ pub(crate) struct Screencast {
 }
 
 /// What the sink was last told the page is: its address, title and load (#6938), and the
-/// browser's pages (#6989).
-type Told = (String, String, PageLoad, Vec<ListedPage>);
+/// browser's pages (#6989) and downloads (#6990).
+type Told = (String, String, PageLoad, Vec<ListedPage>, Vec<DownloadInfo>);
 
 /// What `shown` tells a view, besides its image and its aim.
 fn told(shown: &Painted) -> Told {
@@ -66,6 +66,7 @@ fn told(shown: &Painted) -> Told {
         shown.title.clone(),
         shown.load.clone(),
         shown.pages.clone(),
+        shown.downloads.clone(),
     )
 }
 

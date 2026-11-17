@@ -4125,6 +4125,85 @@ fn a_pages_title_told_to_a_view_is_scrubbed_and_an_address_holding_a_kept_value_
     assert_eq!(second.origin, None);
 }
 
+// The browser's downloads, told to a view as browser_downloads lists them (#6990).
+
+type Downloaded = Arc<Mutex<Vec<Vec<crate::drive::DownloadInfo>>>>;
+
+/// A browser shown into a sink that keeps the downloads each word of it told.
+fn downloads_told_into(browser: &Browser, engine: &Engine) -> Downloaded {
+    let told: Downloaded = Arc::default();
+    let seen = Arc::clone(&told);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        super::lock(&seen).push(painted.downloads);
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    told
+}
+
+fn last_downloads(told: &Downloaded) -> Vec<crate::drive::DownloadInfo> {
+    super::lock(told).last().cloned().unwrap_or_default()
+}
+
+#[test]
+fn a_view_is_told_the_browsers_downloads_as_they_begin_and_move_on() {
+    use crate::drive::DownloadState;
+    let (browser, engine) = browser();
+    let told = downloads_told_into(&browser, &engine);
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAGE-1", "guid": "GUID-1", "url": "http://fixture.test/report.pdf", "suggestedFilename": "report.pdf" }),
+        None,
+    );
+    wait_for("its beginning is told", || last_downloads(&told).len() == 1);
+    engine.emit(
+        "Browser.downloadProgress",
+        json!({ "guid": "GUID-1", "receivedBytes": 2048, "totalBytes": 4096, "state": "inProgress" }),
+        None,
+    );
+    wait_for("how far it came is told", || {
+        last_downloads(&told)
+            .first()
+            .is_some_and(|one| one.received == 2048)
+    });
+    engine.emit(
+        "Browser.downloadProgress",
+        json!({ "guid": "GUID-1", "receivedBytes": 4096, "totalBytes": 4096, "state": "completed" }),
+        None,
+    );
+    wait_for("its end is told", || {
+        last_downloads(&told)
+            .first()
+            .is_some_and(|one| one.state == DownloadState::Done)
+    });
+
+    let one = last_downloads(&told).remove(0);
+    assert_eq!(
+        (one.id.as_str(), one.name.as_str(), one.total),
+        ("d1", "report.pdf", Some(4096))
+    );
+}
+
+#[test]
+fn a_download_told_to_a_view_is_named_as_browser_downloads_names_it_with_no_kept_value() {
+    let (browser, engine) = browser();
+    let told = downloads_told_into(&browser, &engine);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["hunter2secret"]);
+    super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAGE-1", "guid": "GUID-1", "url": "http://fixture.test/x", "suggestedFilename": "statement-hunter2secret.pdf" }),
+        None,
+    );
+    wait_for("it is told", || last_downloads(&told).len() == 1);
+
+    let named = last_downloads(&told).remove(0).name;
+    assert!(!named.contains("hunter2secret"), "{named}");
+    assert_eq!(named, browser.downloads()[0].name);
+}
+
 #[test]
 fn a_paced_browser_acknowledges_no_sooner_than_its_pace_so_the_engine_makes_fewer_frames() {
     let (browser, engine) = browser();

@@ -1060,7 +1060,7 @@ pub fn input_of(input: &wire::Input) -> drive::PersonInput {
 }
 
 /// **What a page is, in the protocol's words** (#6938): its address, title and load, as the
-/// engine told them with a frame, and the browser's pages (#6989).
+/// engine told them with a frame, and the browser's pages (#6989) and downloads (#6990).
 pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
     wire::PageShown {
         address: painted.address.clone(),
@@ -1080,6 +1080,21 @@ pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
                 title: page.title.clone(),
                 origin: page.origin.clone().unwrap_or_default(),
                 current: page.current,
+            })
+            .collect(),
+        // Its downloads, as `browser_downloads` names them (#6990): never their file or origin.
+        downloads: painted
+            .downloads
+            .iter()
+            .map(|one| {
+                let said = download_said(one.clone());
+                wire::DownloadShown {
+                    id: said.download,
+                    name: said.name,
+                    state: said.state,
+                    received: said.bytes,
+                    total: said.total,
+                }
             })
             .collect(),
     }

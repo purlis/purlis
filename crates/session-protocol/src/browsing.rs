@@ -725,6 +725,24 @@ pub struct PageShown {
     /// order they opened, and which is current. Empty from a host before 1.91.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<ListedPage>,
+    /// **The browser's downloads** (1.91, #6990), as `browser_downloads` lists them to its chat,
+    /// in the order they began. Empty from a host before 1.91.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadShown>,
+}
+
+/// **One download of a browser's, as its views are told** (1.91, #6990): its id (`d1`), its
+/// name as `browser_downloads` names it (never a value purlis keeps out), how far it came and
+/// its size where the site said. Never its file, its path or the origin it came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadShown {
+    pub id: String,
+    pub name: String,
+    pub state: DownloadState,
+    #[serde(default)]
+    pub received: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 /// **One of a browser's pages, as its views are told** (1.91, #6989): its id (`p2`), its title
@@ -770,8 +788,16 @@ pub const MOST_SHOWN_WHY_BYTES: usize = 128;
 /// The most pages a [`PageShown`] lists (1.91): past them, the rest are left out.
 pub const MOST_SHOWN_PAGES: usize = 64;
 
-/// The longest id of a page a [`PageShown`] lists (1.91): the engine's are `p1`, `p2`.
+/// The longest id of a page or download a [`PageShown`] lists (1.91): the engine's are `p1`,
+/// `d2`.
 pub const MOST_SHOWN_PAGE_ID_BYTES: usize = 32;
+
+/// The most downloads a [`PageShown`] lists (1.91): a browser makes at most 64.
+pub const MOST_SHOWN_DOWNLOADS: usize = 64;
+
+/// The longest name of a download a [`PageShown`] lists (1.91): the engine's are at most 120
+/// characters.
+pub const MOST_SHOWN_DOWNLOAD_NAME_BYTES: usize = 512;
 
 impl PageShown {
     /// **What of it a view may draw** (#6938): its address as [`shown_address`] keeps it, its
@@ -790,8 +816,47 @@ impl PageShown {
                 other => other,
             },
             pages: held_pages(self.pages),
+            downloads: held_downloads(self.downloads),
         }
     }
+}
+
+/// Whether `id` is one a view may send back: letters, digits, `-` and `_`, at most
+/// [`MOST_SHOWN_PAGE_ID_BYTES`].
+fn plain_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MOST_SHOWN_PAGE_ID_BYTES
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// **The downloads a view may draw** (1.91, #6990): at most [`MOST_SHOWN_DOWNLOADS`], each with a
+/// plain id, its name cut at a character to [`MOST_SHOWN_DOWNLOAD_NAME_BYTES`] and none received
+/// past its size. A character a reader does not see is left in the name for the window to mark,
+/// by purlis's one rule for it (#2020), never dropped unseen.
+fn held_downloads(downloads: Vec<DownloadShown>) -> Vec<DownloadShown> {
+    downloads
+        .into_iter()
+        .filter(|one| plain_id(&one.id))
+        .take(MOST_SHOWN_DOWNLOADS)
+        .map(|one| {
+            let mut name = String::new();
+            for c in one.name.chars() {
+                if name.len() + c.len_utf8() > MOST_SHOWN_DOWNLOAD_NAME_BYTES {
+                    break;
+                }
+                name.push(c);
+            }
+            DownloadShown {
+                received: one
+                    .total
+                    .map_or(one.received, |total| one.received.min(total)),
+                name,
+                ..one
+            }
+        })
+        .collect()
 }
 
 /// **The pages a view may draw** (1.91, #6989): at most [`MOST_SHOWN_PAGES`], each with an id of
@@ -802,14 +867,7 @@ fn held_pages(pages: Vec<ListedPage>) -> Vec<ListedPage> {
     let mut current = false;
     pages
         .into_iter()
-        .filter(|page| {
-            !page.id.is_empty()
-                && page.id.len() <= MOST_SHOWN_PAGE_ID_BYTES
-                && page
-                    .id
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        })
+        .filter(|page| plain_id(&page.id))
         .take(MOST_SHOWN_PAGES)
         .map(|page| {
             let is_current = page.current && !current;

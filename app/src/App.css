@@ -9708,3 +9708,24 @@ nav.piece-files-head {
 .browser-pages {
   flex: 0 0 auto;
 }
+
+/* **The browser's downloads** (#6990): the count keeps its words whole, as the pages' does; its
+   list says each name whole, over as many lines as it takes, and how far it came under it. */
+.browser-downloads {
+  flex: 0 0 auto;
+}
+
+.browser-downloads-list {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-downloads-list > li {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
