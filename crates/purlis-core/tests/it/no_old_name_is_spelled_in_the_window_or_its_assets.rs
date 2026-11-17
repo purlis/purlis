@@ -83,9 +83,10 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     ("app/src/theme/icons.ts", 1, Why::Compat),
     // The hook binary's variable, kept until 1.0: #1305, RN-14 (#1273). Once in each generated
     // hook's command: twenty since `posttooluse-ownwork` (#5750), `posttoolusefailure-purlis`
-    // (#5697) and `permissiondenied` (T1-08, #6399). No purlis name for it exists yet, and the
+    // (#5697) and `permissiondenied` (T1-08, #6399), and sixteen since the four guards ride on a
+    // chat's `--settings` by the binary's path (#7067). No purlis name for it exists yet, and the
     // one variable a hook line reads is the same for every line.
-    ("app/src-tauri/plugin/hooks/hooks.json", 20, Why::HookBinary),
+    ("app/src-tauri/plugin/hooks/hooks.json", 16, Why::HookBinary),
     ("app/src-tauri/plugin/opencode/purlis.ts", 1, Why::HookBinary),
     // purlis's own panels' and views' namespace: #1284.
     ("app/src/Panels.tsx", 8, Why::Unlisted),

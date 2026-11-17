@@ -1415,7 +1415,8 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
 /// ([`purlis_core::harness::claude::under_policy`]). Here the settings an ordinary chat is armed
 /// with, loosened to a policy, are handed to Claude Code with a `purlis` that answers every hook
 /// but the Bash guard, which `fails`. The stand-in's one Bash call writes a file: whether the
-/// file is there is whether the tool ran.
+/// file is there is whether the tool ran. Unix only: the stand-in `purlis` is a shell script.
+#[cfg(unix)]
 mod a_guard_that_fails {
     use super::*;
     use purlis_core::enforcement::{Mode, Resolved, Settings};
@@ -1444,12 +1445,8 @@ mod a_guard_that_fails {
             ),
         )
         .expect("the stand-in purlis");
-        let made = Command::new("/bin/chmod")
-            .arg("+x")
-            .arg(&purlis)
-            .status()
-            .expect("chmod");
-        assert!(made.success());
+        fs::set_permissions(&purlis, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("the stand-in purlis runs");
         let StateHooks::ThisSessionOnly { args, .. } = Harness::ClaudeCode.state_hooks(
             Kit {
                 binary: &purlis,
