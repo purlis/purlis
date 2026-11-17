@@ -1576,6 +1576,51 @@ fn a_plane_that_is_not_open_tells_no_window_it_closed() {
     assert!(told.lock().unwrap().is_empty());
 }
 
+/// **One `Timings` value reaches every sandbox timer of a project the window opens**
+/// (T1.1-01): the block throttle its hooks let blocks through, the window's end of a live ask's
+/// hold, and the board of every chat's confinement the window starts, all hold by the value the
+/// app was given, never by production's where it was given another. The host-mode version is
+/// ticket 6's.
+#[test]
+fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_process() {
+    use purlis_core::sandbox::plan::{Asking, Hearing};
+    use purlis_core::sandbox::timings::Timings;
+
+    let timings = Timings::scaled(0.5);
+    assert_ne!(timings, Timings::production());
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let planes = planes().timed_by(timings);
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("held");
+
+    // The throttle every block of the project is let through.
+    assert_eq!(held.hooks().throttle_window(), timings.throttle_window());
+    // The window's end of a live ask's hold.
+    assert_eq!(held.hooks().timings(), timings);
+    assert_eq!(
+        crate::asking::hold_ends(None, 1_000, &held.hooks().timings()),
+        1_000 + timings.hold().as_secs()
+    );
+    // The board and proxy of a chat the window confines: its chats hand their hearing this.
+    let hearing = Hearing {
+        asks: Some(Asking {
+            tell: Arc::new(|_| {}),
+            askable: Arc::new(|| true),
+            known: Arc::new(|_| None),
+        }),
+        timings: held.chats().timings(),
+        ..Hearing::default()
+    };
+    let telling = hearing.here();
+    assert_eq!(telling.timings, timings, "the proxy's");
+    assert_eq!(
+        telling.asks.expect("a board").holds_for(),
+        timings.hold(),
+        "the board's"
+    );
+}
+
 #[test]
 fn a_plane_can_be_opened_again_after_it_was_closed() {
     // The socket it left behind is its own, and binding over it is the case

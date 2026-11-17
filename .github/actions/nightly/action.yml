@@ -1,0 +1,107 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **One entry of the nightly list** (M74.1, T1.1-09). Main's scheduler (`nightly-branch.yml` on
+# main) checks out the branch and runs each entry of `.github/nightly-on-<branch>.txt` through
+# this action, on the entry's runner. An entry's steps live here, on the branch, so a ticket adds
+# its nightly without touching main. A composite action cannot read `secrets`: an entry that needs
+# one takes it as an input, which main's workflow passes.
+#
+# A name this action does not know fails, so a typo in the list is a red night, not a silent one.
+name: Nightly entry
+description: Runs one entry of the nightly list on this runner.
+inputs:
+  entry:
+    description: The entry's name, as the list writes it.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: An entry this action knows
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "coverage-issues"]'), inputs.entry) }}
+      shell: bash
+      env:
+        ENTRY: ${{ inputs.entry }}
+      run: |
+        echo "::error::$ENTRY is not an entry .github/actions/nightly knows"
+        exit 1
+    # The sandbox scenarios, on Linux or macOS (ticket 54 fills the nightly's ×3 and shuffle).
+    - if: inputs.entry == 'sandbox-scenarios'
+      uses: ./.github/actions/sandbox-scenarios
+    # The existing macOS sandbox test targets against the branch, failing on red.
+    - if: inputs.entry == 'existing-macos-sandbox-tests'
+      uses: ./.github/actions/macos-sandbox-tests
+      with:
+        purlis-app: "true"
+    # The parsers' fuzz targets, each fuzzed from its committed seeds for five minutes (T1.1-47,
+    # `docs/fuzzing.md`). A crash is a public issue; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301).
+    - if: inputs.entry == 'fuzz-parsers'
+      uses: ./.github/actions/fuzz-parsers
+      with:
+        seconds: "300"
+    # Each harness re-recorded against the stand-in model (T1.1-03), at its pinned version and at
+    # its latest release, and diffed against its checked-in recording, in two entries each: the
+    # ordinary one opens `harness-drift` issues and is red on a failed install, build or
+    # recording; the `kind: escape` one is red only on an escape (a refused action that
+    # happened, or a refused call whose recording changed), which the scheduler files as a
+    # public p0 security issue (Q301).
+    - if: inputs.entry == 'harness-rerecord-pinned'
+      uses: ./.github/actions/harness-recordings
+      with:
+        at: pinned
+        mode: drift
+        github-token: ${{ github.token }}
+    - if: inputs.entry == 'harness-rerecord-latest'
+      uses: ./.github/actions/harness-recordings
+      with:
+        at: latest
+        mode: drift
+        github-token: ${{ github.token }}
+    - if: inputs.entry == 'harness-escapes-pinned'
+      uses: ./.github/actions/harness-recordings
+      with:
+        at: pinned
+        mode: escape
+    - if: inputs.entry == 'harness-escapes-latest'
+      uses: ./.github/actions/harness-recordings
+      with:
+        at: latest
+        mode: escape
+    # The sandbox's laws as property tests (T1.1-23, #6870), from a fresh seed each night and at
+    # ten times a pull request's 10 000 cases (the proxy law, which opens real connections, at
+    # 20 000). A failure prints its minimal input; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301). Its red says "property law
+    # failed", never "escape": the p0 issue is opened all the same, and whoever reads it judges
+    # from the counterexample whether it is an escape or a flake.
+    - if: inputs.entry == 'property-tests'
+      uses: ./.github/actions/rust-toolchain
+    - if: inputs.entry == 'property-tests'
+      name: The sandbox's laws
+      shell: bash
+      env:
+        PROPTEST_CASES: "100000"
+      run: "cargo test -p purlis-core --locked --test it the_sandbox_decisions_keep_their_laws::"
+    - if: failure() && inputs.entry == 'property-tests'
+      name: What a red night means
+      shell: bash
+      run: |
+        echo "::error title=property law failed::A sandbox property law failed. Read its minimal input in the step above: a counterexample that carries what a law refuses is an escape; a timeout or a lost connection is a flake."
+        {
+          echo "### property law failed"
+          echo
+          echo "A sandbox property law failed. Its minimal input is in the step *The sandbox's laws*."
+          echo "A counterexample that carries what a law refuses is an escape (p0); a timeout or a lost connection is a flake."
+        } >> "$GITHUB_STEP_SUMMARY"
+    # Ticket 8: the issues the cells' expected_fail marks name, read from GitHub rather than the
+    # pull requests' cache, so a mark on an issue closed since is red the next night (T1.1-08).
+    - if: inputs.entry == 'coverage-issues'
+      uses: ./.github/actions/rust-toolchain
+    - if: inputs.entry == 'coverage-issues'
+      name: The marks' issues, from GitHub
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        node tools/scenario-coverage.mjs issues
+        cargo test -p purlis-scenarios --locked --test coverage no_mark_names_a_closed_issue_or_one_this_change_closes

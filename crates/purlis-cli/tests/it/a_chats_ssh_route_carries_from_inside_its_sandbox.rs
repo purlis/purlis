@@ -245,9 +245,10 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
     let (applied, root) = a_wrapped_chat(&out);
-    let confinement = Confinement::serving(Serving::of(Reach::open(vec![format!(
-        "127.0.0.1:{listed}"
-    )])))
+    let confinement = Confinement::serving(Serving::of(
+        Reach::open(vec![format!("127.0.0.1:{listed}")]),
+        &purlis_core::sandbox::timings::Timings::production(),
+    ))
     .expect("the chat's proxy");
     let route = applied
         .ssh_route(Some(&confinement))

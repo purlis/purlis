@@ -333,7 +333,8 @@ jobs:
       # output and of its own skills catalogue, and what it takes in mid-chat, printed on
       # `measured:` lines for ADR 0102's and ADR 0099's amendments of 2026-11-09. The version
       # purlis supports, this runner's build of it from npm with no install scripts run, pointed
-      # at a loopback port that refuses: no model is called and no credential is used. The tests
+      # at a loopback port that answers every request at once with the end of a turn (0.169 waits
+      # for ever on one that refuses): no model is called and no credential is used. The tests
       # fail only on a Codex that is missing or another version, never on what it did, and are
       # `#[ignore]`d everywhere else.
       - name: Codex, measured
@@ -1643,81 +1644,16 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|\.github/actions/macos-sandbox-tests/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
           fi
-      - if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/rust-toolchain
-      - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          # The macOS `app` job's cache, which `main` saves. With no shared key, this job's key
-          # is its own name, which nothing saves, so every run built every dependency cold.
-          shared-key: app
-          save-if: false
-      # The names the studio probe's network tests look up, from the hosts file, not outside DNS
-      # (#3261): see the action for which names and why.
-      - name: The studio probe's names
+      # The tests themselves, under Seatbelt for real: the same action the sandbox scenarios' macOS
+      # job and the nightly on `phase-1-proven` run, so there is one copy of these steps (M74.1).
+      - name: The sandbox tests, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/studio-probe-names
-      # Node, for a Claude Code chat's server dialling in to its door (#3316).
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          package-manager-cache: false
-          node-version: "22"
-      - name: The studio probe, confined by Seatbelt
-        if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p studio-probe
-      # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
-      - name: A wrapped chat listens nowhere, confined by Seatbelt
-        if: steps.scope.outputs.run == 'true'
-        run: |
-          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
-      # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
-      # own socket and no TCP port, reached through purlis's door alone.
-      - name: A chat's server behind its door, confined by Seatbelt
-        if: steps.scope.outputs.run == 'true'
-        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
-      # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
-      # build's `purlis _ssh-proxy`, runs inside Seatbelt and reaches the chat's SOCKS port; a
-      # host the route does not list, and a direct ssh around it, stay refused. The Linux `rust`
-      # job runs the same test under purlis's own wrap.
-      - name: A chat's ssh through its route from inside its sandbox, confined by Seatbelt
-        if: steps.scope.outputs.run == 'true'
-        run: |
-          tools/tests-ran.sh -- cargo test --locked -p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::
-      # A brokered `secret exec` child under its run's real profile: the network through its
-      # proxy alone, never a direct connection to this Mac or past it.
-      - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
-        if: steps.scope.outputs.run == 'true'
-        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::brokered::tests::under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy
-      # A server's connection a host hands on, received on macOS (#5849): its control buffer holds
-      # one descriptor exactly, so more than one is cut off there, and the slot is marked
-      # close-on-exec after the receive, which takes no flag for it here.
-      - name: A host hands on one connection, and nothing more, on macOS
-        if: steps.scope.outputs.run == 'true'
-        run: "tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::"
-      # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
-      # read by the program that made it, and silently by no other.
-      - name: A held keychain item is read silently by no other program
-        if: steps.scope.outputs.run == 'true'
-        env:
-          PURLIS_TEST_THROWAWAY_KEYCHAIN: "1"
-        # Red unless each test really ran and passed: it leaves a marker only then.
-        run: |
-          rm -rf target/tests-that-really-ran
-          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
-          for ran in held-item-read-by-no-other-program item-another-program-holds-refused; do
-            test -f "target/tests-that-really-ran/$ran" || { echo "::error::$ran did not really run"; exit 1; }
-          done
-      # Which of the confined profile's parts the probe needs to start, each tried on its own.
-      # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
-      - name: What the sandbox refused
-        if: failure() && steps.scope.outputs.run == 'true'
-        run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
+        uses: ./.github/actions/macos-sandbox-tests
 
   # **`purlis listen`'s shim for Node, tried for real** (#2019): a server started on a chat's port
   # by Node's own `http`, by Vite and by Next.js listens on the chat's socket and on no TCP port,

@@ -1,0 +1,205 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: sandbox scenarios
+
+# **The sandbox scenario suite** (M74.1, T1.1-09; Q285, Q296). The jobs start with one placeholder
+# scenario each (`app/src-tauri/src/scenarios.rs`) and fill as the milestone's tickets land.
+#
+# - `sandbox-scenarios-linux` runs on every pull request into `phase-1-proven` or main, drafts
+#   included, and in the merge queue. It always runs: what it skips it skips inside, from the plan
+#   (`tools/sandbox-scenarios-plan.mjs`), never by a path filter, since a path-filtered required
+#   check hangs or is bypassed. Only a pull request that changes documentation alone skips.
+# - `sandbox-scenarios-macos`, on pinned macOS versions, runs in the merge queue, and on a pull
+#   request labelled `macos-scenarios`, drafts included. Like the Linux job it always runs and its
+#   matrix always expands: on a pull request without the label each leg skips its steps, never the
+#   job, so every required check name reports and none waits forever.
+# - `macos-sandbox-tests` runs the existing macOS sandbox test targets (`ci.yml`'s
+#   `studio-confinement-macos` steps, `.github/actions/macos-sandbox-tests`) on the same label,
+#   without that job's path filter or draft skip, and fails on red.
+# - The label `production-timings` adds the production-timing entries (ticket 54) on Linux, and on
+#   macOS with `macos-scenarios`. The merge queue runs them always. `stress-x20` runs each set 20
+#   times under a CPU stress, on Linux, and on macOS with `macos-scenarios`.
+#
+# No scenario is retried (`--retries 0`, `tools/sandbox-scenarios.sh`). A red run uploads its event
+# logs, transcripts and scenario report.
+#
+# Putting any label on a pull request starts a run and cancels the one in flight (`labeled`, and
+# `concurrency` below). The merge check reads the latest run on the head.
+#
+# **During M74.1 the jobs are required by the orchestrator's merge check**, not by branch
+# protection: no ticket merges into `phase-1-proven` unless its pull request's head has a green
+# `sandbox-scenarios-linux` run, and a green labelled macOS run for a ticket that adds or changes a
+# cell, a mark or a code path that runs on macOS. **At the gate** the repository's admin adds, in
+# main's ruleset, these required status checks for the merge queue: `sandbox-scenarios-linux` and
+# each `sandbox-scenarios-macos (<os>)` of the matrix below. Ticket 55 re-points the nightly at
+# main; the pull request trigger already covers main, so that is a settings change.
+#
+# The nightlies on `phase-1-proven` run from main's scheduler (`nightly-branch.yml` on main), which
+# reads `.github/nightly-on-phase-1-proven.txt` and runs each entry through `.github/actions/nightly`.
+
+on:
+  pull_request:
+    branches: [phase-1-proven, main]
+    # `labeled`, so putting `macos-scenarios`, `production-timings` or `stress-x20` on starts a run.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  merge_group:
+    types: [checks_requested]
+
+concurrency:
+  group: sandbox-scenarios-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  # What this run runs, from its event, its labels and the paths it changes. When this job fails,
+  # every output is empty and every job runs (`!= 'false'`): a fault here runs more, never less.
+  plan:
+    name: what the sandbox scenarios run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      linux: ${{ steps.plan.outputs.linux }}
+      macos: ${{ steps.plan.outputs.macos }}
+      production-timings: ${{ steps.plan.outputs.production-timings }}
+      stress: ${{ steps.plan.outputs.stress }}
+      why: ${{ steps.plan.outputs.why }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge commit and its first parent: what the change is.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
+      - name: The plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node tools/sandbox-scenarios-plan.mjs "$EVENT" "$BASE"
+
+  sandbox-scenarios-linux:
+    name: sandbox-scenarios-linux
+    needs: plan
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # The issues a pull request closes, for the coverage gate.
+      pull-requests: read
+    steps:
+      - name: What this run runs, and why
+        env:
+          WHY: ${{ needs.plan.outputs.why }}
+        run: echo "::notice title=sandbox scenarios::${WHY:-the plan could not be read, so everything runs}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.plan.outputs.linux != 'false'
+        with:
+          # The change and its base, whose cells the coverage gate's ratchet reads.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: The sandbox scenarios
+        if: needs.plan.outputs.linux != 'false'
+        uses: ./.github/actions/sandbox-scenarios
+        with:
+          production-timings: ${{ needs.plan.outputs.production-timings }}
+          stress: ${{ needs.plan.outputs.stress }}
+      # The matrix coverage gate (T1.1-08): the list, its caps and reasons, the expected-fail
+      # ratchet against the change's base, and no mark on a closed issue or one this pull
+      # request closes. Built by the step above (`--workspace`), so it builds nothing more.
+      - name: The commit this change is measured against
+        id: base
+        if: needs.plan.outputs.linux != 'false'
+        uses: ./.github/actions/change-base
+      - name: The issues this pull request closes
+        id: closes
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # A merge group closes nothing of its own: its pull requests were judged on their runs.
+        run: |
+          issues=""
+          if [ -n "$PR" ]; then
+            issues=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json closingIssuesReferences -q '[.closingIssuesReferences[].number] | map(tostring) | join(",")')
+          fi
+          echo "issues=$issues" >> "$GITHUB_OUTPUT"
+      - name: The matrix coverage gate
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          SCENARIOS_BASE: ${{ steps.base.outputs.sha }}
+          SCENARIOS_PR_CLOSES: ${{ steps.closes.outputs.issues }}
+        run: |
+          cargo nextest run --workspace --locked --profile ci --retries 0 --no-capture --run-ignored all \
+            -E 'binary_id(purlis-scenarios::coverage) & not test(=at_m74_1_s_gate_nothing_is_pending_and_every_mark_is_approved)'
+      - name: What a red run leaves
+        if: failure() && needs.plan.outputs.linux != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-linux
+          path: |
+            target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  sandbox-scenarios-macos:
+    name: sandbox-scenarios-macos (${{ matrix.os }})
+    needs: plan
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - name: What this run runs, and why
+        env:
+          WHY: ${{ needs.plan.outputs.why }}
+        run: echo "::notice title=sandbox scenarios::${WHY:-the plan could not be read, so everything runs}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.plan.outputs.macos != 'false'
+        with:
+          persist-credentials: false
+      - name: The sandbox scenarios
+        if: needs.plan.outputs.macos != 'false'
+        uses: ./.github/actions/sandbox-scenarios
+        with:
+          production-timings: ${{ needs.plan.outputs.production-timings }}
+          stress: ${{ needs.plan.outputs.stress }}
+      - name: What a red run leaves
+        if: failure() && needs.plan.outputs.macos != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-${{ matrix.os }}
+          path: |
+            target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  macos-sandbox-tests:
+    name: existing macOS sandbox tests
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.macos != 'false' }}
+    runs-on: macos-latest
+    # `studio-confinement-macos`'s 75 minutes, and purlis-app's test build on top.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The sandbox tests, confined by Seatbelt
+        uses: ./.github/actions/macos-sandbox-tests
+        with:
+          purlis-app: true

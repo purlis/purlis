@@ -1,0 +1,169 @@
+{
+  "harness": "opencode",
+  "version": "1.19.5",
+  "recording": "recording.json",
+  "conditions": {
+    "harness_asks": "allowed once, 2 times",
+    "summary": "Full sandbox, harness prompts bypassed (bypassPermissions / OpenCode ask allowed once)"
+  },
+  "forced": {
+    "esc": "pressed",
+    "exit2": "pretooluse",
+    "stall": "posttooluse-blocked"
+  },
+  "turns": [
+    {
+      "prompt": "COVERING-SCRIPT: make each call the stand-in asks for, in order.",
+      "calls": [
+        {
+          "step": "exit2-bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo exit-two",
+            "description": "exit2-bash"
+          },
+          "run": "echo exit-two",
+          "response": 1
+        },
+        {
+          "step": "bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+            "description": "bash"
+          },
+          "run": "echo covered > <work>/covered.txt && cat <work>/covered.txt",
+          "response": 2
+        },
+        {
+          "step": "refused-bash-net",
+          "tool": "bash",
+          "input": {
+            "command": "curl -sS -m 10 http://<refused-target>/",
+            "description": "refused-bash-net"
+          },
+          "run": "curl -sS -m 10 http://<refused-target>/",
+          "response": 3
+        },
+        {
+          "step": "refused-bash-write",
+          "tool": "bash",
+          "input": {
+            "command": "echo by-bash > <outside>/by-bash.txt",
+            "description": "refused-bash-write"
+          },
+          "run": "echo by-bash > <outside>/by-bash.txt",
+          "response": 4
+        },
+        {
+          "step": "refused-write",
+          "tool": "write",
+          "input": {
+            "filePath": "<outside>/by-write.txt",
+            "content": "by-write"
+          },
+          "response": 5
+        },
+        {
+          "step": "refused-edit",
+          "tool": "edit",
+          "input": {
+            "filePath": "<outside>/existing.txt",
+            "oldString": "before",
+            "newString": "after"
+          },
+          "response": 6
+        },
+        {
+          "step": "refused-read",
+          "tool": "read",
+          "input": {
+            "filePath": "<work>/.purlis/vaults/covering.json"
+          },
+          "response": 7
+        },
+        {
+          "step": "refused-web",
+          "tool": "webfetch",
+          "input": {
+            "url": "http://<refused-target>/",
+            "format": "text"
+          },
+          "response": 8
+        },
+        {
+          "step": "parallel-one",
+          "tool": "bash",
+          "input": {
+            "command": "echo one",
+            "description": "parallel-one"
+          },
+          "run": "echo one",
+          "response": 9,
+          "parallel": true
+        },
+        {
+          "step": "parallel-two",
+          "tool": "bash",
+          "input": {
+            "command": "echo two",
+            "description": "parallel-two"
+          },
+          "run": "echo two",
+          "response": 9,
+          "parallel": true
+        },
+        {
+          "step": "subagent",
+          "tool": "task",
+          "input": {
+            "description": "subagent",
+            "prompt": "SUBAGENT-COVERING: make the one call the stand-in asks for.",
+            "subagent_type": "general"
+          },
+          "response": 10,
+          "subagent": true,
+          "calls": [
+            {
+              "step": "subagent-bash",
+              "tool": "bash",
+              "input": {
+                "command": "echo from-subagent",
+                "description": "subagent-bash"
+              },
+              "run": "echo from-subagent",
+              "response": 1
+            }
+          ],
+          "says": "Covering script done."
+        },
+        {
+          "step": "failing-bash",
+          "tool": "bash",
+          "input": {
+            "command": "echo failing >&2; exit 2",
+            "description": "failing-bash"
+          },
+          "run": "echo failing >&2; exit 2",
+          "response": 11
+        }
+      ],
+      "says": "Covering script done."
+    },
+    {
+      "prompt": "COVERING-SCRIPT, second turn: make the call the stand-in asks for.",
+      "calls": [
+        {
+          "step": "esc",
+          "tool": "bash",
+          "input": {
+            "command": "python3 -c \"import time; time.sleep(120)\"",
+            "description": "esc"
+          },
+          "run": "python3 -c \"import time; time.sleep(120)\"",
+          "response": 12
+        }
+      ]
+    }
+  ]
+}

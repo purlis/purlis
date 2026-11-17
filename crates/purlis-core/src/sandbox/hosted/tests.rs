@@ -215,8 +215,10 @@ fn a_port_is_given_back_only_while_this_machines_sandbox_gives_it_now() {
 #[test]
 fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_off() {
     use purlis_session_protocol::session::ReachChange;
-    let board =
-        crate::sandbox::asks::Asks::new(std::sync::Arc::new(|_: crate::sandbox::asks::Heard| {}));
+    let board = crate::sandbox::asks::Asks::new(
+        std::sync::Arc::new(|_: crate::sandbox::asks::Heard| {}),
+        &crate::sandbox::timings::Timings::production(),
+    );
     let allow = ReachChange::AllowNext {
         host: "api.example.com:443".to_owned(),
     };

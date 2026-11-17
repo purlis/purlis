@@ -84,6 +84,7 @@ use super::asks::{Answer, Asks};
 use super::internal::Internal;
 use super::localport;
 use super::reach::{Decision, Reach, Refused};
+use super::timings::Timings;
 
 pub(crate) mod providers;
 pub use providers::ProviderAddresses;
@@ -103,18 +104,16 @@ pub const REFUSALS_KEPT: usize = 8;
 pub const MORE_COUNTED_AT_MOST: usize = 1024;
 
 /// The most a request's head may be before it is refused.
-const HEAD_MAX: usize = 16 * 1024;
-
-/// How long a client has to send its request, and a host to answer the connection.
-pub(super) const PATIENCE: Duration = Duration::from_secs(30);
+pub(super) const HEAD_MAX: usize = 16 * 1024;
 
 /// How long a failing accept waits before it tries again.
 const BACKOFF: Duration = Duration::from_millis(100);
 
-/// How long a stopping proxy waits for its teller to tell what it was handed (#1353).
-const TELLER_PATIENCE: Duration = Duration::from_secs(2);
+/// What a chat's proxy takes on at once: a harness opens a handful of connections, and a
+/// model's answer streams far more often than this.
+pub const CONNECTIONS: usize = 64;
 
-/// What one proxy takes on at once, and how long a connection may carry nothing.
+/// What one proxy takes on at once, and how long it waits.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     /// Connections served at once; one more is answered `503` and closed.
@@ -124,15 +123,22 @@ pub struct Limits {
     pub idle: Duration,
     /// How long a client has to send its request's whole head.
     pub head: Duration,
+    /// How long a client has to send its request, and a host to answer the connection.
+    pub patience: Duration,
 }
 
-/// What a chat's proxy takes on: a harness opens a handful of connections, and a model's
-/// answer streams far more often than this.
-pub const LIMITS: Limits = Limits {
-    connections: 64,
-    idle: Duration::from_secs(600),
-    head: Duration::from_secs(30),
-};
+impl Limits {
+    /// **What a chat's proxy takes on**: [`CONNECTIONS`] at once, waiting as `timings` say
+    /// ([`Timings::idle`], [`Timings::head`], [`Timings::patience`]).
+    pub fn of(timings: &Timings) -> Self {
+        Self {
+            connections: CONNECTIONS,
+            idle: timings.idle(),
+            head: timings.head(),
+            patience: timings.patience(),
+        }
+    }
+}
 
 /// Whether `host` is one `listed` names: the same name, ignoring case and a final dot, or a
 /// name under a listed `*.suffix` (never the suffix itself).
@@ -146,9 +152,12 @@ pub fn allows(listed: &[String], host: &str) -> bool {
         match listed.strip_prefix("*.") {
             // A wildcard names names, never an address literal (#1341).
             Some(_) if host.parse::<std::net::IpAddr>().is_ok() => false,
+            // At least one label before the suffix's, and none of them empty: `..a.a` is not
+            // under `*.a.a` (T1.1-23).
             Some(suffix) => host
                 .strip_suffix(suffix)
-                .is_some_and(|head| head.len() > 1 && head.ends_with('.')),
+                .and_then(|head| head.strip_suffix('.'))
+                .is_some_and(|labels| labels.split('.').all(|label| !label.is_empty())),
             None => host == listed,
         }
     })
@@ -453,25 +462,22 @@ pub fn host_and_port(host: &str, port: u16) -> String {
 /// through, or `ask` or `refused`), and how many connections the line stands for. A target of `None` stands for hosts past what one tally tells apart.
 pub type Reached = Arc<dyn Fn(Option<&str>, &'static str, u64) + Send + Sync + 'static>;
 
-/// How long one tally line stands for: a host and port is told once a [`TALLY_WINDOW`], with
-/// how many connections went to it since it was last told.
-pub const TALLY_WINDOW: Duration = Duration::from_secs(60);
-
-/// How often a proxy's timer tells what has waited a [`TALLY_WINDOW`] (#1699).
-pub const TALLY_TICK: Duration = Duration::from_secs(5);
-
 /// The most hosts and ports one tally tells apart at once; connections past it are counted
 /// together, with no target.
 pub const TALLY_HOSTS: usize = 32;
 
 /// **Every connection a proxy carried, coalesced** (#1664): the first to a host and port is told
-/// at once; those after it in the same [`TALLY_WINDOW`] are counted and told as one line when
-/// the window has passed (by the proxy's timer, [`TALLY_TICK`], or at the next connection,
+/// at once; those after it in the same [`Timings::tally_window`] are counted and told as one line
+/// when the window has passed (by the proxy's timer, [`Timings::tally_tick`], or at the next
+/// connection,
 /// whichever is first) or when the proxy stops. So a chat that
 /// opens a thousand connections to its registry is a line or two a minute, never a thousand,
 /// and the network record keeps every connection without a chat being able to turn it over.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Tally {
+    /// How long one line stands for: a host and port is told once a window, with how many
+    /// connections went to it since it was last told ([`Timings::tally_window`]).
+    window: Duration,
     seen: Vec<Seen>,
     /// Connections past [`TALLY_HOSTS`] since they were last told, per layer, and when they
     /// began.
@@ -492,6 +498,16 @@ struct Seen {
 pub type Line = (Option<String>, &'static str, u64);
 
 impl Tally {
+    /// A tally that has heard nothing yet, its lines standing for `timings`'
+    /// [`Timings::tally_window`].
+    pub fn new(timings: &Timings) -> Self {
+        Self {
+            window: timings.tally_window(),
+            seen: Vec::new(),
+            others: Vec::new(),
+        }
+    }
+
     /// A connection to `target`, let through by `by`, at `now`: the lines to tell now.
     pub fn heard(&mut self, target: &str, by: &'static str, now: Instant) -> Vec<Line> {
         let mut out = self.due(now);
@@ -524,8 +540,9 @@ impl Tally {
     /// window's end, not at the next connection.
     pub fn due(&mut self, now: Instant) -> Vec<Line> {
         let mut out = Vec::new();
+        let window = self.window;
         self.seen.retain_mut(|seen| {
-            if now.saturating_duration_since(seen.since) < TALLY_WINDOW {
+            if now.saturating_duration_since(seen.since) < window {
                 return true;
             }
             if seen.untold > 0 {
@@ -534,7 +551,7 @@ impl Tally {
             false
         });
         self.others.retain(|(layer, since, untold)| {
-            if now.saturating_duration_since(*since) < TALLY_WINDOW {
+            if now.saturating_duration_since(*since) < window {
                 return true;
             }
             out.push((None, layer, *untold));
@@ -573,6 +590,9 @@ pub struct Serving {
     /// Claude Code chat's own proxy did, by name alone ([`Reach::decide_on_any_port`]).
     pub any_port: bool,
     pub limits: Limits,
+    /// The timings the proxy, its teller and its tally wait by (its `limits` are made from the
+    /// same value by [`Self::of`]).
+    pub timings: Timings,
     pub refusals: Refusals,
     /// Told each connection carried, coalesced ([`Tally`]); none tells nobody.
     pub reached: Option<Reached>,
@@ -604,20 +624,25 @@ pub struct Serving {
     pub asking: Option<Arc<AtomicUsize>>,
     /// For a confined extension's proxy (#3094): the addresses a model is served at, never
     /// connected to whatever name resolved to one, and the resolver it looks every name up by
-    /// ([`ProviderAddresses`], [`confined_addresses`]).
+    /// ([`ProviderAddresses`], [`not_at_a_model`]).
     pub providers: Option<Arc<ProviderAddresses>>,
+    /// **A scenario's resolver seam** (T1.1-02), a test build's alone: where this proxy looks
+    /// names up and dials, its `providers` among them ([`super::names`]). None asks the system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub names: Option<Arc<super::names::Names>>,
 }
 
 impl Serving {
     /// A chat's proxy for `reach`: tunnels on [`TUNNEL_PORTS`], plain requests on
-    /// [`PLAIN_PORTS`], within [`LIMITS`], keeping nothing.
-    pub fn of(reach: Reach) -> Self {
+    /// [`PLAIN_PORTS`], within [`Limits::of`] `timings`, keeping nothing.
+    pub fn of(reach: Reach, timings: &Timings) -> Self {
         Self {
             reach,
             tunnel_ports: TUNNEL_PORTS.to_vec(),
             plain_ports: PLAIN_PORTS.to_vec(),
             any_port: false,
-            limits: LIMITS,
+            limits: Limits::of(timings),
+            timings: *timings,
             refusals: Refusals::default(),
             reached: None,
             asks: None,
@@ -626,18 +651,24 @@ impl Serving {
             confined: false,
             asking: None,
             providers: None,
+            #[cfg(any(test, feature = "test-support"))]
+            names: None,
         }
     }
 
     /// **A confined extension's proxy for `hosts`** ([`Self::confined`]), refusing anything they
     /// do not name, and every address a model is served at as `providers` answer, and asking
     /// nobody.
-    pub fn confined(hosts: Vec<String>, providers: Arc<ProviderAddresses>) -> Self {
+    pub fn confined(
+        hosts: Vec<String>,
+        providers: Arc<ProviderAddresses>,
+        timings: &Timings,
+    ) -> Self {
         Self {
             confined: true,
             asking: Some(Arc::new(AtomicUsize::new(0))),
             providers: Some(providers),
-            ..Self::of(Reach::open(hosts))
+            ..Self::of(Reach::open(hosts), timings)
         }
     }
 }
@@ -662,6 +693,8 @@ pub struct Proxy {
     ticking: Option<std::thread::JoinHandle<()>>,
     /// The teller's thread (#1353).
     telling: Option<std::thread::JoinHandle<()>>,
+    /// How long it waits for its teller as it stops (#1353, [`Timings::teller_patience`]).
+    teller_patience: Duration,
     /// Whether its ports stay bound and purlis's own once it stops ([`Serving::confined`]).
     keep: bool,
     /// The `[::1]` listeners on its ports, for a confined extension's proxy.
@@ -679,6 +712,8 @@ impl std::fmt::Debug for Proxy {
     }
 }
 
+/// Proxies a test starts in one line, at production's timings.
+#[cfg(any(test, feature = "test-support"))]
 impl Proxy {
     /// A proxy that tunnels to `hosts` on [`TUNNEL_PORTS`] and carries plain requests to them
     /// on [`PLAIN_PORTS`].
@@ -690,13 +725,13 @@ impl Proxy {
     pub fn start_keeping(hosts: Vec<String>, refusals: Refusals) -> io::Result<Self> {
         Self::serving(Serving {
             refusals,
-            ..Serving::of(Reach::open(hosts))
+            ..Serving::of(Reach::open(hosts), &Timings::production())
         })
     }
 
     /// A proxy that carries `hosts` on `ports`, tunnels and plain requests alike.
     pub fn allowing(hosts: Vec<String>, ports: Vec<u16>) -> io::Result<Self> {
-        Self::limited(hosts, ports, LIMITS)
+        Self::limited(hosts, ports, Limits::of(&Timings::production()))
     }
 
     /// A proxy that carries `hosts` on `ports`, tunnels and plain requests alike, within
@@ -706,10 +741,12 @@ impl Proxy {
             tunnel_ports: ports.clone(),
             plain_ports: ports,
             limits,
-            ..Serving::of(Reach::open(hosts))
+            ..Serving::of(Reach::open(hosts), &Timings::production())
         })
     }
+}
 
+impl Proxy {
     /// **A chat's proxy**: two new ports on the loopback interface, serving `serving`.
     pub fn serving(serving: Serving) -> io::Result<Self> {
         // A confined proxy without the addresses a model is served at would connect to them.
@@ -759,6 +796,16 @@ impl Proxy {
             .copied()
             .collect();
         let limits = serving.limits;
+        // In a scenario the addresses a model is served at are looked up through the seam too.
+        #[cfg(any(test, feature = "test-support"))]
+        let providers = match (&serving.names, serving.providers) {
+            (Some(names), Some(providers)) => {
+                Some(Arc::new(providers.resolving_by(names.resolver())))
+            }
+            (_, providers) => providers,
+        };
+        #[cfg(not(any(test, feature = "test-support")))]
+        let providers = serving.providers;
         let allowed = Arc::new(Allowed {
             reach: serving.reach,
             tunnel_ports: serving.tunnel_ports,
@@ -766,6 +813,7 @@ impl Proxy {
             any_port: serving.any_port,
             idle: limits.idle,
             head: limits.head,
+            patience: limits.patience,
             refusals: serving.refusals.clone(),
             reached: serving.reached,
             asks: serving.asks,
@@ -773,9 +821,11 @@ impl Proxy {
             left_out: serving.left_out,
             confined: serving.confined,
             asking: serving.asking.clone(),
-            providers: serving.providers,
+            providers,
+            #[cfg(any(test, feature = "test-support"))]
+            names: serving.names,
             live: Live::default(),
-            tally: Mutex::new(Tally::default()),
+            tally: Mutex::new(Tally::new(&serving.timings)),
             teller: Teller::default(),
         });
         // The teller (#1353). Where its thread does not start, a refusal is told on the
@@ -809,13 +859,14 @@ impl Proxy {
         }
         // Without its timer, a count is told at the next connection or at the stop, as before.
         let ticking = if allowed.reached.is_some() {
+            let tick = serving.timings.tally_tick();
             let allowed = Arc::clone(&allowed);
             let stop = Arc::clone(&stop);
             std::thread::Builder::new()
                 .name("purlis-egress-tally".into())
                 .spawn(move || {
                     loop {
-                        std::thread::park_timeout(TALLY_TICK);
+                        std::thread::park_timeout(tick);
                         if stop.load(Ordering::SeqCst) {
                             return;
                         }
@@ -838,6 +889,7 @@ impl Proxy {
             allowed,
             ticking,
             telling,
+            teller_patience: serving.timings.teller_patience(),
             keep,
             also: also_addrs,
             asking: serving.asking,
@@ -921,7 +973,7 @@ impl Drop for Proxy {
         // most: a listener stuck on a refusal never holds up a chat's end.
         self.allowed.teller.close();
         if let Some(telling) = self.telling.take() {
-            let until = Instant::now() + TELLER_PATIENCE;
+            let until = Instant::now() + self.teller_patience;
             while !telling.is_finished() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -1038,6 +1090,7 @@ struct Allowed {
     any_port: bool,
     idle: Duration,
     head: Duration,
+    patience: Duration,
     refusals: Refusals,
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
@@ -1046,6 +1099,8 @@ struct Allowed {
     confined: bool,
     asking: Option<Arc<AtomicUsize>>,
     providers: Option<Arc<ProviderAddresses>>,
+    #[cfg(any(test, feature = "test-support"))]
+    names: Option<Arc<super::names::Names>>,
     /// What it carries now, for a confined extension's proxy, ended when its question is.
     live: Live,
     tally: Mutex<Tally>,
@@ -1162,8 +1217,9 @@ impl Allowed {
 
     /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
     /// a service left out of this chat's plan ([`Self::pinned`]); for a confined extension, never
-    /// at an address a model is served at ([`confined_addresses`]); otherwise as
-    /// [`connect_held`].
+    /// at an address a model is served at ([`not_at_a_model`]); otherwise as
+    /// [`connect_held`]. In a scenario, looked up and dialled through its resolver seam
+    /// ([`super::names`]), which decides nothing: this runs only for what was carried.
     fn connect(
         &self,
         host: &str,
@@ -1171,31 +1227,101 @@ impl Allowed {
         own: &[std::net::IpAddr],
         read: Option<&[super::hosts::Network]>,
     ) -> Connected {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(names) = &self.names {
+            // The seam is only the resolver and the dial: looked up where production would look
+            // up, in its order (never a pinned name, a name of this Mac or an address literal).
+            let origin = std::cell::Cell::new(None);
+            let resolve = |name: &str, port: u16| -> Vec<SocketAddr> {
+                if let Some(literal) = literal_address(name, port) {
+                    return vec![literal];
+                }
+                match names.look_up(name, port) {
+                    super::names::Found::Origin(at) => {
+                        origin.set(Some(at));
+                        vec![at]
+                    }
+                    super::names::Found::Scripted(answer) => answer,
+                    super::names::Found::Unmapped => Vec::new(),
+                }
+            };
+            let dial = |at: &SocketAddr, patience| match origin.get() {
+                Some(to) if to == *at => names.dial_origin(host, port, at, patience),
+                _ => names.dial(at, patience),
+            };
+            // An origin's address, for this exact name and port, is exempt from the filter that
+            // keeps a chat off this machine and special-use addresses, and from nothing else.
+            let exempt = |at: SocketAddr| origin.get() == Some(at);
+            return self.connect_by(host, port, own, read, Some(&resolve), &dial, &exempt);
+        }
+        self.connect_by(
+            host,
+            port,
+            own,
+            read,
+            None,
+            &|at, patience| TcpStream::connect_timeout(at, patience),
+            &|_| false,
+        )
+    }
+
+    /// [`Self::connect`], looking `host` up by `resolve` (by default the confined proxy's
+    /// providers' resolver, or the system's), dialling by `dial`, and keeping an address
+    /// `exempt` names past the address filter (none in production; a scenario's origin).
+    #[allow(clippy::too_many_arguments)]
+    fn connect_by(
+        &self,
+        host: &str,
+        port: u16,
+        own: &[std::net::IpAddr],
+        read: Option<&[super::hosts::Network]>,
+        resolve: Option<&LookUp<'_>>,
+        dial: &Dial<'_>,
+        exempt: &dyn Fn(SocketAddr) -> bool,
+    ) -> Connected {
+        let carries = |at: SocketAddr| {
+            if exempt(at) {
+                // Only the special-use filter is waived: a runner's internal networks still hold.
+                self.internal
+                    .as_ref()
+                    .is_none_or(|internal| internal.carries(host, at, read))
+            } else {
+                self.carries(host, at, read)
+            }
+        };
         if self.confined
             && let Some(providers) = &self.providers
         {
-            let carries = |at| self.carries(host, at, read);
-            let resolve = |name: &str, port: u16| providers.resolve(name, port);
-            return match confined_addresses(
+            let by_providers = |name: &str, port: u16| providers.resolve(name, port);
+            return match held_addresses(
                 host,
                 port,
                 &self.reach,
                 own,
                 &carries,
-                providers,
-                &resolve,
-            ) {
-                Ok(reached) => connect_first(reached),
+                resolve.unwrap_or(&by_providers),
+                exempt,
+            )
+            .and_then(|reached| not_at_a_model(reached, providers))
+            {
+                Ok(reached) => connect_first_by(reached, self.patience, dial),
                 Err(refused) => refused,
             };
         }
         match self.pinned(host, port) {
-            Some(at) => {
-                TcpStream::connect_timeout(&at, PATIENCE).map_or(Connected::Not, Connected::To)
-            }
-            None => connect_held(host, port, &self.reach, own, &|at| {
-                self.carries(host, at, read)
-            }),
+            Some(at) => dial(&at, self.patience).map_or(Connected::Not, Connected::To),
+            None => match held_addresses(
+                host,
+                port,
+                &self.reach,
+                own,
+                &carries,
+                resolve.unwrap_or(&system_resolve),
+                exempt,
+            ) {
+                Ok(reached) => connect_first_by(reached, self.patience, dial),
+                Err(refused) => refused,
+            },
         }
     }
 
@@ -1356,7 +1482,7 @@ fn at_a_model(host: &str) -> Decision {
 
 /// One client connection: its request is read, judged, and either carried or refused.
 fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
-    let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
+    let _ = client.set_write_timeout(Some(allowed.idle.min(allowed.patience)));
     let Some((head, rest)) = read_head(&mut client, allowed.head) else {
         answer(
             &mut client,
@@ -1544,7 +1670,7 @@ pub(super) mod reply {
 /// carried or refused with SOCKS's own reply. The whole of the greeting and the request must
 /// arrive within the head's deadline, and neither is more than a few hundred bytes.
 fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
-    let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
+    let _ = client.set_write_timeout(Some(allowed.idle.min(allowed.patience)));
     // A confined extension's proxy carries tunnels its HTTP port judges, the ClientHello among
     // what it judges ([`Serving::confined`]), and no SOCKS request.
     if allowed.confined {
@@ -1608,50 +1734,70 @@ fn socks_answer(code: u8) -> [u8; 10] {
 /// Reads the greeting, answers it, and reads the request: the host and port a `CONNECT` names,
 /// or the reply code that refuses what it asked. `None` where the client said nothing a SOCKS5
 /// client says, or not in time: the connection is closed with no reply.
-fn socks_request(client: &mut TcpStream, deadline: Instant) -> Option<Result<(String, u16), u8>> {
-    let [version, methods] = read_exact::<2>(client, deadline)?;
+pub(super) fn socks_request(
+    client: &mut impl SocksClient,
+    deadline: Instant,
+) -> Option<Result<(String, u16), u8>> {
+    let [version, methods] = take::<2>(client, deadline)?;
     if version != SOCKS_VERSION || methods == 0 {
         return None;
     }
     let mut offered = [0u8; 255];
-    read_into(client, &mut offered[..usize::from(methods)], deadline)?;
+    client.fill(&mut offered[..usize::from(methods)], deadline)?;
     if !offered[..usize::from(methods)].contains(&NO_AUTH) {
-        let _ = client.write_all(&[SOCKS_VERSION, NO_METHOD]);
+        let _ = client.send(&[SOCKS_VERSION, NO_METHOD]);
         return None;
     }
-    client.write_all(&[SOCKS_VERSION, NO_AUTH]).ok()?;
-    let [version, command, _, kind] = read_exact::<4>(client, deadline)?;
+    client.send(&[SOCKS_VERSION, NO_AUTH]).ok()?;
+    let [version, command, _, kind] = take::<4>(client, deadline)?;
     if version != SOCKS_VERSION {
         return None;
     }
     let host = match kind {
-        1 => std::net::Ipv4Addr::from(read_exact::<4>(client, deadline)?).to_string(),
+        1 => std::net::Ipv4Addr::from(take::<4>(client, deadline)?).to_string(),
         3 => {
-            let [len] = read_exact::<1>(client, deadline)?;
+            let [len] = take::<1>(client, deadline)?;
             let mut name = [0u8; 255];
             let name = &mut name[..usize::from(len)];
-            read_into(client, name, deadline)?;
+            client.fill(name, deadline)?;
             match std::str::from_utf8(name) {
-                Ok(name) if !name.is_empty() && name.bytes().all(|b| b.is_ascii_graphic()) => {
-                    name.to_owned()
-                }
+                Ok(name) if sent_as_a_name(name) => name.to_owned(),
                 _ => return Some(Err(reply::ADDRESS_NOT_SUPPORTED)),
             }
         }
-        4 => std::net::Ipv6Addr::from(read_exact::<16>(client, deadline)?).to_string(),
+        4 => std::net::Ipv6Addr::from(take::<16>(client, deadline)?).to_string(),
         _ => return Some(Err(reply::ADDRESS_NOT_SUPPORTED)),
     };
-    let port = u16::from_be_bytes(read_exact::<2>(client, deadline)?);
+    let port = u16::from_be_bytes(take::<2>(client, deadline)?);
     if command != 1 {
         return Some(Err(reply::COMMAND_NOT_SUPPORTED));
     }
     Some(Ok((host, port)))
 }
 
-/// `N` bytes from `client`, all of them before `deadline`.
-fn read_exact<const N: usize>(client: &mut TcpStream, deadline: Instant) -> Option<[u8; N]> {
+/// What [`socks_request`] reads a client's greeting and request from, and answers the greeting
+/// on: a client's connection, or, for the fuzz targets (`fuzz/`), bytes in memory.
+pub(super) trait SocksClient {
+    /// Fills `buf` before `deadline`, or `None`.
+    fn fill(&mut self, buf: &mut [u8], deadline: Instant) -> Option<()>;
+    /// Sends `bytes` whole.
+    fn send(&mut self, bytes: &[u8]) -> io::Result<()>;
+}
+
+impl SocksClient for TcpStream {
+    fn fill(&mut self, buf: &mut [u8], deadline: Instant) -> Option<()> {
+        read_into(self, buf, deadline)
+    }
+
+    fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.write_all(bytes)
+    }
+}
+
+/// `N` bytes from a SOCKS client, all of them before `deadline`.
+fn take<const N: usize>(client: &mut impl SocksClient, deadline: Instant) -> Option<[u8; N]> {
     let mut buf = [0u8; N];
-    read_into(client, &mut buf, deadline)?;
+    client.fill(&mut buf, deadline)?;
     Some(buf)
 }
 
@@ -1675,16 +1821,21 @@ fn read_into(client: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Optio
 
 /// Whether a `Host` header's `named` is `host` on `port`.
 pub(super) fn same_host(named: &str, host: &str, port: u16) -> bool {
-    let (name, named_port) = match named.rsplit_once(':') {
-        Some((name, port)) if !name.ends_with(']') || name.starts_with('[') => {
-            (name, port.parse().ok())
-        }
-        _ => (named, None),
+    let (name, named_port) = match named.strip_prefix('[') {
+        // An IPv6 address, whose colons are inside its brackets: a port only after them.
+        Some(rest) => match rest.split_once(']') {
+            Some((inside, "")) => (inside, None),
+            Some((inside, after)) => match after.strip_prefix(':') {
+                Some(port) => (inside, port.parse().ok()),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match named.rsplit_once(':') {
+            Some((name, port)) => (name, port.parse().ok()),
+            None => (named, None),
+        },
     };
-    let name = name
-        .strip_prefix('[')
-        .and_then(|it| it.strip_suffix(']'))
-        .unwrap_or(name);
     let name = name.strip_suffix('.').unwrap_or(name);
     let host = host.strip_suffix('.').unwrap_or(host);
     name.eq_ignore_ascii_case(host) && named_port.unwrap_or(80) == port
@@ -1772,7 +1923,7 @@ impl Request {
             return None;
         }
         if method == "CONNECT" {
-            let (host, port) = host_port(target)?;
+            let (host, port) = authority_of(target, None)?;
             return Some(Self {
                 host,
                 port,
@@ -1790,13 +1941,7 @@ impl Request {
             Some(at) => (&after[..at], &after[at..]),
             None => (after, "/"),
         };
-        let (host, port) = match authority.rsplit_once(':') {
-            Some(_) => host_port(authority)?,
-            None => (authority.to_owned(), 80),
-        };
-        if host.is_empty() || authority.contains('@') {
-            return None;
-        }
+        let (host, port) = authority_of(authority, Some(80))?;
         let body = match lengths[..] {
             [] => 0,
             [length] if !length.is_empty() && length.bytes().all(|b| b.is_ascii_digit()) => {
@@ -1835,18 +1980,56 @@ fn is_token(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
 }
 
-/// `host:port`, with an IPv6 literal's brackets taken off.
-fn host_port(authority: &str) -> Option<(String, u16)> {
-    let (host, port) = authority.rsplit_once(':')?;
-    let host = host
-        .strip_prefix('[')
-        .and_then(|it| it.strip_suffix(']'))
-        .unwrap_or(host);
-    if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
+/// **A request's authority, `host[:port]`, spelled as a URL client sends one**, with an IPv6
+/// address's brackets taken off; `None` for any other spelling, so the host the proxy judges is
+/// the host curl and Node meant (T1.1-47, `docs/fuzzing.md`). The host is [`sent_as_a_name`] or a
+/// bracketed IPv6 address, and the port is not 0. `default` is the port of an authority that
+/// names none; a `CONNECT`'s always names one.
+fn authority_of(authority: &str, default: Option<u16>) -> Option<(String, u16)> {
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(rest) => {
+            let (inside, after) = rest.split_once(']')?;
+            inside.parse::<std::net::Ipv6Addr>().ok()?;
+            (inside, after)
+        }
+        None => {
+            let end = authority.find(':').unwrap_or(authority.len());
+            let (host, after) = authority.split_at(end);
+            if !sent_as_a_name(host) {
+                return None;
+            }
+            (host, after)
+        }
+    };
+    let port = match port.strip_prefix(':') {
+        Some(port) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            port.parse().ok()?
+        }
+        None if port.is_empty() => default?,
+        _ => return None,
+    };
+    // Port 0 is no site's: nothing listens on it, and nothing names a site on it.
+    (port != 0).then(|| (host.to_owned(), port))
+}
+
+/// **Whether `host` is a name or an IPv4 address as a URL client sends one**: a dotted IPv4
+/// address, or a name of labels of letters, digits, `-` and `_`, none empty, with one final dot
+/// at most, that does not end in a number. A name
+/// that does is an IPv4 address in another notation to curl, to Node and to the resolver
+/// (`0x7f.1`, `2130706433`: WHATWG's "ends in a number"), and any other byte is one no URL's host
+/// is sent with (`1.2.3.4<tab>.github.com`, `evil.test@x.example.com`), so neither is read as a
+/// name a listed `*.suffix` could match.
+pub(super) fn sent_as_a_name(host: &str) -> bool {
+    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
     }
-    let port = port.parse().ok()?;
-    (!host.is_empty()).then(|| (host.to_owned(), port))
+    let name = host.strip_suffix('.').unwrap_or(host);
+    name.split('.').all(|label| {
+        !label.is_empty()
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    }) && !super::hosts::ends_in_a_number(&name.to_ascii_lowercase())
 }
 
 /// What a connect came to.
@@ -1864,9 +2047,16 @@ pub(crate) enum Connected {
 /// Connects to `host` on `port`, only at the addresses it resolves to now that a chat may reach
 /// ([`reachable`]), checked at every connect so a name rebound to this machine or a metadata
 /// service reaches nothing. An address literal was decided as itself
-/// ([`super::reach::Reach::decide`]) and is held to the same check here.
-pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpAddr]) -> Connected {
-    connect_held(host, port, reach, own, &|_| true)
+/// ([`super::reach::Reach::decide`]) and is held to the same check here. Each address has
+/// `patience` to answer.
+pub(crate) fn connect(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    patience: Duration,
+) -> Connected {
+    connect_held(host, port, reach, own, &|_| true, patience)
 }
 
 /// [`connect`], only at the addresses `carries` keeps besides (#2445): what a chat planned on
@@ -1878,15 +2068,27 @@ pub(crate) fn connect_held(
     reach: &Reach,
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
+    patience: Duration,
 ) -> Connected {
-    let resolve = |host: &str, port: u16| {
-        (host, port)
-            .to_socket_addrs()
-            .map(Iterator::collect)
-            .unwrap_or_default()
-    };
-    connect_held_resolving(host, port, reach, own, carries, &resolve)
+    connect_held_resolving(host, port, reach, own, carries, &system_resolve, patience)
 }
+
+/// **`host` on `port`, looked up by the system's resolver**: the one place a chat proxy asks it
+/// (a test build records each name asked, [`super::names::asked_the_system`]).
+pub(crate) fn system_resolve(host: &str, port: u16) -> Vec<SocketAddr> {
+    #[cfg(any(test, feature = "test-support"))]
+    super::names::asking_the_system(host);
+    (host, port)
+        .to_socket_addrs()
+        .map(Iterator::collect)
+        .unwrap_or_default()
+}
+
+/// How a name is looked up on a port: its addresses.
+type LookUp<'a> = dyn Fn(&str, u16) -> Vec<SocketAddr> + 'a;
+
+/// How a connection is made: an address, and how long it has to answer.
+type Dial<'a> = dyn Fn(&SocketAddr, Duration) -> io::Result<TcpStream> + 'a;
 
 /// Whether a confined extension's proxy connects to `at`: never an address in a private or
 /// special-use range ([`super::hosts::special_use`]).
@@ -1898,6 +2100,9 @@ pub(crate) fn carried_when_confined(at: SocketAddr) -> bool {
 /// #3094): the addresses `host` resolves to now by `resolve` that a chat may reach and `carries`
 /// keeps, less every one a model is served at as `providers` answer. The refusal says which held
 /// it back: [`Connected::AtAModel`] where an address was left only for serving a model.
+// The proxy itself goes through `held_addresses` and `not_at_a_model`; this is the studio's
+// tests' one call of both.
+#[cfg(test)]
 pub(crate) fn confined_addresses(
     host: &str,
     port: u16,
@@ -1907,7 +2112,16 @@ pub(crate) fn confined_addresses(
     providers: &ProviderAddresses,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
 ) -> Result<Vec<SocketAddr>, Connected> {
-    let mut reached = held_addresses(host, port, reach, own, carries, resolve)?;
+    let reached = held_addresses(host, port, reach, own, carries, resolve, &|_| false)?;
+    not_at_a_model(reached, providers)
+}
+
+/// `reached`, less every address a model is served at as `providers` answer:
+/// [`Connected::AtAModel`] where none is left.
+fn not_at_a_model(
+    mut reached: Vec<SocketAddr>,
+    providers: &ProviderAddresses,
+) -> Result<Vec<SocketAddr>, Connected> {
     reached.retain(|at| !providers.serves(at.ip()));
     if reached.is_empty() {
         return Err(Connected::AtAModel);
@@ -1925,6 +2139,7 @@ fn held_addresses(
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+    exempt: &dyn Fn(SocketAddr) -> bool,
 ) -> Result<Vec<SocketAddr>, Connected> {
     // Looked up once at most: what answered is remembered, so an empty answer tells apart from
     // one with only addresses a chat never reaches.
@@ -1934,7 +2149,10 @@ fn held_addresses(
         answered.set(!found.is_empty());
         found
     };
-    let mut reached = addresses(host, port, reach, own, &once);
+    let mut reached = match reach.address_of(host, port) {
+        Some(pinned) => vec![pinned],
+        None => reachable_from(&once(host, port), reach, own, exempt),
+    };
     reached.retain(|at| carries(*at));
     if reached.is_empty() {
         return Err(if answered.get() {
@@ -1946,11 +2164,18 @@ fn held_addresses(
     Ok(reached)
 }
 
-/// Connects to the first of `reached` that answers.
-fn connect_first(reached: Vec<SocketAddr>) -> Connected {
+/// Connects to the first of `reached` that answers within `patience`.
+fn connect_first(reached: Vec<SocketAddr>, patience: Duration) -> Connected {
+    connect_first_by(reached, patience, &|at, patience| {
+        TcpStream::connect_timeout(at, patience)
+    })
+}
+
+/// [`connect_first`], dialling by `dial`.
+fn connect_first_by(reached: Vec<SocketAddr>, patience: Duration, dial: &Dial<'_>) -> Connected {
     reached
         .into_iter()
-        .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
+        .find_map(|addr| dial(&addr, patience).ok())
         .map_or(Connected::Not, Connected::To)
 }
 
@@ -1962,9 +2187,10 @@ pub(crate) fn connect_held_resolving(
     own: &[std::net::IpAddr],
     carries: &dyn Fn(SocketAddr) -> bool,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+    patience: Duration,
 ) -> Connected {
-    match held_addresses(host, port, reach, own, carries, resolve) {
-        Ok(reached) => connect_first(reached),
+    match held_addresses(host, port, reach, own, carries, resolve, &|_| false) {
+        Ok(reached) => connect_first(reached, patience),
         Err(refused) => refused,
     }
 }
@@ -1982,7 +2208,7 @@ pub fn addresses(
 ) -> Vec<SocketAddr> {
     match reach.address_of(host, port) {
         Some(pinned) => vec![pinned],
-        None => reachable_from(&resolve(host, port), reach, own),
+        None => reachable_from(&resolve(host, port), reach, own, &|_| false),
     }
 }
 
@@ -1997,13 +2223,16 @@ pub fn reachable(
     reach: &Reach,
     own: &[std::net::IpAddr],
 ) -> Vec<SocketAddr> {
-    reachable_from(&resolve(host, port), reach, own)
+    reachable_from(&resolve(host, port), reach, own, &|_| false)
 }
 
+/// [`reachable`], keeping too an address `exempt` names (a scenario's origin; none in
+/// production).
 fn reachable_from(
     resolved: &[SocketAddr],
     reach: &Reach,
     own: &[std::net::IpAddr],
+    exempt: &dyn Fn(SocketAddr) -> bool,
 ) -> Vec<SocketAddr> {
     resolved
         .iter()
@@ -2011,8 +2240,21 @@ fn reachable_from(
         .filter(|addr| {
             !super::hosts::refused_address(addr.ip(), own)
                 || reach.lists_exactly(addr.ip(), addr.port())
+                || exempt(*addr)
         })
         .collect()
+}
+
+/// `host` as an address literal on `port`, which a resolver answers as itself, asking nobody.
+#[cfg(any(test, feature = "test-support"))]
+fn literal_address(host: &str, port: u16) -> Option<SocketAddr> {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|inside| inside.strip_suffix(']'))
+        .unwrap_or(host);
+    bare.parse::<std::net::IpAddr>()
+        .ok()
+        .map(|ip| SocketAddr::new(ip, port))
 }
 
 /// Whether binding `[::1]` failed because this machine has no IPv6 loopback to bind: none

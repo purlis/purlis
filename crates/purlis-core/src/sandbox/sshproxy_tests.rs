@@ -16,7 +16,11 @@ use super::sshproxy::{COMMAND, carry, proxy_command};
 /// A proxy whose SOCKS port carries `127.0.0.1:<port>` alone: the one way the local-address
 /// check lets this machine be reached, so it can be driven against a server here.
 fn a_proxy_listing(port: u16) -> Proxy {
-    Proxy::serving(Serving::of(Reach::open(vec![format!("127.0.0.1:{port}")]))).expect("a proxy")
+    Proxy::serving(Serving::of(
+        Reach::open(vec![format!("127.0.0.1:{port}")]),
+        &crate::sandbox::timings::Timings::production(),
+    ))
+    .expect("a proxy")
 }
 
 /// A listener on this machine, and its port.
