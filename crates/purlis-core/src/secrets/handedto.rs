@@ -335,10 +335,6 @@ impl Named {
     /// may be shown with its base drawn again: `None` where the line is not sealed by purlis, as
     /// it stands and for that chat (#7129), or the plane has no key to tell.
     fn sought(&self, ctx: &super::Ctx, chat: &str) -> Option<Vec<Sought>> {
-        // RED for one CI run (#6907, #7129): nothing named on disk is checked or looked for.
-        if std::hint::black_box(true) {
-            return Some(Vec::new());
-        }
         let parts = Self::line_parts(chat, &self.entry, &self.shown).ok()?;
         let sealed = |purpose: &str, parts: &[&str]| {
             super::fingerprint::seal_with_the_key_there(ctx, purpose, parts)
