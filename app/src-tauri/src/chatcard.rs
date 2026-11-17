@@ -816,7 +816,7 @@ mod found_by_id_tests {
             brief: "Tidy the changelog.".to_owned(),
             report_owed: true,
         };
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let opened = dispatchrecord::open(root, opening, now).expect("opened");
         let report = Ending {
             report: Some(Report {
