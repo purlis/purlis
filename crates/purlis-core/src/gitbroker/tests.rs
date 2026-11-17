@@ -11,6 +11,7 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         roots_git_held: false,
+        policy: None,
         unreadable: Vec::new(),
         config: None,
         id: None,
@@ -848,6 +849,7 @@ fn saved_project() -> (tempfile::TempDir, PathBuf) {
 fn held_chat(root: &Path) -> Asker {
     Asker {
         roots_git_held: true,
+        policy: None,
         ..asker(Some(root))
     }
 }

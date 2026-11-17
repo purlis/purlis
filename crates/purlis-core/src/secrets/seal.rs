@@ -67,6 +67,9 @@ enum Found {
     Foreign,
     /// None could be read or made.
     Unread,
+    /// This machine has no keyring purlis can use: nothing is sealed or kept here, which is
+    /// said, never taken for a keyring that failed (the review of #7113).
+    NoKeyring,
 }
 
 #[cfg(not(test))]
@@ -78,7 +81,7 @@ static FOUND: std::sync::OnceLock<Found> = std::sync::OnceLock::new();
 fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     #[cfg(test)]
     {
-        if TEST_FOREIGN.with(std::cell::Cell::get) {
+        if TEST_FOREIGN.with(std::cell::Cell::get) || TEST_NO_KEYRING.with(std::cell::Cell::get) {
             return None;
         }
         TEST_KEY.with(|held| held.borrow().clone().map(zeroize::Zeroizing::new))
@@ -90,7 +93,7 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
         }
         match FOUND.get_or_init(read_or_make) {
             Found::Held(key) => Some(key.clone()),
-            Found::Foreign | Found::Unread => None,
+            Found::Foreign | Found::Unread | Found::NoKeyring => None,
         }
     }
 }
@@ -121,8 +124,10 @@ pub fn key_is_foreign() -> bool {
 /// rule needs Security calls only `unsafe` reaches, which is a ruling of its own.
 #[cfg(not(test))]
 fn read_or_make() -> Found {
-    let Ok(entry) = ::keyring::Entry::new(SERVICE, ACCOUNT) else {
-        return Found::Unread;
+    let entry = match ::keyring::Entry::new(SERVICE, ACCOUNT) {
+        Ok(entry) => entry,
+        Err(::keyring::Error::NoDefaultStore) => return Found::NoKeyring,
+        Err(_) => return Found::Unread,
     };
     match entry.get_password() {
         Ok(hex) => {
@@ -149,10 +154,41 @@ fn read_or_make() -> Found {
                 Err(_) => Found::Unread,
             }
         }
+        Err(::keyring::Error::NoDefaultStore) => Found::NoKeyring,
         Err(why) => {
             tracing::warn!("purlis: the seal's key could not be read ({why})");
             Found::Unread
         }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for a machine with no keyring purlis can use.
+    static TEST_NO_KEYRING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's machine has no keyring** (or has one again): nothing seals, and nothing is kept.
+#[cfg(test)]
+pub(crate) fn set_no_keyring_for_this_test(none: bool) {
+    TEST_NO_KEYRING.with(|held| held.set(none));
+}
+
+/// **Whether this machine has no keyring purlis can use** (a Linux with no secret service, say;
+/// the review of #7113): the app's own answer, from where it keeps the seal's key. There no
+/// answer is sealed, so no dispatch grant is kept and no never is added, and nothing is kept to
+/// say one was: a declared gap the window says, never a keyring that failed, which reads as
+/// one that holds what it cannot show. False in any process but the app.
+pub fn no_keyring() -> bool {
+    #[cfg(test)]
+    {
+        TEST_NO_KEYRING.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        super::keyhold::is_the_app()
+            && !crate::fence::FENCED
+            && matches!(FOUND.get_or_init(read_or_make), Found::NoKeyring)
     }
 }
 
@@ -243,11 +279,21 @@ pub fn can_seal() -> bool {
 /// **Whether a seal is kept for `kind` and `clone`**, whether or not this process can read the
 /// key: only that the keyring holds the item, never what it says. What a presence marker is
 /// where nothing else can be told (ticket T1.1-73: the key unreadable and nevers present).
+///
+/// **A keyring that fails reads as one that holds it**, so what it may hold is not taken for
+/// nothing; **a machine with no keyring at all holds none** ([`no_keyring`], the review of
+/// #7113), since nothing could ever have been kept there.
 pub fn kept_exists(kind: &str, clone: &str) -> bool {
     let account = kept_account(kind, clone);
+    if no_keyring() {
+        return false;
+    }
     #[cfg(test)]
     {
-        TEST_KEPT.with(|kept| kept.borrow().contains_key(&account))
+        // Every read errs on a machine with no keyring, as a keyring that fails does: only
+        // `no_keyring` above tells the two apart.
+        TEST_NO_KEYRING.with(std::cell::Cell::get)
+            || TEST_KEPT.with(|kept| kept.borrow().contains_key(&account))
     }
     #[cfg(not(test))]
     {
@@ -256,7 +302,7 @@ pub fn kept_exists(kind: &str, clone: &str) -> bool {
         }
         !matches!(
             ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()),
-            Err(::keyring::Error::NoEntry)
+            Err(::keyring::Error::NoEntry | ::keyring::Error::NoDefaultStore)
         )
     }
 }

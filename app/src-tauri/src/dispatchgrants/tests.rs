@@ -134,6 +134,7 @@ fn chat(session: u32, persona: Option<&str>) -> Asking {
         persona: persona.map(str::to_owned),
         held: false,
         above: purlis_core::dispatchchain::Above::Known(Vec::new()),
+        policy: None,
     }
 }
 

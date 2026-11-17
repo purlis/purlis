@@ -246,7 +246,14 @@ fn commit(
     let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
     git::isolated(&plain, || -> Result<Vec<Say>, Refused> {
         super::runs_a_program(&here.clone)?;
-        made(root, asker.chat, asker.id.as_deref(), &ask, &here, identity)
+        made(
+            root,
+            asker.chat,
+            (asker.id.as_deref(), asker.policy.as_deref()),
+            &ask,
+            &here,
+            identity,
+        )
     })
 }
 
@@ -481,7 +488,7 @@ pub(crate) fn lock_of(git_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 fn made(
     root: &Path,
     chat: u32,
-    id: Option<&str>,
+    (id, policy): (Option<&str>, Option<&str>),
     ask: &CommitAsk,
     here: &Here,
     identity: &git::Isolated,
@@ -595,7 +602,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(root, top, id, &ask.message, &mut queue)?;
+            scanned(root, top, (id, policy), &ask.message, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -1339,11 +1346,13 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
 /// chat's own `pre-commit` gives it (#1476). It runs as the `[policy]` of `root`, the project the
 /// app holds the chat in, never one found from the folder (the re-review of #6992, S1). A logged
 /// finding is let through with one line in the asking chat's log, by the id `chat` the app holds
-/// for it (item 8 of the Q308 follow-up); a chat with no id yet is logged as unknown.
+/// for it (item 8 of the Q308 follow-up); a chat with no id yet is logged as unknown. **Never
+/// looser than the chain that dispatched the chat** (`policy`, the app's record of it; Q308a,
+/// Q308b, the review of #7113).
 fn scanned(
     root: &Path,
     top: &Path,
-    chat: Option<&str>,
+    (chat, policy): (Option<&str>, Option<&str>),
     message: &str,
     queue: &mut Option<String>,
 ) -> Result<(), String> {
@@ -1356,7 +1365,7 @@ fn scanned(
         &mut scan.refused,
         root,
         chat,
-        &crate::enforcement::in_force(root),
+        &crate::enforcement::in_force(root).for_chat(policy),
     );
     if scan.changes_the_allowlist {
         return Err(

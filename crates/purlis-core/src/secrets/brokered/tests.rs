@@ -124,6 +124,7 @@ fn asker(root: &Path, persona: Option<&str>) -> Asker {
         harness: Some(Harness::ClaudeCode),
         ends_seen: None,
         chat_id: None,
+        policy: None,
     }
 }
 

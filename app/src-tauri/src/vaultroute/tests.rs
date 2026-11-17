@@ -34,6 +34,7 @@ fn asker(root: &std::path::Path, persona: Option<&str>) -> brokered::Asker {
         harness: None,
         ends_seen: None,
         chat_id: None,
+        policy: None,
     }
 }
 

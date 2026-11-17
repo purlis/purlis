@@ -625,13 +625,16 @@ fn an_unreadable_seal_key_honours_no_grant_and_raises_a_notice() {
     assert_eq!(project.grants().project, [pair("steward", "ops")]);
     crate::secrets::seal::set_for_this_test(None);
     let grants = project.grants();
+    // Neither grant counts. The `[policy]` this machine accepted on the first read cannot be
+    // verified either, so what the person refused is unknown too (the review of #7113): every
+    // dispatch across personas waits, none is covered.
     for target in ["devops", "ops"] {
         assert_eq!(
             as_the_policy_runs(
                 covers(Some("steward"), target, &grants, &Locks::none()),
                 strict()
             ),
-            Covers::NeedsGrant,
+            Covers::Unread,
             "{target}"
         );
     }
@@ -768,4 +771,202 @@ fn a_dispatched_chat_is_never_looser_than_its_asker() {
     assert_eq!(child.mode(Family::Dispatch), Mode::Enforce);
     // A chat nobody dispatched runs as its project does.
     assert_eq!(project.clone().for_chat(None), project);
+}
+
+// ---- the review of #7113: denies read as `[policy]` is, and anchors that follow the plane ----------
+
+/// Runs git in `root`, with no configuration of the person's, and asserts it did what it said.
+fn git(root: &Path, args: &[&str]) {
+    let mut git = std::process::Command::new("git");
+    git.current_dir(root)
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    let ran = crate::forklock::output(&mut git).expect("git runs");
+    assert!(ran.status.success(), "{args:?}: {ran:?}");
+}
+
+/// A project whose settings are committed at `HEAD`.
+fn committed(settings: &str) -> Project {
+    let project = Project::new(settings);
+    git(project.root(), &["init", "-q"]);
+    git(project.root(), &["add", "-A"]);
+    git(project.root(), &["commit", "-q", "-m", "settings"]);
+    project
+}
+
+const DENIES: &str = "[dispatch.denies]\nsteward = [\"devops\"]\n";
+
+#[test]
+fn a_deny_taken_out_of_the_working_tree_still_denies() {
+    let project = committed(&format!("{STRICT}{DENIES}"));
+    let root = project.root();
+    assert!(project.grants().denies(Some("steward"), "devops"));
+    // A chat deletes the table from the file as it stands, and commits nothing.
+    std::fs::write(crate::names::manifest(root), STRICT).expect("the working tree");
+    assert!(project.grants().denies(Some("steward"), "devops"));
+    assert!(matches!(
+        covers(Some("steward"), "devops", &project.grants(), &Locks::none()),
+        Covers::Denied(_)
+    ));
+}
+
+#[test]
+fn a_deny_the_project_takes_away_holds_until_the_person_presses() {
+    let project = committed(&format!("{STRICT}{DENIES}"));
+    let root = project.root();
+    // Read once: the deny is accepted as it is seen, a tightening needing no press.
+    assert!(project.grants().denies(Some("steward"), "devops"));
+    // A commit takes it out: a loosening, which waits for the person.
+    std::fs::write(crate::names::manifest(root), STRICT).expect("written");
+    git(root, &["commit", "-q", "-a", "-m", "no deny"]);
+    assert!(project.grants().denies(Some("steward"), "devops"));
+    let standing = crate::enforcement::standing(root);
+    assert_eq!(standing.lifted, ["steward -> devops"]);
+    crate::enforcement::press(root, &standing.digest).expect("pressed");
+    assert!(!project.grants().denies(Some("steward"), "devops"));
+    assert!(crate::enforcement::standing(root).lifted.is_empty());
+}
+
+#[test]
+fn a_project_file_that_does_not_read_denies_every_dispatch_across_personas() {
+    // A folder where the file should be.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    std::fs::remove_file(crate::names::manifest(root)).expect("removed");
+    std::fs::create_dir(crate::names::manifest(root)).expect("a folder");
+    let grants = project.grants();
+    assert!(grants.denies(Some("steward"), "devops"));
+    assert!(!grants.denies(Some("steward"), "steward"));
+    // Not TOML.
+    let project = Project::new("[dispatch.denies\nsteward = ");
+    assert!(project.grants().denies(Some("qa"), "ops"));
+    // A table of denies that is no table, and a list that holds what is no name.
+    let project = Project::new(&format!("{STRICT}[dispatch]\ndenies = 3\n"));
+    assert!(project.grants().denies(Some("qa"), "ops"));
+    let project = Project::new(&format!("{STRICT}[dispatch.denies]\nsteward = [3]\n"));
+    let grants = project.grants();
+    assert!(grants.denies(Some("steward"), "ops"));
+    assert!(!grants.denies(Some("qa"), "ops"));
+}
+
+#[test]
+fn a_plane_moved_away_with_a_link_at_its_old_path_keeps_its_nevers() {
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let parent = tempfile::tempdir().expect("a folder");
+    let old = parent.path().join("plane");
+    std::fs::create_dir(&old).expect("made");
+    std::fs::write(crate::names::manifest(&old), STRICT).expect("written");
+    never(&old, &pair("steward", "devops")).expect("said");
+    // Moved, its nevers file taken away, and a link left where it was.
+    let moved = parent.path().join("elsewhere");
+    std::fs::rename(&old, &moved).expect("moved");
+    std::fs::remove_file(crate::dispatchnever::path(&moved)).expect("deleted");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&moved, &old).expect("linked");
+    #[cfg(unix)]
+    assert_eq!(
+        crate::dispatchnever::read(&old),
+        crate::dispatchnever::Nevers::Unread
+    );
+}
+
+#[test]
+fn a_nevers_file_the_app_wrote_with_no_anchor_now_is_not_no_nevers() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    assert!(lift_never(root, "steward", "devops").expect("lifted"));
+    // The anchor taken out of the keyring: the file says the app wrote it.
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Unread
+    );
+}
+
+#[test]
+fn a_grant_revoked_while_the_key_does_not_read_is_not_honoured_once_it_does() {
+    use crate::sandbox::local::{grant_dispatch, revoke_dispatch};
+    let project = Project::new(STRICT);
+    let root = project.root();
+    grant_dispatch(root, "steward", "devops").expect("granted");
+    let copy = record(root);
+    crate::secrets::seal::set_for_this_test(None);
+    assert!(revoke_dispatch(root, "steward", "devops").expect("revoked"));
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    // The row put back as it was.
+    let mut held = record(root);
+    held["dispatch_mine"] = copy["dispatch_mine"].clone();
+    write_record(root, &held);
+    assert_eq!(yours(root), []);
+}
+
+#[test]
+fn a_seal_never_follows_a_grant_to_a_wider_workspace() {
+    use crate::sandbox::local::{DispatchIn, Limited, give_back_dispatch, keep_dispatch_in};
+    let project = Project::new(STRICT);
+    let root = project.root();
+    keep_dispatch_in(
+        root,
+        Limited::Mine,
+        &DispatchIn {
+            asking: "steward".to_owned(),
+            target: "devops".to_owned(),
+            any: false,
+            workspace: "runners".to_owned(),
+            seen: 0,
+        },
+    )
+    .expect("kept");
+    // A row planted among the grants set aside, for every workspace, then given back.
+    let mut held = record(root);
+    held["dispatch_dormant"] =
+        serde_json::json!([{"asking": "steward", "target": "devops", "was": "devops"}]);
+    write_record(root, &held);
+    give_back_dispatch(root, "devops", "", &|_| true, &|_| true).expect("given back");
+    assert_eq!(yours(root), []);
+}
+
+#[test]
+fn a_workspace_count_raised_by_hand_counts_for_nothing() {
+    use crate::sandbox::local::{DispatchIn, Limited, dispatch_mine_in, keep_dispatch_in};
+    let project = Project::new(STRICT);
+    let root = project.root();
+    keep_dispatch_in(
+        root,
+        Limited::Mine,
+        &DispatchIn {
+            asking: "steward".to_owned(),
+            target: "devops".to_owned(),
+            any: false,
+            workspace: "runners".to_owned(),
+            seen: 0,
+        },
+    )
+    .expect("kept");
+    assert_eq!(dispatch_mine_in(root).len(), 1);
+    let mut held = record(root);
+    held["dispatch_mine_in"][0]["seen"] = 1.into();
+    write_record(root, &held);
+    assert_eq!(dispatch_mine_in(root), []);
+}
+
+#[test]
+fn a_machine_with_no_keyring_has_no_nevers_rather_than_unknown_ones() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Read(Vec::new())
+    );
+    assert_eq!(
+        covers(Some("steward"), "devops", &project.grants(), &Locks::none()),
+        Covers::NeedsGrant
+    );
+    // And nothing is kept that would not hold.
+    assert!(crate::sandbox::local::grant_dispatch(root, "steward", "devops").is_err());
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
 }

@@ -279,6 +279,9 @@ pub struct Ctx {
     /// once ([`identity::Kept`]). A clone shares it; a new context starts empty, except in the
     /// app, where every context shares the app's one memory.
     pub(crate) kept: identity::Kept,
+    /// The strictest `[policy]` along the chain that dispatched the chat this context reads
+    /// for ([`Ctx::under_chain`]): none but for a read the app makes for one chat.
+    pub(crate) policy: Option<String>,
 }
 
 impl Ctx {
@@ -294,7 +297,17 @@ impl Ctx {
             env,
             chat_writes: Vec::new(),
             kept: identity::Kept::for_a_new_context(),
+            policy: None,
         }
+    }
+
+    /// This context, for a chat whose chain ran under `policy` at its strictest
+    /// ([`crate::reopen::HandedFrom::policy`]): a family is run for it no looser (Q308a, Q308b;
+    /// the review of #7113).
+    #[must_use]
+    pub fn under_chain(mut self, policy: Option<&str>) -> Self {
+        self.policy = policy.map(str::to_owned);
+        self
     }
 
     /// The directory the state directory's files are gated from (#440), as
@@ -373,9 +386,16 @@ pub fn redact(text: &[u8], secrets: &[String]) -> Vec<u8> {
 /// **The values a command's output is masked of in the project at `root`** (Q308a, the `secrets`
 /// family): `secrets` where the family is enforced, which every template but `open` does; none
 /// where it is off or logs, the log keeping one line that masking was let go, for chat `chat`.
-pub fn masked_of<'a>(root: &Path, chat: Option<&str>, secrets: &'a [String]) -> &'a [String] {
+pub fn masked_of<'a>(
+    root: &Path,
+    (chat, policy): (Option<&str>, Option<&str>),
+    secrets: &'a [String],
+) -> &'a [String] {
     use crate::enforcement::{self, Family, Mode};
-    let mode = enforcement::mode(root, Family::Secrets);
+    // Never looser than the chain that dispatched the chat (the review of #7113).
+    let mode = enforcement::in_force(root)
+        .for_chat(policy)
+        .mode(Family::Secrets);
     if mode == Mode::Enforce || secrets.is_empty() {
         return secrets;
     }

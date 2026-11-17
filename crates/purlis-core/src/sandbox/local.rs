@@ -1239,16 +1239,34 @@ fn policy_text(counter: u64, accepted: &std::collections::BTreeMap<String, Strin
     format!("{counter};{pairs}")
 }
 
-/// **What the keyring anchors a plane's sealed answers by**: a digest of its real path alone
-/// (the M75 review, round 3). Never the clone key, which carries the identity of `.git`: a chat
-/// that copies `.git` aside and back would get a new clone key, no anchor, and read as a fresh
+/// **What the keyring anchors a plane's sealed answers by**: a digest of its path alone (the M75
+/// review, round 3). Never the clone key, which carries the identity of `.git`: a chat that
+/// copies `.git` aside and back would get a new clone key, no anchor, and read as a fresh
 /// install. Under the same path, a clone key with no record is a record gone.
+///
+/// **The path as the plane is reached, its last folder not followed** ([`anchored_path`], the
+/// review of #7113): the folders above it are resolved, so one plane spelled two ways is one
+/// anchor, but a plane moved away and a link left at its old path keeps the old path's anchor.
+/// So the anchor of every answer sealed there is still asked for, and a record taken away with
+/// the move reads as broken, never as a fresh install. A plane moved with no link left is
+/// another path, which no anchor speaks for: what a stable plane id and a machine-level registry
+/// of anchored planes close (#7015).
 pub fn anchor_key(root: &Path) -> String {
     use sha2::Digest;
-    let real = super::real(root);
-    let mut key = crate::extension::hex(&sha2::Sha256::digest(real.as_os_str().as_encoded_bytes()));
+    let path = anchored_path(root);
+    let mut key = crate::extension::hex(&sha2::Sha256::digest(path.as_os_str().as_encoded_bytes()));
     key.truncate(32);
     key
+}
+
+/// The path [`anchor_key`] digests: `root`'s parent resolved, then its own name, never followed.
+/// A root with no name of its own (`/`, or one ending in `..`) is resolved whole.
+fn anchored_path(root: &Path) -> std::path::PathBuf {
+    let absolute = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
+    match (absolute.parent(), absolute.file_name()) {
+        (Some(parent), Some(name)) if !absolute.ends_with("..") => super::real(parent).join(name),
+        _ => super::real(root),
+    }
 }
 
 /// **What this machine keeps of the person's acceptance of the project's `[policy]`** (Q308a,
@@ -2210,14 +2228,29 @@ fn answer_text(asking: &str, target: &str, any: bool, workspace: Option<&str>) -
     }
 }
 
-/// The text of a grant limited to one workspace.
+/// The text of a grant limited to one workspace, with what this machine had seen of that
+/// workspace when it was made ([`DispatchIn::seen`]), so the count is sealed with the grant (the
+/// review of #7113): a count raised by hand to match a workspace made again is a text no seal
+/// holds for.
 fn limited_text(one: &DispatchIn) -> String {
-    answer_text(&one.asking, &one.target, one.any, Some(&one.workspace))
+    format!(
+        "{} #{}",
+        answer_text(&one.asking, &one.target, one.any, Some(&one.workspace)),
+        one.seen
+    )
 }
 
 /// The pair an answer's text names, with no workspace: what a seal moving between kinds keeps.
 fn core_of(text: &str) -> &str {
     text.split_once(" in ").map_or(text, |(core, _)| core)
+}
+
+/// **Whether a seal on `from` may follow its answer to `to`** (the review of #7113): the same
+/// answer, or one that holds in any workspace narrowed to one. Never wider: an answer limited to
+/// one workspace moved to hold in every workspace, or to another, is the person's answer of
+/// just now or no sealed one.
+fn narrows(from: &str, to: &str) -> bool {
+    from == to || (!from.contains(" in ") && core_of(to) == from)
 }
 
 /// **Every dispatch answer `held` lists**, each by kind and text.
@@ -2275,16 +2308,15 @@ fn reseal(
     let after = dispatch_answers(held);
     let verified = held.dispatch_sealed.verify(DISPATCH_STORE, anchor);
     let sealed_before = |kind: DispatchKind, text: &str| verified.holds(kind.word(), text);
+    // One answer the write took from a list of the same side, whose own seal held there, and
+    // which the new one is no wider than: never a seal borrowed from another answer of the same
+    // pair, such as a grant limited to one workspace for one written to hold in all.
     let moved = |kind: DispatchKind, text: &str| {
         DispatchKind::ALL.into_iter().any(|from| {
             from.yours() == kind.yours()
                 && before
                     .iter()
-                    .any(|(k, t)| *k == from && core_of(t) == core_of(text))
-                && verified
-                    .of_kind(from.word())
-                    .iter()
-                    .any(|t| core_of(t) == core_of(text))
+                    .any(|(k, t)| *k == from && narrows(t, text) && verified.holds(from.word(), t))
         })
     };
     let mut new: Vec<(&str, String)> = Vec::new();
@@ -2298,15 +2330,31 @@ fn reseal(
     if verified.standing == Standing::Unverifiable {
         // The key does not read here: nothing counts anyway, and a write of anything else goes
         // ahead. Only the person's answer of just now is refused, since it would not hold.
-        return if new.is_empty() {
-            Ok(())
-        } else {
-            Err(io::Error::other(
+        if !new.is_empty() {
+            return Err(io::Error::other(
                 "purlis could not read the key it seals your answers with, so the grant was \
                  not kept. Open purlis again and allow it to use its key in the keychain, \
                  then answer again.",
-            ))
-        };
+            ));
+        }
+        // **An answer taken out loses its seal even so** (the review of #7113): its entry, and
+        // its seal in the live list, go, so a row put back once the key reads again is sealed
+        // by nothing. The anchor cannot follow without the key, so the set then reads as
+        // broken, and no answer counts until the person gives them again: closed, never open.
+        let gone =
+            |kind: &str, text: &str| !after.iter().any(|(k, t)| k.word() == kind && t == text);
+        let set = &mut held.dispatch_sealed;
+        let taken: Vec<String> = set
+            .entries
+            .iter()
+            .filter(|entry| gone(&entry.kind, &entry.text))
+            .map(|entry| entry.mac.clone())
+            .collect();
+        if !taken.is_empty() {
+            set.entries.retain(|entry| !taken.contains(&entry.mac));
+            set.live.retain(|mac| !taken.contains(mac));
+        }
+        return Ok(());
     }
     let still = |kind: &str, text: &str| after.iter().any(|(k, t)| k.word() == kind && t == text);
     if new.is_empty()
@@ -3180,19 +3228,40 @@ pub fn move_dispatch_mine(
     from: Option<&str>,
     to: Option<(&str, u32)>,
 ) -> io::Result<bool> {
+    // The person's press in Settings: where the grant holds now is their answer of just now,
+    // and sealed as one, since a seal never follows a grant to a wider or another workspace
+    // ([`narrows`]). Only for a grant that is there.
+    let there = |held: &OnDisk| match from {
+        Some(workspace) => held
+            .dispatch_mine_in
+            .iter()
+            .any(|one| one.is(asking, target, any, workspace)),
+        None if any => held.dispatch_any.iter().any(|one| one == asking),
+        None => held
+            .dispatch_mine
+            .iter()
+            .any(|pair| pair.asking == asking && pair.target == target),
+    };
+    if !there(&read(root)) {
+        return Ok(false);
+    }
+    let now = match to {
+        Some((workspace, seen)) => (
+            DispatchKind::MineIn,
+            limited_text(&DispatchIn {
+                asking: asking.to_owned(),
+                target: target.to_owned(),
+                any,
+                workspace: workspace.to_owned(),
+                seen,
+            }),
+        ),
+        None if any => (DispatchKind::Any, answer_text(asking, "", true, None)),
+        None => (DispatchKind::Mine, answer_text(asking, target, false, None)),
+    };
     let mut was = false;
-    change(root, |held| {
-        was = match from {
-            Some(workspace) => held
-                .dispatch_mine_in
-                .iter()
-                .any(|one| one.is(asking, target, any, workspace)),
-            None if any => held.dispatch_any.iter().any(|one| one == asking),
-            None => held
-                .dispatch_mine
-                .iter()
-                .any(|pair| pair.asking == asking && pair.target == target),
-        };
+    change_sealing(root, &[now], |held| {
+        was = there(held);
         if !was {
             return;
         }

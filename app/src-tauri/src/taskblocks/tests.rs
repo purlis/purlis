@@ -1037,6 +1037,7 @@ fn allowing_a_tasks_dispatch_for_this_chat_allows_nothing_for_its_session_or_sib
         persona: Some("steward".to_owned()),
         held: false,
         above: purlis_core::dispatchchain::Above::Known(Vec::new()),
+        policy: None,
     };
     let store = Store::default();
     let ask = |session: u32| {
@@ -1176,6 +1177,7 @@ fn started(chats: &crate::chats::Chats, dir: &std::path::Path, names: &[&str]) -
                     depth: 1,
                     root: None,
                     above: None,
+                    policy: None,
                     by_person: false,
                     long: false,
                     policy: None,

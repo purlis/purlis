@@ -170,6 +170,7 @@ fn a_declared_tool_s_run_is_held_by_the_chat_s_own_profile_on_linux() {
             harness: Some(Harness::Codex),
             ends_seen: None,
             chat_id: None,
+            policy: None,
         };
         let script = [
             r#"head -c 10 "$KUBECONFIG"; echo"#.to_owned(),
@@ -272,6 +273,7 @@ fn a_tool_declared_under_another_name_runs_under_it_inside_the_wrap() {
         harness: Some(Harness::Codex),
         ends_seen: None,
         chat_id: None,
+        policy: None,
     };
     let wanted = Wanted {
         vault: "team".into(),

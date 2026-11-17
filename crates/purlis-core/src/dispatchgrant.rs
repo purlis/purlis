@@ -219,6 +219,9 @@ pub struct InForce {
     pub denied: Vec<Pair>,
     /// The personas the project's denies keep from every other persona (`"*"`).
     pub denied_any: Vec<String>,
+    /// Whether the project's denies keep every persona from every other: they do not read
+    /// (the review of #7113).
+    pub denied_all: bool,
 }
 
 impl InForce {
@@ -234,23 +237,23 @@ impl InForce {
     /// **A grant of the project's limited to one workspace goes by the same verdict** (#1505):
     /// accepted here, it is in force only while the last settling answered.
     ///
-    /// **This runs no git**: it goes by the verdict of the last settling, which the app runs
-    /// before a dispatch is decided, and it is safe under the lock a decision is made under.
-    /// Where nothing has been settled yet for the project, what was accepted of its grants is
-    /// not in force until a settling started off this thread lands. It writes only what a
-    /// look writes: the count of a workspace seen gone ([`crate::dispatchwithin::noticed`]),
-    /// and a record of nevers an earlier build kept is moved to its own file.
+    /// **Its grants run no git**: they go by the verdict of the last settling, which the app
+    /// runs before a dispatch is decided. Where nothing has been settled yet for the project,
+    /// what was accepted of its grants is not in force until a settling started off this
+    /// thread lands. **Its denies are read as `[policy]` is** (the review of #7113,
+    /// [`crate::enforcement::denies_in_force`]): one git read of the committed file at `HEAD`,
+    /// bounded as that read is, as the `dispatch` family's mode is read for the same decision.
+    /// It writes only what a look writes: the count of a workspace seen gone
+    /// ([`crate::dispatchwithin::noticed`]), a record of nevers an earlier build kept moved to
+    /// its own file, and a tightening of `[policy]` kept as accepted.
     pub fn read(root: &Path, chat: Vec<ChatPair>) -> Self {
         let settled = crate::dispatcharrival::for_read(root).read;
         let seen = crate::sandbox::local::dispatch_seen(root)
             .filter(|_| settled)
             .unwrap_or_default();
-        let denies = committed_denies(
-            crate::sandbox::read_plane_file(&crate::names::manifest(root))
-                .ok()
-                .flatten()
-                .as_deref(),
-        );
+        // With `[policy]`, from the committed file at `HEAD` and never fewer than this person
+        // accepted; unreadable, every dispatch across personas (the review of #7113).
+        let denies = crate::enforcement::denies_in_force(root);
         let (never, never_unread) = match crate::dispatchnever::read(root) {
             crate::dispatchnever::Nevers::Read(pairs) => (pairs, false),
             crate::dispatchnever::Nevers::Unread => (Vec::new(), true),
@@ -275,8 +278,9 @@ impl InForce {
                 .filter(|(level, _)| settled || *level != Level::Project)
                 .collect(),
             works_in: None,
-            denied: denies.pairs,
-            denied_any: denies.any,
+            denied: denies.pairs(),
+            denied_any: denies.any(),
+            denied_all: denies.is_all(),
         }
     }
 
@@ -324,23 +328,13 @@ impl InForce {
     pub fn denies(&self, asking: Option<&str>, target: &str) -> bool {
         asking.is_some_and(|asking| {
             asking != target
-                && (self
-                    .denied
-                    .iter()
-                    .any(|pair| pair.asking == asking && pair.target == target)
+                && (self.denied_all
+                    || self
+                        .denied
+                        .iter()
+                        .any(|pair| pair.asking == asking && pair.target == target)
                     || self.denied_any.iter().any(|one| one == asking))
         })
-    }
-
-    /// **Whether what covers `asking` to `target` is a grant that rests on a seal**: one of
-    /// yours, or the project's as this machine accepted it, and no policy allow without one.
-    /// What an unattended chat with no sandbox may lean on only where the seal keeps it out of
-    /// that chat's reach ([`crate::dispatchunattended`]).
-    pub fn rests_on_a_seal(&self, asking: Option<&str>, target: &str) -> bool {
-        matches!(
-            self.level_of(asking, target),
-            Some(Level::You | Level::Project)
-        )
     }
 
     /// Whether you said never to `asking` dispatching to `target`.
@@ -666,18 +660,29 @@ pub fn committed(text: Option<&str>) -> Committed {
 pub struct Denies {
     /// Each pair it denies, once.
     pub pairs: Vec<Pair>,
-    /// Each asking persona it keeps from every other persona (`"*"`), once.
+    /// Each asking persona it keeps from every other persona (`"*"`), once: and each whose
+    /// list holds something that does not read (the review of #7113), since what it meant to
+    /// deny is unknown.
     pub any: Vec<String>,
-    /// Each thing in it that denies nothing, as one sentence.
+    /// Whether it denies every dispatch across personas: the table is not one, or names an
+    /// asking persona purlis cannot read, so what it meant to deny is unknown.
+    pub all: bool,
+    /// Each thing in it that does not read, as one sentence.
     pub refused: Vec<String>,
 }
 
 /// **The project's dispatch denies as `text`, the whole project file, writes them** (`None`:
 /// no file): `[dispatch.denies]`, an asking persona's name to a list of target personas' names,
-/// or `"*"`. Anything else denies nothing, and is said.
+/// or `"*"`. **Anything else fails closed** (the review of #7113), and is said: a list that does
+/// not read denies its asking persona every other, and a table that does not read, or an asking
+/// persona's name that is none, denies every dispatch across personas.
 pub fn committed_denies(text: Option<&str>) -> Denies {
     let mut out = Denies::default();
-    let Some(top) = text.and_then(|text| text.parse::<toml::Table>().ok()) else {
+    let Some(text) = text else {
+        return out;
+    };
+    let Ok(top) = text.parse::<toml::Table>() else {
+        out.all = true;
         return out;
     };
     let Some(value) = top.get(TABLE).and_then(|table| table.get(DENIES)) else {
@@ -685,18 +690,28 @@ pub fn committed_denies(text: Option<&str>) -> Denies {
     };
     let at = format!("{TABLE}.{DENIES}");
     let Some(table) = value.as_table() else {
+        out.all = true;
         out.refused.push(format!(
-            "{at} is not a table, so it denies nothing: write the asking persona, then the \
-             personas it may not dispatch to, as steward = [\"devops\"]"
+            "{at} is not a table, so it denies every dispatch across personas: write the asking \
+             persona, then the personas it may not dispatch to, as steward = [\"devops\"]"
         ));
         return out;
     };
     for (asking, targets) in table {
+        let every_other = |out: &mut Denies, why: String| {
+            out.refused.push(why);
+            if !crate::personas::valid_name(asking) {
+                out.all = true;
+            } else if !out.any.contains(asking) {
+                out.any.push(asking.clone());
+            }
+        };
+        let shown = crate::shown::short(asking);
         let Some(targets) = targets.as_array() else {
-            out.refused.push(format!(
-                "{at}.{} is not a list of personas, so it denies nothing",
-                crate::shown::short(asking)
-            ));
+            every_other(
+                &mut out,
+                format!("{at}.{shown} is not a list of personas, so it denies them all"),
+            );
             continue;
         };
         for target in targets {
@@ -706,22 +721,131 @@ pub fn committed_denies(text: Option<&str>) -> Denies {
                         out.any.push(asking.clone());
                     }
                 }
+                // A persona's own name in its list: dispatching to itself needs no grant, and
+                // no deny holds it.
+                Some(target) if target == asking && crate::personas::valid_name(asking) => out
+                    .refused
+                    .push(format!("{at}.{shown} names itself, which denies nothing")),
                 Some(target) => match Pair::new(asking, target) {
                     Ok(pair) => {
                         if !out.pairs.contains(&pair) {
                             out.pairs.push(pair);
                         }
                     }
-                    Err(why) => out.refused.push(why),
+                    Err(why) => every_other(&mut out, why),
                 },
-                None => out.refused.push(format!(
-                    "{at}.{} holds something that is not a persona's name, which denies nothing",
-                    crate::shown::short(asking)
-                )),
+                None => every_other(
+                    &mut out,
+                    format!(
+                        "{at}.{shown} holds something that is not a persona's name, so it \
+                         denies them all"
+                    ),
+                ),
             }
         }
     }
     out
+}
+
+/// What [`Denied`] spells "every dispatch across personas" as.
+const ALL_DENIED: &str = "* -> *";
+
+/// **The project's dispatch denies as `[policy]` resolves and accepts them** (the review of
+/// #7113): each deny spelled `steward -> devops`, `steward -> *` for every other persona, or
+/// `* -> *` for every dispatch across personas. Kept in the sealed acceptance of the project's
+/// `[policy]` ([`crate::enforcement::press`]), so a deny the project's file takes away still
+/// holds until the person presses to accept that.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Denied(std::collections::BTreeSet<String>);
+
+impl Denied {
+    /// Every dispatch across personas denied.
+    pub fn all() -> Self {
+        Self(std::iter::once(ALL_DENIED.to_owned()).collect())
+    }
+
+    /// The denies `text`, a whole project file, says ([`committed_denies`]): every dispatch
+    /// across personas where it is not TOML.
+    pub fn of_text(text: Option<&str>) -> Self {
+        let denies = committed_denies(text);
+        if denies.all {
+            return Self::all();
+        }
+        Self(
+            denies
+                .pairs
+                .iter()
+                .map(Pair::to_string)
+                .chain(denies.any.iter().map(|asking| format!("{asking} -> {ANY}")))
+                .collect(),
+        )
+    }
+
+    /// Whether it denies every dispatch across personas.
+    pub fn is_all(&self) -> bool {
+        self.0.contains(ALL_DENIED)
+    }
+
+    /// Whether it denies nothing.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Every deny of `self` and of `other`.
+    #[must_use]
+    pub fn with(&self, other: &Self) -> Self {
+        if self.is_all() || other.is_all() {
+            return Self::all();
+        }
+        Self(self.0.union(&other.0).cloned().collect())
+    }
+
+    /// The denies of `self` that `other` does not hold, each spelled: what accepting `other`
+    /// would lift.
+    pub fn without(&self, other: &Self) -> Vec<String> {
+        if other.is_all() {
+            return Vec::new();
+        }
+        self.0.difference(&other.0).cloned().collect()
+    }
+
+    /// As an acceptance keeps it: each deny, `|` between.
+    pub fn spelled(&self) -> String {
+        self.0.iter().cloned().collect::<Vec<_>>().join("|")
+    }
+
+    /// What [`Denied::spelled`] spelled. A deny it cannot read denies every dispatch across
+    /// personas.
+    pub fn parse(text: &str) -> Self {
+        let mut out = std::collections::BTreeSet::new();
+        for one in text.split('|').filter(|one| !one.is_empty()) {
+            let reads = one == ALL_DENIED
+                || one.split_once(" -> ").is_some_and(|(asking, target)| {
+                    crate::personas::valid_name(asking)
+                        && (target == ANY || crate::personas::valid_name(target))
+                });
+            if !reads || one == ALL_DENIED {
+                return Self::all();
+            }
+            out.insert(one.to_owned());
+        }
+        Self(out)
+    }
+
+    /// The pairs it names.
+    pub fn pairs(&self) -> Vec<Pair> {
+        self.0.iter().filter_map(|one| Pair::parse(one)).collect()
+    }
+
+    /// The asking personas it keeps from every other.
+    pub fn any(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|one| one.strip_suffix(" -> *"))
+            .filter(|asking| *asking != ANY)
+            .map(str::to_owned)
+            .collect()
+    }
 }
 
 /// What a chat is told when the project's policy denies its dispatch to `target`.

@@ -229,6 +229,10 @@ pub struct Asking {
     /// Who is above it in its chain, as its own record keeps it (#1548): what the question
     /// reads to offer no box for a persona the person said never to for a chat above it.
     pub above: dispatchchain::Above,
+    /// The strictest `[policy]` along the chain that dispatched it, as its own record keeps it
+    /// ([`purlis_core::reopen::HandedFrom::policy`]): a dispatch it asks for is judged no looser
+    /// (Q308a, Q308b; the review of #7113). None for a chat no dispatch started.
+    pub policy: Option<String>,
 }
 
 /// The chat `chat` records, as an asking chat: session `session`, shown as `name`, in the
@@ -246,6 +250,7 @@ pub fn asking_from(
         persona: purlis_core::start::runs_with(chat, root),
         held: chat.held.is_some(),
         above: dispatchchain::Above::of(chat),
+        policy: chat.from.as_ref().and_then(|from| from.policy.clone()),
     }
 }
 
@@ -2412,6 +2417,13 @@ pub const SEALS_UNREAD: &str = "purlis could not read the key it seals your disp
      on this machine just now. Quit and open purlis again, and allow it to use its key when \
      macOS asks.";
 
+/// What the window says on a machine with no keyring purlis can use (the review of #7113): a
+/// declared gap, said, never read as a keyring that failed.
+pub const NO_KEYRING: &str = "This machine has no keyring purlis can use, so purlis cannot keep \
+     dispatch grants or nevers here, and none counts: a chat's dispatch to another persona asks \
+     you each time, and a chat nobody is at does not dispatch to one. Set up your desktop's \
+     keyring (a Secret Service such as GNOME Keyring or KWallet), then open purlis again.";
+
 /// Why what this machine accepted of the project's grants is not settled now (#1543).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -2561,8 +2573,12 @@ fn standing_of(root: &Path) -> DispatchStanding {
                 text,
             })
             .collect(),
-        seals_unread: purlis_core::sandbox::local::dispatch_seals_unread(root)
-            .then(|| SEALS_UNREAD.to_owned()),
+        seals_unread: if purlis_core::secrets::seal::no_keyring() {
+            Some(NO_KEYRING.to_owned())
+        } else {
+            purlis_core::sandbox::local::dispatch_seals_unread(root)
+                .then(|| SEALS_UNREAD.to_owned())
+        },
     }
 }
 

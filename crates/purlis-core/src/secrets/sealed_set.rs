@@ -92,8 +92,9 @@ pub enum Standing {
     /// One was anchored and this is not it (removed, an older copy put back, a live seal taken
     /// out): nothing in it counts.
     Broken,
-    /// Nothing was ever anchored, and entries are here: written by something other than the
-    /// app, or by a build from before the set. Nothing in it counts; a store of denies imports
+    /// Nothing was ever anchored, and entries are here, or a counter only the app's writes
+    /// raise: written by something other than the app, by a build from before the set, or
+    /// anchored once under a path the plane is no longer reached by. Nothing in it counts; a store of denies imports
     /// them once ([`crate::dispatchnever`]).
     Unanchored,
     /// This process cannot verify (it is not the app, or the key cannot be read): nothing
@@ -189,7 +190,10 @@ impl Set {
             clone,
             &Self::live_text(self.generation, &self.live),
         ) {
-            None if self.is_empty() => none(Standing::Fresh),
+            // A set the app wrote at least once (its counter past nought) was anchored then: no
+            // anchor now is one taken away, or a plane reached by another path, never a fresh
+            // install (the review of #7113).
+            None if self.is_empty() && self.generation == 0 => none(Standing::Fresh),
             None => none(Standing::Unanchored),
             Some(false) => none(Standing::Broken),
             Some(true) => {

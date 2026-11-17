@@ -8084,6 +8084,12 @@ impl Chats {
                 harness: running.harness,
                 ends_seen: None,
                 chat_id: running.chat.identity.id.clone(),
+                // Never looser than the chain that dispatched it (the review of #7113).
+                policy: running
+                    .chat
+                    .from
+                    .as_ref()
+                    .and_then(|from| from.policy.clone()),
             },
             unconfined,
         ))

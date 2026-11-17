@@ -382,7 +382,9 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 /// lock wins. Read as the app resolved it for this process ([`crate::enforcement::mode`]).
 pub fn vaults_off(ctx: &Ctx) -> bool {
     !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
-        && crate::enforcement::mode(&ctx.root, crate::enforcement::Family::Vaults)
+        && crate::enforcement::in_force(&ctx.root)
+            .for_chat(ctx.policy.as_deref())
+            .mode(crate::enforcement::Family::Vaults)
             == crate::enforcement::Mode::Off
 }
 
@@ -1800,6 +1802,10 @@ pub struct Asker {
     /// enforcement log names it by (item 8 of the Q308 follow-up). `None` for a chat with none
     /// yet, which is logged as unknown.
     pub chat_id: Option<String>,
+    /// The strictest `[policy]` along the chain that dispatched the chat, from the app's record
+    /// of it ([`crate::reopen::HandedFrom::policy`]): a family is run for it no looser (Q308a,
+    /// Q308b; the review of #7113). `None` for a chat no dispatch started.
+    pub policy: Option<String>,
 }
 
 /// Why nothing is run where purlis has no sandbox to run it in: neither macOS nor Linux. The
@@ -2724,12 +2730,13 @@ pub fn fill_code(
 
 /// What a vault is read through for chat `asker`: the app's record of the chat.
 fn reading_for(asker: &Asker) -> Ctx {
-    match &asker.confines {
+    let ctx = match &asker.confines {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
         None => Ctx::new(&asker.root, asker.env.clone()),
-    }
+    };
+    ctx.under_chain(asker.policy.as_deref())
 }
 
 /// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
@@ -4359,6 +4366,7 @@ pub(crate) fn serve_recorded(
         env: Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]),
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
+        policy: asker.policy.clone(),
     };
     exec::record(
         &ctx_traced,
@@ -4439,7 +4447,11 @@ pub(crate) fn serve_recorded(
         &group,
         reader,
         &mut *writer,
-        super::masked_of(&ctx.root, asker.chat_id.as_deref(), &prepared.secret_values),
+        super::masked_of(
+            &ctx.root,
+            (asker.chat_id.as_deref(), asker.policy.as_deref()),
+            &prepared.secret_values,
+        ),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()
