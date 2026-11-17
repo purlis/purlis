@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # charter.toml (excerpt) — regulated project.
 # Uses the documented regulated lock set (docs example, Q316 point 7).
 [policy]

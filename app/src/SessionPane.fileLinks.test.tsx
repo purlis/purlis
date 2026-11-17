@@ -391,7 +391,7 @@ describe("a file outside the workspace", () => {
   });
 
   it("asks first, showing the file and the workspace, starting on Open file", async () => {
-    const { ask } = await asking();
+    const { ask } = await asking("Fix the login form");
 
     expect(ask).toHaveTextContent("This chat's output names a file that is not in app.");
     expect(ask).toHaveTextContent(HOSTS);
@@ -415,6 +415,13 @@ describe("a file outside the workspace", () => {
     const { ask } = await asking();
 
     expect(ask).not.toHaveTextContent("From chat");
+  });
+
+  it("says the pane's output named the file in a shell's pane, which is no chat (#6516)", async () => {
+    const { ask } = await asking();
+
+    expect(ask).toHaveTextContent("This pane's output names a file that is not in app.");
+    expect(ask).not.toHaveTextContent("This chat's output");
   });
 
   it("opens on Open file, answered with the ask's token, in a tab of its own", async () => {

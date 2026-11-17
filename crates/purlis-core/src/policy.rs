@@ -64,10 +64,10 @@ pub const EVERYTHING_ELSE: &str = "policy-everything-else";
 /// The `@id` prefix only the shipped default's structural rules may use (Q326).
 pub const RESERVED_PREFIX: &str = "policy-";
 
-/// Every family, each a Cedar action group of its `[policy]` key's name: ADR 0125's 24
-/// (`enforcement::Family::ALL`) and `audit`, the 25th (spec §3.3; the Rust family gains it in
-/// slice 10).
-pub const FAMILIES: [&str; 25] = [
+/// Every family, each a Cedar action group of its `[policy]` key's name: the 25 of
+/// `enforcement::Family::ALL` (ADR 0125's 24 and `secrets.credential_files`, Q325) and `audit`,
+/// the 26th (spec §3.3; the Rust family gains it in slice 10).
+pub const FAMILIES: [&str; 26] = [
     "sandbox",
     "network",
     "ports",
@@ -83,6 +83,7 @@ pub const FAMILIES: [&str; 25] = [
     "browser",
     "skills",
     "secrets",
+    "secrets.credential_files",
     "guards.forge",
     "guards.shape",
     "guards.plane",
@@ -452,9 +453,10 @@ fn families_of(policy: &CedarPolicy) -> Vec<&'static str> {
     }
 }
 
-/// The prefix a family gives an `@id`: its key with `.` as `-`, and a hyphen.
+/// The prefix a family gives an `@id`: its key with `.` and `_` as `-`, and a hyphen, so it is
+/// kebab-case (`secrets.credential_files` gives `secrets-credential-files-`).
 fn prefix(family: &str) -> String {
-    format!("{}-", family.replace('.', "-"))
+    format!("{}-", family.replace(['.', '_'], "-"))
 }
 
 /// What is wrong with a rule's annotations, if anything: its `@id` first, then its words.

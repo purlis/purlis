@@ -66,6 +66,7 @@ fn applies(action: &serde_json::Value) -> bool {
 
 #[test]
 fn a_policy_that_fails_strict_validation_is_reported_with_its_file_and_line() {
+    purlis_core::unsteered!();
     let text = "// purlis-policy 1\n\
                 \n\
                 @id(\"guards-git-quiet-push\")\n\
@@ -88,6 +89,7 @@ fn a_policy_that_fails_strict_validation_is_reported_with_its_file_and_line() {
 
 #[test]
 fn a_rule_without_an_id_is_refused_at_load() {
+    purlis_core::unsteered!();
     let text = "// purlis-policy 1\n\
                 \n\
                 forbid (principal, action == Action::\"merge\", resource);\n";
@@ -106,6 +108,7 @@ fn a_rule_without_an_id_is_refused_at_load() {
 
 #[test]
 fn a_rule_whose_id_lacks_its_family_prefix_or_takes_the_reserved_one_is_refused_at_load() {
+    purlis_core::unsteered!();
     for id in [
         "merge-hold-again",
         "policy-everything-else",
@@ -128,10 +131,19 @@ fn a_rule_whose_id_lacks_its_family_prefix_or_takes_the_reserved_one_is_refused_
         with_project(spans_two).is_ok(),
         "a rule over two families takes either's prefix"
     );
+    let snake_family = "// purlis-policy 1\n\
+                        @id(\"secrets-credential-files-ssh-keys\")\n\
+                        forbid (principal, action in [Action::\"read\", Action::\"secrets.credential_files\"], resource);\n";
+    assert!(
+        with_project(snake_family).is_ok(),
+        "a family whose key has an underscore gives a kebab-case prefix: {:?}",
+        with_project(snake_family).err()
+    );
 }
 
 #[test]
 fn two_rules_with_one_id_at_different_levels_are_refused_at_load() {
+    purlis_core::unsteered!();
     let workspace = "// purlis-policy 1\n\
                      @id(\"guards-merge-hold\") @level(\"workspace\")\n\
                      permit (principal in Workspace::\"web\", action == Action::\"merge\", resource);\n";
@@ -192,6 +204,7 @@ fn two_files_at_one_level_with_one_id_are_refused_naming_both() {
 
 #[test]
 fn a_level_above_its_file_or_you_in_a_committed_file_is_refused_at_load() {
+    purlis_core::unsteered!();
     for level in ["organisation", "you", "nobody"] {
         let text = format!(
             "// purlis-policy 1\n@id(\"guards-merge-held\") @level(\"{level}\")\nforbid (principal, action == Action::\"merge\", resource);\n"
@@ -204,6 +217,7 @@ fn a_level_above_its_file_or_you_in_a_committed_file_is_refused_at_load() {
 
 #[test]
 fn an_ask_naming_anyone_but_you_fails_validation() {
+    purlis_core::unsteered!();
     let text = "// purlis-policy 1\n\
                 @id(\"guards-merge-held\") @ask(\"admin\")\n\
                 forbid (principal, action == Action::\"merge\", resource);\n";
@@ -226,6 +240,7 @@ fn an_ask_naming_anyone_but_you_fails_validation() {
 
 #[test]
 fn an_action_named_like_its_family_fails_validation() {
+    purlis_core::unsteered!();
     assert_eq!(
         policy::check_schema(policy::SCHEMA),
         Vec::<String>::new(),
@@ -254,6 +269,7 @@ fn an_action_named_like_its_family_fails_validation() {
 
 #[test]
 fn every_action_belongs_to_exactly_one_family_group() {
+    purlis_core::unsteered!();
     let families: BTreeSet<&str> = policy::FAMILIES.into_iter().collect();
     let mut expected: BTreeSet<&str> = purlis_core::enforcement::Family::ALL
         .iter()
@@ -262,7 +278,7 @@ fn every_action_belongs_to_exactly_one_family_group() {
     expected.insert("audit");
     assert_eq!(
         families, expected,
-        "ADR 0125's 24 families and audit (spec §3.3)"
+        "ADR 0125's 24 families, secrets.credential_files (Q325) and audit (spec §3.3)"
     );
 
     let schema = schema_json();
@@ -305,6 +321,7 @@ fn every_action_belongs_to_exactly_one_family_group() {
 
 #[test]
 fn every_schema_attribute_declares_its_source() {
+    purlis_core::unsteered!();
     let schema = schema_json();
     let common = schema["commonTypes"]
         .as_object()
@@ -400,6 +417,7 @@ fn every_schema_attribute_declares_its_source() {
 
 #[test]
 fn the_shipped_default_ends_in_the_everything_else_permit() {
+    purlis_core::unsteered!();
     assert!(policy::DEFAULT.starts_with("// purlis-policy 1\n"));
     let loaded = policy::load(&[File::shipped_default()]).expect("the shipped default loads");
     assert_eq!(
@@ -436,6 +454,7 @@ fn the_shipped_default_ends_in_the_everything_else_permit() {
 
 #[test]
 fn a_newer_schema_version_than_this_build_reads_is_reported_as_broken() {
+    purlis_core::unsteered!();
     let text = "// purlis-policy 2\n\
                 @id(\"guards-merge-held\")\n\
                 forbid (principal, action == Action::\"merge\", resource);\n";
@@ -455,6 +474,7 @@ fn a_newer_schema_version_than_this_build_reads_is_reported_as_broken() {
 
 #[test]
 fn the_prototype_sample_projects_validate_against_the_schema() {
+    purlis_core::unsteered!();
     for project in ["solo", "team", "regulated"] {
         let text = read(
             &fixtures()
@@ -476,6 +496,7 @@ fn the_prototype_sample_projects_validate_against_the_schema() {
 
 #[test]
 fn an_ask_with_no_permit_under_it_is_no_permit_and_an_error_is_a_deny() {
+    purlis_core::unsteered!();
     let deny_by_default = policy::DEFAULT.replace(
         "@id(\"policy-everything-else\") @level(\"project\")\npermit (principal, action, resource);",
         "",
@@ -574,6 +595,7 @@ fn median(samples: usize, mut f: impl FnMut()) -> Duration {
 /// (it asks Cedar twice).
 #[test]
 fn one_decision_within_budget_relative_to_baseline() {
+    purlis_core::unsteered!();
     const BUDGET_PER_BASELINE: f64 = 250.0 / 94.0;
     const SAMPLES: usize = 400;
 

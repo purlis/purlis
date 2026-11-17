@@ -182,12 +182,15 @@ type StartCtx = {
   @source("host-supplied") gaps: Set<String>,     // families with a known gap here (Q319.C1)
 };
 
-// ── families (§3.3): ADR 0125's 24 and `audit`, each an action group ───────────────────────
+// ── families (§3.3): ADR 0125's 24, `secrets.credential_files` and `audit`, each a group ───
+// `secrets.credential_files` (ADR 0067 §5 class 6, Q325) has no action of its own, as `asks`,
+// `limits` and `audit` have none: its mode says whether the floor holds the person's own
+// credential files, a denial class of the sandbox (§3.3's "not a chat decision"), never a rule.
 
 action "sandbox", "network", "ports", "processes",
        "guards.git", "guards.merge", "guards.release", "guards.save", "guards.credential",
        "guards.forge", "guards.shape", "guards.plane",
-       "asks", "dispatch", "vaults", "secrets", "browser", "skills",
+       "asks", "dispatch", "vaults", "secrets", "secrets.credential_files", "browser", "skills",
        "mode", "tools", "trust", "runners", "consents", "limits", "audit";
 
 // ── actions (§3.3): 51, each in exactly one family ─────────────────────────────────────────

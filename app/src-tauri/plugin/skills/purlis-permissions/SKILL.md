@@ -63,6 +63,7 @@ pane when it is on screen. It names what was blocked and offers what purlis can 
 - For a local socket, a system service or a port, what allowing it means, said on the Notice.
 - For a command run with a vault, the way that works instead.
 - Where a policy forbids it, which policy and who set it, so the person knows whom to ask.
+  `purlis policy show --default` prints the shipped default every project's policy starts from.
 
 Your part is short: say what was blocked, by its host, path, socket or service name, and wait.
 If they allow it, this chat restarts on the same conversation and is told to retry. Do not

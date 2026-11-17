@@ -47,6 +47,7 @@ const CARD: ChatCard = {
   screen_kept: true,
   chat_reopen: null,
   task: TASK,
+  found_by: null,
 };
 
 describe("a chat found by its number in the palette (#6214)", () => {
@@ -55,6 +56,20 @@ describe("a chat found by its number in the palette (#6214)", () => {
     expect(rows.map((row) => row.title)).toEqual(["Show closed chat #641 · Signed commits #5607"]);
     expect(opensACard(rows[0])).toBe(true);
     expect(rows[0].id).toBe(cardRowId(641));
+  });
+
+  it("a closed chat found by a number it had before a restart says that number too (#6685)", () => {
+    const card: ChatCard = {
+      ...CARD,
+      number: 731,
+      title: "Tidy the changelog",
+      task: null,
+      found_by: 702,
+    };
+    const rows = numberRows({ number: 702, lookup: { is: "ended", card } });
+    expect(rows.map((row) => row.title)).toEqual([
+      "Show closed chat #731 · Tidy the changelog (was #702)",
+    ]);
   });
 
   it("the finished row is found by 641 and by #641, and not by another number", () => {
