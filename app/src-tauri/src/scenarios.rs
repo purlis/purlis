@@ -339,6 +339,33 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         return;
     };
     for dialect in Dialect::ALL {
+        // On macOS a Claude Code chat runs in Claude Code's own sandbox, as production runs it,
+        // which the fake harness does not play: that is ticket 10's leg, the real binary under
+        // it. purlis's wrap holds a Claude Code chat on Linux alone (`claude_wrap::wrap`), so
+        // the dialect is reported not run here, never passed.
+        if dialect == Dialect::Claude && cfg!(target_os = "macos") {
+            report::write(&[purlis_scenarios::model::LegRecord {
+                kind: purlis_scenarios::model::EntryKind::Fixture,
+                row: "T1.1-06".to_owned(),
+                test: Some(
+                    "a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold"
+                        .to_owned(),
+                ),
+                dialect: Some(purlis_scenarios::model::Dialect::Claude),
+                protection: Some(purlis_scenarios::model::Protection::Full),
+                os: report::this_os(),
+                leg: purlis_scenarios::model::ReportLeg::Fixture,
+                timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
+                verdict: purlis_scenarios::model::ReportVerdict::NotRun,
+                reason: Some(
+                    "Claude Code on macOS runs its own sandbox, which the fake does not play \
+                     (ticket 10)"
+                        .to_owned(),
+                ),
+            }])
+            .expect("the leg's report");
+            continue;
+        }
         let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), dialect)
         else {
             return;
