@@ -1778,13 +1778,26 @@ pub(crate) fn workspace_of(root: &std::path::Path, cwd: &std::path::Path) -> Opt
 /// **Writes one log line a chat's process handed over** ([`Ask::PolicyLog`]), or says why not.
 fn policy_line(held: &Held, line: &purlis_core::hookwire::PolicyLogAsk) -> Result<(), String> {
     use purlis_core::enforcement::{self, Family};
-    let chat = held
-        .chats()
-        .id_of(line.chat)
-        .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
-    let Some(family) = Family::of_key(&line.family) else {
-        return Ok(());
+    let Some(chat) = held.chats().id_of(line.chat) else {
+        return Err(format!(
+            "purlis kept no log line: chat {} is not open in this project",
+            line.chat
+        ));
     };
+    let Some(family) = Family::of_key(&line.family) else {
+        return Err("purlis kept no log line: it names no family of the policy".to_owned());
+    };
+    if !enforcement::known_rule(family, &line.rule) {
+        return Err(format!(
+            "purlis kept no log line: it names no rule of {}",
+            family.key()
+        ));
+    }
+    if let Some(host) = &line.host
+        && !enforcement::is_host_and_port(host)
+    {
+        return Err("purlis kept no log line: its host is no host:port".to_owned());
+    }
     enforcement::write_line(held.root(), &chat, family, &line.rule, line.host.as_deref());
     Ok(())
 }
