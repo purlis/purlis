@@ -297,8 +297,9 @@ fn keep_screen(
 /// (#6737): what a launch whose record of what was open was refused keeps the screens of. The
 /// host says only a number and a run for each chat it left; the run's own start in the event
 /// log at `events` names the chat it is a run of, by its id, and that chat's dispatch record
-/// says it was a task that had finished ([`crate::finished::had_finished`]). A number alone
-/// proves nothing: it may be a person's own chat's, and a kept screen is never one of those.
+/// says it was a task that had finished ([`crate::finished::is_finished`]), **by that id**: a
+/// record that names its worker by number alone proves nothing, as a number alone may be a
+/// person's own chat's, and a kept screen is never one of those.
 /// None where this machine keeps no event log, or it cannot be read.
 pub(crate) fn finished_tasks_left_by_run(
     root: &std::path::Path,
@@ -322,12 +323,16 @@ pub(crate) fn finished_tasks_left_by_run(
     };
     left.iter()
         .filter_map(|(number, run)| {
+            let id = chats.get(run)?;
             let me = dispatchrecord::ChatRef {
                 chat: *number,
-                id: Some(chats.get(run)?.clone()),
+                id: Some(id.clone()),
                 ..Default::default()
             };
-            crate::finished::had_finished(root, &me).then_some(me)
+            dispatchrecord::latest_for(root, &me)
+                .filter(|record| record.worker.chat.id.as_deref() == Some(id.as_str()))
+                .is_some_and(|record| crate::finished::is_finished(&record))
+                .then_some(me)
         })
         .collect()
 }
@@ -1025,6 +1030,72 @@ mod tests {
             vec![]
         );
         assert_eq!(finished_tasks_left_by_run(&root, &host, None), vec![]);
+    }
+
+    #[test]
+    fn a_finished_task_whose_record_names_its_chat_by_number_alone_is_not_proven_by_a_run() {
+        // An older record with no id matches any chat dealt its number: a person's own chat
+        // left under number 7, whose run proves only its own id, is never taken for it.
+        let host = Pretend::default();
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        let record = dispatchrecord::open(
+            &root,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: ChatRef {
+                        chat: 4,
+                        id: Some("01K6ASKER0000000000000000A".to_owned()),
+                        name: "steward 4".to_owned(),
+                        persona: None,
+                    },
+                    workspace: None,
+                    by_person: false,
+                    session_record: None,
+                },
+                persona: Some("devops".to_owned()),
+                worker: Worker {
+                    chat: ChatRef {
+                        chat: 7,
+                        id: None,
+                        name: "devops 7".to_owned(),
+                        persona: Some("devops".to_owned()),
+                    },
+                    harness: None,
+                    profile: None,
+                    session_record: None,
+                },
+                task: Some("check prod".to_owned()),
+                place: Place::default(),
+                brief: "check prod".to_owned(),
+                report_owed: true,
+            },
+            chrono::Utc::now(),
+        )
+        .expect("recorded");
+        dispatchrecord::close(
+            &root,
+            &record.id,
+            dispatchrecord::Ending {
+                report: Some(dispatchrecord::Report {
+                    outcome: dispatchrecord::Outcome::Done,
+                    text: "prod is green".to_owned(),
+                    changed: dispatchrecord::Changed::default(),
+                }),
+                usage: None,
+            },
+            chrono::Utc::now(),
+        )
+        .expect("ended");
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN000000000000000000P");
+        let log = a_log_where("01K6PERSONSCHAT0000000000P", "01K6RUN000000000000000000P");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
     }
 
     #[test]

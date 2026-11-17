@@ -926,17 +926,18 @@ pub fn read_back(
 /// only its number and its run. A run with no `run.started` in the log is left out.
 pub fn chats_of_runs(dir: &Path, runs: &[&str]) -> io::Result<HashMap<String, String>> {
     let mut found = HashMap::new();
-    if runs.is_empty() {
+    let wanted: std::collections::HashSet<&str> = runs.iter().copied().collect();
+    if wanted.is_empty() {
         return Ok(found);
     }
     read_back(dir, |event| {
         if event.kind == "run.started"
             && let (Some(run), Some(chat)) = (event.run, event.chat)
-            && runs.contains(&run.as_str())
+            && wanted.contains(run.as_str())
         {
             found.entry(run).or_insert(chat);
         }
-        if found.len() == runs.len() {
+        if found.len() == wanted.len() {
             std::ops::ControlFlow::Break(())
         } else {
             std::ops::ControlFlow::Continue(())

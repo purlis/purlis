@@ -567,9 +567,12 @@ pub(crate) fn left_out(root: &std::path::Path, chat: &purlis_core::reopen::Chat)
 /// its put back for ([`left_out`]), and keeps the screen of where the session host still runs
 /// it, whether its record of what was open was read or not (#6504, #6737).
 pub(crate) fn had_finished(root: &std::path::Path, me: &dispatchrecord::ChatRef) -> bool {
-    dispatchrecord::latest_for(root, me).is_some_and(|record| {
-        !record.kept_open && Finished::of(&record).is_some_and(|how| how != Finished::Blocked)
-    })
+    dispatchrecord::latest_for(root, me).is_some_and(|record| is_finished(&record))
+}
+
+/// Whether the task `record` is of had finished, as [`had_finished`] judges it.
+pub(crate) fn is_finished(record: &dispatchrecord::Record) -> bool {
+    !record.kept_open && Finished::of(record).is_some_and(|how| how != Finished::Blocked)
 }
 
 /// **The record to put back at a launch**: `record` without the task chats that had finished
