@@ -107,6 +107,7 @@ mod inboxupdates;
 mod machineprofiles;
 mod mainwatch;
 mod personaskills;
+mod policypress;
 mod regenerate;
 mod routergrade;
 mod scriptless;
@@ -1332,6 +1333,31 @@ async fn reopen_finished_task(
             .find(|open| open.session == session)
             .map(|open| drawn_of(&held, open))
             .ok_or_else(|| format!("chat {session} ended as it started"))
+    })
+    .await
+}
+
+/// **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
+/// again on its conversation, as the same chat under a new number
+/// ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
+#[tauri::command]
+#[specta::specta]
+async fn reopen_closed_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    number: u32,
+    columns: u16,
+    rows: u16,
+) -> Result<OpenChat, String> {
+    let held = planes.held(&plane)?;
+    off_the_window(STARTING_A_CHAT, move || {
+        let session = chatcard::reopen_closed(&held, number, Size { columns, rows })?;
+        drawn(&held, session).map_err(|_| {
+            format!(
+                "chat {number} was reopened as chat {session}, which ended as it started. Reopen \
+                 it again from its card, or start a new chat in its place."
+            )
+        })
     })
     .await
 }

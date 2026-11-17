@@ -14,9 +14,10 @@
  *   ruling of 2026-11-11). ***Reopen* is plain**, because it starts a program: the chat's
  *   conversation started again as an ordinary chat. Where it cannot, it is disabled with why.
  * - **A chat no dispatch started** (#6304) has no task: its badge says Closed, it has no report
- *   line, *Reopen* is disabled with why, and *Read it* is disabled, as its screen is never kept.
- *   A handoff, or a task that ended owing no report, is drawn the same way from its chat's
- *   record, with *Reopen*'s own words, and *Read it* opens its screen where one was kept.
+ *   line, and *Read it* is disabled, as its screen is never kept. *Reopen* starts it again on
+ *   its conversation from the record kept as it closed, and is disabled with why where that
+ *   record kept none (#6485). A handoff, or a task that ended owing no report, is drawn the
+ *   same way from its chat's record, and *Read it* opens its screen where one was kept.
  * - Built from the families: `HeldPopover`, `Facts`, `Badge`, `ButtonRow` and `Button`.
  */
 import type { RefObject } from "react";
@@ -27,16 +28,15 @@ import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
 import {
   NO_REPORT,
+  READ_IT,
+  REOPEN,
   SCREEN_NOT_KEPT,
+  canRead,
+  cannotReopen,
   cardOutcome,
   cardTitle,
   cardWhen,
-  whyCardCannotReopen,
 } from "./closedChat";
-
-/** Why *Reopen* does nothing on a card whose task names no conversation. */
-export const NO_CONVERSATION =
-  "It cannot be reopened: its harness named no conversation to resume.";
 
 /** The card's own words and answers, inside whatever holds it. */
 export function ClosedChatCard({
@@ -52,9 +52,10 @@ export function ClosedChatCard({
   onReopen: () => void;
 }) {
   const outcome = cardOutcome(card);
-  // A chat no dispatch started has no task: no report, and no Reopen (#6304).
+  // A chat no dispatch started has no task, so no report; its Reopen is its record's (#6485).
   const task = card.task;
-  const cannotReopen = whyCardCannotReopen(card);
+  const whyNoReopen = cannotReopen(card);
+  const readable = canRead(card);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
       <div className="closed-chat-card-head">
@@ -81,18 +82,16 @@ export function ClosedChatCard({
         <Button
           variant="primary"
           onPress={onRead}
-          isDisabled={!card.screen_kept}
-          tooltip={card.screen_kept ? undefined : SCREEN_NOT_KEPT}
+          isDisabled={!readable}
+          tooltip={readable ? undefined : SCREEN_NOT_KEPT}
         >
-          Read it
+          {READ_IT}
         </Button>
-        <Button onPress={onReopen} isDisabled={cannotReopen !== undefined} tooltip={cannotReopen}>
-          Reopen
+        <Button onPress={onReopen} isDisabled={whyNoReopen !== undefined} tooltip={whyNoReopen}>
+          {REOPEN}
         </Button>
       </ButtonRow>
-      {!card.screen_kept && (
-        <p className="closed-chat-card-note ui-text-secondary">{SCREEN_NOT_KEPT}</p>
-      )}
+      {!readable && <p className="closed-chat-card-note ui-text-secondary">{SCREEN_NOT_KEPT}</p>}
     </div>
   );
 }

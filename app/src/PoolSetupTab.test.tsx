@@ -7,7 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
-import { markPoolOwned } from "./pools";
+import { forgetPools, markPoolOwned } from "./pools";
 import { settingsPlace, useShownGroup } from "./settings/links";
 import { POOLS } from "./settings/pools";
 
@@ -120,6 +120,8 @@ afterEach(() => {
   cleanup();
   clearMocks();
   vi.useRealTimers();
+  // The pools store outlives a render: what one test read is the next one's first picture.
+  forgetPools();
 });
 
 describe("PoolSetupTab", () => {
@@ -245,7 +247,10 @@ describe("PoolSetupTab", () => {
     const calls = core(() => CHOSEN);
     const { unmount } = render(<PoolSetupTab plane="p" />);
     const box = await screen.findByRole("textbox", { name: /Name/ });
-    vi.useFakeTimers();
+    // Only the name's wait, a setTimeout, is counted. Setting the box's value can start jsdom's
+    // own focus-fixup setInterval, depending on whether the last one had gone idle yet, and
+    // that interval is jsdom's, not a wait the tab left behind (#6920).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.change(box, { target: { value: "dev" } });
     const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
     expect(kept()).toEqual([]);

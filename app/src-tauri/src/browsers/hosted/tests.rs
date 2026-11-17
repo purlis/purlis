@@ -100,6 +100,7 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
             BrowserViewRole::Focused,
             Box::new(move |_aim, image| drawing.lock().unwrap().push(image.to_vec())),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -355,6 +356,7 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
             BrowserViewRole::Focused,
             Box::new(move |aim, _image| seen.lock().unwrap().push(aim.unwrap_or_default())),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -421,6 +423,7 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -434,6 +437,7 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
             &program,
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
+            Box::new(|_| {}),
             Box::new(|_| {}),
             Arc::new(|_| {}),
         )
@@ -526,6 +530,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -588,6 +593,7 @@ fn a_watched_browser(window: &Window) -> (Said, u32, String) {
                 let drawn = Arc::clone(&drawn);
                 move |_, _| *drawn.lock().unwrap() += 1
             }),
+            Box::new(|_| {}),
             Box::new(|_| {}),
             Arc::new({
                 let said = Arc::clone(&said);
@@ -933,6 +939,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -1127,6 +1134,7 @@ fn a_browser_view_is_told_its_pages_origin_alone_as_the_page_moves() {
             BrowserViewRole::Focused,
             Box::new(move |_, _| *drawing.lock().unwrap() += 1),
             Box::new(move |origin| heard.lock().unwrap().push(origin)),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -1144,6 +1152,54 @@ fn a_browser_view_is_told_its_pages_origin_alone_as_the_page_moves() {
             Some("http://localhost:5173".to_owned()),
             Some("https://docs.example.test".to_owned())
         ]
+    );
+}
+
+#[test]
+fn a_browser_view_is_told_what_its_page_is_with_no_user_in_its_address() {
+    // #6938: the title after the site, the whole address in its tooltip, and the load state,
+    // from the engine's record; what a host sends is held to what a view may draw.
+    use purlis_session_protocol::browsing::{PageLoad, PageShown};
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let pages: Arc<Mutex<Vec<PageShown>>> = Arc::default();
+    let heard = Arc::clone(&pages);
+    window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(|_| {}),
+            Box::new(move |page| heard.lock().unwrap().push(page)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+
+    {
+        let mut shown = screen.shown();
+        shown.address = "https://ada:pw@docs.example.test/a?q=1".into();
+        shown.title = "Docs\u{202e} home".into();
+    }
+    screen.makes(b"\xff\xd8 one");
+    until("what the page is", || !pages.lock().unwrap().is_empty());
+    screen.shown().load = PageLoad::Loading;
+    screen.tells();
+    until("its load", || pages.lock().unwrap().len() == 2);
+
+    let pages = pages.lock().unwrap();
+    assert_eq!(pages[0].address, "https://docs.example.test/a?q=1");
+    assert_eq!(pages[0].title, "Docs home");
+    assert_eq!(pages[0].load, PageLoad::Loaded);
+    assert_eq!(pages[1].load, PageLoad::Loading);
+    assert_eq!(
+        crate::browsers::ShownPage::of(pages[1].clone()),
+        crate::browsers::ShownPage {
+            address: Some("https://docs.example.test/a?q=1".into()),
+            title: Some("Docs home".into()),
+            load: crate::browsers::PageLoadSaid::Loading,
+        }
     );
 }
 
@@ -1247,6 +1303,7 @@ fn a_runner_browsers_view_says_its_pool_and_the_persons_input_reaches_it_there()
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
             Box::new(|_| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .expect("its view attaches on the runner");
@@ -1331,6 +1388,7 @@ fn typing_is_said_on_the_origin_of_the_page_and_the_log_holds_no_path_query_or_v
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
             Box::new(move |origin| heard.lock().unwrap().push(origin)),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();

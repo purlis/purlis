@@ -675,7 +675,9 @@ export function ViewPane({
     (settingsLevel !== undefined ||
       piece?.path !== undefined ||
       outside !== undefined ||
-      pieceDiff !== undefined);
+      pieceDiff !== undefined ||
+      // A browser's site and secrets are its first row (#6937), beside the pane's grip and actions.
+      isBrowser(view));
   return (
     <section
       className="view-pane"

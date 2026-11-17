@@ -407,6 +407,13 @@ export const commands = {
 	personaAllowNotNow: __WINDOW_ONLY_RESULT,
 	answerTeamSandboxOff: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The project's `[policy]` as it stands for you**: what waits for your press, and what the
+	 *  file says that purlis could not read. Off the window's thread: it reads the project's files,
+	 *  the administrator's policy and this machine's acceptance.
+	 */
+	projectPolicyState: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("project_policy_state", { plane })),
+	acceptProjectPolicy: __WINDOW_ONLY_RESULT,
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -1607,6 +1614,7 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
+	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
 	setTaskScreens: __WINDOW_ONLY_RESULT,
@@ -1617,6 +1625,7 @@ export const commands = {
 	finishedTasks: (plane: PlaneId) => typedError<FinishedTask[], string>(__TAURI_INVOKE("finished_tasks", { plane })),
 	clearFinishedTasks: __WINDOW_ONLY_RESULT,
 	reopenFinishedTask: __WINDOW_ONLY_RESULT,
+	reopenClosedChat: __WINDOW_ONLY_RESULT,
 	resumeEndedChat: __WINDOW_ONLY_RESULT,
 	taskBrief: __WINDOW_ONLY_RESULT,
 	activity: __WINDOW_ONLY_RESULT,
@@ -4252,6 +4261,9 @@ export type BrowserDriver =
  *  reconnected.
  * 
  *  Or, with `page` and no image, where the browser's page is (#2300): its origin alone.
+ * 
+ *  Or, with `shown` and no image, what the browser's page is (#6938): its whole address, its
+ *  title and where its load stands.
  */
 export type BrowserFrame = {
 	aim: string,
@@ -4272,6 +4284,12 @@ export type BrowserFrame = {
 	 *  `ended`; `null` on every other frame.
 	 */
 	closed: string | null,
+	/**
+	 *  What the browser's page is (#6938): said on its own, with no image, where it changed
+	 *  and before the first frame of each snapshot; `null` on every frame, and from a host
+	 *  before 1.90.
+	 */
+	shown: ShownPage | null,
 };
 
 /**
@@ -4279,7 +4297,9 @@ export type BrowserFrame = {
  *  (its `aim`), at a point in CSS pixels of the page; `modifiers` are bits (Alt 1, Control 2,
  *  Meta 4, Shift 8).
  */
-export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number } | 
+/**  Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed. */
+{ kind: "navigate"; aim: string; step: BrowserStep };
 
 /**  Which limit a row sets. */
 export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
@@ -4339,6 +4359,9 @@ export type BrowserSitesChanged = {
 	added: string[],
 	removed: string[],
 };
+
+/**  **A step through a page's history the person takes** (#6938), from the strip above it. */
+export type BrowserStep = "back" | "forward" | "reload" | "stop";
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
@@ -4717,11 +4740,11 @@ export type ChatCard = {
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
 	/**
-	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
-	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
-	 *  nothing in words of its own.
+	 *  **Whether *Reopen* starts a card drawn from its chat's record again** (#6485), and why
+	 *  not where it cannot. `None` for a card drawn from its task, whose Reopen is its finished
+	 *  row's (`task.reopens`).
 	 */
-	dispatched: boolean,
+	chat_reopen: ChatReopen | null,
 };
 
 /**
@@ -4955,6 +4978,18 @@ export type ChatPromptRouting = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**
+ *  **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
+ *  started, a handoff, or a task that ended owing no report.
+ */
+export type ChatReopen = 
+/**  It starts again on its conversation (`reopen_closed_chat`). */
+"reopens" | 
+/**  It closed before purlis kept what a reopen needs. */
+"not_kept" | 
+/**  Its harness named no conversation to resume. */
+"no_conversation";
 
 /**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
@@ -5273,6 +5308,20 @@ export type CloneToVouch = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+ *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+ *  card (`chat_by_number`).
+ */
+export type ClosedChat = {
+	number: number,
+	earlier: number[],
+	title: string,
+	place: string,
+	/**  When it closed, UTC, RFC 3339. */
+	ended: string,
 };
 
 /**
@@ -9964,6 +10013,12 @@ export type PageAt = {
 	origin: string | null,
 };
 
+/**
+ *  **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
+ *  (`net::ERR_NAME_NOT_RESOLVED`, `null` where it gave none), or crashed.
+ */
+export type PageLoadSaid = { state: "loading" } | { state: "loaded" } | { state: "failed"; why: string | null } | { state: "crashed" };
+
 /**  One part of a panel's body. */
 export type PanelBlock = { kind: "list"; rows: PanelRow[]; empty: PanelEmpty } | { kind: "note"; text: string; tone: string } | 
 /**
@@ -10829,6 +10884,31 @@ export type PolicyRefused = {
 	 *  was made.
 	 */
 	until: number | null,
+};
+
+/**  What the window says about the project's `[policy]` on this machine. */
+export type PolicyState = {
+	/**  Each family that waits for your press to loosen. */
+	waiting: PolicyWaiting[],
+	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
+	refused: string[],
+	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
+	unsealed: boolean,
+	/**
+	 *  The digest of the committed text this was read from: what Accept names, so a press on a
+	 *  file that changed since it was shown accepts nothing.
+	 */
+	digest: string,
+};
+
+/**  One family the project now runs looser than you accepted. */
+export type PolicyWaiting = {
+	/**  The family's key, as `[policy]` spells it. */
+	family: string,
+	/**  What you accepted: `off`, `log` or `enforce`. */
+	accepted: string,
+	/**  What the project's file says now. */
+	committed: string,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -14729,6 +14809,19 @@ export type Shown = {
 	 *  ask that is never offered a rule nor cooled off.
 	 */
 	rule?: RuleShown | null,
+};
+
+/**
+ *  **What a browser's page is** (#6938), as the core tells its view, from the engine's own
+ *  record of the page and never read from its content: its whole address, `null` where there
+ *  is none to show (no page, a page that is not on the web, or one whose address holds a value
+ *  purlis keeps out); its title, `null` for none; and where its load stands. Drawn by purlis
+ *  outside the page, so a page cannot fake it (#2024).
+ */
+export type ShownPage = {
+	address: string | null,
+	title: string | null,
+	load: PageLoadSaid,
 };
 
 /**

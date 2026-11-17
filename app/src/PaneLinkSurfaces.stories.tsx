@@ -56,7 +56,7 @@ const CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,

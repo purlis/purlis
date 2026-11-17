@@ -52,28 +52,33 @@ use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::browsing::{
     Act, Aim, Browsed, BrowserReach, Driver, FillSecret, Input, KeptLogin, LinkFrames, LogIn,
-    origin_of,
+    PageShown, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
-use purlis_session_protocol::view::frames::{JPEG, aimed, closed as closed_frame, frame, origin};
+use purlis_session_protocol::view::frames::{
+    JPEG, aimed, closed as closed_frame, frame, origin, page as page_frame,
+};
 use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
 use crate::hosting::Running;
 use crate::recording::Stopped;
 
-/// Where a browser's engine hands each frame it makes: what it shows, the address of the
-/// document its page has loaded as the engine records it (#2300), and a JPEG image of it. The
-/// host keeps only the address's origin ([`origin_of`]).
-pub type FrameSink = Arc<dyn Fn(Aim, String, Bytes) + Send + Sync>;
+/// Where a browser's engine hands each frame it makes: what it shows, what its page is (the
+/// address of the document it has loaded as the engine records it, #2300, its title and its
+/// load, #6938), and a JPEG image of it, empty where only what the page is changed. A view is
+/// told the address's origin ([`origin_of`]), and, over a link of 1.90 or later, the page as
+/// [`PageShown::held`] keeps it.
+pub type FrameSink = Arc<dyn Fn(Aim, PageShown, Bytes) + Send + Sync>;
 
 /// **How a view's link reads a browser's frames**: whether they name what they show (1.14),
-/// whether it is sent the page's origin (1.35, #2300), and whether it is a link between hosts,
-/// held to the link's frames (#2050).
+/// whether it is sent the page's origin (1.35, #2300) and what the page is (1.90, #6938), and
+/// whether it is a link between hosts, held to the link's frames (#2050).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Reads {
     pub aims: bool,
     pub origins: bool,
+    pub pages: bool,
     pub between_hosts: bool,
 }
 
@@ -96,6 +101,7 @@ impl Reads {
                     major: 1,
                     minor: 35,
                 },
+            pages: version >= purlis_session_protocol::session::KNOWS_PAGES_SHOWN,
             between_hosts: scope == purlis_session_protocol::auth::Scope::RemoteLink,
         }
     }
@@ -461,35 +467,62 @@ impl Browsers for NoBrowsers {
     }
 }
 
-/// What a browser view is sent: nothing yet, the latest frame (what it shows, its page's
-/// origin, and its image), or the end.
+/// What a browser view is sent: nothing yet, the latest frame, or the end.
 #[derive(Clone)]
 enum Latest {
     Nothing,
-    Frame(Aim, Option<String>, Bytes),
+    Frame(Shown),
     Ended,
 }
 
+/// **The latest frame of a browser**: what it shows, its page's origin, what its page is
+/// (#6938), and its latest image, counted, which is empty until the engine has made one.
+#[derive(Clone)]
+struct Shown {
+    aim: Aim,
+    origin: Option<String>,
+    page: PageShown,
+    image: Bytes,
+    painted: u64,
+}
+
+/// What one view was sent last: its page's origin, what its page is, and which image.
+#[derive(Default)]
+struct Sent {
+    origin: Option<Option<String>>,
+    page: Option<PageShown>,
+    painted: Option<u64>,
+}
+
 impl Latest {
-    /// The latest frame, framed as a view whose link `reads` it: for one sent origins (1.35),
-    /// after an origin frame where its origin is not `sent`, the one the view was sent last,
-    /// which it becomes.
-    fn framed(&self, reads: Reads, sent: &mut Option<Option<String>>) -> Option<Bytes> {
-        let Latest::Frame(aim, at, image) = self else {
+    /// The latest frame, framed as a view whose link `reads` it and that was `sent` what it was
+    /// sent last, which it becomes: for one sent origins (1.35), an origin frame where its
+    /// origin is not the one sent; for one sent pages (1.90), a page frame where its page is not
+    /// the one sent (#6938); then its image where it is not the one sent. Nothing where all
+    /// of them were.
+    fn framed(&self, reads: Reads, sent: &mut Sent) -> Option<Bytes> {
+        let Latest::Frame(shown) = self else {
             return None;
         };
-        let image = if reads.aims {
-            aimed(aim, image)
-        } else {
-            frame(JPEG, image)
-        };
-        if !reads.origins || sent.as_ref() == Some(at) {
-            return Some(image);
+        let mut framed = bytes::BytesMut::new();
+        if reads.origins && sent.origin.as_ref() != Some(&shown.origin) {
+            sent.origin = Some(shown.origin.clone());
+            framed.extend_from_slice(&origin(shown.origin.as_deref()));
         }
-        *sent = Some(at.clone());
-        let mut both = bytes::BytesMut::from(&origin(at.as_deref())[..]);
-        both.extend_from_slice(&image);
-        Some(both.freeze())
+        if reads.pages && sent.page.as_ref() != Some(&shown.page) {
+            sent.page = Some(shown.page.clone());
+            framed.extend_from_slice(&page_frame(&shown.page));
+        }
+        // An empty image is the end of a view: none is sent before the engine has made one.
+        if !shown.image.is_empty() && sent.painted != Some(shown.painted) {
+            sent.painted = Some(shown.painted);
+            framed.extend_from_slice(&if reads.aims {
+                aimed(&shown.aim, &shown.image)
+            } else {
+                frame(JPEG, &shown.image)
+            });
+        }
+        (!framed.is_empty()).then(|| framed.freeze())
     }
 }
 
@@ -539,14 +572,31 @@ impl Hub {
         if viewers.len() == 1 {
             let latest = self.latest.clone();
             self.screen
-                .show(Arc::new(move |aim: Aim, address: String, image: Bytes| {
-                    // Its origin alone, cut here: never a path, a query or a user.
-                    let at = origin_of(&address);
+                .show(Arc::new(move |aim: Aim, page: PageShown, image: Bytes| {
+                    // Its origin alone, cut here: never a path, a query or a user. What the page
+                    // is, as a view may draw it (#6938).
+                    let at = origin_of(&page.address);
+                    let page = page.held();
                     latest.send_if_modified(|now| {
-                        if matches!(now, Latest::Ended) {
-                            return false;
-                        }
-                        *now = Latest::Frame(aim, at, image);
+                        let (image, painted) = match now {
+                            Latest::Ended => return false,
+                            // Only what the page is changed: its last image stays (#6938).
+                            Latest::Frame(was) if image.is_empty() => {
+                                if was.origin == at && was.page == page && was.aim == aim {
+                                    return false;
+                                }
+                                (was.image.clone(), was.painted)
+                            }
+                            Latest::Frame(was) => (image, was.painted + 1),
+                            Latest::Nothing => (image, 1),
+                        };
+                        *now = Latest::Frame(Shown {
+                            aim,
+                            origin: at,
+                            page,
+                            image,
+                            painted,
+                        });
                         true
                     });
                 }));
@@ -608,9 +658,9 @@ impl Source for BrowserSource {
         let watching = self.hub.watched(every, most_width);
         let mut latest = self.hub.latest.subscribe();
         let reads = self.reads;
-        // The snapshot says the page's origin whatever this view was sent before it: a view
-        // attached again starts from nothing.
-        let mut origin_sent = None;
+        // The snapshot says the page's origin and what it is whatever this view was sent before
+        // it: a view attached again starts from nothing.
+        let mut origin_sent = Sent::default();
         let snapshot = latest
             .borrow_and_update()
             .framed(reads, &mut origin_sent)
@@ -640,8 +690,10 @@ impl Source for BrowserSource {
                         let next = latest.borrow_and_update().clone();
                         match next {
                             Latest::Frame(..) => {
-                                let framed =
-                                    next.framed(reads, &mut origin_sent).unwrap_or_default();
+                                // Nothing this view was not sent already: it waits on.
+                                let Some(framed) = next.framed(reads, &mut origin_sent) else {
+                                    continue;
+                                };
                                 let now = tokio::time::Instant::now();
                                 return Some((
                                     framed,

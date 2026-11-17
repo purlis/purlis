@@ -1606,6 +1606,14 @@ fn nothing_to_resume_on(session: u32) -> String {
     )
 }
 
+/// Why closed chat `number` was not reopened where its harness named no conversation (#6485).
+fn nothing_to_reopen_on(number: u32) -> String {
+    format!(
+        "purlis did not reopen chat {number}: its harness named no conversation to resume. Start \
+         a new chat in its place."
+    )
+}
+
 /// Why chat `session` was not restarted when purlis holds no conversation to resume it by, and
 /// what to do (#1428). True of a chat that has not said which conversation it is in yet, and of
 /// one whose harness never says: the first way out is for the one, the second for both.
@@ -4363,15 +4371,12 @@ impl Chats {
             )),
             Some(was) if was.resume.is_none() => Err(nothing_to_resume_on(session)),
             Some(was) => {
+                // Its number is the one it closed under: kept with those it had (#6486).
                 let again = Chat {
-                    identity: purlis_core::reopen::Identity {
-                        run: None,
-                        ..was.identity.clone()
-                    },
-                    pid: None,
-                    number: None,
+                    number: Some(session),
                     ..was
-                };
+                }
+                .renumbered();
                 self.start_recorded_told(&again, size, Why::Relaunch, None, None)
             }
         };
@@ -4379,6 +4384,44 @@ impl Chats {
             lock(&self.let_go).remove(&session);
         }
         self.unclaim(session);
+        started
+    }
+
+    /// **Reopens the closed chat `record` keeps** (#6485): *Reopen* on its card. It starts again
+    /// on its conversation, the same chat under its id in a new run and under a new number, as
+    /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
+    /// is open again, where nothing was kept, and where its harness named no conversation. Once
+    /// at a time: a second press while it starts is refused.
+    ///
+    /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
+    pub fn reopen_closed(
+        &self,
+        record: &purlis_core::chatrecords::ChatRecord,
+        size: Size,
+    ) -> Result<u32, String> {
+        use purlis_core::chatrecords::CannotReopen;
+        let number = record.number;
+        let again = record.reopened().map_err(|why| match why {
+            CannotReopen::NotKept => format!(
+                "purlis did not reopen chat {number}: it closed before purlis kept what a reopen \
+                 needs. Start a new chat in its place."
+            ),
+            CannotReopen::NoConversation => nothing_to_reopen_on(number),
+        })?;
+        // Claimed before it is asked whether it is open, so a second press while the first
+        // starts it is refused by the claim, and one after finds it open: never started twice.
+        self.claim(number)?;
+        let started = if lock(&self.open)
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
+        {
+            Err(format!(
+                "purlis did not reopen chat {number}: it is open again under another number."
+            ))
+        } else {
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        };
+        self.unclaim(number);
         started
     }
 
@@ -4390,14 +4433,10 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("purlis did not restart chat {session}: it is not open."))?;
         Ok(Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
-            pid: None,
-            number: None,
+            number: Some(session),
             ..was
-        })
+        }
+        .renumbered())
     }
 
     /// `started` takes the place of `session` in the strip's order, and the record says so.
@@ -5683,6 +5722,7 @@ impl Chats {
                     ended: Arc::clone(&self.nexts_ended),
                 },
                 self.project.clone(),
+                answered_by_the_policy(&self.project, identity.id.clone()),
             )
         });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
@@ -5981,6 +6021,7 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
+            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -9342,14 +9383,12 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("chat {session} is not open"))?;
         let again = Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
             resume: None,
-            pid: None,
-            number: None,
-            ..was
+            ..Chat {
+                number: Some(session),
+                ..was
+            }
+            .renumbered()
         };
         // **A dispatched chat is handed its brief again** (#1609), as its first message: the
         // brief was the whole of what it was asked, and this run has no conversation to hold it.
@@ -9812,7 +9851,11 @@ struct Asking {
 ///
 /// Every answer comes from the window ([`Chats::allow_live`], [`Chats::keep_blocked_live`]);
 /// nothing a chat sends reaches the board.
-fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
+fn asked_by_the_proxy(
+    asking: Asking,
+    root: PathBuf,
+    answered: Option<purlis_core::sandbox::asks::Answered>,
+) -> purlis_core::sandbox::plan::Asking {
     use purlis_core::sandbox::asks::Heard;
     use purlis_core::sandboxblock::{Block, Operation};
     let Asking {
@@ -9914,7 +9957,34 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
             purlis_core::sandbox::grant::allowed_already(&root, host)
                 .map(purlis_core::sandbox::reach::By::from)
         }),
+        answered,
     }
+}
+
+/// **What a chat's board tells of a host it answered Allow** because the project's `[policy]`
+/// does not enforce `asks` (Q308, instruction 50), as its start resolved it: nothing where the
+/// family is enforced (the board asks as before), a log line for chat `chat` where it logs.
+fn answered_by_the_policy(
+    root: &std::path::Path,
+    chat: Option<String>,
+) -> Option<purlis_core::sandbox::asks::Answered> {
+    use purlis_core::enforcement::{self, Family, Mode};
+    let mode = enforcement::mode(root, Family::Asks);
+    if mode == Mode::Enforce {
+        return None;
+    }
+    let root = root.to_path_buf();
+    Some(Arc::new(move |host: &str, port: u16| {
+        if let (Mode::Log, Some(chat)) = (mode, chat.as_deref()) {
+            enforcement::record(
+                &root,
+                chat,
+                Family::Asks,
+                enforcement::RULE_HOST_ASK,
+                Some(&format!("{host}:{port}")),
+            );
+        }
+    }))
 }
 
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
@@ -10095,10 +10165,16 @@ fn what_its_hooks_read(
     cwd: Option<&Path>,
     sandboxed: bool,
     id: Option<&str>,
+    policy: Option<&str>,
 ) {
     purlis_core::hoststart::what_its_hooks_read(
         env,
-        &purlis_core::hoststart::Watched { cwd, sandboxed, id },
+        &purlis_core::hoststart::Watched {
+            cwd,
+            sandboxed,
+            id,
+            policy,
+        },
     );
 }
 

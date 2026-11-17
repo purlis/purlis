@@ -594,7 +594,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(top, &ask.message, &mut queue)?;
+            scanned(root, top, &ask.message, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -1335,12 +1335,26 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
 /// made here.
 ///
 /// Where it refuses, `queue` is given the line of the needs-you item the app raises, as a
-/// chat's own `pre-commit` gives it (#1476).
-fn scanned(top: &Path, message: &str, queue: &mut Option<String>) -> Result<(), String> {
+/// chat's own `pre-commit` gives it (#1476). It runs as the `[policy]` of `root`, the project the
+/// app holds the chat in, never one found from the folder (the re-review of #6992, S1).
+fn scanned(
+    root: &Path,
+    top: &Path,
+    message: &str,
+    queue: &mut Option<String>,
+) -> Result<(), String> {
     let mut scan = crate::diffscan::checked(top)
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
     let said = crate::diffscan::message_checked(top, message);
     scan.refused.extend(said.refused);
+    // As the project's `[policy]` runs each finding's family (Q308a). The app has the chat's
+    // number here, not its id, so a logged finding is let through without a line.
+    crate::diffscan::under_policy(
+        &mut scan.refused,
+        root,
+        None,
+        &crate::enforcement::in_force(root),
+    );
     if scan.changes_the_allowlist {
         return Err(
             "the commit changes the scan's allowlist, which only a commit made outside a chat \

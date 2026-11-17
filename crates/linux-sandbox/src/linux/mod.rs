@@ -132,7 +132,7 @@ fn supervise(
         eprintln!(
             "purlis: {}, and this kernel's is version {abi}, so nothing was started. {}",
             crate::NEEDS_LANDLOCK,
-            crate::landlock_way_on(true)
+            crate::landlock_way_on(crate::WayOn::Unknown)
         );
         return Ok(NOT_STARTED);
     }

@@ -131,6 +131,7 @@ pub const NOT_INHERITED: &[&str] = &[
     WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
+    crate::enforcement::ENV,
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
     HARNESS_INTERNAL_ENV,
@@ -1629,6 +1630,41 @@ pub enum Ask {
     /// it, so a line nobody proved can never raise it. **It moves nothing**: the fact is fed by
     /// the reports the board takes alone. No ticket, for a record's reason.
     Attendance(AttendanceAsk),
+    /// **How each family of purlis's refusals runs for this chat** (rulings Q308, Q308a; the
+    /// review of #6992): what a hook or a git hook asks before it judges, since the app alone
+    /// can verify what the person accepted. The app answers [`Answer::Policy`] with the policy
+    /// for the project it holds the chat in, never one a line names. **No answer is `strict`**:
+    /// a process that cannot ask the app never runs looser than the committed file. No ticket,
+    /// for a record's reason.
+    Policy(PolicyAsk),
+    /// **One quiet line for a refusal a family under `log` would have made** (Q308): what a hook
+    /// hands the app to write in the chat's enforcement log, since a hook inside the wrap
+    /// cannot. The rule, the family and the host alone. The app answers [`Answer::Policy`]. No
+    /// ticket, for a record's reason.
+    PolicyLog(PolicyLogAsk),
+}
+
+/// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+}
+
+/// **A hook's line for its chat's enforcement log** ([`Ask::PolicyLog`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyLogAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The family's key.
+    pub family: String,
+    /// The rule's id.
+    pub rule: String,
+    /// The host it was about, where the rule is about one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 /// **A tool line's ask for its chat's attendance** ([`Ask::Attendance`], R-109): what the line's
@@ -2464,6 +2500,9 @@ pub enum Answer {
     /// **Whether the asking chat is attended** ([`Ask::Attendance`], R-109): its fact, as it
     /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
     Attended { attended: bool },
+    /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
+    /// as [`crate::enforcement::Resolved::spelled`] writes them.
+    Policy { spelled: String },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2798,6 +2837,8 @@ impl Ask {
             Self::Prompt(asked) => asked.chat,
             Self::Merge(asked) => asked.chat,
             Self::Attendance(asked) => asked.chat,
+            Self::Policy(asked) => asked.chat,
+            Self::PolicyLog(line) => line.chat,
         }
     }
 }

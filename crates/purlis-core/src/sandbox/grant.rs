@@ -503,6 +503,20 @@ impl fmt::Display for Refused {
     }
 }
 
+/// What a refused credential says (ADR 0067 §5 class 6, rulings Q321 and Q325), where no
+/// socket can be allowed to a chat.
+pub const CREDENTIALS_ROUTE: &str = "That is one of your own credentials. A chat never reads or \
+     writes them at the full sandbox, or at the basic one where the project's policy says so, so \
+     plain gh or git over https that relies on it stops working here. Give the chat a forge token \
+     through purlis's vault, or push through the app.";
+
+/// [`CREDENTIALS_ROUTE`], where a person can allow their own SSH agent to a chat: on macOS.
+pub const CREDENTIALS_ROUTE_WITH_AGENT: &str = "That is one of your own credentials. A chat never \
+     reads or writes them at the full sandbox, or at the basic one where the project's policy \
+     says so, so plain gh or git over https that relies on it stops working here. Give the chat \
+     a forge token through purlis's vault, push through the app, or allow your SSH agent for this \
+     chat.";
+
 /// The way that works for something of `class`, which is never granted (ADR 0067 §5).
 pub fn brokered_route(class: Class) -> &'static str {
     match class {
@@ -521,6 +535,10 @@ pub fn brokered_route(class: Class) -> &'static str {
             "That holds what only a person approves, so it is never a chat's to write. Make the \
              change yourself, in the window or your own terminal."
         }
+        // Allowing the person's agent is offered only where a socket's grant compiles: on
+        // macOS (D-sock-7).
+        Class::Credentials if cfg!(target_os = "macos") => CREDENTIALS_ROUTE_WITH_AGENT,
+        Class::Credentials => CREDENTIALS_ROUTE,
         Class::LaterCode => {
             "A later program loads code or settings from that, outside any sandbox, so no chat \
              ever writes it. Make the change yourself, in your own editor or terminal."

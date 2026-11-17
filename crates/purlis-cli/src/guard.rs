@@ -49,6 +49,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use purlis_core::enforcement::{Family, Mode};
 use purlis_core::handoffguard::Caller;
 use purlis_core::toolgate::{self, Call, Launched, Plane};
 use purlis_core::toolhooks::Answer;
@@ -137,23 +138,45 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
             permission_mode: permission_mode.as_deref(),
         },
     };
-    if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
+    // How each family of refusals runs for this chat (Q308, Q308a): as its start resolved the
+    // project's `[policy]`, made stricter by what the project says now.
+    let policy = purlis_core::enforcement::in_force(&root);
+    let chat = purlis_core::enforcement::this_chat();
+    let judged = toolgate::judged(&call, plane.as_ref(), &|family| policy.mode(family));
+    for logged in &judged.logged {
+        if let Some(family) = logged.arm.and_then(toolgate::Arm::family) {
+            log_verdict(&root, chat.as_deref(), family, logged);
+        }
+    }
+    if let Some(verdict) = judged.refused {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
     // The merge hold (R-114, R-115): in a chat the app started, a merge is refused to the chat
     // in any mode, and its request is handed to the app, which asks the person. After the
     // refusals, and ahead of A4, which leaves a merge the hold stands for to it, attended or not
-    // (R-145).
-    if let Some(verdict) = held_merge(&command, &cwd) {
-        return crate::hooks::Answered::of(Answer::Deny(verdict));
+    // (R-145). `guards.merge` (Q308): not asked where off, and logged where it logs.
+    let merges = policy.mode(Family::GuardsMerge);
+    if merges != Mode::Off
+        && let Some(verdict) = held_merge(&command, &cwd, merges == Mode::Enforce)
+    {
+        if merges == Mode::Enforce {
+            return crate::hooks::Answered::of(Answer::Deny(verdict));
+        }
+        log_verdict(&root, chat.as_deref(), Family::GuardsMerge, &verdict);
     }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
     // git itself (#3931). After every refusal, because it is the one that asks the app.
-    if let Some(found) = &found
+    // `guards.git` (Q308).
+    let git = policy.mode(Family::GuardsGit);
+    if git != Mode::Off
+        && let Some(found) = &found
         && !launched.sandboxed
         && let Some(verdict) = held_branch_folder(Path::new(&found.root), &command, &cwd)
     {
-        return crate::hooks::Answered::of(Answer::Deny(verdict));
+        if git == Mode::Enforce {
+            return crate::hooks::Answered::of(Answer::Deny(verdict));
+        }
+        log_verdict(&root, chat.as_deref(), Family::GuardsGit, &verdict);
     }
     // Nothing refused: a dispatch or a handoff that writes and shares its call with another
     // command was refused above (#3785), and nothing here asks the person.
@@ -167,6 +190,20 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// **One quiet line for a refusal a family under `log` would have made** (Q308): by its arm's id,
+/// or, where it has no arm, the id of the hold that made it, and never its sentence, which may
+/// quote the command.
+fn log_verdict(root: &Path, chat: Option<&str>, family: Family, verdict: &toolgate::Verdict) {
+    use purlis_core::enforcement::{RULE_BRANCH_FOLDER, RULE_MERGE_HOLD};
+    let rule: &str = match (verdict.arm, family) {
+        (Some(arm), _) => arm.id(),
+        (None, Family::GuardsMerge) => RULE_MERGE_HOLD,
+        (None, _) => RULE_BRANCH_FOLDER,
+    };
+    let chat = chat.unwrap_or(purlis_core::enforcement::UNKNOWN_CHAT);
+    purlis_core::enforcement::record(root, chat, family, rule, None);
 }
 
 /// How long the guard waits for the app to say whether this chat is attended (R-109): the app
@@ -214,12 +251,14 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 /// where no app takes the hand-over, the chat is refused all the same. **It is a hold only where
 /// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
 /// is refused with a block's reason, which the event log records.
-fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
-    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
+fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::Verdict> {
+    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS, UNKNOWN_LINE};
     use purlis_core::mergehold::{self, AppSaid, Held};
     crate::session::chat_number()?;
     let held = mergehold::held(command)?;
     let answer = match &held {
+        // Under `guards.merge = "log"` nobody is asked (Q308): the hold is only recorded.
+        Held::Request(_) if !asks_the_app => None,
         Held::Request(request) => crate::brokered::asked(
             |chat| {
                 Ask::Merge(MergeAsk {
@@ -236,6 +275,8 @@ fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
     };
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
+        // An app of another build could not read the hand-over: no refusal of its own (#6960).
+        Some(Answer::No { why }) if why == UNKNOWN_LINE => AppSaid::OtherBuild,
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
     };
@@ -468,10 +509,14 @@ pub(crate) fn refuse_on_a_crash(tell_the_host: fn(&str, bool)) {
         let mut err = std::io::stderr().lock();
         let unanswered = info.payload().downcast_ref::<&str>() == Some(&UNANSWERED);
         if unanswered {
+            // The time limit's own words (#6962): a short line on a busy machine runs out of
+            // time too, so this never blames the line's length or nesting, whose caps say so
+            // themselves (`guardcaps::refusal`).
             let _ = writeln!(
                 err,
                 "purlis guard: this tool call is refused because purlis could not check it in \
-                 time: the command is too long or too deeply nested, so split it into smaller \
+                 time: the check ran out of its time limit, which a busy machine can cause, and \
+                 nothing ran. Try it again; if it runs out of time again, split it into smaller \
                  commands."
             );
         } else {

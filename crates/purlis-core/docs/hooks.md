@@ -888,18 +888,21 @@ first file and line. No value is sent to the window.
 Every guard is eventually wrong about something, and the response a design invites at that
 moment is the response it gets. So this is written down rather than left to be discovered.
 
-**There is no config key, environment variable or `purlis guard` verb that lifts a
-denial, and there will not be one.** That is the answer, not an omission:
+**A guard's family can be set to `log` or `off` by the project, and only a person can make it
+so** (rulings Q308, Q308a; ADR 0125, reversing charter#370). The project's committed `[policy]`
+says how each family of refusals runs (`docs/policy.md`). What #370 guarded against still holds,
+another way:
 
-- purlis's guards exist because **committed data must not be able to reach a credential or
-  make something run**. A switch purlis read from `charter.toml` would be a switch a
-  committed file could flip — a teammate's pull request turning off the guard that keeps a
-  vault out of the transcript. An environment variable is no better: the agent writes the
-  command line the variable would sit on.
-- So an override purlis can read is an override the *agent* controls, which is precisely
-  the party the guards bound.
+- a committed change that loosens a family reaches nobody's chats until that person presses
+  Accept in the window, on the text the window showed them, and the acceptance is sealed on their
+  machine by the app;
+- a chat's write or commit of `[policy]` is refused, and nothing a chat puts in its environment
+  or names as its plane loosens anything: a hook asks the app, and runs every family enforced
+  where the app does not answer;
+- some refusals stand outside the policy: a chat changing its own policy, the kill switch, and a
+  grader's lock bundles.
 
-**The override is that you run the command yourself.** The guards are `PreToolUse` hooks on
+**Or run the command yourself.** The guards are `PreToolUse` hooks on
 the harness's tools — they govern what an agent does with your authority inside a session.
 Your own shell is on the other side of that boundary and always was. Open a terminal and run
 it. Nothing is being worked around: the rule never applied to you.
@@ -995,7 +998,9 @@ purlis never lets it come to that:
   that wait, so on Claude Code and Codex a call made in those first seconds after an update may
   still meet the harness's timeout.
 - **A decision not made in time is a refusal**: exit 2, with one sentence on stderr — purlis
-  could not check the call in time, the command is too long or too deeply nested, so split it.
+  could not check the call in time because the check ran out of its time limit (a busy machine
+  can cause it), so try again, and split the command if it runs out of time again (#6962). The
+  words for a command too long or too deeply nested belong to the caps below, never to time.
   A payload that has not all arrived within the budget is refused the same way; it is never
   judged as an empty command.
 - **Before any guard reads a command, three caps are checked**, each in one pass, and a command

@@ -29,7 +29,7 @@ import {
 /** The project the status line names, found by its directory: the line draws the project's
  *  name, and its directory is the item's tooltip (qw357). */
 const projectAt = (directory: string) =>
-  vi.waitFor(() => {
+  waitFor(() => {
     const item = document.querySelector<HTMLElement>(
       `[data-testid="status-project"][data-directory="${directory}"]`,
     );

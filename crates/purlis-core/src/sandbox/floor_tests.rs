@@ -13,7 +13,14 @@ use std::io::Write as _;
 fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a project");
     let root = dir.path().canonicalize().expect("a real folder");
-    std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("charter.toml");
+    // Today's floor, explicitly, so these tests keep proving enforcement (Q308). The floor's
+    // refusal of programs holds under every template (the review of #6992, B1; the last test
+    // here).
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("charter.toml");
     (dir, root)
 }
 
@@ -416,8 +423,13 @@ fn the_homes_docker_folders_are_never_written_by_a_chat_and_a_projects_own_docke
             !writes(&profile, &kept.join("docker")),
             "{harness:?}: where the link leads is writable"
         );
+        // Docker's registry logins are a credential (ADR 0067 §5 class 6, Q321): neither read
+        // nor written, so no chat logs in there or names a helper a later `docker` runs.
+        assert!(
+            !writes(&profile, &home.join(".docker/config.json")),
+            "{harness:?}: Docker's logins are writable"
+        );
         for still in [
-            home.join(".docker/config.json"),
             home.join(".docker/buildx/activity/default"),
             root.join(".docker/compose.yaml"),
             root.join(".docker/bin/build.sh"),
@@ -500,12 +512,14 @@ fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entr
                 "{harness:?}: {not} is writable"
             );
         }
-        for still in [
-            ".docker/config.json",
-            ".Docker/config.json",
-            ".docker/buildx/activity/default",
-            ".rd/other",
-        ] {
+        // Docker's registry logins, under either spelling: a credential (Q321).
+        for not in [".docker/config.json", ".Docker/config.json"] {
+            assert!(
+                !writes(&profile, &home.join(not)),
+                "{harness:?}: {not} is writable"
+            );
+        }
+        for still in [".docker/buildx/activity/default", ".rd/other"] {
             assert!(
                 writes(&profile, &home.join(still)),
                 "{harness:?}: {still} is not writable"
@@ -1960,6 +1974,9 @@ fn a_name_lifted_for_a_claude_code_chat_goes_whole_and_alone() {
         unreachable!();
     };
     for rules in [settings.sandbox.to_string(), settings.deny.join("\n")] {
+        // gh's token stays denied inside the lifted folder: a grant lifts no class (Q321).
+        let rules = rules.replace(".config/gh/hosts.yml", "");
+        let rules = rules.replace(&claude::either_case(".config/gh/hosts.yml"), "");
         assert!(!rules.contains(".config/gh"), "{rules}");
         assert!(
             !rules.contains(&claude::either_case(".config/gh")),
@@ -2511,6 +2528,42 @@ fn later_code_names_moved_by_xdg_folders_are_held_where_they_moved() {
                 writes(&profile, &still),
                 "{harness:?}: {} is not writable",
                 still.display()
+            );
+        }
+    }
+}
+
+/// **The floor's refusal of programs holds under every `[policy]`** (the review of #6992, B1): a
+/// program launchd, Launch Services or cron runs is outside the wrap, where a chat could read the
+/// vaults and write the project's settings, so the floor refuses `launchctl`, `osascript`,
+/// `open`, cron and Apple Events whatever the template and the `processes` family say, a
+/// pressed `open` included.
+#[test]
+fn the_floors_refusal_of_programs_holds_under_every_policy() {
+    let _home = super::local::OwnConfigHome::new();
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    for policy in [
+        "[policy]\ntemplate = \"strict\"\n",
+        "",
+        "[policy]\ntemplate = \"watch\"\nprocesses = \"off\"\n",
+        "[policy]\ntemplate = \"open\"\n",
+    ] {
+        let (_dir, root) = project();
+        std::fs::write(root.join("charter.toml"), format!("schema = 1\n{policy}"))
+            .expect("charter.toml");
+        crate::enforcement::at_start(&root);
+        crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
+            assert!(
+                profile.contains("(literal \"/usr/bin/osascript\")"),
+                "{policy:?} {harness:?}"
+            );
+            assert!(profile.contains("(deny lsopen)"), "{policy:?} {harness:?}");
+            assert!(
+                profile.contains("(deny job-creation)"),
+                "{policy:?} {harness:?}"
             );
         }
     }

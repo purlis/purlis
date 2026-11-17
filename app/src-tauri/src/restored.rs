@@ -86,6 +86,12 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
             chat.label.as_deref().unwrap_or(&chat.name)
         );
     }
+    // Each ends for good here, and keeps its card (#6487).
+    crate::chatcard::keep_closed_records(
+        held.root(),
+        &launch.not_resumed,
+        "that could not carry on at a launch",
+    );
     let coming = coming_back(held, &launch.back);
     let kept = launch
         .back
@@ -389,7 +395,7 @@ fn tell_the_ledger(held: &Held, told: Vec<(u32, dispatchrestart::Ended)>) {
 
 /// **Forget on a chat a launch could not start** (#1513): `forget` lets it go, and where it was
 /// a task still owing its report, it has ended by itself and the chat that asked is told,
-/// once. Anything else is forgotten as it always was.
+/// once. Anything else is forgotten as it always was. Either keeps its closed record (#6487).
 pub(crate) fn forgetting(
     held: &Held,
     id: &str,
@@ -400,6 +406,12 @@ pub(crate) fn forgetting(
     let Some(chat) = chat else {
         return Ok(());
     };
+    // It ends for good here, and keeps its card (#6487).
+    crate::chatcard::keep_closed_records(
+        held.root(),
+        std::iter::once(&chat),
+        "forgotten after it did not start",
+    );
     let told = {
         let _deciding = held.chats().deciding();
         end_it(held, &chat, NotBack::LetGo, chrono::Utc::now())

@@ -1252,3 +1252,44 @@ fn a_folder_the_command_ran_in_reached_through_a_link_is_refused() {
     .unwrap_err();
     assert!(why.contains("through a link"), "{why}");
 }
+
+/// The re-review of #6992, S1: the scan runs as the `[policy]` of the project the app holds
+/// the chat's root for, never one derived from the folder the commit is made in.
+#[test]
+fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() {
+    let t = tree();
+    // The project the app holds, apart from the folder's own tree, runs `open`, pressed.
+    let held = tempfile::tempdir().expect("the held project");
+    let held = std::fs::canonicalize(held.path())
+        .map(|root| (held, root))
+        .expect("resolves");
+    std::fs::write(
+        held.1
+            .join(crate::names::PLANE_MANIFEST.spelling_at(&held.1, Path::is_file)),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .unwrap();
+    crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
+        .expect("the person's press");
+    let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
+    std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
+
+    let ask = CommitAsk {
+        chat: 4,
+        message: "piece: one change\n\nWhy it was made.".to_owned(),
+        stage: staging(&["id"]),
+        folder: None,
+    };
+    let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
+    let plain = git::Isolated::default().pinned(&t.here.top, &t.here.git_dir);
+    let here = Here {
+        cwd: t.here.top.clone(),
+        top: t.here.top.clone(),
+        git_dir: t.here.git_dir.clone(),
+        common: t.here.common.clone(),
+        clone: t.here.clone.clone(),
+    };
+    git::isolated(&plain, || made(&held.1, 4, &ask, &here, &identity))
+        .map_err(|refused| refused.why)
+        .expect("the held project's `open` lets the scan's finding through");
+}

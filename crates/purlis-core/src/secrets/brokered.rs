@@ -2508,8 +2508,14 @@ fn approved_line_is(words: &[String], wanted: &Wanted, command: &[String]) -> bo
 /// its own folder, and the cache homes its sandbox widens to (#1337). A program found in one,
 /// or a `PATH` entry naming one, is never one a run takes.
 pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
+    confined_writes(confines, asker.folder.as_deref())
+}
+
+/// [`chat_writes`] for a chat in `folder` held to `confines`: the one list, for a brokered run
+/// and for the program a chat's start hands it ([`crate::sandbox::Applied::chat_writes`]).
+pub(crate) fn confined_writes(confines: &Confines, folder: Option<&Path>) -> Vec<PathBuf> {
     let mut writable = confines.writable.clone();
-    writable.extend(asker.folder.iter().cloned());
+    writable.extend(folder.map(Path::to_path_buf));
     if let Some(caches) = &confines.widened.caches {
         writable.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
     }
@@ -4400,12 +4406,14 @@ pub(crate) fn serve_recorded(
         let _ = spawned.wait();
         return;
     }
+    // The app runs this for a chat it knows by number, not by id: a masking the project lets go
+    // under `log` is let go with no line (Q308a).
     let code = run(
         spawned,
         &group,
         reader,
         &mut *writer,
-        &prepared.secret_values,
+        super::masked_of(&ctx.root, None, &prepared.secret_values),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()

@@ -42,6 +42,13 @@ for want in "$dir"/*.args; do
     fi
     rm -f "$q"
     env > "$base.env"
+    # A variable this CLI warns of on its standard output, as glab does of one it renamed.
+    if [ -f "$base.warns" ]; then
+      var=$(cat "$base.warns")
+      if env | grep -q "^$var="; then
+        echo "DEPRECATION WARNING: The environment variable $var has been deprecated and will be removed in future releases. Use GLAB_$var instead."
+      fi
+    fi
     cat "$base.out"
     cat "$base.err" >&2
     exit "$(cat "$base.code")"
@@ -143,6 +150,12 @@ impl Scene {
         std::fs::write(base.with_extension("out"), out).unwrap();
         std::fs::write(base.with_extension("err"), err).unwrap();
         base
+    }
+
+    /// The question written down at `base` warns of variable `var` on its standard output,
+    /// before its answer, where it is given `var`.
+    pub fn warns_of(&self, base: &Path, var: &str) {
+        std::fs::write(base.with_extension("warns"), var).unwrap();
     }
 
     /// `gh api --hostname <host> <path>`, answered.
