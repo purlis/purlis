@@ -9498,6 +9498,29 @@ impl Chats {
         }
     }
 
+    /// **Starts keeping the screens of the finished task chats the session host left, where the
+    /// record of what was open was refused** (#6737): each proven a task's by its run
+    /// ([`crate::chatcard::finished_tasks_left_by_run`]), since no record says which chats were
+    /// tasks. Waited for and closed as [`Self::start_keeping_screens_left`]'s are.
+    pub(crate) fn start_keeping_screens_proven_left(&self) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
+        let events = match crate::EVENT_LOG.get() {
+            Some(Ok(dir)) => Some(dir.as_path()),
+            _ => None,
+        };
+        let left =
+            crate::chatcard::finished_tasks_left_by_run(&self.project, &*self.sessions, events);
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
+        }
+    }
+
     /// **Waits for the screens `keeping` is keeping, until its deadline, and closes their chats**
     /// (#6504), each where the session host holds it: a pool the settings no longer route among
     /// them, which the sweep would leave running with no tab (#6504's review).

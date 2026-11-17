@@ -295,6 +295,45 @@ fn keep_screen(
     }
 }
 
+/// **The finished task chats among those the session host left, each proven by its run**
+/// (#6737): what a launch whose record of what was open was refused keeps the screens of. The
+/// host says only a number and a run for each chat it left; the run's own start in the event
+/// log at `events` names the chat it is a run of, by its id, and that chat's dispatch record
+/// says it was a task that had finished ([`crate::finished::had_finished`]). A number alone
+/// proves nothing: it may be a person's own chat's, and a kept screen is never one of those.
+/// None where this machine keeps no event log, or it cannot be read.
+pub(crate) fn finished_tasks_left_by_run(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    events: Option<&std::path::Path>,
+) -> Vec<dispatchrecord::ChatRef> {
+    let left = host.runs_left();
+    let Some(events) = events.filter(|_| !left.is_empty()) else {
+        return Vec::new();
+    };
+    let runs: Vec<&str> = left.iter().map(|(_, run)| run.as_str()).collect();
+    let chats = match purlis_core::eventlog::chats_of_runs(events, &runs) {
+        Ok(chats) => chats,
+        Err(why) => {
+            tracing::info!(
+                "purlis: the event log could not be read, so no finished task's screen the \
+                 session host left is kept ({why})"
+            );
+            return Vec::new();
+        }
+    };
+    left.iter()
+        .filter_map(|(number, run)| {
+            let me = dispatchrecord::ChatRef {
+                chat: *number,
+                id: Some(chats.get(run)?.clone()),
+                ..Default::default()
+            };
+            crate::finished::had_finished(root, &me).then_some(me)
+        })
+        .collect()
+}
+
 /// How long a quit waits, over every project together, for the screens of the tasks that had
 /// finished (#6305): as long as it gives every plane's saving to stop. A launch after a crash
 /// gives a project's the same (#6504).
@@ -911,6 +950,102 @@ mod tests {
             |value| format!(r#"{{"github-token": "{value}"}}"#),
         );
         std::fs::write(root.join("team.json"), held).expect("held");
+    }
+
+    /// [`a_task`], ended with its report: a task that had finished (#6737).
+    fn a_finished_task() -> (tempfile::TempDir, std::path::PathBuf) {
+        let (dir, root) = a_task();
+        let record = dispatchrecord::latest_for(&root, &a_task_s_ref()).expect("recorded");
+        let report = dispatchrecord::Report {
+            outcome: dispatchrecord::Outcome::Done,
+            text: "prod is green".to_owned(),
+            changed: dispatchrecord::Changed::default(),
+        };
+        dispatchrecord::close(
+            &root,
+            &record.id,
+            dispatchrecord::Ending {
+                report: Some(report),
+                usage: None,
+            },
+            chrono::Utc::now(),
+        )
+        .expect("ended");
+        (dir, root)
+    }
+
+    /// An event log holding the start of run `run` of chat `chat` (#6737).
+    fn a_log_where(chat: &str, run: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a folder");
+        let mut log = purlis_core::eventlog::Log::open(dir.path(), "01K6DEVICE00000000000000DV")
+            .expect("opened");
+        log.append(
+            Some(chat),
+            Some(run),
+            None,
+            "run.started",
+            serde_json::json!({}),
+        )
+        .expect("written");
+        dir
+    }
+
+    #[test]
+    fn a_finished_task_the_host_left_is_proven_by_its_run_where_no_record_says_so() {
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let log = a_log_where(TASK, "01K6RUN0000000000000000007");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![a_task_s_ref()]
+        );
+    }
+
+    #[test]
+    fn a_chat_left_under_a_finished_task_s_number_but_another_chat_s_run_is_not_a_task() {
+        // A person's own chat dealt number 7 after the task's: its screen is never kept.
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN000000000000000000P");
+        let log = a_log_where("01K6PERSONSCHAT0000000000P", "01K6RUN000000000000000000P");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_chat_left_whose_run_the_log_never_started_or_with_no_log_proves_nothing() {
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let empty = tempfile::tempdir().expect("a folder");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(empty.path())),
+            vec![]
+        );
+        assert_eq!(finished_tasks_left_by_run(&root, &host, None), vec![]);
+    }
+
+    #[test]
+    fn a_task_still_working_the_host_left_is_not_proven_finished() {
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let log = a_log_where(TASK, "01K6RUN0000000000000000007");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
     }
 
     #[test]
