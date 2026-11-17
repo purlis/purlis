@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A file a chat on this host printed, read for the window** (#6387, session protocol 1.90's
+//! **A file a chat on this host printed, read for the window** (#6387, session protocol 1.91's
 //! `read_file`): the runner's half of a runner chat's file link. The desktop sends the path as
 //! the chat printed it, as data; this reads it here, on the machine whose file it names, and
 //! never builds a shell line or starts a program from it.
