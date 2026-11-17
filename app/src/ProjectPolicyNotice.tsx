@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { commands, type PlaneId, type PolicyState } from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
+import { holdPolicy } from "./projectPolicy";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
@@ -55,7 +56,11 @@ export function ProjectPolicyNotice({
       .projectPolicyState(plane)
       .then((answer) => {
         // Only a policy state is drawn: an answer of any other shape says nothing.
-        if (live && answer.status === "ok" && drawable(answer.data)) setState(answer.data);
+        if (live && answer.status === "ok" && drawable(answer.data)) {
+          setState(answer.data);
+          // The pane heads say it from here: one read per project (`projectPolicy.ts`).
+          holdPolicy(plane, answer.data);
+        }
       })
       // A state that cannot be read asks nothing: until an Accept, nothing is loosened.
       .catch(() => {});
@@ -78,7 +83,10 @@ export function ProjectPolicyNotice({
           setAgain((n) => n + 1);
           return;
         }
-        if (drawable(done.data)) setState(done.data);
+        if (drawable(done.data)) {
+          setState(done.data);
+          holdPolicy(plane, done.data);
+        }
         sandboxCommandReturned();
       })
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))

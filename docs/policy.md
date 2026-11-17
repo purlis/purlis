@@ -37,6 +37,20 @@ nothing covers starts with no grant) and `asks` (a host is answered Allow) switc
 family is a key already and stays enforced until it is wired. Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
 
+## Where the window shows it
+
+- **A chat's pane head** says the template and how many families are set apart from it (`team
+  +2`); its tooltip says the whole policy. A narrow pane drops it first.
+- **Settings › Project › Policy** lists the template, each family set apart and how your chats
+  run it now (stricter where a lock, a family not wired yet or a loosening that waits for your
+  Accept holds it), the families an administrator locks, and Accept for a loosening. Its
+  **Would have blocked** count is every chat's enforcement log, and opens it: the newest lines,
+  by rule, family and chat.
+- **The move to `watch`** is announced once on each machine, in the first project that names no
+  template.
+
+The window only says the policy; the app resolves it, as below.
+
 ## Who can change it
 
 - **Only a committed change counts**: the file is read as it stands at the plane root's `HEAD`.
