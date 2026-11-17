@@ -631,9 +631,21 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::Architecture { .. } => "unsupported-architecture",
         Finding::DiskFull { .. } => "disk-full",
         Finding::ImageUnreachable { .. } => "image-unreachable",
+        Finding::KernelShort { .. } => "kernel-short",
         Finding::ContextMoved { .. } => CONTEXT_MOVED,
         Finding::Here(_) => "here",
     }
+}
+
+/// **Whether a finding says the machine can't be reached**: its name doesn't resolve, nothing
+/// answers on its port, or nothing was met through its jump host or proxy. Remove of a pool there
+/// offers to forget it here, since nothing can be removed on a machine that doesn't answer.
+#[must_use]
+pub fn unreachable(finding: &Finding) -> bool {
+    matches!(
+        finding,
+        Finding::NoSuchName { .. } | Finding::NoAnswer { .. } | Finding::NotMetThrough { .. }
+    )
 }
 
 /// **What a finding says** (ADR 0123 §7's words), the same in the window and in `purlis pool`.
@@ -940,6 +952,7 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        Finding::KernelShort { host, short } => (kernel_short_said(host, short), check_again()),
         Finding::ImageUnreachable { host, registry } => (
             format!(
                 "{host} couldn't download the runner image. Check that {host} can reach \
@@ -965,6 +978,46 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
+}
+
+/// **What a host short of the Landlock purlis's sandbox needs is told** (#7084): its release
+/// where one was read, why no chat starts there, and its way on ([`Short::way`]).
+///
+/// [`Short::way`]: crate::dockerpool::kernel::Short::way
+fn kernel_short_said(host: &str, short: &crate::dockerpool::kernel::Short) -> String {
+    use crate::dockerpool::kernel::{UBUNTU_24_04_KERNEL, Way};
+    let release = short.release.as_deref().map(crate::shown::short);
+    let way = short.way();
+    let found = match (&release, way) {
+        (Some(release), Way::TurnLandlockOn) => format!(
+            "{host} runs Linux {release}, and its kernel doesn't have Landlock version 6, which \
+             purlis's sandbox needs"
+        ),
+        (Some(release), _) => format!(
+            "{host} runs Linux {release}, and {}",
+            purlis_linux_sandbox::NEEDS_LANDLOCK
+        ),
+        (None, _) => format!(
+            "{host}'s kernel doesn't have Landlock version 6 (Linux 6.12 or later), which \
+             purlis's sandbox needs"
+        ),
+    };
+    let way = match way {
+        Way::TurnLandlockOn => format!(
+            "Turn Landlock on in {host}'s kernel (add `landlock` to its `lsm=` boot setting), \
+             restart it, then check again."
+        ),
+        Way::UbuntusNewerKernel => format!(
+            "On {host}, run `sudo apt install --install-recommends {UBUNTU_24_04_KERNEL}` for a \
+             newer kernel, then restart {host} and check again."
+        ),
+        Way::NewerKernel => {
+            format!("Update {host} to Linux 6.12 or later, restart it, then check again.")
+        }
+    };
+    format!(
+        "{found}, so no chat on this pool will start. A container runs on its host's kernel. {way}"
+    )
 }
 
 fn user_or_you(user: &str) -> String {
@@ -1086,6 +1139,7 @@ pub fn for_the_admin(cause: &str) -> bool {
             | "unconfined"
             | "disk-full"
             | "image-unreachable"
+            | "kernel-short"
     )
 }
 
@@ -1154,7 +1208,14 @@ pub fn without_local_paths(text: &str, machine: &Machine) -> String {
 /// to the agent, removing images or downloading one.
 #[must_use]
 pub fn sorted(see: &super::See) -> (Vec<&str>, Vec<&str>) {
-    const CHANGING: [&str; 4] = ["sudo usermod ", "sudo systemctl ", " prune", " pull "];
+    const CHANGING: [&str; 6] = [
+        "sudo usermod ",
+        "sudo systemctl ",
+        "sudo apt ",
+        "sudo reboot",
+        " prune",
+        " pull ",
+    ];
     see.text.lines().partition(|line| {
         let line = line.trim();
         !(line == "ssh-add" || CHANGING.iter().any(|one| line.contains(one)))
@@ -1451,6 +1512,43 @@ fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
                          before it downloads. It only reads."
                     ),
                     format!("{to} {}", q(&asked)),
+                )
+            }
+        }
+        Finding::KernelShort { host, short } => {
+            use crate::dockerpool::kernel::{UBUNTU_24_04_KERNEL, Way};
+            let read =
+                format!("{docker} info --format '{{{{.KernelVersion}}}} {{{{.OperatingSystem}}}}'");
+            if short.way() != Way::UbuntusNewerKernel {
+                see(
+                    format!(
+                        "This prints the kernel {host} runs and its system, as purlis reads them. \
+                         It only reads."
+                    ),
+                    read,
+                )
+            } else if tls {
+                see(
+                    format!(
+                        "The first prints the kernel {host} runs, as purlis reads it, and only \
+                         reads. Run on {host}, the second installs Ubuntu's newer kernel and the \
+                         third restarts {host} into it: everything running there stops."
+                    ),
+                    format!(
+                        "{read}\nsudo apt install --install-recommends {UBUNTU_24_04_KERNEL}\nsudo reboot"
+                    ),
+                )
+            } else {
+                see(
+                    format!(
+                        "The first prints the kernel {host} runs, as purlis reads it, and only \
+                         reads. The second installs Ubuntu's newer kernel on {host} and the third \
+                         restarts {host} into it: everything running there stops."
+                    ),
+                    format!(
+                        "{read}\n{to_t} sudo apt install --install-recommends \
+                         {UBUNTU_24_04_KERNEL}\n{to_t} sudo reboot"
+                    ),
                 )
             }
         }

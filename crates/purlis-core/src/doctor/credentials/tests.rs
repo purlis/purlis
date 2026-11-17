@@ -80,7 +80,7 @@ fn a_plain_file_vault_whose_file_went_after_values_were_written_is_a_warning() {
         &plane.ctx,
         &file,
         "K",
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 13).unwrap(),
+        crate::wallclock::day(2026, 10, 13).unwrap(),
     )
     .expect("its record");
     std::fs::remove_file(&file).unwrap();

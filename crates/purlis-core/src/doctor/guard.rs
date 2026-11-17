@@ -209,7 +209,7 @@ pub(super) fn guard_seen(d: &Doctor) -> Row {
         seen.as_ref(),
         folder.as_deref(),
         || guardseen::worked_in(&d.root),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -217,7 +217,7 @@ fn seen_row(
     seen: Option<&Sighting>,
     folder: Option<&Path>,
     worked_in: impl FnOnce() -> bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Row {
     let Some(seen) = seen else {
         if !worked_in() {
@@ -270,10 +270,8 @@ mod tests {
     use super::*;
     use crate::doctor::Status;
 
-    fn at(text: &str) -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339(text)
-            .unwrap()
-            .with_timezone(&chrono::Utc)
+    fn at(text: &str) -> jiff::Timestamp {
+        str::parse::<jiff::Timestamp>(text).unwrap()
     }
 
     fn sighting(harness: Option<&str>, source: &str, folder: Option<&str>) -> Sighting {
@@ -500,7 +498,7 @@ mod tests {
             Some("codex"),
             guardseen::Source::Settings,
             None,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         let r = guard_seen(&doctor(&root, &root, false));

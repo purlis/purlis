@@ -101,7 +101,7 @@ pub fn report(
     dir: &Path,
     stale_days: i64,
     near_threshold: f64,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> Result<Report, Unread> {
     let (ents, unread) = memstore::read_entries(root, dir);
     if !unread.is_empty() {
@@ -146,9 +146,9 @@ pub fn report(
     let mut stale = Vec::new();
     for found in &ents {
         if let Some(date) = memstore::memory_date(&found.text, &name_of(found)) {
-            let age = (today - date).num_days();
+            let age = i64::from((today - date).get_days());
             if age > stale_days {
-                stale.push((name_of(found), date.format("%Y-%m-%d").to_string(), age));
+                stale.push((name_of(found), date.strftime("%Y-%m-%d").to_string(), age));
             }
         }
     }
@@ -184,7 +184,7 @@ pub fn report(
 pub fn apply_safe(
     root: &Path,
     dir: &Path,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> Result<Vec<String>, Unread> {
     let mut actions = Vec::new();
     let rep = report(root, dir, 90, 0.5, today)?;
@@ -334,7 +334,7 @@ pub struct Optimizing {
     pub apply: bool,
     /// Age in days past which a memory is proposed for archival.
     pub stale_days: i64,
-    pub today: chrono::NaiveDate,
+    pub today: jiff::civil::Date,
     /// The heading over the proposals.
     pub proposals: &'static str,
     /// Said when `--apply` found nothing safe to do.
@@ -452,7 +452,7 @@ pub fn optimize_workspaces(
     names: &[String],
     apply: bool,
     stale_days: i64,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
     changed: &mut dyn FnMut(),
     say: crate::repocmd::Sink,
 ) -> u8 {

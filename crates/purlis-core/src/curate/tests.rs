@@ -29,7 +29,7 @@ fn a_snapshot_is_never_a_rule_however_imperative_it_sounds() {
     );
 }
 
-fn day(text: &str) -> chrono::NaiveDate {
+fn day(text: &str) -> jiff::civil::Date {
     text.parse().unwrap()
 }
 

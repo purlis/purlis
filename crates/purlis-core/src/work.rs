@@ -180,9 +180,9 @@ pub struct Iteration {
     /// Its title. A GitLab cadence's iterations have none: they are named by their dates.
     pub title: Option<String>,
     /// Its first day.
-    pub start: Option<chrono::NaiveDate>,
+    pub start: Option<jiff::civil::Date>,
     /// Its last day, inclusive.
-    pub end: Option<chrono::NaiveDate>,
+    pub end: Option<jiff::civil::Date>,
 }
 
 impl Iteration {
@@ -214,7 +214,8 @@ impl Iteration {
         let start = day_of(start);
         let end = start.and_then(|first| {
             let more = days.checked_sub(1)?;
-            first.checked_add_days(chrono::Days::new(u64::from(more)))
+            let more = jiff::Span::new().try_days(i64::from(more)).ok()?;
+            first.checked_add(more).ok()
         });
         Iteration {
             forge_ref,
@@ -246,9 +247,9 @@ pub struct Placement {
 }
 
 /// A day from a forge's date or timestamp, read by its first ten characters.
-fn day_of(text: &str) -> Option<chrono::NaiveDate> {
+fn day_of(text: &str) -> Option<jiff::civil::Date> {
     let day = text.get(..10)?;
-    chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()
+    jiff::civil::Date::strptime("%Y-%m-%d", day).ok()
 }
 
 /// A milestone, as the item names it. The forge's own id for it travels beside its title, as an
@@ -261,7 +262,7 @@ pub struct Milestone {
     pub forge_ref: Option<ForgeRef>,
     pub title: String,
     /// Its due date, when it has one.
-    pub due: Option<chrono::NaiveDate>,
+    pub due: Option<jiff::civil::Date>,
 }
 
 impl Milestone {
@@ -353,7 +354,7 @@ mod tests {
 
     #[test]
     fn an_iteration_that_lasts_fourteen_days_ends_on_its_fourteenth() {
-        let day = |d| chrono::NaiveDate::from_ymd_opt(2026, 10, d);
+        let day = |d| crate::wallclock::day(2026, 10, d);
         let sprint = Iteration::lasting(None, Some("Sprint 3"), "2026-10-05", 14);
         assert_eq!((sprint.start, sprint.end), (day(5), day(18)));
         let gitlab = Iteration::of_forge(
@@ -376,7 +377,7 @@ mod tests {
 
     #[test]
     fn a_milestones_due_date_is_its_day_on_either_forge() {
-        let day = chrono::NaiveDate::from_ymd_opt(2026, 10, 31);
+        let day = crate::wallclock::day(2026, 10, 31);
         let github = Milestone::of_forge(
             Some(ForgeRef("MI_kwDOAcme1".into())),
             "v1",

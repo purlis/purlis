@@ -16,7 +16,7 @@ fn plane() -> tempfile::TempDir {
     dir
 }
 
-fn now() -> chrono::DateTime<chrono::Utc> {
+fn now() -> jiff::Timestamp {
     "2026-05-04T11:32:17Z".parse().unwrap()
 }
 

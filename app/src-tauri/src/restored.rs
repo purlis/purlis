@@ -298,7 +298,7 @@ impl Known {
 /// ended; the reports kept for chats that came back are handed to them.
 fn after_put_back(held: &Held, launch: &AtLaunch, coming: AskerComing, settles: bool) {
     let root = held.root();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let deciding = held.chats().deciding();
     let mut told = Vec::new();
     for chat in &launch.not_resumed {
@@ -363,7 +363,7 @@ fn end_it(
     held: &Held,
     chat: &Chat,
     why: NotBack,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<(u32, dispatchrestart::Ended)> {
     let asker = chat
         .from
@@ -414,7 +414,7 @@ pub(crate) fn forgetting(
     );
     let told = {
         let _deciding = held.chats().deciding();
-        end_it(held, &chat, NotBack::LetGo, chrono::Utc::now())
+        end_it(held, &chat, NotBack::LetGo, jiff::Timestamp::now())
     };
     tell_the_ledger(held, told.into_iter().collect());
     held.rows_changed();

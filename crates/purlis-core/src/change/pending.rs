@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 
 use super::landing::log_dir;
@@ -108,7 +108,7 @@ impl Pending {
         head: &str,
         via: Via,
         stage: Stage,
-        when: DateTime<Utc>,
+        when: Timestamp,
     ) -> Pending {
         Pending {
             ts: crate::dispatch::stamp(when),
@@ -122,7 +122,7 @@ impl Pending {
     }
 
     /// This line moved on to `stage`, at `when`.
-    pub fn at(&self, stage: Stage, when: DateTime<Utc>) -> Pending {
+    pub fn at(&self, stage: Stage, when: Timestamp) -> Pending {
         Pending {
             ts: crate::dispatch::stamp(when),
             stage,
@@ -240,8 +240,12 @@ pub fn pendings(plane: &Path, ws: &str, slug: &str) -> Pendings {
 mod tests {
     use super::*;
 
-    fn at(second: u32) -> DateTime<Utc> {
-        chrono::TimeZone::with_ymd_and_hms(&Utc, 2026, 10, 2, 9, 0, second).unwrap()
+    fn at(second: i8) -> Timestamp {
+        jiff::civil::date(2026, 10, 2)
+            .at(9, 0, second, 0)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp()
     }
 
     /// FD-25 (#985): a pending landing is filed under the device id the machine store keeps,

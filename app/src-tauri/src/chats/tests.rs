@@ -7267,7 +7267,7 @@ fn a_dispatched_chat_whose_conversation_was_lost_is_handed_its_brief_on_its_fres
             brief: BRIEF.to_owned(),
             report_owed: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     chats.brief_was_sent(&record, BRIEF);
@@ -8304,12 +8304,23 @@ fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_n
         ..a_claude_ready()
     };
 
-    chats
+    let session = chats
         .start_ready(&chat("/bin/sh", "dev 1", None), &ready, SIZE)
         .expect("it starts");
 
     let opening = host.openings().pop().expect("opened");
     assert_eq!(opening.handed.names(), ["AWS_ACCESS_KEY_ID"]);
+    assert_eq!(
+        purlis_core::secrets::handedto::masked_for(
+            &root,
+            session,
+            "id the-aws-id-for-this-test",
+            &|_| None
+        )
+        .as_deref(),
+        Some("id ‹secret: id›"),
+        "its kept screen masks it, under its entry's name (#6309)"
+    );
     assert_eq!(
         purlis_core::profilesignin::handed_onto(Vec::new(), &opening.handed),
         [(
@@ -11428,7 +11439,7 @@ fn a_studio_chats_job_is_done_once_its_draft_came_and_stays_done() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::OutcomeEvals,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(
@@ -11503,7 +11514,7 @@ fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::Checks,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(

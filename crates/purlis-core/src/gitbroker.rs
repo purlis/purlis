@@ -48,7 +48,7 @@ fn waits_on_signing(
     (repo, piece): (&str, &str),
     asker: &Asker,
     refused: crate::pieceupdate::UnsignedRefused,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) {
     let waiting = crate::signingsetup::retry::Waiting {
         ws: ws.to_owned(),
@@ -60,7 +60,7 @@ fn waits_on_signing(
         path: refused.path,
         commit: refused.commit,
         chat_id: asker.id.clone(),
-        at: now.timestamp(),
+        at: now.as_second(),
         sent: false,
         why: None,
     };
@@ -111,7 +111,7 @@ pub fn answer(
     asker: &Asker,
     ask: &GitAsk,
     isolation: &git::Isolated,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Answer {
     answer_telling(root, asker, ask, isolation, now).answer
 }
@@ -147,17 +147,12 @@ pub fn answer_telling(
     asker: &Asker,
     ask: &GitAsk,
     isolation: &git::Isolated,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Answered {
     git::isolated(isolation, || isolated_answer(root, asker, ask, now))
 }
 
-fn isolated_answer(
-    root: &Path,
-    asker: &Asker,
-    ask: &GitAsk,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Answered {
+fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestamp) -> Answered {
     let no = |why: String| Answered::from(Answer::No { why });
     let mut needs = None;
     let mut sent = None;
@@ -1074,7 +1069,7 @@ fn claim(
     asker: &Asker,
     at: &crate::worktree::Located,
     act: crate::hookwire::ClaimAct,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Answer {
     let may = Answer::Said {
         lines: Vec::new(),

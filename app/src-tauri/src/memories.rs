@@ -219,7 +219,7 @@ impl Store {
         &self,
         text: &str,
         title: Option<&str>,
-        stamp: chrono::NaiveDateTime,
+        stamp: jiff::civil::DateTime,
     ) -> io::Result<PathBuf> {
         match self {
             Self::Workspace(ws) => ws.remember_titled(text, title, stamp),
@@ -273,8 +273,8 @@ fn read_in(
 }
 
 /// Now, as the store stamps a file it writes.
-fn now() -> chrono::NaiveDateTime {
-    chrono::Local::now().naive_local()
+fn now() -> jiff::civil::DateTime {
+    jiff::Zoned::now().datetime()
 }
 
 /// What a memory command says when its blocking thread ended without an answer. Every one of
@@ -472,7 +472,7 @@ fn create(
     scope: &MemoryScope,
     title: &str,
     text: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<MemoryView, String> {
     if title.contains(['\n', '\r']) {
         // The edit's rule, so the two writes of a title refuse the same thing.
@@ -547,7 +547,7 @@ fn move_to(
     scope: &MemoryScope,
     slug: &str,
     to: &MemoryScope,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> Result<MemoryView, String> {
     let plane = Plane::open(root);
@@ -580,7 +580,7 @@ fn scopes(root: &Path) -> Result<Vec<MemoryScope>, String> {
 mod tests {
     use super::*;
 
-    fn at() -> chrono::NaiveDateTime {
+    fn at() -> jiff::civil::DateTime {
         "2026-05-04T11:32:17".parse().unwrap()
     }
 

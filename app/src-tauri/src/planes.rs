@@ -1265,7 +1265,14 @@ impl Held {
         // The finished tasks of a record started fresh, which puts none back: the session host
         // may still run one after a crash, and its screen is kept all the same (#6504's review).
         let mut finished_fresh = Vec::new();
+        // A number a closed chat's record still answers to is never dealt again (#6740), even
+        // where the record of open chats was lost, reset or cannot be read.
+        let closed = purlis_core::chatrecords::highest_number(&self.root);
         let record = record.map(|record| {
+            let record = reopen::Record {
+                dealt: record.dealt.max(closed),
+                ..record
+            };
             let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
@@ -1314,7 +1321,10 @@ impl Held {
                      put back. Repair or remove {}.",
                     reopen::path(&self.root).display()
                 ));
-                reopen::Record::default()
+                reopen::Record {
+                    dealt: closed,
+                    ..reopen::Record::default()
+                }
             }
         };
         // A task that had reported when the app quit is not started again: it is a finished
@@ -3481,10 +3491,10 @@ impl Planes {
         // And a dispatch whose persona chat that record does not bring back has ended (#1452).
         // It first makes an older build's handoff that still owes a report the task it now is
         // (#1519): before any chat is put back, so what puts them back reads the newer shape.
-        purlis_core::dispatchrecord::settle_on_open(&root, chrono::Utc::now());
+        purlis_core::dispatchrecord::settle_on_open(&root, jiff::Timestamp::now());
         // And what the chats of a dispatch said to each other is kept for 30 days after it
         // ended, whichever of them is still brought back (#1495, D-1495-12).
-        purlis_core::dispatchrecord::expire_talk(&root, chrono::Utc::now());
+        purlis_core::dispatchrecord::expire_talk(&root, jiff::Timestamp::now());
         // Then the worktrees of the dispatches that have ended are looked at, once (#1453):
         // one whose branch is merged, and that no chat coming back stands in, is taken away.
         // **Which chats come back is read here**, beside the settle above and before this

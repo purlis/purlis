@@ -66,19 +66,19 @@ const MOST_FILES: usize = 600;
 const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
 
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
-fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
+fn path_for(root: &Path, when: jiff::Timestamp, device: &str) -> PathBuf {
     root.join("personas")
         .join(DIR_NAME)
-        .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
+        .join(format!("{}.{device}.jsonl", when.strftime("%Y-%m")))
 }
 
 /// `<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are
 /// kept. `None` where this machine has no data home.
-pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> Option<PathBuf> {
+pub fn local_path_for(root: &Path, when: jiff::Timestamp) -> Option<PathBuf> {
     Some(
         crate::appstate::dir(root)?
             .join(LOCAL_DIR)
-            .join(format!("{}.jsonl", when.format("%Y-%m"))),
+            .join(format!("{}.jsonl", when.strftime("%Y-%m"))),
     )
 }
 
@@ -187,7 +187,7 @@ impl Graded {
     /// time's shape, and a spend and a report that hold together ([`report_holds_together`],
     /// #3353). A teammate's purlis writes the record, and a person reads these words in the
     /// window and the terminal, so a row that says anything else is skipped.
-    fn sound(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+    fn sound(&self, now: jiff::Timestamp) -> bool {
         let hex = |word: &str| {
             matches!(word.len(), 40 | 64)
                 && word
@@ -254,13 +254,13 @@ const MOST_SECONDS: f64 = 24.0 * 60.0 * 60.0;
 /// How far past this machine's clock a row read back may be stamped: a teammate's clock may run
 /// a little ahead, but a row stamped later than this would stay newest and push real ones out
 /// of the [`MOST_GRADES`] read.
-const MOST_AHEAD: chrono::TimeDelta = chrono::TimeDelta::hours(1);
+const MOST_AHEAD: jiff::SignedDuration = jiff::SignedDuration::from_hours(1);
 
 /// Whether `ts` is a time's stamp, no later than [`MOST_AHEAD`] past `now`.
-fn stamped_by(ts: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
-    chrono::DateTime::parse_from_rfc3339(ts).is_ok_and(|at| {
-        now.checked_add_signed(MOST_AHEAD)
-            .is_none_or(|latest| at <= latest)
+fn stamped_by(ts: &str, now: jiff::Timestamp) -> bool {
+    str::parse::<jiff::Timestamp>(ts).is_ok_and(|at| {
+        now.checked_add(MOST_AHEAD)
+            .map_or(true, |latest| at <= latest)
     })
 }
 
@@ -455,7 +455,7 @@ pub(crate) fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
         && report.resets_at.as_deref().is_none_or(|at| {
             report.ended == grade::GradeEnd::UsageLimit
                 && at.len() <= 64
-                && chrono::DateTime::parse_from_rfc3339(at).is_ok()
+                && str::parse::<jiff::Timestamp>(at).is_ok()
         })
         && report.earlier.as_ref().is_none_or(|earlier| earlier_holds(report, earlier))
 }
@@ -692,12 +692,16 @@ fn record_to(
     let row = fitted(&masked(graded))?;
     if local {
         crate::appstate::made(root).ok()?;
-        return append_local(&local_path_for(root, chrono::Utc::now())?, &row).ok();
+        return append_local(&local_path_for(root, jiff::Timestamp::now())?, &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
         return None;
     }
-    crate::dispatch::append(&path_for(root, chrono::Utc::now(), &device()), root, &row)
+    crate::dispatch::append(
+        &path_for(root, jiff::Timestamp::now(), &device()),
+        root,
+        &row,
+    )
 }
 
 /// **Appends `row` to this machine's record file `path`**, in a folder of this machine's state
@@ -857,7 +861,7 @@ pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> 
 /// content match). The committed record and this machine's are read, newest month first, until
 /// enough are held.
 pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
-    read_at(root, name, level, chrono::Utc::now())
+    read_at(root, name, level, jiff::Timestamp::now())
 }
 
 /// **The grades of the skill that had the places `was`** (#3918, [`super::history::places`]):
@@ -867,7 +871,7 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
 /// a skill that took the old name there since is another, and its grades are none of these. A
 /// place no level's rule reads is left out.
 pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
-    read_where(root, &wanted_of(was), Which::Own, chrono::Utc::now())
+    read_where(root, &wanted_of(was), Which::Own, jiff::Timestamp::now())
 }
 
 /// The copies [`read_of`] reads the rows of.
@@ -895,7 +899,7 @@ pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
     let was = super::history::places(root, level, name).unwrap_or_default();
     let earlier = earlier::of(root, level, name);
     match followed((level, name), &was, &earlier) {
-        Some(copies) => read_where(root, &copies, Which::Own, chrono::Utc::now()),
+        Some(copies) => read_where(root, &copies, Which::Own, jiff::Timestamp::now()),
         None => read(root, name, Some(level)),
     }
 }
@@ -964,7 +968,7 @@ struct Wanted<'a> {
     name: &'a str,
     level: Option<Option<String>>,
     trees: Option<&'a [String]>,
-    until: Option<chrono::DateTime<chrono::Utc>>,
+    until: Option<jiff::Timestamp>,
     grades: &'a [String],
 }
 
@@ -979,18 +983,13 @@ impl Wanted<'_> {
             }
             && self.trees.is_none_or(|trees| trees.contains(&row.tree))
             && (self.until.is_none_or(|until| {
-                chrono::DateTime::parse_from_rfc3339(&row.ts).is_ok_and(|at| at <= until)
+                str::parse::<jiff::Timestamp>(&row.ts).is_ok_and(|at| at <= until)
             }) || self.grades.contains(&row.grade))
     }
 }
 
 /// [`read`], with this machine's clock at `now`.
-fn read_at(
-    root: &Path,
-    name: &str,
-    level: Option<&Level>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Read {
+fn read_at(root: &Path, name: &str, level: Option<&Level>, now: jiff::Timestamp) -> Read {
     let wanted = Wanted {
         name,
         level: level.map(Level::rel),
@@ -1003,12 +1002,7 @@ fn read_at(
 
 /// The rows of the record of any of `copies` ([`Wanted`]) that `which` takes, newest first, at
 /// most [`MOST_GRADES`]. A draft's are looked for in this machine's record alone.
-fn read_where(
-    root: &Path,
-    copies: &[Wanted<'_>],
-    which: Which<'_>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Read {
+fn read_where(root: &Path, copies: &[Wanted<'_>], which: Which<'_>, now: jiff::Timestamp) -> Read {
     let mut files = match which {
         Which::OfDraft(_) => Vec::new(),
         Which::Own | Which::Grade(_) => record_files(&root.join("personas").join(DIR_NAME)),
@@ -1103,7 +1097,7 @@ pub fn ended_said_on(end: grade::GradeEnd, harness: Option<&str>) -> String {
 /// is the grade, the places each copy had before are looked in ([`read_followed`]). `None` where
 /// no row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let of = |copies: &[Wanted<'_>]| {
         read_where(root, copies, Which::Grade(grade), now)
             .grades

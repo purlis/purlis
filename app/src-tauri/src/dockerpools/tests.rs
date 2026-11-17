@@ -483,3 +483,87 @@ fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
             .is_empty()
     );
 }
+
+/// Writes `runners.json` under `config` with one pool, `remote`, on another machine over SSH.
+#[cfg(unix)]
+fn a_pool_on_another_machine(config: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let pool = serde_json::json!({
+        "name": "remote",
+        "kind": "remote-docker",
+        "image": IMAGE,
+        "route": "ssh://me@build-box/var/run/docker.sock",
+        "pin": {
+            "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            "engine": "engine-b",
+        },
+    });
+    let text = serde_json::json!({ "version": 1, "pools": [pool], "runners": [] });
+    std::fs::write(&path, text.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(purlis_core::runners::pools(config).unwrap().len(), 1);
+}
+
+/// **Remove of a pool whose machine doesn't answer offers to forget it here**, and forgetting it
+/// leaves no pool on this machine: nothing is sent there, so it works while the machine is gone.
+#[cfg(unix)]
+#[test]
+fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leaves_no_pool() {
+    use purlis_core::sshroute::connect::Finding;
+    let config = tempfile::tempdir().unwrap();
+    a_pool_on_another_machine(config.path());
+    let no_answer = Finding::NoAnswer {
+        host: "build-box".into(),
+        port: 22,
+    };
+
+    let came = unreachable_said("build-box", &no_answer).expect("offered forgetting");
+
+    assert_eq!(
+        came,
+        PoolRemoval::Unreachable {
+            why: "build-box didn't answer on port 22. Check that it's on and on this network, \
+                  and connect your VPN if you use one."
+                .into(),
+            host: "build-box".into(),
+        }
+    );
+    let left = forgotten_here(config.path(), "remote").expect("forgotten");
+    assert!(
+        purlis_core::runners::pools(config.path())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        left.is_empty(),
+        "no runner was kept, so nothing is said left: {left}"
+    );
+}
+
+/// A machine that answered, and refused something else, is not offered forgetting: Remove's own
+/// words say what to do there.
+#[cfg(unix)]
+#[test]
+fn a_pool_whose_machine_answers_is_not_offered_forgetting() {
+    use purlis_core::sshroute::connect::Finding;
+    let refused = Finding::SignInRefused {
+        host: "build-box".into(),
+    };
+    assert_eq!(unreachable_said("build-box", &refused), None);
+    for unreachable in [
+        Finding::NoSuchName {
+            host: "build-box".into(),
+        },
+        Finding::NotMetThrough {
+            host: "build-box".into(),
+            said: String::new(),
+        },
+    ] {
+        assert!(
+            unreachable_said("build-box", &unreachable).is_some(),
+            "{unreachable:?}"
+        );
+    }
+}

@@ -178,7 +178,7 @@ fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), Vault
     }
     match v.provider.as_str() {
         "keyring" => keyring::set(ctx, v, key, value),
-        "plain-file" => plain_file::set(ctx, v, key, value, chrono::Local::now().date_naive()),
+        "plain-file" => plain_file::set(ctx, v, key, value, jiff::Zoned::now().date()),
         "reference" => reference::set(ctx, v, key, value),
         _ => onepassword::set(ctx, v, key, value),
     }?;
@@ -373,7 +373,7 @@ pub fn trace_secret_use(ctx: &Ctx, event: &str, resolved: &[String], fields: &[(
         &session,
         event,
         &scrubbed,
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
     );
 }
 
@@ -533,7 +533,7 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
             return 1;
         }
     };
-    let today = chrono::Local::now().date_naive();
+    let today = jiff::Zoned::now().date();
     let ages = match v.provider.as_str() {
         "plain-file" => plain_file::ages(ctx, &v, today),
         "keyring" => keyring::ages(ctx, &v, today),

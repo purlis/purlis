@@ -172,7 +172,7 @@ fn add_judged_then(
             vet,
             None,
             &Who::here(None, Some("3".to_owned()), None),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             &mut |line| lines.push(line),
         )
     });

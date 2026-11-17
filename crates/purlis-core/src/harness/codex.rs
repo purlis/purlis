@@ -568,9 +568,16 @@ fn permission_flag(binary: &std::path::Path) -> [String; 2] {
 /// turn goes on (`hooks/src/events/pre_tool_use.rs`).
 ///
 /// Not from the registry, as [`permission_flag`] is not: every `PreToolUse` word there is a
-/// guard, which refuses on a crash or a late answer, and a question refused that way would be
-/// lost. This one fails open: any failure prints nothing, and Codex asks in its pane. Codex
-/// asks the operator to trust it once, as it does each of purlis's hooks.
+/// guard, which refuses what it cannot judge within its own budget, and a question refused
+/// that way would be lost. This one fails open: any failure prints nothing, and Codex asks in
+/// its pane. Codex asks the operator to trust it once, as it does each of purlis's hooks.
+///
+/// **No hook of a Codex chat fails closed when its process does** (#7067, read from Codex's
+/// source at `rust-v0.147.0` and `rust-v0.169.0`): Codex has no fail-closed option, and a
+/// `PreToolUse` hook that times out, is killed by a signal or exits with any other code is
+/// `Failed` in `hooks/src/events/pre_tool_use.rs`, not blocked, so the tool runs. A guard that
+/// dies on Codex is a declared gap: the wrap and the proxy are its only fail-closed points.
+/// Claude Code's guards fail closed by the project's policy (`hookreg::Handler::on_failure`).
 fn question_group(binary: &std::path::Path) -> toml::Value {
     hook_group(
         binary,

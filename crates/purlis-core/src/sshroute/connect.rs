@@ -111,6 +111,13 @@ pub enum Finding {
     /// Docker's disk there is too full to make a runner on (#6205): what is free, where `df`
     /// said.
     DiskFull { host: String, free: Option<u64> },
+    /// **Its kernel lacks the Landlock purlis's sandbox needs** (#7084): ABI
+    /// [`purlis_linux_sandbox::MIN_ABI`], Linux 6.12. A container runs on its host's kernel, so
+    /// no chat on the pool starts there. What was found of the kernel.
+    KernelShort {
+        host: String,
+        short: crate::dockerpool::kernel::Short,
+    },
     /// It couldn't download the runner image from its registry.
     ImageUnreachable { host: String, registry: String },
     /// **The Docker context the pool's route was read from now names another route** (#6268).

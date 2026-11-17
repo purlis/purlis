@@ -29,7 +29,7 @@ pub struct Request<'a> {
     /// The hosts those clones may reach, where the app makes them for a sandboxed chat
     /// ([`crate::repocmd::clone::Request::hosts`]); `None`, no limit, anywhere else.
     pub hosts: Option<&'a [String]>,
-    pub now: chrono::DateTime<chrono::Utc>,
+    pub now: jiff::Timestamp,
     pub ids: &'a crate::active::Ids,
 }
 
@@ -213,7 +213,7 @@ mod tests {
         dir
     }
 
-    fn now() -> chrono::DateTime<chrono::Utc> {
+    fn now() -> jiff::Timestamp {
         "2026-05-04T11:32:17Z".parse().unwrap()
     }
 

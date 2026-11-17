@@ -45,7 +45,7 @@ fn told(root: &Path, harness: &str, mode: &str, attendance: Attendance) -> Vec<S
             cwd: root.parent().expect("the plane has a parent"),
             payload: &payload,
             env: &lookup,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             attendance,
         },
         None,

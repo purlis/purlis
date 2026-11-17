@@ -310,7 +310,7 @@ impl Browser {
         Ok(LoginEnded {
             driver: ended.0,
             epoch: ended.1,
-            outcome: self.kept_out(outcome),
+            outcome: self.inner.kept_out(outcome),
         })
     }
 

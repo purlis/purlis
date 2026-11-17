@@ -287,17 +287,17 @@ pub fn parameters() -> Value {
 
 /// A time in seconds since 1970, as RFC 3339.
 fn time(secs: Option<i64>) -> Value {
-    secs.and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+    secs.and_then(|secs| jiff::Timestamp::from_second(secs).ok())
         .map_or(Value::Null, |at| {
-            json!(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+            json!(at.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
         })
 }
 
 /// A dispatch record's stamp, as seconds since 1970.
 fn stamped(stamp: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(stamp)
+    str::parse::<jiff::Timestamp>(stamp)
         .ok()
-        .map(|at| at.timestamp())
+        .map(|at| at.as_second())
 }
 
 /// One row of the answer, for a page of `workspace`. A parent that works elsewhere (another

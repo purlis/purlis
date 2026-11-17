@@ -84,7 +84,7 @@ fn an_app(tmp: &tempfile::TempDir, answer: Option<Answer>) -> App {
                 &project,
                 &asker,
                 &write.write,
-                chrono::Local::now().naive_local(),
+                jiff::Zoned::now().datetime(),
             ) {
                 Ok(brokered::Done::Written(written)) => Answer::Written {
                     to: written.to,
@@ -378,7 +378,7 @@ fn a_memory_in(tmp: &tempfile::TempDir, ws: &str, text: &str) -> String {
     let path = purlis_core::workspaces::Plane::open(root(tmp))
         .workspace(ws)
         .unwrap()
-        .remember(text, chrono::Local::now().naive_local())
+        .remember(text, jiff::Zoned::now().datetime())
         .expect("remembered");
     path.file_stem().unwrap().to_string_lossy().into_owned()
 }

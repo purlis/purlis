@@ -222,6 +222,7 @@ function Start({
   onDismiss,
   take,
   extra,
+  paste,
 }: {
   shown: IdentitiesShown;
   ticked: readonly string[];
@@ -233,6 +234,8 @@ function Start({
   onDismiss: () => void;
   take: boolean;
   extra?: ReactNode;
+  /** What finishes a try GitHub may have made the App for: shown once a try didn't finish. */
+  paste?: ReactNode;
 }) {
   const { chosen, typed, workflows } = choice;
   const [preview, setPreview] = useState("");
@@ -277,10 +280,11 @@ function Start({
         agent can never act as you.
       </p>
       {trouble && (
-        <Trouble cause="agent-identity-not-made" title="The App wasn't made" onDismiss={onDismiss}>
+        <Trouble cause="agent-identity-not-made" title="It didn't finish" onDismiss={onDismiss}>
           {trouble}
         </Trouble>
       )}
+      {paste}
       <Facts aria-label="What purlis found">
         {shown.owners.length > 0 && (
           <Fact label="Your repos are on">
@@ -361,6 +365,49 @@ function Start({
   );
 }
 
+/**
+ * **Finishes from the address the browser ended on**: for an App GitHub made whose answer
+ * never reached purlis. The box is a secret's, since the address holds GitHub's one-time code: it
+ * is never in React's state or drawn.
+ */
+function PasteAddress({ onFinish }: { onFinish: (address: string) => void }) {
+  const box = useRef<HTMLInputElement>(null);
+  const [filled, setFilled] = useState(false);
+  return (
+    <Disclosure
+      label="Finish with the address your browser ended on"
+      level={3}
+      className="agent-identity-fold"
+    >
+      <div className="agent-identity-fold-body">
+        <p className="agent-identity-term">
+          Copy the address your browser ended on, starting http://127.0.0.1, and paste it here. It
+          works for an hour after you pressed Create GitHub App.
+        </p>
+        <TextField
+          type="password"
+          label="The address your browser ended on"
+          inputRef={box}
+          onChange={setFilled}
+        />
+        <ButtonRow>
+          <Button
+            onPress={() => {
+              const address = box.current?.value ?? "";
+              if (box.current) box.current.value = "";
+              setFilled(false);
+              onFinish(address);
+            }}
+            isDisabled={!filled}
+          >
+            Finish with this address
+          </Button>
+        </ButtonRow>
+      </div>
+    </Disclosure>
+  );
+}
+
 /** Waits on GitHub's page, where the App is made. */
 function OnGitHub({
   onAgain,
@@ -368,12 +415,14 @@ function OnGitHub({
   trouble,
   onDismiss,
   take,
+  paste,
 }: {
   onAgain: () => void;
   onStop: () => void;
   trouble: string | null;
   onDismiss: () => void;
   take: boolean;
+  paste: ReactNode;
 }) {
   return (
     <>
@@ -392,10 +441,11 @@ function OnGitHub({
         </Trouble>
       )}
       <ol className="agent-identity-steps" aria-label="On GitHub's page">
-        <li>Press Create GitHub App on the page.</li>
+        <li>Press Create GitHub App on the page. GitHub makes the App the moment you press it.</li>
         <li>Install it on your repos. Choose all repos, or only some.</li>
       </ol>
-      <Waiting>Waiting for GitHub. This moves on by itself.</Waiting>
+      <Waiting>Waiting for GitHub. This moves on by itself, or stops after 15 minutes.</Waiting>
+      {paste}
       <Action>
         <Button icon={<Out />} onPress={onAgain}>
           Open the page again
@@ -541,9 +591,17 @@ export function StartOverAsk({
   );
 }
 
+/** What a try sent to GitHub asked for. */
+interface Tried {
+  owner: string;
+  personal: boolean;
+  workflows: boolean;
+}
+
 type Screen =
   | { at: "start" }
   | { at: "browser"; attempt: string }
+  | { at: "pasted" }
   | { at: "made"; app: string; stand: IdentityStand | null; busy: boolean };
 
 /**
@@ -581,6 +639,10 @@ export function AgentIdentityFlow({
   const [lines, setLines] = useState<{ for: string[]; text: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const attempt = useRef<string | null>(null);
+  // What the last try sent to GitHub asked for, which an address pasted after it finishes.
+  const [tried, setTried] = useState<Tried | null>(null);
+  // While an address the person pasted is being finished, a try's own answer changes nothing.
+  const pasting = useRef(false);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -639,20 +701,53 @@ export function AgentIdentityFlow({
 
   const shownLines = lines?.for === ticked ? lines.text : null;
 
+  const made = (app: string) => setScreen({ at: "made", app, stand: null, busy: false });
+
   const create = (owner: string, personal: boolean) => {
     const mine = crypto.randomUUID();
     attempt.current = mine;
+    setTried({ owner, personal, workflows: choice.workflows });
     setTrouble(null);
     setScreen({ at: "browser", attempt: mine });
     void answer(commands.agentIdentityCreate(plane, mine, owner, personal, choice.workflows)).then(
-      (made) => {
-        if (!live.current || attempt.current !== mine) return;
-        setScreen({ at: "made", app: made, stand: null, busy: false });
+      (app) => {
+        if (!live.current || attempt.current !== mine || pasting.current) return;
+        made(app);
       },
       (why: unknown) => {
         if (!live.current || attempt.current !== mine) return;
+        // A paste under way stopped this try: it is over, and the paste says what happened.
+        if (pasting.current) {
+          attempt.current = null;
+          return;
+        }
         setTrouble(whyOf(why));
         setScreen({ at: "start" });
+      },
+    );
+  };
+
+  const fromAddress = (address: string) => {
+    if (tried === null) return;
+    pasting.current = true;
+    setTrouble(null);
+    setScreen({ at: "pasted" });
+    const { owner, personal, workflows } = tried;
+    void answer(
+      commands.agentIdentityCreateFromAddress(plane, address, owner, personal, workflows),
+    ).then(
+      (app) => {
+        pasting.current = false;
+        attempt.current = null;
+        if (live.current) made(app);
+      },
+      (why: unknown) => {
+        pasting.current = false;
+        if (!live.current) return;
+        setTrouble(whyOf(why));
+        // An address that didn't read stopped nothing: a try still waiting goes on waiting.
+        const running = attempt.current;
+        setScreen(running === null ? { at: "start" } : { at: "browser", attempt: running });
       },
     );
   };
@@ -700,7 +795,15 @@ export function AgentIdentityFlow({
         onDismiss={dismiss}
         take={take}
         extra={extra}
+        paste={tried && <PasteAddress onFinish={fromAddress} />}
       />
+    );
+  if (screen.at === "pasted")
+    return (
+      <>
+        <Head take={take} title="Getting the App from GitHub…" />
+        <Waiting>Asking GitHub for the App the address names.</Waiting>
+      </>
     );
   if (screen.at === "browser")
     return (
@@ -714,6 +817,7 @@ export function AgentIdentityFlow({
         trouble={trouble}
         onDismiss={dismiss}
         take={take}
+        paste={<PasteAddress onFinish={fromAddress} />}
       />
     );
   const startOver = () => setConfirming(true);

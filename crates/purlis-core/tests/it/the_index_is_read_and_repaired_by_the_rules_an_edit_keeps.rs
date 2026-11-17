@@ -49,7 +49,7 @@ fn names(list: &[&str]) -> BTreeSet<String> {
     list.iter().map(|s| s.to_string()).collect()
 }
 
-fn today() -> chrono::NaiveDate {
+fn today() -> jiff::civil::Date {
     "2026-01-02".parse().unwrap()
 }
 

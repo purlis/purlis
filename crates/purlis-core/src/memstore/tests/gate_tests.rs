@@ -3,7 +3,7 @@
 
 use super::*;
 
-fn stamp() -> chrono::NaiveDateTime {
+fn stamp() -> jiff::civil::DateTime {
     "2026-03-02T09:14:00".parse().unwrap()
 }
 

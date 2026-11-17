@@ -242,7 +242,7 @@ pub fn use_workspace(
     ids: &Ids,
     create: bool,
     force: bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     say: Sink,
 ) -> u8 {
     if !crate::contain::workspace_name_ok(name) {
@@ -967,7 +967,7 @@ mod tests {
     }
 
     /// The instant a scaffold stamps `workspace.json` with.
-    fn stamp() -> chrono::DateTime<chrono::Utc> {
+    fn stamp() -> jiff::Timestamp {
         "2026-05-04T11:32:17Z".parse().unwrap()
     }
 

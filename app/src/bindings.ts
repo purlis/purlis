@@ -2321,6 +2321,14 @@ export const commands = {
 	 *  window.
 	 */
 	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
+	/**
+	 *  **Finishes making the App from the address the browser ended on**: for when GitHub
+	 *  made the App and its redirect never reached the listener, or reached it unmatched. The person
+	 *  pasted the address themselves, so its code is taken without the `state`, and is still held to
+	 *  what was asked: the owner named, the permissions, no events. A try still waiting on GitHub is
+	 *  stopped once the address reads, and not before. Then as [`agent_identity_create`].
+	 */
+	agentIdentityCreateFromAddress: (plane: PlaneId, address: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create_from_address", { plane, address, owner, personal, workflows })),
 	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
 	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
 	/**  **The exact lines Finish adds** (Q11), from the one source Finish writes from. */
@@ -3516,6 +3524,11 @@ export const commands = {
 	 */
 	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
 	/**
+	 *  **What the chat whose ULID is `id` is now** (#6685's review): what a closed chat's row in the
+	 *  Chats list's filter opens. On a blocking thread, as it reads the dispatch records.
+	 */
+	chatById: (plane: PlaneId, id: string) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id })),
+	/**
 	 *  **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
 	 *  on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
 	 */
@@ -4566,8 +4579,17 @@ export const commands = {
 	 *  goes. Where that is no longer so, or the other way round, nothing is done (#4325).
 	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
 	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
+	 *  A pool on another machine that doesn't answer is removed not at all: the answer says so, and
+	 *  the window offers to forget it here.
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	/**
+	 *  **Forgets pool `name` on this machine without contacting its machine**: the window's Forget it
+	 *  here, offered where Remove found that machine doesn't answer. Its runners stay there, and the
+	 *  answer says what stays and the commands that remove it there. Refused for a pool on this
+	 *  machine's Docker, which is removed, never only forgotten.
+	 */
+	forgetDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("forget_docker_pool", { name })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.
@@ -7608,7 +7630,12 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number } | 
 /**  Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed. */
-{ kind: "navigate"; aim: string; step: BrowserStep };
+{ kind: "navigate"; aim: string; step: BrowserStep } | 
+/**
+ *  The person watches another of the browser's pages (#6989): `page` is its id, as the view
+ *  was told it.
+ */
+{ kind: "watch"; aim: string; page: string };
 
 /**  Which limit a row sets. */
 export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
@@ -8054,6 +8081,13 @@ export type ChatCard = {
 	 *  row's (`task.reopens`).
 	 */
 	chat_reopen: ChatReopen | null,
+	/**
+	 *  **The number it was found by, where that is one it had before a restart** (#6685): the
+	 *  card is titled by the number it closed under, and says this one too
+	 *  ([`purlis_core::chatrecords::ChatRecord::found_by`]). `None` where it was found by that
+	 *  number, by its ULID, and for a card drawn from its task.
+	 */
+	found_by: number | null,
 };
 
 /**
@@ -8622,10 +8656,15 @@ export type CloseHanded = {
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
  *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_number`).
+ *  card (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
+	/**
+	 *  Its ULID: what choosing its row opens it by (`chat_by_id`), as more than one record may
+	 *  answer to a number (#6740).
+	 */
+	id: string,
 	earlier: number[],
 	title: string,
 	place: string,
@@ -9628,6 +9667,26 @@ export type Doing = {
 	 */
 	over: boolean,
 };
+
+/**
+ *  **One download of a browser's, as its view is told** (#6990): its id (`d1`), its name as
+ *  `browser_downloads` names it (which the view draws with every character a reader does not see
+ *  marked, #2020), how far it came, and its size in bytes, `null` where the site did not say.
+ *  Bytes are `f64`, so they are a `number` in TypeScript and not a `bigint`: whole up to 2⁵³.
+ */
+export type DownloadListed = {
+	id: string,
+	name: string,
+	state: DownloadStateSaid,
+	received: number | null,
+	total: number | null,
+};
+
+/**
+ *  **How far a download came** (#6990): under way, done, cancelled by the page or the engine,
+ *  or cancelled by purlis for its size.
+ */
+export type DownloadStateSaid = "going" | "done" | "cancelled" | "too_large";
 
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
@@ -13313,6 +13372,18 @@ export type PageAt = {
 };
 
 /**
+ *  **One of a browser's pages, as its view is told** (#6989): its id (`p2`), what the person's
+ *  pick of it names; its title as `browser_pages` lists it, `null` for none; the origin of its
+ *  address alone, `null` for none; and whether it is the page shown now.
+ */
+export type PageListed = {
+	id: string,
+	title: string | null,
+	origin: string | null,
+	current: boolean,
+};
+
+/**
  *  **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
  *  (`net::ERR_NAME_NOT_RESOLVED`, `null` where it gave none), or crashed.
  */
@@ -14479,6 +14550,17 @@ export type PoolProfiles = {
 	 */
 	fresh_claim: boolean,
 };
+
+/**
+ *  **What a pool's Remove came to**: removed, with what could not be removed where something
+ *  stays; or nothing removed because the pool's machine doesn't answer, in Pool setup's words,
+ *  so the window offers to forget it here ([`forget_docker_pool`]).
+ */
+export type PoolRemoval = 
+/**  It is gone, or what of it stays is said in `left`. */
+{ state: "removed"; left: string | null } | 
+/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
+{ state: "unreachable"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -18134,6 +18216,16 @@ export type ShownPage = {
 	address: string | null,
 	title: string | null,
 	load: PageLoadSaid,
+	/**
+	 *  **The browser's pages** (#6989), as `browser_pages` lists them to its chat, in the order
+	 *  they opened: empty from a host before 1.91, and the view then lists none.
+	 */
+	pages: PageListed[],
+	/**
+	 *  **The browser's downloads** (#6990), as `browser_downloads` lists them to its chat, in the
+	 *  order they began: empty from a host before 1.91, and the view then counts none.
+	 */
+	downloads: DownloadListed[],
 };
 
 /**

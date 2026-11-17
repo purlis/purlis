@@ -2226,6 +2226,91 @@ fn a_chat_dropped_at_start_fresh_keeps_its_closed_record() {
 }
 
 #[test]
+fn a_launch_never_deals_again_a_number_a_closed_chat_answers_to() {
+    // #6740: the record of open chats has lost count (here it names none), while the closed
+    // chats' records still answer to 731, and to 702, the number it had before a restart.
+    let dir = tempfile::tempdir().expect("a directory");
+    let (planes, root, _held) = launched_with_one_chat(dir.path());
+    let closed = purlis_core::chatrecords::ChatRecord {
+        number: 731,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T11:00:00Z".to_owned(),
+        started_by: purlis_core::chatrecords::StartedBy::Person,
+        place: "project root".to_owned(),
+        earlier: vec![702],
+        chat: None,
+    };
+    let older = purlis_core::chatrecords::ChatRecord {
+        number: 9,
+        id: "01K6CHATS0000000000000000D".to_owned(),
+        earlier: vec![760],
+        ..closed.clone()
+    };
+    purlis_core::chatrecords::keep_all(&root, &[closed, older]).expect("the closes are kept");
+
+    planes.relaunch(Choice::StartFresh, &[]);
+
+    assert_eq!(
+        reopen::read_or_refusal(&root)
+            .expect("the record reads")
+            .dealt,
+        760,
+        "a number a closed chat answers to could be dealt again"
+    );
+}
+
+/// A plane whose closed chats' records answer to 760 at most, the record of open chats then
+/// made what `lose` leaves of it, opened as a launch does: the number the next chat would take.
+fn the_number_dealt_after(lose: impl FnOnce(&Path)) -> u32 {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    a_record_naming(&root, "/bin/echo");
+    let closed = purlis_core::chatrecords::ChatRecord {
+        number: 731,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T11:00:00Z".to_owned(),
+        started_by: purlis_core::chatrecords::StartedBy::Person,
+        place: "project root".to_owned(),
+        earlier: vec![760],
+        chat: None,
+    };
+    purlis_core::chatrecords::keep(&root, &closed).expect("the close is kept");
+    lose(&reopen::path(&root));
+
+    let (planes, _) = planes_telling();
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("it is held");
+    held.reopen(STARTING, reopen::read_or_refusal(&root), Choice::ReopenAll);
+    held.chats().next_number()
+}
+
+#[test]
+fn a_launch_whose_record_of_open_chats_was_lost_deals_no_number_a_closed_chat_answers_to() {
+    // #6740: the file is gone, so it counts from nothing but the closed chats' records.
+    let dealt = the_number_dealt_after(|record| std::fs::remove_file(record).expect("removed"));
+    assert!(
+        dealt > 760,
+        "chat {dealt} could be one a closed chat answers to"
+    );
+}
+
+#[test]
+fn a_launch_whose_record_of_open_chats_is_refused_deals_no_number_a_closed_chat_answers_to() {
+    // #6740: the file cannot be read, so nothing is put back, and the count is the closes'.
+    let dealt = the_number_dealt_after(|record| {
+        std::fs::write(record, "{ not a record").expect("written");
+    });
+    assert!(
+        dealt > 760,
+        "chat {dealt} could be one a closed chat answers to"
+    );
+}
+
+#[test]
 fn the_choice_is_made_once_and_a_reloaded_window_asking_again_changes_nothing() {
     // A webview reload runs the window's launch path a second time. The chats are already
     // back, so a second question — or a second put-back — would be a second copy of each.
@@ -4954,8 +5039,8 @@ fn a_saved_record_s_closed_step_names_the_record_and_the_same_line_again_closes_
                        ## How to resume\n\nr\n",
             facts: &Facts {
                 place: purlis_core::active::Place::PlaneRoot,
-                at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
-                    .and_then(|day| day.and_hms_opt(16, 0, 0))
+                at: purlis_core::wallclock::day(2026, 9, 28)
+                    .map(|day| day.at(16, 0, 0, 0))
                     .expect("a time"),
                 chat: None,
                 persona: None,

@@ -115,7 +115,7 @@ impl Probe {
             self.branch(),
             "check-probe",
             answered,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .map(|_| ()))
     }

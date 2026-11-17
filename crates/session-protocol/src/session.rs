@@ -587,11 +587,28 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
 ///
-/// 1.91 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
+/// 1.91 tells a browser's views its other pages, and lets the person watch another (#6989): a
+/// page frame lists the browser's pages as `browser_pages` lists them to its chat
+/// ([`crate::browsing::PageShown::pages`]: each one's id, scrubbed title and origin, and which is
+/// current), and `browser_input` may carry the person's pick of one
+/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. It
+/// lists the browser's downloads too, as `browser_downloads` lists them to its chat
+/// ([`crate::browsing::PageShown::downloads`]: each one's id, name, state and how far it came,
+/// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
+/// pick.
+///
+/// 1.92 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
 /// now while the link to a runner is down; and say `link_down` again while it is down each time
-/// why changes, so the window says what the last try found. A host before 1.91 is sent no
+/// why changes, so the window says what the last try found. A host before 1.92 is sent no
 /// `link_now`.
 pub const VERSION: Version = Version {
+    major: 1,
+    minor: 92,
+};
+
+/// The version that first lists a browser's pages and downloads to its views and takes the
+/// person's pick of a page to watch (#6989, #6990): none is sent to a host before.
+pub const KNOWS_PAGES_LISTED: Version = Version {
     major: 1,
     minor: 91,
 };
@@ -600,7 +617,7 @@ pub const VERSION: Version = Version {
 /// to a host before.
 pub const KNOWS_LINK_NOW: Version = Version {
     major: 1,
-    minor: 91,
+    minor: 92,
 };
 
 /// The version that first tells a browser's views what its page is and takes the person's
@@ -1327,7 +1344,7 @@ pub enum Command {
     /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
-    /// The window asks the host that relays its link to link to the other host again now (1.91,
+    /// The window asks the host that relays its link to link to the other host again now (1.92,
     /// #7134): its Try now, while that link is down, rather than once the pause between tries
     /// has passed. Answered [`Answer::Done`] at once, before the try: whether it links is said
     /// as ever, `link_back` or `link_down` again. A host that relays nothing has nothing to

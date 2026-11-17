@@ -31,6 +31,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { AboutCharter } from "../About";
+import { BrowserDownloads } from "../BrowserDownloads";
 import { SecretMarks } from "../SecretMarks";
 import { ENDS_IT, OUTSIDE } from "../actions";
 import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
@@ -386,6 +387,7 @@ const CLOSED_CHAT_CARD: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -743,6 +745,21 @@ const DIALOGS: Opened[] = [
       });
       render(<SecretMarks secrets={[filled("dash-api-key"), filled("dash-2fa")]} />);
       await userEvent.click(screen.getByRole("button", { name: "2 secrets" }));
+    },
+  },
+  {
+    name: "a browser's downloads, in its count's popover (#6990)",
+    file: "BrowserDownloads.tsx",
+    open: async () => {
+      render(
+        <BrowserDownloads
+          downloads={[
+            { id: "d1", name: "report.pdf", state: "done", received: 84_000, total: 84_000 },
+            { id: "d2", name: "data.csv", state: "going", received: 1_000, total: null },
+          ]}
+        />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "2 downloads" }));
     },
   },
   {

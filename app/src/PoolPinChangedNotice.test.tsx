@@ -30,7 +30,11 @@ function core(
     (cmd, args) => {
       calls.push({ cmd, args });
       if (cmd === "pools_pin_changed") return found();
-      if (cmd === "remove_docker_pool") return removing((args as { name: string }).name);
+      if (cmd === "remove_docker_pool")
+        return Promise.resolve(removing((args as { name: string }).name)).then((left) => ({
+          state: "removed",
+          left,
+        }));
       if (cmd === "pool_named_by") return [];
       if (cmd === "pool_held_runners") return [];
       if (cmd === "docker_pools") return { pools: [], clusters: [] };

@@ -147,8 +147,8 @@ export interface Shortcut {
   does: string;
   group: Group;
   where: Scope;
-  /** **Where the sheet says it applies**, for an act its scope's word is too narrow for: a key
-   *  the pane takes from a chat's, a shell's and a one-job program's terminal alike (#6358). */
+  /** **Where the sheet says it applies**, for an act its scope's word does not fit: a terminal
+   *  key only a chat answers says "In a chat", where every other says "In a pane" (#6483). */
   place?: string;
   /** `key` is matched by its handler; a `path` is keys already declared, in turn; a `native`
    *  key is the system menu's or an editor's own. */
@@ -754,8 +754,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.find",
-    does: "Find in the chat",
-    group: "Tabs and chats",
+    does: "Find in the pane",
+    // Any terminal pane's, a shell's as much as a chat's (#6483). Its id, from when only a chat
+    // had a terminal, is the one `SessionPane`'s key handler asks `isKey` for.
+    group: "Panes",
     where: "terminal",
     kind: "key",
     chords: { mac: [cmd("f")], other: [ctl("F", { shift: true })] },
@@ -768,7 +770,6 @@ export const SHORTCUTS: readonly Shortcut[] = [
     does: "The links on the pane's screen: Links in this pane…",
     group: "Panes",
     where: "terminal",
-    place: "In a pane",
     kind: "key",
     // `L` for links (#6220, D5). ⇧⌘L was no key of the window's; Ctrl with Shift and a letter is
     // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
@@ -795,8 +796,11 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.menu",
-    does: "The chat's menu, under its cursor",
-    group: "Tabs and chats",
+    does: "The pane's menu, under its cursor",
+    // Any terminal pane's (#6483). Nothing asks `isKey` for this id: `SessionPane`'s key handler
+    // calls `asksForTheMenu` itself, to know whether a program has the mouse. The id is the
+    // sheet's row, kept as it was.
+    group: "Panes",
     where: "terminal",
     kind: "key",
     chords: both(bare("F10", { shift: true }), bare("ContextMenu")),
@@ -810,6 +814,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     does: "A new line in the chat's prompt",
     group: "Tabs and chats",
     where: "terminal",
+    // The one terminal key that needs a chat: a shell has no harness, and keeps its own Enter.
+    place: "In a chat",
     kind: "key",
     chords: both(bare("Enter", { shift: true })),
     said: (mac) => (mac ? "⇧↩" : "Shift+Enter"),
@@ -818,8 +824,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.leave",
-    does: "Out of the chat's terminal, a browser you drive or DevTools (with Shift, back)",
-    group: "Tabs and chats",
+    does: "Out of the terminal, a browser you drive or DevTools (with Shift, back)",
+    // Any terminal pane's (#6483). Its id is the one `leavesTheChat` (`SessionPane`) and
+    // `leaveKeys.ts` ask `isKey` for.
+    group: "Panes",
     where: "terminal",
     kind: "key",
     chords: both(ctl("Tab"), ctl("Tab", { shift: true })),

@@ -305,7 +305,7 @@ export const NotAllowedToUseDocker: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const list = within(canvas.getByRole("list", { name: "What purlis checked on build-box" }));
-    await expect(list.getAllByRole("listitem")).toHaveLength(11);
+    await expect(list.getAllByRole("listitem")).toHaveLength(12);
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await userEvent.tab();
@@ -398,7 +398,7 @@ export const PlainTcpRefused: Story = {
 
 /** What Connect asks the engine before the pool is made (#6272): it confines runners, and its
  *  platform has a runner image. The image's download and the disk wait for the pool. */
-const ON_CONNECT = ["unconfined", "unsupported-architecture"];
+const ON_CONNECT = ["unconfined", "unsupported-architecture", "kernel-short"];
 const EVERY_ENGINE_CHECK = [...ON_CONNECT, "image-unreachable", "disk-full"];
 
 const DONE = connect({
@@ -781,7 +781,7 @@ const NOT_SIGNED = tlsFinding(
 export const FindsCertificateFromAnotherAuthority: Story = {
   beforeEach: faked([]),
   args: { step: NOT_SIGNED, shown: shown(NOT_SIGNED) },
-  play: playFinding(10),
+  play: playFinding(11),
 };
 
 const EXPIRED = tlsFinding(
@@ -793,7 +793,7 @@ const EXPIRED = tlsFinding(
 export const FindsCertificateExpired: Story = {
   beforeEach: faked([]),
   args: { step: EXPIRED, shown: shown(EXPIRED) },
-  play: playFinding(10),
+  play: playFinding(11),
 };
 
 const WRONG_NAME = tlsFinding(
@@ -806,7 +806,7 @@ const WRONG_NAME = tlsFinding(
 export const FindsCertificateForAnotherName: Story = {
   beforeEach: faked([]),
   args: { step: WRONG_NAME, shown: shown(WRONG_NAME) },
-  play: playFinding(10),
+  play: playFinding(11),
 };
 
 const CA_CHANGED = connect({
@@ -980,7 +980,7 @@ const NO_SUCH_NAME = sshFinding(
 export const FindsNoSuchName: Story = {
   beforeEach: faked([]),
   args: { step: NO_SUCH_NAME, shown: shown(NO_SUCH_NAME) },
-  play: playDoctor("purlis couldn't find that machine", 11),
+  play: playDoctor("purlis couldn't find that machine", 12),
 };
 
 const NO_ANSWER = sshFinding(
@@ -996,7 +996,7 @@ const NO_ANSWER = sshFinding(
 export const FindsNoAnswer: Story = {
   beforeEach: faked([]),
   args: { step: NO_ANSWER, shown: shown(NO_ANSWER) },
-  play: playDoctor("The machine didn't answer", 11),
+  play: playDoctor("The machine didn't answer", 12),
 };
 
 /** Purlis's first contact by hand, with its own settings, as the core writes it for build-box. */
@@ -1016,7 +1016,7 @@ const NOT_SSH = sshFinding(
 export const FindsSshNotThere: Story = {
   beforeEach: faked([]),
   args: { step: NOT_SSH, shown: shown(NOT_SSH) },
-  play: playDoctor("The machine didn't answer as SSH", 11),
+  play: playDoctor("The machine didn't answer as SSH", 12),
 };
 
 const NOT_MET = sshFinding(
@@ -1032,7 +1032,7 @@ const NOT_MET = sshFinding(
 export const FindsKeyNotSaved: Story = {
   beforeEach: faked([]),
   args: { step: NOT_MET, shown: shown(NOT_MET) },
-  play: playDoctor("purlis couldn't save the machine's key", 11),
+  play: playDoctor("purlis couldn't save the machine's key", 12),
 };
 
 const NOT_MET_THROUGH = sshFinding(
@@ -1048,7 +1048,7 @@ const NOT_MET_THROUGH = sshFinding(
 export const FindsNothingMetThroughAJumpHost: Story = {
   beforeEach: faked([]),
   args: { step: NOT_MET_THROUGH, shown: shown(NOT_MET_THROUGH) },
-  play: playDoctor("purlis couldn't meet the machine", 11),
+  play: playDoctor("purlis couldn't meet the machine", 12),
 };
 
 const SIGN_IN_REFUSED = sshFinding(
@@ -1064,7 +1064,7 @@ const SIGN_IN_REFUSED = sshFinding(
 export const FindsNoAgentKey: Story = {
   beforeEach: faked([]),
   args: { step: SIGN_IN_REFUSED, shown: shown(SIGN_IN_REFUSED) },
-  play: playDoctor("The machine didn't accept your sign-in", 11),
+  play: playDoctor("The machine didn't accept your sign-in", 12),
 };
 
 const NO_ENGINE = sshFinding(
@@ -1080,7 +1080,7 @@ const NO_ENGINE = sshFinding(
 export const FindsNoSocket: Story = {
   beforeEach: faked([]),
   args: { step: NO_ENGINE, shown: shown(NO_ENGINE) },
-  play: playDoctor("No Docker there that you can use", 11),
+  play: playDoctor("No Docker there that you can use", 12),
 };
 
 const ENGINE_SILENT = sshFinding(
@@ -1096,7 +1096,7 @@ const ENGINE_SILENT = sshFinding(
 export const FindsDockerSilent: Story = {
   beforeEach: faked([]),
   args: { step: ENGINE_SILENT, shown: shown(ENGINE_SILENT) },
-  play: playDoctor("Docker didn't answer there", 11),
+  play: playDoctor("Docker didn't answer there", 12),
 };
 
 const ENGINE_CHANGED = sshFinding(
@@ -1114,7 +1114,7 @@ const ENGINE_CHANGED = sshFinding(
 export const FindsEngineChanged: Story = {
   beforeEach: faked([]),
   args: { step: ENGINE_CHANGED, shown: shown(ENGINE_CHANGED, "build-box") },
-  play: playDoctor("Docker there isn't the one you trusted", 11),
+  play: playDoctor("Docker there isn't the one you trusted", 12),
 };
 
 const UNCONFINED = sshFinding(
@@ -1130,7 +1130,7 @@ const UNCONFINED = sshFinding(
 export const FindsDockerUnconfined: Story = {
   beforeEach: faked([]),
   args: { step: UNCONFINED, shown: shown(UNCONFINED, "build-box") },
-  play: playDoctor("Docker there doesn't confine runners", 11),
+  play: playDoctor("Docker there doesn't confine runners", 12),
 };
 
 const ARCHITECTURE = sshFinding(
@@ -1147,7 +1147,7 @@ const ARCHITECTURE = sshFinding(
 export const FindsUnsupportedArchitecture: Story = {
   beforeEach: faked([]),
   args: { step: ARCHITECTURE, shown: shown(ARCHITECTURE) },
-  play: playDoctor("There's no runner image for that machine", 11),
+  play: playDoctor("There's no runner image for that machine", 12),
 };
 
 const YOUR_IMAGE = sshFinding(
@@ -1193,7 +1193,7 @@ const IMAGE_UNREACHABLE = sshFinding(
 export const FindsImageUnreachable: Story = {
   beforeEach: faked([]),
   args: { step: IMAGE_UNREACHABLE, shown: shown(IMAGE_UNREACHABLE, "build-box") },
-  play: playDoctor("The machine couldn't download the runner image", 11),
+  play: playDoctor("The machine couldn't download the runner image", 12),
 };
 
 const DISK_FULL = sshFinding(
@@ -1209,7 +1209,24 @@ const DISK_FULL = sshFinding(
 export const FindsDiskFull: Story = {
   beforeEach: faked([]),
   args: { step: DISK_FULL, shown: shown(DISK_FULL, "build-box") },
-  play: playDoctor("Docker's disk there is full", 11),
+  play: playDoctor("Docker's disk there is full", 12),
+};
+
+const KERNEL_SHORT = sshFinding(
+  "kernel-short",
+  "build-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), so no chat on this pool will start. A container runs on its host's kernel. On build-box, run `sudo apt install --install-recommends linux-generic-hwe-24.04` for a newer kernel, then restart build-box and check again.",
+  {
+    note: "The first prints the kernel build-box runs, as purlis reads it, and only reads. The second installs Ubuntu's newer kernel on build-box and the third restarts build-box into it: everything running there stops.",
+    text: "docker -H ssh://sam@build-box info --format '{{.KernelVersion}} {{.OperatingSystem}}'\nssh -t sam@build-box sudo apt install --install-recommends linux-generic-hwe-24.04\nssh -t sam@build-box sudo reboot",
+  },
+);
+
+/** Its host runs Linux 6.8, short of the Landlock purlis's sandbox needs (#7084): the kernel's
+ *  line fails, with Ubuntu 24.04's newer kernel one command away. */
+export const FindsKernelShort: Story = {
+  beforeEach: faked([]),
+  args: { step: KERNEL_SHORT, shown: shown(KERNEL_SHORT, "build-box") },
+  play: playDoctor("Its kernel can't run purlis's sandbox", 12),
 };
 
 const HERE = sshFinding("here", "purlis found no ssh on this machine.");
@@ -1218,7 +1235,7 @@ const HERE = sshFinding("here", "purlis found no ssh on this machine.");
 export const FindsSomethingHere: Story = {
   beforeEach: faked([]),
   args: { step: HERE, shown: shown(HERE) },
-  play: playDoctor("That didn't work", 11),
+  play: playDoctor("That didn't work", 12),
 };
 
 const NOT_A_ROUTE = connect({
@@ -1261,7 +1278,7 @@ const TLS_FILE = tlsDoctor(
 export const FindsTlsFileMissing: Story = {
   beforeEach: faked([]),
   args: { step: TLS_FILE, shown: shown(TLS_FILE) },
-  play: playDoctor("purlis can't use one of the files you named", 10, "lab.example.internal"),
+  play: playDoctor("purlis can't use one of the files you named", 11, "lab.example.internal"),
 };
 
 const CLIENT_REFUSED = tlsDoctor(
@@ -1277,7 +1294,7 @@ const CLIENT_REFUSED = tlsDoctor(
 export const FindsClientCertificateRefused: Story = {
   beforeEach: faked([]),
   args: { step: CLIENT_REFUSED, shown: shown(CLIENT_REFUSED) },
-  play: playDoctor("Docker there didn't accept your certificate", 10, "lab.example.internal"),
+  play: playDoctor("Docker there didn't accept your certificate", 11, "lab.example.internal"),
 };
 
 const CLIENT_EXPIRED = tlsDoctor(
@@ -1293,7 +1310,7 @@ const CLIENT_EXPIRED = tlsDoctor(
 export const FindsClientCertificateExpired: Story = {
   beforeEach: faked([]),
   args: { step: CLIENT_EXPIRED, shown: shown(CLIENT_EXPIRED) },
-  play: playDoctor("Your certificate has expired", 10, "lab.example.internal"),
+  play: playDoctor("Your certificate has expired", 11, "lab.example.internal"),
 };
 
 const FOR_ADMIN = sshFinding(

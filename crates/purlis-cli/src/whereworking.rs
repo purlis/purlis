@@ -83,8 +83,9 @@ const APP_GONE: &str = "The purlis app that started this chat is not running, so
                         record to read of where it is working.";
 
 /// The instant times are said against, in this machine's zone.
-fn local(now: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::FixedOffset> {
-    now.with_timezone(&chrono::Local).fixed_offset()
+fn local(now: jiff::Timestamp) -> jiff::Zoned {
+    let offset = jiff::tz::TimeZone::system().to_offset(now);
+    now.to_zoned(jiff::tz::TimeZone::fixed(offset))
 }
 
 /// `purlis persona where`: the picture on stdout; outside a chat, a sentence saying so.
@@ -93,7 +94,7 @@ pub fn run(now: Option<&str>) -> ExitCode {
         Asked::Working(working) => {
             println!(
                 "{}",
-                awareness::listing(&working.picture, local(crate::hooks::instant(now)))
+                awareness::listing(&working.picture, &local(crate::hooks::instant(now)))
             );
             ExitCode::SUCCESS
         }
@@ -119,7 +120,7 @@ pub fn tool() -> (Result<String, String>, Vec<hookwire::framed::Attached>) {
     let said = match asked {
         Asked::Working(working) => Ok(awareness::listing(
             &working.picture,
-            local(chrono::Utc::now()),
+            &local(jiff::Timestamp::now()),
         )),
         Asked::NotAChat => Ok(awareness::NOT_A_CHAT.to_owned()),
         Asked::Refused(why) => Err(why),
@@ -130,18 +131,18 @@ pub fn tool() -> (Result<String, String>, Vec<hookwire::framed::Attached>) {
 
 /// What a chat's start briefing says of where it is working, where the app has anything to
 /// say. From then that is what the app counts the chat as told.
-pub fn briefing(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
+pub fn briefing(now: jiff::Timestamp) -> Option<String> {
     match asked(Tell::Start, A_HOOK_WAITS) {
-        Asked::Working(working) => awareness::briefing(&working.picture, local(now)),
+        Asked::Working(working) => awareness::briefing(&working.picture, &local(now)),
         _ => None,
     }
 }
 
 /// The one line a turn is told when where the chat is working has changed since it was last
 /// told, and nothing when it has not.
-pub fn update(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
+pub fn update(now: jiff::Timestamp) -> Option<String> {
     match asked(Tell::Turn, A_HOOK_WAITS) {
-        Asked::Working(working) => awareness::update(&working, local(now)),
+        Asked::Working(working) => awareness::update(&working, &local(now)),
         _ => None,
     }
 }

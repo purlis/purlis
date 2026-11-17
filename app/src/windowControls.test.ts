@@ -134,6 +134,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/savefix.rs: Continue": CHAT,
   "crates/purlis-core/src/secrets/ask/run.rs: Allow once": CHAT,
   "crates/purlis-core/src/secrets/brokered.rs: Allow": CHAT,
+  // A seal key the press could not use (#7073) is what Accept itself answers, shown on the
+  // project policy Notice beside the Accept it names (`ProjectPolicyNotice.tsx`).
+  "crates/purlis-core/src/secrets/seal.rs: Accept": BESIDE,
   "crates/purlis-core/src/secrets/vaultcmd.rs: Allow": CHAT,
   "crates/purlis-core/src/settings/hosts.rs: Confirm": BESIDE,
   "crates/purlis-core/src/signingsetup/retry.rs: Sign and retry": CHAT,

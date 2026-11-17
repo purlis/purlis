@@ -517,7 +517,7 @@ pub fn end_at_launch(
     chat: &Chat,
     asker: Option<&str>,
     why: NotBack,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<Option<Ended>> {
     let Some(from) = chat.from.as_ref() else {
         return Ok(None);
@@ -690,7 +690,7 @@ pub fn settle_after_launch(
     root: &Path,
     live: impl Fn(&ChatRef) -> bool,
     asker_back: impl Fn(&dispatchrecord::Record) -> bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> usize {
     dispatchrecord::settle_asked(root, live, asker_back, now)
 }

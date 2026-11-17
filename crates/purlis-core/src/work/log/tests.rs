@@ -17,7 +17,10 @@ fn project() -> tempfile::TempDir {
     let written = crate::workspaces::Plane::open(dir.path())
         .workspace("alpha")
         .unwrap()
-        .add_todo("Port the picker", at(0).naive_utc())
+        .add_todo(
+            "Port the picker",
+            at(0).to_zoned(jiff::tz::TimeZone::UTC).datetime(),
+        )
         .unwrap();
     assert_eq!(
         Some(todo().todo_parts().unwrap().1),
@@ -31,11 +34,12 @@ fn key(text: &str) -> TrackerKey {
     TrackerKey::parse(text).unwrap()
 }
 
-fn at(second: u32) -> chrono::DateTime<chrono::Utc> {
-    use chrono::TimeZone;
-    chrono::Utc
-        .with_ymd_and_hms(2026, 10, 2, 8, 0, second)
+fn at(second: i8) -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(8, 0, second, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
         .unwrap()
+        .timestamp()
 }
 
 fn todo() -> TrackerKey {

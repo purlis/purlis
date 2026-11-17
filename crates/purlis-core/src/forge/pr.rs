@@ -591,8 +591,8 @@ pub(super) fn held_to_the_forges_clock(gate: Gate, touched: Option<&str>) -> Gat
         .map(|d| d.as_secs() as i64)
         .unwrap_or_default();
     let settled = touched
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-        .is_some_and(|at| now - at.timestamp() >= SETTLE.as_secs() as i64);
+        .and_then(|at| str::parse::<jiff::Timestamp>(at).ok())
+        .is_some_and(|at| now - at.as_second() >= SETTLE.as_secs() as i64);
     Gate::Checks { settled }
 }
 

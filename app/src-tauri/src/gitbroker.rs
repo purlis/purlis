@@ -241,7 +241,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
             &asker,
             ask,
             &isolation,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});

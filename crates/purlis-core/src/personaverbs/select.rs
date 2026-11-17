@@ -109,7 +109,7 @@ pub struct Asking<'a> {
     /// persona is fixed for its life (ADR 0090 as amended, #1435).
     pub in_chat: bool,
     pub bucket: &'a str,
-    pub now: chrono::NaiveDateTime,
+    pub now: jiff::civil::DateTime,
 }
 
 /// `charter persona use <name>`, and its exit code.

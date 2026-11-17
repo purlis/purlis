@@ -152,7 +152,7 @@ pub fn import(
     plane: &Path,
     ws: &str,
     chosen: &[Shown],
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<usize, String> {
     let workspace = Plane::open(plane)
         .workspace(ws)
@@ -496,9 +496,9 @@ mod tests {
         found.iter().map(|one| one.shown.clone()).collect()
     }
 
-    fn stamp() -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 1)
-            .and_then(|d| d.and_hms_opt(9, 30, 0))
+    fn stamp() -> jiff::civil::DateTime {
+        crate::wallclock::day(2026, 10, 1)
+            .map(|d| d.at(9, 30, 0, 0))
             .expect("a time")
     }
 

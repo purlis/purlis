@@ -119,7 +119,7 @@ pub fn move_memory(
     from: &Scope,
     slug: &str,
     to: &Scope,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> io::Result<PathBuf> {
     move_memory_as(plane, from, slug, to, now, None)
 }
@@ -134,7 +134,7 @@ pub fn move_memory_as(
     from: &Scope,
     slug: &str,
     to: &Scope,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> io::Result<PathBuf> {
     if from == to {

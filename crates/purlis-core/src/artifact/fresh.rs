@@ -111,11 +111,16 @@ fn declared(folder: &Path) -> Option<i64> {
 
 /// An RFC 3339 time, or a `YYYY-MM-DD` day at midnight UTC, in seconds since 1970.
 fn date(text: &str) -> Option<i64> {
-    if let Ok(at) = chrono::DateTime::parse_from_rfc3339(text) {
-        return Some(at.timestamp());
+    if let Ok(at) = str::parse::<jiff::Timestamp>(text) {
+        return Some(at.as_second());
     }
-    let day = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()?;
-    Some(day.and_hms_opt(0, 0, 0)?.and_utc().timestamp())
+    let day = jiff::civil::Date::strptime("%Y-%m-%d", text).ok()?;
+    Some(
+        day.to_zoned(jiff::tz::TimeZone::UTC)
+            .ok()?
+            .timestamp()
+            .as_second(),
+    )
 }
 
 fn plain_file(path: &Path) -> bool {

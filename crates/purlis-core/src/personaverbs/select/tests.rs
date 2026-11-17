@@ -15,11 +15,8 @@ fn ids(session: Option<&str>, terminal: Option<&str>) -> Ids {
     }
 }
 
-fn now() -> chrono::NaiveDateTime {
-    chrono::NaiveDate::from_ymd_opt(2026, 5, 4)
-        .unwrap()
-        .and_hms_opt(11, 32, 17)
-        .unwrap()
+fn now() -> jiff::civil::DateTime {
+    crate::wallclock::day(2026, 5, 4).unwrap().at(11, 32, 17, 0)
 }
 
 fn run(plane: &Plane, name: &str, ids: &Ids, env: Option<&str>) -> (u8, Heard) {
