@@ -34,7 +34,9 @@ The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
 the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
 nothing covers starts with no grant) and `asks` (a host is answered Allow) switch; every other
-family is a key already and stays enforced until it is wired. Your own denies hold in every mode,
+family is a key already and stays enforced until it is wired. One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
+forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
+sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
 
 ## Who can change it

@@ -519,7 +519,7 @@ fn ready_given_on(
             &start.grants,
         )
         // Under a policy that forbids the opt-out, no refusal sends the person to it (#1423).
-        .map_err(|refused| refused.said(&crate::sandbox::policy::Locks::of(root)))?
+        .map_err(|refused| refused.said_on(&crate::sandbox::policy::Locks::of(root), on_a_runner))?
         {
             Some(crate::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None),
             Some(crate::sandbox::Decided::Unsandboxed(lifted)) => {

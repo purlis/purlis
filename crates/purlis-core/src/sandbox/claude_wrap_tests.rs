@@ -190,6 +190,31 @@ fn a_runner_whose_kernel_cannot_apply_the_wrap_refuses_the_chat_in_words() {
 }
 
 #[test]
+fn on_a_person_s_own_linux_without_landlock_6_a_claude_code_chat_is_told_no_other_profile_helps() {
+    // ADR 0067 as amended 2026-11-10: Claude Code runs in purlis's wrap on Linux too, so a
+    // Claude Code profile is no way round a kernel without Landlock 6, here as on a runner.
+    let place = place(FULL, false);
+    assert!(!place.machine.is_a_runner());
+    let refused = for_start(
+        Harness::ClaudeCode,
+        place.plane.path(),
+        &place.machine,
+        &|_| false,
+    )
+    .expect_err("refused: the kernel cannot apply the wrap");
+    assert_eq!(refused, NotStarted::NoBackend(Missing::Landlock));
+    let said = refused.to_string();
+    assert!(!said.contains("profile"), "{said}");
+    assert!(
+        said.ends_with(
+            "Nothing was started. Update to Linux 6.12 or later, or start this chat without the \
+             sandbox from the new-chat picker."
+        ),
+        "{said}"
+    );
+}
+
+#[test]
 fn on_a_person_s_own_linux_a_sandboxed_claude_code_chat_runs_in_purlis_s_wrap() {
     // ADR 0067 as amended 2026-11-10: on a person's own Linux machine, as on a runner, a
     // sandboxed Claude Code chat runs whole inside purlis's wrap, at the full sandbox and at the

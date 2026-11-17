@@ -174,11 +174,13 @@ fn on_a_linux_kernel_without_landlock_6_an_opencode_chat_is_refused_with_the_ver
         refused.to_string(),
         "this project runs every chat sandboxed, and this machine cannot apply the sandbox: \
          purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), and this kernel does \
-         not have it. Nothing was started. Update to Linux 6.12 or later, start this chat on a \
-         Claude Code profile, or start it without the sandbox from the new-chat picker."
+         not have it. Nothing was started. Update to Linux 6.12 or later, or start this chat \
+         without the sandbox from the new-chat picker."
     );
     // Where policy forbids starting a chat without the sandbox, no way on names it.
-    assert!(!backend::landlock_way_on(false).contains("picker"));
+    assert!(!backend::landlock_way_on(backend::WayOn::Here { opt_out: false }).contains("picker"));
+    // No harness is a way on: every sandboxed chat on Linux runs in the same wrap.
+    assert!(!refused.to_string().contains("profile"));
     // Neither bubblewrap nor socat is asked for: the wrap needs no program.
     assert!(
         for_start(
@@ -1684,6 +1686,8 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                 Class::Vaults => (root.join(".charter/vaults").display().to_string(), true),
                 Class::Integrity => (root.join(".charter/app").display().to_string(), false),
                 Class::HumanPowers => (config_dir.display().to_string(), false),
+                // The SSH folder, held whole (the review of #7008).
+                Class::Credentials => (home_dir.join(".ssh").display().to_string(), true),
                 // Off a runner it names nothing (RR-5), which its own test holds.
                 Class::RunnerInternals => continue,
                 Class::LaterCode => match harness {
@@ -1712,7 +1716,7 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
             held += 1;
         }
     }
-    assert_eq!(held, 12, "four classes, for each of three harnesses");
+    assert_eq!(held, 15, "five classes, for each of three harnesses");
 }
 
 /// Round three of the review (rulings V73a and V73d), applied for real.

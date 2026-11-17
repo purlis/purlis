@@ -100,6 +100,10 @@ pub enum Family {
     Skills,
     /// A vault's value kept out of a chat: masking, the leak guard, the vault-file Read guard.
     Secrets,
+    /// The person's own credential files at the floor (ADR 0067 §5 class 6, ruling Q325): an SSH
+    /// private key and each forge and cloud credential file, unread by a chat at the floor only
+    /// where this is enforced. The full sandbox holds them whatever it says. Off or enforce only.
+    CredentialFiles,
     /// The guards on a forge: its verbs and its login (Q308b).
     GuardsForge,
     /// The shape of a call: the tool gate's caps, prose, handoff and plumbing arms, and the
@@ -124,7 +128,7 @@ pub enum Family {
 
 impl Family {
     /// Every family, in the order the docs list them.
-    pub const ALL: [Family; 24] = [
+    pub const ALL: [Family; 25] = [
         Family::Sandbox,
         Family::Network,
         Family::Ports,
@@ -140,6 +144,7 @@ impl Family {
         Family::Browser,
         Family::Skills,
         Family::Secrets,
+        Family::CredentialFiles,
         Family::GuardsForge,
         Family::GuardsShape,
         Family::GuardsPlane,
@@ -169,6 +174,7 @@ impl Family {
             Family::Browser => "browser",
             Family::Skills => "skills",
             Family::Secrets => "secrets",
+            Family::CredentialFiles => "secrets.credential_files",
             Family::GuardsForge => "guards.forge",
             Family::GuardsShape => "guards.shape",
             Family::GuardsPlane => "guards.plane",
@@ -206,7 +212,10 @@ impl Family {
     /// Whether the family takes `log`: `vaults` takes off or enforce only (Q308a), and the
     /// sandbox is a level, not a mode.
     pub fn logs(self) -> bool {
-        !matches!(self, Family::Sandbox | Family::Vaults)
+        !matches!(
+            self,
+            Family::Sandbox | Family::Vaults | Family::CredentialFiles
+        )
     }
 
     /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
@@ -239,6 +248,7 @@ impl Family {
                 | Family::GuardsSave
                 | Family::GuardsCredential
                 | Family::Secrets
+                | Family::CredentialFiles
         )
     }
 }
@@ -320,6 +330,14 @@ impl Template {
     /// How the template runs `family`. The sandbox's entry is only whether a wrap is applied at
     /// all; its level is [`Template::sandbox_level`]'s.
     pub fn mode(self, family: Family) -> Mode {
+        // The person's own credential files at the floor (Q325): `team` and `strict` hold them,
+        // and the floor templates leave the person's tools working, as before Q321.
+        if family == Family::CredentialFiles {
+            return match self {
+                Template::Team | Template::Strict => Mode::Enforce,
+                Template::Open | Template::Watch | Template::Hold => Mode::Off,
+            };
+        }
         let secret = matches!(
             family,
             Family::Secrets | Family::Vaults | Family::GuardsCredential
@@ -445,6 +463,16 @@ impl Settings {
                             "{TABLE}.{TEMPLATE_KEY} is not open, watch, hold, team or strict, so \
                              every family it does not override is enforced"
                         ));
+                    }
+                }
+            } else if key == "secrets" && value.is_table() {
+                // `secrets.credential_files = "enforce"` makes `secrets` a table (Q325): each of
+                // its keys is a family, and the `secrets` family stays the template's. A project
+                // that sets both writes the quoted key `"secrets.credential_files"` beside
+                // `secrets = …`, since TOML gives one key one value.
+                if let Some(keys) = value.as_table() {
+                    for (sub, value) in keys {
+                        said.family(&format!("secrets.{sub}"), value);
                     }
                 }
             } else if key == "guards" {

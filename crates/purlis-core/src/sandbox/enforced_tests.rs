@@ -347,6 +347,9 @@ fn at_basic_sandbox_claude_codes_denial_classes_are_held_and_its_web_tools_allow
         .paths
         .iter()
         .filter(|denial| denial.access == Access::ReadWrite)
+        // The person's own credentials are held at the floor only where the project's policy
+        // enforces them (Q325), which this one's does not.
+        .filter(|denial| denial.class != Class::Credentials)
     {
         let path = denial.path.display().to_string();
         assert!(
