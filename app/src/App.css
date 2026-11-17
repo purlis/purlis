@@ -9680,7 +9680,7 @@ nav.piece-files-head {
 
 .browser-progress {
   position: absolute;
-  inset-block-end: -1px;
+  inset-block-end: 0;
   inset-inline-start: 0;
   inline-size: 40%;
   block-size: 2px;
