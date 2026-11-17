@@ -219,7 +219,8 @@ fn a_shipped_build_never_takes_a_chat_s_copy_of_the_app_s_program_for_the_app() 
 fn a_listener_of_a_chat_s_own_copy_of_the_app_is_refused() {
     purlis_core::unsteered!();
     // This process listens, as the chat's copy would: the app it stands under is another
-    // process, so the copy's socket is refused, never asked.
+    // process (its parent, live and this user's, so its sockets can be listed), so the copy's
+    // socket is refused, never asked.
     let tmp = tempfile::tempdir().unwrap();
     let socket = tmp.path().join("app").join("hooks.sock");
     let _listener = Listener::bind(tmp.path(), &socket).expect("a socket");
@@ -231,7 +232,7 @@ fn a_listener_of_a_chat_s_own_copy_of_the_app_is_refused() {
     };
 
     let unreached = reach::reach_from(
-        Under::App(vec![u32::MAX - 1]),
+        Under::App(vec![std::os::unix::process::parent_id()]),
         tmp.path(),
         &chat,
         Duration::from_secs(2),
