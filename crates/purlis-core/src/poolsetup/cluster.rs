@@ -74,11 +74,11 @@ pub const CLAIMS_SETTLE: u64 = 35;
 /// `policy` and bound at `binding` (each RFC 3339, as the cluster stamps them): [`CLAIMS_SETTLE`]
 /// after the later of the two. `None` where either can't be read as a time.
 #[must_use]
-pub fn in_force_in(policy: &str, binding: &str, now: chrono::DateTime<chrono::Utc>) -> Option<u64> {
-    let at = |text: &str| chrono::DateTime::parse_from_rfc3339(text.trim()).ok();
+pub fn in_force_in(policy: &str, binding: &str, now: jiff::Timestamp) -> Option<u64> {
+    let at = |text: &str| str::parse::<jiff::Timestamp>(text.trim()).ok();
     let later = at(policy)?.max(at(binding)?);
-    let from = later + chrono::Duration::seconds(i64::try_from(CLAIMS_SETTLE).ok()?);
-    Some(u64::try_from((from.to_utc() - now).num_seconds()).unwrap_or(0))
+    let from = later + jiff::SignedDuration::from_secs(i64::try_from(CLAIMS_SETTLE).ok()?);
+    Some(u64::try_from(from.duration_since(now).as_secs()).unwrap_or(0))
 }
 
 /// A cluster as Pool setup reads it.
@@ -485,7 +485,7 @@ pub fn installed(kubectl: &Kubectl) -> Result<Installed, String> {
             .zip(made(
                 "validatingadmissionpolicybindings.admissionregistration.k8s.io",
             ))
-            .and_then(|(policy, binding)| in_force_in(&policy, &binding, chrono::Utc::now()))
+            .and_then(|(policy, binding)| in_force_in(&policy, &binding, jiff::Timestamp::now()))
     } else {
         None
     };

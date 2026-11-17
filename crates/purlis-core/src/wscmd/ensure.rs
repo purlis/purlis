@@ -24,7 +24,7 @@ use crate::wslayer;
 pub fn ensure(
     root: &Path,
     name: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     author: &str,
 ) -> Result<Vec<wslayer::Row>, String> {
     if !crate::contain::workspace_name_ok(name) {
@@ -147,7 +147,7 @@ mod tests {
         dir
     }
 
-    fn now() -> chrono::DateTime<chrono::Utc> {
+    fn now() -> jiff::Timestamp {
         "2026-05-04T11:32:17Z".parse().unwrap()
     }
 

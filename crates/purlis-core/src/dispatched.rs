@@ -1406,7 +1406,7 @@ impl Ledger {
     ) {
         let entry = self.tasks.entry(task).or_default();
         entry.restart = restart;
-        let Some(Ok(at)) = started.map(chrono::DateTime::parse_from_rfc3339) else {
+        let Some(Ok(at)) = started.map(str::parse::<jiff::Timestamp>) else {
             return;
         };
         if entry.started.is_none() {
@@ -1745,7 +1745,7 @@ impl Ledger {
     /// list row shows, the latest only.
     pub fn noted(&mut self, task: u32, text: &str, now: SystemTime) {
         self.tasks.entry(task).or_default().last_note = Some(crate::dispatchrecord::LastNote {
-            at: now.into(),
+            at: crate::wallclock::instant(now),
             text: Some(text.to_owned()),
         });
     }

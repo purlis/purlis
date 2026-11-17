@@ -218,7 +218,7 @@ fn temp_plane() -> (tempfile::TempDir, purlis_core::workspaces::Plane) {
     (dir, plane)
 }
 
-fn pinned() -> chrono::NaiveDateTime {
+fn pinned() -> jiff::civil::DateTime {
     "2026-03-02T09:14:00".parse().unwrap()
 }
 
@@ -691,8 +691,8 @@ fn closing_a_todo_by_a_slug_two_todos_share_closes_neither() {
     // a todo nobody named; SI-9d refuses the slug, names both, and each closes by its full name.
     let (_tmp, plane) = temp_plane();
     let ws = plane.workspace("alpha").unwrap();
-    let early: chrono::NaiveDateTime = "2026-03-02T09:14:00".parse().unwrap();
-    let later: chrono::NaiveDateTime = "2026-03-02T09:15:00".parse().unwrap();
+    let early: jiff::civil::DateTime = "2026-03-02T09:14:00".parse().unwrap();
+    let later: jiff::civil::DateTime = "2026-03-02T09:15:00".parse().unwrap();
     ws.add_todo("Write the migration", early).unwrap();
     ws.add_todo("Write the migration", later).unwrap();
 

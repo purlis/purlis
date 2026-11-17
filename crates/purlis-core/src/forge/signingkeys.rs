@@ -211,7 +211,7 @@ fn keys_listed(kind: Kind, out: &str) -> Option<Vec<Key>> {
                         .get("created_at")
                         .and_then(serde_json::Value::as_str)
                         .and_then(|at| at.get(..10))
-                        .filter(|day| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").is_ok())
+                        .filter(|day| jiff::civil::Date::strptime("%Y-%m-%d", day).is_ok())
                         .map(str::to_owned),
                 })
             })

@@ -185,7 +185,7 @@ pub fn applied(held: &Held, id: u32, from: crate::proposals::From) -> Result<Str
         held.runner_writes(),
         id,
         from,
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
     );
     held.chats().asks_may_have_moved();
     match made {
@@ -233,7 +233,7 @@ pub fn apply_in(
     writes: &RunnerWrites,
     id: u32,
     from: crate::proposals::From,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> Result<HeldWrite, NotMade> {
     let shown = writes
         .every()

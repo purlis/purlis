@@ -271,7 +271,7 @@ pub(crate) async fn open_view(
                 Some(key.as_str()).filter(|key| !key.is_empty()),
                 |about| match about {
                     Subject::Personas => {
-                        purlis_core::handed::personas(&root, chrono::Local::now().naive_local())
+                        purlis_core::handed::personas(&root, jiff::Zoned::now().datetime())
                     }
                 },
             )
@@ -350,7 +350,7 @@ pub(crate) async fn run_action(
                 confirmed,
                 |about| match about {
                     Subject::Personas => {
-                        purlis_core::handed::personas(&root, chrono::Local::now().naive_local())
+                        purlis_core::handed::personas(&root, jiff::Zoned::now().datetime())
                     }
                 },
             )
@@ -510,7 +510,7 @@ fn built_in(
                     why: format!("This plane has no workspace called {key} any more."),
                 });
             }
-            let drawn = purlis_core::change::view::view(root, key, chrono::Utc::now());
+            let drawn = purlis_core::change::view::view(root, key, jiff::Timestamp::now());
             Ok(ViewAnswer::Answered {
                 blocks: drawn.blocks.iter().map(PanelBlock::from).collect(),
                 took_ms: millis(began.elapsed()),

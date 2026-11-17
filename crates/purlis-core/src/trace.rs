@@ -40,13 +40,13 @@ pub fn record(
     session: &str,
     event: &str,
     fields: &[(&str, &str)],
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) {
     let path = file(root, session);
     let mut rec = serde_json::Map::new();
     rec.insert(
         "ts".into(),
-        stamp.format("%Y-%m-%dT%H:%M:%S").to_string().into(),
+        stamp.strftime("%Y-%m-%dT%H:%M:%S").to_string().into(),
     );
     rec.insert("event".into(), event.into());
     for (key, value) in fields {
@@ -68,13 +68,13 @@ pub fn record_values(
     session: &str,
     event: &str,
     fields: &[(&str, serde_json::Value)],
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) {
     let path = file(root, session);
     let mut rec = serde_json::Map::new();
     rec.insert(
         "ts".into(),
-        stamp.format("%Y-%m-%dT%H:%M:%S").to_string().into(),
+        stamp.strftime("%Y-%m-%dT%H:%M:%S").to_string().into(),
     );
     rec.insert("event".into(), event.into());
     for (key, value) in fields {

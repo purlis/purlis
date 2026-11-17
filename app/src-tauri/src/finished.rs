@@ -258,13 +258,15 @@ pub(crate) fn finish_of(record: &Record, session: u32) -> Option<crate::asknotif
     let worked = if record.worked > 0 {
         record.worked
     } else {
-        let at = |stamp: &str| chrono::DateTime::parse_from_rfc3339(stamp).ok();
+        let at = |stamp: &str| str::parse::<jiff::Timestamp>(stamp).ok();
         record
             .ended
             .as_deref()
             .and_then(at)
             .zip(at(&record.started))
-            .and_then(|(ended, started)| u64::try_from((ended - started).num_seconds()).ok())
+            .and_then(|(ended, started)| {
+                u64::try_from(ended.duration_since(started).as_secs()).ok()
+            })
             .unwrap_or(0)
     };
     Some(crate::asknotify::Finish {
@@ -331,7 +333,7 @@ pub(crate) fn listed_for(
         return Vec::new();
     };
     let open = crate::dispatches::open_chats(held);
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     listed
         .finished_for(held.root(), &me, |worker| {
             open.iter().any(|one| is_open(worker, one))
@@ -372,9 +374,11 @@ pub(crate) fn listed_for(
                     | Finished::StoppedAtItsTokenLimit
                     | Finished::FromItsLastMessage => how.said_to_a_chat().to_owned(),
                 },
-                age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
+                age_secs: str::parse::<jiff::Timestamp>(&record.started)
                     .ok()
-                    .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
+                    .and_then(|started| {
+                        std::time::Duration::try_from(now.duration_since(started)).ok()
+                    })
                     .map(|age| age.as_secs()),
                 by_person: record.asker.by_person,
                 branch: record
@@ -413,7 +417,7 @@ fn orphaned_for(
     me: &dispatchrecord::ChatRef,
     open: &[crate::dispatches::OpenChat],
 ) -> Vec<purlis_core::dispatched::Row> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     orphaned(held, me, open, |record| purlis_core::dispatched::Row {
         chat: purlis_core::dispatched::NO_NUMBER_KNOWN,
         name: name_of(record),
@@ -429,9 +433,9 @@ fn orphaned_for(
             .word()
             .to_owned(),
         state: ITS_DISPATCH_STILL_RUNS.to_owned(),
-        age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
+        age_secs: str::parse::<jiff::Timestamp>(&record.started)
             .ok()
-            .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
+            .and_then(|started| std::time::Duration::try_from(now.duration_since(started)).ok())
             .map(|age| age.as_secs()),
         by_person: record.asker.by_person,
         branch: record

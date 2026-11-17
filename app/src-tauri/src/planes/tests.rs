@@ -4954,8 +4954,8 @@ fn a_saved_record_s_closed_step_names_the_record_and_the_same_line_again_closes_
                        ## How to resume\n\nr\n",
             facts: &Facts {
                 place: purlis_core::active::Place::PlaneRoot,
-                at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
-                    .and_then(|day| day.and_hms_opt(16, 0, 0))
+                at: purlis_core::wallclock::day(2026, 9, 28)
+                    .map(|day| day.at(16, 0, 0, 0))
                     .expect("a time"),
                 chat: None,
                 persona: None,

@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::NaiveDate;
 use serde_json::json;
 
 use super::*;
@@ -20,11 +19,8 @@ fn project(workspaces: &[&str]) -> tempfile::TempDir {
     dir
 }
 
-fn at(h: u32, m: u32) -> chrono::NaiveDateTime {
-    NaiveDate::from_ymd_opt(2026, 10, 3)
-        .unwrap()
-        .and_hms_opt(h, m, 0)
-        .unwrap()
+fn at(h: i8, m: i8) -> jiff::civil::DateTime {
+    crate::wallclock::day(2026, 10, 3).unwrap().at(h, m, 0, 0)
 }
 
 fn in_ws(name: &str) -> Place {
@@ -274,12 +270,12 @@ fn project_with_memories(n: u32) -> tempfile::TempDir {
     let dir = p.path().join("workspaces/alpha/memory");
     std::fs::create_dir_all(&dir).unwrap();
     for i in 1..=n {
-        let when = at(8, 0) + chrono::Duration::minutes(i64::from(i));
+        let when = at(8, 0) + jiff::SignedDuration::from_mins(i64::from(i));
         std::fs::write(
-            dir.join(format!("{}memory-{i}.md", when.format("%Y%m%d-%H%M%S-"))),
+            dir.join(format!("{}memory-{i}.md", when.strftime("%Y%m%d-%H%M%S-"))),
             format!(
                 "# Memory {i}\n\n_{} · memory_\n\nBody of memory {i}.\n",
-                when.format("%Y-%m-%d %H:%M")
+                when.strftime("%Y-%m-%d %H:%M")
             ),
         )
         .unwrap();
@@ -1161,8 +1157,8 @@ fn every_dispatch_subcommand_has_a_tool_a_claude_code_chat_runs_without_asking()
             &crate::active::Place::PlaneRoot,
             tool,
             &serde_json::Map::new(),
-            chrono::NaiveDate::from_ymd_opt(2026, 10, 29)
-                .and_then(|day| day.and_hms_opt(12, 0, 0))
+            crate::wallclock::day(2026, 10, 29)
+                .map(|day| day.at(12, 0, 0, 0))
                 .expect("a time"),
         )
         .expect_err("not run here");

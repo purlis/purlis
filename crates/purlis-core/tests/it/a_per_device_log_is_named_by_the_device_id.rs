@@ -7,11 +7,14 @@
 
 use std::path::Path;
 
-use chrono::TimeZone;
 use purlis_core::{machine, pieces};
 
-fn when() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc.with_ymd_and_hms(2026, 10, 2, 9, 0, 0).unwrap()
+fn when() -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(9, 0, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 /// The per-device log files in `dir`, by name.

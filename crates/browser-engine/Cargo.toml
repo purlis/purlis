@@ -39,7 +39,7 @@ zip = { version = "9.0", default-features = false, features = ["deflate-flate2-z
 # The one download: core's own client and features, so the tree gains no crate.
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 # When a manifest was issued, read as RFC 3339.
-chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+jiff = { workspace = true, features = ["serde"] }
 # A screenshot's blanked fields are painted over in purlis, not in the page: the engine's PNG is
 # decoded and encoded again. The version the app's icons already link, so the tree gains no crate.
 png = "0.18"

@@ -8,7 +8,7 @@ use super::*;
 use purlis_core::brokered::{Asker, Store, Write};
 use purlis_core::repocmd::Say;
 
-fn now() -> chrono::NaiveDateTime {
+fn now() -> jiff::civil::DateTime {
     "2026-10-06T12:00:00".parse().expect("a stamp")
 }
 

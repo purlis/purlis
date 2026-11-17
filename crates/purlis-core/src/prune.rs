@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::counts::counted;
 use crate::dispatchplace::{self, InFolder};
@@ -69,7 +69,7 @@ pub fn prune(
     asked: &Asked<'_>,
     asker: &Asker<'_>,
     plane: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     let ws = asked.ws;
@@ -396,7 +396,7 @@ fn remove_one(
     one: &Candidate,
     asked: &Asked<'_>,
     asker: &Asker<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> bool {
     let (repo, piece) = (one.folder.repo.as_str(), one.folder.piece.as_str());

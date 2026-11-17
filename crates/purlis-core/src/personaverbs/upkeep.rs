@@ -348,7 +348,7 @@ pub struct Optimize<'a> {
     pub all: bool,
     pub apply: bool,
     pub stale_days: i64,
-    pub today: chrono::NaiveDate,
+    pub today: jiff::civil::Date,
 }
 
 /// `charter persona optimize`: the curation `workspace optimize` runs, over each persona's
@@ -410,7 +410,7 @@ pub struct Log<'a> {
     pub n: i64,
     /// The trace bucket this session writes and reads.
     pub session: &'a str,
-    pub now: chrono::NaiveDateTime,
+    pub now: jiff::civil::DateTime,
 }
 
 /// `charter persona log [name] [message] [-n N]`: note something in this session's activity

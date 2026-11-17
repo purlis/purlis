@@ -28,7 +28,7 @@ purlis-core.workspace = true
 purlis-host.workspace = true
 # The hidden `purlis _sandbox`: purlis's own wrap of a chat on Linux (#1040).
 purlis-linux-sandbox.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+jiff.workspace = true
 clap.workspace = true
 # `purlis signing setup --key` reads the passphrase of the person's own key without echoing it
 # (#5480). Already in this workspace's lockfile through `minisign`, so it adds no crate.

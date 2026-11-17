@@ -27,7 +27,7 @@ fn chat(number: u32, id: &str, ended: &str) -> ChatRecord {
 }
 
 fn at(time: &str) -> SystemTime {
-    chrono::DateTime::parse_from_rfc3339(time).unwrap().into()
+    str::parse::<jiff::Timestamp>(time).unwrap().into()
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn a_chat_whose_end_stands_in_the_future_is_swept_though_other_chats_keep_closin
     // at once, as a dispatch record's words are (`dispatchrecord::talk_is_due`).
     let (_dir, root) = project();
     let now = SystemTime::now();
-    let stamp = |time: SystemTime| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339();
+    let stamp = |time: SystemTime| crate::oldspelling::rfc3339(crate::wallclock::instant(time));
     let a_year = std::time::Duration::from_secs(365 * 24 * 3600);
     let ahead = serde_json::to_value(OnDisk::of(&chat(702, ID, &stamp(now + a_year)))).unwrap();
     std::fs::create_dir_all(dir(&root)).unwrap();
@@ -231,11 +231,14 @@ fn a_chat_whose_end_stands_in_the_future_is_swept_though_other_chats_keep_closin
 #[test]
 fn a_chat_kept_with_an_end_ahead_of_this_clock_is_kept_as_ending_now() {
     let (_dir, root) = project();
-    let before = chrono::Utc::now();
-    let ahead = (before + chrono::Duration::days(365)).to_rfc3339();
+    let before = jiff::Timestamp::now();
+    let ahead = crate::oldspelling::rfc3339(before + jiff::SignedDuration::from_hours(24 * 365));
     keep(&root, &chat(702, ID, &ahead)).unwrap();
-    let ended = chrono::DateTime::parse_from_rfc3339(&every(&root)[0].ended).unwrap();
-    assert!(ended >= before && ended <= chrono::Utc::now(), "{ended}");
+    let ended = str::parse::<jiff::Timestamp>(&every(&root)[0].ended).unwrap();
+    assert!(
+        ended >= before && ended <= jiff::Timestamp::now(),
+        "{ended}"
+    );
     assert_eq!(
         sweep(&root, SystemTime::now()),
         0,

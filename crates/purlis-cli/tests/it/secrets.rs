@@ -424,10 +424,7 @@ fn set_writes_the_value_and_its_date_at_0600() {
         &std::fs::read_to_string(vaults.join("devops.meta.json")).expect("a sidecar"),
     )
     .unwrap();
-    let today = chrono::Local::now()
-        .date_naive()
-        .format("%Y-%m-%d")
-        .to_string();
+    let today = jiff::Zoned::now().date().strftime("%Y-%m-%d").to_string();
     assert_eq!(meta["NEW"]["set_at"], today.as_str());
     for f in ["devops.json", "devops.meta.json"] {
         let mode = std::fs::metadata(vaults.join(f))

@@ -491,7 +491,7 @@ impl ErrorKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Answer {
     pub outcome: Result<Value, ErrorKind>,
-    pub at: chrono::DateTime<chrono::Utc>,
+    pub at: jiff::Timestamp,
     pub cursor: Option<String>,
     /// With an error, a sentence for the reader saying what happened and what to do, where the
     /// query has one (ADR 0122 as amended 2026-11-11): `error: { kind, message }`.
@@ -499,7 +499,7 @@ pub struct Answer {
 }
 
 impl Answer {
-    pub fn data(data: Value, at: chrono::DateTime<chrono::Utc>) -> Self {
+    pub fn data(data: Value, at: jiff::Timestamp) -> Self {
         Answer {
             outcome: Ok(data),
             at,
@@ -508,7 +508,7 @@ impl Answer {
         }
     }
 
-    pub fn error(kind: ErrorKind, at: chrono::DateTime<chrono::Utc>) -> Self {
+    pub fn error(kind: ErrorKind, at: jiff::Timestamp) -> Self {
         Answer {
             outcome: Err(kind),
             at,
@@ -518,11 +518,7 @@ impl Answer {
     }
 
     /// An error with a sentence for the reader.
-    pub fn error_saying(
-        kind: ErrorKind,
-        message: impl Into<String>,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> Self {
+    pub fn error_saying(kind: ErrorKind, message: impl Into<String>, at: jiff::Timestamp) -> Self {
         Answer {
             message: Some(message.into()),
             ..Answer::error(kind, at)
@@ -551,7 +547,7 @@ impl Answer {
         };
         out.insert(
             "at".into(),
-            json!(self.at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+            json!(self.at.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()),
         );
         if let Some(cursor) = &self.cursor {
             out.insert("cursor".into(), json!(cursor));

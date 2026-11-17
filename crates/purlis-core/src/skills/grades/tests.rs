@@ -223,7 +223,7 @@ fn the_record_is_read_newest_first_and_a_row_it_cannot_take_is_skipped() {
         &graded(root, "new", "2026-10-25T10:00:00+00:00", Spent::default()),
         "desk",
     );
-    let file = path_for(root, chrono::Utc::now(), "laptop");
+    let file = path_for(root, jiff::Timestamp::now(), "laptop");
     let mut newer = serde_json::to_value(graded(
         root,
         "later",
@@ -408,7 +408,7 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         &graded(root, "kept", "2026-10-25T10:00:00+00:00", Spent::default()),
         "laptop",
     );
-    let file = path_for(root, chrono::Utc::now(), "laptop");
+    let file = path_for(root, jiff::Timestamp::now(), "laptop");
     let mut text = std::fs::read_to_string(&file).unwrap();
     for (key, value) in [
         ("commit", serde_json::json!("\u{1b}[31mnot a commit")),
@@ -624,7 +624,7 @@ fn uncommitted_row() -> Graded {
 #[test]
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     assert!(
-        uncommitted_row().sound(chrono::Utc::now()),
+        uncommitted_row().sound(jiff::Timestamp::now()),
         "a row purlis writes is kept"
     );
     // #5718: a stop at a usage limit says when it resets, and a resumed grade what it went on
@@ -637,7 +637,7 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         usd: Some(0.01),
         ..grade::Earlier::default()
     });
-    assert!(at_the_limit.sound(chrono::Utc::now()));
+    assert!(at_the_limit.sound(jiff::Timestamp::now()));
     type Breaks = fn(&mut Graded);
     let broken: [(&str, Breaks); 22] = [
         (
@@ -731,7 +731,7 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     for (what, breaks) in broken {
         let mut row = uncommitted_row();
         breaks(&mut row);
-        assert!(!row.sound(chrono::Utc::now()), "{what}: {row:?}");
+        assert!(!row.sound(jiff::Timestamp::now()), "{what}: {row:?}");
     }
 }
 
@@ -891,9 +891,7 @@ fn the_estimate_is_the_closest_grades_and_names_it() {
 /// stamp no later than this machine's clock allows.
 #[test]
 fn a_row_out_of_range_or_at_odds_with_itself_is_skipped() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-28T00:00:00+00:00")
-        .unwrap()
-        .to_utc();
+    let now = str::parse::<jiff::Timestamp>("2026-10-28T00:00:00+00:00").unwrap();
     assert!(uncommitted_row().sound(now), "a row purlis writes is kept");
     type Breaks = fn(&mut Graded);
     let broken: [(&str, Breaks); 13] = [
@@ -1126,7 +1124,7 @@ fn a_row_with_a_previous_arm_names_the_version_it_compared_with() {
         outcome_not_run: 0,
         outcome_pass_rate: None,
     });
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     assert!(
         !row.sound(now),
         "a previous arm with no version named is skipped"
@@ -1141,7 +1139,7 @@ fn a_row_with_a_previous_arm_names_the_version_it_compared_with() {
 /// chats are held to what its tests could have asked for, and its spend to its report's.
 #[test]
 fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582() {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let interrupted = |spent: Spent| Graded {
         report: GradeReport {
             spent_tokens: spent.tokens,
@@ -1179,7 +1177,7 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
 /// those that ran, at most what its runs could ask for; a scored row's arms say it instead.
 #[test]
 fn an_interrupted_rows_chats_asked_for_are_held_to_what_it_could_ask_3602() {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let interrupted = |asked_for: Option<u32>| {
         let spent = Spent {
             chats: 4,
@@ -1236,7 +1234,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
         };
         row.report.spent_tokens = Some(4_000);
         row.report.spent_usd = Some(0.04);
-        assert!(row.sound(chrono::Utc::now()), "{row:?}");
+        assert!(row.sound(jiff::Timestamp::now()), "{row:?}");
         row
     };
     let scored_on = |profile: &str| {
@@ -1303,7 +1301,7 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         cost_usd: Some(0.03),
         asked_for: None,
     };
-    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    assert!(row.sound(jiff::Timestamp::now()), "{row:?}");
     let estimate = estimate_of(&[row], 12, Some("work"), 0).unwrap();
     assert_eq!(
         estimate.chats_then, 3,
@@ -1462,7 +1460,7 @@ fn outcome_row() -> Graded {
 /// outcome evals do not hold together is skipped, as a trigger test's is.
 #[test]
 fn a_row_whose_outcome_evals_do_not_hold_together_is_skipped() {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let row = outcome_row();
     assert_eq!(row.report.outcomes.len(), 2);
     assert_eq!(row.report.outcome_delta, Some(0.0));
@@ -2003,7 +2001,7 @@ fn a_grade_recorded_under_a_built_in_skills_old_name_is_read_under_its_new_one_5
         &graded(root, "kept", "2026-10-25T10:00:00+00:00", Spent::default()),
         "laptop",
     );
-    let file = path_for(root, chrono::Utc::now(), "laptop");
+    let file = path_for(root, jiff::Timestamp::now(), "laptop");
     let text = std::fs::read_to_string(&file).unwrap();
     let mut row: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
     row["skill"] = "purlis-compact".into();

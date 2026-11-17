@@ -328,7 +328,7 @@ fn an_id(id: &str) -> bool {
 }
 
 fn a_time(time: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(time).is_ok()
+    str::parse::<jiff::Timestamp>(time).is_ok()
 }
 
 /// Whether `chat` is one this store keeps: a ULID, two times, a title.
@@ -469,9 +469,9 @@ fn locked(root: &Path) -> std::io::Result<crate::rewrite::Lock> {
 /// `ended`, or now where it stands in the future: a clock ahead wrote it, and an entry kept with
 /// it would never age ([`sweep`]).
 fn no_later_than_now(ended: &str) -> String {
-    let now = chrono::Utc::now();
-    match chrono::DateTime::parse_from_rfc3339(ended) {
-        Ok(at) if at > now => now.to_rfc3339(),
+    let now = jiff::Timestamp::now();
+    match str::parse::<jiff::Timestamp>(ended) {
+        Ok(at) if at > now => crate::oldspelling::rfc3339(now),
         _ => ended.to_owned(),
     }
 }
@@ -607,7 +607,7 @@ fn left_behind(name: &str) -> bool {
 
 /// Whether `chat` is [`crate::retention::KEEP_FOR`] or more old at `now`, or ended after `now`.
 fn due(chat: &ChatRecord, now: SystemTime) -> bool {
-    chrono::DateTime::parse_from_rfc3339(&chat.ended).map_or(true, |ended| {
+    str::parse::<jiff::Timestamp>(&chat.ended).map_or(true, |ended| {
         now.duration_since(SystemTime::from(ended))
             .map_or(true, |age| age >= crate::retention::KEEP_FOR)
     })

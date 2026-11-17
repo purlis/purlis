@@ -1439,7 +1439,9 @@ pub const PROJECT_RULE: (&str, &str) = ("reports", "always_send");
 
 /// Now, UTC, RFC 3339 to the second, as the sent list and the held drafts keep a time.
 fn now() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+    jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// A route's refusal of `draft`, with the prefilled link that files it in a browser instead.

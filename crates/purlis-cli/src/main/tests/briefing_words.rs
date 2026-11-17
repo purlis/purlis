@@ -110,7 +110,7 @@ fn briefings() -> Vec<(String, String)> {
                 cwd,
                 payload: &payload,
                 env: &lookup,
-                now: chrono::Utc::now(),
+                now: jiff::Timestamp::now(),
                 attendance: purlis_core::dispatchunattended::Attendance::Attended,
             };
             (

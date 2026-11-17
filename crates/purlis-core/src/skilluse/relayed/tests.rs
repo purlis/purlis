@@ -147,7 +147,7 @@ fn a_runners_skill_run_is_logged_in_no_project_this_purlis_may_not_write() {
 
 /// The rows of the desktop's file of the runner's lines' month.
 fn rows(plane: &Path) -> Vec<Value> {
-    let when = chrono::DateTime::from_timestamp_millis(1_793_440_800_000).unwrap();
+    let when = jiff::Timestamp::from_millisecond(1_793_440_800_000).unwrap();
     std::fs::read_to_string(crate::skilluse::path_for(plane, when, DESKTOP))
         .unwrap_or_default()
         .lines()

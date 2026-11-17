@@ -28,7 +28,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 /// The directory under a workspace holding its piece records.
@@ -147,7 +147,7 @@ pub fn record(
     piece: &str,
     reason: Option<&str>,
     who: &Who,
-    when: DateTime<Utc>,
+    when: Timestamp,
 ) -> Option<PathBuf> {
     let text = |v: &Option<String>| v.clone().map_or(Value::Null, Value::String);
     let mut line = serde_json::Map::new();
@@ -253,7 +253,7 @@ pub fn declare(
     piece: &str,
     what: Declaration<'_>,
     who: &Who,
-    when: DateTime<Utc>,
+    when: Timestamp,
 ) -> Result<Declared, NotDeclared> {
     let (event, reason) = match what {
         Declaration::Done => (Event::Done, None),
@@ -303,7 +303,7 @@ pub fn claimant(entry: Option<&Value>) -> String {
 /// What a piece has said, in one cell: its declaration ([`outcome`]), or `silent <age>` when
 /// it declared nothing and charter claimed it, or empty. An age, never a verdict: whether
 /// `silent 3d` is a problem is the reader's call.
-pub fn said(plane: &Path, ws: &str, repo: &str, piece: &str, now: DateTime<Utc>) -> String {
+pub fn said(plane: &Path, ws: &str, repo: &str, piece: &str, now: Timestamp) -> String {
     let declared = declarations(plane, ws);
     let spoken = outcome(declared.get(&(repo.to_string(), piece.to_string())));
     if !spoken.is_empty() {
@@ -350,7 +350,7 @@ pub fn unclaimed(
     ws: &str,
     repo: &str,
     listed: &[crate::worktree::Piece],
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> BTreeMap<String, String> {
     let candidates: Vec<&crate::worktree::Piece> = listed
         .iter()
@@ -415,7 +415,7 @@ fn claim_key(branch: &str) -> String {
 /// ([`crate::worktree::cut_branches`]), rather than beside the log that just refused a
 /// write: git drops a branch's config with the branch, and a mark dated before a later cut of
 /// the same name is about the earlier one, as a log line is ([`unclaimed`]).
-pub fn mark_claimed(plane: &Path, ws: &str, repo: &str, branch: &str, when: DateTime<Utc>) -> bool {
+pub fn mark_claimed(plane: &Path, ws: &str, repo: &str, branch: &str, when: Timestamp) -> bool {
     let Ok(clone) = crate::worktree::clone_dir(plane, ws, repo) else {
         return false;
     };
@@ -497,7 +497,7 @@ fn common_git_dir(clone: &Path) -> Option<PathBuf> {
 /// creation and not an earlier one's of the same name; `git worktree repair` and `move` leave
 /// it alone. `None` when there is no reflog (`core.logAllRefUpdates` off, a reftable clone) or
 /// its first line is not a creation, as after `git reflog expire` dropped it.
-pub fn branch_created(common: &Path, branch: &str) -> Option<DateTime<Utc>> {
+pub fn branch_created(common: &Path, branch: &str) -> Option<Timestamp> {
     let reflog = common.join("logs").join("refs").join("heads").join(branch);
     created_in(plain_file_head(&reflog)?.lines().next()?)
 }
@@ -525,7 +525,7 @@ fn plain_file_head(path: &Path) -> Option<String> {
 ///
 /// A line is `<old> <new> <name> <<email>> <seconds> <offset>\t<message>`; the name can hold
 /// spaces, so the instant is read from the right.
-fn created_in(line: &str) -> Option<DateTime<Utc>> {
+fn created_in(line: &str) -> Option<Timestamp> {
     let (head, message) = line.split_once('\t')?;
     if !message.starts_with("branch: Created from") {
         return None;
@@ -533,14 +533,14 @@ fn created_in(line: &str) -> Option<DateTime<Utc>> {
     let mut fields = head.rsplitn(3, ' ');
     let _offset = fields.next()?;
     let seconds: i64 = fields.next()?.parse().ok()?;
-    DateTime::<Utc>::from_timestamp(seconds, 0)
+    Timestamp::from_second(seconds).ok()
 }
 
 /// When the tree at `path` was written: the modification time of its `.git` file, which
 /// `git worktree add` writes and `repair` or `move` rewrite.
-fn tree_written(path: &Path) -> Option<DateTime<Utc>> {
+fn tree_written(path: &Path) -> Option<Timestamp> {
     let modified = path.join(".git").symlink_metadata().ok()?.modified().ok()?;
-    Some(DateTime::<Utc>::from(modified))
+    Some(crate::wallclock::instant(modified))
 }
 
 /// How long ago a cut made at `cut_at` was made, when none of `stamps` speaks for it and it is
@@ -550,14 +550,14 @@ fn tree_written(path: &Path) -> Option<DateTime<Utc>> {
 /// writes whole seconds and a claim follows its cut. A stamp that cannot be read as an instant
 /// is no evidence either way and is passed over.
 pub fn unclaimed_age(
-    cut_at: DateTime<Utc>,
+    cut_at: Timestamp,
     stamps: &[Option<&Value>],
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Option<String> {
-    if (now - cut_at).num_seconds() < UNCLAIMED_AFTER_SECS {
+    if now.duration_since(cut_at).as_secs() < UNCLAIMED_AFTER_SECS {
         return None;
     }
-    let from = DateTime::<Utc>::from_timestamp(cut_at.timestamp(), 0)?;
+    let from = Timestamp::from_second(cut_at.as_second()).ok()?;
     let spoken = stamps
         .iter()
         .any(|ts| matches!(parse(*ts), Stamp::At(at) if at >= from));
@@ -701,9 +701,10 @@ pub fn removed_since(
     plane: &Path,
     ws: &str,
     repo: Option<&str>,
-    since: DateTime<Utc>,
+    since: Timestamp,
 ) -> Vec<(String, String)> {
-    let from = since - chrono::Duration::nanoseconds(i64::from(since.timestamp_subsec_nanos()));
+    let from = since
+        - jiff::SignedDuration::from_nanos(i64::from(since.subsec_nanosecond().unsigned_abs()));
     events(plane, ws)
         .iter()
         .filter(|event| event["event"].as_str() == Some(Event::Removed.word()))
@@ -747,7 +748,7 @@ pub fn last_seen(plane: &Path, ws: &str, repo: &str, piece: &str) -> Option<Valu
 /// repo's count ([`Summary`] says where). Kept as a third answer rather than folded into
 /// `None`, because `None` means "no stamp", which is a state the footer renders.
 enum Stamp {
-    At(DateTime<Utc>),
+    At(Timestamp),
     /// Parsed, but with no offset: Python cannot subtract it and neither will charter.
     Naive,
     None,
@@ -757,8 +758,8 @@ fn parse(ts: Option<&Value>) -> Stamp {
     let Some(text) = ts.and_then(Value::as_str) else {
         return Stamp::None;
     };
-    if let Ok(at) = DateTime::parse_from_rfc3339(text) {
-        return Stamp::At(at.with_timezone(&Utc));
+    if let Ok(at) = str::parse::<Timestamp>(text) {
+        return Stamp::At(at);
     }
     // `fromisoformat` accepts a naive stamp; charter's own writer never produces one, so this
     // only has to recognise the shape rather than read it. Recognised by hand because the
@@ -799,8 +800,8 @@ fn looks_like_a_naive_stamp(text: &str) -> bool {
 
 /// A coarse age — `3m`, `5h`, `3d`. Coarse on purpose: the number is context for a human
 /// decision, not an input to one charter is making.
-pub fn since(when: DateTime<Utc>, now: DateTime<Utc>) -> String {
-    let secs = (now - when).num_seconds().max(0);
+pub fn since(when: Timestamp, now: Timestamp) -> String {
+    let secs = now.duration_since(when).as_secs().max(0);
     if secs < 3600 {
         format!("{}m", secs / 60)
     } else if secs < 86400 {
@@ -821,7 +822,7 @@ pub fn silence(
     ws: &str,
     repo: &str,
     piece: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Option<String>, ()> {
     if declarations(plane, ws).contains_key(&(repo.to_string(), piece.to_string())) {
         return Ok(None);
@@ -924,7 +925,7 @@ impl Summary {
 /// continue` around the inner loop and is where a naive timestamp lands: the pieces counted
 /// before it in that repo stay counted, and the rest of the repo does not. Faithful rather
 /// than endorsed — it is recorded here because it is the behaviour a differential compares.
-pub fn summary(plane: &Path, ws: &str, now: DateTime<Utc>) -> Option<Summary> {
+pub fn summary(plane: &Path, ws: &str, now: Timestamp) -> Option<Summary> {
     let base = crate::worktree::root_of(plane, ws);
     let reader = std::fs::read_dir(&base).ok()?;
     let mut repos: Vec<String> = reader
@@ -998,8 +999,8 @@ fn seen_record(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> Optio
 }
 
 /// `isoformat(timespec="seconds")` of a UTC instant.
-fn iso_seconds(when: DateTime<Utc>) -> String {
-    when.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
+fn iso_seconds(when: Timestamp) -> String {
+    when.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()
 }
 
 /// Record that the worker in a tree is alive — `pieces.seen`.
@@ -1018,7 +1019,7 @@ pub fn seen(
     piece: Option<&str>,
     session: Option<&str>,
     persona: Option<&str>,
-    when: DateTime<Utc>,
+    when: Timestamp,
 ) -> Option<PathBuf> {
     let path = seen_path(plane, ws, repo, piece);
     let stamp = iso_seconds(when);
@@ -1032,7 +1033,7 @@ pub fn seen(
         {
             for (name, ts) in old {
                 match parse(Some(ts)) {
-                    Stamp::At(at) if (when - at).num_seconds() <= PRESENCE_WINDOW_SECS => {
+                    Stamp::At(at) if when.duration_since(at).as_secs() <= PRESENCE_WINDOW_SECS => {
                         by.insert(name.clone(), ts.clone());
                     }
                     Stamp::Naive => return None,
@@ -1106,7 +1107,7 @@ pub fn touch(
     cwd: &Path,
     session: Option<&str>,
     persona: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) {
     if let Some((ws, repo, piece)) = tree_at(plane, cwd) {
         let _ = seen(plane, &ws, &repo, piece.as_deref(), session, persona, now);
@@ -1115,13 +1116,7 @@ pub fn touch(
 
 /// How long ago this piece was last seen, falling back to its claim — `pieces.seen_age`.
 /// `None` for the stamp with no offset charter cannot subtract.
-pub fn seen_age(
-    plane: &Path,
-    ws: &str,
-    repo: &str,
-    piece: &str,
-    now: DateTime<Utc>,
-) -> Option<String> {
+pub fn seen_age(plane: &Path, ws: &str, repo: &str, piece: &str, now: Timestamp) -> Option<String> {
     let mark = last_seen(plane, ws, repo, piece);
     let claim = claims(plane, ws)
         .get(&(repo.to_string(), piece.to_string()))

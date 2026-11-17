@@ -35,7 +35,7 @@ mod an_engines_age_at_a_start {
     use std::io;
     use std::sync::Mutex;
 
-    use chrono::{DateTime, TimeDelta};
+    use jiff::{SignedDuration, Timestamp};
     use purlis_browser_engine::install::{
         EngineSettings, Engines, Fetch, Manifest, NoSigner, Platform, Refused,
     };
@@ -68,7 +68,7 @@ mod an_engines_age_at_a_start {
 
     /// The start this build's pin gets `after` it was issued, neither read answering, on a
     /// machine that has installed nothing.
-    fn started(after: TimeDelta) -> Started {
+    fn started(after: SignedDuration) -> Started {
         let home = tempfile::tempdir().unwrap();
         let shipped = Manifest::shipped();
         let now = shipped.issued + after;
@@ -94,7 +94,7 @@ mod an_engines_age_at_a_start {
             answer,
             manifests,
             archives,
-        } = started(TimeDelta::days(22));
+        } = started(SignedDuration::from_hours(22 * 24));
         let refused = answer.expect_err("an engine past the limit does not start");
         assert!(
             matches!(refused, Refused::Outdated { days: 22 }),
@@ -119,7 +119,7 @@ mod an_engines_age_at_a_start {
             answer,
             manifests,
             archives,
-        } = started(TimeDelta::zero());
+        } = started(SignedDuration::ZERO);
         assert!(
             matches!(answer, Err(Refused::Download(_))),
             "it went on to download the pinned engine: {answer:?}"
@@ -130,11 +130,9 @@ mod an_engines_age_at_a_start {
 
     #[test]
     fn only_a_debug_build_takes_its_engines_clock_from_the_variable() {
-        let real = DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc();
+        let real = str::parse::<Timestamp>("2030-01-01T00:00:00Z").unwrap();
         let asked = "2026-10-14T11:19:22Z";
-        let named = DateTime::parse_from_rfc3339(asked).unwrap().to_utc();
+        let named = str::parse::<Timestamp>(asked).unwrap();
         assert_eq!(engines_clock(true, Some(asked), real), named);
         assert_eq!(
             engines_clock(false, Some(asked), real),
@@ -457,7 +455,7 @@ fn a_machine_that_never_used_the_pinned_engine_is_never_checked_for_one() {
         &EngineSettings::default(),
         &asked,
         &asked,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(checked.is_none());
     assert!(asked.0.borrow().is_empty(), "nothing reached the network");
@@ -475,7 +473,7 @@ fn a_machine_with_the_pinned_engine_installed_reads_the_published_manifest_and_i
         &EngineSettings::default(),
         &manifests,
         &archives,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(
         matches!(checked, Some(Err(Refused::Download(_)))),
@@ -1893,9 +1891,7 @@ fn a_cancelled_download_keeps_nothing_in_the_engines_folder() {
         .prepare(
             &EngineSettings::default(),
             &reads,
-            chrono::DateTime::parse_from_rfc3339("2026-10-15T00:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
+            str::parse::<jiff::Timestamp>("2026-10-15T00:00:00Z").unwrap(),
         )
         .unwrap_err();
 

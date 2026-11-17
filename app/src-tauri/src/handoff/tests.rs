@@ -10917,7 +10917,7 @@ fn queued_by(held: &Held, chat: u32, what: purlis_core::dispatchqueue::Queued) -
     }
     let token = held.hooks().token_for(chat);
     // Queued now, as the command queues it: a dispatch started before it is one it can be on.
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     Some(purlis_core::dispatchqueue::queue(&socket, chat, &token, what, now).expect("queued"))
 }
 

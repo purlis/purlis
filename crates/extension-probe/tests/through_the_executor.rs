@@ -132,9 +132,9 @@ impl Probe {
     }
 }
 
-fn noon() -> chrono::NaiveDateTime {
-    chrono::NaiveDate::from_ymd_opt(2026, 9, 25)
-        .and_then(|day| day.and_hms_opt(12, 0, 0))
+fn noon() -> jiff::civil::DateTime {
+    purlis_core::wallclock::day(2026, 9, 25)
+        .map(|day| day.at(12, 0, 0, 0))
         .expect("a time")
 }
 
@@ -548,12 +548,12 @@ impl Probe {
 }
 
 /// The clock the reader measures ages against.
-fn now() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc::now()
+fn now() -> jiff::Timestamp {
+    jiff::Timestamp::now()
 }
 
 fn seconds_ago(seconds: i64) -> i64 {
-    now().timestamp() - seconds
+    now().as_second() - seconds
 }
 
 #[test]

@@ -26,7 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{Date, DateTime, Time};
 
 use crate::contain::SHARED_PERSONA;
 use crate::counts::{counted, plural};
@@ -85,7 +85,7 @@ pub const RECENT_DAYS: i64 = 14;
 /// **The one reading both the CLI and the persona statistics view count from**
 /// (charter-app#339). [`crate::handed::personas`] hands these dates to the view and [`row`]
 /// counts them, so a memory the table counts is a memory the view counts, on the same day.
-pub fn written(root: &Path, name: &str) -> Vec<Option<NaiveDate>> {
+pub fn written(root: &Path, name: &str) -> Vec<Option<Date>> {
     entries(root, name).iter().map(dated).collect()
 }
 
@@ -93,10 +93,10 @@ pub fn written(root: &Path, name: &str) -> Vec<Option<NaiveDate>> {
 ///
 /// Public so that the persona statistics view links it rather than repeating it. A second
 /// spelling of "recent" is how the two would come to disagree by a day.
-pub fn recent(days: &[Option<NaiveDate>], recent_days: i64, today: NaiveDate) -> usize {
+pub fn recent(days: &[Option<Date>], recent_days: i64, today: Date) -> usize {
     days.iter()
         .flatten()
-        .filter(|day| (today - **day).num_days() <= recent_days)
+        .filter(|day| i64::from((today - **day).get_days()) <= recent_days)
         .count()
 }
 
@@ -105,18 +105,18 @@ fn entries(root: &Path, name: &str) -> Vec<crate::memstore::Found> {
     crate::memstore::read_entries(root, &dir).0
 }
 
-fn dated(entry: &crate::memstore::Found) -> Option<NaiveDate> {
+fn dated(entry: &crate::memstore::Found) -> Option<Date> {
     let file = entry.path.file_name().unwrap_or_default().to_string_lossy();
     crate::memstore::memory_date(&entry.text, &file)
 }
 
 /// `persona.stats`: one row from `name`'s committed memory.
-pub fn row(root: &Path, name: &str, recent_days: i64, today: NaiveDate) -> Row {
+pub fn row(root: &Path, name: &str, recent_days: i64, today: Date) -> Row {
     let entries = entries(root, name);
     let total = entries.len();
     let re = verify_re();
     let verified = entries.iter().filter(|e| re.is_match(&e.text)).count();
-    let days: Vec<Option<NaiveDate>> = entries.iter().map(dated).collect();
+    let days: Vec<Option<Date>> = entries.iter().map(dated).collect();
     let recent = recent(&days, recent_days, today);
     let mut dup: BTreeSet<usize> = BTreeSet::new();
     for (_, a, b) in crate::memstore::duplicates(&entries, 0.5) {
@@ -154,10 +154,10 @@ pub fn row(root: &Path, name: &str, recent_days: i64, today: NaiveDate) -> Row {
 /// `019:.x` after six dates, nine separators and eleven offsets, good and bad. (3.14 reads a
 /// few of these differently — it refuses `10.5` and `10:00:00:25`, and rolls `24:00` over to
 /// the next day.)
-fn ts(row: &serde_json::Value) -> Option<(NaiveDateTime, NaiveDate)> {
+fn ts(row: &serde_json::Value) -> Option<(DateTime, Date)> {
     let raw = row.get("ts")?.as_str()?.trim();
     let (local, offset) = from_isoformat(raw)?;
-    Some((local - offset, local.date()))
+    Some((local.checked_sub(offset).ok()?, local.date()))
 }
 
 /// `datetime.fromisoformat`: the stamp as written, and its offset (zero for none).
@@ -165,7 +165,7 @@ fn ts(row: &serde_json::Value) -> Option<(NaiveDateTime, NaiveDate)> {
 /// The date is `YYYY-MM-DD` or `YYYYMMDD`, and after it comes **any one character** — `T`, a
 /// space, or anything else — then the time. The ISO week forms are not read: charter never
 /// wrote one, and CPython's rule for where a week date ends is a guess of its own.
-fn from_isoformat(raw: &str) -> Option<(NaiveDateTime, chrono::Duration)> {
+fn from_isoformat(raw: &str) -> Option<(DateTime, jiff::SignedDuration)> {
     let bytes = raw.as_bytes();
     if matches!(bytes.get(4..6), Some([b'W', _] | [_, b'W'])) {
         return None;
@@ -174,15 +174,25 @@ fn from_isoformat(raw: &str) -> Option<(NaiveDateTime, chrono::Duration)> {
     let date = crate::recall::from_isoformat(raw.get(..date_len)?)?;
     let mut rest = raw[date_len..].chars();
     if rest.next().is_none() {
-        return Some((date.and_hms_opt(0, 0, 0)?, chrono::Duration::zero()));
+        return Some((
+            date.to_datetime(Time::midnight()),
+            jiff::SignedDuration::ZERO,
+        ));
     }
     let (clock, offset) = time_and_offset(rest.as_str().as_bytes())?;
     let [h, m, s] = clock.hms;
     // `hour must be in 0..23` and its kin — Python's range checks on the time, not the offset —
-    // are chrono's too: it refuses an hour past 23 and a minute or second past 59 (a leap second
-    // is spelled in the micros, which stop at 999999 here). A check of our own before this line
-    // could not change an answer: cargo-mutants found every one of its six mutants survived.
-    Some((date.and_hms_micro_opt(h, m, s, clock.micros)?, offset))
+    // are jiff's too: it refuses an hour past 23 and a minute or second past 59, and the micros
+    // stop at 999999 here. A check of our own before this line could not change an answer:
+    // cargo-mutants found every one of its six mutants survived (when chrono did this).
+    let time = Time::new(
+        i8::try_from(h).ok()?,
+        i8::try_from(m).ok()?,
+        i8::try_from(s).ok()?,
+        i32::try_from(clock.micros).ok()?.checked_mul(1_000)?,
+    )
+    .ok()?;
+    Some((date.to_datetime(time), offset))
 }
 
 /// `parse_isoformat_time`: the time, and the offset after it.
@@ -190,18 +200,18 @@ fn from_isoformat(raw: &str) -> Option<(NaiveDateTime, chrono::Duration)> {
 /// The offset starts at the first `Z`, `+` or `-`. Where there is one, the time may stop short
 /// of it — `10:` and `10x` both read as ten o'clock before `+05:00`, as they do in CPython —
 /// and where there is none it may not.
-fn time_and_offset(t: &[u8]) -> Option<(Clock, chrono::Duration)> {
+fn time_and_offset(t: &[u8]) -> Option<(Clock, jiff::SignedDuration)> {
     let at = t.iter().position(|b| matches!(b, b'Z' | b'+' | b'-'));
     let clock = hh_mm_ss_ff(&t[..at.unwrap_or(t.len())])?;
     let Some(at) = at else {
-        return clock.whole.then_some((clock, chrono::Duration::zero()));
+        return clock.whole.then_some((clock, jiff::SignedDuration::ZERO));
     };
     let zone = &t[at + 1..];
     let offset = if t[at] == b'Z' {
         if !zone.is_empty() {
             return None;
         }
-        chrono::Duration::zero()
+        jiff::SignedDuration::ZERO
     } else {
         let off = hh_mm_ss_ff(zone).filter(|o| o.whole)?;
         let [h, m, s] = off.hms.map(i64::from);
@@ -209,10 +219,10 @@ fn time_and_offset(t: &[u8]) -> Option<(Clock, chrono::Duration)> {
         // `tzinfo_from_isoformat_results`: a whole-second offset of zero is UTC, and the
         // fraction written after it is dropped.
         let micros = if whole == 0 { 0 } else { off.micros };
-        let size =
-            chrono::Duration::seconds(whole) + chrono::Duration::microseconds(i64::from(micros));
+        let size = jiff::SignedDuration::from_secs(whole)
+            + jiff::SignedDuration::from_micros(i64::from(micros));
         // `timezone()` takes an offset strictly inside a day, and checks nothing else about it.
-        if size >= chrono::Duration::days(1) {
+        if size >= jiff::SignedDuration::from_hours(24) {
             return None;
         }
         if t[at] == b'-' { -size } else { size }
@@ -302,7 +312,7 @@ fn is_event(row: &serde_json::Value, event: &str) -> bool {
 
 /// `(fired, first, followed)` — `dispatch.advice_tally`, `first_advice` (its date as the row
 /// wrote it) and `routed_since_first_advice`.
-fn advice(rows: &[serde_json::Value]) -> (usize, Option<NaiveDate>, usize) {
+fn advice(rows: &[serde_json::Value]) -> (usize, Option<Date>, usize) {
     let fired = rows.iter().filter(|r| is_event(r, ADVICE)).count();
     let first = rows
         .iter()
@@ -424,7 +434,7 @@ fn glyph(status: &str) -> &'static str {
 }
 
 /// `charter persona stats [NAME] [--recent-days N]`, and its exit code.
-pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate, say: Sink) -> u8 {
+pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: Date, say: Sink) -> u8 {
     let name = name.filter(|n| !n.is_empty());
     if let Some(n) = name
         && n != SHARED_PERSONA
@@ -557,7 +567,7 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
     let log = crate::dispatch::rows(root);
     let (fired, first, followed) = advice(&log);
     if fired > 0 {
-        let since = first.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());
+        let since = first.map_or_else(String::new, |d| d.strftime("%Y-%m-%d").to_string());
         say(Say::Info(
             format!(
                 "Routing advice: fired {} · work handed to a persona {} \

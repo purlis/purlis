@@ -19,7 +19,7 @@ publish = false
 purlis-core.workspace = true
 clap.workspace = true
 serde_json.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+jiff.workspace = true
 ulid = "3"
 
 [dev-dependencies]

@@ -291,7 +291,7 @@ fn trust(trust: FrameTrust) -> &'static str {
 /// written (a `.part` of the last hour, or one in a folder) is left alone; an older `.part` is
 /// removed unread.
 pub fn report_waiting(reports: &Reports, crashes: &Path) -> Vec<Outcome> {
-    let now = chrono::Utc::now().timestamp().unsigned_abs();
+    let now = jiff::Timestamp::now().as_second().unsigned_abs();
     let stale = |at: Option<u64>| at.is_none_or(|at| now.saturating_sub(at) > KEPT_FOR_SECS);
     for (path, at) in in_folder(crashes, "kept") {
         if stale(at) {

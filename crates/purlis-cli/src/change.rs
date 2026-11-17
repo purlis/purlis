@@ -123,7 +123,7 @@ pub enum ChangeCommand {
 
 pub fn run(here: &Here, command: ChangeCommand) -> Result<u8, String> {
     let root = here.plane.root().to_path_buf();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let mut say = crate::speak;
     let ws = |flag: Option<&str>| here.active_workspace(flag);
     let code = match command {

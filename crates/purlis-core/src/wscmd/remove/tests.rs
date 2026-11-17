@@ -153,7 +153,7 @@ fn removing_a_workspace_forgets_what_its_tasks_said_and_says_what_it_leaves() {
     use crate::dispatchrecord::{self, Asker, Mode, Opening, Place, Worker};
     let dir = plane();
     std::fs::create_dir_all(dir.path().join("workspaces/beta")).unwrap();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let opened = dispatchrecord::open(
         dir.path(),
         Opening {

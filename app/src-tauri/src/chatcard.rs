@@ -526,14 +526,12 @@ pub(crate) fn closed_record(
     chat: &purlis_core::reopen::Chat,
     harness: Option<purlis_core::harness::Harness>,
     workspace: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<purlis_core::chatrecords::ChatRecord> {
     use purlis_core::chatrecords::{ChatRecord, StartedBy};
     let minted = purlis_core::eventlog::written_at_ms(id)?;
-    let started =
-        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(i64::try_from(minted).ok()?)?;
-    let stamp =
-        |at: chrono::DateTime<chrono::Utc>| at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started = jiff::Timestamp::from_millisecond(i64::try_from(minted).ok()?).ok()?;
+    let stamp = |at: jiff::Timestamp| at.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
     Some(ChatRecord {
         number: session,
         id: id.to_owned(),
@@ -568,7 +566,7 @@ pub(crate) fn keep_closed_records<'c>(
     chats: impl IntoIterator<Item = &'c purlis_core::reopen::Chat>,
     why: &str,
 ) {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let records: Vec<_> = chats
         .into_iter()
         .filter_map(|chat| {
@@ -596,10 +594,8 @@ mod closed_record_tests {
 
     const ID: &str = "01K6CHATS0000000000000000C";
 
-    fn now() -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339("2026-11-12T09:40:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc)
+    fn now() -> jiff::Timestamp {
+        str::parse::<jiff::Timestamp>("2026-11-12T09:40:00Z").unwrap()
     }
 
     fn chat() -> purlis_core::reopen::Chat {
@@ -620,11 +616,12 @@ mod closed_record_tests {
         assert_eq!(record.ended, "2026-11-12T09:40:00Z");
         assert_eq!(
             record.started,
-            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
+            jiff::Timestamp::from_millisecond(
                 ulid::Ulid::from_string(ID).unwrap().timestamp_ms() as i64
             )
             .unwrap()
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+            .to_string()
         );
         assert_eq!(
             record.started_by,
@@ -723,7 +720,7 @@ mod tests {
                 brief: "check prod".to_owned(),
                 report_owed: true,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("recorded");
         (dir, root)

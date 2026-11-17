@@ -52,7 +52,7 @@ pub(super) fn into_first_workspace(
     run: &mut Run,
     root: &Path,
     source: &Path,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> u8 {
     let name = first_clone_name(source);
     let ws = match planefile::load(root) {
@@ -79,7 +79,7 @@ pub(super) fn into_workspace(
     source: &Path,
     ws: &str,
     name: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<std::path::PathBuf, String> {
     let author = crate::wscmd::ensure::author();
     crate::wscmd::ensure::ensure(root, ws, now, &author)?;

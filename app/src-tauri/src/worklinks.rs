@@ -47,7 +47,7 @@ pub async fn chat_work_link(
             held.chats(),
             session,
             &item,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     })
     .await
@@ -64,7 +64,7 @@ pub async fn chat_work_unlink(
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window(WORK_LINK, move || {
-        unlink(held.root(), held.chats(), session, chrono::Utc::now())
+        unlink(held.root(), held.chats(), session, jiff::Timestamp::now())
     })
     .await
 }
@@ -169,7 +169,7 @@ fn link(
     chats: &Chats,
     session: u32,
     item: &str,
-    ts: chrono::DateTime<chrono::Utc>,
+    ts: jiff::Timestamp,
 ) -> Result<String, String> {
     let item = TrackerKey::parse(item)?;
     let chat = LinkedChat::of(root, chats, session)?;
@@ -184,7 +184,7 @@ fn unlink(
     root: &Path,
     chats: &Chats,
     session: u32,
-    ts: chrono::DateTime<chrono::Utc>,
+    ts: jiff::Timestamp,
 ) -> Result<Option<String>, String> {
     let chat = LinkedChat::of(root, chats, session)?;
     let device = device(chats)?;

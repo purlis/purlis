@@ -18,11 +18,12 @@ const SIZE: Size = Size {
 const TODO: &str = "todo:alpha/20261002-080000-port-the-picker";
 const ISSUE: &str = "github:github.com/acme/api#12";
 
-fn at(second: u32) -> chrono::DateTime<chrono::Utc> {
-    use chrono::TimeZone;
-    chrono::Utc
-        .with_ymd_and_hms(2026, 10, 2, 8, 0, second)
+fn at(second: i8) -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(8, 0, second, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
         .unwrap()
+        .timestamp()
 }
 
 /// A project with workspaces `alpha` and `beta`, and the todo [`TODO`] names open in `alpha`.
@@ -35,7 +36,10 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     let written = purlis_core::workspaces::Plane::open(&root)
         .workspace("alpha")
         .unwrap()
-        .add_todo("Port the picker", at(0).naive_utc())
+        .add_todo(
+            "Port the picker",
+            at(0).to_zoned(jiff::tz::TimeZone::UTC).datetime(),
+        )
         .unwrap();
     assert_eq!(
         TODO.strip_prefix("todo:alpha/"),

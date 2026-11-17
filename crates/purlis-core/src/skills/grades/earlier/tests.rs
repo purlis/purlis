@@ -13,10 +13,8 @@ fn project() -> tempfile::TempDir {
     tmp
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 #[test]

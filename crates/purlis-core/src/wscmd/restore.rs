@@ -78,7 +78,7 @@ pub struct Request<'a> {
     pub on_demand: bool,
     /// The instant a manifest this writes would be stamped with (the clone's membership
     /// record).
-    pub now: chrono::DateTime<chrono::Utc>,
+    pub now: jiff::Timestamp,
 }
 
 /// One manifest row that survived the containment gate.
@@ -410,7 +410,7 @@ fn pull(dir: &Path, helper: &str) {
 ///
 /// A function of its own so `fork` names one thing, and so the count it prints first is the
 /// count this then restores.
-pub fn after_fork(root: &Path, ws: &str, now: chrono::DateTime<chrono::Utc>, say: Sink) -> u8 {
+pub fn after_fork(root: &Path, ws: &str, now: jiff::Timestamp, say: Sink) -> u8 {
     restore(
         &Request {
             root,
