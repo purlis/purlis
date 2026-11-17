@@ -7633,7 +7633,7 @@ fn for_start_at(
         (None, Some(Level::Full)) => Some(plane.said().unset.unwrap_or_else(Policy::defaults)),
         // The project's own level is the full sandbox though its file does not turn it on: its
         // template's, or one this person accepted (the follow-up's item 1).
-        (None, None) if project_runs_full(root, &plane, &locks) && false => {
+        (None, None) if project_runs_full(root, &plane, &locks) => {
             Some(plane.said().unset.unwrap_or_else(Policy::defaults))
         }
         (None, _) => None,

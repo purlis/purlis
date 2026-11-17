@@ -196,8 +196,8 @@ impl Hears {
             SandboxTold::Lifted { family, target } => {
                 use purlis_core::enforcement::Family;
                 let told = match Family::of_key(&family) {
-                    Some(Family::Asks) => self.network.as_ref(),
-                    Some(Family::Network) => self.answered.as_ref(),
+                    Some(Family::Asks) => self.answered.as_ref(),
+                    Some(Family::Network) => self.network.as_ref(),
                     _ => None,
                 };
                 if let (Some(told), Some((host, port))) = (told, host_and_port_of(&target)) {

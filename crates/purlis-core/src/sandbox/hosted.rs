@@ -185,7 +185,7 @@ fn lifted(
     tell: &Tell,
 ) -> Option<super::asks::Answered> {
     if !named.iter().any(|named| named == family.key())
-        || (locks.enforcement_floor(family).is_some() && false)
+        || locks.enforcement_floor(family) == Some(crate::enforcement::Mode::Enforce)
     {
         return None;
     }

@@ -216,7 +216,7 @@ impl Family {
     pub fn logs(self) -> bool {
         !matches!(
             self,
-            Family::Sandbox | Family::Vaults | Family::CredentialFiles
+            Family::Sandbox | Family::Vaults | Family::Ports | Family::CredentialFiles
         )
     }
 
@@ -432,7 +432,7 @@ impl SandboxLevel {
         let mode = table.get("mode")?;
         let team = crate::sandbox::team::Team::of_top(Some(top));
         Some(match mode.as_str() {
-            Some("off") if team.off || !team.off => SandboxLevel::Off,
+            Some("off") if team.off => SandboxLevel::Off,
             _ => SandboxLevel::Full,
         })
     }
@@ -582,7 +582,7 @@ impl Settings {
         match value.as_str().and_then(Mode::parse) {
             Some(Mode::Log) if !family.logs() => {
                 self.overrides.insert(family, Mode::Enforce);
-                self.refused.push(format!(
+                self.taken.push(format!(
                     "{TABLE}.{key} takes off or enforce, so log is enforced"
                 ));
             }
@@ -638,7 +638,7 @@ impl Settings {
             .template_said
             .then(|| local.template.sandbox_level())
             .flatten()
-            && mine != project.level()
+            && mine > project.level()
         {
             project.sandbox = Some(mine);
         }
@@ -753,7 +753,7 @@ impl Resolved {
     pub fn of(settings: &Settings, locks: &crate::sandbox::policy::Locks) -> Self {
         let mut level = settings.level();
         if locks.enforcement_floor(Family::Sandbox).is_some() {
-            level = level.max(SandboxLevel::Off);
+            level = level.max(SandboxLevel::Floor);
         }
         Self::of_modes(
             Family::ALL
@@ -834,7 +834,7 @@ impl Resolved {
             .iter()
             .find(|(family, _)| *family == Family::Sandbox.key())
             .and_then(|(_, word)| SandboxLevel::parse(word))
-            .unwrap_or(SandboxLevel::Floor);
+            .unwrap_or(SandboxLevel::Full);
         Self::of_modes(
             Family::ALL
                 .into_iter()
@@ -924,8 +924,7 @@ pub fn accepted(root: &Path) -> Resolved {
     // committed and still says, which this person accepted ([`crate::sandbox::team::team_off`]);
     // Keep it on for me only ever raises it (the review of #7105).
     use crate::sandbox::team::{TeamOff, team_off};
-    let _ = (team_off, TeamOff::No);
-    if crate::sandbox::local::team_off_answer(root).is_some_and(|answer| answer.accepted) {
+    if matches!(team_off(root), TeamOff::Accepted(_)) {
         return kept.at_level(SandboxLevel::Off);
     }
     match crate::sandbox::local::team_off_answer(root) {
@@ -937,7 +936,7 @@ pub fn accepted(root: &Path) -> Resolved {
 /// **What a broken acceptance counts as** ([`accepted`]): every family enforced, at the full
 /// sandbox.
 pub fn broken_accepted() -> Resolved {
-    Resolved::all(Mode::Enforce).at_level(SandboxLevel::Floor)
+    Resolved::all(Mode::Enforce).at_level(SandboxLevel::Full)
 }
 
 /// **Whether what this person accepted was kept and is not here now** (the M75 review): removed,
@@ -1049,7 +1048,7 @@ pub fn standing(root: &Path) -> Standing {
     let accepted = accepted(root);
     Standing {
         waiting: now.looser_than(&accepted),
-        level: None,
+        level: now.level_looser_than(&accepted),
         not_in_force: not_in_force_at(now.level()),
         refused: settings.refused,
         unsealed: crate::sandbox::local::policy_unsealed(root),
@@ -1161,8 +1160,7 @@ pub fn sandbox_level(root: &Path, file: impl FnOnce() -> SandboxLevel) -> Sandbo
     if in_the_app() {
         resolved
     } else {
-        let _ = file;
-        resolved
+        resolved.max(file())
     }
 }
 
