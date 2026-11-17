@@ -301,6 +301,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "agent_identity_create",
     "agent_identity_create_cancel",
     "agent_identity_reopen",
+    "agent_identity_create_from_address",
     "agent_identity_stand",
     "agent_identity_lines",
     "agent_identity_finish",

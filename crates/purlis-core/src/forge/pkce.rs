@@ -218,15 +218,14 @@ pub fn read_redirect(target: &str, state: &State) -> Redirected {
     read_redirect_at(REDIRECT_PATH, target, state)
 }
 
-/// [`read_redirect`], for a redirect that comes back on `at`.
-pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
+/// The `code`, `state` and `error` of a request to `at`, decoded: `None` for another path, a name
+/// given twice, which is no forge's redirect, or a value no forge would send.
+fn query_at(at: &str, target: &str) -> Option<[Option<String>; 3]> {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     if path != at {
-        return Redirected::NotOurs;
+        return None;
     }
-    let mut code = None;
-    let mut offered = None;
-    let mut error = None;
+    let [mut code, mut offered, mut error] = [None, None, None];
     for pair in query.split('&') {
         let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
         let slot = match name {
@@ -235,28 +234,46 @@ pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
             "error" => &mut error,
             _ => continue,
         };
-        // A name given twice is no forge's redirect.
         if slot.is_some() {
-            return Redirected::NotOurs;
+            return None;
         }
-        let Some(value) = decoded(value) else {
-            return Redirected::NotOurs;
-        };
-        *slot = Some(value);
+        *slot = Some(decoded(value)?);
     }
+    Some([code, offered, error])
+}
+
+/// The code alone.
+fn held(mut code: String) -> Code {
+    let held = SecretString::from(code.as_str());
+    code.zeroize();
+    Code(held)
+}
+
+/// [`read_redirect`], for a redirect that comes back on `at`.
+pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
+    let Some([code, offered, error]) = query_at(at, target) else {
+        return Redirected::NotOurs;
+    };
     if !offered.is_some_and(|offered| state.matches(&offered)) {
         return Redirected::NotOurs;
     }
     match (code, error) {
-        (Some(mut code), None) if !code.is_empty() => {
-            let held = SecretString::from(code.as_str());
-            code.zeroize();
-            Redirected::Code(Code(held))
-        }
+        (Some(code), None) if !code.is_empty() => Redirected::Code(held(code)),
         (None, Some(error)) if error == "access_denied" => {
             Redirected::Declined(Declined::ByThePerson)
         }
         _ => Redirected::Declined(Declined::ByTheForge),
+    }
+}
+
+/// **The code of a request to `at`, whatever its `state` says**, and only a code: `None` with no
+/// code, with an `error`, or for anything [`read_redirect_at`] would not read. Never a reason to
+/// take a code on its own: only for telling a redirect that came back unmatched from a stranger,
+/// and for an address the person pasted themselves, whose code is still held to what was asked.
+pub fn code_at(at: &str, target: &str) -> Option<Code> {
+    match query_at(at, target)? {
+        [Some(code), _, None] if !code.is_empty() => Some(held(code)),
+        _ => None,
     }
 }
 

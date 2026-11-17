@@ -42,9 +42,11 @@ use std::time::{Duration, Instant};
 
 use super::pkce::{Code, Declined, Redirected, State, read_redirect};
 
-/// The most one request's head may be. A redirect's is a few hundred bytes; a browser's
-/// headers bring it to a kilobyte or two.
-pub const MOST_HEAD: usize = 8 * 1024;
+/// The most one request's head may be. A redirect's is a few hundred bytes, and a browser's
+/// headers bring it to a kilobyte or two. But a browser sends this machine every cookie any
+/// local server on any port has set it, since cookies don't keep to a port, so a developer's
+/// browser can send many kilobytes more: this takes what nginx takes by default.
+pub const MOST_HEAD: usize = 32 * 1024;
 
 /// How long one connection has to send its request head.
 pub const PER_REQUEST: Duration = Duration::from_secs(3);
@@ -332,20 +334,27 @@ fn serve<T>(
         // person's browser.
         return Heard::NotOurs;
     }
+    // Each refusal is logged by its fixed status alone, nothing of the request, so a report of a
+    // sign-in that wouldn't finish says which check refused it.
     let Some(head) = head(conn, until, now) else {
+        tracing::info!("purlis: the sign-in listener refused a request whose head didn't end");
         respond(conn, "400 Bad Request", NOTHING_PAGE);
         return Heard::NotOurs;
     };
     let target = match target_of(&head, port) {
         Ok(target) => target,
         Err(status) => {
+            tracing::info!("purlis: the sign-in listener refused a request: {status}");
             respond(conn, status, NOTHING_PAGE);
             return Heard::NotOurs;
         }
     };
     let heard = read(target);
     match &heard {
-        Heard::NotOurs => respond(conn, "404 Not Found", NOTHING_PAGE),
+        Heard::NotOurs => {
+            tracing::info!("purlis: the sign-in listener refused a request: not the redirect");
+            respond(conn, "404 Not Found", NOTHING_PAGE);
+        }
         Heard::Page { policy, page } => respond_under(conn, "200 OK", policy, page),
         Heard::Took { page, .. } | Heard::Stop { page, .. } => respond(conn, "200 OK", page),
     }

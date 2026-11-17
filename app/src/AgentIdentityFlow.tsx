@@ -222,6 +222,7 @@ function Start({
   onDismiss,
   take,
   extra,
+  paste,
 }: {
   shown: IdentitiesShown;
   ticked: readonly string[];
@@ -233,6 +234,8 @@ function Start({
   onDismiss: () => void;
   take: boolean;
   extra?: ReactNode;
+  /** What finishes a try GitHub may have made the App for: shown once a try didn't finish. */
+  paste?: ReactNode;
 }) {
   const { chosen, typed, workflows } = choice;
   const [preview, setPreview] = useState("");
@@ -277,10 +280,11 @@ function Start({
         agent can never act as you.
       </p>
       {trouble && (
-        <Trouble cause="agent-identity-not-made" title="The App wasn't made" onDismiss={onDismiss}>
+        <Trouble cause="agent-identity-not-made" title="The App wasn't kept" onDismiss={onDismiss}>
           {trouble}
         </Trouble>
       )}
+      {paste}
       <Facts aria-label="What purlis found">
         {shown.owners.length > 0 && (
           <Fact label="Your repos are on">
@@ -361,6 +365,50 @@ function Start({
   );
 }
 
+/**
+ * **Finishes from the address the browser ended on**: for an App GitHub made whose answer
+ * never reached purlis. The box is a secret's, since the address holds GitHub's one-time code: it
+ * is never in React's state or drawn.
+ */
+function PasteAddress({ onFinish, open }: { onFinish: (address: string) => void; open?: boolean }) {
+  const box = useRef<HTMLInputElement>(null);
+  const [filled, setFilled] = useState(false);
+  return (
+    <Disclosure
+      label="Browser stuck on a purlis page?"
+      level={3}
+      className="agent-identity-fold"
+      defaultExpanded={open}
+    >
+      <div className="agent-identity-fold-body">
+        <p className="agent-identity-term">
+          If you pressed Create GitHub App, GitHub made the App. Copy the address your browser ended
+          on, starting http://127.0.0.1, and paste it here. It works for an hour.
+        </p>
+        <TextField
+          type="password"
+          label="The address your browser ended on"
+          inputRef={box}
+          onChange={setFilled}
+        />
+        <ButtonRow>
+          <Button
+            onPress={() => {
+              const address = box.current?.value ?? "";
+              if (box.current) box.current.value = "";
+              setFilled(false);
+              onFinish(address);
+            }}
+            isDisabled={!filled}
+          >
+            Finish with this address
+          </Button>
+        </ButtonRow>
+      </div>
+    </Disclosure>
+  );
+}
+
 /** Waits on GitHub's page, where the App is made. */
 function OnGitHub({
   onAgain,
@@ -368,12 +416,14 @@ function OnGitHub({
   trouble,
   onDismiss,
   take,
+  paste,
 }: {
   onAgain: () => void;
   onStop: () => void;
   trouble: string | null;
   onDismiss: () => void;
   take: boolean;
+  paste: ReactNode;
 }) {
   return (
     <>
@@ -392,10 +442,11 @@ function OnGitHub({
         </Trouble>
       )}
       <ol className="agent-identity-steps" aria-label="On GitHub's page">
-        <li>Press Create GitHub App on the page.</li>
+        <li>Press Create GitHub App on the page. GitHub makes the App the moment you press it.</li>
         <li>Install it on your repos. Choose all repos, or only some.</li>
       </ol>
-      <Waiting>Waiting for GitHub. This moves on by itself.</Waiting>
+      <Waiting>Waiting for GitHub. This moves on by itself, or stops after 15 minutes.</Waiting>
+      {paste}
       <Action>
         <Button icon={<Out />} onPress={onAgain}>
           Open the page again
@@ -581,6 +632,8 @@ export function AgentIdentityFlow({
   const [lines, setLines] = useState<{ for: string[]; text: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const attempt = useRef<string | null>(null);
+  // The owner of the last try sent to GitHub, which an address pasted after it finishes for.
+  const [tried, setTried] = useState<{ owner: string; personal: boolean } | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -642,9 +695,37 @@ export function AgentIdentityFlow({
   const create = (owner: string, personal: boolean) => {
     const mine = crypto.randomUUID();
     attempt.current = mine;
+    setTried({ owner, personal });
     setTrouble(null);
     setScreen({ at: "browser", attempt: mine });
     void answer(commands.agentIdentityCreate(plane, mine, owner, personal, choice.workflows)).then(
+      (made) => {
+        if (!live.current || attempt.current !== mine) return;
+        setScreen({ at: "made", app: made, stand: null, busy: false });
+      },
+      (why: unknown) => {
+        if (!live.current || attempt.current !== mine) return;
+        setTrouble(whyOf(why));
+        setScreen({ at: "start" });
+      },
+    );
+  };
+
+  const fromAddress = (address: string) => {
+    if (tried === null) return;
+    const mine = crypto.randomUUID();
+    attempt.current = mine;
+    setTrouble(null);
+    setScreen({ at: "browser", attempt: mine });
+    void answer(
+      commands.agentIdentityCreateFromAddress(
+        plane,
+        address,
+        tried.owner,
+        tried.personal,
+        choice.workflows,
+      ),
+    ).then(
       (made) => {
         if (!live.current || attempt.current !== mine) return;
         setScreen({ at: "made", app: made, stand: null, busy: false });
@@ -700,6 +781,7 @@ export function AgentIdentityFlow({
         onDismiss={dismiss}
         take={take}
         extra={extra}
+        paste={tried && <PasteAddress onFinish={fromAddress} open={trouble !== null} />}
       />
     );
   if (screen.at === "browser")
@@ -714,6 +796,7 @@ export function AgentIdentityFlow({
         trouble={trouble}
         onDismiss={dismiss}
         take={take}
+        paste={<PasteAddress onFinish={fromAddress} />}
       />
     );
   const startOver = () => setConfirming(true);

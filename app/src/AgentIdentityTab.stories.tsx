@@ -207,3 +207,18 @@ export const Removed: Story = {
     await page.findByRole("button", { name: "Delete it on GitHub" });
   },
 };
+
+export const CameBackUnmatched: Story = {
+  beforeEach: () =>
+    answers(NONE, {
+      agent_identity_create: () =>
+        Promise.reject(
+          "GitHub sent your browser back, but not with the check purlis sent for this try, so purlis didn't take its answer. If you pressed Create GitHub App, GitHub made the App then. To finish, paste the address your browser ended on, which works for an hour. Or delete the App at https://github.com/organizations/acme/settings/apps and start over.",
+        ),
+    }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await userEvent.click(await page.findByRole("button", { name: "Create the GitHub App" }));
+    await expect(await page.findByLabelText("The address your browser ended on")).toBeTruthy();
+  },
+};

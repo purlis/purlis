@@ -315,6 +315,56 @@ pub async fn agent_identity_reopen(app: tauri::AppHandle) -> Result<(), String> 
         .map_err(|_| "the browser did not open".to_owned())
 }
 
+/// **Finishes making the App from the address the browser ended on**: for when GitHub
+/// made the App and its redirect never reached the listener, or reached it unmatched. The person
+/// pasted the address themselves, so its code is taken without the `state`, and is still held to
+/// what was asked: the owner named, the permissions, no events. Any try still waiting on GitHub
+/// is stopped first. Then as [`agent_identity_create`]: the key kept, the repos page opened.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_identity_create_from_address(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    address: String,
+    owner: String,
+    personal: bool,
+    workflows: bool,
+) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt as _;
+    let ctx = ctx_of(&planes, &plane)?;
+    if let Some((running, _)) = OPENED.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        tries(|all| all.stop(&running));
+    }
+    blocking(move || {
+        crate::forgeaccounts::host_scope()?;
+        if purlis_core::fence::FENCED {
+            return Err("A test build of purlis doesn't make GitHub Apps.".to_owned());
+        }
+        let wanted = Wanted {
+            owner: if personal {
+                Owner::Personal(owner)
+            } else {
+                Owner::Organisation(owner)
+            },
+            workflows,
+        };
+        core::ready_to_keep(&ctx)?;
+        let exchange = oauth::Https::shared();
+        let created = core::create_from_address(exchange.as_ref(), &address, &wanted)?;
+        core::keep_key(&ctx, &created)?;
+        if app
+            .opener()
+            .open_url(created.install_page(), None::<&str>)
+            .is_err()
+        {
+            tracing::warn!("purlis: the page for choosing an App's repos did not open");
+        }
+        Ok(created.app.clone())
+    })
+    .await
+}
+
 /// **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing.
 #[tauri::command]
 #[specta::specta]

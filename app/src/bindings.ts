@@ -2309,6 +2309,14 @@ export const commands = {
 	 *  window.
 	 */
 	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
+	/**
+	 *  **Finishes making the App from the address the browser ended on**: for when GitHub
+	 *  made the App and its redirect never reached the listener, or reached it unmatched. The person
+	 *  pasted the address themselves, so its code is taken without the `state`, and is still held to
+	 *  what was asked: the owner named, the permissions, no events. Any try still waiting on GitHub
+	 *  is stopped first. Then as [`agent_identity_create`]: the key kept, the repos page opened.
+	 */
+	agentIdentityCreateFromAddress: (plane: PlaneId, address: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create_from_address", { plane, address, owner, personal, workflows })),
 	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
 	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
 	/**  **The exact lines Finish adds** (Q11), from the one source Finish writes from. */

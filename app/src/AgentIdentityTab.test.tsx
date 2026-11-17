@@ -82,6 +82,38 @@ describe("Agent identity", () => {
     expect(await screen.findByText(/wasn't finished in time/)).toBeTruthy();
   });
 
+  it("finishes from the address the browser ended on, after GitHub's answer didn't match", async () => {
+    const pasted = "http://127.0.0.1:59526/purlis/agent-identity/back?code=c0de&state=old";
+    const asked = fake({
+      agent_identities: NONE,
+      agent_identity_create: () =>
+        Promise.reject("GitHub sent your browser back, but not with the check purlis sent."),
+      agent_identity_create_from_address: "Iv23li",
+      agent_identity_stand: { ...STAND, installed: false },
+      agent_identity_lines: "lines",
+    });
+    render(<AgentIdentityTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
+    expect(await screen.findByText(/not with the check purlis sent/)).toBeTruthy();
+    const box = await screen.findByLabelText("The address your browser ended on");
+    await userEvent.click(box);
+    await userEvent.paste(pasted);
+    expect(screen.queryByText(/c0de/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Finish with this address" }));
+    expect(await screen.findByRole("heading", { name: "Choose its repos" })).toBeTruthy();
+    const sent = asked.find((one) => one.cmd === "agent_identity_create_from_address");
+    expect(sent?.args).toMatchObject({ address: pasted, owner: "acme", personal: false });
+  });
+
+  it("says on GitHub's page that the App is made the moment Create is pressed", async () => {
+    fake({ agent_identities: NONE, agent_identity_create: new Promise(() => {}) });
+    render(<AgentIdentityTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
+    expect(await screen.findByText(/GitHub makes the App the moment you press it/)).toBeTruthy();
+    expect(screen.getByText(/stops after 15 minutes/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Browser stuck on a purlis page?" })).toBeTruthy();
+  });
+
   it("resumes at Finish with the exact lines, and adds them on that one press", async () => {
     const asked = fake({
       agent_identities: { ...NONE, pending: [{ app: "Iv23li", stand: STAND, trouble: null }] },
