@@ -966,7 +966,7 @@ mod tests {
                 report: Some(report),
                 usage: None,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("ended");
         (dir, root)
@@ -1071,7 +1071,7 @@ mod tests {
                 brief: "check prod".to_owned(),
                 report_owed: true,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("recorded");
         dispatchrecord::close(
@@ -1085,7 +1085,7 @@ mod tests {
                 }),
                 usage: None,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("ended");
         host.leaves_running(7, None);
