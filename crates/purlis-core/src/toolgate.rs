@@ -475,10 +475,28 @@ pub fn judged(
         logged: std::cell::RefCell::new(Vec::new()),
         sandboxed: plane.is_some_and(|plane| plane.launched.sandboxed),
     };
+    // **A7c holds in every mode** (Q308b keeps the person's own denies): where the person's
+    // ask and deny rules name a program, a command too big or too deep to read whole cannot be
+    // shown clear of them, so the caps refuse it whatever the families they otherwise run at
+    // say (#7104). Read only when the caps would let a command through.
+    let persons_rules_bind = || {
+        plane.is_some_and(|plane| {
+            crate::rulespelling::Rules::in_force(
+                Path::new(plane.root),
+                &[Path::new(plane.session_dir), Path::new(call.cwd)],
+            )
+            .names_a_program()
+        })
+    };
+    let caps_refuse = |verdict: Verdict| match gate.mode(Arm::Caps) {
+        Mode::Enforce => Some(verdict),
+        _ if persons_rules_bind() => Some(verdict),
+        _ => gate.refuses(verdict),
+    };
     // First of all, in front of every arm: a command too big to read in time is refused before
     // any of them parses it (#1355). Refusing is the safe direction for every arm at once.
     if let Some(why) = guardcaps::refusal(call.command) {
-        let refused = gate.refuses(Verdict::new(Arm::Caps, guardcaps::REASON, None, why));
+        let refused = caps_refuse(Verdict::new(Arm::Caps, guardcaps::REASON, None, why));
         return Judged {
             refused,
             logged: gate.logged.into_inner(),
@@ -486,9 +504,10 @@ pub fn judged(
     }
     // And a string an arm derives from the command and reads in turn is held to the same cap:
     // an arm that met one nested too deep to read whole decided nothing, so the call is refused
-    // as too big to check, whatever the arms said (#1355).
+    // as too big to check, whatever the arms said (#1355). Where the caps let it through, an arm
+    // that refused on what it did read still refuses.
     let refused = match shellseg::too_deep_within(|| arms(call, plane, &gate)) {
-        (_, true) => gate.refuses(too_deep()),
+        (verdict, true) => caps_refuse(too_deep()).or(verdict),
         (verdict, false) => verdict,
     };
     Judged {

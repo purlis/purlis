@@ -1998,3 +1998,48 @@ fn a_runner_without_landlock_6_names_no_way_out_it_refuses() {
     assert!(why.contains("Runs on"), "{why}");
     assert!(!plane.root().join("ran").exists(), "nothing was run");
 }
+
+#[test]
+fn a_chat_another_chat_asked_for_starts_without_its_profiles_prompts_off_words() {
+    purlis_core::unsteered!();
+    // #7104: under `[policy] mode = "log"` (the `watch` default) a dispatched chat may start on
+    // a profile whose command switches the prompts off (Q308b); it still starts capped at auto,
+    // so those words are dropped, and its tab says so (#3787).
+    let plane = Plane::new();
+    let bin = plane.harness();
+    plane.declares(&format!(
+        "[harness.work]\nkind = \"claude\"\ncommand = [{:?}, \"--dangerously-skip-permissions\", \
+         \"--permission-mode\", \"bypassPermissions\", \"--verbose\"]\n",
+        bin.display().to_string()
+    ));
+    plane.approve("work");
+    crate::support::no_claude_sandbox_here(plane.root());
+    let asked = Start {
+        made: purlis_core::sandbox::Made::Asked {
+            how: purlis_core::sandbox::Asking::Dispatch,
+            above: Some(vec![None]),
+        },
+        ..plane.start("work")
+    };
+
+    let ready = start::ready(&asked, plane.root()).expect("it starts");
+    assert_eq!(ready.command, ["--verbose"], "{:?}", ready.command);
+    assert!(
+        ready
+            .notices
+            .iter()
+            .any(|n| n.contains("started without it")),
+        "{:?}",
+        ready.notices
+    );
+    // The person's own start on it runs the profile as they declared it.
+    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    assert!(
+        ready
+            .command
+            .iter()
+            .any(|w| w == "--dangerously-skip-permissions"),
+        "{:?}",
+        ready.command
+    );
+}

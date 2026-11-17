@@ -647,3 +647,31 @@ fn a_profile_with_its_prompts_off_is_refused_a_dispatched_chat_as_policy_mode_ru
         None
     );
 }
+
+#[test]
+fn a_command_without_its_prompts_off_words_keeps_every_other_word() {
+    // #7104: what a chat another chat asked for is started on, capped at auto.
+    for (command, kept) in [
+        (
+            vec!["claude", "--dangerously-skip-permissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "bypassPermissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (vec!["codex", "-a", "never", "--yolo"], vec!["codex"]),
+        (
+            vec!["codex", "-capproval_policy=never", "exec"],
+            vec!["codex", "exec"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "auto"],
+            vec!["claude", "--permission-mode", "auto"],
+        ),
+    ] {
+        let without = without_bypass(&words(&command));
+        assert_eq!(without, words(&kept), "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+}

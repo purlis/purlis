@@ -452,3 +452,40 @@ fn the_persons_own_ask_and_deny_rules_hold_under_every_spelling_in_every_mode() 
         );
     }
 }
+
+#[test]
+fn the_persons_own_rules_hold_under_open_for_a_command_too_big_or_too_deep_to_read() {
+    // #7104: under `open` the caps let through a command no arm can read whole, and A7c, which
+    // holds in every mode, would never be asked. Where the person's rules name a program, such
+    // a command cannot be shown clear of them, so it is refused.
+    let plant = |dir: &std::path::Path| {
+        std::fs::create_dir_all(dir.join(".claude")).expect(".claude");
+        std::fs::write(
+            dir.join(".claude/settings.json"),
+            r#"{"permissions": {"deny": ["Bash(terraform apply *)"]}}"#,
+        )
+        .expect("settings");
+    };
+    let rule = "/usr/local/bin/terraform apply";
+    // Past the size the caps read.
+    let huge = format!(
+        "{rule}; echo {}",
+        "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES)
+    );
+    // Within the caps' size and nesting, but more text, read inward, than the readers may read:
+    // seven substitutions deep round a long word.
+    let deep = format!(
+        "{rule}; {}{}{}",
+        "echo $(".repeat(7),
+        "y".repeat(20 * 1024),
+        ")".repeat(7)
+    );
+    assert_eq!(crate::guardcaps::refusal(&deep), None, "the caps read it");
+    for (shape, cmd) in [("too big", &huge), ("too deep", &deep)] {
+        let judged = judged_under("template = \"open\"\n", cmd, None, &plant);
+        assert!(judged.refused.is_some(), "{shape}: {judged:?}");
+        // Where the person has no rule, `open` lets it through as before.
+        let judged = judged_under("template = \"open\"\n", cmd, None, &nothing_planted);
+        assert_eq!(judged.refused, None, "{shape}, no rule");
+    }
+}

@@ -25,7 +25,7 @@ guards.release = "log"     # one family, apart from the template
 | Template | What runs | Sandbox (wired in a later release; today `[sandbox]` decides) |
 |---|---|---|
 | `open` | nothing | none |
-| `watch` (the default) | everything logs; `secrets`, `vaults` and `guards.credential` are enforced | the floor |
+| `watch` (the default) | everything logs; `secrets`, `vaults`, `guards.credential` and `trust` are enforced | the floor |
 | `hold` | `watch`, and `guards.merge` enforced | the floor |
 | `team` | `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and the families Q308b added enforced; the rest log | the full sandbox |
 | `strict` | everything enforced: purlis before Q308 | as `[sandbox]` says |
@@ -36,12 +36,16 @@ the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pa
 nothing covers starts with no grant) and `asks` (a host is answered Allow) switch, and so do
 the nine families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
 `tools`, `trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted,
-not applied); every other family is a key already and stays enforced until it is wired. Which
+not applied, up to an administrator's ceiling where there is one); every other family is a key already and stays enforced until it is wired. Which
 choke point switches each, and the family of every decision purlis makes about a chat, are in
 [`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
 forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
 sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
+
+**A profile or harness declaration nobody approved still asks** under every template but `open`
+(Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start
+unapproved, and then its chat's tab says so as it starts.
 
 ## Who can change it
 

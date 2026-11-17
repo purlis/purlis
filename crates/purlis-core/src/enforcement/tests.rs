@@ -32,6 +32,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
         for family in Family::ALL {
             let want = match family {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
+                // An unapproved profile or declaration still asks (Q329).
+                Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
                 // The floor is a wrap.
@@ -58,11 +60,13 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold = if secret.contains(&family) || family == Family::GuardsMerge {
-            Mode::Enforce
-        } else {
-            Mode::Log
-        };
+        let hold =
+            if secret.contains(&family) || family == Family::GuardsMerge || family == Family::Trust
+            {
+                Mode::Enforce
+            } else {
+                Mode::Log
+            };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
             || family.added_by_q308b()
@@ -887,10 +891,16 @@ fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults(
     assert_eq!(nine.len(), 9);
     for family in nine {
         assert!(family.switchable(), "{}", family.key());
+        // Q329: `trust` is enforced under every template but `open`.
+        let floor = if family == Family::Trust {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
         for (template, want) in [
             ("open", Mode::Off),
-            ("watch", Mode::Log),
-            ("hold", Mode::Log),
+            ("watch", floor),
+            ("hold", floor),
             ("team", Mode::Enforce),
             ("strict", Mode::Enforce),
         ] {
@@ -945,4 +955,32 @@ fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
     }
     assert!(!known_rule(Family::Limits, "dispatch.anything"));
     assert!(!known_rule(Family::GuardsGit, "A3"));
+}
+
+#[test]
+fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_their_move() {
+    // #7104: A3 and A3b moved from `guards.git` to `guards.plane` (Q308b). A project on `watch`
+    // that enforced `guards.git` keeps them enforced; one that names `guards.plane` decides.
+    for (text, want) in [
+        ("[policy]\nguards.git = \"enforce\"\n", Mode::Enforce),
+        (
+            "[policy]\ntemplate = \"hold\"\nguards.git = \"enforce\"\n",
+            Mode::Enforce,
+        ),
+        ("[policy]\n", Mode::Log),
+        (
+            "[policy]\ntemplate = \"strict\"\nguards.git = \"off\"\n",
+            Mode::Enforce,
+        ),
+        (
+            "[policy]\nguards.git = \"enforce\"\nguards.plane = \"log\"\n",
+            Mode::Log,
+        ),
+    ] {
+        assert_eq!(
+            under(&said(text), &Locks::none(), Family::GuardsPlane),
+            want,
+            "{text}"
+        );
+    }
 }

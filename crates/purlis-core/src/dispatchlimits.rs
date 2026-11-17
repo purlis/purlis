@@ -486,6 +486,10 @@ pub struct Limits {
     pub target: Option<String>,
     /// Which level decided each limit.
     set_by: [Source; Limit::ALL.len()],
+    /// **An administrator's ceiling on each limit**, whichever level's value won: a value at or
+    /// below the ceiling keeps its own level in `set_by`, and the ceiling still binds what
+    /// [`Limits::lifted`] leaves (Q308a: a lock wins over every mode).
+    ceilings: [Option<u32>; Limit::ALL.len()],
     /// Each limit of this machine's own that is above the project's, and was not applied.
     pub ignored: Vec<Ignored>,
 }
@@ -626,6 +630,7 @@ pub fn in_force(
         asking: asking.map(str::to_owned),
         target: target.map(str::to_owned),
         set_by: resolved.map(|(_, from)| from),
+        ceilings: Limit::ALL.map(|limit| policy.get(limit)),
         ignored,
     }
 }
@@ -899,39 +904,42 @@ impl Refused {
 }
 
 impl Limits {
-    /// **Whether `[policy] limits` may lift `limit` here** (Q308b): not where an administrator's
-    /// ceiling set it, or a refused policy file, since a lock wins over every mode (Q308a).
-    pub fn liftable(&self, limit: Limit) -> bool {
-        !matches!(self.set_by(limit), Source::Policy | Source::PolicyRefused)
+    /// **What `[policy] limits` may lift `limit` to here** (Q308b), as `Some(bound)`, where
+    /// `None` is no bound: an administrator's ceiling on it, whichever level's value won, since a
+    /// lock wins over every mode (Q308a). `None` of the whole answer is that nothing lifts it: a
+    /// refused policy file.
+    fn lift_to(&self, limit: Limit) -> Option<Option<u32>> {
+        if matches!(self.set_by(limit), Source::PolicyRefused) {
+            return None;
+        }
+        Some(self.ceilings[limit.at()])
     }
 
     /// **These limits as `[policy] limits = "off"` or `"log"` leaves them** (Q308b: a limit is
-    /// counted, not applied): every count an administrator's ceiling did not set is lifted, and
-    /// depth goes to [`DEEPEST`], the bound no level raises, so a chain of dispatches still ends.
-    /// A 0 that switches dispatch off, and the loop rule, are kept.
+    /// counted, not applied): every count goes up to an administrator's ceiling on it, where
+    /// there is one, and is unbounded where there is none. Depth goes no deeper than [`DEEPEST`],
+    /// the bound no level raises, so a chain of dispatches still ends. A 0 that switches dispatch
+    /// off, and the loop rule, are kept.
     pub fn lifted(&self) -> Self {
         let mut lifted = self.clone();
-        let unbounded = |limit: Limit, now: u32| {
-            if self.liftable(limit) { u32::MAX } else { now }
-        };
-        if self.off().is_none() {
-            lifted.running = unbounded(Limit::RunningPerChat, self.running);
-            lifted.lineage = unbounded(Limit::LivePerLineage, self.lineage);
-            lifted.messages_per_minute =
-                unbounded(Limit::MessagesPerMinute, self.messages_per_minute);
-            if self.liftable(Limit::Depth) {
-                lifted.depth = DEEPEST;
-            }
-            if self.liftable(Limit::MayDispatch) {
-                lifted.may_dispatch = None;
-            }
-            if self.liftable(Limit::MayRunAtOnce) {
-                lifted.may_run_at_once = None;
-            }
-            if self.liftable(Limit::TokensPerSession) {
-                lifted.tokens_per_session = None;
-            }
+        if self.off().is_some() {
+            return lifted;
         }
+        let bounded = |limit: Limit, now: u32| match self.lift_to(limit) {
+            None => now,
+            Some(ceiling) => ceiling.unwrap_or(u32::MAX).max(now),
+        };
+        let optional = |limit: Limit, now: Option<u32>| match self.lift_to(limit) {
+            None => now,
+            Some(ceiling) => ceiling,
+        };
+        lifted.running = bounded(Limit::RunningPerChat, self.running);
+        lifted.lineage = bounded(Limit::LivePerLineage, self.lineage);
+        lifted.messages_per_minute = bounded(Limit::MessagesPerMinute, self.messages_per_minute);
+        lifted.depth = bounded(Limit::Depth, self.depth).min(DEEPEST);
+        lifted.may_dispatch = optional(Limit::MayDispatch, self.may_dispatch);
+        lifted.may_run_at_once = optional(Limit::MayRunAtOnce, self.may_run_at_once);
+        lifted.tokens_per_session = optional(Limit::TokensPerSession, self.tokens_per_session);
         lifted
     }
 

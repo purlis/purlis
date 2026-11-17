@@ -193,7 +193,8 @@ impl Family {
     }
 
     /// Whether Q308b added the family: `team` and `strict` enforce it, `watch` and `hold` log it,
-    /// `open` turns it off.
+    /// `open` turns it off. `trust` is the exception (Q329): every template but `open` enforces
+    /// it.
     pub fn added_by_q308b(self) -> bool {
         matches!(
             self,
@@ -288,13 +289,14 @@ impl Mode {
 pub enum Template {
     /// Everything off.
     Open,
-    /// Everything logged; `secrets`, `vaults` and `guards.credential` enforced. The default.
+    /// Everything logged; `secrets`, `vaults`, `guards.credential` and `trust` enforced. The
+    /// default.
     #[default]
     Watch,
     /// `watch`, and `guards.merge` enforced.
     Hold,
-    /// The merge, release, save and credential guards, `secrets` and `vaults` enforced; the rest
-    /// logged.
+    /// The merge, release, save and credential guards, `secrets`, `vaults`, `trust` and the
+    /// families Q308b added enforced; the rest logged.
     Team,
     /// Everything enforced: purlis as it was before Q308.
     Strict,
@@ -347,6 +349,9 @@ impl Template {
             Template::Open => Mode::Off,
             Template::Strict => Mode::Enforce,
             Template::Watch if secret => Mode::Enforce,
+            // **An unapproved profile or harness declaration still needs the person's approval**
+            // (Q329): only `open`, or the person's own `trust = "off"`, lets one run unapproved.
+            Template::Watch | Template::Hold if family == Family::Trust => Mode::Enforce,
             Template::Hold if secret || family == Family::GuardsMerge => Mode::Enforce,
             Template::Team
                 if secret
@@ -566,10 +571,21 @@ impl Settings {
 
     /// How the settings run `family`, before any lock or acceptance.
     pub fn mode(&self, family: Family) -> Mode {
-        self.overrides
+        let own = self
+            .overrides
             .get(&family)
             .copied()
-            .unwrap_or_else(|| self.template.mode(family))
+            .unwrap_or_else(|| self.template.mode(family));
+        // **A3 and A3b moved from `guards.git` to `guards.plane`** (Q308b): a project that
+        // names `guards.git` and not `guards.plane` keeps them at least as strict as its
+        // `guards.git` says, so the move loosens nothing it set (#7104).
+        if family == Family::GuardsPlane
+            && !self.overrides.contains_key(&family)
+            && let Some(git) = self.overrides.get(&Family::GuardsGit)
+        {
+            return own.max(*git);
+        }
+        own
     }
 }
 

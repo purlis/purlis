@@ -21,8 +21,11 @@ row names no family, two, or one purlis does not know, or where a section's coun
   - **the grader bundles**: a skill's grade and an outcome eval run in a bundle a skill cannot
     loosen (a skill cannot grade itself);
   - **a chat changing its own policy**: the settings tables a chat's write or commit may not
-    change, the state folder that holds grants and nevers, the admin lock file and its folder,
-    and the admin lock layer itself (a lock is judged after the mode and always enforces);
+    change, the state folder that holds grants and nevers, the persona gate's refusal of the
+    control surface, the admin lock file and its folder, and the admin lock layer itself, its
+    dispatch ceilings included (a lock is judged after the mode and always enforces);
+  - **a chat answering for the person**: an ask only the window answers, and a `purlis`
+    command's confirmation in the window;
   - **the person's own rules**: their ask and deny rules under every spelling (A7c), as their
     dispatch nevers and Keep blocked hosts hold (those rows are `dispatch`'s and `asks`'s,
     whose wiring keeps them in every mode).
@@ -43,15 +46,15 @@ point asks it.
 
 | Family | Choke point | Rule in the log | What stays enforced in every mode |
 |---|---|---|---|
-| `guards.shape` | The Bash guard's arms: caps (`toolgate::Gate::mode`), A7 handoff, A7b consent spelling, A7d sub-agent dispatch, A7e dispatch text, A10 rider (`toolgate::Arm::family`) | the arm's id (`caps`, `A7`, …) | The caps run at the strictest family the gate asks, with `guards.merge` and `guards.git`: a command too big or too deep to read is never shown clear of an enforced arm. A7c (the person's own ask and deny rules) is `fixed`. The guard's own failure handling (a crash, a timeout, an unknown hook word refuses) is plumbing, not a refusal of the chat's. |
+| `guards.shape` | The Bash guard's arms: caps (`toolgate::Gate::mode`), A7 handoff, A7b consent spelling, A7d sub-agent dispatch, A7e dispatch text, A10 rider (`toolgate::Arm::family`) | the arm's id (`caps`, `A7`, …) | The caps run at the strictest family the gate asks, with `guards.merge` and `guards.git`: a command too big or too deep to read is never shown clear of an enforced arm. A7c (the person's own ask and deny rules) is `fixed`: where the person's rules name a program, a command too big or too deep to read is refused in every mode. The guard's own failure handling (a crash, a timeout, an unknown hook word refuses) is plumbing, not a refusal of the chat's. |
 | `guards.plane` | The Bash guard's plane-root arms A3 (branch move) and A3b (destroying reset) | `A3`, `A3b` | Brokered writes, proposals and removal are refused by the sandbox where they matter, and a write to a manifest is `fixed`. |
 | `guards.forge` | `chattools::forge_milestones`: a repo named that this workspace does not hold is read from the project's other workspace that holds it | `forge.milestones.workspace` | A forge sign-in, a minted token and a persona tool's forge subcommands run with a vault's value are `guards.credential` and `vaults` rows; the CLI route's file refusal has no plane to ask. |
-| `mode` | `dispatchunattended::bypass_refusal_in` and `start_of_a_persona_chat_in` (the app's `handoff.rs`): a chat one chat starts for another on a profile whose command switches the prompts off | `dispatch.prompts-off` | A task's level is still capped at auto: a task at the prompts-off level needs a level and per-harness words purlis does not have. A grade's chat is `fixed`. |
+| `mode` | `dispatchunattended::bypass_refusal_in` and `start_of_a_persona_chat_in` (the app's `handoff.rs`): a chat one chat starts for another on a profile whose command switches the prompts off | `dispatch.prompts-off` | A task's level is still capped at auto: a chat another chat asked for starts without its profile's words that switch the prompts off (`start::ready_in`), and its tab says so. A grade's chat is `fixed`. |
 | `tools` | `personaverbs::chatstart::unenforced` and `personaprofile::named_by`: a persona whose `disallowed-tools:` the harness cannot carry | `persona.disallowed-tools` | The deny-list itself is written into Claude Code's settings in every mode. |
-| `trust` | `wiring::not_asked` and `personaprofile::offers_of`: a profile's command, or the harness declaration it runs on, nobody approved on this machine | `profile.approval`, `declaration.approval` | A profile in a file purlis refused (a local file git would commit). Extensions are approved against the machine's config, which no plane's policy reaches. |
+| `trust` | `wiring::not_asked` and `personaprofile::offers_of`: a profile's command, or the harness declaration it runs on, nobody approved on this machine | `profile.approval`, `declaration.approval` | Every template but `open` enforces it (Q329). A profile in a file purlis refused (a local file git would commit). Where it is lifted, the chat's tab says it started unapproved (`wiring::unapproved_notice`). Extensions are approved against the machine's config, which no plane's policy reaches. |
 | `runners` | `runnerwrite::held_for_the_person`, asked by the app before it holds a runner chat's dispatch (`runnerdispatches::held_from_a_pool`) or write (`brokered.rs`) | `runner.dispatch`, `runner.write` | No vault value, token or sign-in goes to a runner that is not the person's own (a `vaults` row); a runner's taint. |
 | `consents` | `windowonly::asks`: a window-only refusal (Trust this clone) is raised as an ask | `window-only.ask` | The press itself stays the window's: each releases a credential, publishes, or sends data off the machine, and which a chat may make needs a ruling of its own, as `skills` does. |
-| `limits` | `dispatchdecision::asked_by_a_chat` (depth, running per chat, live per lineage, may-dispatch, may-run-at-once, tokens per session: the dispatch is decided again with `Limits::lifted`), and `gitbroker::commit::paced` (30 commits in 10 minutes) | `dispatch.<limit>`, `commit.rate` | An administrator's ceiling, depth beyond 8 (`DEEPEST`), and a 0 that switches dispatch off (the project's word). |
+| `limits` | `dispatchdecision::asked_by_a_chat` (depth, running per chat, live per lineage, may-dispatch, may-run-at-once, tokens per session: the dispatch is decided again with `Limits::lifted`), and `gitbroker::commit::paced` (30 commits in 10 minutes) | `dispatch.<limit>`, `commit.rate` | An administrator's ceiling, whichever level's value it bounds (a lifted limit goes up to it), depth beyond 8 (`DEEPEST`), and a 0 that switches dispatch off (the project's word), the destination workspace's included. |
 
 ## Rows per family
 
@@ -68,7 +71,7 @@ point asks it.
 | `guards.credential` | 32 |
 | `asks` | 19 |
 | `dispatch` | 57 |
-| `vaults` | 89 |
+| `vaults` | 90 |
 | `browser` | 83 |
 | `skills` | 69 |
 | `secrets` | 34 |
@@ -76,12 +79,12 @@ point asks it.
 | `guards.shape` | 53 |
 | `guards.plane` | 33 |
 | `mode` | 28 |
-| `tools` | 41 |
+| `tools` | 40 |
 | `trust` | 32 |
-| `runners` | 22 |
-| `consents` | 27 |
-| `limits` | 116 |
-| `fixed` | 46 |
+| `runners` | 21 |
+| `consents` | 25 |
+| `limits` | 115 |
+| `fixed` | 50 |
 | **Total** | **1,199** |
 
 <!-- rows -->
@@ -778,7 +781,7 @@ point asks it.
 | # | Decision | Where | Family |
 |---|---|---|---|
 | 1 | Only a human scope (the window, or `charter inbox`) answers an ask. A chat can raise an ask but never answer one. | `crates/purlis-core/src/harness/asks.rs:489` (`may_answer`), `:496` (`may_choose`), `:504`; hook side: `crates/purlis-core/src/harness/hooked.rs:19-21` doc, `crates/purlis-cli/src/permission.rs:35` | `consents` |
-| 2 | Some asks are answered from the window only, not from `charter inbox`: an ask that elicits a secret, an Allow on an edit, and an answer to a chat's question. Deny and cancel can come from either. | `crates/purlis-core/src/harness/asks.rs:489`, `:496` | `consents` |
+| 2 | Some asks are answered from the window only, not from `charter inbox`: an ask that elicits a secret, an Allow on an edit, and an answer to a chat's question. Deny and cancel can come from either. | `crates/purlis-core/src/harness/asks.rs:489`, `:496` | `fixed` |
 | 3 | "Allow always" (an allow that outlives the session) is never offered and is refused if sent, whatever the source. | registry: `crates/purlis-core/src/harness/asks.rs:287-289` (`raise` partitions out `lasts`, `:482`); hook path: `crates/purlis-core/src/harness/hooked.rs:160` | `consents` |
 | 4 | A permission option that switches the session's mode (Claude Code `setMode`, e.g. bypassPermissions or acceptEdits) is never offered in the window. It is left to the pane. | `crates/purlis-core/src/harness/hooked.rs:183` (`switches_the_mode`), applied at `:160` | `mode` |
 | 5 | Allow is dropped when the window's one-line summary is not the whole action (cut, masked, hidden Unicode), or when a shell call has input keys beyond `command`/`description`/`timeout` (e.g. `dangerouslyDisableSandbox`, `run_in_background`). Only deny is left; the pane shows the rest. | `crates/purlis-core/src/harness/hooked.rs:174`; `PLAIN_SHELL_KEYS` `:198`; `shown_in_full` `:214` | `consents` |
@@ -825,7 +828,7 @@ point asks it.
 | 46 | Merge ask: a chat never merges. The app merges on the person's press, only while the request's head is the commit asked about, and only for repos in the inventory. | `crates/purlis-core/src/mergehold.rs:4-27`; `app/src-tauri/src/asking.rs:2158` (`merge_hold`) | `guards.merge` |
 | 47 | A window-only refusal (e.g. Trust this clone) becomes an ask, one per chat per control. Unrecorded clones are trusted only through one project-wide ask. | `crates/purlis-core/src/windowonly.rs:4-25`, `:69`, `:240`; `app/src-tauri/src/asking.rs:2234`, `:2289` | `consents` |
 | 48 | The project's "expects" consent (Allow on this machine, ADR 0093) and a persona's hosts/tools waiting for an Allow are Blocking asks. A changed list asks again. | `app/src-tauri/src/asking/consents.rs:222` (`persona_allows`); ADR 0121 amendments 2026-11-10 and 2026-11-12 | `trust` |
-| 49 | A `purlis` CLI command's confirmation in the window (pool sign-in, profile off a pool, signing check) waits 2 min, and a timeout counts as no. With no project open in the window it is refused at once. | `crates/purlis-core/src/windowline.rs:52` (`THE_PERSON_HAS`) | `consents` |
+| 49 | A `purlis` CLI command's confirmation in the window (pool sign-in, profile off a pool, signing check) waits 2 min, and a timeout counts as no. With no project open in the window it is refused at once. | `crates/purlis-core/src/windowline.rs:52` (`THE_PERSON_HAS`) | `fixed` |
 | 50 | Report consent: two streams (Crash reports, Agent drafts) plus "Always send". Unanswered, unreadable or missing means no. Asked once at first run, and once more after a crash. Window only; a committed file can never give it. Stored as `<config>/reports.json`, Machine tier. | `crates/purlis-core/src/report/consent.rs:51` (`Consent`), `:94` (`allows`), `:104` (`always_sends`), `:111` (`wants_the_crash_notice`), `:117` (`read`); `app/src-tauri/src/reportconsent.rs:8` (WINDOW_ONLY) | `consents` |
 | 51 | Consent-gated commands (`report … --yes`, `todo … promote`): `init` writes `ask` rules for them into `.claude/settings.json` and `opencode.json`, in both the `charter` and `purlis` spellings. The retired handoff `ask` rule is removed. | `crates/purlis-core/src/scaffold/settings.rs:51-95` (`REPORT_RULE`, `PROMOTE_RULE`, `PURLIS_*`), `:134` (`handoff_rule_retired`) | `consents` |
 | 52 | A consent-gated command written in a spelling the host's ask rule does not match (a path, another case, `VAR=`, a wrapper, inside `sh -c` or a heredoc) is refused, fail-closed. | `crates/purlis-core/src/consentspelling.rs:73` (`REASON`), `:81` (`GUARDED`) | `guards.shape` |
@@ -1021,7 +1024,7 @@ point asks it.
 | 112 | Gate declines any command with shell metacharacters | `crates/purlis-core/src/personagate.rs:237` (`shell_literal`) | `tools` |
 | 113 | Gate declines interpreters/wrappers (sh, bash, python, env, sudo, xargs, find, make…) | `crates/purlis-core/src/personagate.rs:117` (`INTERPRETERS`) | `tools` |
 | 114 | Gate declines destructive verbs: kubectl delete/drain/exec…, gh/glab delete/remove/revoke/rotate/transfer, git clean, agentmail send…, purlis/charter/edm secret/vault/change; gh hyphenated deletions; forge `api` non-GET/HEAD | `crates/purlis-core/src/personagate.rs:79` (`DANGEROUS`), `:275`, `:282-285`, `:367` | `tools` |
-| 115 | Gate declines anything touching control surface (state dir, vaults, persona definitions) | `crates/purlis-core/src/personagate.rs:459-555` | `tools` |
+| 115 | Gate declines anything touching control surface (state dir, vaults, persona definitions) | `crates/purlis-core/src/personagate.rs:459-555` | `fixed` |
 | 116 | Tools ceiling frozen at session start; live edit can only narrow; ceiling kept 7 days | `crates/purlis-core/src/personagate.rs:760` (`snapshot`), `:901` | `tools` |
 | 117 | Grant must match what was approved in plane-trust fingerprint on this machine | `crates/purlis-core/src/personagate.rs:45-53`; `crates/purlis-core/src/toolhooks.rs:741-748` | `trust` |
 | 118 | `borrows:`/`extends:` misspelled or duplicated ⇒ borrows nothing; `tools`/`agent-tools`/`uses` accumulate down chain | `crates/purlis-core/src/personagrant.rs:41`, `:78` | `tools` |
@@ -1354,7 +1357,7 @@ point asks it.
 | L22 | A Machine-scope Allow only for a socket or service, never a host or folder | crates/purlis-core/src/sandbox/policy.rs:602 (in `refuses_grant`) | `asks` |
 | L23 | `sandbox.never-hosts`: hosts no level may add, no Allow may keep, never asked about | crates/purlis-core/src/sandbox/policy.rs:540 (`never_allows`), :560; read at crates/purlis-core/src/sandbox.rs:4357, :4557 (reach) and via `refuses`/`refuses_grant` | `network` |
 | L24 | `sandbox.relayed-internal`: internal addresses a desktop-planned chat on a runner may reach; absent = none; metadata never | crates/purlis-core/src/sandbox/policy.rs:549, parse :1009 (`relayed_internal`); read at crates/purlis-core/src/sandbox/internal.rs:125 | `network` |
-| L25 | `dispatch.<limit>` ceilings (running-per-chat, live-per-lineage, depth ≤8, messages-per-minute, may-dispatch, may-run-at-once, tokens-per-session, minutes-per-task): no level sets more; 0 turns that off | crates/purlis-core/src/sandbox/policy.rs:506 (`dispatch_ceiling`); crates/purlis-core/src/dispatchlimits.rs:1349 (`ceiling`), :114 (`DEEPEST` 8), :117 (`MOST` 10,000), :120 (`MOST_TOKENS`); read at crates/purlis-core/src/dispatchlimits.rs:1515, app/src-tauri/src/overlimit.rs:363-364, :404, :603, :615, app/src-tauri/src/dispatchlimits.rs:179 | `limits` |
+| L25 | `dispatch.<limit>` ceilings (running-per-chat, live-per-lineage, depth ≤8, messages-per-minute, may-dispatch, may-run-at-once, tokens-per-session, minutes-per-task): no level sets more; 0 turns that off | crates/purlis-core/src/sandbox/policy.rs:506 (`dispatch_ceiling`); crates/purlis-core/src/dispatchlimits.rs:1349 (`ceiling`), :114 (`DEEPEST` 8), :117 (`MOST` 10,000), :120 (`MOST_TOKENS`); read at crates/purlis-core/src/dispatchlimits.rs:1515, app/src-tauri/src/overlimit.rs:363-364, :404, :603, :615, app/src-tauri/src/dispatchlimits.rs:179 | `fixed` |
 | L26 | `dispatch.allow` false: no chat dispatches to another, its own persona included | crates/purlis-core/src/sandbox/policy.rs:800, :812 (`dispatch_refused`); read at crates/purlis-core/src/dispatchgrant.rs:448, :451, :457, crates/purlis-core/src/dispatchdecision.rs:485, crates/purlis-core/src/dispatchwants.rs:358, :379, app/src-tauri/src/handoff.rs:4412, :4489, app/src-tauri/src/dispatchgrants.rs:1010, :3533, :4003 | `dispatch` |
 | L27 | `dispatch.locked`: persona pairs (from→to) no chat may dispatch across; no grant covers them | crates/purlis-core/src/sandbox/policy.rs:805, :812; parse :1068; read as L26 plus app/src-tauri/src/dispatchgrants.rs:3772, :4010 | `dispatch` |
 | L28 | Outcome eval's shell: hard-set lock bundle (no hosts, presets, persona hosts/tools, write/vault/socket/run grants, live asks, scopes; own temp folder only) | crates/purlis-core/src/sandbox/policy.rs:274-291 (in `Locks::of`), :1243 (`holding_to_its_folder`); used at crates/purlis-core/src/skills/grades.rs:2189 | `fixed` |
@@ -1488,7 +1491,7 @@ point asks it.
 | 15 | A pin change since the mark takes the mark away (values stop until re-marked) | crates/purlis-core/src/poollogins.rs:457; crates/purlis-core/src/runners.rs:321 (`Pool::marked`) | `vaults` |
 | 16 | A persona's browser login on a pool needs the person's opt-in, per persona+login+pool, re-asked if the pool/runner changed; in memory only | crates/purlis-core/src/poollogins.rs:533 (`allow`), :539 (`keep_off`), :550 (`standing`) | `browser` |
 | 17 | Runner taint: once any non-shell/non-browser program ran on a runner outside landlock/bubblewrap/seatbelt, that runner gets no browser, no login, no vault value/token, no sign-in until remade; fail closed on unreadable file | crates/purlis-core/src/runnertaint.rs:61 (`taints`), :107, :200; uses at poollogins.rs:213/:313, pools.rs:3012, poolsetup.rs:1733, windowline.rs:247 | `runners` |
-| 18 | Sign-ins are not carried to a remade runner, and conversations not brought back, where either runner was tainted or its home isn't its own | crates/purlis-core/src/pools.rs:1301, :1718, :1919 | `runners` |
+| 18 | Sign-ins are not carried to a remade runner, and conversations not brought back, where either runner was tainted or its home isn't its own | crates/purlis-core/src/pools.rs:1301, :1718, :1919 | `vaults` |
 | 19 | A profile being signed out of a pool is held from every drain's carry | crates/purlis-core/src/runners.rs:1766, :1816 | `runners` |
 | 20 | Pool limit: most a profile may send, size | crates/purlis-core/src/poollimits.rs:216 (ALL, `profileSize`) | `limits` |
 | 21 | Pool limit: profile files | crates/purlis-core/src/poollimits.rs:216 (`profileFiles`) | `limits` |

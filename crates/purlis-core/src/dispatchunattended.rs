@@ -291,30 +291,53 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
+    (0..command.len()).find_map(|at| bypass_at(command, at).map(|(shown, _)| shown))
+}
+
+/// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
+/// chat another chat asked for is started on where `[policy] mode` let such a profile through
+/// (Q308b), so it still runs at its task's level, capped at auto (#3787, #7104). A flag's value
+/// goes with it where it is the next word.
+pub fn without_bypass(command: &[String]) -> Vec<String> {
+    let mut kept = Vec::with_capacity(command.len());
+    let mut at = 0;
+    while at < command.len() {
+        match bypass_at(command, at) {
+            Some((_, words)) => at += words,
+            None => {
+                kept.push(command[at].clone());
+                at += 1;
+            }
+        }
+    }
+    kept
+}
+
+/// The words at `at` of `command` that switch the prompts off, as shown, and how many words
+/// they are: one, or two where the value is the next word.
+fn bypass_at(command: &[String], at: usize) -> Option<(String, usize)> {
     use crate::sandbox::codex::{is_flag, split};
-    command.iter().enumerate().find_map(|(at, word)| {
-        if BYPASS_FLAGS.contains(&word.as_str()) {
-            return Some(word.clone());
-        }
-        if !is_flag(word) {
-            return None;
-        }
-        let (flag, attached) = split(word);
-        let next = || command.get(at + 1).map(String::as_str);
-        let value = attached.or_else(next)?;
-        // A value may be written quoted and spaced (`approval_policy = "never"`).
-        let plain = value.replace(['"', '\'', ' '], "");
-        let off = if flag == CLAUDE_CODE_MODE_FLAG {
-            ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
-        } else {
-            MODE_FLAGS
-                .iter()
-                .any(|(known, never)| flag == *known && plain == *never)
-        };
-        off.then(|| match attached {
-            Some(_) => word.clone(),
-            None => format!("{flag} {value}"),
-        })
+    let word = command.get(at)?;
+    if BYPASS_FLAGS.contains(&word.as_str()) {
+        return Some((word.clone(), 1));
+    }
+    if !is_flag(word) {
+        return None;
+    }
+    let (flag, attached) = split(word);
+    let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
+    // A value may be written quoted and spaced (`approval_policy = "never"`).
+    let plain = value.replace(['"', '\'', ' '], "");
+    let off = if flag == CLAUDE_CODE_MODE_FLAG {
+        ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
+    } else {
+        MODE_FLAGS
+            .iter()
+            .any(|(known, never)| flag == *known && plain == *never)
+    };
+    off.then(|| match attached {
+        Some(_) => (word.clone(), 1),
+        None => (format!("{flag} {value}"), 2),
     })
 }
 
