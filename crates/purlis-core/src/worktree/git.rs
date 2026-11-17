@@ -2531,6 +2531,40 @@ pub const HOOK_REPOSITORY_ENV: [&str; 6] = [
 /// for another on any call: [`NO_PROGRAMS`] turns `refs/replace` off.)
 pub const AS_WRITTEN_ENV: [(&str, &str); 1] = [("GIT_GRAFT_FILE", "/dev/null/no-grafts")];
 
+/// **What a read of history as written is told** (M75 spec §5, review round 5, SEC5-SF1): no
+/// object stands in for another, whatever the repository's config or `refs/replace/` says, and
+/// no graft gives a commit parents it was not written with ([`AS_WRITTEN_ENV`]).
+pub const AS_WRITTEN_READ_ENV: [(&str, &str); 2] =
+    [("GIT_NO_REPLACE_OBJECTS", "1"), AS_WRITTEN_ENV[0]];
+
+/// **Run a read of `dir`'s history as it was written** (M75 spec §5; Q320c R5-1): [`run`]'s
+/// hardening, [`AS_WRITTEN_READ_ENV`], and the repository's config neutralised key by key on the
+/// command line, since git still needs its `extensions` (the object format) to read an object.
+/// The keys that change what a read of `HEAD:./<file>` names are the work tree's: a
+/// `core.worktree` the repository's config names would make `./` another folder of the commit,
+/// so the work tree is named as `dir` itself, which is why `dir` must be the top of its tree.
+/// `core.useReplaceRefs` is held off on every call already ([`NO_PROGRAMS`]).
+pub fn run_as_written(dir: &Path, args: &[&str], timeout: Duration) -> Result<Run, GitUnavailable> {
+    let work_tree = format!("--work-tree={}", dir.display());
+    let mut held_args: Vec<&str> = vec![&work_tree];
+    held_args.extend_from_slice(args);
+    let extra = Extra {
+        config: vec!["core.bare=false".to_owned()],
+        pass: AS_WRITTEN_READ_ENV
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).into()))
+            .collect(),
+        ..Extra::default()
+    };
+    let extra = match held(dir, &held_args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(as_text(answer)),
+    };
+    counted(dir, &held_args, || {
+        Ok(wait(spawn_with(dir, &held_args, &extra)?, timeout)?)
+    })
+}
+
 /// Run `git -C <dir> <args>` with a deadline, from inside a git hook: [`run`]'s hardening plus
 /// [`HOOK_REPOSITORY_ENV`] and [`CONFIG_LOCATION_ENV`], so it reads the index and the config
 /// the command that ran the hook reads, and history as written ([`AS_WRITTEN_ENV`]).

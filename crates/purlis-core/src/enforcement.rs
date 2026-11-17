@@ -387,7 +387,7 @@ impl Template {
 }
 
 /// The sandbox family's three values (Q308a).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SandboxLevel {
     /// No wrap.
     Off,
@@ -534,15 +534,25 @@ impl Settings {
     /// root; a branch folder's own file is never asked.
     pub fn read(root: &Path) -> Self {
         use crate::settings::{Which, layer_text};
-        let mut project = match committed_text(root) {
-            Ok(text) => Self::from_text(text.as_deref()),
-            // A `HEAD` git could not read in time is not a file to fall back to (the
-            // re-review of #6992): strict, with the sentence for the Notice.
-            Err(why) => Self {
+        let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
+        let mut project = match committed_text(root, &names) {
+            Committed::Text { text, .. } => Self::from_text(Some(&text)),
+            Committed::Absent => Self::from_text(None),
+            // ADR 0125's reader keeps its own working-file read where the plane is no
+            // repository at all, until M75 slice 13 retires it; `committed_text` has none.
+            Committed::NoHead { repository: false } => {
+                Self::from_text(layer_text(root, Which::Shared).text())
+            }
+            // A `HEAD` git could not read in time, or none yet, is not a file to fall back to
+            // (the re-review of #6992): strict, with the sentence for the Notice.
+            Committed::NoHead { repository: true } | Committed::Unread(_) => Self {
                 template: Template::Strict,
                 template_said: true,
                 overrides: BTreeMap::new(),
-                refused: vec![why],
+                refused: vec![
+                    "git could not read the project's last commit, so its [policy] is enforced"
+                        .to_owned(),
+                ],
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
@@ -575,35 +585,67 @@ impl Settings {
 /// How long reading the committed file at `HEAD` may take.
 const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// **The plane root's committed settings file as it stands at `HEAD`** (Q309 point 1): a
-/// change not committed yet is not the project's. Where the plane is no git repository, the
-/// file as it stands is all there is. `Ok(None)` where there is no such file; an error, which
-/// reads as `strict`, where the plane is a repository whose `HEAD` git could not read or did not
-/// read in time: never the working tree's file then (the re-review of #6992).
-pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
-    use crate::settings::{Which, layer_text};
-    let unread =
-        || "git could not read the project's last commit, so its [policy] is enforced".to_owned();
-    match crate::worktree::git::run(
+/// **A file of the plane root as it stands at `HEAD`**, what [`committed_text`] reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Committed {
+    /// The file as committed, under the name it has there.
+    Text {
+        /// The name it is committed under.
+        file: &'static str,
+        /// What it holds.
+        text: String,
+    },
+    /// `HEAD` holds no such file: the project says nothing in it.
+    Absent,
+    /// There is no `HEAD` to read: the plane is no git repository (`repository` false), or one
+    /// with no commit yet. Nothing is committed, and the working file is never read in its place
+    /// (M75 spec §5; Q320a N3, Q320b R2-1).
+    NoHead {
+        /// Whether the plane is a git repository at all.
+        repository: bool,
+    },
+    /// git could not read `HEAD`, or not in time: the sentence for the Notice.
+    Unread(String),
+}
+
+/// **The plane root's file, under the first of `names` it is committed by, as it stands at
+/// `HEAD`** (Q309 point 1; M75 spec §5): a change not committed yet is not the project's, and
+/// neither is a branch folder's copy. The read is of history as written
+/// ([`crate::worktree::git::run_as_written`]): no replace ref, graft or repository config key
+/// changes what it reads (review round 5, SEC5-SF1; Q320c R5-1). There is no working-file
+/// fallback (review round 5, FB5 R4-4): where there is no `HEAD`, it says so.
+pub fn committed_text(root: &Path, names: &[&'static str]) -> Committed {
+    use crate::worktree::git::run_as_written;
+    let unread = || Committed::Unread("git could not read the project's last commit".to_owned());
+    match run_as_written(
         root,
-        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
         GIT_WAIT,
     ) {
         Ok(run) if run.ok() => {}
-        // git said the plane is no repository at all: its file is all there is.
         Ok(run) if run.code == Some(128) && run.err.contains("not a git repository") => {
-            return Ok(layer_text(root, Which::Shared).text().map(str::to_owned));
+            return Committed::NoHead { repository: false };
         }
-        // Timed out, failed, or no commit yet: never the working tree's file.
-        _ => return Err(unread()),
+        // `--verify --quiet` exits 1 with nothing said where there is no commit yet.
+        Ok(run) if run.code == Some(1) && run.err.trim().is_empty() => {
+            return Committed::NoHead { repository: true };
+        }
+        _ => return unread(),
     }
-    let file = Which::Shared.file_at(root);
-    match crate::worktree::git::run(root, &["show", &format!("HEAD:./{file}")], GIT_WAIT) {
-        Ok(run) if run.ok() => Ok(Some(run.out)),
-        // No such file at `HEAD`: the project says nothing.
-        Ok(run) if run.code == Some(128) => Ok(None),
-        _ => Err(unread()),
+    for file in names {
+        match run_as_written(root, &["show", &format!("HEAD:./{file}")], GIT_WAIT) {
+            Ok(run) if run.ok() => {
+                return Committed::Text {
+                    file,
+                    text: run.out,
+                };
+            }
+            // No such file at `HEAD`: the next name.
+            Ok(run) if run.code == Some(128) => {}
+            _ => return unread(),
+        }
     }
+    Committed::Absent
 }
 
 /// **The digest of what the press accepts** (the review of #6992, S2, and its re-review): of the

@@ -46,3 +46,26 @@ pub fn from_the_app() {
     enforcement::ask_with(asked);
     enforcement::log_to(Box::new(logged));
 }
+
+/// `purlis policy`: the project policy (M75, ADR 0126).
+#[derive(clap::Subcommand, Debug)]
+pub enum PolicyCommand {
+    /// Print a policy. With `--default`, the shipped default compiled into this build, which a
+    /// project's `policy.cedar` sits on top of.
+    Show {
+        /// The shipped default, as this build holds it.
+        #[arg(long, required = true)]
+        default: bool,
+    },
+}
+
+/// Runs `purlis policy …`.
+pub fn run(command: &PolicyCommand) -> std::process::ExitCode {
+    match command {
+        // `--default` is required for now: the policy in force is a later slice's.
+        PolicyCommand::Show { default: _ } => {
+            print!("{}", purlis_core::policy::DEFAULT);
+            std::process::ExitCode::SUCCESS
+        }
+    }
+}
