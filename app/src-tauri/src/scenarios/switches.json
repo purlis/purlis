@@ -1918,6 +1918,21 @@
       }
     },
     {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "if !super::keyhold::is_the_app() || crate::fence::FENCED {",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129) on the dispatch-grant seal key (Q306): a fenced build never reads the login keychain for it, as no test touches the person's keychain; a release build reads it, in the app alone.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/secrets/setup.rs",
       "at": "if !crate::fence::inside(&home, &crate::fence::fence()) {",
       "kind": "switch",
