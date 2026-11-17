@@ -16,7 +16,7 @@ import { expect, screen, waitFor } from "storybook/test";
 import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { BrowserView } from "./BrowserView";
-import type { BrowserFrame } from "./bindings";
+import type { BrowserFrame, ShownPage } from "./bindings";
 import { forgetOrigins } from "./browserWatch";
 import { forgetProjectsBrowsers, tellProjectBrowsers } from "./browsersGrid";
 import type { Offer } from "./actions";
@@ -170,6 +170,7 @@ export const Letterboxed: Story = {
       reconnection: null,
       page: null,
       closed: null,
+      shown: null,
     });
     const picture = canvas.getByLabelText("The browser's page", { selector: "canvas" });
     await waitFor(() => expect(picture).toHaveProperty("height", FRAME.height));
@@ -292,6 +293,7 @@ export const HandedOverByItsChat: Story = {
       reconnection: null,
       page: null,
       closed: null,
+      shown: null,
     });
 
     await userEvent.tab();
@@ -378,8 +380,22 @@ function chatsBrowser(origin: string, keys: readonly string[], personDrives = fa
 /** Draws a frame on `origin`, and waits until the row names it. */
 async function onPage(origin: string, host: string) {
   await waitFor(() => expect(frames).toBeDefined());
-  frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null });
-  frames?.onmessage({ aim: "p1:1", jpeg: framed(), reconnection: null, page: null, closed: null });
+  frames?.onmessage({
+    aim: "",
+    jpeg: "",
+    reconnection: null,
+    page: { origin },
+    closed: null,
+    shown: null,
+  });
+  frames?.onmessage({
+    aim: "p1:1",
+    jpeg: framed(),
+    reconnection: null,
+    page: null,
+    closed: null,
+    shown: null,
+  });
   await waitFor(() =>
     expect(document.querySelector('[data-testid="browser-chip"]')).toHaveTextContent(host),
   );
@@ -583,6 +599,7 @@ export const ANarrowPaneSayingEverything: Story = {
       reconnection: null,
       page: null,
       closed: null,
+      shown: null,
     });
     await waitFor(() => canvas.getByRole("button", { name: /Done/ }));
     const status = canvas.getByRole("status");
@@ -597,6 +614,7 @@ export const ANarrowPaneSayingEverything: Story = {
       reconnection: "reconnecting",
       page: null,
       closed: null,
+      shown: null,
     });
     await waitFor(() => expect(status).toHaveTextContent(RECONNECTING_SAID));
     await expect(status).toHaveTextContent("The page changed before");
@@ -604,5 +622,137 @@ export const ANarrowPaneSayingEverything: Story = {
     // Three things said at once wrap to more lines than one, every word of them whole.
     await fitsThePane(canvas, 160);
     (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** Tells the view what its page is (#6938), as the core does, after a frame on `origin`. */
+async function told(origin: string, host: string, shown: ShownPage) {
+  await onPage(origin, host);
+  frames?.onmessage({
+    aim: "",
+    jpeg: "",
+    reconnection: null,
+    page: null,
+    closed: null,
+    shown,
+  });
+}
+
+/** The page of the stories of what a page is (#6938). */
+const DOCS: ShownPage = {
+  address: "https://console.volaticloud.com/projects/fleet/runners?tab=pending",
+  title: "Pending runners · Fleet · VolatiCloud console",
+  load: { state: "loaded" },
+};
+
+/**
+ * **What the page is** (#6938): its title after the site, Copy for its whole address, and Back,
+ * Forward and Reload at the strip's start. The keyboard goes Back, Forward, Reload, then the
+ * strip's Take control.
+ */
+export const ItsTitleAndHistory: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas, userEvent }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", DOCS);
+    await waitFor(() =>
+      expect(canvas.getByTestId("browser-title")).toHaveTextContent("Pending runners"),
+    );
+    await expect(canvas.getByRole("button", { name: "Copy address" })).toBeVisible();
+    await fitsThePane(canvas);
+
+    const back = canvas.getByRole("button", { name: "Back" });
+    back.focus();
+    await untilFocused(() => back, "Back takes the keyboard");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Forward" }),
+      "Tab reaches Forward",
+    );
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "Reload" }), "Tab reaches Reload");
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Take control" }),
+      "Tab reaches Take control",
+    );
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** **A page loading** (#6938): the strip's lower edge moves, it says so, and Stop is in Reload's
+ *  place. */
+export const APageLoading: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...DOCS,
+      load: { state: "loading" },
+    });
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Loading the page…"));
+    await expect(canvas.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(
+      document.querySelector(".browser-bar")?.hasAttribute("data-loading"),
+      "the strip draws the load on its lower edge",
+    ).toBe(true);
+    await fitsThePane(canvas);
+  },
+};
+
+/** **A page that did not load, in a narrow pane** (#6938): the strip says so with the engine's
+ *  reason and what to do, and wraps rather than running past the pane. */
+export const APageThatDidNotLoad: Story = {
+  args: { width: 420 },
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...DOCS,
+      title: null,
+      load: { state: "failed", why: "net::ERR_NAME_NOT_RESOLVED" },
+    });
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "This page did not load (net::ERR_NAME_NOT_RESOLVED). Press Reload to try again.",
+      ),
+    );
+    await expect(canvas.getByRole("button", { name: "Reload" })).toBeVisible();
+    await fitsThePane(canvas, 160);
+  },
+};
+
+/** **A page that stopped working** (#6938): its renderer crashed, and the strip says Reload. */
+export const APageThatStoppedWorking: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...DOCS,
+      load: { state: "crashed" },
+    });
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "This page stopped working. Press Reload to open it again.",
+      ),
+    );
+    await fitsThePane(canvas);
+  },
+};
+
+/**
+ * **A long title in a real pane, 420px wide** (#6938): the title is cut before the site is, and
+ * Copy, the site and the pane head's controls keep their room; nothing runs past the pane.
+ */
+export const ALongTitleInANarrowSplitPane: Story = {
+  render: () => <InAPane width={420} />,
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(0, 3)),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...DOCS,
+      title: `${"A very long page title that goes on ".repeat(6)}and on`,
+    });
+    const title = await waitFor(() => canvas.getByTestId("browser-title"));
+    await fitsThePane(canvas);
+    await expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
+    await expect(canvas.getByRole("button", { name: "Copy address" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "3 secrets" })).toBeVisible();
   },
 };

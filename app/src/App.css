@@ -9646,3 +9646,59 @@ nav.piece-files-head {
   padding: 0;
   list-style: none;
 }
+
+/* **What the page is** (#6938): its title after the site, cut before the site is; Copy beside
+   it. */
+.browser-title {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.browser-copy-address {
+  flex: none;
+}
+
+/* Back, Forward and Reload or Stop, at the strip's start (#6938). */
+.browser-nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* A page loading draws the strip's lower edge moving (#6938), a mark of its own under the
+   strip's controls; the motion layer stills it under reduced motion, where the strip still
+   says it is loading. */
+.browser-bar[data-loading] {
+  position: relative;
+}
+
+.browser-progress {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  inline-size: 40%;
+  block-size: 2px;
+  background: var(--accent-base);
+  animation: browser-loading var(--motion-duration-breathe) var(--motion-easing-steady) infinite
+    alternate;
+}
+
+@keyframes browser-loading {
+  from {
+    inset-inline-start: 0;
+  }
+
+  to {
+    inset-inline-start: 60%;
+  }
+}
+
+.browser-bar-loading {
+  color: var(--text-primary);
+}

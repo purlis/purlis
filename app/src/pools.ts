@@ -159,6 +159,14 @@ function subscribe(listener: () => void) {
   };
 }
 
+/** Back to nothing read and no dialog open, for a test: the store outlives a render, and a view
+ *  mounted next draws what is held before it subscribes, so a read left by one test would be
+ *  the next test's first picture (#6982). A read still on its way is dropped. */
+export function forgetPools() {
+  reading++;
+  set(() => START);
+}
+
 export function usePools(): Held {
   return useSyncExternalStore(subscribe, () => held);
 }
