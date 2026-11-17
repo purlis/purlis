@@ -1,0 +1,12 @@
+{
+  "$comment": "The issues the cells' expected_fail marks name, and whether each is open (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`.",
+  "fetched": "2026-11-17",
+  "issues": {
+    "6657": "open",
+    "6672": "open",
+    "6673": "open",
+    "6674": "open",
+    "6675": "open",
+    "6676": "open"
+  }
+}
