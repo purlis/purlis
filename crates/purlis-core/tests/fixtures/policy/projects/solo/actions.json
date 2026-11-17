@@ -1,0 +1,5 @@
+[["web/builder","merge","Branch::\"acme/web#main\"",{}],
+ ["web/builder","push","Branch::\"acme/web#feature-x\"",{"force":true}],
+ ["web/builder","connect","Host::\"pastebin.com\"",{}],
+ ["web/builder","reveal","Secret::\"builder/npm-token\"",{}],
+ ["web/builder","read","Path::\"api/.env\"",{}]]

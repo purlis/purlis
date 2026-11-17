@@ -1,0 +1,5 @@
+[["web/builder","write","Path::\"web/src/app.ts\"",{}],
+ ["web/builder","connect","Host::\"api.acme.com\"",{}],
+ ["web/builder","merge","Branch::\"acme/web#main\"",{}],
+ ["web/builder","install","Skill::\"random-skill\"",{}],
+ ["web/builder","dispatch-to","Persona::\"reviewer\"",{}]]
