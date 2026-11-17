@@ -128,6 +128,14 @@ fn a_rule_whose_id_lacks_its_family_prefix_or_takes_the_reserved_one_is_refused_
         with_project(spans_two).is_ok(),
         "a rule over two families takes either's prefix"
     );
+    let snake_family = "// purlis-policy 1\n\
+                        @id(\"secrets-credential-files-ssh-keys\")\n\
+                        forbid (principal, action in [Action::\"read\", Action::\"secrets.credential_files\"], resource);\n";
+    assert!(
+        with_project(snake_family).is_ok(),
+        "a family whose key has an underscore gives a kebab-case prefix: {:?}",
+        with_project(snake_family).err()
+    );
 }
 
 #[test]
@@ -235,7 +243,7 @@ fn every_action_belongs_to_exactly_one_family_group() {
     expected.insert("audit");
     assert_eq!(
         families, expected,
-        "ADR 0125's 24 families and audit (spec §3.3)"
+        "ADR 0125's 24 families, secrets.credential_files (Q325) and audit (spec §3.3)"
     );
 
     let schema = schema_json();
