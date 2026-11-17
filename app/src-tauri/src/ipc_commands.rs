@@ -130,6 +130,7 @@ macro_rules! app_commands {
                 sandboxing::answer_team_sandbox_off,
                 policypress::project_policy_state,
                 policypress::accept_project_policy,
+                policypress::policy_log,
                 sandboxing::persona_grants_held,
                 sandboxing::allow_persona_grants,
                 sandboxing::sandbox_block_report,

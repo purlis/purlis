@@ -1486,6 +1486,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
     // The project's `[policy]` as it stands for you (Q308): a read; Accept stays the window's.
     "project_policy_state",
+    // What the project's `[policy]` let through and logged (Q308a): a read of rule ids,
+    // families, chat numbers and the host:port a rule was about, never a command, a path or a
+    // value.
+    "policy_log",
     "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",

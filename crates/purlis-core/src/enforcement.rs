@@ -805,7 +805,7 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
 }
 
 /// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Standing {
     /// Each family the project now runs looser than this person accepted: the family, the
     /// accepted mode and the project's. What the press would accept.
@@ -816,18 +816,35 @@ pub struct Standing {
     pub unsealed: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
+    /// What the project's `[policy]` says, from the same read: its template and the families
+    /// it sets apart.
+    pub said: Settings,
+    /// How every family runs here now: the stricter of what the project says and what this
+    /// person accepted, each enforced where the acceptance's seal does not hold.
+    pub runs: Resolved,
+    /// Each family an administrator's lock holds enforced on this machine.
+    pub locked: Vec<Family>,
 }
 
 /// [`Standing`] for the project at `root`.
 pub fn standing(root: &Path) -> Standing {
-    // One read of `HEAD`, so what waits and the digest the press must name are of the same file.
+    // One read of `HEAD`, so what waits, what is said and the digest the press must name are
+    // all of the same file.
     let settings = Settings::read(root);
-    let now = Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root));
+    let locks = crate::sandbox::policy::Locks::of(root);
+    let now = Resolved::of(&settings, &locks);
+    let accepted = accepted(root);
     Standing {
-        waiting: now.looser_than(&accepted(root)),
-        refused: settings.refused,
+        waiting: now.looser_than(&accepted),
+        refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
         digest: digest(&now),
+        runs: now.stricter(&accepted),
+        locked: Family::ALL
+            .into_iter()
+            .filter(|family| locks.enforcement_floor(*family).is_some())
+            .collect(),
+        said: settings,
     }
 }
 
@@ -980,7 +997,7 @@ pub struct Logged {
 }
 
 /// The most of a rule id or a host a log line keeps, in characters.
-const MOST_CHARS: usize = 200;
+pub const MOST_CHARS: usize = 200;
 
 /// What a log line names as its chat where the process was not told which (Q308 review, S3).
 pub const UNKNOWN_CHAT: &str = "unknown";

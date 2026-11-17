@@ -769,6 +769,12 @@ export const commands = {
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
+	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
+	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
+	 *  thread.
+	 */
+	policyLog: (plane: PlaneId) => typedError<PolicyLog, string>(__TAURI_INVOKE("policy_log", { plane })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -14160,6 +14166,52 @@ export type PluginOffShown = {
 export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
 
 /**
+ *  What the project's enforcement log holds, newest first, at most [`MOST_LINES`], with how
+ *  many lines it holds in all.
+ */
+export type PolicyLog = {
+	/**  How many refusals were let through and logged, every chat's. */
+	count: number,
+	/**  The newest of them. */
+	lines: PolicyLogLine[],
+	/**
+	 *  How many lines the log holds that are not as purlis writes them, left out of the count
+	 *  and the lines: what a process other than the app wrote there.
+	 */
+	dropped: number,
+};
+
+/**  One line of the project's enforcement log: a refusal a family set to `log` let through. */
+export type PolicyLogLine = {
+	/**  When, UTC, RFC 3339. */
+	at: string,
+	/**  The id of the rule that would have refused. */
+	rule: string,
+	/**  The family's key. */
+	family: string,
+	/**
+	 *  The number of the chat it was in, while that chat is open here; `null` for one that has
+	 *  closed, or that purlis could not name: the window says it is unknown.
+	 */
+	session: number | null,
+	/**  The host it was about, where the rule is about one. */
+	host: string | null,
+};
+
+/**  One family the project's `[policy]` sets apart from its template. */
+export type PolicyOverride = {
+	/**  The family's key, as `[policy]` spells it. */
+	family: string,
+	/**  What the file says: `off`, `log` or `enforce`. */
+	said: string,
+	/**
+	 *  How your chats here run it now: stricter than `said` where a lock holds it, where the
+	 *  family is not switchable yet, or where a loosening waits for your press.
+	 */
+	runs: string,
+};
+
+/**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
  */
@@ -14186,6 +14238,20 @@ export type PolicyState = {
 	 *  file that changed since it was shown accepts nothing.
 	 */
 	digest: string,
+	/**
+	 *  The template the project's committed file names (`open`, `watch`, `hold`, `team` or
+	 *  `strict`), or `watch` where it names none (Q308a: the window says it, Q308 instruction 45).
+	 */
+	template: string,
+	/**  Whether the file named no template, so `watch`, the shipped default, holds. */
+	template_default: boolean,
+	/**  Each family the project sets apart from its template, in the docs' order. */
+	overrides: PolicyOverride[],
+	/**
+	 *  Each family an administrator's lock holds enforced on this machine, whatever the file
+	 *  says (Q308a: Settings shows it as locked).
+	 */
+	locked: string[],
 };
 
 /**  One family the project now runs looser than you accepted. */

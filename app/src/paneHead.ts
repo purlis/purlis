@@ -80,7 +80,12 @@ export function stateButtonOf(chat: {
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
  * among them: they never go. The workspace is not either, being the foot's (#5206).
  *
- * - `number`: the chat's number beside its name (#6212), first to go: its tab's hover says it too,
+ * - `policy`: the project's policy (Q308a, instruction 45), first to go: the same for every chat of
+ *   the project, and said whole in Settings › Project › Policy. Measured on the longest head with
+ *   the mark at its widest, `strict +12` (`ChatFoot.stories.tsx`'s
+ *   `PolicyGoesWhereItNoLongerFits`, which fails where this width is not the narrowest it fits
+ *   at, give or take 24 px), so it goes under 570, and nothing measured before it moves.
+ * - `number`: the chat's number beside its name (#6212), next to go: its tab's hover says it too,
  *   and the name needs the room more. Measured on the longest head (`ChatFoot.stories.tsx`): with
  *   it, a head at 470 px is 14 px over, so it goes under 500.
  * - `markWord`: the state mark's word, its dot staying.
@@ -92,10 +97,12 @@ export function stateButtonOf(chat: {
  * - `mark`: the state mark, dot and all.
  * - `splitDown`: the Split down button.
  */
-export type HeadPart = "number" | "markWord" | "using" | "buttonWord" | "mark" | "splitDown";
+export type HeadPart =
+  "policy" | "number" | "markWord" | "using" | "buttonWord" | "mark" | "splitDown";
 
 /** **The ruled order**, and the pane width in CSS pixels under which each part goes (#4585). */
 export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
+  { part: "policy", below: 570 },
   { part: "number", below: 500 },
   { part: "markWord", below: 470 },
   { part: "using", below: 450 },
@@ -145,7 +152,8 @@ export type PaneKind =
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
  * runs as, which chat it is (its name, or the path to the task it shows), its state mark and
- * the mark's word, and what it uses now (`using`, #5524). A pane with no foot keeps its details
+ * the mark's word, what it uses now (`using`, #5524) and the project's policy (`policy`, Q308a).
+ * A pane with no foot keeps its details
  * here too (spec #5191, Out of Scope): its sandbox, harness · workspace (`where`), where it came
  * from and its work item.
  */
@@ -158,6 +166,7 @@ export type LinePart =
   | "mark"
   | "markWord"
   | "using"
+  | "policy"
   | "where"
   | "from"
   | "workItem";
@@ -239,6 +248,8 @@ export type LineFacts = {
   /** It may use something now, its skill run or its browsers, which its head says after its
    *  state (#5524) until a narrow pane drops it (#5614). */
   using?: boolean;
+  /** The project's policy has been read (Q308a, instruction 45): a live chat's head says it. */
+  policy?: boolean;
   /** False where the pane draws no close: a pane showing a task of its session (#1486). */
   closes?: boolean;
   /**
@@ -306,6 +317,9 @@ export function paneLinesOf(
     if (!drops.has("markWord")) head.push("markWord");
   }
   if (facts.using === true && !drops.has("using")) head.push("using");
+  // The project's policy (Q308a): on a live chat's or task's head, which its hooks run under.
+  if (facts.policy === true && !ended && (kind === "chat" || pathed) && !drops.has("policy"))
+    head.push("policy");
   if (!footed && details) {
     head.push("where");
     if (facts.from === true) head.push("from");
