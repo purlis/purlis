@@ -56,6 +56,12 @@ pub const SCHEMA: &str = include_str!("policy/schema.cedarschema");
 /// handful of rules ending in [`EVERYTHING_ELSE`], which later slices grow family by family.
 pub const DEFAULT: &str = include_str!("policy/default.cedar");
 
+/// **The limits key table** (spec §5.1; review round 3, C3 S5): every `[policy.limits]` key,
+/// wildcards expanded, with its shipped value, unit, loosening direction, ruling and the
+/// inventory row it comes from. Slice 12 types `[policy.limits]` against it;
+/// `tests/it/every_inventory_row_is_mapped.rs` checks it.
+pub const LIMITS: &str = include_str!("policy/limits.toml");
+
 /// The shipped default's catch-all permit (Q316.1). Deny-by-default turns it off (Q318.1).
 pub const EVERYTHING_ELSE: &str = "policy-everything-else";
 
@@ -231,6 +237,19 @@ pub struct Rule {
     /// Its `@timed`, if it writes one.
     pub timed: Option<String>,
     policy: CedarPolicy,
+}
+
+impl Rule {
+    /// The actions its scope names, as written: none when it names none, so it applies to every
+    /// action. The action-to-kind table is generated from it (spec §8.2).
+    pub fn actions(&self) -> Vec<String> {
+        let name = |uid: &EntityUid| uid.id().unescaped().to_owned();
+        match self.policy.action_constraint() {
+            ActionConstraint::Any => Vec::new(),
+            ActionConstraint::Eq(uid) => vec![name(&uid)],
+            ActionConstraint::In(uids) => uids.iter().map(name).collect(),
+        }
+    }
 }
 
 /// The embedded schema, parsed once.

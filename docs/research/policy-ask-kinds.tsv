@@ -1,0 +1,18 @@
+# The action-to-kind table (M75 slice 08; spec §8.2; Q314 point 13; the deferral is proposed).
+# Every @ask("you") rule of the shipped default, in its order, with the actions its scope names
+# and the kind of ask the window shows it as: an AskSource kind (app/src-tauri/src/asking.rs,
+# kebab-case), or "none" where no window kind asks for that action today, which the rule's
+# family's slice adds. The rule and actions columns are generated from the default and checked
+# by crates/purlis-core/tests/it/every_inventory_row_is_mapped.rs; the kind and note are written.
+rule	actions	kind	note
+guards-merge-hold	merge	merge-hold	The merge ask (Asks #46).
+guards-release-hold	release	none	Today the release floor refuses an unattended publish and never asks (release #1).
+guards-git-protected-push	push	permission	Today a protected-branch push is a risk class on the harness's permission ask (Asks #19).
+guards-git-force-push	push	permission	As guards-git-protected-push.
+sandbox-other-workspace-read	read	none	Today another workspace's paths are denied, with no ask.
+network-production-host	connect	sandbox-host	A production host is a risk class on the host ask (Asks #20).
+network-unknown-host	connect	sandbox-host	The host ask.
+browser-unknown-site	browse	browser-site	The ask for a site new to the project.
+vaults-use	use	vault	The vault ask.
+dispatch-other-persona	dispatch-to	dispatch	The dispatch grant ask (Asks #32).
+skills-unlisted	install,load	none	Today an unlisted skill is refused by [skill_policy], with no ask.

@@ -1,0 +1,332 @@
+# The limits key table (M75 slice 08; spec §5.1; review round 3, C3 S5).
+#
+# Every `[policy.limits]` key, named one by one: spec §5.1's wildcards `asks.cool-off-*` and
+# `runners.pool-*` are expanded, one key per number today. Slice 12 types `[policy.limits]`
+# against this table, so a key that is not here makes the file broken.
+#
+# - `key`: `<family>.<kebab>`. `dispatch.*` keep `dispatchlimits::Limit::key()`'s spellings
+#   (Q315.4); the other names are proposed (review round 1).
+# - `shipped`: the value in the shipped default, today's value: a whole number in `unit`;
+#   "none" for no cap (off until set); "by-memory" for a value read from the device's memory.
+# - `loosens`: the direction that loosens it, "raised" or "lowered" (review round 1, S-B8). The
+#   value in force is the stricter of committed and accepted.
+# - `source`: the ruling that names the key.
+# - `inventory`: the #6970 row it comes from, which `docs/research/policy-inventory-map.tsv`
+#   maps to a key of this table; empty for a key no row of the inventory holds.
+#
+# `tests/it/every_inventory_row_is_mapped.rs` checks it.
+
+# ── dispatch (today's `dispatchlimits::Limit`) ────────────────────────────────────────────
+[[limit]]
+key = "dispatch.running-per-chat"
+shipped = 6
+unit = "tasks"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #47"
+
+[[limit]]
+key = "dispatch.live-per-lineage"
+shipped = 16
+unit = "chats"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #48"
+
+[[limit]]
+key = "dispatch.messages-per-minute"
+shipped = 10
+unit = "messages"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #51"
+
+[[limit]]
+key = "dispatch.may-dispatch"
+shipped = "none"
+unit = "tasks"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #52"
+
+[[limit]]
+key = "dispatch.may-run-at-once"
+shipped = "none"
+unit = "chats"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #53"
+
+[[limit]]
+key = "dispatch.tokens-per-session"
+shipped = "none"
+unit = "tokens"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #54"
+
+[[limit]]
+key = "dispatch.minutes-per-task"
+shipped = "none"
+unit = "minutes"
+loosens = "raised"
+source = "Q315.4"
+inventory = "Dispatch #55"
+
+# ── trust (a chat's start) ────────────────────────────────────────────────────────────────
+[[limit]]
+key = "trust.project-file-max-bytes"
+shipped = 1048576
+unit = "bytes"
+loosens = "raised"
+source = "Q316.4"
+inventory = "Sandbox #4"
+
+[[limit]]
+key = "trust.profile-max-bytes"
+shipped = 786432
+unit = "bytes"
+loosens = "raised"
+source = "Q316.4"
+# The inventory names the 768 KiB cap only in its prose ("Limits that bound nothing a chat
+# may do"), in no row.
+inventory = ""
+
+[[limit]]
+key = "trust.accepted-floor-max-versions"
+shipped = 32
+unit = "versions"
+loosens = "raised"
+source = "review round 3, SEC3 nit; review round 4, F4 SF-2"
+inventory = ""
+
+[[limit]]
+key = "trust.kept-untold-max"
+shipped = 20000
+unit = "names"
+loosens = "raised"
+source = "Q316.4"
+inventory = "Sandbox #35"
+
+[[limit]]
+key = "trust.unread-max"
+shipped = 1024
+unit = "names"
+loosens = "raised"
+source = "Q316.4"
+inventory = "Sandbox #63"
+
+[[limit]]
+key = "trust.repositories-unfound-max"
+shipped = 50000
+unit = "repositories"
+loosens = "raised"
+source = "Q316.4"
+inventory = "Sandbox #65"
+
+# ── asks ──────────────────────────────────────────────────────────────────────────────────
+[[limit]]
+key = "asks.needs-you-max-items"
+shipped = 50
+unit = "items"
+loosens = "raised"
+source = "Q314.14"
+inventory = ""
+
+[[limit]]
+key = "asks.needs-you-max-days"
+shipped = 30
+unit = "days"
+loosens = "raised"
+source = "Q314.14"
+inventory = ""
+
+[[limit]]
+key = "asks.needs-you-quiet-days"
+shipped = 7
+unit = "days"
+loosens = "raised"
+source = "Q314.14"
+inventory = ""
+
+# `asks.cool-off-*`, expanded: today's `askrules::COOL_AFTER`, `COOL_WITHIN_SECS` and
+# `COOL_FOR_SECS`, all three on one row of the inventory.
+[[limit]]
+key = "asks.cool-off-after"
+shipped = 2
+unit = "Don't allows"
+loosens = "lowered"
+source = "Q314.15"
+inventory = "Asks #25"
+
+[[limit]]
+key = "asks.cool-off-within-minutes"
+shipped = 60
+unit = "minutes"
+loosens = "lowered"
+source = "Q314.15"
+inventory = "Asks #25"
+
+[[limit]]
+key = "asks.cool-off-for-minutes"
+shipped = 60
+unit = "minutes"
+loosens = "lowered"
+source = "Q314.15"
+inventory = "Asks #25"
+
+# ── skills ────────────────────────────────────────────────────────────────────────────────
+[[limit]]
+key = "skills.min-age-days"
+shipped = 7
+unit = "days"
+loosens = "lowered"
+source = "Q315.7"
+inventory = "Skills #31"
+
+# ── runners: `runners.pool-*`, expanded, one key per `poollimits::ALL` entry ──────────────
+[[limit]]
+key = "runners.pool-profile-size-mib"
+shipped = 128
+unit = "MiB"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #20"
+
+[[limit]]
+key = "runners.pool-profile-files"
+shipped = 8192
+unit = "files"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #21"
+
+[[limit]]
+key = "runners.pool-code-size-mib"
+shipped = 1024
+unit = "MiB"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #22"
+
+[[limit]]
+key = "runners.pool-code-send-minutes"
+shipped = 10
+unit = "minutes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #23"
+
+[[limit]]
+key = "runners.pool-sign-in-wait-minutes"
+shipped = 15
+unit = "minutes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #24"
+
+[[limit]]
+key = "runners.pool-vouch-wait-minutes"
+shipped = 5
+unit = "minutes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #25"
+
+[[limit]]
+key = "runners.pool-answer-wait-seconds"
+shipped = 30
+unit = "seconds"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #26"
+
+[[limit]]
+key = "runners.pool-cpus-thousandths"
+shipped = 2000
+unit = "thousandths of a CPU"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #27"
+
+[[limit]]
+key = "runners.pool-memory-mib"
+shipped = 4096
+unit = "MiB"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #28"
+
+[[limit]]
+key = "runners.pool-processes"
+shipped = 1024
+unit = "processes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #29"
+
+[[limit]]
+key = "runners.pool-tmp-mib"
+shipped = 1024
+unit = "MiB"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #30"
+
+[[limit]]
+key = "runners.pool-suspend-after-minutes"
+shipped = 1440
+unit = "minutes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Other B #31"
+
+# ── browser (today's `browserlimits::Limit`) ──────────────────────────────────────────────
+[[limit]]
+key = "browser.per-project"
+shipped = 3
+unit = "browsers"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Browser #B32"
+
+[[limit]]
+key = "browser.on-this-device"
+shipped = "by-memory"
+unit = "browsers (one per 4 GiB of the device's memory class, never none)"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Browser #B33"
+
+[[limit]]
+key = "browser.idle-minutes"
+shipped = 10
+unit = "minutes"
+loosens = "raised"
+source = "Q315.10"
+inventory = "Browser #B34"
+
+# ── audit ─────────────────────────────────────────────────────────────────────────────────
+[[limit]]
+key = "audit.event-log-days"
+shipped = 30
+unit = "days (7 at least and 90 at most, proposed)"
+loosens = "lowered"
+source = "Q313.4; review round 1, S5"
+inventory = "Other B #50"
+
+[[limit]]
+key = "audit.record-days"
+shipped = 365
+unit = "days (30 at least, proposed)"
+loosens = "lowered"
+source = "Q313.4; review round 1, S5"
+inventory = ""
+
+[[limit]]
+key = "audit.record-max-bytes"
+shipped = 2147483648
+unit = "bytes"
+loosens = "lowered"
+source = "Q313.4; review round 1, S5"
+inventory = ""
