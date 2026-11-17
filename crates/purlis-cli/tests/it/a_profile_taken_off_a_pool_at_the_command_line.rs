@@ -199,7 +199,11 @@ fn in_a_chat_the_window_is_asked_nothing() {
     let env = [(CHAT_ENV.to_owned(), "3".to_owned())];
     let out = purlis(config, &TAKE_OFF, &env);
     assert!(!out.status.success(), "{}", said(&out));
-    assert!(said(&out).contains("a terminal outside purlis"), "{}", said(&out));
+    assert!(
+        said(&out).contains("a terminal outside purlis"),
+        "{}",
+        said(&out)
+    );
     assert_eq!(window.asked(), Vec::new());
 }
 
