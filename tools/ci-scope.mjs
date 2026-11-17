@@ -126,6 +126,11 @@ export const READ_BY_CODE = [
 export const DOCS_READ_BY_RUST = [
   "docs/plane-format.md",
   "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
+  // `it/every_inventory_row_is_mapped` holds every row of #6970 to its place in the policy, and
+  // every shipped ask to its kind (M75 slice 08).
+  "docs/research/policy-inventory.md",
+  "docs/research/policy-inventory-map.tsv",
+  "docs/research/policy-ask-kinds.tsv",
 ];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a

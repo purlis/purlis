@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The limits key table (M75 slice 08; spec §5.1; review round 3, C3 S5).
 #
 # Every `[policy.limits]` key, named one by one: spec §5.1's wildcards `asks.cool-off-*` and
@@ -155,7 +158,8 @@ inventory = ""
 key = "asks.cool-off-after"
 shipped = 2
 unit = "Don't allows"
-loosens = "lowered"
+# More Don't allows before the cool-off is a chat asked again more: raising it loosens.
+loosens = "raised"
 source = "Q314.15"
 inventory = "Asks #25"
 

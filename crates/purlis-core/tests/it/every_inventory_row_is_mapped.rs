@@ -250,7 +250,7 @@ fn target_problem(target: &str, pending: bool, known: &Known) -> Option<String> 
     if target.is_empty() {
         return (!pending).then(|| "no target, and not pending".to_owned());
     }
-    if target.contains(|c: char| c.is_whitespace() || c == ',' || c == ';') {
+    if target.contains(|c: char| c.is_whitespace() || [',', ';', '|'].contains(&c)) {
         return Some(format!("{target:?} names more than one target"));
     }
     let (kind, name) = target.split_once(':').unwrap_or((target, ""));
@@ -288,6 +288,7 @@ fn line(cite: &str, target: &str, pending: &str) -> String {
 
 #[test]
 fn every_inventory_row_maps_to_exactly_one_target_or_is_pending() {
+    purlis_core::unsteered!();
     let text = read("docs/research/policy-inventory.md");
     assert_eq!(
         inventory(&text).len(),
@@ -316,6 +317,7 @@ fn every_inventory_row_maps_to_exactly_one_target_or_is_pending() {
 
 #[test]
 fn a_mapped_rule_id_exists_in_the_shipped_default() {
+    purlis_core::unsteered!();
     let known = Known::shipped();
     let head = line("Ports #P1", "rule:guards-merge-hold", "");
     let held = head.clone() + &line("Ports #P2", "set:protected-branches", "");
@@ -341,6 +343,7 @@ fn a_mapped_rule_id_exists_in_the_shipped_default() {
 
 #[test]
 fn a_mapped_limits_key_exists_in_the_schema_of_limits() {
+    purlis_core::unsteered!();
     let known = Known::shipped();
     let head = line("Ports #P1", "not-a-chat-decision", "");
     let key = head.clone() + &line("Ports #P2", "limit:dispatch.running-per-chat", "");
@@ -354,8 +357,25 @@ fn a_mapped_limits_key_exists_in_the_schema_of_limits() {
         );
     }
 
-    // Both ways on the real files: every row the key table cites maps to a key of it.
-    let map = read("docs/research/policy-inventory-map.tsv");
+    // Both ways on the real files: every row the key table cites maps to a key that cites it.
+    let problems = citing_problems(&read("docs/research/policy-inventory-map.tsv"));
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    // A row that maps to a key of the table other than the one citing it fails.
+    let elsewhere = "Dispatch #47\tlimits\tlimit:dispatch.live-per-lineage\tpending\n\
+                     Dispatch #48\tlimits\tlimit:dispatch.live-per-lineage\tpending\n";
+    let problems = citing_problems(elsewhere);
+    assert!(
+        problems.iter().any(|p| p.starts_with(
+            "Dispatch #47 is cited by [\"dispatch.running-per-chat\"], and maps to \
+             Some(\"limit:dispatch.live-per-lineage\")"
+        )),
+        "{problems:?}"
+    );
+}
+
+/// Where a row the limits key table cites does not map to a key that cites it, one sentence
+/// each. Several keys may cite one row (`asks.cool-off-*`, Asks #25); its target is one of them.
+fn citing_problems(map: &str) -> Vec<String> {
     let targets: BTreeMap<&str, &str> = map
         .lines()
         .filter_map(|l| {
@@ -363,22 +383,29 @@ fn a_mapped_limits_key_exists_in_the_schema_of_limits() {
             Some((f.next()?, f.nth(1)?))
         })
         .collect();
+    let mut citing: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for limit in limits_table().limit {
-        if limit.inventory.is_empty() {
-            continue;
+        if !limit.inventory.is_empty() {
+            citing.entry(limit.inventory).or_default().push(limit.key);
         }
-        let target = targets.get(limit.inventory.as_str()).copied();
-        assert!(
-            target.is_some_and(|t| t.starts_with("limit:") && known.limits.contains(&t[6..])),
-            "{} cites {}, which maps to {target:?}, not a key of the table",
-            limit.key,
-            limit.inventory
-        );
     }
+    citing
+        .iter()
+        .filter_map(|(row, keys)| {
+            let target = targets.get(row.as_str()).copied();
+            let cited = target
+                .and_then(|t| t.strip_prefix("limit:"))
+                .is_some_and(|key| keys.iter().any(|k| k == key));
+            (!cited).then(|| {
+                format!("{row} is cited by {keys:?}, and maps to {target:?}, which is none of them")
+            })
+        })
+        .collect()
 }
 
 #[test]
 fn a_row_mapped_twice_fails_the_check() {
+    purlis_core::unsteered!();
     let known = Known::shipped();
     let twice = line("Ports #P1", "not-a-chat-decision", "")
         + &line("Ports #P2", "not-a-chat-decision", "")
@@ -393,10 +420,20 @@ fn a_row_mapped_twice_fails_the_check() {
         check(SMALL, &two_targets, &known),
         ["Ports #P2: \"rule:guards-merge-hold,sandbox-level-step\" names more than one target"]
     );
+    // Pending or not, two rules joined by `|` are two targets.
+    for pending in ["", "pending"] {
+        let either = line("Ports #P1", "not-a-chat-decision", "")
+            + &line("Ports #P2", "rule:a|rule:b", pending);
+        assert_eq!(
+            check(SMALL, &either, &known),
+            ["Ports #P2: \"rule:a|rule:b\" names more than one target"]
+        );
+    }
 }
 
 #[test]
 fn a_row_mapped_to_a_fourth_fixed_thing_fails_the_check() {
+    purlis_core::unsteered!();
     let known = Known::shipped();
     let head = line("Ports #P1", "not-a-chat-decision", "");
     for thing in FIXED {
@@ -444,6 +481,7 @@ const SPEC_KEYS: [&str; 23] = [
 
 #[test]
 fn the_limits_key_table_names_every_key_with_no_wildcard() {
+    purlis_core::unsteered!();
     let table = limits_table();
     let mut keys = BTreeSet::new();
     for limit in &table.limit {
@@ -484,16 +522,94 @@ fn the_limits_key_table_names_every_key_with_no_wildcard() {
             "spec §5.1 names {key}, which the table lacks"
         );
     }
-    for wildcard in ["asks.cool-off-", "runners.pool-"] {
+    let problems = wildcard_problems(&table);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+
+    // A key of either wildcard dropped from the table fails.
+    for dropped in ["asks.cool-off-within-minutes", "runners.pool-tmp-mib"] {
+        let mut short = limits_table();
+        short.limit.retain(|limit| limit.key != dropped);
+        let problems = wildcard_problems(&short);
         assert!(
-            keys.iter().any(|key| key.starts_with(wildcard)),
-            "{wildcard}* is not expanded"
+            problems.iter().any(|p| p.contains(dropped)),
+            "{dropped} dropped: {problems:?}"
         );
     }
 }
 
+/// Spec §5.1's two wildcards, each expanded to the keys today's code holds, with today's value:
+/// `askrules`'s three cool-off constants, and every limit of `poollimits::all()`, by its key.
+fn wildcard_keys() -> Vec<(String, u64)> {
+    use purlis_core::{askrules, poollimits};
+    // Each of the code's pool limits, by its key, and its name in the table.
+    let pool = [
+        ("profileSize", "profile-size-mib"),
+        ("profileFiles", "profile-files"),
+        ("codeSize", "code-size-mib"),
+        ("codeSendTime", "code-send-minutes"),
+        ("signInWait", "sign-in-wait-minutes"),
+        ("vouchWait", "vouch-wait-minutes"),
+        ("answerWait", "answer-wait-seconds"),
+        ("cpus", "cpus-thousandths"),
+        ("memory", "memory-mib"),
+        ("processes", "processes"),
+        ("tmp", "tmp-mib"),
+        ("suspendAfter", "suspend-after-minutes"),
+    ];
+    let limits = poollimits::all();
+    assert_eq!(limits.len(), pool.len(), "a pool limit with no name here");
+    let after = u64::try_from(askrules::COOL_AFTER).expect("a small count");
+    let mut keys = vec![
+        ("asks.cool-off-after".to_owned(), after),
+        (
+            "asks.cool-off-within-minutes".to_owned(),
+            askrules::COOL_WITHIN_SECS / 60,
+        ),
+        (
+            "asks.cool-off-for-minutes".to_owned(),
+            askrules::COOL_FOR_SECS / 60,
+        ),
+    ];
+    for (code, name) in pool {
+        let limit = limits
+            .iter()
+            .find(|limit| limit.key == code)
+            .unwrap_or_else(|| panic!("poollimits has no {code}"));
+        keys.push((format!("runners.pool-{name}"), limit.default));
+    }
+    keys
+}
+
+/// Where the table's expansion of `asks.cool-off-*` and `runners.pool-*` is not every key with
+/// today's value, one sentence each.
+fn wildcard_problems(table: &LimitsTable) -> Vec<String> {
+    let expected = wildcard_keys();
+    let mut problems = Vec::new();
+    for (key, value) in &expected {
+        match table.limit.iter().find(|limit| &limit.key == key) {
+            None => problems.push(format!("{key} is not in the table")),
+            Some(limit) if limit.shipped.as_integer() != i64::try_from(*value).ok() => problems
+                .push(format!(
+                    "{key} ships {:?}, and today's code holds {value}",
+                    limit.shipped
+                )),
+            Some(_) => {}
+        }
+    }
+    for limit in &table.limit {
+        let wild = ["asks.cool-off-", "runners.pool-"]
+            .iter()
+            .any(|prefix| limit.key.starts_with(prefix));
+        if wild && !expected.iter().any(|(key, _)| key == &limit.key) {
+            problems.push(format!("{} is no key today's code holds", limit.key));
+        }
+    }
+    problems
+}
+
 #[test]
 fn the_action_to_kind_table_lists_every_shipped_ask() {
+    purlis_core::unsteered!();
     let default = policy::load(&[File::shipped_default()]).expect("the shipped default loads");
     let asks: Vec<String> = default
         .rules()
@@ -509,6 +625,20 @@ fn the_action_to_kind_table_lists_every_shipped_ask() {
         .collect();
     assert!(!asks.is_empty(), "the shipped default asks");
 
+    let sources = ask_sources(&read("app/src/bindings.ts"));
+    assert!(
+        sources.contains("merge-hold"),
+        "the window's kinds: {sources:?}"
+    );
+    assert_eq!(
+        kind_problem("merge-held", &sources).as_deref(),
+        Some("\"merge-held\" is no AskSource kind of the window, nor \"none\"")
+    );
+    assert_eq!(
+        kind_problem("", &sources).as_deref(),
+        Some("no window kind")
+    );
+
     let table = read("docs/research/policy-ask-kinds.tsv");
     let mut listed = Vec::new();
     for line in table.lines() {
@@ -519,7 +649,9 @@ fn the_action_to_kind_table_lists_every_shipped_ask() {
         let [rule, actions, kind, _note] = fields[..] else {
             panic!("{line:?}: not 4 fields");
         };
-        assert!(!kind.is_empty(), "{rule}: no window kind");
+        if let Some(problem) = kind_problem(kind, &sources) {
+            panic!("{rule}: {problem}");
+        }
         listed.push(format!("{rule}\t{actions}"));
     }
     assert_eq!(
@@ -527,5 +659,143 @@ fn the_action_to_kind_table_lists_every_shipped_ask() {
         asks,
         "the table's rules and actions, in the default's order, are generated from it:\n{}",
         asks.join("\n")
+    );
+}
+
+/// The kinds of ask the window shows: `AskSource`'s spellings, as the generated bindings hold
+/// them (`app/src-tauri/src/asking.rs`, kebab-case).
+fn ask_sources(bindings: &str) -> BTreeSet<String> {
+    let start = bindings
+        .find("export type AskSource =")
+        .expect("the bindings name AskSource");
+    let body = &bindings[start..];
+    let body = &body[..body.find(';').expect("AskSource ends")];
+    body.lines()
+        .filter_map(|line| line.trim().strip_prefix('"'))
+        .filter_map(|rest| rest.split('"').next())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// What is wrong with an action-to-kind table's kind, if anything: it is an `AskSource` kind,
+/// or "none" where the window asks for that action in no way yet.
+fn kind_problem(kind: &str, sources: &BTreeSet<String>) -> Option<String> {
+    if kind.is_empty() {
+        return Some("no window kind".to_owned());
+    }
+    (kind != "none" && !sources.contains(kind))
+        .then(|| format!("{kind:?} is no AskSource kind of the window, nor \"none\""))
+}
+
+/// The families that hold a credential's release: `watch`, the default template (`docs/policy.md`),
+/// enforces them and logs the rest.
+const CREDENTIAL_FAMILIES: [&str; 3] = ["secrets", "vaults", "guards.credential"];
+
+/// Words in a row's decision that say it stands between a chat and a credential.
+const CREDENTIAL_WORDS: [&str; 16] = [
+    "credential",
+    "password",
+    "passphrase",
+    "keychain",
+    "secret",
+    "token",
+    "private key",
+    "signing key",
+    "ssh key",
+    "api key",
+    "api-key",
+    "vault value",
+    "sign-in",
+    "login",
+    "cookie",
+    "2fa",
+];
+
+/// Whether a row's decision names a credential.
+fn names_a_credential(decision: &str) -> bool {
+    let decision = decision.to_lowercase();
+    CREDENTIAL_WORDS.iter().any(|word| decision.contains(word))
+}
+
+/// Where a pending row that names a credential sits in a family `[policy]` can log or turn off,
+/// with no reason kept for it, one sentence each. A reason is a `#kept` line of the mapping:
+/// `#kept<TAB><row><TAB><why its check releases no credential>`. The sandbox is a level, not a
+/// mode, and a fixed thing never switches, so neither is read; nor is a row already in a
+/// credential family. A reason for a row the check would not read is stale, and fails too.
+fn credential_problems(map: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut kept: BTreeMap<&str, &str> = BTreeMap::new();
+    for line in map.lines() {
+        if let Some(rest) = line.strip_prefix("#kept\t") {
+            let (cite, why) = rest.split_once('\t').unwrap_or((rest, ""));
+            if why.trim().is_empty() {
+                problems.push(format!("{cite}: kept with no reason"));
+            }
+            kept.insert(cite, why);
+        }
+    }
+    let mut read = BTreeSet::new();
+    for line in map.lines() {
+        if line.starts_with('#') || line.starts_with("row\t") {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [cite, family, target, pending, decision, _place] = fields[..] else {
+            continue;
+        };
+        if pending != "pending"
+            || family == "sandbox"
+            || CREDENTIAL_FAMILIES.contains(&family)
+            || target.starts_with("fixed:")
+            || !names_a_credential(decision)
+        {
+            continue;
+        }
+        read.insert(cite);
+        if !kept.contains_key(cite) {
+            problems.push(format!(
+                "{cite} names a credential and is pending in {family}, which `[policy]` can log or \
+                 turn off: map it to one of {CREDENTIAL_FAMILIES:?}, or keep it with a reason"
+            ));
+        }
+    }
+    for cite in kept.keys() {
+        if !read.contains(cite) {
+            problems.push(format!(
+                "{cite}: kept, but no credential row the check reads"
+            ));
+        }
+    }
+    problems
+}
+
+#[test]
+fn no_credential_releasing_row_is_pending_in_a_switchable_non_credential_family() {
+    purlis_core::unsteered!();
+    let problems = credential_problems(&read("docs/research/policy-inventory-map.tsv"));
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+
+    let token = "Ports #P2\tports\t\tpending\tPrinting the forge token is refused\t`a.rs:2`\n";
+    assert_eq!(
+        credential_problems(token),
+        [
+            "Ports #P2 names a credential and is pending in ports, which `[policy]` can log or \
+             turn off: map it to one of [\"secrets\", \"vaults\", \"guards.credential\"], or keep \
+             it with a reason"
+        ]
+    );
+    let moved = token.replace("\tports\t", "\tsecrets\t");
+    assert!(credential_problems(&moved).is_empty());
+    let kept = format!("#kept\tPorts #P2\tThe token is the app's own.\n{token}");
+    assert!(credential_problems(&kept).is_empty());
+    let stale = format!("#kept\tPorts #P2\tThe token is the app's own.\n{moved}");
+    assert_eq!(
+        credential_problems(&stale),
+        ["Ports #P2: kept, but no credential row the check reads"]
+    );
+    let bare = format!("#kept\tPorts #P2\t\n{token}");
+    assert_eq!(
+        credential_problems(&bare),
+        ["Ports #P2: kept with no reason"]
     );
 }
