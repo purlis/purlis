@@ -662,10 +662,11 @@ fn an_entry_set_aside_whose_name_a_hand_edit_dropped_reads_and_is_nobody_s_to_be
     std::fs::create_dir_all(path.parent().expect("a folder")).expect("made");
     std::fs::write(
         &path,
-        r#"{"dispatch_mine": [{"asking": "steward", "target": "devops"}],
-            "dispatch_dormant": [{"asking": "devops", "target": "steward"}]}"#,
+        r#"{"dispatch_dormant": [{"asking": "devops", "target": "steward"}]}"#,
     )
     .expect("written by hand");
+    // A grant the app sealed (ticket T1.1-73), beside the entry edited by hand.
+    local::grant_dispatch(root, "steward", "devops").expect("kept");
 
     // The rest of the record still reads: one dropped key costs no grant.
     assert_eq!(dispatchgrant::yours(root), [pair("steward", "devops")]);
