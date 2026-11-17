@@ -56,7 +56,7 @@
 //! still and let go on (#6015, id 211), 1.87's held connection given up as the chat moved
 //! on from it (R-290, Q240, id 212), 1.88's Allow next time of a block, made and removed,
 //! and listed by `reach_of` until it is used (T1-34, R-291, ids 213 to 215), and told used up
-//! or put out, so the window audits its end (Q278), and 1.91's Try now of a relaying host's
+//! or put out, so the window audits its end (Q278), and 1.92's Try now of a relaying host's
 //! link (#7134, id 216).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by

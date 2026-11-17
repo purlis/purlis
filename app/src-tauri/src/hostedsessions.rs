@@ -5243,7 +5243,7 @@ impl SessionHost for HostedSessions {
         lock(&self.reconnecting).down.clone()
     }
 
-    /// Asked on the project's own link, which its host relays: a host before 1.91 is asked
+    /// Asked on the project's own link, which its host relays: a host before 1.92 is asked
     /// nothing, and tries again after its pause as ever.
     fn link_now(&self) {
         let Ok(link) = self.own_link(Duration::ZERO) else {

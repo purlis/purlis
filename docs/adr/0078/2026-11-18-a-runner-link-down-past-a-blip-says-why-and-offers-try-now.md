@@ -26,21 +26,21 @@ confirmed** (D-7134-1 to D-7134-5).
    (`hostlink::MOST_PAUSE`), so that is the honest bound on the next try; no time of each try is
    carried, since a try is said only when its reason changes (item 3). *D-7134-2.*
 3. **The relaying host says `link_down` again while the link is down, each time why changes**
-   (session protocol 1.91). Before, it said it once for each outage, so the window held what
+   (session protocol 1.92). Before, it said it once for each outage, so the window held what
    ended the link ("the link to it ended"), never what the tries since found ("the connector did
    not connect: Docker … didn't answer through SSH"). A try that fails for the reason already
    told says nothing, so a link down for hours is not a word every thirty seconds. A window
-   before 1.91 takes the second as the first. The core keeps the last reason for each pool, from
+   before 1.92 takes the second as the first. The core keeps the last reason for each pool, from
    when the link first went (`runner_links_down`), and drops it once the link is back or a
    changed key or a runner gone says it in a Notice of its own. The window reads it as it is
    drawn and again on each `chats-reconnecting` of its plane, which a new reason sends as it
    dims the chats again. *Rejected:* a reason carried on `chats-reconnecting` itself, which a
    pane drawn during the outage would still have to read, as it reads which chats are dimmed.
    *D-7134-3.*
-4. **Try now is `link_now`** (session protocol 1.91), the window's alone and never sent on: the
+4. **Try now is `link_now`** (session protocol 1.92), the window's alone and never sent on: the
    relaying host ends its pause between tries and tries at once, or takes links anew where they
    were over. It answers at once; what the try finds is said as ever, `link_back`, or `link_down`
-   again with a new reason. A host before 1.91 is sent nothing, and tries after its pause.
+   again with a new reason. A host before 1.92 is sent nothing, and tries after its pause.
    *D-7134-4.*
 5. **Check pool opens the pool's own setup** (#4491), where a Docker pool's runner is checked
    step by step; for a cluster pool, which has none, Pools opens with its row. **Dismiss** puts
