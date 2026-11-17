@@ -529,7 +529,7 @@ describe("a file a runner chat printed (#6387)", () => {
         },
       },
     ];
-    const { drawn } = await pane(`wrote ${HOSTS} now`);
+    const { drawn } = await pane(`wrote ${HOSTS} now`, "Fix the login form");
     hover(drawn, 8, 0);
     await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
     click(drawn, 8, 0, { ctrlKey: true });
@@ -558,7 +558,7 @@ describe("a file a runner chat printed (#6387)", () => {
         },
       },
     ];
-    const { drawn } = await pane(`wrote ${HOSTS} now`);
+    const { drawn } = await pane(`wrote ${HOSTS} now`, "Fix the login form");
     hover(drawn, 8, 0);
     await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
     click(drawn, 8, 0, { ctrlKey: true });
