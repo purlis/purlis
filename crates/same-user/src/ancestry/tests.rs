@@ -597,3 +597,97 @@ fn stat_parent_reads_after_the_last_parenthesis() {
     assert_eq!(stat_parent("123 (a (b) c) S 45 6 7"), Some(45));
     assert_eq!(stat_parent("garbage"), None);
 }
+
+#[test]
+fn lsof_s_names_are_read_under_the_process_that_holds_them_in_the_order_printed() {
+    let text = "p4242\nn/Applications/purlis.app/Contents/MacOS/purlis-app\nn/usr/lib/dyld\n\
+                p77\nn->0x1234\nn/tmp/p/.purlis/app/hooks.sock\np9\n";
+    assert_eq!(
+        lsof_by_process(text),
+        vec![
+            (
+                4242,
+                vec![
+                    "/Applications/purlis.app/Contents/MacOS/purlis-app".to_owned(),
+                    "/usr/lib/dyld".to_owned()
+                ]
+            ),
+            (77, vec!["/tmp/p/.purlis/app/hooks.sock".to_owned()]),
+            (9, Vec::new()),
+        ]
+    );
+    assert_eq!(lsof_by_process(""), Vec::new());
+}
+
+#[test]
+fn a_program_replaced_since_it_started_is_still_named_by_its_path() {
+    assert_eq!(
+        undeleted(PathBuf::from("/opt/purlis/purlis-app (deleted)")),
+        PathBuf::from("/opt/purlis/purlis-app")
+    );
+    assert_eq!(
+        undeleted(PathBuf::from("/opt/purlis/purlis-app")),
+        PathBuf::from("/opt/purlis/purlis-app")
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+#[test]
+fn this_process_s_own_program_is_read_from_the_kernel() {
+    let me = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+    let read = executables_of(&[std::process::id()], |command| command.output());
+    let read = read[0]
+        .clone()
+        .expect("this process may read its own program");
+    assert_eq!(std::fs::canonicalize(read).unwrap(), me);
+}
+
+/// What `lsof` exits with, as [`std::process::Command::output`] gives it.
+#[cfg(target_os = "macos")]
+fn lsof_ran(code: i32, stdout: &str, stderr: &str) -> Output {
+    use std::os::unix::process::ExitStatusExt;
+    Output {
+        status: std::process::ExitStatus::from_raw(code << 8),
+        stdout: stdout.as_bytes().to_vec(),
+        stderr: stderr.as_bytes().to_vec(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn a_socket_listing_that_fails_is_an_error_never_a_process_that_holds_none() {
+    let failed = |out: io::Result<Output>| sockets_held_by(&[40, 30], move |_| out).is_err();
+    assert!(
+        failed(Err(io::Error::other("no lsof here"))),
+        "lsof did not run"
+    );
+    assert!(
+        failed(Ok(lsof_ran(1, "", "lsof: can't open /dev/null"))),
+        "lsof said why it failed"
+    );
+    assert!(failed(Ok(lsof_ran(2, "", ""))), "an exit lsof never gives");
+    // `lsof` exits 1, silently, where a process holds no unix socket: an answer.
+    assert_eq!(
+        sockets_held_by(&[40, 30], |_| Ok(lsof_ran(
+            1,
+            "p40\nf3\nn/p/hooks.sock\n",
+            ""
+        )))
+        .expect("a listing"),
+        vec![vec![PathBuf::from("/p/hooks.sock")], Vec::new()]
+    );
+    assert_eq!(
+        sockets_held_by(&[40], |_| Ok(lsof_ran(0, "p40\nf3\nn/p/hooks.sock\n", "")))
+            .expect("a listing"),
+        vec![vec![PathBuf::from("/p/hooks.sock")]]
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn a_socket_listing_that_fails_is_an_error_never_a_process_that_holds_none() {
+    // A pid no process has: its descriptors cannot be listed.
+    let none = u32::try_from(i32::MAX).expect("a pid");
+    assert!(sockets_held_by(&[none], |_| unreachable!()).is_err());
+    assert!(sockets_held_by(&[std::process::id()], |_| unreachable!()).is_ok());
+}

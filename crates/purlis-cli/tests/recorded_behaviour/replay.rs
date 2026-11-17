@@ -283,6 +283,14 @@ fn execute(row: &Value, tokens: &Tokens, fence: &Path) -> Result<Ran, String> {
     // This test build is fenced (charter-app#129), and a fenced build unset falls back to the
     // temporary directory the ENVIRONMENT names — which a cleared environment does not. So the
     // fence is named: this scenario's own scratch tree, and nothing else.
+    // A scenario with no stand-in app (`serve`) is one no app runs above. This test process
+    // holds the stand-ins' hook sockets of the scenarios beside it, and a test build takes a
+    // test binary that holds one for the app (`hookwire::reach::program_of`): so the command
+    // is told to take none of them for the app, and what it says does not depend on what runs
+    // beside it (#6995, review round 2).
+    if row["serve"].is_null() {
+        command.env("REACH_TRUSTS_ONLY_THE_APP", "1");
+    }
     command
         .env("CHARTER_PLANE_FENCE", fence)
         .stdin(Stdio::piped())
