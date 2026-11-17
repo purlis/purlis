@@ -5,7 +5,7 @@ template = "strict"
 sandbox  = "full"
 
 [policy.rules]
-"everything-else" = "off"     # deny-by-default: the catch-all permit is gone
+"policy-everything-else" = "off"  # deny-by-default: the catch-all permit is gone
 
 [policy.locks]                # Project locks: no level below may loosen these
 families = ["*"]              # every family frozen at enforce

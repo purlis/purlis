@@ -21,5 +21,5 @@ forbid (principal, action == Action::"read", resource)
 
 // The infra workspace wants its deploy chat to push infra's main.
 // A workspace-level permit: it can't punch through the project forbid above.
-@id("infra-deployer-push-main") @level("workspace")
+@id("guards-git-infra-deployer-push-main") @level("workspace")
 permit (principal in Workspace::"infra", action == Action::"push", resource == Branch::"acme/infra#main");
