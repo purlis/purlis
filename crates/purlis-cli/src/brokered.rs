@@ -41,7 +41,9 @@ pub enum NotTaken {
     /// A chat the app started, whose harness gave this process no connection to the app: none
     /// of [`purlis_core::chattools::CONNECTION_ENV`] reached it.
     NoConnection,
-    /// The app's socket is not there, or nothing listens on it: the app has gone.
+    /// The app's socket is not there, or nothing listens on it, and this process does not run
+    /// under it: the app has gone. Never said where the app runs above this process, full or
+    /// slow as it may be ([`hookwire::reach::Unreached::Refused`]).
     AppGone,
     /// The app ended the connection without answering: an app older than the ask.
     Dropped,
@@ -147,7 +149,11 @@ fn the_chat_s_connection(
             Err(NotTaken::NoConnection)
         }
         Err(Unreached::AppGone(_)) => Err(NotTaken::AppGone),
-        Err(not @ Unreached::NotTheApp(_)) => Ok(Err(not.said().unwrap_or_default())),
+        // Something that is not the app, or an app that is there and let nothing through (it
+        // is full, or cannot tell which chat this is): refused, and never written here (#6995).
+        Err(not @ (Unreached::NotTheApp(_) | Unreached::Refused(_))) => {
+            Ok(Err(not.said().unwrap_or_default()))
+        }
     }
 }
 

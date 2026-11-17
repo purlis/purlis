@@ -43,7 +43,9 @@ fn under_the_app_with_no_chat_named_and_no_answer_from_it_is_refused_and_never_r
         Duration::from_millis(50),
     )
     .unwrap_err();
-    assert!(matches!(unreached, Unreached::AppGone(_)), "{unreached:?}");
+    // The app is above all the same: refused, never taken for one that has gone.
+    assert!(matches!(unreached, Unreached::Refused(_)), "{unreached:?}");
+    assert!(unreached.said().unwrap().starts_with(NO_APP_ANSWERED));
 }
 
 #[test]

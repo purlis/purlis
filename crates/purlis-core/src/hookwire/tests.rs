@@ -5598,13 +5598,11 @@ fn a_chat_is_named_only_where_one_chat_s_program_holds_the_asker() {
         },
     );
 
-    assert_eq!(
-        tokens
-            .chat_by(&|program| program.pid == 30)
-            .map(|(chat, _)| chat),
-        Some(3)
-    );
-    assert_eq!(tokens.chat_by(&|_| false), None);
-    // Inside both: nothing names one chat.
-    assert_eq!(tokens.chat_by(&|_| true), None);
+    assert!(matches!(
+        tokens.chat_by(&|program| program.pid == 30),
+        ChatOf::Named(3, _)
+    ));
+    assert_eq!(tokens.chat_by(&|_| false), ChatOf::InNone);
+    // Inside both: nothing names one chat, and that is no answer that it is in none.
+    assert_eq!(tokens.chat_by(&|_| true), ChatOf::InDoubt);
 }

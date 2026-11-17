@@ -124,6 +124,33 @@ impl Parents {
         }
     }
 
+    /// The user `pid` runs as, where it is known: its effective uid, which the kernel says for
+    /// any user's process. What tells an ancestor whose program a sandbox hides (this user's)
+    /// from one only the system may read (root's, such as `login` or `sshd`).
+    ///
+    /// - **Linux:** the owner of `/proc/<pid>`, which the kernel sets to the process's
+    ///   effective uid.
+    /// - **macOS:** `pbsi_uid` from `PROC_PIDT_SHORTBSDINFO`, the reading [`Self::of`] takes.
+    /// - **Any other unix:** `None`.
+    pub fn owner(pid: u32) -> Option<u32> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            use std::os::unix::fs::MetadataExt;
+            std::fs::metadata(format!("/proc/{pid}"))
+                .ok()
+                .map(|meta| meta.uid())
+        }
+        #[cfg(target_os = "macos")]
+        {
+            pidinfo::owner(pid)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+        {
+            let _ = pid;
+            None
+        }
+    }
+
     /// `start`'s ancestors, its parent first, up to and without pid 1 (`init`, `launchd`), which
     /// is above everything and so vouches for nothing.
     pub fn chain(start: u32) -> Vec<u32> {
@@ -166,6 +193,25 @@ mod pidinfo {
             u32_at(
                 &bytes,
                 std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_ppid),
+            )
+        })?
+    }
+
+    /// The effective uid of `pid`, from `PROC_PIDT_SHORTBSDINFO`.
+    pub(super) fn owner(pid: u32) -> Option<u32> {
+        let bytes = read(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            size_of::<libc::proc_bsdshortinfo>(),
+        )?;
+        let named = u32_at(
+            &bytes,
+            std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_pid),
+        )?;
+        (named == pid).then(|| {
+            u32_at(
+                &bytes,
+                std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_uid),
             )
         })?
     }
