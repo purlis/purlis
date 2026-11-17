@@ -161,7 +161,7 @@ pub fn start(
 }
 
 /// **What a confinement tells of a host it let through only because the window named `family`
-/// as not enforced for its chat** ([`session::Confine::lifted`], 1.90): told to the window as
+/// as not enforced for its chat** ([`session::Confine::lifted`], 1.91): told to the window as
 /// [`SandboxTold::Lifted`]. None where the window did not name it, and the family is enforced.
 fn lifted(
     confine: &session::Confine,

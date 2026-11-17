@@ -53,7 +53,7 @@ Keep blocked stay refused. A confined extension's proxy is not touched.
   chat's restart.
 - A **socket** ask is answered so only under `asks = "off"`; under `log` it still asks.
 - A host ask a session host's board answers, and a host its proxy carries for `network`, are
-  told to the window (session protocol 1.90, `Confine::lifted`, `SandboxTold::Lifted`), which
+  told to the window (session protocol 1.91, `Confine::lifted`, `SandboxTold::Lifted`), which
   alone resolves the policy and knows the chat, and logs it.
 
 ## Reported as not in force

@@ -3769,7 +3769,7 @@ pub(crate) fn answers(what: GrantWhat, mode: purlis_core::enforcement::Mode) -> 
 }
 
 /// The rule a folder or socket ask answered by the project's `[policy]` is logged by.
-pub(crate) const ASK_ANSWERED_RULE: &str = "sandbox-ask";
+pub(crate) const ASK_ANSWERED_RULE: &str = purlis_core::enforcement::RULE_SANDBOX_ASK;
 
 /// **A folder or socket ask the project's `[policy]` answers itself** (Q308a; the Q308
 /// follow-up, item 3): where `asks` is off or logged ([`answers`]: a socket under off alone), a
