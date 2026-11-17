@@ -119,6 +119,7 @@ const TERMINAL: &str = "/System/Applications/Utilities/Terminal.app/Contents/Mac
 
 #[test]
 fn the_first_process_of_a_pid_namespace_of_its_own_is_a_sandbox_s_boundary() {
+    purlis_core::unsteered!();
     // `unshare -p`: the chain reads to a top whose parent is 0, as the system's first
     // process's is, every program is read, and none is the app's.
     let mut shown = Shown::chain(&[(2, Some(SHELL), USER)], 0);
@@ -129,6 +130,7 @@ fn the_first_process_of_a_pid_namespace_of_its_own_is_a_sandbox_s_boundary() {
 
 #[test]
 fn a_shipped_build_takes_the_app_by_its_program_s_name_and_purlis_only_where_it_serves() {
+    purlis_core::unsteered!();
     assert_eq!(reach::shipped_program_of(APP.as_ref()), Ran::App);
     assert_eq!(reach::shipped_program_of(HOST.as_ref()), Ran::Purlis);
     assert_eq!(reach::shipped_program_of(HARNESS.as_ref()), Ran::Other);
@@ -156,6 +158,7 @@ fn a_shipped_build_takes_the_app_by_its_program_s_name_and_purlis_only_where_it_
 
 #[test]
 fn a_shipped_build_never_takes_a_chat_s_copy_of_the_app_s_program_for_the_app() {
+    purlis_core::unsteered!();
     // A chat copies the app's program into a folder of its own and runs it below its harness,
     // holding a hook socket of its own making: the real app above is the app, and the copy is
     // none of its processes, so what listens there is never believed.
@@ -192,6 +195,7 @@ fn a_shipped_build_never_takes_a_chat_s_copy_of_the_app_s_program_for_the_app() 
 
 #[test]
 fn a_listener_of_a_chat_s_own_copy_of_the_app_is_refused() {
+    purlis_core::unsteered!();
     // This process listens, as the chat's copy would: the app it stands under is another
     // process, so the copy's socket is refused, never asked.
     let tmp = tempfile::tempdir().unwrap();
@@ -220,6 +224,7 @@ fn a_listener_of_a_chat_s_own_copy_of_the_app_is_refused() {
 
 #[test]
 fn a_person_s_terminal_climbing_through_root_s_login_is_not_a_sandbox_s_boundary() {
+    purlis_core::unsteered!();
     // zsh, then `login` (root's, its program unreadable to this user), then Terminal.
     let terminal = [
         (10, Some(SHELL), USER),
@@ -234,6 +239,7 @@ fn a_person_s_terminal_climbing_through_root_s_login_is_not_a_sandbox_s_boundary
 
 #[test]
 fn an_unreadable_ancestor_of_this_user_s_or_with_none_of_its_own_below_is_a_boundary() {
+    purlis_core::unsteered!();
     // This user's own process, its program hidden: what a sandbox hides.
     let hidden = [(10, Some(SHELL), USER), (20, None, USER)];
     assert_eq!(shipped(&Shown::chain(&hidden, 1)), Under::Boxed);
@@ -248,6 +254,7 @@ fn an_unreadable_ancestor_of_this_user_s_or_with_none_of_its_own_below_is_a_boun
 
 #[test]
 fn an_orphan_a_sandbox_still_holds_is_boxed_and_a_person_s_terminal_is_not() {
+    purlis_core::unsteered!();
     // A chat's process that left its tree: its parent is `launchd` or `init`, nothing is
     // above it to read, and its sandbox came with it.
     let mut orphan = Shown::chain(&[], 1);
@@ -274,6 +281,7 @@ fn whoami_at(socket: &std::path::Path) -> String {
 
 #[test]
 fn the_app_says_it_cannot_tell_rather_than_in_no_chat_while_a_chat_s_program_is_unrecorded() {
+    purlis_core::unsteered!();
     let tmp = tempfile::tempdir().unwrap();
     let socket = tmp.path().join("hooks.sock");
     let listener = Listener::bind(tmp.path(), &socket).expect("a socket");
@@ -307,6 +315,7 @@ fn the_app_says_it_cannot_tell_rather_than_in_no_chat_while_a_chat_s_program_is_
 
 #[test]
 fn an_asker_that_cannot_be_read_is_in_doubt_never_in_no_chat() {
+    purlis_core::unsteered!();
     let tokens = hookwire::ChatTokens::default();
     assert_eq!(tokens.chat_of(&[]), hookwire::ChatOf::InDoubt);
 }

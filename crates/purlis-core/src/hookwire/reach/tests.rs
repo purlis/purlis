@@ -54,6 +54,7 @@ fn under_the_app_only_its_answer_that_this_is_in_no_chat_runs_the_command_here()
     let at = || PathBuf::from("/app/hooks.sock");
     let said = |in_no_chat: bool, older: bool, unheard: Option<&str>| Said {
         in_no_chat: in_no_chat.then(at),
+        in_doubt: None,
         older: older.then(|| (at(), None)),
         unheard: unheard.map(str::to_owned),
     };
@@ -76,6 +77,15 @@ fn under_the_app_only_its_answer_that_this_is_in_no_chat_runs_the_command_here()
             "{what}"
         );
     }
+    // One app in no chat and another that cannot tell: never taken for no chat's.
+    let doubted = Said {
+        in_doubt: Some(PathBuf::from("/other/hooks.sock")),
+        ..said(true, false, None)
+    };
+    assert!(
+        matches!(unclaimed(&app(), doubted), Unreached::AppGone(_)),
+        "in doubt"
+    );
     // A sandboxed process is a chat's whatever the app says.
     assert!(matches!(
         unclaimed(&Admit::Unwritable, said(true, false, None)),

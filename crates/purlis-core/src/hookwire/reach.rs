@@ -460,6 +460,9 @@ fn reached_from(
             Ok(Asked::InNoChat) => {
                 said.in_no_chat.get_or_insert(socket);
             }
+            Ok(Asked::InDoubt) => {
+                said.in_doubt.get_or_insert(socket);
+            }
             // An app older than the question, or one that did not answer it in time: with the
             // connection, where it answered something else and kept it.
             Ok(Asked::Older(kept)) => {
@@ -474,12 +477,13 @@ fn reached_from(
     let Some(chat) = claimed else {
         return Err(unclaimed(&admitted, said));
     };
-    // The app says this process runs in none of its chats, or is older than the question: the
-    // environment's chat is put to it, and the app judges it as it judges every line, by the
-    // chat's token and this process's ancestry.
+    // The app says this process runs in none of its chats, cannot tell which, or is older than
+    // the question: the environment's chat is put to it, and the app judges it as it judges
+    // every line, by the chat's token and this process's ancestry.
     let Some((socket, kept)) = said
         .older
         .or_else(|| said.in_no_chat.map(|socket| (socket, None)))
+        .or_else(|| said.in_doubt.map(|socket| (socket, None)))
     else {
         return Err(Unreached::AppGone(said.unheard.unwrap_or_else(|| {
             "the app that started this chat holds no hook socket".to_owned()
@@ -511,6 +515,9 @@ fn reached_from(
 struct Said {
     /// The first whose app said this process runs in none of its chats.
     in_no_chat: Option<PathBuf>,
+    /// The first whose app said it cannot tell which of its chats this process runs in
+    /// ([`IN_DOUBT`]).
+    in_doubt: Option<PathBuf>,
     /// One whose app is older than the question, or did not answer it in time.
     older: Option<(PathBuf, Option<UnixStream>)>,
     /// Why the last that did not answer did not.
@@ -523,9 +530,16 @@ struct Said {
 /// **Only the app's own answer that this process runs in none of its chats lets the command run
 /// here** (#6995): under the app ([`Admit::Ancestors`]) every socket asked must have said so. An
 /// app that is slow, full, older than the question, or holds no hook socket says nothing about
-/// this process, which runs under it all the same, so it is refused. A sandboxed process
+/// this process, which runs under it all the same, so it is refused, and so is one that cannot
+/// tell which of its chats this process runs in ([`IN_DOUBT`]). A sandboxed process
 /// ([`Admit::Unwritable`]) is a chat's whatever anything says.
 fn unclaimed(admitted: &Admit, said: Said) -> Unreached {
+    if let Some(socket) = &said.in_doubt {
+        return Unreached::AppGone(format!(
+            "the app at {} cannot tell which of its chats this process runs in",
+            socket.display()
+        ));
+    }
     let socket = said
         .in_no_chat
         .as_deref()
@@ -566,6 +580,8 @@ enum Admit {
 enum Asked {
     Named(Reached),
     InNoChat,
+    /// It cannot tell which of its chats this process runs in ([`IN_DOUBT`]).
+    InDoubt,
     /// Older than the question: with the connection, where it answered something else and kept
     /// it open.
     Older(Option<UnixStream>),
@@ -585,16 +601,16 @@ fn asked_at(socket: &Path, admitted: &Admit, within: Duration) -> Result<Asked, 
     };
     admit(&stream, socket, admitted).map_err(|why| Unreached::NotTheApp(why.to_string()))?;
     match whoami(&stream, within) {
-        Ok(Some(you)) => Ok(Asked::Named(Reached {
+        Ok(Told::Named(you)) => Ok(Asked::Named(Reached {
             chat: you.you_are,
             token: Some(ChatToken::from(you.token.as_str())),
             stream,
             socket: socket.to_path_buf(),
         })),
-        Ok(None) => Ok(Asked::InNoChat),
-        // The app turned the question away (it serves as many connections as it may), or
-        // cannot tell which chat this process runs in: it is there, said nothing that lets
-        // this process run, and is not asked again.
+        Ok(Told::InNone) => Ok(Asked::InNoChat),
+        Ok(Told::InDoubt) => Ok(Asked::InDoubt),
+        // The app turned the question away (it serves as many connections as it may): it is
+        // there, said nothing that lets this process run, and is not asked again.
         Err(why) if why.kind() == io::ErrorKind::ConnectionRefused => {
             Err(Unreached::Refused(format!(
                 "the app at {} turned the question away ({why})",
@@ -610,9 +626,18 @@ fn asked_at(socket: &Path, admitted: &Admit, within: Duration) -> Result<Asked, 
     }
 }
 
-/// Writes [`WhoAmI`] on `stream` and reads the answer: `Some` where the app names the chat,
-/// `None` where it says this process runs in none, an error otherwise.
-fn whoami(stream: &UnixStream, within: Duration) -> io::Result<Option<YouAre>> {
+/// What the app told a [`WhoAmI`].
+enum Told {
+    /// The chat this process runs in.
+    Named(YouAre),
+    /// None of its chats ([`IN_NO_CHAT`]).
+    InNone,
+    /// It cannot tell ([`IN_DOUBT`]).
+    InDoubt,
+}
+
+/// Writes [`WhoAmI`] on `stream` and reads the answer, or an error where the app said neither.
+fn whoami(stream: &UnixStream, within: Duration) -> io::Result<Told> {
     let mut line = serde_json::to_vec(&WhoAmI { whoami: true }).map_err(io::Error::other)?;
     line.push(b'\n');
     stream.set_write_timeout(Some(within))?;
@@ -639,14 +664,12 @@ fn whoami(stream: &UnixStream, within: Duration) -> io::Result<Option<YouAre>> {
         }
     }
     if let Ok(you) = serde_json::from_slice::<YouAre>(&said) {
-        return Ok(Some(you));
+        return Ok(Told::Named(you));
     }
     match serde_json::from_slice::<Answer>(&said) {
-        Ok(Answer::No { why }) if why == IN_NO_CHAT => Ok(None),
-        // The app cannot tell: refused, as a full app's question is.
-        Ok(Answer::No { why }) if why == IN_DOUBT => {
-            Err(io::Error::new(io::ErrorKind::ConnectionRefused, why))
-        }
+        Ok(Answer::No { why }) if why == IN_NO_CHAT => Ok(Told::InNone),
+        // The app cannot tell: never taken for none of its chats.
+        Ok(Answer::No { why }) if why == IN_DOUBT => Ok(Told::InDoubt),
         // The sentence an older app says to a line it cannot read: it ends the connection.
         Ok(Answer::No { why }) if why == super::UNKNOWN_LINE => {
             Err(io::Error::other("the app is older than the question"))
