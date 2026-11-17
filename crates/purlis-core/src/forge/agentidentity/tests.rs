@@ -170,9 +170,12 @@ fn a_redirect_with_the_right_state_gets_the_app_and_any_other_request_gets_nothi
             assert!(page.contains("form-action https://github.com"), "{page}");
             let action = after(&page, "action=\"");
             let state = action.split("state=").nth(1).expect("a state").to_owned();
-            // A forged redirect is refused, and the flow goes on waiting.
-            assert!(get(port, "/purlis/agent-identity/back?code=evil&state=wrong").contains("404"));
-            assert!(get(port, "/purlis/agent-identity/back?code=evil").contains("404"));
+            // A request without a code is refused, and the flow goes on waiting. (One that
+            // carries a code without this try's state ends the wait: ADR 0077, amended
+            // 2026-11-17, and `github_coming_back_without_this_try_s_state_…` below.)
+            assert!(get(port, "/purlis/agent-identity/back?state=wrong").contains("404"));
+            assert!(get(port, "/purlis/agent-identity/back").contains("404"));
+            assert!(get(port, "/purlis/agent-identity/elsewhere?code=evil").contains("404"));
             let back = get(
                 port,
                 &format!("/purlis/agent-identity/back?code=abc123&state={state}"),
