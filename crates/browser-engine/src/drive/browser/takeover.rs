@@ -55,8 +55,8 @@ use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
 use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
-    ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
-    SHIFT, Step, lock,
+    ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PageId, PersonInput,
+    Refusal, SHIFT, Step, lock,
 };
 
 /// Who holds a browser, and the epoch of their lease.
@@ -474,6 +474,7 @@ impl Browser {
         }
         match input {
             PersonInput::Navigate { step, .. } => self.person_steps(&session, *step),
+            PersonInput::Watch { page, .. } => self.person_watches(page),
             PersonInput::Key {
                 down,
                 key,
@@ -733,6 +734,27 @@ impl Browser {
         )
     }
 
+    /// **The person watches another of the browser's pages** (#6989), while they drive: it
+    /// becomes the current page, so its views cast it and the agent's next call, once handed
+    /// back, acts there. [`Refusal::NoSuchPage`] for a page the browser no longer has.
+    fn person_watches(&self, page: &PageId) -> Result<(), Refusal> {
+        let lease = lock(&self.lease);
+        if lease.driver != Driver::Person {
+            return Err(Refusal::NotDriving);
+        }
+        let target = self.target(Some(page))?;
+        lock(&self.inner.state).current = Some(target.clone());
+        let shown = self
+            .devtools()
+            .call("Target.activateTarget", json!({ "targetId": target }), None)
+            .map(drop)
+            .map_err(refusal);
+        drop(lease);
+        // Its views are told at once which page is current now, before it paints.
+        self.inner.tell_now();
+        shown
+    }
+
     fn person_sends(&self, method: &str, event: Value, session: &str) -> Result<(), Refusal> {
         let lease = lock(&self.lease);
         if lease.driver != Driver::Person {
@@ -966,7 +988,7 @@ impl Browser {
         let seen = input.aim().document;
         match input {
             // A step aimed at what the page no longer shows is never taken (#6938).
-            PersonInput::Navigate { .. } => Ok(Landing::not()),
+            PersonInput::Navigate { .. } | PersonInput::Watch { .. } => Ok(Landing::not()),
             PersonInput::Key { .. } => {
                 // The field the last key went to, still focused and as it was: the key lands
                 // there, and the page's tree is not read (#2974).

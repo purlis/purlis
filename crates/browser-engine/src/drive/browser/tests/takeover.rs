@@ -2279,3 +2279,53 @@ fn a_step_aimed_at_what_the_page_no_longer_shows_is_dropped() {
     );
     assert!(engine.sent("Page.reload").is_empty());
 }
+
+// ---- The person watches another of the browser's pages (#6989) ----
+
+fn watch(aim: &Aim, page: &str) -> PersonInput {
+    PersonInput::Watch {
+        aim: aim.clone(),
+        page: PageId::new(page),
+    }
+}
+
+#[test]
+fn the_person_watches_another_page_only_while_they_drive_and_it_becomes_current() {
+    let (browser, engine) = browser();
+    super::a_second_page(&browser, &engine);
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&watch(&aim, "p2")),
+        Err(Refusal::NotDriving)
+    );
+    assert!(engine.sent("Target.activateTarget").is_empty());
+
+    browser.take_over();
+    browser.person_input(&watch(&aim, "p2")).unwrap();
+
+    assert_eq!(
+        super::super::lock(&browser.inner.state).current.as_deref(),
+        Some("PAGE-7")
+    );
+    assert_eq!(
+        engine.sent("Target.activateTarget")[0].params["targetId"],
+        json!("PAGE-7")
+    );
+    assert_eq!(aim_now(&browser).page, PageId::new("p2"));
+}
+
+#[test]
+fn watching_a_page_the_browser_does_not_have_is_refused_and_changes_nothing() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&watch(&aim, "p9")),
+        Err(Refusal::NoSuchPage(PageId::new("p9")))
+    );
+    assert_eq!(
+        super::super::lock(&browser.inner.state).current.as_deref(),
+        Some("PAGE-1")
+    );
+    assert!(engine.sent("Target.activateTarget").is_empty());
+}

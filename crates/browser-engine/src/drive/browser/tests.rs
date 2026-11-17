@@ -4027,6 +4027,104 @@ fn a_title_that_holds_a_text_kept_out_is_told_scrubbed_as_browser_pages_lists_it
     assert!(!title.contains("hunter2secret"), "{title}");
 }
 
+// The browser's pages, told to a view as browser_pages lists them (#6989).
+
+type Listed = Arc<Mutex<Vec<Vec<crate::drive::ListedPage>>>>;
+
+/// A browser shown into a sink that keeps the pages each word of it told, image or not.
+fn pages_told_into(browser: &Browser, engine: &Engine) -> Listed {
+    let told: Listed = Arc::default();
+    let seen = Arc::clone(&told);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        super::lock(&seen).push(painted.pages);
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    told
+}
+
+fn last_pages(told: &Listed) -> Vec<crate::drive::ListedPage> {
+    super::lock(told).last().cloned().unwrap_or_default()
+}
+
+#[test]
+fn a_view_is_told_the_browsers_pages_by_id_title_and_origin_and_which_is_current() {
+    use crate::drive::ListedPage;
+    let (browser, engine) = browser();
+    let told = pages_told_into(&browser, &engine);
+    a_second_page(&browser, &engine);
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"More","url":"http://fixture.test/more.html?token=1","attached":true}}),
+        None,
+    );
+    wait_for("both pages are told", || last_pages(&told).len() == 2);
+
+    let pages = last_pages(&told);
+    assert_eq!(
+        pages[1],
+        ListedPage {
+            id: PageId::new("p2"),
+            title: "More".into(),
+            origin: Some("http://fixture.test".into()),
+            current: false,
+        }
+    );
+    assert!(pages[0].current, "{pages:?}");
+}
+
+#[test]
+fn a_view_is_told_which_page_is_current_as_the_agent_switches() {
+    let (browser, engine) = browser();
+    let told = pages_told_into(&browser, &engine);
+    a_second_page(&browser, &engine);
+    browser
+        .call(
+            &id(1),
+            Call::SwitchPage {
+                page: PageId::new("p2"),
+            },
+        )
+        .unwrap();
+    wait_for("the second is told current", || {
+        last_pages(&told)
+            .iter()
+            .any(|page| page.id == PageId::new("p2") && page.current)
+    });
+    assert_eq!(
+        last_pages(&told).iter().filter(|page| page.current).count(),
+        1
+    );
+}
+
+#[test]
+fn a_pages_title_told_to_a_view_is_scrubbed_and_an_address_holding_a_kept_value_has_no_origin() {
+    let (browser, engine) = browser();
+    let told = pages_told_into(&browser, &engine);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["hunter2secret"]);
+    super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    a_second_page(&browser, &engine);
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"Hello hunter2secret","url":"http://fixture.test/in?pw=hunter2secret","attached":true}}),
+        None,
+    );
+    wait_for("its title is told", || {
+        last_pages(&told)
+            .iter()
+            .any(|page| page.title.starts_with("Hello"))
+    });
+
+    let second = last_pages(&told)
+        .into_iter()
+        .find(|page| page.id == PageId::new("p2"))
+        .unwrap();
+    assert!(!second.title.contains("hunter2secret"), "{second:?}");
+    assert_eq!(second.origin, None);
+}
+
 #[test]
 fn a_paced_browser_acknowledges_no_sooner_than_its_pace_so_the_engine_makes_fewer_frames() {
     let (browser, engine) = browser();

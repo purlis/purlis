@@ -28,10 +28,10 @@
 use super::super::kept::{KEPT_WHOLE_FROM, Kept};
 use super::super::scrub::Scrub;
 use super::super::{
-    Answer, Content, DownloadInfo, FieldInfo, KeptOff, MOST_FILE_NAME_CHARS, PageId, PageInfo,
-    Refusal, Settled, lock, plain_file_name,
+    Answer, Content, DownloadInfo, FieldInfo, KeptOff, ListedPage, MOST_FILE_NAME_CHARS, PageId,
+    PageInfo, Refusal, Settled, lock, plain_file_name,
 };
-use super::{Browser, State, login};
+use super::{Browser, Inner, State, login};
 
 /// What a call says of a site it held back whose address holds a text kept out: that site is not
 /// said, and so nobody is asked about it.
@@ -366,20 +366,87 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
 impl Browser {
     /// [`kept_off_told`], where this browser keeps the agent off a site.
     pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
+        self.inner.with_kept_off_told(answer)
+    }
+
+    /// **`outcome`, as the chat may read it** (module docs). Nothing the agent's calls answer
+    /// leaves the browser but through this.
+    pub(super) fn kept_out(&self, outcome: Result<Answer, Refusal>) -> Result<Answer, Refusal> {
+        self.inner.kept_out(outcome)
+    }
+
+    /// `downloads`, each named as an answer would name it.
+    pub(super) fn names_kept_out(&self, downloads: Vec<DownloadInfo>) -> Vec<DownloadInfo> {
+        self.inner.names_kept_out(downloads)
+    }
+}
+
+impl Inner {
+    /// **The browser's pages, as its views are told** (#6989): listed as `browser_pages` lists
+    /// them to the chat, through the same way out ([`Inner::with_kept_off_told`], then
+    /// [`Inner::kept_out`]), each address then cut to its origin: none where the address held
+    /// a value kept out, as a view's page is told (#6938). Taken with no lock held.
+    pub(super) fn pages_told(&self) -> Vec<ListedPage> {
+        let listed: Vec<PageInfo> = {
+            let state = lock(&self.state);
+            state
+                .pages
+                .iter()
+                .filter_map(|page| state.info(&page.target))
+                .collect()
+        };
+        let held: Vec<PageId> = match self.keeping() {
+            Some(keeping) => listed
+                .iter()
+                .filter(|page| keeping.every.holds(&page.address))
+                .map(|page| page.id.clone())
+                .collect(),
+            None => Vec::new(),
+        };
+        let answer = Answer {
+            page: None,
+            settled: Settled::Yes,
+            opened: Vec::new(),
+            content: Content::Pages(listed),
+            note: None,
+            repeated: false,
+            asked: Vec::new(),
+            downloads: Vec::new(),
+        };
+        let Ok(Answer {
+            content: Content::Pages(pages),
+            ..
+        }) = self.kept_out(Ok(self.with_kept_off_told(answer)))
+        else {
+            return Vec::new();
+        };
+        pages
+            .into_iter()
+            .map(|page| ListedPage {
+                origin: login::origin_of(&page.address).filter(|_| !held.contains(&page.id)),
+                id: page.id,
+                title: page.title,
+                current: page.current,
+            })
+            .collect()
+    }
+
+    /// [`kept_off_told`], where this browser keeps the agent off a site.
+    pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
         // Each page by what it is kept off: a sign-in's own page and its windows act on its site.
         let (each, new): (Vec<(PageId, Option<KeptOff>)>, Option<KeptOff>) = {
-            let state = lock(&self.inner.state);
+            let state = lock(&self.state);
             let each = state
                 .pages
                 .iter()
                 .map(|page| {
                     (
                         page.id.clone(),
-                        self.inner.kept_off_on(&state, Some(&page.target)),
+                        self.kept_off_on(&state, Some(&page.target)),
                     )
                 })
                 .collect();
-            (each, self.inner.kept_off_on(&state, None))
+            (each, self.kept_off_on(&state, None))
         };
         if new.is_none() && each.iter().all(|(_, kept_off)| kept_off.is_none()) {
             return answer;
@@ -396,7 +463,7 @@ impl Browser {
     /// What is kept out now, or `None` where nothing is.
     fn keeping(&self) -> Option<Keeping> {
         let (browser, pages, filled, named_by_their_sites, closed) = {
-            let state = lock(&self.inner.state);
+            let state = lock(&self.state);
             let pages: Vec<(PageId, Kept)> = state
                 .pages
                 .iter()

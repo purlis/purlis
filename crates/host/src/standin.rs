@@ -721,6 +721,8 @@ pub struct Shown {
     /// Its page's title and load, told with each frame (#6938).
     pub title: String,
     pub load: purlis_session_protocol::browsing::PageLoad,
+    /// The browser's pages, told with each frame (#6989).
+    pub pages: Vec<purlis_session_protocol::browsing::ListedPage>,
     pub stopped: bool,
     /// What it was started reaching (#2013).
     pub reach: Option<purlis_session_protocol::browsing::BrowserReach>,
@@ -767,6 +769,7 @@ impl Shown {
             address: self.address.clone(),
             title: self.title.clone(),
             load: self.load.clone(),
+            pages: self.pages.clone(),
         }
     }
 }
@@ -1018,8 +1021,10 @@ impl crate::browsers::Screen for StandInScreen {
         if !shown.taken_over {
             return Err(crate::browsers::NotTaken::NotDriving);
         }
-        let (Input::Mouse { aim, .. } | Input::Key { aim, .. } | Input::Navigate { aim, .. }) =
-            input;
+        let (Input::Mouse { aim, .. }
+        | Input::Key { aim, .. }
+        | Input::Navigate { aim, .. }
+        | Input::Watch { aim, .. }) = input;
         if aim.document != shown.document {
             return Err(crate::browsers::NotTaken::Missed);
         }

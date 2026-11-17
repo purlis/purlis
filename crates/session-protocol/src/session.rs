@@ -586,9 +586,23 @@ use crate::view::{Limits, Views};
 /// `browser_input` may carry the person's Back, Forward, Reload or Stop
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
+///
+/// 1.91 tells a browser's views its other pages, and lets the person watch another (#6989): a
+/// page frame lists the browser's pages as `browser_pages` lists them to its chat
+/// ([`crate::browsing::PageShown::pages`]: each one's id, scrubbed title and origin, and which is
+/// current), and `browser_input` may carry the person's pick of one
+/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. A view
+/// of a link before 1.91 is sent no list, and a host before 1.91 is sent no pick.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 90,
+    minor: 91,
+};
+
+/// The version that first lists a browser's pages to its views and takes the person's pick of
+/// one to watch (#6989): none is sent to a host before.
+pub const KNOWS_PAGES_LISTED: Version = Version {
+    major: 1,
+    minor: 91,
 };
 
 /// The version that first tells a browser's views what its page is and takes the person's

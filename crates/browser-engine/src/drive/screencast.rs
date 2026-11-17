@@ -28,7 +28,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::browser::Inner;
-use super::{PageLoad, Painted, lock};
+use super::{ListedPage, PageLoad, Painted, lock};
 
 /// Where each frame goes: its image, and what it showed.
 pub(crate) type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
@@ -55,8 +55,19 @@ pub(crate) struct Screencast {
     asks: Mutex<Option<Sender<Ask>>>,
 }
 
-/// What the sink was last told the page is: its address, title and load (#6938).
-type Told = (String, String, PageLoad);
+/// What the sink was last told the page is: its address, title and load (#6938), and the
+/// browser's pages (#6989).
+type Told = (String, String, PageLoad, Vec<ListedPage>);
+
+/// What `shown` tells a view, besides its image and its aim.
+fn told(shown: &Painted) -> Told {
+    (
+        shown.address.clone(),
+        shown.title.clone(),
+        shown.load.clone(),
+        shown.pages.clone(),
+    )
+}
 
 impl Screencast {
     pub(crate) fn new() -> Self {
@@ -113,11 +124,7 @@ impl Screencast {
         let Some(sink) = lock(&self.sink).clone() else {
             return;
         };
-        let now = (
-            shown.address.clone(),
-            shown.title.clone(),
-            shown.load.clone(),
-        );
+        let now = told(&shown);
         {
             let mut told = lock(&self.told);
             if told.as_ref() == Some(&now) {
@@ -143,11 +150,7 @@ impl Screencast {
             return;
         };
         if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(data) {
-            *lock(&self.told) = Some((
-                shown.address.clone(),
-                shown.title.clone(),
-                shown.load.clone(),
-            ));
+            *lock(&self.told) = Some(told(&shown));
             sink(Painted { jpeg, ..shown });
         }
         self.ask(Ask::Frame {

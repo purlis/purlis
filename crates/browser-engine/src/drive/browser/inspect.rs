@@ -624,7 +624,9 @@ impl Browser {
         let on = Some(open.front_session.as_str());
         match input {
             // DevTools' view draws no strip to step from (#6938).
-            PersonInput::Navigate { .. } => return Err(Refusal::Missed),
+            PersonInput::Navigate { .. } | PersonInput::Watch { .. } => {
+                return Err(Refusal::Missed);
+            }
             PersonInput::Key {
                 down,
                 key,
@@ -1350,6 +1352,7 @@ fn front_end_event(
                     address: String::new(),
                     title: String::new(),
                     load: PageLoad::Loaded,
+                    pages: Vec::new(),
                     jpeg,
                 });
             }

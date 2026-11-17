@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use purlis_host::standin::{StandInBrowsers, StandInScreen, StandIns};
 use purlis_host::{ComposesNothing, Hosting};
 use purlis_session_protocol::auth::{Credentials, Scope};
+use purlis_session_protocol::browsing::ListedPage;
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
@@ -687,4 +688,103 @@ async fn a_view_of_a_link_before_1_90_is_sent_no_page_frame() {
         said_with_pages(&frames),
         ["origin http://localhost:5173", "one"]
     );
+}
+
+/// What a view's page frames listed of the browser's pages, in order: `id:title@origin`, with
+/// `*` after the current one (1.91, #6989).
+fn listed(frames: &[Frame]) -> Vec<String> {
+    frames
+        .iter()
+        .filter_map(Frame::page)
+        .map(|page| {
+            page.pages
+                .iter()
+                .map(|one| {
+                    let current = if one.current { "*" } else { "" };
+                    format!("{}:{}@{}{current}", one.id, one.title, one.origin)
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+fn a_page(id: &str, title: &str, origin: &str, current: bool) -> ListedPage {
+    ListedPage {
+        id: id.into(),
+        title: title.into(),
+        origin: origin.into(),
+        current,
+    }
+}
+
+#[tokio::test]
+async fn a_view_is_told_the_browsers_pages_where_they_change_and_in_its_snapshot() {
+    // 1.91 (#6989): each page's id, title and origin, and which is current, held as a view may
+    // draw them: an origin that is not one exactly is told as none.
+    let mut linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+    let soon = || Instant::now() + Duration::from_millis(300);
+
+    screen.shown().pages = vec![
+        a_page("p1", "Docs", "https://docs.example.test", true),
+        a_page("p2", "Sign in", "https://id.example.test/path", false),
+    ];
+    screen.makes(b"one");
+    assert_eq!(
+        listed(&every_frame_until(&mut reader, soon()).await),
+        ["p1:Docs@https://docs.example.test* p2:Sign in@"]
+    );
+
+    // The current page moves on with no new image: the view is told the list again, once.
+    screen.shown().pages[0].current = false;
+    screen.shown().pages[1].current = true;
+    screen.tells();
+    screen.tells();
+    assert_eq!(
+        listed(&every_frame_until(&mut reader, soon()).await),
+        ["p1:Docs@https://docs.example.test p2:Sign in@*"]
+    );
+
+    let (_, mut again) = linked.watch(&program, ViewRole::Thumbnail).await;
+    assert_eq!(
+        listed(&every_frame_until(&mut again, soon()).await),
+        ["p1:Docs@https://docs.example.test p2:Sign in@*"]
+    );
+}
+
+#[tokio::test]
+async fn a_view_of_a_link_before_1_91_is_told_what_its_page_is_and_no_list_of_pages() {
+    let before = purlis_session_protocol::version::Speaks::new([
+        purlis_session_protocol::version::Version {
+            major: 1,
+            minor: 90,
+        },
+    ]);
+    let mut linked = linked_speaking(before).await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+
+    {
+        let mut shown = screen.shown();
+        shown.address = "http://localhost:5173/".into();
+        shown.title = "App".into();
+        shown.pages = vec![a_page("p1", "App", "http://localhost:5173", true)];
+    }
+    screen.makes(b"one");
+    // Only the list moved: a 1.90 view is told nothing new.
+    screen.shown().pages.push(a_page("p2", "More", "", false));
+    screen.tells();
+
+    let frames = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(300)).await;
+    assert_eq!(
+        said_with_pages(&frames),
+        [
+            "origin http://localhost:5173",
+            "page http://localhost:5173/ | App | Loaded",
+            "one"
+        ]
+    );
+    assert_eq!(listed(&frames), [""]);
 }

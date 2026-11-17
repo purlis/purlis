@@ -2210,3 +2210,71 @@ fn a_download_is_judged_on_what_its_browser_and_its_login_say_of_it_now() {
         }
     );
 }
+
+#[test]
+fn a_frame_tells_the_host_the_browsers_pages_by_id_title_and_origin_alone() {
+    // #6989: as `browser_pages` lists them, with no path, and which is current.
+    let painted = drive::Painted {
+        aim: drive::Aim {
+            page: drive::PageId::new("p1"),
+            document: 1,
+        },
+        address: "https://docs.example.test/a".into(),
+        title: "Docs".into(),
+        load: drive::PageLoad::Loaded,
+        pages: vec![
+            drive::ListedPage {
+                id: drive::PageId::new("p1"),
+                title: "Docs".into(),
+                origin: Some("https://docs.example.test".into()),
+                current: true,
+            },
+            drive::ListedPage {
+                id: drive::PageId::new("p2"),
+                title: String::new(),
+                origin: None,
+                current: false,
+            },
+        ],
+        jpeg: Vec::new(),
+    };
+    let page = super::page_of(&painted);
+    assert_eq!(
+        page.pages,
+        [
+            wire::ListedPage {
+                id: "p1".into(),
+                title: "Docs".into(),
+                origin: "https://docs.example.test".into(),
+                current: true,
+            },
+            wire::ListedPage {
+                id: "p2".into(),
+                title: String::new(),
+                origin: String::new(),
+                current: false,
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_persons_pick_of_a_page_reaches_the_engine_as_theirs_to_watch() {
+    let input = super::input_of(&wire::Input::Watch {
+        aim: wire::Aim {
+            page: "p1".into(),
+            document: 4,
+        },
+        page: "p2".into(),
+    });
+    assert_eq!(
+        input,
+        drive::PersonInput::Watch {
+            aim: drive::Aim {
+                page: drive::PageId::new("p1"),
+                document: 4,
+            },
+            page: drive::PageId::new("p2"),
+        }
+    );
+}

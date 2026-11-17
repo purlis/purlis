@@ -26,8 +26,8 @@ use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, FillHold, Gate, Hold, Judge,
-    KeptOff, Limits, Outbound, PageId, PageInfo, PageLoad, Painted, Ref, Refusal, RefusedLoad,
-    Settled, Why, lock,
+    KeptOff, Limits, ListedPage, Outbound, PageId, PageInfo, PageLoad, Painted, Ref, Refusal,
+    RefusedLoad, Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
@@ -308,8 +308,10 @@ fn pastes(event: &Value) -> bool {
 /// **What a view is told of a page** (#6938), from [`State::shown_now`], with no image: where its
 /// address holds a text kept out, it is named by none, since what a view is told of it is written
 /// where a chat can read it (the person's ruling of 2026-11-06). Worked out with no lock held.
+/// With it, the browser's pages as [`Inner::pages_told`] lists them (#6989).
 fn told_of(
     (aim, mut address, title, load, kept): (Aim, String, String, PageLoad, Kept),
+    pages: Vec<ListedPage>,
 ) -> Painted {
     if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
         address.clear();
@@ -319,6 +321,7 @@ fn told_of(
         address,
         title,
         load,
+        pages,
         jpeg: Vec::new(),
     }
 }
@@ -3410,6 +3413,8 @@ impl Browser {
             Call::SwitchPage { page } => {
                 let target = self.target(Some(&page))?;
                 lock(&self.inner.state).current = Some(target.clone());
+                // Its views are told the page that is current now (#6989).
+                self.inner.tell_now();
                 let _ = self.gated(|| {
                     self.devtools().call(
                         "Target.activateTarget",
@@ -6283,8 +6288,10 @@ impl Inner {
     /// (#6938): its address, title or load, with no image, while the browser is shown and only
     /// where any of them changed. A page that is loading may paint nothing for a while, and its
     /// view still says so.
+    ///
+    /// The browser's pages are told with it (#6989): a page opened, gone or retitled.
     fn tell_page_now(&self, method: &str) {
-        if !matches!(
+        if matches!(
             method,
             "Page.frameStartedLoading"
                 | "Page.frameStoppedLoading"
@@ -6295,8 +6302,17 @@ impl Inner {
                 | "Target.targetCrashed"
                 | "Target.targetDestroyed"
                 | "Target.attachedToTarget"
-        ) || !self.cast.showing()
-        {
+                | "Target.detachedFromTarget"
+        ) {
+            self.tell_now();
+        }
+    }
+
+    /// **Tells a view what the current page is and what the browser's pages are, now** (#6938,
+    /// #6989), with no image, while the browser is shown and only where any of it changed: where
+    /// no event of the engine's says so, as when the current page changes.
+    pub(super) fn tell_now(&self) {
+        if !self.cast.showing() {
             return;
         }
         let shown = {
@@ -6307,7 +6323,7 @@ impl Inner {
                 .and_then(|target| state.shown_now(target))
         };
         if let Some(shown) = shown {
-            self.cast.page_now(told_of(shown));
+            self.cast.page_now(told_of(shown, self.pages_told()));
         }
     }
 
@@ -6333,8 +6349,11 @@ impl Inner {
                 state.shown_now(&target)
             });
             if let Some(shown) = shown {
-                self.cast
-                    .frame(&event.params, event.session_id.as_deref(), told_of(shown));
+                self.cast.frame(
+                    &event.params,
+                    event.session_id.as_deref(),
+                    told_of(shown, self.pages_told()),
+                );
             }
             return;
         }

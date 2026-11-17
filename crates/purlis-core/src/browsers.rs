@@ -1052,11 +1052,15 @@ pub fn input_of(input: &wire::Input) -> drive::PersonInput {
                 wire::Step::Stop => drive::Step::Stop,
             },
         },
+        wire::Input::Watch { aim, page } => drive::PersonInput::Watch {
+            aim: aim_at(aim),
+            page: drive::PageId::new(page.clone()),
+        },
     }
 }
 
 /// **What a page is, in the protocol's words** (#6938): its address, title and load, as the
-/// engine told them with a frame.
+/// engine told them with a frame, and the browser's pages (#6989).
 pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
     wire::PageShown {
         address: painted.address.clone(),
@@ -1067,6 +1071,17 @@ pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
             drive::PageLoad::Failed(why) => wire::PageLoad::Failed { why: why.clone() },
             drive::PageLoad::Crashed => wire::PageLoad::Crashed,
         },
+        // The browser's pages, as `browser_pages` lists them (#6989).
+        pages: painted
+            .pages
+            .iter()
+            .map(|page| wire::ListedPage {
+                id: page.id.as_str().to_owned(),
+                title: page.title.clone(),
+                origin: page.origin.clone().unwrap_or_default(),
+                current: page.current,
+            })
+            .collect(),
     }
 }
 

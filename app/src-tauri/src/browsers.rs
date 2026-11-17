@@ -105,6 +105,20 @@ pub struct ShownPage {
     pub address: Option<String>,
     pub title: Option<String>,
     pub load: PageLoadSaid,
+    /// **The browser's pages** (#6989), as `browser_pages` lists them to its chat, in the order
+    /// they opened: empty from a host before 1.91, and the view then lists none.
+    pub pages: Vec<PageListed>,
+}
+
+/// **One of a browser's pages, as its view is told** (#6989): its id (`p2`), what the person's
+/// pick of it names; its title as `browser_pages` lists it, `null` for none; the origin of its
+/// address alone, `null` for none; and whether it is the page shown now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PageListed {
+    pub id: String,
+    pub title: Option<String>,
+    pub origin: Option<String>,
+    pub current: bool,
 }
 
 /// **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
@@ -133,6 +147,16 @@ impl ShownPage {
                 PageLoad::Failed { why } => PageLoadSaid::Failed { why: some(why) },
                 PageLoad::Crashed => PageLoadSaid::Crashed,
             },
+            pages: page
+                .pages
+                .into_iter()
+                .map(|listed| PageListed {
+                    id: listed.id,
+                    title: some(listed.title),
+                    origin: some(listed.origin),
+                    current: listed.current,
+                })
+                .collect(),
         }
     }
 }
@@ -210,6 +234,9 @@ pub enum BrowserInput {
     },
     /// Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed.
     Navigate { aim: String, step: BrowserStep },
+    /// The person watches another of the browser's pages (#6989): `page` is its id, as the view
+    /// was told it.
+    Watch { aim: String, page: String },
 }
 
 /// What became of one event of the person's (#2014): it reached the page; it was dropped, the
@@ -316,6 +343,10 @@ impl BrowserInput {
                     BrowserStep::Reload => wire::Step::Reload,
                     BrowserStep::Stop => wire::Step::Stop,
                 },
+            },
+            BrowserInput::Watch { aim, page } => Input::Watch {
+                aim: aim_read(aim)?,
+                page: page.clone(),
             },
         })
     }
@@ -1405,7 +1436,8 @@ mod hosted {
                 return Ok(InputOutcome::Missed);
             };
             let link = self.link_for(program)?;
-            // A host before 1.90 takes no step through a page's history (#6938).
+            // A host before 1.90 takes no step through a page's history (#6938), and one before
+            // 1.91 no pick of a page to watch (#6989).
             if matches!(
                 input,
                 purlis_session_protocol::browsing::Input::Navigate { .. }
@@ -1413,6 +1445,15 @@ mod hosted {
             {
                 return Ok(InputOutcome::Refused {
                     why: crate::browsers::OLD_HOST_NO_STEPS.to_owned(),
+                });
+            }
+            if matches!(
+                input,
+                purlis_session_protocol::browsing::Input::Watch { .. }
+            ) && link.version() < session::KNOWS_PAGES_LISTED
+            {
+                return Ok(InputOutcome::Refused {
+                    why: crate::browsers::OLD_HOST_NO_WATCH.to_owned(),
                 });
             }
             let sent = link.call_refused_within(
@@ -1975,6 +2016,11 @@ pub async fn go_browser(
 /// older than 1.90 (#6938).
 pub const OLD_HOST_NO_STEPS: &str = "This browser's host is older than this window and cannot go \
                                      back, forward, reload or stop. Update purlis where it runs.";
+
+/// What the person's pick of another page to watch is refused with on a browser whose host is
+/// older than 1.91 (#6989).
+pub const OLD_HOST_NO_WATCH: &str = "This browser's host is older than this window and cannot \
+                                     show another of its pages. Update purlis where it runs.";
 
 /// What sending a browser the window did not start in this project to an address is refused
 /// with (#2176).

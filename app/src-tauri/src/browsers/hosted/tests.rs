@@ -1199,7 +1199,66 @@ fn a_browser_view_is_told_what_its_page_is_with_no_user_in_its_address() {
             address: Some("https://docs.example.test/a?q=1".into()),
             title: Some("Docs home".into()),
             load: crate::browsers::PageLoadSaid::Loading,
+            pages: Vec::new(),
         }
+    );
+}
+
+#[test]
+fn a_browser_view_is_told_the_browsers_pages_and_which_is_current() {
+    // #6989: as `browser_pages` lists them, each held to what a view may draw.
+    use purlis_session_protocol::browsing::{ListedPage, PageShown};
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let pages: Arc<Mutex<Vec<PageShown>>> = Arc::default();
+    let heard = Arc::clone(&pages);
+    window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(|_| {}),
+            Box::new(move |page| heard.lock().unwrap().push(page)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+
+    screen.shown().pages = vec![
+        ListedPage {
+            id: "p1".into(),
+            title: "Docs".into(),
+            origin: "https://docs.example.test".into(),
+            current: false,
+        },
+        ListedPage {
+            id: "p2".into(),
+            title: "Sign in\u{202e}".into(),
+            origin: "https://id.example.test".into(),
+            current: true,
+        },
+    ];
+    screen.makes(b"\xff\xd8 one");
+    until("its pages", || !pages.lock().unwrap().is_empty());
+
+    let told = crate::browsers::ShownPage::of(pages.lock().unwrap()[0].clone());
+    assert_eq!(
+        told.pages,
+        [
+            crate::browsers::PageListed {
+                id: "p1".into(),
+                title: Some("Docs".into()),
+                origin: Some("https://docs.example.test".into()),
+                current: false,
+            },
+            crate::browsers::PageListed {
+                id: "p2".into(),
+                title: Some("Sign in".into()),
+                origin: Some("https://id.example.test".into()),
+                current: true,
+            },
+        ]
     );
 }
 

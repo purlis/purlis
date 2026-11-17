@@ -1253,6 +1253,7 @@ describe("what the page is, and the person's steps through its history (#6938)",
     address: "https://docs.example.test/guide/start?tab=2",
     title: "Getting started",
     load: { state: "loaded" },
+    pages: [],
     ...more,
   });
 
@@ -1351,5 +1352,97 @@ describe("what the page is, and the person's steps through its history (#6938)",
     await waitFor(() =>
       expect(barSaid()).toHaveTextContent("the page has no earlier address to go back to"),
     );
+  });
+});
+
+describe("the browser's other pages, and the person watching another (#6989)", () => {
+  const listed = (current: string): ShownPage => ({
+    address: "https://docs.example.test/guide",
+    title: "Guide",
+    load: { state: "loaded" },
+    pages: [
+      { id: "p1", title: "Guide", origin: "https://docs.example.test", current: current === "p1" },
+      { id: "p2", title: "Sign in", origin: "https://id.example.test", current: current === "p2" },
+      { id: "p3", title: null, origin: null, current: current === "p3" },
+    ],
+  });
+
+  async function drawn(input?: (args: Record<string, unknown>) => unknown) {
+    const { BrowserView } = await import("./BrowserView");
+    const { ProjectShownProvider } = await import("./projectShown");
+    const host = core(undefined, false, input);
+    render(
+      <ProjectShownProvider value={true}>
+        <BrowserView plane={PLANE} program="B1" />
+      </ProjectShownProvider>,
+    );
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==", "p1:7");
+    return host;
+  }
+
+  it("says no count for a browser of one page, or from a host that lists none", async () => {
+    const host = await drawn();
+    host.shown({ ...listed("p1"), pages: [] });
+    await waitFor(() => expect(screen.getByTestId("browser-title")).toHaveTextContent("Guide"));
+    expect(screen.queryByTestId("browser-pages")).toBeNull();
+    host.shown({ ...listed("p1"), pages: listed("p1").pages.slice(0, 1) });
+    await waitFor(() => expect(screen.queryByTestId("browser-pages")).toBeNull());
+  });
+
+  it("says which page is shown of how many after the title, and lists each by its title and site", async () => {
+    const host = await drawn();
+    host.shown(listed("p2"));
+    const head = screen.getByTestId("browser-head");
+    const count = await within(head).findByRole("button", { name: "Page 2 of 3" });
+    expect(within(head).getByTestId("browser-title").compareDocumentPosition(count)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    await userEvent.click(count);
+    const menu = await screen.findByRole("menu", { name: "This browser's pages" });
+    const rows = within(menu).getAllByRole("menuitemradio");
+    expect(rows.map((row) => row.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(rows[1]).toHaveAccessibleName("Sign in");
+    expect(rows[2]).toHaveAccessibleName("A page with no web address");
+  });
+
+  it("takes the browser over before watching another page, aimed at the frame the person saw", async () => {
+    const host = await drawn();
+    host.shown(listed("p1"));
+    const count = await screen.findByRole("button", { name: "Page 1 of 3" });
+    count.focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("menu", { name: "This browser's pages" });
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Sign in" }));
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    const order = host.order();
+    expect(order.indexOf("take_over_browser")).toBeLessThan(order.indexOf("browser_input"));
+    expect(host.asked("browser_input")[0]).toEqual({
+      program: "B1",
+      input: { kind: "watch", aim: "p1:7", page: "p2" },
+    });
+    expect(barSaid()).toHaveTextContent("You are driving this browser.");
+  });
+
+  it("sends nothing for the page already shown", async () => {
+    const host = await drawn();
+    host.shown(listed("p1"));
+    await userEvent.click(await screen.findByRole("button", { name: "Page 1 of 3" }));
+    await userEvent.click(await screen.findByRole("menuitemradio", { name: "Guide" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(host.asked("take_over_browser")).toHaveLength(0);
+    expect(host.asked("browser_input")).toHaveLength(0);
+  });
+
+  it("says in the strip why watching another page was refused", async () => {
+    const host = await drawn(() => ({
+      outcome: "refused",
+      why: "This browser's host is older than this window and cannot show another of its pages. Update purlis where it runs.",
+    }));
+    host.shown(listed("p1"));
+    await userEvent.click(await screen.findByRole("button", { name: "Page 1 of 3" }));
+    await userEvent.click(await screen.findByRole("menuitemradio", { name: "Sign in" }));
+    await waitFor(() => expect(barSaid()).toHaveTextContent("cannot show another of its pages"));
   });
 });

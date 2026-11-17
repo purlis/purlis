@@ -56,6 +56,7 @@ import { Select } from "./ui/select/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
+import { BrowserPages } from "./BrowserPages";
 import { SecretMarks, marksOn } from "./SecretMarks";
 import { onAMac } from "./tabKeys";
 import { Button, IconButton } from "./ui/button/Button";
@@ -72,10 +73,10 @@ export const DROPPED =
   "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
 /** Whether `input` is one the person would miss if it were dropped: a key pressed, a mouse
- *  button pressed or let go, or a step through the page's history (#6938). A move or a wheel is
- *  followed by the next one. */
+ *  button pressed or let go, a step through the page's history (#6938) or a pick of another
+ *  page to watch (#6989). A move or a wheel is followed by the next one. */
 function anAct(input: BrowserInput) {
-  if (input.kind === "navigate") return true;
+  if (input.kind === "navigate" || input.kind === "watch") return true;
   if (input.kind === "key") return input.action === "down";
   return input.kind === "mouse" && (input.action === "pressed" || input.action === "released");
 }
@@ -453,6 +454,14 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     });
   };
 
+  /** **Watches another of the browser's pages** (#6989): the person's own act, so it takes the
+   *  browser over first, as Back does, and is never done for the agent. */
+  const watchPage = (page: string) => {
+    void takeOver().then((took) => {
+      if (took) send({ kind: "watch", aim: aim.current, page });
+    });
+  };
+
   /** Opens the page's DevTools beside it (#2028), taking the browser over first. */
   const inspect = () => {
     void takeOver().then(async (took) => {
@@ -601,6 +610,8 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           </Tooltip>
         )}
         {shownPage?.address != null && <CopyAddress address={shownPage.address} />}
+        {/* Its other pages, and a way to watch another (#6989). */}
+        <BrowserPages pages={shownPage?.pages ?? []} onWatch={watchPage} />
         <SecretMarks secrets={marks} />
       </div>
       {(theirs || handed) && (
