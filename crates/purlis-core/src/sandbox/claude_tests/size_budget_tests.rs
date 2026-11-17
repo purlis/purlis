@@ -204,12 +204,58 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
     );
 }
 
+/// Whether `path`, or a folder above it, matches `glob` as Claude Code's sandbox reads a path
+/// pattern: `*` within a name, `**` any folders or none, `?` one letter, `[...]` a class.
+fn glob_holds(glob: &str, path: &str) -> bool {
+    thread_local! {
+        /// Each glob's pattern, made once: the large plane weighs thousands of paths.
+        static MADE: std::cell::RefCell<std::collections::HashMap<String, Option<regex::Regex>>> =
+            std::cell::RefCell::default();
+    }
+    MADE.with(|made| {
+        made.borrow_mut()
+            .entry(glob.to_owned())
+            .or_insert_with(|| glob_pattern(glob))
+            .as_ref()
+            .is_some_and(|it| it.is_match(path))
+    })
+}
+
+/// [`glob_holds`]'s pattern for `glob`, or `None` where it is none.
+fn glob_pattern(glob: &str) -> Option<regex::Regex> {
+    let mut pattern = String::from("^");
+    let mut rest = glob;
+    while let Some(c) = rest.chars().next() {
+        if let Some(after) = rest.strip_prefix("**") {
+            pattern.push_str(".*");
+            rest = after;
+            continue;
+        }
+        match c {
+            '*' => pattern.push_str("[^/]*"),
+            '?' => pattern.push_str("[^/]"),
+            '[' => match rest.find(']') {
+                Some(end) => {
+                    pattern.push_str(&rest[..=end]);
+                    rest = &rest[end + 1..];
+                    continue;
+                }
+                None => pattern.push_str(r"\["),
+            },
+            _ => pattern.push_str(&regex::escape(&c.to_string())),
+        }
+        rest = &rest[c.len_utf8()..];
+    }
+    pattern.push_str("(?:/.*)?$");
+    regex::Regex::new(&pattern).ok()
+}
+
 /// **What Claude Code's sandbox decides of a command's write to `path`** in a chat opened in
 /// `cwd` under `filesystem`, as its profile builder makes it (read in 2.1.291 and 2.1.300): a
-/// write goes ahead inside the chat's folder, an `allowWrite` entry or its shared temp folder,
-/// unless a `denyWrite` path holds it, at or below; and every folder above a `denyWrite` path is
-/// pinned, never written itself. Only plain paths are weighed: a glob is the same on both sides
-/// of what this module compares.
+/// write goes ahead inside the chat's folder, an `allowWrite` entry (a glob by what it matches)
+/// or its shared temp folder, unless a `denyWrite` entry holds it, at or below; and every folder
+/// above a plain `denyWrite` path is pinned, never written itself. A glob gets no folder above
+/// it pinned.
 fn writes(filesystem: &serde_json::Value, cwd: &str, path: &str) -> bool {
     let list = |key: &str| -> Vec<String> {
         filesystem[key]
@@ -217,12 +263,15 @@ fn writes(filesystem: &serde_json::Value, cwd: &str, path: &str) -> bool {
             .map(|it| {
                 it.iter()
                     .filter_map(|one| one.as_str().map(str::to_owned))
-                    .filter(|one| !one.contains(['*', '?', '[']))
                     .collect()
             })
             .unwrap_or_default()
     };
+    let glob = |it: &str| it.contains(['*', '?', '[']);
     let under = |inner: &str, outer: &str| {
+        if glob(outer) {
+            return glob_holds(outer, inner);
+        }
         outer == "/" || inner == outer || inner.starts_with(&format!("{outer}/"))
     };
     let roots: Vec<String> = std::iter::once(cwd.to_owned())
@@ -232,13 +281,18 @@ fn writes(filesystem: &serde_json::Value, cwd: &str, path: &str) -> bool {
     let denied = list("denyWrite");
     roots.iter().any(|root| under(path, root))
         && !denied.iter().any(|held| under(path, held))
-        && !denied.iter().any(|held| held != path && under(held, path))
+        && !denied
+            .iter()
+            .filter(|held| !glob(held))
+            .any(|held| held != path && under(held, path))
 }
 
 /// **The pins left out change no write a command may make** (the person's ruling, 2026-11-16,
 /// #6961): on the large plane, every git folder pin, a file below it, each folder above it and a
 /// file beside it, each written as before by a command in the chat's folder, with each pin
-/// [`super::claude::Settings::written_in`] left out put back.
+/// [`super::claude::Settings::written_in`] left out put back. So too where the chat is granted a
+/// write root that is a glob cut mid-name (`<plane>/workspaces/workspace-0*`), or one that ends
+/// in `/**`: a pin it covers is kept (the review of #7005).
 #[test]
 fn the_pins_left_out_change_no_write_a_command_may_make() {
     no_settings_of_this_machines();
@@ -258,57 +312,93 @@ fn the_pins_left_out_change_no_write_a_command_may_make() {
     else {
         panic!("not sandboxed");
     };
-    let Form::ClaudeCode(after) = applied.form_in(Some(&cwd)) else {
+    let Form::ClaudeCode(whole) = applied.with(applied.chain(Some(&cwd))) else {
         panic!("not Claude Code's own sandbox");
     };
-    let mut before = after.sandbox["filesystem"].clone();
-    let listed = before["denyWrite"].as_array_mut().expect("a list");
-    for pin in &after.pins {
-        if !listed.iter().any(|it| it == pin) {
-            listed.push(serde_json::json!(pin));
-        }
-    }
-    let left_out = before["denyWrite"].as_array().map_or(0, Vec::len)
-        - after.sandbox["filesystem"]["denyWrite"]
-            .as_array()
-            .map_or(0, Vec::len);
-    // At least every other workspace's branch folders' pins, by each of their names.
     assert!(
-        left_out >= (WORKSPACES - 1) * BRANCH_FOLDERS,
-        "every other workspace's pins are left out: {left_out}"
+        applied.leaves_pins_out(Some(&cwd)),
+        "a chat in one branch folder leaves the others' pins out"
     );
+    assert!(
+        !applied.leaves_pins_out(None),
+        "with no folder, none is left out"
+    );
+    // A chat at the plane's root writes above every pin, so keeps each by the root's spelling;
+    // a pin's other names (its firmlink twin, a link's spelling), which no write root of its
+    // reaches, still go.
+    let Form::ClaudeCode(at_root) = applied.form_in(Some(&root)) else {
+        panic!("not Claude Code's own sandbox");
+    };
+    let spelled = root.display().to_string();
+    let kept = at_root.sandbox["filesystem"]["denyWrite"].clone();
+    for pin in whole.pins.iter().filter(|pin| pin.starts_with(&spelled)) {
+        assert!(
+            kept.as_array()
+                .is_some_and(|it| it.iter().any(|one| one == pin)),
+            "{pin} is kept for a chat at the root"
+        );
+    }
+    let workspaces = root.join("workspaces").display().to_string();
+    for granted in [
+        None,
+        Some(format!("{workspaces}/workspace-0*")),
+        Some(format!("{workspaces}/workspace-1?/.worktrees/**")),
+        Some(format!("{workspaces}/workspace-0[3-5]")),
+    ] {
+        let mut whole = whole.clone();
+        if let Some(glob) = &granted {
+            let allow = &mut whole.sandbox["filesystem"]["allowWrite"];
+            if !allow.is_array() {
+                *allow = serde_json::json!([]);
+            }
+            allow.as_array_mut().unwrap().push(serde_json::json!(glob));
+        }
+        let after = whole.written_in(&cwd);
+        let before = whole.sandbox["filesystem"].clone();
+        let left_out = before["denyWrite"].as_array().map_or(0, Vec::len)
+            - after.sandbox["filesystem"]["denyWrite"]
+                .as_array()
+                .map_or(0, Vec::len);
+        if granted.is_none() {
+            // At least every other workspace's branch folders' pins, by each of their names.
+            assert!(
+                left_out >= (WORKSPACES - 1) * BRANCH_FOLDERS,
+                "every other workspace's pins are left out: {left_out}"
+            );
+        }
 
-    let cwd = cwd.display().to_string();
-    let mut corpus: Vec<String> = Vec::new();
-    for pin in &after.pins {
-        corpus.push(pin.clone());
-        corpus.push(format!("{pin}/config"));
-        corpus.push(format!("{pin}-beside"));
-        let mut above = Path::new(pin).parent();
-        while let Some(folder) = above.filter(|it| it.starts_with(&root)) {
-            corpus.push(folder.display().to_string());
-            above = folder.parent();
+        let cwd = cwd.display().to_string();
+        let mut corpus: Vec<String> = Vec::new();
+        for pin in &after.pins {
+            corpus.push(pin.clone());
+            corpus.push(format!("{pin}/config"));
+            corpus.push(format!("{pin}-beside"));
+            let mut above = Path::new(pin).parent();
+            while let Some(folder) = above.filter(|it| it.starts_with(&root)) {
+                corpus.push(folder.display().to_string());
+                above = folder.parent();
+            }
         }
+        corpus.push(format!("{cwd}/a-file"));
+        corpus.sort();
+        corpus.dedup();
+        let changed: Vec<&String> = corpus
+            .iter()
+            .filter(|path| {
+                writes(&before, &cwd, path) != writes(&after.sandbox["filesystem"], &cwd, path)
+            })
+            .collect();
+        assert!(
+            changed.is_empty(),
+            "granted {granted:?}: {} of {} writes decided otherwise: {changed:?}",
+            changed.len(),
+            corpus.len()
+        );
+        assert!(
+            writes(&after.sandbox["filesystem"], &cwd, &format!("{cwd}/a-file")),
+            "the chat still writes its own folder"
+        );
     }
-    corpus.push(format!("{cwd}/a-file"));
-    corpus.sort();
-    corpus.dedup();
-    let changed: Vec<&String> = corpus
-        .iter()
-        .filter(|path| {
-            writes(&before, &cwd, path) != writes(&after.sandbox["filesystem"], &cwd, path)
-        })
-        .collect();
-    assert!(
-        changed.is_empty(),
-        "{} of {} writes decided otherwise: {changed:?}",
-        changed.len(),
-        corpus.len()
-    );
-    assert!(
-        writes(&after.sandbox["filesystem"], &cwd, &format!("{cwd}/a-file")),
-        "the chat still writes its own folder"
-    );
 }
 
 /// **A pin under a write root of the person's own settings is kept** (the orchestrator's ruling
@@ -403,4 +493,131 @@ fn a_pin_under_a_write_root_of_the_persons_own_settings_is_kept() {
             "{anywhere}: every pin kept"
         );
     }
+}
+
+/// Settings holding `pins` alone, granted `allow_write`, as [`super::claude::rules`] marks them.
+fn pinned(pins: &[&str], allow_write: &[&str]) -> super::claude::Settings {
+    super::claude::Settings {
+        sandbox: serde_json::json!({
+            "enabled": true,
+            "filesystem": { "denyWrite": pins, "allowWrite": allow_write },
+        }),
+        deny: Vec::new(),
+        made_folders: Vec::new(),
+        pins: pins.iter().map(|it| (*it).to_owned()).collect(),
+        persons_roots: Vec::new(),
+        compile_cache: false,
+    }
+}
+
+/// The `denyWrite` entries of `settings`.
+fn deny_write(settings: &super::claude::Settings) -> Vec<String> {
+    settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|it| it.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// **A glob write root cut mid-name keeps every pin it covers** (the review of #7005): its plain
+/// part, `/a/proj` of `/a/proj*`, is no folder, and `/a/project/.git` is not below it; the last
+/// whole folder before the glob, `/a`, is, so the pin is kept. One the root does not cover still
+/// goes.
+#[test]
+fn a_glob_write_root_cut_mid_name_keeps_every_pin_it_covers() {
+    for root in [
+        "/a/proj*",
+        "/a/pro?ect",
+        "/a/[p]roject",
+        "/a/{project,other}",
+    ] {
+        let kept = deny_write(
+            &pinned(&["/a/project/.git", "/elsewhere/repo/.git"], &[root])
+                .written_in(Path::new("/home/someone/chat")),
+        );
+        assert!(
+            kept.contains(&"/a/project/.git".to_owned()),
+            "{root} covers /a/project/.git: {kept:?}"
+        );
+        assert!(
+            !kept.contains(&"/elsewhere/repo/.git".to_owned()),
+            "{root} covers nothing under /elsewhere: {kept:?}"
+        );
+    }
+}
+
+/// **A glob write root of the person's own settings, cut mid-name, is read as its last whole
+/// folder** (the review of #7005): `/a/proj*` places `/a`, and an Edit allow rule's
+/// `//a/sub*/**` places `/a` too.
+#[test]
+fn a_persons_glob_write_root_is_read_as_its_last_whole_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("settings.json");
+    fs::write(
+        &file,
+        r#"{"sandbox": {"filesystem": {"allowWrite": ["/a/proj*"]}},
+            "permissions": {"allow": ["Edit(//b/sub*/**)"], "additionalDirectories": ["/c/d/"]}}"#,
+    )
+    .unwrap();
+    let roots = super::claude::write_roots_in(&[file], None);
+    assert_eq!(roots, ["/a", "/c/d", "/b"]);
+}
+
+/// **A pin is kept where a write root names it in another case** (the review of #7005): on a
+/// volume that is not case-sensitive, as macOS's is by default, `/A/Project` is `/a/project`, so
+/// a pin is weighed against each root case-blind and kept when they differ by case alone.
+#[test]
+fn a_pin_is_kept_where_a_write_root_names_it_in_another_case() {
+    let kept = deny_write(
+        &pinned(&["/A/Project/.git"], &["/a/project"]).written_in(Path::new("/home/someone/chat")),
+    );
+    assert_eq!(kept, ["/A/Project/.git"]);
+}
+
+/// **A held path that ends in whitespace keeps its `/**` rule, and the rules below it**: Claude
+/// Code reads a rule's path as gitignore reads a line, which drops whitespace at its end, so
+/// `Read(//a/b )` holds `/a/b`, not `/a/b ` nor what is below it; only `Read(//a/b /**)` does.
+#[test]
+fn a_held_path_that_ends_in_whitespace_keeps_its_rules_below_it() {
+    for rules in [
+        vec!["Read(//a/b )", "Read(//a/b /**)"],
+        vec!["Edit(//a/b\t)", "Edit(//a/b\t/c)"],
+    ] {
+        let rules: Vec<String> = rules.into_iter().map(str::to_owned).collect();
+        assert_eq!(super::claude::fewest(rules.clone()), rules);
+    }
+}
+
+/// **Managed preferences an MDM profile installs are read as Claude Code reads them, and a
+/// managed source that cannot be read keeps every pin** (the review of #7005): a property list's
+/// `allowWrite` places its folder as a JSON file's does; a drop-in folder that cannot be listed,
+/// read in its place, places `/`, which every pin meets.
+#[test]
+fn managed_preferences_are_read_and_a_source_that_cannot_be_keeps_every_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    let preferences = dir.path().join("com.anthropic.claudecode.plist");
+    let mut filesystem = plist::Dictionary::new();
+    filesystem.insert(
+        "allowWrite".to_owned(),
+        plist::Value::Array(vec!["/managed/proj*".into()]),
+    );
+    let mut sandbox = plist::Dictionary::new();
+    sandbox.insert(
+        "filesystem".to_owned(),
+        plist::Value::Dictionary(filesystem),
+    );
+    let mut top = plist::Dictionary::new();
+    top.insert("sandbox".to_owned(), plist::Value::Dictionary(sandbox));
+    plist::Value::Dictionary(top)
+        .to_file_binary(&preferences)
+        .unwrap();
+    assert_eq!(
+        super::claude::write_roots_in(&[preferences], None),
+        ["/managed"]
+    );
+
+    let unlisted = dir.path().join("managed-settings.d");
+    fs::create_dir_all(&unlisted).unwrap();
+    assert_eq!(super::claude::write_roots_in(&[unlisted], None), ["/"]);
 }

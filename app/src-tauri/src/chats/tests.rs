@@ -3182,6 +3182,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            leaves_pins_out: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -3264,6 +3265,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3710,6 +3712,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9097,6 +9100,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9592,6 +9596,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9653,6 +9658,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9926,6 +9932,7 @@ pub(crate) fn a_chat_asking_live_on(
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            leaves_pins_out: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -9966,6 +9973,7 @@ fn open_a_harness_chat(
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            leaves_pins_out: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -10302,6 +10310,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -10391,6 +10400,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -12119,6 +12129,7 @@ mod moved_on {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                leaves_pins_out: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -13516,4 +13527,46 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
         None
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
+}
+
+/// **A folder for the session is offered only to an open chat whose settings keep every git
+/// folder pin** (#6961, the review of #7005): not to one that leaves pins out, nor, failing
+/// closed, to a chat this window does not have open.
+#[test]
+fn a_folder_for_the_session_is_offered_only_to_a_chat_that_keeps_every_pin() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let running = |leaves_pins_out: bool| Running {
+        chat: a_resumable_chat_in(plane.path()),
+        how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+        harness: Some(Harness::ClaudeCode),
+        declared: None,
+        workspace: None,
+        confinement: None,
+        confines: None,
+        started_with: StartedWith::default(),
+        composed_by_its_host: false,
+        pools_unknown: false,
+        ran: None,
+        grants_as: None,
+        skills: None,
+        plane_skills: true,
+        skills_read: Default::default(),
+        last_prompt: None,
+        runs_as: None,
+        runners_word: None,
+        reports_verified: false,
+        leaves_pins_out,
+        clones_at_start: None,
+        prompt_key: None,
+    };
+    lock(&chats.open).insert(1, running(false));
+    lock(&chats.open).insert(2, running(true));
+
+    assert!(chats.may_be_granted_a_folder(1));
+    assert!(
+        !chats.may_be_granted_a_folder(2),
+        "its settings leave pins out"
+    );
+    assert!(!chats.may_be_granted_a_folder(3), "not open here");
 }

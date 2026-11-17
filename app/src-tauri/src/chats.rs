@@ -537,6 +537,11 @@ struct Running {
     /// attributes its run began with: what a block its hook line reports is worth toward the
     /// block loop (R-209).
     reports_verified: bool,
+    /// **Whether its settings leave a git folder pin out, or may** (#6961, the review of #7005):
+    /// a Claude Code chat whose sandbox this window compiled and left pins out of for its folder
+    /// ([`purlis_core::sandbox::Applied::leaves_pins_out`]), or one its runner composed, whose
+    /// settings this window cannot read. Such a chat is offered no folder for the session.
+    leaves_pins_out: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -6423,6 +6428,10 @@ impl Chats {
                 reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
                     &attributes,
                 ),
+                leaves_pins_out: harness == Some(Harness::ClaudeCode)
+                    && (on_the_runner
+                        || sandbox
+                            .is_some_and(|applied| applied.leaves_pins_out(chat.cwd.as_deref()))),
             },
         );
         drop(open);
@@ -8174,6 +8183,15 @@ impl Chats {
         lock(&self.open)
             .get(&session)
             .is_some_and(|running| running.reports_verified)
+    }
+
+    /// **Whether chat `session` may be offered a folder for the session from the window** (#6961,
+    /// the review of #7005): an open chat whose settings keep every git folder pin. Failing
+    /// closed, a chat this window does not have open is not.
+    pub fn may_be_granted_a_folder(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| !running.leaves_pins_out)
     }
 
     /// **Whether chat `session` is open and runs in a sandbox its host composed for it** (#2692):

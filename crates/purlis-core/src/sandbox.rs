@@ -5457,6 +5457,24 @@ impl Applied {
         form
     }
 
+    /// **Whether the settings of a chat that opens in `cwd` leave a git folder pin out**
+    /// ([`claude::Settings::written_in`], #6961): such a chat is offered no folder for the
+    /// session from the window ([`crate::harness::hooked::HookAsks::granting_folders_by`]), since
+    /// a pin under it would not hold. False for any form but Claude Code's own sandbox, which
+    /// alone writes pins, and with no `cwd`, where none is left out.
+    pub fn leaves_pins_out(&self, cwd: Option<&Path>) -> bool {
+        let (Form::ClaudeCode(whole), Some(cwd)) = (self.with(self.chain(cwd)), cwd) else {
+            return false;
+        };
+        let written = whole.written_in(cwd);
+        let listed = |settings: &claude::Settings| -> usize {
+            settings.sandbox["filesystem"]["denyWrite"]
+                .as_array()
+                .map_or(0, Vec::len)
+        };
+        listed(&written) < listed(&whole)
+    }
+
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
     fn chain(&self, cwd: Option<&Path>) -> Vec<Denial> {
         manifests_held(&self.root, cwd)
