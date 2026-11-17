@@ -497,3 +497,99 @@ fn a_wrap_that_sets_its_own_tmpdir_names_claude_codes_temp_folder_over_the_armin
         pairs(&[(temp, "/wrap/temp"), ("TMPDIR", "/wrap/temp")])
     );
 }
+
+/// Each guard's word and what Claude Code does when it fails, as `args`' `--settings` arm it.
+fn guards_failing(args: &[String]) -> Vec<(String, String)> {
+    let at = args
+        .iter()
+        .position(|word| word == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["hooks"]["PreToolUse"]
+        .as_array()
+        .expect("the guards")
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().cloned().unwrap_or_default())
+        .map(|hook| {
+            let command = hook["command"].as_str().unwrap_or_default();
+            (
+                command
+                    .rsplit_once(" hook ")
+                    .map_or("", |(_, w)| w)
+                    .to_owned(),
+                hook["onFailure"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// A Claude Code chat in the project at `root`, armed by the start as the window arms it.
+fn claude_code_started_in(root: &std::path::Path) -> Vec<String> {
+    let plugin = root.parent().unwrap().join("plugin");
+    std::fs::create_dir_all(plugin.join("skills")).unwrap();
+    let kit = Kit {
+        binary: Some(std::path::PathBuf::from("/bin/purlis")),
+        plugin: Some(plugin),
+        git_hooks: None,
+        skill_sets: None,
+        chat_settings: None,
+    };
+    let (args, _) = armed(&Arming {
+        root,
+        kit: &kit,
+        harness: Some(Harness::ClaudeCode),
+        cwd: Some(root),
+        plugins: &crate::harness_plugin::Chosen::new(),
+        sandbox: None,
+        persona: None,
+        env: &[],
+        graded: false,
+        skills: &Box::new(ChatSkills::read(
+            true,
+            root,
+            Some(Harness::ClaudeCode),
+            Some(root),
+            None,
+        )),
+    })
+    .expect("armed");
+    args
+}
+
+#[test]
+fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_them() {
+    // #7067: armed failing closed, and loosened by the start to what the chat's policy runs.
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    std::fs::write(root.join("charter.toml"), "[policy]\ntemplate = \"open\"\n").unwrap();
+    let failing = |pairs: [(&str, &str); 4]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(w, f)| ((*w).to_owned(), (*f).to_owned()))
+            .collect()
+    };
+    // Before any press the project runs no looser than `watch`, which enforces `secrets`: the
+    // Bash and Read guards judge it, so a dead one refuses.
+    assert_eq!(
+        guards_failing(&claude_code_started_in(&root)),
+        failing([
+            ("pretooluse", "block"),
+            ("pretooluse-read", "block"),
+            ("pretooluse-edit", "continue"),
+            ("pretooluse-dispatch", "continue"),
+        ])
+    );
+    // Once the person accepts `open`, nothing a guard judges is enforced, and none holds a call
+    // when it dies.
+    crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
+    assert_eq!(
+        guards_failing(&claude_code_started_in(&root)),
+        failing([
+            ("pretooluse", "continue"),
+            ("pretooluse-read", "continue"),
+            ("pretooluse-edit", "continue"),
+            ("pretooluse-dispatch", "continue"),
+        ])
+    );
+}
