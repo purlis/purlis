@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # charter.toml (excerpt) — solo developer: almost nothing blocked except the merge hold.
 [policy]
 template = "open"            # every family off ...
