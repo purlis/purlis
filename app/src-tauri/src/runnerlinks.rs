@@ -996,7 +996,7 @@ pub fn sign_in_on(
         runtime.block_on(signing_in_over(to, start, said));
     });
     heard
-        .recv_timeout(ANSWER_WITHIN * 2)
+        .recv_timeout(SIGN_IN_STARTS_WITHIN)
         .map_err(|_| LATE.to_owned())?
 }
 
@@ -1007,6 +1007,12 @@ struct OverTheLink {
     ended: std::sync::Mutex<Option<Option<i32>>>,
     ending: std::sync::atomic::AtomicBool,
 }
+
+/// How long a sign-in over the link waits to start: the link's first word, up or down and why,
+/// then the runner's answer to the start. Never shorter than the first word's own wait, or a link
+/// that is down would be said as a runner that was late.
+const SIGN_IN_STARTS_WITHIN: std::time::Duration =
+    std::time::Duration::from_secs(FIRST_LINK_WITHIN.as_secs() + ANSWER_WITHIN.as_secs());
 
 /// How long ending a sign-in over the link waits for the runner to say it ended.
 const A_SIGN_IN_ENDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);

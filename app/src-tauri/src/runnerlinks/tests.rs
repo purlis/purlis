@@ -961,4 +961,6 @@ fn the_first_link_waits_out_the_checks_and_the_handshakes_own_deadlines() {
     let handshake = purlis_session_protocol::version::HANDSHAKE_TIMEOUT;
     // Hello and handshake, then the session protocol's proof: each its own deadline.
     assert!(FIRST_LINK_WITHIN > CHECK_WITHIN + handshake * 2);
+    // A sign-in waits for the link's first word inside its own wait.
+    assert!(SIGN_IN_STARTS_WITHIN > FIRST_LINK_WITHIN);
 }

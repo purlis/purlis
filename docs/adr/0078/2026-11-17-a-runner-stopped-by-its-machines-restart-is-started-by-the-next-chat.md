@@ -26,5 +26,9 @@ confirmed*.
    that the runner did not answer in time; the runner, its stream closed under it, logged a
    handshake that failed against another host. Now the link says why it is down, with where to
    look (Pool setup), and a runner whose dialer goes away mid-handshake says that it went away
-   (`LinkRefused::WentAway`), never that it is another host. *Decided in implementation, to be
+   (`LinkRefused::WentAway`), never that it is another host. The cost is a longer wait, up to
+   `FIRST_LINK_WITHIN` (90 seconds), before a link that hangs is said to be late; a check that
+   runs past `CHECK_WITHIN` is not stopped, only no longer waited for (a `docker start` it began
+   finishes, and the next link finds the runner running). A sign-in started over the link waits
+   inside the same bound (`SIGN_IN_STARTS_WITHIN`). *Decided in implementation, to be
    confirmed* (D-7091-3).

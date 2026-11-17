@@ -143,8 +143,7 @@ impl Connector for CommandConnector {
 impl CommandConnector {
     /// One connection: checked, prepared and run.
     async fn connected(self) -> std::io::Result<Connected> {
-        let this = self;
-        let checked = this.before_each.clone();
+        let checked = self.before_each.clone();
         tokio::task::spawn_blocking(move || checked())
             .await
             .map_err(std::io::Error::other)?
@@ -157,7 +156,7 @@ impl CommandConnector {
                     std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
                 }
             })?;
-        let prepared = match this.prepare.clone() {
+        let prepared = match self.prepare.clone() {
             Some(prepare) => Some(
                 tokio::task::spawn_blocking(move || prepare())
                     .await
@@ -166,7 +165,7 @@ impl CommandConnector {
             ),
             None => None,
         };
-        let mut command = tokio::process::Command::new(&this.program);
+        let mut command = tokio::process::Command::new(&self.program);
         let held = prepared.map(|prepared| {
             command.envs(prepared.env);
             for name in &prepared.cleared {
@@ -175,7 +174,7 @@ impl CommandConnector {
             prepared.held
         });
         let mut child = command
-            .args(&this.args)
+            .args(&self.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
