@@ -1403,7 +1403,7 @@ fn age_phrase(ts: f64, now: Timestamp) -> String {
     if ts == 0.0 {
         return "not worked yet".to_string();
     }
-    let now = now.as_second() as f64 + f64::from(now.subsec_nanosecond().unsigned_abs()) / 1e9;
+    let now = now.as_duration().as_secs_f64();
     let days = ((now - ts) / 86400.0).floor() as i64;
     if days <= 0 {
         "today".to_string()

@@ -2080,8 +2080,8 @@ fn real_stamp(name: &str, bare: &str) -> bool {
     else {
         return false;
     };
-    // A second of `60` is a leap second, which jiff reads as `59`; no journal name is stamped
-    // with one.
+    // `stamp` is `%Y%m%d-%H%M%S` whole, so its last two digits are the second. A second of `60`
+    // is a leap second, which jiff reads as `59`; no journal name is stamped with one.
     !stamp.ends_with("60") && jiff::civil::DateTime::strptime("%Y%m%d-%H%M%S", stamp).is_ok()
 }
 

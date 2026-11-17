@@ -11,6 +11,14 @@ use jiff::Timestamp;
 use jiff::civil::{Date, DateTime};
 use jiff::tz::{AmbiguousOffset, TimeZone};
 
+/// `text` as a wall-clock reading, `2026-11-06T12:00:00` with an optional fraction, read as
+/// chrono read a `NaiveDateTime`: a date and a time to the second, with a `T` between them and
+/// nothing after but white space. jiff's own parse would take more (no seconds, no time, an
+/// offset it then drops), and a `--now` it took that chrono refused would be read in silence.
+pub fn reading(text: &str) -> Result<DateTime, jiff::Error> {
+    DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", text.trim_end())
+}
+
 /// `at` on `zone`'s clock when it names exactly one instant; `None` for a reading a clock
 /// change repeats or skips (chrono's `single`).
 #[must_use]
@@ -75,6 +83,34 @@ mod tests {
 
     fn at(text: &str) -> DateTime {
         text.parse().unwrap()
+    }
+
+    #[test]
+    fn a_reading_is_taken_as_chrono_took_a_naive_date_and_time_and_nothing_looser() {
+        // Each verdict is chrono 0.4.45's `str::parse::<NaiveDateTime>`.
+        for taken in [
+            "2026-11-06T12:00:00",
+            "2026-11-06T12:00:00.5",
+            " 2026-11-06T12:00:00",
+            "2026-11-06T12:00:00 ",
+            "2026-11-06T1:00:00",
+        ] {
+            assert!(reading(taken).is_ok(), "{taken:?}");
+        }
+        for refused in [
+            "2026-11-06 12:00:00",
+            "2026-11-06t12:00:00",
+            "2026-11-06T12:00",
+            "2026-11-06",
+            "2026-11-06T12:00:00+05:00",
+            "2026-11-06T12:00:00Z",
+        ] {
+            assert!(reading(refused).is_err(), "{refused:?}");
+        }
+        assert_eq!(
+            reading("2026-11-06T12:00:00.5").unwrap(),
+            at("2026-11-06T12:00:00.5")
+        );
     }
 
     #[test]

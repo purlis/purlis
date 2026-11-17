@@ -525,8 +525,7 @@ fn when(now: Option<&str>) -> Result<jiff::Zoned, String> {
     let Some(text) = now else {
         return Ok(jiff::Zoned::now());
     };
-    let naive: jiff::civil::DateTime = text
-        .parse()
+    let naive = purlis_core::wallclock::reading(text)
         .map_err(|e| format!("--now is not a local naive timestamp: {e}"))?;
     purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive)
         .map(|at| at.to_zoned(jiff::tz::TimeZone::system()))

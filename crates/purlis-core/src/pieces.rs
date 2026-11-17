@@ -704,7 +704,12 @@ pub fn removed_since(
     since: Timestamp,
 ) -> Vec<(String, String)> {
     let from = since
-        - jiff::SignedDuration::from_nanos(i64::from(since.subsec_nanosecond().unsigned_abs()));
+        .round(
+            jiff::TimestampRound::new()
+                .smallest(jiff::Unit::Second)
+                .mode(jiff::RoundMode::Floor),
+        )
+        .unwrap_or(since);
     events(plane, ws)
         .iter()
         .filter(|event| event["event"].as_str() == Some(Event::Removed.word()))

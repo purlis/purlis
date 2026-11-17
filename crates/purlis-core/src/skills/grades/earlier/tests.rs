@@ -239,3 +239,49 @@ fn an_earlier_name_is_kept_until_a_time_spelt_as_it_was_before_the_move_to_jiff(
         ["2026-10-30T10:00:00.123456700+00:00"]
     );
 }
+
+#[test]
+fn a_file_chrono_wrote_is_read_and_written_back_with_its_times_as_they_were() {
+    // The file as chrono kept it (#7089): `to_rfc3339`'s numeric offset and six-digit fraction,
+    // and a `Z` time an older build wrote. A later move rewrites the file around them.
+    let project = project();
+    let root = project.path();
+    let dir = crate::appstate::made(root).unwrap();
+    std::fs::write(
+        dir.join(FILE),
+        r#"{"v":1,"skills":{"skills.local/ship":[
+            {"name":"deploy","level":"skills.local","until":"2026-10-30T10:00:00.123456+00:00"},
+            {"name":"push","level":"skills.local","until":"2026-10-29T09:00:00Z"}
+        ]}}"#,
+    )
+    .unwrap();
+    let local = Level::project().local(true);
+    let until = |kept: &[Earlier]| -> Vec<Option<jiff::Timestamp>> {
+        kept.iter().map(Earlier::until).collect()
+    };
+    assert_eq!(
+        until(&of(root, &local, "ship")),
+        [
+            Some("2026-10-30T10:00:00.123456Z".parse().unwrap()),
+            Some("2026-10-29T09:00:00Z".parse().unwrap()),
+        ]
+    );
+
+    moved(
+        root,
+        (&local, "triage"),
+        (&local, "sort"),
+        &[],
+        at("2026-10-31T08:00:00.5Z"),
+    )
+    .unwrap();
+
+    let text = std::fs::read_to_string(dir.join(FILE)).unwrap();
+    for spelt in [
+        "\"until\": \"2026-10-30T10:00:00.123456+00:00\"",
+        "\"until\": \"2026-10-29T09:00:00Z\"",
+        "\"until\": \"2026-10-31T08:00:00.500+00:00\"",
+    ] {
+        assert!(text.contains(spelt), "{spelt} in {text}");
+    }
+}

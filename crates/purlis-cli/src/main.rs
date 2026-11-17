@@ -3137,8 +3137,7 @@ fn instant(now: Option<&str>) -> Result<f64, String> {
             .map(|since| since.as_secs_f64())
             .unwrap_or(0.0));
     };
-    let naive: jiff::civil::DateTime = text
-        .parse()
+    let naive = purlis_core::wallclock::reading(text)
         .map_err(|e| format!("--now is not a local naive timestamp: {e}"))?;
     // A naive stamp is LOCAL time, as `--now` is everywhere in this binary.
     purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive)
@@ -3308,7 +3307,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
         } => {
             let on_a_test_clock = now.is_some();
             let now = match now {
-                Some(text) => match text.parse::<jiff::civil::DateTime>() {
+                Some(text) => match purlis_core::wallclock::reading(text) {
                     // A naive stamp is LOCAL time, as `--now` is everywhere in this binary.
                     Ok(naive) => {
                         match purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive) {
@@ -3738,7 +3737,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             now,
         } => {
             let now = match now {
-                Some(text) => match text.parse::<jiff::civil::DateTime>() {
+                Some(text) => match purlis_core::wallclock::reading(text) {
                     Ok(naive) => {
                         match purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive) {
                             Some(local) => local,
@@ -3803,7 +3802,7 @@ fn pinned(now: &Option<String>) -> Option<jiff::Timestamp> {
     let Some(text) = now else {
         return Some(jiff::Timestamp::now());
     };
-    let naive: jiff::civil::DateTime = match text.parse() {
+    let naive = match purlis_core::wallclock::reading(text) {
         Ok(naive) => naive,
         Err(e) => {
             eprintln!("purlis: --now is not a local naive timestamp: {e}");

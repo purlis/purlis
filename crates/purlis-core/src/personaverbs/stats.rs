@@ -184,7 +184,8 @@ fn from_isoformat(raw: &str) -> Option<(DateTime, jiff::SignedDuration)> {
     // `hour must be in 0..23` and its kin — Python's range checks on the time, not the offset —
     // are jiff's too: it refuses an hour past 23 and a minute or second past 59, and the micros
     // stop at 999999 here. A check of our own before this line could not change an answer:
-    // cargo-mutants found every one of its six mutants survived (when chrono did this).
+    // cargo-mutants found every one of its six mutants survived, when chrono's `and_hms_micro_opt`
+    // stood here; jiff's `Time::new` refuses the same times.
     let time = Time::new(
         i8::try_from(h).ok()?,
         i8::try_from(m).ok()?,

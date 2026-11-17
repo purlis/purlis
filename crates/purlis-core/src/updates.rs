@@ -378,7 +378,7 @@ impl IsoWeek {
 
     /// The week holding `at`, in UTC.
     fn holding(at: jiff::Timestamp) -> IsoWeek {
-        let week = at.to_zoned(jiff::tz::TimeZone::UTC).date().iso_week_date();
+        let week = crate::wallclock::utc_day(at).iso_week_date();
         IsoWeek {
             year: i32::from(week.year()),
             week: u32::from(week.week().unsigned_abs()),
