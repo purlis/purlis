@@ -504,7 +504,9 @@ const POLICY_MEASURED = Array.from({ length: 80 }, (_, n) => POLICY_BELOW + 60 -
  * **The policy goes where the longest head no longer has room for it** (Q308a): the longest head,
  * with every part a pane at the policy's width keeps and the policy's widest mark (`strict
  * +12`), drawn at each width; the narrowest it fits at, in a tab beside others, is what
- * `HEAD_DROPS` drops the policy under, with at most 24 px to spare in any cell of the matrix.
+ * `HEAD_DROPS` drops the policy under, with at most 48 px to spare in any cell of the matrix: the
+ * compact density's head is some 30 px narrower than the comfortable one's, which the width is
+ * measured on.
  */
 export const PolicyGoesWhereItNoLongerFits: Story = {
   args: { width: 900 },
@@ -533,6 +535,6 @@ export const PolicyGoesWhereItNoLongerFits: Story = {
     const narrowest = Math.min(...fitting);
     const says = `the longest head with the policy fits from ${narrowest}px`;
     await expect(narrowest, says).toBeLessThanOrEqual(POLICY_BELOW);
-    await expect(narrowest, says).toBeGreaterThan(POLICY_BELOW - 24);
+    await expect(narrowest, says).toBeGreaterThan(POLICY_BELOW - 48);
   },
 };

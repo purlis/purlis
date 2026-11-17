@@ -84,7 +84,9 @@ export function stateButtonOf(chat: {
  *   the project, and said whole in Settings › Project › Policy. Measured on the longest head with
  *   the mark at its widest, `strict +12` (`ChatFoot.stories.tsx`'s
  *   `PolicyGoesWhereItNoLongerFits`, which fails where this width is not the narrowest it fits
- *   at, give or take 24 px), so it goes under 570, and nothing measured before it moves.
+ *   at, give or take 48 px): it fits from 542 px on the default theme at the comfortable density,
+ *   the widest cell, and some 30 px less at the compact one, so it goes under 550, and nothing
+ *   measured before it moves.
  * - `number`: the chat's number beside its name (#6212), next to go: its tab's hover says it too,
  *   and the name needs the room more. Measured on the longest head (`ChatFoot.stories.tsx`): with
  *   it, a head at 470 px is 14 px over, so it goes under 500.
@@ -102,7 +104,7 @@ export type HeadPart =
 
 /** **The ruled order**, and the pane width in CSS pixels under which each part goes (#4585). */
 export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
-  { part: "policy", below: 570 },
+  { part: "policy", below: 550 },
   { part: "number", below: 500 },
   { part: "markWord", below: 470 },
   { part: "using", below: 450 },
