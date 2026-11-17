@@ -17,9 +17,10 @@
 //!   the chat closes for good ([`forget`]).
 //! - **And named on disk, never a value**: each chat's entries, by vault and key, in
 //!   `<state>/app/chat-handed/<chat>.names` ([`dir`]), each with the form its value was handed
-//!   in ([`Form`]: escaped for a dotenv file, pointed at a tunnel's port), so a launch after a
-//!   crash, which kept nothing in memory of what the chat was handed before, reads those entries
-//!   again and makes each form again to mask its screen ([`masked_for`]). Clone state, denied
+//!   in ([`Form`]: escaped for a dotenv file, pointed at a tunnel's port) and a seal of that
+//!   value under the plane's key ([`Named`]), so a launch after a crash, which kept nothing in
+//!   memory of what the chat was handed before, reads those entries again, makes each form
+//!   again, and masks its screen with it where it is the value handed ([`masked_for`]). Clone state, denied
 //!   to every sandboxed chat, gone as the chat closes for good, and swept at the project's open
 //!   once 30 days old, but a chat's the plane will bring back ([`on_open`]).
 //! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
@@ -37,7 +38,8 @@
 //!   the process, where the names on disk do not read, and where an entry named there cannot be
 //!   read again without asking the
 //!   person ([`read_again`]): a vault whose value is read through a program that may ask (1Password,
-//!   a reference to another store, an entry linked into either), an entry gone or changed, and a
+//!   a reference to another store, an entry linked into either), an entry gone, an entry whose
+//!   value changed since it was handed (its seal is not the value's read again), and a
 //!   value made once ([`Form::Unrepeatable`]): a one-time code, a GitHub App token.
 //! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
 //!   where no app answered, and anything the chat found on its own.
@@ -195,8 +197,9 @@ impl Known {
 #[derive(Clone, Default)]
 struct Handed {
     known: Vec<Known>,
-    /// The entries `known` holds, by vault and key: named on disk once, and not read again.
-    entries: BTreeSet<Entry>,
+    /// The entries `known` holds, each with its value's seal: named on disk once, and not read
+    /// again.
+    entries: BTreeSet<Named>,
     blind: bool,
 }
 
@@ -224,6 +227,48 @@ impl Entry {
     #[must_use]
     pub fn in_form(self, form: Form) -> Self {
         Self { form, ..self }
+    }
+}
+
+/// The purpose an entry's seal ([`Named`]) is made for, and no other seal is.
+const SEALED_FOR: &str = "a value handed to a chat";
+
+/// **An entry as [`dir`] names it: and the seal of the value it was handed**, `HMAC-SHA256` of
+/// its vault, its key and that value in its form, under a key derived from the plane's
+/// ([`super::fingerprint::seal`]), which lasts beyond the process and which no sandboxed chat
+/// reads. Never the value: a launch after a crash reads the entry again, makes its form again
+/// and seals that, and a value that does not seal the same (an entry changed since it was
+/// handed) leaves the screen unmaskable, as does a line with no seal of purlis's.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct Named {
+    #[serde(flatten)]
+    entry: Entry,
+    seal: String,
+}
+
+impl Named {
+    /// `entry`, handed `value` in its form, as the project at `root` names it: an error where
+    /// no seal can be made, as there is no plane key and none can be made.
+    pub fn of(root: &Path, entry: Entry, value: &str) -> std::io::Result<Self> {
+        let ctx = super::Ctx::new(root, super::Env::from_process());
+        let seal = super::fingerprint::seal(&ctx, SEALED_FOR, &[&entry.vault, &entry.key, value])
+            .ok_or_else(|| {
+            std::io::Error::other(
+                "the plane's key, which seals what a chat was handed, could not be made",
+            )
+        })?;
+        Ok(Self { entry, seal })
+    }
+
+    /// Whether `value`, `self`'s entry's value made again in its form, is the value it was
+    /// handed: never where the plane has no key.
+    fn seals(&self, ctx: &super::Ctx, value: &str) -> bool {
+        super::fingerprint::seal_with_the_key_there(
+            ctx,
+            SEALED_FOR,
+            &[&self.entry.vault, &self.entry.key, value],
+        )
+        .is_some_and(|seal| seal == self.seal)
     }
 }
 
@@ -316,20 +361,21 @@ pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) -> std::io::
     remember_known(
         root,
         chat,
-        std::slice::from_ref(entry),
+        &[Named::of(root, entry.clone(), value)?],
         Known::of(&entry.key, value),
     )
 }
 
-/// **Remembers that chat `chat` of the project at `root` was handed `entries`, known as
-/// `known`**, or, for `None`, as something that could not be known ([`Known::of`]): for values
-/// read before the chat had its number, as a profile's sign-in is. Each entry not named for the
-/// chat before is named on disk ([`dir`]); where that fails, it answers why, as [`remember`]
-/// does, and the entries are named again at the next hand-out.
+/// **Remembers that chat `chat` of the project at `root` was handed `entries`, each sealed with
+/// its value ([`Named::of`]), known as `known`**, or, for `None`, as something that could not
+/// be known ([`Known::of`]): for values read before the chat had its number, as a profile's
+/// sign-in is. Each entry not named for the chat before is named on disk ([`dir`]); where that
+/// fails, it answers why, as [`remember`] does, and the entries are named again at the next
+/// hand-out.
 pub fn remember_known(
     root: &Path,
     chat: u32,
-    entries: &[Entry],
+    entries: &[Named],
     known: Option<Vec<Known>>,
 ) -> std::io::Result<()> {
     let key = (root.to_path_buf(), chat);
@@ -342,7 +388,7 @@ pub fn remember_known(
         Some(known) => one.known.extend(known),
         None => one.blind = true,
     }
-    let new: Vec<Entry> = entries
+    let new: Vec<Named> = entries
         .iter()
         .filter(|entry| one.entries.insert((*entry).clone()))
         .cloned()
@@ -362,7 +408,7 @@ pub fn remember_known(
 
 /// `new` added to what chat `chat` has named on disk, the file written whole and private. A
 /// file there that does not read is not written over: what it named would be lost.
-fn name_on_disk(root: &Path, chat: u32, new: &[Entry]) -> std::io::Result<()> {
+fn name_on_disk(root: &Path, chat: u32, new: &[Named]) -> std::io::Result<()> {
     let mut all = named(root, chat)?;
     for entry in new {
         if !all.contains(entry) {
@@ -409,7 +455,7 @@ pub(crate) fn as_a_crash_leaves_it(root: &Path, chat: u32) {
 /// The entries named on disk for chat `chat`, read through no link: none where it has no file.
 /// A file that cannot be read, or a line in it that does not parse, is an error: what it names
 /// is not known.
-fn named(root: &Path, chat: u32) -> std::io::Result<Vec<Entry>> {
+fn named(root: &Path, chat: u32) -> std::io::Result<Vec<Named>> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     let mut text = String::new();
@@ -501,7 +547,8 @@ fn asks_nobody(ctx: &super::Ctx, entry: &Entry) -> Option<bool> {
 
 /// **`screen`, what chat `chat` of the project at `root` showed, masked** with every secret it
 /// was handed ([`masked`]): those this process knows, and each entry named on disk that it does
-/// not, read again by `read` (a launch after a crash). `None` where one could not be known.
+/// not, read again by `read` (a launch after a crash). `None` where one could not be known,
+/// and where one read again is not the value it was handed ([`Named`]).
 pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> Option<String> {
     let one = handed()
         .as_ref()
@@ -511,13 +558,17 @@ pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> 
         return None;
     }
     let mut known = one.known;
-    for entry in named(root, chat).ok()? {
-        if one.entries.contains(&entry) {
+    let ctx = super::Ctx::new(root, super::Env::from_process());
+    for named in named(root, chat).ok()? {
+        if one.entries.contains(&named) {
             continue;
         }
-        let value = read(&entry)?;
-        let handed = entry.form.of(&value)?;
-        known.extend(Known::of(&entry.key, &handed)?);
+        let value = read(&named.entry)?;
+        let handed = named.entry.form.of(&value)?;
+        if !named.seals(&ctx, &handed) {
+            return None;
+        }
+        known.extend(Known::of(&named.entry.key, &handed)?);
     }
     masked(screen, &known)
 }

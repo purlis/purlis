@@ -5351,7 +5351,7 @@ impl Chats {
         // Known to mask the chat's kept screen with once it has its number, as it is announced
         // (#6309): the values themselves go to its start.
         let signed_in_with =
-            (!handed.is_empty()).then(|| (handed.entries().to_vec(), handed.known()));
+            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -5992,15 +5992,19 @@ impl Chats {
         let announce = |session: u32| {
             // Named on disk before its program exists (#6309): a crash after it starts leaves
             // what masks its screen, and where that fails the chat is ended below.
-            if let Some((entries, known)) = &signed_in_with
-                && let Err(why) = purlis_core::secrets::handedto::remember_known(
-                    &self.project,
-                    session,
-                    entries,
-                    known.clone(),
-                )
-            {
-                *lock(&sign_in_unnamed) = Some(why);
+            if let Some((named, known)) = &signed_in_with {
+                let remembered = match named {
+                    Ok(named) => purlis_core::secrets::handedto::remember_known(
+                        &self.project,
+                        session,
+                        named,
+                        known.clone(),
+                    ),
+                    Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
+                };
+                if let Err(why) = remembered {
+                    *lock(&sign_in_unnamed) = Some(why);
+                }
             }
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);

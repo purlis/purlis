@@ -214,24 +214,30 @@ fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value(
 
     let written = std::fs::read_to_string(file(&root, 44)).expect("named");
 
-    assert_eq!(written, "{\"vault\":\"team\",\"key\":\"db-password\"}\n");
+    assert_eq!(written.lines().count(), 1, "{written}");
+    assert!(
+        written.starts_with("{\"vault\":\"team\",\"key\":\"db-password\",\"seal\":\""),
+        "{written}"
+    );
+    assert!(!written.contains("FAKE-HANDED-VALUE-0009"), "{written}");
 }
 
-/// What a crashed window's process named on disk for chat `chat`, which this process never
-/// handed anything.
-fn named_by_a_crashed_window(root: &Path, chat: u32, vault: &str, key: &str) {
-    std::fs::create_dir_all(dir(root)).expect("made");
-    std::fs::write(
-        file(root, chat),
-        format!("{{\"vault\":\"{vault}\",\"key\":\"{key}\"}}\n"),
-    )
-    .expect("written");
+/// What a crashed window's process named on disk for chat `chat`, handed `value` as `entry`,
+/// which this process never handed anything.
+fn named_by_a_crashed_window(root: &Path, chat: u32, entry: Entry, value: &str) {
+    remember(root, chat, &entry, value).expect("named");
+    as_a_crash_leaves_it(root, chat);
 }
 
 #[test]
 fn after_a_crash_an_entry_named_on_disk_is_read_again_and_masked() {
     let (_dir, root) = a_project();
-    named_by_a_crashed_window(&root, 45, "team", "api-key");
+    named_by_a_crashed_window(
+        &root,
+        45,
+        Entry::new("team", "api-key"),
+        "FAKE-HANDED-VALUE-0010",
+    );
     let read = |entry: &Entry| {
         (entry == &Entry::new("team", "api-key"))
             .then(|| zeroize::Zeroizing::new("FAKE-HANDED-VALUE-0010".to_owned()))
@@ -246,7 +252,12 @@ fn after_a_crash_an_entry_named_on_disk_is_read_again_and_masked() {
 #[test]
 fn after_a_crash_an_entry_that_cannot_be_read_again_leaves_the_screen_unmaskable() {
     let (_dir, root) = a_project();
-    named_by_a_crashed_window(&root, 46, "team", "minted-token");
+    named_by_a_crashed_window(
+        &root,
+        46,
+        Entry::new("team", "minted-token"),
+        "FAKE-HANDED-VALUE-0026",
+    );
 
     assert_eq!(masked_for(&root, 46, "x anything", &nothing), None);
 }
@@ -274,7 +285,7 @@ fn an_entry_this_process_knows_is_not_read_again() {
 #[test]
 fn names_left_30_days_are_swept_at_the_project_s_open_and_younger_ones_kept() {
     let (_dir, root) = a_project();
-    named_by_a_crashed_window(&root, 48, "team", "k");
+    named_by_a_crashed_window(&root, 48, Entry::new("team", "k"), "FAKE-HANDED-VALUE-0027");
     let now = std::time::SystemTime::now();
 
     on_open(
@@ -295,7 +306,7 @@ fn names_left_30_days_are_swept_at_the_project_s_open_and_younger_ones_kept() {
 #[test]
 fn names_of_a_chat_the_plane_brings_back_are_kept_however_old() {
     let (_dir, root) = a_project();
-    named_by_a_crashed_window(&root, 52, "team", "k");
+    named_by_a_crashed_window(&root, 52, Entry::new("team", "k"), "FAKE-HANDED-VALUE-0028");
     let later = std::time::SystemTime::now()
         + crate::retention::KEEP_FOR
         + std::time::Duration::from_secs(60);
@@ -352,9 +363,53 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
         "FAKE-HANDED-VALUE-0024",
     )
     .unwrap();
+    let written = std::fs::read_to_string(file(&root, 55)).expect("named");
+    assert!(
+        written.starts_with("{\"vault\":\"team\",\"key\":\"k\",\"seal\":\""),
+        "{written}"
+    );
+}
+
+#[test]
+fn after_a_crash_an_entry_changed_since_it_was_handed_leaves_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(
+        &root,
+        56,
+        Entry::new("team", "api-key"),
+        "FAKE-HANDED-VALUE-0029",
+    );
+    let rotated = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-ROTATED-VALUE-0030".into()));
+
     assert_eq!(
-        std::fs::read_to_string(file(&root, 55)).expect("named"),
-        "{\"vault\":\"team\",\"key\":\"k\"}\n"
+        masked_for(&root, 56, "x FAKE-HANDED-VALUE-0029", &rotated),
+        None
+    );
+}
+
+#[test]
+fn after_a_crash_an_entry_named_with_no_seal_of_purlis_s_leaves_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    let read = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-HANDED-VALUE-0031".into()));
+    named_lines_by_a_crashed_window(&root, 57, "{\"vault\":\"team\",\"key\":\"k\"}\n");
+    assert_eq!(
+        masked_for(&root, 57, "x FAKE-HANDED-VALUE-0031", &read),
+        None,
+        "no seal"
+    );
+
+    named_lines_by_a_crashed_window(
+        &root,
+        57,
+        &format!(
+            "{{\"vault\":\"team\",\"key\":\"k\",\"seal\":\"{}\"}}\n",
+            "0".repeat(64)
+        ),
+    );
+    assert_eq!(
+        masked_for(&root, 57, "x FAKE-HANDED-VALUE-0031", &read),
+        None,
+        "a seal purlis did not make"
     );
 }
 
@@ -367,17 +422,15 @@ fn named_lines_by_a_crashed_window(root: &Path, chat: u32, lines: &str) {
 #[test]
 fn after_a_crash_a_value_handed_escaped_in_a_dotenv_file_is_masked_as_it_was_escaped() {
     let (_dir, root) = a_project();
-    named_lines_by_a_crashed_window(
+    let cert = "FAKE-CERT-0016\nFAKE-CERT-0017";
+    named_by_a_crashed_window(&root, 49, Entry::new("team", "cert"), cert);
+    named_by_a_crashed_window(
         &root,
         49,
-        "{\"vault\":\"team\",\"key\":\"cert\"}\n\
-         {\"vault\":\"team\",\"key\":\"cert\",\"form\":\"dotenv-escaped\"}\n",
+        Entry::new("team", "cert").in_form(Form::DotenvEscaped),
+        &super::super::dotenv::escaped(cert),
     );
-    let read = |_: &Entry| {
-        Some(zeroize::Zeroizing::new(
-            "FAKE-CERT-0016\nFAKE-CERT-0017".into(),
-        ))
-    };
+    let read = |_: &Entry| Some(zeroize::Zeroizing::new(cert.into()));
 
     assert_eq!(
         masked_for(&root, 49, "CERT=FAKE-CERT-0016\\nFAKE-CERT-0017\r\n", &read).as_deref(),
@@ -394,13 +447,11 @@ fn after_a_crash_a_value_pointed_at_a_tunnel_is_masked_as_it_was_pointed() {
         reads_hostaddr: true,
         escaped: false,
     };
-    named_lines_by_a_crashed_window(
+    named_by_a_crashed_window(
         &root,
         50,
-        &format!(
-            "{}\n",
-            serde_json::to_string(&Entry::new("team", "dsn").in_form(form)).unwrap()
-        ),
+        Entry::new("team", "dsn").in_form(form),
+        "postgres://fake-user:FAKE-PASS-0018@127.0.0.1:54321/orders",
     );
     let read = |_: &Entry| {
         Some(zeroize::Zeroizing::new(
@@ -418,10 +469,11 @@ fn after_a_crash_a_value_pointed_at_a_tunnel_is_masked_as_it_was_pointed() {
 #[test]
 fn after_a_crash_a_value_made_once_leaves_the_screen_unmaskable() {
     let (_dir, root) = a_project();
-    named_lines_by_a_crashed_window(
+    named_by_a_crashed_window(
         &root,
         51,
-        "{\"vault\":\"team\",\"key\":\"totp\",\"form\":\"unrepeatable\"}\n",
+        Entry::new("team", "totp").in_form(Form::Unrepeatable),
+        "123456",
     );
     let read = |_: &Entry| Some(zeroize::Zeroizing::new("FAKE-SEED-0019".into()));
 

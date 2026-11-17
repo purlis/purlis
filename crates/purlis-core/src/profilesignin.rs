@@ -220,9 +220,20 @@ impl Handed {
         Some(known)
     }
 
-    /// The vault entry each value was read from, never a value.
-    pub fn entries(&self) -> &[crate::secrets::handedto::Entry] {
-        &self.entries
+    /// The vault entry each value was read from, each sealed with its value for the project at
+    /// `root` ([`crate::secrets::handedto::Named::of`]), never a value: an error where no seal
+    /// can be made.
+    pub fn named(
+        &self,
+        root: &std::path::Path,
+    ) -> std::io::Result<Vec<crate::secrets::handedto::Named>> {
+        self.pairs
+            .iter()
+            .zip(&self.entries)
+            .map(|((_, value), entry)| {
+                crate::secrets::handedto::Named::of(root, entry.clone(), value)
+            })
+            .collect()
     }
 
     /// The variables it sets, never a value.

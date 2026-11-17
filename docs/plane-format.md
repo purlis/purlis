@@ -7794,13 +7794,18 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   a browser login (#6309, parent #5820), named before the value is handed. A launch after a window crashed reads these entries again to mask
   the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
   process took what it knew of the values with it. **Never a value**: the values themselves
-  are known only in memory, as a keyed digest (`secrets::handedto`).
-- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>"}`, and `"form"`
+  are known only in memory, as a keyed digest (`secrets::handedto`), and here only as a seal.
+- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>", "seal": "<64 hex>"}`,
+  and `"form"`
   where the value was handed in another form than as read: `"dotenv-escaped"`, as a dotenv file
   holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>,
   "escaped": <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or
-  `"unrepeatable"`, a one-time code or a minted token, made once. Each entry and form once,
-  written whole through a temp file (mode 0600, its folder 0700) and read through no link.
+  `"unrepeatable"`, a one-time code or a minted token, made once. `seal` is `HMAC-SHA256` of the
+  vault, the key and the value as handed (in its form), each ended by a NUL, under a key derived
+  from `fingerprint.key` for this purpose alone (`fingerprint::seal`, purpose `a value handed
+  to a chat`): no use without the plane's key, which no sandboxed chat reads. Each entry, form
+  and seal once, written whole through a temp file (mode 0600, its folder 0700) and read through
+  no link.
 - **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
   value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
   named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
@@ -7808,7 +7813,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   and writing under every harness: a chat that rewrote its own would choose what its kept
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
-  will bring back. A file that does not read, a line in it that does not, a form that cannot be
+  will bring back. A file that does not read, a line in it that does not, a line with no seal
+  or one that is not the seal of its entry's value read again and made again in its form (an
+  entry changed since it was handed, or a line purlis did not write), a form that cannot be
   made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
   vault whose value is read through a program that may ask the person, as a 1Password vault's
   is and a reference vault's `op read` or `vault kv get` is, or an entry linked into one; an
