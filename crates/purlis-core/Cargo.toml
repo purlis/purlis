@@ -26,7 +26,7 @@ futures = "0.3"
 # `charter news` prints the app's own CHANGELOG.md sections through the same parser the release
 # workflow and About Charter use (#352), so the three cannot disagree about a version.
 changelog.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+jiff.workspace = true
 # The runner image the update manifest names for this version is signed with the updater's own
 # key (#2749), and checked as the updater checks a bundle: the same verifier and version
 # tauri-plugin-updater already brings, so no crate is added.

@@ -146,7 +146,7 @@ pub(crate) fn heard<R: Runtime>(
             return;
         };
         let config = purlis_core::machine::config_root();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();

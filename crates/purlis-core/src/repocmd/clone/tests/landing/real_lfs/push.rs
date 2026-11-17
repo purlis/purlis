@@ -97,7 +97,7 @@ fn place() -> Place {
         None,
         None,
         &Who::here(None, Some("3".to_owned()), None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |line| said.push(line),
     );
     assert_eq!(code, 0, "{said:?}");

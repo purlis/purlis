@@ -67,7 +67,7 @@ pub fn recovered_from(
     open: &[(u32, &Chat)],
     default: Option<&str>,
     most: usize,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<Vec<Option<String>>> {
     let (records, _older) = crate::dispatchrecord::newest(root, most, now);
     recovered(asking, open, default, &records)

@@ -35,7 +35,7 @@ fn ambient<'a>(env: &'a dyn Fn(&str) -> Option<String>, cwd: &'a Path) -> Ambien
     Ambient {
         env,
         cwd,
-        now: chrono::DateTime::from_timestamp(1_772_000_000, 0).unwrap(),
+        now: jiff::Timestamp::from_second(1_772_000_000).ok().unwrap(),
         config: None,
         built_in: crate::extension::BuiltIn::none(),
     }
@@ -417,7 +417,7 @@ fn an_alert_row_follows_the_declaration_inside_the_frame_and_the_active_workspac
 
 /// An approved extension under `dir` that declares one footer badge and fills it with `value`,
 /// written at `now` — a facts file and no program. Answers its config home.
-fn a_footer_badge(dir: &Path, value: &str, now: chrono::DateTime<chrono::Utc>) -> PathBuf {
+fn a_footer_badge(dir: &Path, value: &str, now: jiff::Timestamp) -> PathBuf {
     use crate::extension;
     // The record keeps only an absolute path free of `..`.
     let ext = dir.canonicalize().unwrap().join("ext");
@@ -434,7 +434,7 @@ fn a_footer_badge(dir: &Path, value: &str, now: chrono::DateTime<chrono::Utc>) -
         ext.join("state").join(extension::facts::FILE),
         format!(
             r#"{{"badges": {{"open": {{"value": "{value}", "at": {}}}}}}}"#,
-            now.timestamp()
+            now.as_second()
         ),
     )
     .unwrap();
@@ -461,7 +461,7 @@ fn body_with_config(root: &Path, config: &Path) -> Vec<String> {
 #[test]
 fn an_approved_extensions_badge_is_one_row_under_the_declaration_and_nothing_more() {
     let (_held, root) = a_plane("alpha");
-    let now = chrono::DateTime::from_timestamp(1_772_000_000, 0).unwrap();
+    let now = jiff::Timestamp::from_second(1_772_000_000).ok().unwrap();
     let config = a_footer_badge(&root, "4", now);
 
     let body = body_with_config(&root, &config);

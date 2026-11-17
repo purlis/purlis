@@ -1309,8 +1309,8 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
         inspected
             .pointer(&format!("/0/State/{key}"))
             .and_then(serde_json::Value::as_str)
-            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
-            .and_then(|time| u64::try_from(time.timestamp()).ok())
+            .and_then(|text| str::parse::<jiff::Timestamp>(text).ok())
+            .and_then(|time| u64::try_from(time.as_second()).ok())
             .filter(|secs| *secs > 0)
     };
     Ran {
@@ -4085,8 +4085,8 @@ impl Docker {
         Ok(inspected
             .pointer("/0/CreatedAt")
             .and_then(serde_json::Value::as_str)
-            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
-            .and_then(|time| u64::try_from(time.timestamp()).ok()))
+            .and_then(|text| str::parse::<jiff::Timestamp>(text).ok())
+            .and_then(|time| u64::try_from(time.as_second()).ok()))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a

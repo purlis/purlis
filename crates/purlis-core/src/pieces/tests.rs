@@ -7,17 +7,16 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
-fn now() -> DateTime<Utc> {
-    DateTime::from_timestamp(1_772_000_000, 0).unwrap()
+fn now() -> Timestamp {
+    jiff::Timestamp::from_second(1_772_000_000).unwrap()
 }
 
 fn at(offset_secs: i64) -> String {
-    (now() - chrono::Duration::seconds(offset_secs)).to_rfc3339_opts(
-        chrono::SecondsFormat::Secs,
-        // `+00:00`, which is what `datetime.isoformat` writes for an aware UTC instant — NOT
-        // `Z`, which is what charter would have to be reading if this used `Zulu`.
-        false,
-    )
+    // `+00:00`, which is what `datetime.isoformat` writes for an aware UTC instant — NOT `Z`,
+    // which is what charter would have to be reading if this used `Zulu`.
+    (now() - jiff::SignedDuration::from_secs(offset_secs))
+        .strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        .to_string()
 }
 
 fn a_plane() -> (tempfile::TempDir, PathBuf) {
@@ -122,17 +121,35 @@ fn silence_is_measured_from_the_heartbeat_and_falls_back_to_the_claim() {
 #[test]
 fn an_age_is_coarse_and_never_negative() {
     assert_eq!(since(now(), now()), "0m");
-    assert_eq!(since(now() - chrono::Duration::seconds(59), now()), "0m");
-    assert_eq!(since(now() - chrono::Duration::seconds(60), now()), "1m");
-    assert_eq!(since(now() - chrono::Duration::seconds(3599), now()), "59m");
-    assert_eq!(since(now() - chrono::Duration::seconds(3600), now()), "1h");
     assert_eq!(
-        since(now() - chrono::Duration::seconds(86399), now()),
+        since(now() - jiff::SignedDuration::from_secs(59), now()),
+        "0m"
+    );
+    assert_eq!(
+        since(now() - jiff::SignedDuration::from_secs(60), now()),
+        "1m"
+    );
+    assert_eq!(
+        since(now() - jiff::SignedDuration::from_secs(3599), now()),
+        "59m"
+    );
+    assert_eq!(
+        since(now() - jiff::SignedDuration::from_secs(3600), now()),
+        "1h"
+    );
+    assert_eq!(
+        since(now() - jiff::SignedDuration::from_secs(86399), now()),
         "23h"
     );
-    assert_eq!(since(now() - chrono::Duration::seconds(86400), now()), "1d");
+    assert_eq!(
+        since(now() - jiff::SignedDuration::from_secs(86400), now()),
+        "1d"
+    );
     // A stamp from the future is not a negative age.
-    assert_eq!(since(now() + chrono::Duration::seconds(600), now()), "0m");
+    assert_eq!(
+        since(now() + jiff::SignedDuration::from_secs(600), now()),
+        "0m"
+    );
 }
 
 #[test]
@@ -580,7 +597,7 @@ fn stamp(offset_secs: i64) -> serde_json::Value {
 
 #[test]
 fn a_cut_nothing_has_spoken_for_is_unclaimed_for_as_long_as_it_has_existed() {
-    let cut_at = now() - chrono::Duration::days(3);
+    let cut_at = now() - jiff::SignedDuration::from_hours(24 * 3);
     assert_eq!(unclaimed_age(cut_at, &[], now()).as_deref(), Some("3d"));
     // A missing heartbeat is a `None` stamp, and says nothing.
     assert_eq!(unclaimed_age(cut_at, &[None], now()).as_deref(), Some("3d"));
@@ -588,7 +605,7 @@ fn a_cut_nothing_has_spoken_for_is_unclaimed_for_as_long_as_it_has_existed() {
 
 #[test]
 fn a_claim_after_the_cut_speaks_for_it() {
-    let cut_at = now() - chrono::Duration::hours(2);
+    let cut_at = now() - jiff::SignedDuration::from_hours(2);
     let claim = stamp(2 * 3600 - 5);
     assert_eq!(unclaimed_age(cut_at, &[Some(&claim)], now()), None);
 }
@@ -596,14 +613,15 @@ fn a_claim_after_the_cut_speaks_for_it() {
 #[test]
 fn a_claim_in_the_same_second_as_the_cut_speaks_for_it() {
     // The log writes whole seconds, so a claim made 400ms after the cut reads as earlier.
-    let cut_at = now() - chrono::Duration::hours(2) + chrono::Duration::milliseconds(400);
+    let cut_at =
+        now() - jiff::SignedDuration::from_hours(2) + jiff::SignedDuration::from_millis(400);
     let claim = stamp(2 * 3600);
     assert_eq!(unclaimed_age(cut_at, &[Some(&claim)], now()), None);
 }
 
 #[test]
 fn a_claim_before_the_cut_is_about_an_earlier_branch_of_that_name() {
-    let cut_at = now() - chrono::Duration::hours(2);
+    let cut_at = now() - jiff::SignedDuration::from_hours(2);
     let earlier = stamp(5 * 86400);
     assert_eq!(
         unclaimed_age(cut_at, &[Some(&earlier)], now()).as_deref(),
@@ -613,15 +631,15 @@ fn a_claim_before_the_cut_is_about_an_earlier_branch_of_that_name() {
 
 #[test]
 fn a_cut_whose_chat_may_still_be_starting_is_not_called_unclaimed() {
-    let young = now() - chrono::Duration::seconds(UNCLAIMED_AFTER_SECS - 1);
+    let young = now() - jiff::SignedDuration::from_secs(UNCLAIMED_AFTER_SECS - 1);
     assert_eq!(unclaimed_age(young, &[], now()), None);
-    let old = now() - chrono::Duration::seconds(UNCLAIMED_AFTER_SECS);
+    let old = now() - jiff::SignedDuration::from_secs(UNCLAIMED_AFTER_SECS);
     assert_eq!(unclaimed_age(old, &[], now()).as_deref(), Some("5m"));
 }
 
 #[test]
 fn a_stamp_that_is_not_an_instant_is_no_evidence_either_way() {
-    let cut_at = now() - chrono::Duration::days(1);
+    let cut_at = now() - jiff::SignedDuration::from_hours(24);
     let naive = serde_json::Value::String("2026-03-01T00:00:00".into());
     let junk = serde_json::json!(17);
     assert_eq!(
@@ -650,14 +668,14 @@ fn a_common_dir(branch: &str, reflog: &str) -> (tempfile::TempDir, PathBuf) {
 
 #[test]
 fn a_branch_was_cut_when_its_reflog_says_it_was_created() {
-    let created = now().timestamp() - 3 * 86400;
+    let created = now().as_second() - 3 * 86400;
     let reflog = reflog_line(created, "branch: Created from HEAD")
-        + &reflog_line(now().timestamp() - 60, "commit: later work");
+        + &reflog_line(now().as_second() - 60, "commit: later work");
     let (_dir, common) = a_common_dir("feature/chat-1", &reflog);
 
     assert_eq!(
         branch_created(&common, "feature/chat-1"),
-        DateTime::<Utc>::from_timestamp(created, 0)
+        jiff::Timestamp::from_second(created).ok()
     );
 }
 
@@ -763,7 +781,7 @@ fn the_folders_removed_since_a_moment_are_listed_in_order_and_others_are_not() {
             serde_json::json!({"ts": "not a time", "event": "removed", "repo": "api", "piece": "x"}),
         ],
     );
-    let since = now() - chrono::Duration::seconds(10);
+    let since = now() - jiff::SignedDuration::from_secs(10);
     assert_eq!(
         removed_since(&root, "alpha", Some("api"), since),
         [
@@ -773,7 +791,8 @@ fn the_folders_removed_since_a_moment_are_listed_in_order_and_others_are_not() {
     );
     assert_eq!(removed_since(&root, "alpha", None, since).len(), 3);
     // The log keeps whole seconds: a removal in the second it was asked counts.
-    let in_that_second = now() - chrono::Duration::seconds(5) + chrono::Duration::milliseconds(400);
+    let in_that_second =
+        now() - jiff::SignedDuration::from_secs(5) + jiff::SignedDuration::from_millis(400);
     assert_eq!(
         removed_since(&root, "alpha", Some("api"), in_that_second),
         [("api".to_owned(), "second".to_owned())]

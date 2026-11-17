@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 
 use super::TrackerKey;
@@ -129,10 +129,10 @@ impl Op {
     }
 
     /// The line, in its closed key set.
-    fn to_line(&self, ts: DateTime<Utc>) -> Value {
+    fn to_line(&self, ts: Timestamp) -> Value {
         let mut line = Map::new();
         line.insert("v".into(), Value::from(VERSION));
-        line.insert("ts".into(), Value::from(ts.format(TS).to_string()));
+        line.insert("ts".into(), Value::from(ts.strftime(TS).to_string()));
         match self {
             Op::Link { item, chat } | Op::Unlink { item, chat } => {
                 let op = if matches!(self, Op::Link { .. }) {
@@ -163,7 +163,7 @@ impl Op {
             return None;
         }
         let ts = fields.get("ts")?.as_str()?;
-        chrono::NaiveDateTime::parse_from_str(ts, TS).ok()?;
+        jiff::civil::DateTime::strptime(TS, ts).ok()?;
         let text = |key: &str| fields.get(key).and_then(Value::as_str);
         let key = |name: &str| text(name).and_then(|k| TrackerKey::parse(k).ok());
         let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
@@ -205,7 +205,7 @@ fn chat_id(word: &str) -> Option<String> {
 /// `device` is this device's id (ADR 0066), and a chat is named by its ULID: anything else is
 /// refused before a byte is written. An alias goes through [`append_alias`] instead, which
 /// refuses one that would close a cycle.
-pub fn append(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io::Result<()> {
+pub fn append(root: &Path, ws: &str, device: &str, ts: Timestamp, op: &Op) -> io::Result<()> {
     if matches!(op, Op::Alias { .. }) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -248,7 +248,7 @@ pub fn link_chat(
     root: &Path,
     place: Place<'_>,
     device: &str,
-    ts: DateTime<Utc>,
+    ts: Timestamp,
     item: TrackerKey,
     chat: &str,
 ) -> io::Result<()> {
@@ -332,7 +332,7 @@ pub fn unlink_chat(
     root: &Path,
     place: Place<'_>,
     device: &str,
-    ts: DateTime<Utc>,
+    ts: Timestamp,
     chat: &str,
 ) -> io::Result<Option<TrackerKey>> {
     let ws = in_a_workspace(place, Act::Unlink)?;
@@ -370,10 +370,10 @@ fn unlinked_as_asked(after: &Fold, chat: &str, item: &TrackerKey) -> io::Result<
 /// place. Dated after every line for the chat, including its current link, a new line is taken
 /// after them all, from any workspace and whatever this machine's clock says. Only lines for
 /// this chat move it, so a clock that is right writes the time it reads.
-fn after_its_lines(folded: &Fold, chat: &str, ts: DateTime<Utc>) -> DateTime<Utc> {
+fn after_its_lines(folded: &Fold, chat: &str, ts: Timestamp) -> Timestamp {
     folded
         .last_line_for(chat)
-        .map_or(ts, |at| ts.max(at + chrono::Duration::seconds(1)))
+        .map_or(ts, |at| ts.max(at + jiff::SignedDuration::from_secs(1)))
 }
 
 /// What a chat's write was, for its refusal.
@@ -415,7 +415,7 @@ pub fn append_alias(
     root: &Path,
     ws: &str,
     device: &str,
-    ts: DateTime<Utc>,
+    ts: Timestamp,
     from: TrackerKey,
     to: TrackerKey,
     cause: Cause,
@@ -431,7 +431,7 @@ pub fn append_alias_over(
     root: &Path,
     ws: &str,
     device: &str,
-    ts: DateTime<Utc>,
+    ts: Timestamp,
     from: TrackerKey,
     to: TrackerKey,
     cause: Cause,
@@ -469,7 +469,7 @@ pub fn follow_rename(
     old: &str,
     new: &str,
     device: &dyn Fn() -> io::Result<String>,
-    ts: DateTime<Utc>,
+    ts: Timestamp,
 ) -> io::Result<Followed> {
     let folded = fold(root);
     let mut followed = Followed::default();
@@ -517,7 +517,7 @@ pub fn check_writable(root: &Path, ws: &str, device: &str) -> io::Result<PathBuf
     Ok(path)
 }
 
-fn write(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io::Result<()> {
+fn write(root: &Path, ws: &str, device: &str, ts: Timestamp, op: &Op) -> io::Result<()> {
     if let Some(chat) = op.chat()
         && chat_id(chat).is_none()
     {
@@ -548,7 +548,7 @@ fn write(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io:
 
 /// [`write`] where there is no folder to hold.
 #[cfg(not(unix))]
-fn write_by_path(root: &Path, ws: &str, path: &Path, ts: DateTime<Utc>, op: &Op) -> io::Result<()> {
+fn write_by_path(root: &Path, ws: &str, path: &Path, ts: Timestamp, op: &Op) -> io::Result<()> {
     use std::io::Write;
     let path = path.to_path_buf();
     crate::rewrite::create_dir_all(&dir_for(root, ws))?;
@@ -568,16 +568,16 @@ fn write_by_path(root: &Path, ws: &str, path: &Path, ts: DateTime<Utc>, op: &Op)
 
 /// The `ts` of the last line in the log at `path`, where it has one that reads.
 #[cfg(not(unix))]
-fn last_ts(path: &Path) -> Option<DateTime<Utc>> {
+fn last_ts(path: &Path) -> Option<Timestamp> {
     last_ts_in(&std::fs::read_to_string(path).ok()?)
 }
 
 /// The `ts` of the last line in a log whose text is `text`, where it has one that reads.
-fn last_ts_in(text: &str) -> Option<DateTime<Utc>> {
+fn last_ts_in(text: &str) -> Option<Timestamp> {
     let line: Value =
         serde_json::from_str(text.lines().rev().find(|l| !l.trim().is_empty())?).ok()?;
-    let ts = chrono::NaiveDateTime::parse_from_str(line.get("ts")?.as_str()?, TS).ok()?;
-    Some(ts.and_utc())
+    let ts = jiff::civil::DateTime::strptime(TS, line.get("ts")?.as_str()?).ok()?;
+    jiff::tz::Offset::UTC.to_timestamp(ts).ok()
 }
 
 /// Every workspace's log, folded.
@@ -592,7 +592,7 @@ pub struct Fold {
     /// both sides of an alias.
     named: BTreeSet<TrackerKey>,
     /// The `ts` of the last chat link or unlink line naming each chat, whatever it did.
-    last_for: BTreeMap<String, DateTime<Utc>>,
+    last_for: BTreeMap<String, Timestamp>,
     /// Lines skipped, by `<workspace>/<file>`.
     skipped: BTreeMap<String, usize>,
 }
@@ -652,7 +652,7 @@ impl Fold {
     }
 
     /// When the last line naming chat `chat`, a link or an unlink, was dated.
-    fn last_line_for(&self, chat: &str) -> Option<DateTime<Utc>> {
+    fn last_line_for(&self, chat: &str) -> Option<Timestamp> {
         self.last_for.get(chat).copied()
     }
 
@@ -820,9 +820,10 @@ pub fn fold(root: &Path) -> Fold {
     }
     for (ts, _, _, ws, op) in lines {
         if let Some(chat) = op.chat()
-            && let Ok(at) = chrono::NaiveDateTime::parse_from_str(&ts, TS)
+            && let Ok(at) = jiff::civil::DateTime::strptime(TS, &ts)
+                .and_then(|at| jiff::tz::Offset::UTC.to_timestamp(at))
         {
-            out.last_for.insert(chat.to_string(), at.and_utc());
+            out.last_for.insert(chat.to_string(), at);
         }
         match op {
             Op::Link {

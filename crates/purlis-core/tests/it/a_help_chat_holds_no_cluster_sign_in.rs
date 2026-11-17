@@ -334,10 +334,9 @@ fn help_chats_session_record(root: &Path) -> String {
     purlis_core::reopen::write(root, &record).expect("the record is written");
     let facts = purlis_core::sessionrecord::Facts {
         place: purlis_core::active::Place::PlaneRoot,
-        at: chrono::NaiveDate::from_ymd_opt(2026, 11, 14)
+        at: purlis_core::wallclock::day(2026, 11, 14)
             .unwrap()
-            .and_hms_opt(4, 0, 0)
-            .unwrap(),
+            .at(4, 0, 0, 0),
         chat: Some(purlis_core::sessionrecord::chat_facts(root, 1)),
         persona: None,
         pieces: Vec::new(),

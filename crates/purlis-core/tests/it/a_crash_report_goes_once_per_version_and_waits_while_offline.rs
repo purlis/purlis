@@ -309,10 +309,11 @@ fn a_report_waiting_longer_than_fourteen_days_is_dropped_unsent() {
     let mut on_disk: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     for (at, days) in [(0, 15), (1, 13)] {
-        on_disk["sent"][at]["at"] = (chrono::Utc::now() - chrono::Duration::days(days))
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string()
-            .into();
+        on_disk["sent"][at]["at"] = (jiff::Timestamp::now()
+            - jiff::SignedDuration::from_hours(24 * days))
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
+        .into();
     }
     std::fs::write(&path, on_disk.to_string()).unwrap();
 

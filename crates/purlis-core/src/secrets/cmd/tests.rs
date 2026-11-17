@@ -361,8 +361,8 @@ fn reveal_to_a_terminal_prints_the_value_once_newline_terminated_and_records_it(
 
 /// Today less `days`, as the plain-file sidecar records a set.
 fn days_ago(days: i64) -> String {
-    (chrono::Local::now().date_naive() - chrono::Duration::days(days))
-        .format("%Y-%m-%d")
+    (jiff::Zoned::now().date() - jiff::SignedDuration::from_hours(24 * days))
+        .strftime("%Y-%m-%d")
         .to_string()
 }
 

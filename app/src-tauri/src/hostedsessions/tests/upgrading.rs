@@ -319,8 +319,8 @@ fn a_project_with_two_declared_profiles_a_branch_and_a_session_record(world: &Wo
                    ## How to resume\n\nr\n",
             facts: &purlis_core::sessionrecord::Facts {
                 place: purlis_core::active::Place::Workspace("alpha".to_owned()),
-                at: chrono::NaiveDate::from_ymd_opt(2026, 10, 14)
-                    .and_then(|day| day.and_hms_opt(16, 0, 0))
+                at: purlis_core::wallclock::day(2026, 10, 14)
+                    .map(|day| day.at(16, 0, 0, 0))
                     .expect("a time"),
                 chat: None,
                 persona: None,

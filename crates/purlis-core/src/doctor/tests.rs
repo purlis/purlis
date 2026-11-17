@@ -2905,7 +2905,7 @@ fn landed(root: &Path, ws: &str, slug: &str, repo: &str) {
             3,
             "6dcb09b5b57875f334f61aebed695e2e4193db5e",
             "e5bd3914e2e596debea16f433f57875b5b90bcd6",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();
@@ -3004,7 +3004,7 @@ fn a_pushed_member_branch_the_default_branch_holds_with_no_landing_is_a_fail() {
                 head,
                 crate::change::pending::Via::Queue,
                 stage,
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             ),
         )
         .unwrap();
@@ -3088,7 +3088,7 @@ fn a_logged_landing_the_default_branch_no_longer_holds_is_a_fail_naming_change_a
             3,
             "6dcb09b5b57875f334f61aebed695e2e4193db5e",
             &merge,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();
@@ -3162,7 +3162,7 @@ fn a_request_left_set_to_merge_later_is_a_fail_that_says_how_it_clears() {
             "6dcb09b5b57875f334f61aebed695e2e4193db5e",
             crate::change::pending::Via::Direct,
             crate::change::pending::Stage::MergeLater,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();
@@ -3931,7 +3931,7 @@ fn a_request_charter_only_asked_to_merge_is_not_called_left_to_merge_later() {
             "6dcb09b5b57875f334f61aebed695e2e4193db5e",
             crate::change::pending::Via::Direct,
             crate::change::pending::Stage::Asked,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();

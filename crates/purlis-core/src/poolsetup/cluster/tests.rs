@@ -471,7 +471,7 @@ fn a_pool_is_added_only_once_the_policy_on_claims_is_in_force() {
 
 #[test]
 fn the_policy_on_claims_is_in_force_its_settle_time_after_the_later_of_it_and_its_binding() {
-    let at = |text: &str| chrono::DateTime::parse_from_rfc3339(text).unwrap().to_utc();
+    let at = |text: &str| str::parse::<jiff::Timestamp>(text).unwrap();
     let policy = "2026-11-13T08:03:40Z";
     let binding = "2026-11-13T08:03:41Z";
     assert_eq!(

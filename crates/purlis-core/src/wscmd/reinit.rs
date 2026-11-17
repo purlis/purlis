@@ -58,7 +58,7 @@ pub enum Scope<'a> {
 }
 
 /// Run it, and give back the exit code.
-pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say: Sink) -> u8 {
+pub fn reinit(root: &Path, scope: Scope, now: jiff::Timestamp, say: Sink) -> u8 {
     let plane = crate::workspaces::Plane::open(root);
     let author = ensure::author();
     // Workspaces `--all` could not look at, named here and counted in the closing line. A

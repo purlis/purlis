@@ -18,7 +18,7 @@ publish = false
 # stranger can meet that contract without the core is `extension-probe`, which links nothing.
 [dependencies]
 purlis-core.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+jiff.workspace = true
 serde_json.workspace = true
 
 # The end-to-end tests drive this program through charter's real executor, with the fence.

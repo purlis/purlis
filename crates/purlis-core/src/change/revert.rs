@@ -47,7 +47,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::cmd::{REFUSED, load, named, now_iso, save, workspace_ok};
 use super::land::{holds, sha_ok, short};
@@ -358,7 +358,7 @@ pub fn revert(
     ws: &str,
     slug: &str,
     by: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     if !workspace_ok(plane, ws, say) {

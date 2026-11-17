@@ -3,8 +3,6 @@
 
 use std::path::Path;
 
-use chrono::NaiveDate;
-
 use super::*;
 use crate::active::Place;
 
@@ -22,11 +20,8 @@ fn plane(workspaces: &[&str]) -> tempfile::TempDir {
     dir
 }
 
-fn at(h: u32, m: u32, s: u32) -> chrono::NaiveDateTime {
-    NaiveDate::from_ymd_opt(2026, 9, 28)
-        .unwrap()
-        .and_hms_opt(h, m, s)
-        .unwrap()
+fn at(h: i8, m: i8, s: i8) -> jiff::civil::DateTime {
+    crate::wallclock::day(2026, 9, 28).unwrap().at(h, m, s, 0)
 }
 
 const BODY: &str = "## Goal\n\nShip the record.\n\n## Done\n\n- wrote it\n\n## Decisions\n\n- \
@@ -37,7 +32,7 @@ const CHAT_ID: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7F";
 const DEVICE: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7G";
 const RUN: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7H";
 
-fn facts(place: Place, when: chrono::NaiveDateTime) -> Facts {
+fn facts(place: Place, when: jiff::civil::DateTime) -> Facts {
     Facts {
         place,
         at: when,
@@ -598,7 +593,7 @@ fn a_record_names_the_chat_it_was_resumed_from_and_whether_a_handoff_opened_it()
     )
     .unwrap();
     let lineage = |number: u32| {
-        let mut written = facts(alpha(), at(9, 0, number));
+        let mut written = facts(alpha(), at(9, 0, i8::try_from(number).unwrap()));
         written.chat = Some(chat_facts(dir.path(), number));
         let done = write(dir.path(), &format!("Chat {number}"), BODY, &written).unwrap();
         let text = std::fs::read_to_string(&done.path).unwrap();

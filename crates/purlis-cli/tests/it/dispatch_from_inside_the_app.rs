@@ -1247,7 +1247,7 @@ impl StandIn {
             .and_then(|cwd| purlis_core::active::workspace_of_tree(&self.root, cwd))
             .map_or(Place::PlaneRoot, Place::Workspace);
         let asker = purlis_core::reopen::shown_name(&asking, Some("claude"));
-        let when: chrono::NaiveDateTime = "2026-10-07T14:32:05".parse().unwrap();
+        let when: jiff::civil::DateTime = "2026-10-07T14:32:05".parse().unwrap();
         let message = purlis_core::handoff::task_message(&asker, &place, when, &ask.brief);
         let start = dispatchdecision::start_for(
             &asking,

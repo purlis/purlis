@@ -714,7 +714,9 @@ pub fn limit_reset(plane: &Path, chat: &str) -> Option<String> {
         .ok()?
         .get("resets_at")?
         .as_i64()?;
-    chrono::DateTime::from_timestamp(at, 0).map(|at| at.to_rfc3339())
+    jiff::Timestamp::from_second(at)
+        .ok()
+        .map(crate::oldspelling::rfc3339)
 }
 
 // ---- reading it back ------------------------------------------------------------------------

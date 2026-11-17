@@ -100,8 +100,8 @@ fn declared(folder: &Path) -> Result<data::Declared, String> {
     }
 }
 
-fn said_at(at: chrono::DateTime<chrono::Utc>) -> String {
-    at.format("%Y-%m-%d %H:%M UTC").to_string()
+fn said_at(at: jiff::Timestamp) -> String {
+    at.strftime("%Y-%m-%d %H:%M UTC").to_string()
 }
 
 async fn blocking<T: Send + 'static>(

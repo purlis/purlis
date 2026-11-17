@@ -230,7 +230,7 @@ fn a_failure_met_again_after_its_draft_left_is_counted_and_never_drafted_again()
         reports.hold_once(internal(), &Caller::chat("5"), from(5)),
         Ok(None)
     );
-    let later = chrono::Utc::now() + chrono::Duration::seconds(60);
+    let later = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60);
     assert_eq!(reports.send_held_due(later), 1);
 
     let first = String::from_utf8(intake.received()[0].clone()).unwrap();

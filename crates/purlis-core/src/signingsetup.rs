@@ -341,8 +341,9 @@ pub fn test_commit(tree: &str, who: &Who, when: i64) -> Vec<u8> {
 
 /// `when` as GitHub reads a commit's date: ISO 8601 in UTC, to the second.
 fn iso(when: i64) -> Result<String, String> {
-    chrono::DateTime::from_timestamp(when, 0)
-        .map(|at| at.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+    jiff::Timestamp::from_second(when)
+        .ok()
+        .map(|at| at.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
         .ok_or_else(|| "the clock gave no time to date the test with".to_owned())
 }
 

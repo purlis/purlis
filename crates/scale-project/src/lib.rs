@@ -20,7 +20,8 @@
 use std::io;
 use std::path::Path;
 
-use chrono::{Duration, NaiveDateTime};
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 use purlis_core::dispatchrecord::{self, Record};
 use purlis_core::workspaces::Plane;
 
@@ -84,7 +85,7 @@ pub struct Plan {
     pub seed: u64,
     pub size: Size,
     /// The newest moment anything in the project carries.
-    pub at: NaiveDateTime,
+    pub at: DateTime,
 }
 
 /// A word every generated project holds in many memories but not most: what the scale run
@@ -111,7 +112,7 @@ pub fn persona_name(n: usize) -> String {
 /// is written in order, by this thread.
 pub fn generate(plan: &Plan, root: &Path) -> io::Result<()> {
     let size = plan.size;
-    let now = plan.at.and_utc();
+    let now = utc(plan.at);
     init(root)?;
     let plane = Plane::open(root);
 
@@ -272,7 +273,7 @@ fn said(told: &[impl std::fmt::Debug]) -> String {
 }
 
 /// One session record of a closed chat in `workspace`, as `purlis session record` writes it.
-fn session(root: &Path, workspace: &str, rng: &mut Rng, at: NaiveDateTime) -> io::Result<()> {
+fn session(root: &Path, workspace: &str, rng: &mut Rng, at: DateTime) -> io::Result<()> {
     let title = rng.title(0);
     let body = format!(
         "## Goal\n{}\n\n## Done\n{}\n\n## Decisions\n{}\n\n## Open\n{}\n\n## How to resume\n{}\n",
@@ -299,24 +300,25 @@ fn session(root: &Path, workspace: &str, rng: &mut Rng, at: NaiveDateTime) -> io
         .map_err(|why| io::Error::other(why.to_string()))
 }
 
+/// `at` as an instant, read as UTC.
+fn utc(at: DateTime) -> jiff::Timestamp {
+    jiff::tz::Offset::UTC
+        .to_timestamp(at)
+        .expect("a time within the years jiff holds")
+}
+
 /// One dispatch record, ended within the last 20 days unless `running`.
-fn dispatch(
-    root: &Path,
-    rng: &mut Rng,
-    at: NaiveDateTime,
-    size: Size,
-    running: bool,
-) -> io::Result<()> {
+fn dispatch(root: &Path, rng: &mut Rng, at: DateTime, size: Size, running: bool) -> io::Result<()> {
     let started = rng.before(at, 20);
     let id = ulid::Ulid::from_parts(
-        u64::try_from(started.and_utc().timestamp_millis()).unwrap_or_default(),
+        u64::try_from(utc(started).as_millisecond()).unwrap_or_default(),
         (u128::from(rng.next()) << 64) | u128::from(rng.next()),
     )
     .to_string();
     let workspace = workspace_name(1 + rng.below(size.workspaces));
     let persona = persona_name(1 + rng.below(size.personas));
-    let stamp = |moment: NaiveDateTime| moment.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let ended = (!running).then(|| started + Duration::minutes(5 + rng.below(240) as i64));
+    let stamp = |moment: DateTime| moment.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let ended = (!running).then(|| started + SignedDuration::from_mins(5 + rng.below(240) as i64));
     // Through core's own reading of a record, so a field this does not name takes the default
     // core gives it, and a shape core would not read fails here rather than in the run.
     let record: Record = serde_json::from_value(serde_json::json!({
@@ -388,8 +390,8 @@ impl Rng {
     }
 
     /// A moment within `days` before `at`, to the second.
-    fn before(&mut self, at: NaiveDateTime, days: usize) -> NaiveDateTime {
-        at - Duration::seconds(self.below(days * 86_400) as i64)
+    fn before(&mut self, at: DateTime, days: usize) -> DateTime {
+        at - SignedDuration::from_secs(self.below(days * 86_400) as i64)
     }
 
     /// A word, the first ones of [`WORDS`] far more often than the last, as in prose.

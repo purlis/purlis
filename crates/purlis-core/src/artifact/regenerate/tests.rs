@@ -432,7 +432,7 @@ fn a_failed_check_leaves_the_last_good_data_untouched() {
     let said = failed_said(&why, Some(good_at));
     assert!(said.contains("last good: "), "{said}");
     assert!(
-        said.contains(&good_at.format("%Y-%m-%d").to_string()),
+        said.contains(&good_at.strftime("%Y-%m-%d").to_string()),
         "{said}"
     );
 }

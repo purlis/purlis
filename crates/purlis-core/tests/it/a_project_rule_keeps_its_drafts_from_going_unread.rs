@@ -79,8 +79,8 @@ fn held_from(reports: &Reports, project: &Path) -> Held {
         .expect("held")
 }
 
-fn after_the_hold() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc::now() + chrono::Duration::seconds(i64::from(HOLD_SECS) + 1)
+fn after_the_hold() -> jiff::Timestamp {
+    jiff::Timestamp::now() + jiff::SignedDuration::from_secs(i64::from(HOLD_SECS) + 1)
 }
 
 #[test]

@@ -43,7 +43,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::pieces::{self, Event, Who};
@@ -323,7 +323,7 @@ pub fn take(
     who: &Who,
     live: Option<&[Live]>,
     act: Act,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), String> {
     take_telling(plane, at, who, live, act, now).map_err(Refusal::why)
 }
@@ -355,7 +355,7 @@ pub fn take_telling(
     who: &Who,
     live: Option<&[Live]>,
     act: Act,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), Refusal> {
     let refused = |why: String| {
         Refusal::Otherwise(format!(
@@ -417,7 +417,7 @@ pub fn removing(
     at: &Located,
     who: &Who,
     judged: Judged<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     remove: impl FnOnce() -> u8,
 ) -> Result<u8, String> {
     let refused = |why: String| {

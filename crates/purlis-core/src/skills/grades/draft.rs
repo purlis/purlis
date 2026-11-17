@@ -201,7 +201,7 @@ fn latest_of(root: &Path, level: &Level, name: &str, mint: &str) -> Option<Grade
         root,
         std::slice::from_ref(&wanted),
         Which::OfDraft(mint),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .grades
     .into_iter()

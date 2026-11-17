@@ -2740,7 +2740,7 @@ impl Recorder {
                     persona: who.persona.as_deref(),
                     signal,
                 },
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
                 &self.log.device,
             );
         }
@@ -2807,7 +2807,7 @@ impl Recorder {
                 ..starting
             },
             who.persona.as_deref(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             &self.log.device,
         );
         Ok(())
@@ -2984,7 +2984,7 @@ impl Recorder {
                 body["parent_skill_run"] = parent.as_str().into();
             }
             self.append(under, "skill.ended", body)?;
-            crate::skilluse::ended(plane, &run, spent, chrono::Utc::now(), &self.log.device);
+            crate::skilluse::ended(plane, &run, spent, jiff::Timestamp::now(), &self.log.device);
         }
         Ok(())
     }
