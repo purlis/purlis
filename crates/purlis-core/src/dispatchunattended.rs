@@ -294,7 +294,8 @@ pub fn answer_on(
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
         Covers::Denied(_) => Answer::Refused(Refusal::Denied(target.to_owned())),
         Covers::Covered if asking == Some(target) => Answer::Covered,
-        Covers::Covered if !sandboxed && !reach.sealed_here => {
+        Covers::Covered if !sandboxed && !reach.sealed_here && false => {
+            // MUTATION(12)
             Answer::Refused(Refusal::NotSealedHere(target.to_owned()))
         }
         Covers::NeedsGrant if !sandboxed => Answer::Refused(Refusal::Unsandboxed(Missing {

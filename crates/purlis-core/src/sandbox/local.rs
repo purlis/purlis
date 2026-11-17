@@ -1253,7 +1253,8 @@ fn policy_text(counter: u64, accepted: &std::collections::BTreeMap<String, Strin
 /// of anchored planes close (#7015).
 pub fn anchor_key(root: &Path) -> String {
     use sha2::Digest;
-    let path = anchored_path(root);
+    let path = super::real(root); // MUTATION(4)
+    let _ = anchored_path(root);
     let mut key = crate::extension::hex(&sha2::Sha256::digest(path.as_os_str().as_encoded_bytes()));
     key.truncate(32);
     key
@@ -2233,11 +2234,8 @@ fn answer_text(asking: &str, target: &str, any: bool, workspace: Option<&str>) -
 /// review of #7113): a count raised by hand to match a workspace made again is a text no seal
 /// holds for.
 fn limited_text(one: &DispatchIn) -> String {
-    format!(
-        "{} #{}",
-        answer_text(&one.asking, &one.target, one.any, Some(&one.workspace)),
-        one.seen
-    )
+    // MUTATION(8)
+    answer_text(&one.asking, &one.target, one.any, Some(&one.workspace))
 }
 
 /// The pair an answer's text names, with no workspace: what a seal moving between kinds keeps.
@@ -2250,7 +2248,7 @@ fn core_of(text: &str) -> &str {
 /// one workspace moved to hold in every workspace, or to another, is the person's answer of
 /// just now or no sealed one.
 fn narrows(from: &str, to: &str) -> bool {
-    from == to || (!from.contains(" in ") && core_of(to) == from)
+    core_of(from) == core_of(to) // MUTATION(7)
 }
 
 /// **Every dispatch answer `held` lists**, each by kind and text.
@@ -2350,7 +2348,7 @@ fn reseal(
             .filter(|entry| gone(&entry.kind, &entry.text))
             .map(|entry| entry.mac.clone())
             .collect();
-        if !taken.is_empty() {
+        if !taken.is_empty() && false {
             set.entries.retain(|entry| !taken.contains(&entry.mac));
             set.live.retain(|mac| !taken.contains(mac));
         }

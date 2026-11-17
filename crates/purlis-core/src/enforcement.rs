@@ -559,6 +559,10 @@ impl Settings {
         let local = Self::from_text(layer_text(root, Which::Local).text());
         // The local file can add a deny, never take one away.
         project.denies = project.denies.with(&local.denies);
+        // MUTATION(1): denies from the working tree
+        project.denies = crate::dispatchgrant::Denied::of_text(
+            std::fs::read_to_string(crate::names::manifest(root)).ok().as_deref(),
+        );
         for family in Family::ALL {
             // Only what the local file says: a family it is silent on is the project's.
             let mine = local
@@ -610,6 +614,8 @@ pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
             let path = Which::Shared.path(root);
             return match std::fs::metadata(&path) {
                 Err(none) if none.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                // MUTATION(3)
+                Ok(meta) if meta.is_dir() => Ok(None),
                 _ => std::fs::read_to_string(&path).map(Some).map_err(|_| {
                     "purlis could not read the project's settings file, so its [policy] is \
                      enforced"
@@ -714,7 +720,8 @@ impl Resolved {
                 .into_iter()
                 .map(|family| (family, self.mode(family).max(other.mode(family))))
                 .collect(),
-            self.1.with(&other.1),
+            // MUTATION(2): only self's denies
+            self.1.clone(),
         )
     }
 

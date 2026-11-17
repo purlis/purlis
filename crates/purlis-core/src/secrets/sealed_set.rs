@@ -193,7 +193,7 @@ impl Set {
             // A set the app wrote at least once (its counter past nought) was anchored then: no
             // anchor now is one taken away, or a plane reached by another path, never a fresh
             // install (the review of #7113).
-            None if self.is_empty() && self.generation == 0 => none(Standing::Fresh),
+            None if self.is_empty() => none(Standing::Fresh), // MUTATION(5)
             None => none(Standing::Unanchored),
             Some(false) => none(Standing::Broken),
             Some(true) => {

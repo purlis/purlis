@@ -393,9 +393,8 @@ pub fn masked_of<'a>(
 ) -> &'a [String] {
     use crate::enforcement::{self, Family, Mode};
     // Never looser than the chain that dispatched the chat (the review of #7113).
-    let mode = enforcement::in_force(root)
-        .for_chat(policy)
-        .mode(Family::Secrets);
+    let mode = enforcement::in_force(root).mode(Family::Secrets); // MUTATION(10)
+    let _ = policy;
     if mode == Mode::Enforce || secrets.is_empty() {
         return secrets;
     }
