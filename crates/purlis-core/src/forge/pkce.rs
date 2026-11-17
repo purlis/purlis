@@ -242,8 +242,8 @@ fn query_at(at: &str, target: &str) -> Option<[Option<String>; 3]> {
     Some([code, offered, error])
 }
 
-/// The code alone.
-fn held(mut code: String) -> Code {
+/// `code` as a [`Code`], its plain copy wiped.
+fn code_of(mut code: String) -> Code {
     let held = SecretString::from(code.as_str());
     code.zeroize();
     Code(held)
@@ -258,7 +258,7 @@ pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
         return Redirected::NotOurs;
     }
     match (code, error) {
-        (Some(code), None) if !code.is_empty() => Redirected::Code(held(code)),
+        (Some(code), None) if !code.is_empty() => Redirected::Code(code_of(code)),
         (None, Some(error)) if error == "access_denied" => {
             Redirected::Declined(Declined::ByThePerson)
         }
@@ -272,7 +272,7 @@ pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
 /// and for an address the person pasted themselves, whose code is still held to what was asked.
 pub fn code_at(at: &str, target: &str) -> Option<Code> {
     match query_at(at, target)? {
-        [Some(code), _, None] if !code.is_empty() => Some(held(code)),
+        [Some(code), _, None] if !code.is_empty() => Some(code_of(code)),
         _ => None,
     }
 }

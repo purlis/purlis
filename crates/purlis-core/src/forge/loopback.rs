@@ -12,13 +12,15 @@
 //! - **One sign-in, one redirect.** It lives for one sign-in. The first request that carries
 //!   that sign-in's `state` ([`super::pkce::read_redirect`]) is the redirect; the listener
 //!   answers it and is closed, so no second request is ever read. It also closes when the
-//!   person cancels and when the time allowed runs out.
+//!   person cancels and when the time allowed runs out, and when a flow's own `read` says so (the
+//!   App flow's, for a code that isn't its own: [`super::agentidentity`]).
 //! - **A request that is not the redirect changes nothing.** Another path, another method, a
 //!   `Host` that is not the listener's own address, or no `state`: each is refused with a fixed
 //!   answer, and the sign-in goes on waiting. After [`MOST_STRANGERS`] of them the sign-in stops
 //!   with a sentence saying so, so nothing can keep the listener answering for long.
-//! - **It reflects nothing.** Every answer is one of three fixed pages. Nothing from the
-//!   request is put in an answer, in an error or in a log: not the query, not a header.
+//! - **It reflects nothing.** Every answer is a fixed page: one of the listener's three, or one of
+//!   the flow's own (its `read`'s). Nothing from the request is put in an answer, in an error or
+//!   in a log: not the query, not a header.
 //! - **It reads little, briefly.** One request head of at most [`MOST_HEAD`] bytes, within
 //!   [`PER_REQUEST`]; a body is never read.
 //!

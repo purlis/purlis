@@ -75,11 +75,14 @@ describe("Agent identity", () => {
   it("says what stopped it, on the first screen", async () => {
     fake({
       agent_identities: NONE,
-      agent_identity_create: () => Promise.reject("GitHub's page wasn't finished in time."),
+      agent_identity_create: () =>
+        Promise.reject(
+          "GitHub's answer didn't come back within 15 minutes, so purlis stopped waiting.",
+        ),
     });
     render(<AgentIdentityTab plane="p" />);
     await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
-    expect(await screen.findByText(/wasn't finished in time/)).toBeTruthy();
+    expect(await screen.findByText(/stopped waiting/)).toBeTruthy();
   });
 
   it("finishes from the address the browser ended on, after GitHub's answer didn't match", async () => {
@@ -87,14 +90,14 @@ describe("Agent identity", () => {
     const asked = fake({
       agent_identities: NONE,
       agent_identity_create: () =>
-        Promise.reject("GitHub sent your browser back, but not with the check purlis sent."),
+        Promise.reject("Your browser came back from GitHub with an answer purlis couldn't match."),
       agent_identity_create_from_address: "Iv23li",
       agent_identity_stand: { ...STAND, installed: false },
       agent_identity_lines: "lines",
     });
     render(<AgentIdentityTab plane="p" />);
     await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
-    expect(await screen.findByText(/not with the check purlis sent/)).toBeTruthy();
+    expect(await screen.findByText(/couldn't match/)).toBeTruthy();
     const box = await screen.findByLabelText("The address your browser ended on");
     await userEvent.click(box);
     await userEvent.paste(pasted);
@@ -103,6 +106,25 @@ describe("Agent identity", () => {
     expect(await screen.findByRole("heading", { name: "Choose its repos" })).toBeTruthy();
     const sent = asked.find((one) => one.cmd === "agent_identity_create_from_address");
     expect(sent?.args).toMatchObject({ address: pasted, owner: "acme", personal: false });
+  });
+
+  it("keeps waiting on GitHub after a paste that isn't the address", async () => {
+    fake({
+      agent_identities: NONE,
+      agent_identity_create: new Promise(() => {}),
+      agent_identity_create_from_address: () =>
+        Promise.reject("That isn't the address GitHub sent your browser back to."),
+    });
+    render(<AgentIdentityTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Create the GitHub App" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Browser stuck on a purlis page?" }),
+    );
+    await userEvent.click(screen.getByLabelText("The address your browser ended on"));
+    await userEvent.paste("not it");
+    await userEvent.click(screen.getByRole("button", { name: "Finish with this address" }));
+    expect(await screen.findByText(/isn't the address/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Finish on GitHub" })).toBeTruthy();
   });
 
   it("says on GitHub's page that the App is made the moment Create is pressed", async () => {

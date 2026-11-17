@@ -12,7 +12,10 @@
 //!    and a `state`, and posts them to GitHub. GitHub takes a manifest only by a post, so a link
 //!    alone can't do this. Only the holder of that address gets the page.
 //! 3. GitHub sends the browser back with a one-time code and that `state`. Any other request is
-//!    refused by the listener's own rules, and the first that matches closes it.
+//!    refused by the listener's own rules, and the first that matches closes it. One to the
+//!    redirect address with a code but not this `state` closes it too, with the code untaken and
+//!    the person told how to finish: by pasting the address the browser ended on
+//!    ([`create_from_address`]; ADR 0077 as amended 2026-11-17).
 //! 4. The code is exchanged at once ([`convert`]). The answer is held to what was asked: the named
 //!    owner, the permissions, no events. The client secret and webhook secret
 //!    are never taken out of the answer, which wipes them as it goes.
@@ -465,8 +468,8 @@ pub fn create_app(
                  was taken"
             );
             Err(format!(
-                "GitHub sent your browser back, but not with the check purlis sent for this try, \
-                 so purlis didn't take its answer. {}",
+                "Your browser came back from GitHub with an answer purlis couldn't match to this \
+                 try, so purlis took nothing and stopped waiting. {}",
                 maybe_made(&wanted.owner)
             ))
         }
@@ -482,6 +485,12 @@ pub fn create_from_address(
     address: &str,
     wanted: &Wanted,
 ) -> Result<Created, String> {
+    convert(endpoint, &code_in_address(address)?, wanted)
+}
+
+/// **The code in the address the person pasted**, or a sentence that says nothing of it: read
+/// before anything is stopped or sent, so a paste that isn't the redirect changes nothing.
+pub fn code_in_address(address: &str) -> Result<Code, String> {
     let not_it = || {
         "That isn't the address GitHub sent your browser back to. It starts with \
          http://127.0.0.1: and holds code=. Copy it from the browser's address bar."
@@ -496,8 +505,7 @@ pub fn create_from_address(
     if port.is_empty() || port.len() > 5 || !port.bytes().all(|b| b.is_ascii_digit()) {
         return Err(not_it());
     }
-    let code = pkce::code_at(BACK_PATH, target).ok_or_else(not_it)?;
-    convert(endpoint, &code, wanted)
+    pkce::code_at(BACK_PATH, target).ok_or_else(not_it)
 }
 
 /// The reserved key an App's private key is kept under.

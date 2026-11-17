@@ -213,7 +213,7 @@ export const CameBackUnmatched: Story = {
     answers(NONE, {
       agent_identity_create: () =>
         Promise.reject(
-          "GitHub sent your browser back, but not with the check purlis sent for this try, so purlis didn't take its answer. If you pressed Create GitHub App, GitHub made the App then. To finish, paste the address your browser ended on, which works for an hour. Or delete the App at https://github.com/organizations/acme/settings/apps and start over.",
+          "Your browser came back from GitHub with an answer purlis couldn't match to this try, so purlis took nothing and stopped waiting. If you pressed Create GitHub App, GitHub made the App then. To finish, paste the address your browser ended on, which works for an hour. Or delete the App at https://github.com/organizations/acme/settings/apps and start over.",
         ),
     }),
   play: async ({ canvasElement }) => {

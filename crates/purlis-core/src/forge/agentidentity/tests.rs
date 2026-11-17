@@ -844,6 +844,7 @@ fn github_coming_back_without_this_try_s_state_ends_the_wait_and_says_where_the_
         // Not the 15 minutes' time-out: the flow ends on the redirect itself.
         assert!(!why.contains("in time"), "{back}: {why}");
         assert!(why.contains("pressed Create"), "{back}: {why}");
+        assert!(why.contains("couldn't match"), "{back}: {why}");
         assert!(
             why.contains("https://github.com/organizations/acme/settings/apps"),
             "{back}: {why}"
