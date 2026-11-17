@@ -7922,7 +7922,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `app/src-tauri/src/sessionhost.rs`'s `HookChannels`). When
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
-  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
+  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`, which a
+  hook's report is sent to. **An ask is not** (#6995, `hookwire::reach`): it finds the socket
+  from the app process the chat runs under, which must be the one listening, and the app names
+  the asking chat by its ancestry (`{"whoami": true}`, answered `{"you_are": <n>, "token":
+  "<the chat's token>"}` or a `no`). Inside a sandbox, where that process cannot be read, the
+  variable and the plane above the working directory say where to knock, and a socket is
+  believed only in a folder the asker may not write; it tries, with a file
+  `.purlis-may-write-<pid>-<16 hex>` beside the socket that is removed at once where it was
+  made.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/slots.sock`

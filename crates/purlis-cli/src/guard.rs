@@ -243,20 +243,28 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
 /// run in `cwd` by a chat the app started, where it merges a request; or `None`.
 ///
-/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
-/// no hook, and a harness they start themselves is theirs. **No answer lets the merge through**:
+/// Asked only of a chat the app started, as the app names it by the asker's ancestry or the
+/// environment says (#6995): the person's own terminal runs no hook, and a harness they start
+/// themselves is theirs. **No answer lets the merge through**:
 /// where no app takes the hand-over, the chat is refused all the same. **It is a hold only where
 /// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
 /// is refused with a block's reason, which the event log records.
 fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::Verdict> {
     use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
     use purlis_core::mergehold::{self, AppSaid, Held};
-    crate::session::chat_number()?;
     let held = mergehold::held(command)?;
+    // Whether this is a chat's is the app's to say, by its ancestry, as well as its
+    // environment's (#6995): a chat whose environment was emptied is still held.
     let answer = match &held {
-        // Under `guards.merge = "log"` nobody is asked (Q308): the hold is only recorded.
-        Held::Request(_) if !asks_the_app => None,
-        Held::Request(request) => crate::brokered::asked(
+        // Under `guards.merge = "log"` nobody is asked (Q308): the hold is only recorded, for
+        // a chat's merge only.
+        Held::Request(_) if !asks_the_app => {
+            if !crate::brokered::in_a_chat() {
+                return None;
+            }
+            None
+        }
+        Held::Request(request) => match crate::brokered::asked(
             |chat| {
                 Ask::Merge(MergeAsk {
                     chat,
@@ -265,10 +273,16 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
                 })
             },
             A_MERGE_IS_TAKEN_WITHIN,
-        )
-        .ok()
-        .and_then(Result::ok),
-        Held::Unreadable | Held::Land => None,
+        ) {
+            Err(crate::brokered::NotTaken::NotAChat) => return None,
+            answer => answer.ok().and_then(Result::ok),
+        },
+        Held::Unreadable | Held::Land => {
+            if !crate::brokered::in_a_chat() {
+                return None;
+            }
+            None
+        }
     };
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
@@ -294,20 +308,27 @@ const CLAIMS_ARE_ANSWERED_WITHIN: Duration = Duration::from_millis(900);
 /// commits, updates or pushes in a branch folder another live chat holds
 /// ([`purlis_core::piececlaim`]), in the brokered refusal's words; or `None`.
 ///
-/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
-/// no hook, and a harness they start themselves is theirs. The app judges each write's claim
-/// against the chats it has, and the chat takes a folder no live chat holds.
+/// Asked only of a chat the app started, as the app names it by the asker's ancestry or the
+/// environment says (#6995): the person's own terminal runs no hook, and a harness they start
+/// themselves is theirs. The app judges each write's claim against the chats it has, and the
+/// chat takes a folder no live chat holds.
 ///
-/// **No answer lets the call through** (the review of #4129). This guards against accidents
-/// and is not a wall: where no app takes the ask (none, or one older than it), or none answers
-/// within [`CLAIMS_ARE_ANSWERED_WITHIN`], the git runs. A stale claim of a chat that has ended
-/// can then never stop another, and a slow app can never cost the hook its budget.
+/// **The app's silence lets the call through** (the review of #4129). This guards against
+/// accidents and is not a wall: where the app is older than the ask, or does not answer within
+/// [`CLAIMS_ARE_ANSWERED_WITHIN`], the git runs. A stale claim of a chat that has ended can then
+/// never stop another, and a slow app can never cost the hook its budget. **No app at all, or
+/// something that is not the app, refuses it** (#6995): a chat's process cannot unset or
+/// replace the app to have its git judged by no one.
 fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate::Verdict> {
     use purlis_core::hookwire::{ClaimAct, GitWork};
-    crate::session::chat_number()?;
     let ends = Instant::now() + CLAIMS_ARE_ANSWERED_WITHIN;
     let mut asked = Vec::new();
     let writes = purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string());
+    // Whether this is a chat's is the app's to say, by its ancestry, as well as its
+    // environment's (#6995), asked only of a line that writes a branch at all.
+    if (writes.unplaced.is_none() && writes.found.is_empty()) || !crate::brokered::in_a_chat() {
+        return None;
+    }
     // A git that may write a branch where the line cannot be followed: with no sandbox behind
     // it, it is refused with the shape that places it, where the project has a branch folder
     // it could be in. Before any wait on the app, so no wait lets it through.
@@ -342,10 +363,21 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
             piece: at.piece.clone(),
             act,
         };
-        // Refused only where the app says another live chat holds the folder; any other
-        // answer, a `No` included, lets the git run, as no answer does.
-        if let crate::gitask::Forwarded::Said { code, lines } =
-            crate::gitask::forwarded(&at.workspace, work, left)
+        // Refused where the app says another live chat holds the folder, and where no app, or
+        // something that is not the app, answers for this chat (#6995); any other answer, a
+        // `No` of the app's included, lets the git run, as the app's silence does.
+        let forwarded = crate::gitask::forwarded(&at.workspace, work, left);
+        if let crate::gitask::Forwarded::Refused(why) = &forwarded
+            && why.starts_with(purlis_core::hookwire::reach::NO_APP_ANSWERED)
+        {
+            return Some(toolgate::Verdict {
+                arm: None,
+                reason: purlis_core::piececlaim::REASON.to_owned(),
+                shape: Some(write.sub),
+                denial: why.clone(),
+            });
+        }
+        if let crate::gitask::Forwarded::Said { code, lines } = forwarded
             && code == purlis_core::hookwire::CLAIM_HELD
         {
             use purlis_core::repocmd::Say;

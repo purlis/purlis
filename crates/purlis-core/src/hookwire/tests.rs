@@ -5513,3 +5513,98 @@ fn a_peer_that_closed_before_it_was_named_is_counted_and_logs_nothing_above_trac
         "it is still there to be read at trace"
     );
 }
+
+/// A [`reach::WhoAmI`] written on a new connection to `path`, and the line the app answers.
+#[cfg(unix)]
+fn whoami_at(path: &std::path::Path) -> String {
+    use std::io::{BufRead, Write};
+    let mut stream = std::os::unix::net::UnixStream::connect(path).expect("connected");
+    stream.write_all(b"{\"whoami\":true}\n").expect("written");
+    let mut said = String::new();
+    std::io::BufReader::new(&stream)
+        .read_line(&mut said)
+        .expect("answered");
+    said
+}
+
+#[cfg(unix)]
+#[test]
+fn the_app_names_the_chat_an_asker_runs_inside_by_its_ancestry_with_no_token_asked() {
+    // #6995: the asker says nothing of who it is; the app answers from the chat whose program it
+    // runs inside, and hands back that chat's token.
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener.tokens().issue_to_this_process(3).expect("a token");
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(|_, _| Answer::No {
+            why: NOTHING_ANSWERS.to_owned(),
+        }),
+    );
+
+    let you: reach::YouAre = serde_json::from_str(&whoami_at(&path)).expect("named");
+
+    assert_eq!(you.you_are, 3);
+    assert_eq!(you.token, token.expose());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_app_names_no_chat_for_an_asker_outside_every_chat_s_program() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    // Chat 3's program is another process: this one runs inside no chat.
+    let mut other = crate::forklock::spawn(std::process::Command::new("sleep").arg("30")).unwrap();
+    listener.tokens().issue(3).expect("a token");
+    listener
+        .tokens()
+        .bind(3, Program::of(other.id()).expect("its program"));
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(|_, _| Answer::No {
+            why: NOTHING_ANSWERS.to_owned(),
+        }),
+    );
+
+    let said = whoami_at(&path);
+    let _ = other.kill();
+    let _ = other.wait();
+
+    assert!(
+        matches!(serde_json::from_str(&said), Ok(Answer::No { why }) if why == reach::IN_NO_CHAT),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_chat_is_named_only_where_one_chat_s_program_holds_the_asker() {
+    let tokens = ChatTokens::default();
+    tokens.issue(3).expect("a token");
+    tokens.issue(4).expect("a token");
+    tokens.bind(
+        3,
+        Program {
+            pid: 30,
+            started: "a".to_owned(),
+        },
+    );
+    tokens.bind(
+        4,
+        Program {
+            pid: 40,
+            started: "b".to_owned(),
+        },
+    );
+
+    assert_eq!(
+        tokens
+            .chat_by(&|program| program.pid == 30)
+            .map(|(chat, _)| chat),
+        Some(3)
+    );
+    assert_eq!(tokens.chat_by(&|_| false), None);
+    // Inside both: nothing names one chat.
+    assert_eq!(tokens.chat_by(&|_| true), None);
+}
