@@ -2835,10 +2835,7 @@ pub(crate) fn keep_grade_screen(
         tracing::warn!("purlis: a grade's chat {session} showed nothing to keep");
         return;
     };
-    let read_again = purlis_core::secrets::handedto::read_again(root);
-    let Some(screen) =
-        purlis_core::secrets::handedto::masked_for(root, session, &screen, &read_again)
-    else {
+    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, &screen) else {
         tracing::warn!(
             "purlis: a grade's chat {session} was not kept: what it was handed could not be \
              known to mask"

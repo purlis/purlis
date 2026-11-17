@@ -422,8 +422,7 @@ fn a_value_sent_for_a_run_on_a_runner_masks_its_chat_s_kept_screen() {
     );
 
     assert_eq!(
-        purlis_core::secrets::handedto::masked_for(a_project(), 6, "got v-kubeconfig", &|_| None)
-            .as_deref(),
+        purlis_core::secrets::handedto::masked_for(a_project(), 6, "got v-kubeconfig").as_deref(),
         Some("got ‹secret: kubeconfig›")
     );
 }
