@@ -126,16 +126,21 @@ pub struct Asking {
     pub tell: super::asks::Tell,
     pub askable: super::asks::Askable,
     pub known: super::asks::Known,
+    /// Where the project's `[policy]` does not enforce `asks` (Q308): what is told of each host
+    /// answered Allow with nobody asked ([`Asks::answering`]).
+    pub answered: Option<super::asks::Answered>,
 }
 
 impl Asking {
     /// The board these make, holding as `timings` say.
     pub fn board(self, timings: &Timings) -> Arc<Asks> {
-        Arc::new(
-            Asks::new(self.tell, timings)
-                .asking_while(self.askable)
-                .knowing(self.known),
-        )
+        let board = Asks::new(self.tell, timings)
+            .asking_while(self.askable)
+            .knowing(self.known);
+        Arc::new(match self.answered {
+            Some(answered) => board.answering(answered),
+            None => board,
+        })
     }
 }
 

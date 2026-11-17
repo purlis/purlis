@@ -193,11 +193,11 @@ describe("a project moved into a window of its own", () => {
       restore: { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [] },
     });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
     await fromTheMenu("two", "Move to a new window");
 
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: null }]);
     // **Nothing was closed**: its chats go on running, and the new window draws them.
     expect(sent("close_plane")).toEqual([]);
@@ -214,7 +214,7 @@ describe("a project moved into a window of its own", () => {
       refuseMove: "purlis could not make a window: no display",
     });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
     await fromTheMenu("two", "Move to a new window");
 
@@ -230,7 +230,7 @@ describe("a project moved into a window of its own", () => {
     });
     render(<App />);
 
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
     expect(await screen.findByRole("tab", { name: /two\.1/ })).toBeInTheDocument();
     // A split window is not a launch: the working directory, the relaunch question and the
     // remembered window set are all the main window's.
@@ -250,7 +250,7 @@ describe("a project moved into a window of its own", () => {
       chats: { [TWO]: [chat(1, "two.1")] },
     });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
     await screen.findByRole("tab", { name: /two\.1/ });
 
     const listening = asked.filter((one) => one.cmd === "plugin:event|listen");
@@ -274,7 +274,7 @@ describe("a project moved into a window of its own", () => {
     mockWindows("window-1");
     const { sent } = core({ handed: { planes: [TWO], active: 0 } });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
 
     await fromTheMenu("two", "Move to the main window");
 
@@ -289,7 +289,7 @@ describe("a project moved into a window of its own", () => {
   it("does not offer the main window's projects a way back to where they already are", async () => {
     core({ restore: { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [] } });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
     fireEvent.contextMenu(projectTab("two"));
     const menu = await screen.findByRole("menu");
@@ -300,7 +300,7 @@ describe("a project moved into a window of its own", () => {
   it("arrives in the window it was moved to, in front", async () => {
     const { fire } = core({ launch: ONE });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
     fire("projects-arrived", { planes: [TWO], front: TWO });
 
@@ -310,7 +310,7 @@ describe("a project moved into a window of its own", () => {
   it("comes back behind what is showing when a split window is closed", async () => {
     const { fire } = core({ launch: ONE });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
     fire("projects-arrived", { planes: [TWO, THREE], front: null });
 
@@ -322,7 +322,7 @@ describe("a project moved into a window of its own", () => {
     // window holding it to the front instead.
     const { sent } = core({ launch: ONE, holder: { [TWO]: "window-1" } });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
     await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
     const person = userEvent.setup();
@@ -378,7 +378,7 @@ describe("needs you, across windows", () => {
     // The main window, as Tauri names it, so the badge has a window to be set on.
     mockWindows("main");
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
     fire(
       "window-said",
@@ -409,7 +409,7 @@ describe("needs you, across windows", () => {
       unfiled: { [ONE]: [{ ...chat(2, "shell 2"), unreported: "a shell cannot say it waits" }] },
     });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     fire(
       "window-said",
       said("window-1", { quiet: [{ name: "codex 4", project: "two", plane: TWO, session: 4 }] }),
@@ -422,7 +422,7 @@ describe("needs you, across windows", () => {
     });
     await userEvent.click(hand);
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const here = await vi.waitFor(() => {
+    const here = await waitFor(() => {
       const found = inbox.querySelector<HTMLElement>(`[data-cause="chat-quiet:${ONE}#2"]`);
       expect(found).not.toBeNull();
       return found as HTMLElement;
@@ -446,7 +446,7 @@ describe("needs you, across windows", () => {
     // The main window, as Tauri names it, so the badge has a window to be set on.
     mockWindows("main");
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     fire(
       "window-said",
       said("window-1", {
@@ -477,7 +477,7 @@ describe("quitting with two windows", () => {
   it("warns about the chats in the other window too", async () => {
     const { fire, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     fire("window-said", said("window-1", { ending: [ending] }));
 
     fire("quit-asked", null);
@@ -490,7 +490,7 @@ describe("quitting with two windows", () => {
   it("warns rather than quitting while another window has not said what it has open", async () => {
     const { fire, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
     fire("quit-asked", null);
 
@@ -501,7 +501,7 @@ describe("quitting with two windows", () => {
   it("quits at once when no window has anything open", async () => {
     const { fire, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     fire("window-said", said("window-1"));
 
     await vi.waitFor(() => {

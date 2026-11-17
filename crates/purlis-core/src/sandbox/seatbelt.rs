@@ -663,6 +663,11 @@ pub fn floor_profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     let mut out = String::from(FLOOR_BASE);
+    // Nothing started outside the profile, whatever the project's `[policy]` says: a program
+    // launchd, Launch Services or cron runs is outside every wrap, where a chat could read the
+    // vaults and write the project's settings (the review of #6992, B1). Part of the floor, not
+    // of the `processes` family.
+    out.push_str(FLOOR_PROCESSES);
     out.push_str(FLOOR_HELD);
     out.push_str(&terminal_rules());
     let mut line = |text: String| {
@@ -877,10 +882,9 @@ fn vault_rules(ops: &str) -> Result<Vec<String>, &'static str> {
     Ok(rules)
 }
 
-/// What the floor holds besides files ([`floor_profile`]): nothing started outside the profile,
-/// no unix socket and no port of this machine. The hook socket, the proxy's ports and what a
-/// person allowed are given back after it.
-pub const FLOOR_HELD: &str = "(deny appleevent-send)
+/// What the floor holds of programs ([`floor_profile`]): nothing started outside the profile,
+/// whatever the project's `[policy]` says, since a program started there runs outside the wrap.
+pub const FLOOR_PROCESSES: &str = "(deny appleevent-send)
 (deny lsopen)
 (deny job-creation)
 (deny mach-lookup
@@ -893,7 +897,12 @@ pub const FLOOR_HELD: &str = "(deny appleevent-send)
   (literal \"/usr/bin/crontab\")
   (literal \"/usr/bin/at\")
   (literal \"/usr/bin/batch\"))
-(deny network-outbound (remote unix-socket))
+";
+
+/// What the floor holds besides files and programs ([`floor_profile`]): no unix socket and no
+/// port of this machine. The hook socket, the proxy's ports and what a person allowed are given
+/// back after it.
+pub const FLOOR_HELD: &str = "(deny network-outbound (remote unix-socket))
 (deny network-outbound (remote ip \"localhost:*\"))
 ";
 

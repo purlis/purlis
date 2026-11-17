@@ -714,3 +714,45 @@ fn a_waiting_once_put_out_or_ended_by_keep_blocked_is_told() {
             .contains(&"h1.example.com:443".to_owned())
     );
 }
+
+/// **The `asks` family** (Q308, instruction 50): enforced, a host nothing lists is held while the
+/// person is asked; off or logged, it is answered Allow for this chat at once, nobody asked, and
+/// the board tells who keeps the log. The person's Keep blocked holds in every mode.
+#[test]
+fn a_host_ask_is_answered_allow_where_the_policy_does_not_enforce_asks() {
+    // Enforced: no answering, so the board holds it and asks, giving up after its hold.
+    let (enforced, heard) = board(Duration::from_millis(50), Duration::from_millis(1));
+    assert_ne!(
+        enforced.hold("api.example.com", 443, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert!(
+        heard
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|one| matches!(one, Heard::Asked(_)))
+    );
+    // Off or logged: Allow at once, nobody asked, and the answer told.
+    let (plain, heard) = board(Duration::from_secs(60), Duration::from_millis(1));
+    let told: Arc<Mutex<Vec<(String, u16)>>> = Arc::default();
+    let keep = Arc::clone(&told);
+    let answering =
+        Arc::try_unwrap(plain)
+            .unwrap()
+            .answering(Arc::new(move |host: &str, port: u16| {
+                keep.lock().unwrap().push((host.to_owned(), port));
+            }));
+    assert_eq!(
+        answering.hold("api.example.com", 443, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert!(heard.lock().unwrap().is_empty(), "nobody was asked");
+    assert_eq!(*told.lock().unwrap(), [("api.example.com".to_owned(), 443)]);
+    // The person's Keep blocked holds whatever the policy says.
+    answering.keep_blocked(&host("cdn.example.net"));
+    assert_eq!(
+        answering.hold("cdn.example.net", 443, &[443]),
+        Answer::Refused
+    );
+}

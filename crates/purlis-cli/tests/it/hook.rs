@@ -385,7 +385,7 @@ fn a_plane_with_a_persona() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
     std::fs::write(
         dir.path().join("charter.toml"),
-        "schema = 1\n\n[persona]\ndefault = \"ops\"\n",
+        "schema = 1\n\n[persona]\ndefault = \"ops\"\n\n[policy]\ntemplate = \"strict\"\n",
     )
     .expect("a manifest");
     let persona = dir.path().join("personas/ops");
@@ -634,7 +634,12 @@ fn bash(command: &str) -> String {
 /// leak guard to have something real to refuse.
 fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
-    std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    // Today's blocking, explicitly (Q308: the default is `watch`).
+    std::fs::write(
+        dir.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the marker");
     let vaults = dir.path().join(".charter").join("vaults");
     std::fs::create_dir_all(&vaults).expect("the vault directory");
     std::fs::write(vaults.join("db.json"), "{}\n").expect("a vault");
@@ -670,12 +675,13 @@ fn the_bash_guard_refuses_by_printing_and_exits_cleanly() {
         "{said}"
     );
     assert!(
-        said.contains("no config key, environment variable or switch"),
+        said.contains("under [policy] in the project's committed settings"),
         "every denial carries the override note: {said}"
     );
 }
 
-/// R-021: **guard A, the leak guard, is never switchable.** What this proves: with the project's
+/// R-021: **guard A, the leak guard, is switched by nothing but the project's `[policy]`
+/// `secrets`** (Q308), which every template but `open` enforces. What this proves: with the project's
 /// files at their loosest (the manifest's and the machine file's sandbox keys, the harness's own
 /// settings allowing every Bash and Read call in bypass mode), on each harness, sandboxed or not,
 /// from the chat or a sub-agent, in bypass permissions, with the state folder or the plane root
@@ -1368,7 +1374,12 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
 /// from and writes an empty entry. A test that phoned a forge would be a test nobody could run.
 fn a_plane_with_a_clone() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
-    std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    // Today's blocking, explicitly (Q308: the default is `watch`).
+    std::fs::write(
+        dir.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the marker");
     let clone = dir.path().join("workspaces/alpha/svc");
     std::fs::create_dir_all(&clone).expect("the clone's directory");
     let done = support::command("git")
@@ -1690,4 +1701,34 @@ fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_o
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(decision(&String::from_utf8_lossy(&out.stdout)), None);
+}
+
+/// **A hook the app does not answer runs every family enforced** (the review of #6992, B2 and
+/// B3): a project whose committed `[policy]` says `open` still has its hook skip refused when no
+/// app answers this hook — its environment scrubbed of the hook socket, or naming one nothing
+/// listens on — and neither the folder nor a variable it names loosens anything.
+#[test]
+fn a_hook_no_app_answers_refuses_as_strict_whatever_the_project_says() {
+    let plane = tempfile::tempdir().expect("a directory");
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("the marker");
+    let gone = plane.path().join("nobody-listens.sock");
+    let gone = gone.to_str().expect("a path");
+    let all_off = "guards.save=off,guards.git=off,secrets=off";
+    for env in [
+        &[][..],
+        &[("PURLIS_HOOK_SOCKET", gone), ("PURLIS_CHAT", "7")][..],
+        &[
+            ("PURLIS_POLICY", all_off),
+            ("PURLIS_ROOT", "/tmp"),
+            ("CHARTER_ROOT", "/tmp"),
+        ][..],
+    ] {
+        let (code, out, err) = guard(plane.path(), &bash("git commit --no-verify -m x"), env);
+        assert_eq!(code, 0, "{err}");
+        assert!(decision(&out).is_some(), "refused under {env:?}: {out:?}");
+    }
 }

@@ -55,6 +55,7 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod policy;
 mod pool;
 mod poolsetup;
 mod queries;
@@ -1258,7 +1259,7 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
             suspends_after,
             idles,
             if as_a_service {
-                purlis_host::Serves::AsALoginItem
+                purlis_host::Serves::AsARunnersService
             } else {
                 purlis_host::Serves::Alone
             },
@@ -5451,6 +5452,9 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // How each family of refusals runs for this chat is the app's answer (Q308): asked the first
+    // time it is needed, every family enforced where the app does not answer.
+    policy::from_the_app();
     // First: the release build unwinds, and a Rust panic, on any thread, still ends the process
     // (`panicend`). The guard's refusal below replaces it and ends the process its own way.
     #[cfg(not(debug_assertions))]

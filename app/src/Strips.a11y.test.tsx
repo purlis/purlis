@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -302,7 +302,7 @@ describe("the window's strips", () => {
     await findStripNamed("Projects");
     // alpha, from the title bar's ⌄ (#2916).
     await goToWorkspace("alpha");
-    await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
+    await waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
     // What the debt list held is still drawn, and still in its strip: the `×`, the gears and
     // the strips' own controls moved nowhere. The rail's own are its + and its hide (#2915).
     expect(
@@ -337,7 +337,7 @@ describe("the window's strips", () => {
     render(<App />);
     // alpha, from the title bar's ⌄ (#2916).
     await goToWorkspace("alpha");
-    await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
+    await waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
 
     within(stripNamed("Tabs")).getAllByRole("tab")[0].focus();
     await userEvent.keyboard("{F2}");

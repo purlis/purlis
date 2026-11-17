@@ -3304,6 +3304,8 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Merge(_) => 23,
             Ask::Chats(_) => 24,
             Ask::Attendance(_) => 25,
+            Ask::Policy(_) => 26,
+            Ask::PolicyLog(_) => 27,
         }
     }
     let asks = vec![
@@ -3475,10 +3477,17 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             unattended: false,
             claude_code_mode: None,
         }),
+        Ask::Policy(purlis_core::hookwire::PolicyAsk { chat }),
+        Ask::PolicyLog(purlis_core::hookwire::PolicyLogAsk {
+            chat,
+            family: "guards.git".to_owned(),
+            rule: "A3".to_owned(),
+            host: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=25).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
