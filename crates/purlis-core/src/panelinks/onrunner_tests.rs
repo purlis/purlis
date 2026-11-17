@@ -416,3 +416,17 @@ fn a_chat_at_the_projects_root_counts_the_project_as_its_workspace() {
         Some("workspaces/docs/guide.md")
     );
 }
+
+#[test]
+fn a_files_identity_is_its_device_and_number_whatever_its_size_and_time() {
+    assert_eq!(
+        super::identity_of("64769:1234:13:1700000000.5"),
+        Some("64769:1234")
+    );
+    assert_eq!(
+        super::identity_of("64769:1234:99:1800000000.0"),
+        Some("64769:1234")
+    );
+    assert_eq!(super::identity_of("13:1700000000"), None);
+    assert_eq!(super::identity_of(""), None);
+}

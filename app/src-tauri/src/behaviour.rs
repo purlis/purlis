@@ -2301,7 +2301,7 @@ fn a_chat_is_told_its_own_number(target: &Target) {
 /// runner.
 fn a_file_a_runner_chat_printed_is_read_on_its_runner(target: &Target) {
     use crate::runnerfiles::ReadThere;
-    use purlis_session_protocol::session::FileReach;
+    use purlis_session_protocol::session::FileRead;
 
     // Outside every project, on whichever machine the chat runs: a chat started with no folder
     // runs wherever its host does, which is no folder of the project's.
@@ -2337,19 +2337,26 @@ fn a_file_a_runner_chat_printed_is_read_on_its_runner(target: &Target) {
         .runner_files_of(id)
         .expect("the window reads its runner's files");
     let outside = reads
-        .read(&printed, FileReach::Workspace)
+        .read(&printed, None)
         .expect_err("a file outside the workspace is not read without an ask");
     assert!(
         outside.contains("outside the chat's workspace"),
         "{outside}"
     );
+    // As the person's answer to the ask keeps it: the file it is when they answer.
+    let Some(FileRead::Plain { version, .. }) =
+        purlis_core::panelinks::RunnerFiles::look(&reads, &printed)
+    else {
+        panic!("the runner finds the file the chat wrote");
+    };
+    let opened = purlis_core::panelinks::onrunner::identity_of(&version).expect("an identity");
     assert_eq!(
-        reads.read(&printed, FileReach::Anywhere),
+        reads.read(&printed, Some(opened)),
         Ok(ReadThere::Text("fn main() {}\n".to_owned()))
     );
     assert!(matches!(
         purlis_core::panelinks::RunnerFiles::look(&reads, "/dev/null"),
-        Some(purlis_session_protocol::session::FileRead::NotPlain { .. })
+        Some(FileRead::NotPlain { .. })
     ));
     target.sessions.close(id).expect("it closes");
 }

@@ -808,7 +808,7 @@ pub async fn pane_link_file(
 
 /// **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
 /// chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
-/// run of the app and within the hour. Read on the runner, as data, through its kind's adapter.
+/// run of the app and within the hour, and it is still the file it was then. Read on the runner, as data, through its kind's adapter.
 #[tauri::command]
 #[specta::specta]
 pub async fn pane_link_runner_file(
@@ -825,18 +825,16 @@ pub async fn pane_link_runner_file(
         .and_then(|(held, session)| held.chats().runner_files_of(session))
         .filter(|reads| reads.runner() == runner)
         .ok_or_else(|| crate::runnerfiles::not_reachable(&runner))?;
-    let reach = match app
+    let opened = app
         .state::<PaneLinkAsks>()
         .0
-        .opened_on_runner(&pane, &runner, &path)
-    {
-        Some(()) => purlis_session_protocol::session::FileReach::Anywhere,
-        None => purlis_session_protocol::session::FileReach::Workspace,
-    };
+        .opened_on_runner(&pane, &runner, &path);
     crate::off_the_window("reading the file", move || {
-        reads.read(&path, reach).map(|read| LinkFile::File {
-            file: crate::runnerfiles::shown(read),
-        })
+        reads
+            .read(&path, opened.as_deref())
+            .map(|read| LinkFile::File {
+                file: crate::runnerfiles::shown(read),
+            })
     })
     .await
 }

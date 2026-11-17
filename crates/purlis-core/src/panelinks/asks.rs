@@ -70,12 +70,14 @@ struct Opened {
     at: Instant,
 }
 
-/// One file on a runner, outside its chat's workspace, as opened (#6387).
+/// One file on a runner, outside its chat's workspace, as opened (#6387), and which file it
+/// was then (`onrunner::identity_of`).
 #[derive(Debug)]
 struct OnRunner {
     pane: Asked,
     runner: String,
     path: String,
+    identity: String,
     at: Instant,
 }
 
@@ -171,8 +173,9 @@ impl Asks {
 
 impl Asks {
     /// `path`, a file on `runner` outside its chat's workspace, was opened in `pane` on an
-    /// answered ask (#6387): the runner reads it for that pane's tab from now on.
-    pub fn keep_opened_on_runner(&self, pane: &Pane, runner: &str, path: &str) {
+    /// answered ask (#6387), and was then the file `identity` names: the runner reads it for
+    /// that pane's tab from now on, while it is still that file.
+    pub fn keep_opened_on_runner(&self, pane: &Pane, runner: &str, path: &str, identity: &str) {
         let pane = Asked::from(pane);
         let mut on_runners = lock(&self.on_runners);
         on_runners.retain(|one| {
@@ -186,23 +189,25 @@ impl Asks {
             pane,
             runner: runner.to_owned(),
             path: path.to_owned(),
+            identity: identity.to_owned(),
             at: Instant::now(),
         });
     }
 
-    /// **Whether `path` on `runner` was opened in `pane` on an answered ask**, within
-    /// [`OPENED_LIFE`]: `Some(())` where it was, so its tab may read it outside the workspace.
-    pub fn opened_on_runner(&self, pane: &Pane, runner: &str, path: &str) -> Option<()> {
+    /// **Which file `path` on `runner` was when it was opened in `pane`** on an answered ask,
+    /// while that is within [`OPENED_LIFE`]; `None` for a file nobody opened there.
+    pub fn opened_on_runner(&self, pane: &Pane, runner: &str, path: &str) -> Option<String> {
         let pane = Asked::from(pane);
         lock(&self.on_runners)
             .iter()
-            .any(|one| {
+            .rev()
+            .find(|one| {
                 one.pane == pane
                     && one.runner == runner
                     && one.path == path
                     && one.at.elapsed() < self.opened_life
             })
-            .then_some(())
+            .map(|one| one.identity.clone())
     }
 }
 

@@ -181,9 +181,11 @@ fn a_file_outside_the_runner_chats_workspace_asks_first_naming_the_runner() {
         matches!(opened, Opening::Open(Target::File(_))),
         "{opened:?}"
     );
-    assert!(
+    assert_eq!(
         asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
-            .is_some()
+            .as_deref(),
+        Some("1:2"),
+        "kept as the file it was when the ask was answered"
     );
     let other_chat = Pane {
         session: Some(8),
@@ -305,5 +307,30 @@ fn a_runner_chat_with_no_way_to_read_its_runner_links_no_file() {
     assert_eq!(
         Resolver::default().resolve(&file("src/main.rs"), &on_runner()),
         Resolved::Quiet
+    );
+}
+
+#[test]
+fn a_file_gone_by_the_time_its_ask_is_answered_is_not_kept_as_opened() {
+    let runner = fake();
+    let asks = Asks::default();
+    let Resolved::Link(target) = links(&runner).resolve(&file("/etc/hosts"), &on_runner()) else {
+        panic!("expected a link");
+    };
+    let gone = Fake {
+        files: Vec::new(),
+        ..runner
+    };
+
+    super::super::LinkKind::accepted(
+        &RunnerFile::new(Box::new(gone)),
+        &target,
+        &on_runner(),
+        &asks,
+    );
+
+    assert!(
+        asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
+            .is_none()
     );
 }

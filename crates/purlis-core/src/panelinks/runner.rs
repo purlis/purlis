@@ -136,7 +136,8 @@ impl LinkKind for RunnerFile {
     }
 
     /// A file outside the workspace opened on an answered ask is kept as opened for the pane on
-    /// that runner, so its tab may read it there.
+    /// that runner, as the file it is now, so its tab may read it there and nothing put in its
+    /// place since.
     fn accepted(&self, target: &Target, pane: &Pane, asks: &Asks) {
         let Target::File(file) = target else {
             return;
@@ -144,8 +145,18 @@ impl LinkKind for RunnerFile {
         let ReadFrom::Runner { runner } = &file.read_from else {
             return;
         };
-        if let Some(path) = Path::new(&file.path).to_str() {
-            asks.keep_opened_on_runner(pane, runner, path);
+        let Some(path) = Path::new(&file.path).to_str() else {
+            return;
+        };
+        if let Some(FileRead::Plain {
+            path: found,
+            version,
+            ..
+        }) = self.files.look(path)
+            && found == path
+            && let Some(identity) = super::onrunner::identity_of(&version)
+        {
+            asks.keep_opened_on_runner(pane, runner, path, identity);
         }
     }
 }

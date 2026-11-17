@@ -202,6 +202,16 @@ fn version_of(meta: &std::fs::Metadata, size: u64) -> String {
     )
 }
 
+/// **Which file a [`version_of`] names**, whatever its size and time: its device and its
+/// number there. `None` for a version that does not hold them.
+pub fn identity_of(version: &str) -> Option<&str> {
+    let parts: Vec<&str> = version.split(':').collect();
+    if parts.len() != 4 || parts[..2].iter().any(|part| part.is_empty()) {
+        return None;
+    }
+    version.get(..parts[0].len() + 1 + parts[1].len())
+}
+
 #[cfg(not(unix))]
 fn version_of(meta: &std::fs::Metadata, size: u64) -> String {
     let changed = meta

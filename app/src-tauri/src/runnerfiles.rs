@@ -11,6 +11,8 @@
 //!   slow to answer leaves the text no link, and never holds the pane up.
 //! - A tab reads the file in pieces of one version ([`ReadsOnRunner::read`]): a file that
 //!   changed between them is read again from its start, once.
+//! - A file outside the chat's workspace is read only as the file it was when the person
+//!   answered the ask for it: one put in its place since, or a link put there, is not read.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,13 +95,15 @@ impl ReadsOnRunner {
         &self.runner
     }
 
-    /// **`path`, read for its tab**: held to the chat's workspace on the runner, unless `reach`
-    /// says the person answered an ask for it. The sentence the tab shows where it can't be.
-    pub(crate) fn read(&self, path: &str, reach: FileReach) -> Result<ReadThere, String> {
+    /// **`path`, read for its tab**: held to the chat's workspace on the runner, unless the
+    /// person answered an ask for it when it was the file `opened` names
+    /// (`onrunner::identity_of`), and then read only while it still is that file at that path.
+    /// The sentence the tab shows where it can't be.
+    pub(crate) fn read(&self, path: &str, opened: Option<&str>) -> Result<ReadThere, String> {
         let mut tried = 0;
         loop {
             tried += 1;
-            match self.read_once(path, reach)? {
+            match self.read_once(path, opened)? {
                 Some(read) => return Ok(read),
                 None if tried < 2 => {}
                 None => {
@@ -113,13 +117,31 @@ impl ReadsOnRunner {
     }
 
     /// One read from the start: `None` where the file changed between its pieces.
-    fn read_once(&self, path: &str, reach: FileReach) -> Result<Option<ReadThere>, String> {
+    fn read_once(&self, path: &str, opened: Option<&str>) -> Result<Option<ReadThere>, String> {
+        let reach = match opened {
+            Some(_) => FileReach::Anywhere,
+            None => FileReach::Workspace,
+        };
         let mut text = Vec::new();
         let mut first: Option<(u64, String)> = None;
         loop {
             let at = text.len() as u64;
             let read = self.asks.ask(path, reach, Some(at), PIECE_WITHIN)?;
             let (size, version, piece) = match read {
+                FileRead::Plain {
+                    path: found,
+                    version,
+                    ..
+                } if opened.is_some_and(|opened| {
+                    found != path
+                        || purlis_core::panelinks::onrunner::identity_of(&version) != Some(opened)
+                }) =>
+                {
+                    return Err(format!(
+                        "This file changed on runner {} since you opened it. Open it from its link in the chat again.",
+                        self.runner
+                    ));
+                }
                 FileRead::Plain {
                     size,
                     version,
