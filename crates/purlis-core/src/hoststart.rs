@@ -1073,6 +1073,7 @@ pub fn compose_ready(
             cwd: Some(&cwd),
             sandboxed: sandbox.is_some(),
             id: start.program.as_deref(),
+            policy: Some(&crate::enforcement::at_start(root).spelled()),
         },
         kit.binary.as_deref(),
     );
@@ -1143,6 +1144,7 @@ pub fn compose_ready(
             .map(str::to_owned),
         // Given with its token, by the host that starts it ([`spec`]).
         prompt_key: None,
+        pools_held: None,
     })
 }
 
@@ -1726,16 +1728,21 @@ pub struct Watched<'a> {
     pub sandboxed: bool,
     /// Its own id (ADR 0066).
     pub id: Option<&'a str>,
+    /// How each family of purlis's refusals runs for it, as its start resolved it (Q308a,
+    /// [`crate::enforcement::at_start`], [`crate::enforcement::Resolved::spelled`]).
+    pub policy: Option<&'a str>,
 }
 
 /// What a chat's hooks read about it (#1338, #1345, #1457), put in its `env`: the folder it was
-/// started in, whether a sandbox was applied to it, and its own id. Whatever a profile or the
+/// started in, whether a sandbox was applied to it, its own id, and how its start resolved the
+/// project's `[policy]` (Q308a). Whatever a profile or the
 /// arming said under either name is replaced.
 pub fn what_its_hooks_read(env: &mut Vec<(String, String)>, watched: &Watched<'_>) {
     let ours = [
         crate::hookwire::SANDBOXED_ENV,
         crate::sandboxblock::CHAT_DIR_ENV,
         crate::hookwire::CHAT_ID_ENV,
+        crate::enforcement::ENV,
     ];
     env.retain(|(key, _)| !ours.iter().any(|one| crate::envvar::same(one, key)));
     if let Some(cwd) = watched.cwd {
@@ -1746,6 +1753,9 @@ pub fn what_its_hooks_read(env: &mut Vec<(String, String)>, watched: &Watched<'_
     }
     if let Some(id) = watched.id {
         env.push((ours[2].to_owned(), id.to_owned()));
+    }
+    if let Some(policy) = watched.policy {
+        env.push((ours[3].to_owned(), policy.to_owned()));
     }
 }
 

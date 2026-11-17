@@ -46,7 +46,7 @@ import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { PoolMintingNotice } from "./PoolMintingNotice";
 import { PoolPinChangedNotice } from "./PoolPinChangedNotice";
-import { HostFailingNotice } from "./HostFailingNotice";
+import { HostFailingNotice, NotInTheBackgroundNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { ReportConsentAsk } from "./ReportConsent";
@@ -2152,6 +2152,7 @@ function App() {
       showChat: () => undefined,
       focusChat: () => undefined,
       reopenTask: async () => nowhere(),
+      reopenClosedChat: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
       ownTab: () => undefined,
@@ -3234,6 +3235,10 @@ function App() {
               {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}
               <HostFailingNotice />
+
+              {/* Something keeps purlis running, but the system would not start it at login, so
+            the window runs its session host as before (FD-17). */}
+              <NotInTheBackgroundNotice />
 
               {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
               <VaultsWaitingNotice />

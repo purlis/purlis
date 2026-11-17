@@ -644,3 +644,32 @@ fn a_chat_retried_on_its_own_moves_the_count_the_project_said() {
     );
     planes.let_go_of_all();
 }
+
+/// **A chat forgotten after it did not start keeps its closed record** (#6487): Forget this
+/// chat ends it for good, so its number opens its card after it.
+#[cfg(unix)]
+#[test]
+fn a_chat_forgotten_after_it_did_not_start_keeps_its_closed_record() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let host = Pretend::default();
+    host.refuses_number(2, "its program went");
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    let held = planes.held(&plane).expect("it is held");
+    let id = held.chats().would_not_start()[0].id.clone();
+
+    crate::restored::forgetting(&held, &id, || held.chats().forget(&id)).expect("it is waiting");
+
+    let kept = purlis_core::chatrecords::every(&root);
+    assert_eq!(
+        kept.iter()
+            .map(|one| (one.number, one.id.as_str()))
+            .collect::<Vec<_>>(),
+        [(2, id.as_str())]
+    );
+    planes.let_go_of_all();
+}

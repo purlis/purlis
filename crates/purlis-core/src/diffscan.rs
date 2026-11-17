@@ -1809,10 +1809,46 @@ pub const ALLOWLIST_REFUSAL: &str = "purlis: commit refused — it changes .char
 
 /// What a chat's commit is refused with where it stages a change to what chats run under that
 /// the project's file in the working tree does not hold (#1464).
+/// **The family a finding's rule is in** (Q308a): a credential's is `guards.credential`, the
+/// token scan on commit and push; personal data's is `guards.save`.
+pub fn family_of(rule: &str) -> crate::enforcement::Family {
+    if crate::secretshape::is_personal(rule) {
+        crate::enforcement::Family::GuardsSave
+    } else {
+        crate::enforcement::Family::GuardsCredential
+    }
+}
+
+/// **`refused` as the project's `[policy]` runs each finding's family** (Q308, Q308a): a finding
+/// of an enforced family stays refused; one whose family logs is let through and recorded for
+/// chat `chat` in the project at `root`, by its rule alone (never its path or value); one whose
+/// family is off is let through. What the allowlist and the runs-under checks refuse is no
+/// family's: they keep the scan and the policy themselves out of a chat's reach.
+pub fn under_policy(
+    refused: &mut Vec<Finding>,
+    root: &Path,
+    chat: Option<&str>,
+    policy: &crate::enforcement::Resolved,
+) {
+    refused.retain(|finding| {
+        let family = family_of(finding.rule);
+        crate::enforcement::judged(
+            root,
+            chat,
+            family,
+            policy.mode(family),
+            finding.rule,
+            None,
+            (),
+        )
+        .is_some()
+    });
+}
+
 pub const RUNS_UNDER_REFUSAL: &str = "purlis: commit refused — it stages a version of the \
-     project's file (purlis.toml) whose [sandbox], [chat_env] or [dispatch] tables differ from \
-     the file in the working tree, or one purlis cannot read as a regular file. A chat never \
-     changes what chats run under or who may dispatch to whom. Take it out of the commit \
+     project's file (purlis.toml) whose [sandbox], [chat_env], [dispatch] or [policy] tables \
+     differ from the file in the working tree, or one purlis cannot read as a regular file. A \
+     chat never changes what chats run under, who may dispatch to whom, or which refusals run. Take it out of the commit \
      (`git restore --staged <the file>`), or stage the file as it is. Do not use --no-verify; \
      the operator has been told.\n";
 
@@ -1894,6 +1930,99 @@ pub fn one_line(finding: &Finding) -> String {
         "{}:{}  {}  {}",
         finding.path, finding.line, finding.kind, finding.masked
     )
+}
+
+#[cfg(test)]
+mod policy_tests {
+    //! **The scan's findings run as `[policy]` says** (Q308a): a credential's under
+    //! `guards.credential`, personal data's under `guards.save`.
+    use super::*;
+    use crate::enforcement::{Family, Mode, Resolved};
+
+    const CHAT: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
+
+    fn finding(rule: &'static str) -> Finding {
+        Finding {
+            path: "notes.md".to_owned(),
+            line: 1,
+            rule,
+            kind: "a value",
+            masked: "abcd…".to_owned(),
+            fingerprint: "f".to_owned(),
+        }
+    }
+
+    /// Every family enforced but `family`, which runs at `mode`.
+    fn policy(family: Family, mode: Mode) -> Resolved {
+        Resolved::parse(&format!("{}={}", family.key(), mode.word()))
+    }
+
+    /// A credential's rule (any rule that is not personal data) and personal data's.
+    fn the_two() -> [(Family, &'static str); 2] {
+        [
+            (Family::GuardsCredential, "github-pat"),
+            (Family::GuardsSave, "email"),
+        ]
+    }
+
+    #[test]
+    fn each_finding_is_in_its_family() {
+        for (family, rule) in the_two() {
+            assert_eq!(family_of(rule), family, "{rule}");
+        }
+    }
+
+    #[test]
+    fn an_enforced_finding_stays_refused() {
+        let root = tempfile::tempdir().expect("a folder");
+        for (family, rule) in the_two() {
+            let mut refused = vec![finding(rule)];
+            under_policy(
+                &mut refused,
+                root.path(),
+                Some(CHAT),
+                &policy(family, Mode::Enforce),
+            );
+            assert_eq!(refused.len(), 1, "{}", family.key());
+        }
+        assert!(crate::enforcement::read_log(root.path(), CHAT).is_empty());
+    }
+
+    #[test]
+    fn a_logged_finding_is_let_through_and_recorded_by_its_rule_alone() {
+        for (family, rule) in the_two() {
+            let root = tempfile::tempdir().expect("a folder");
+            let mut refused = vec![finding(rule)];
+            under_policy(
+                &mut refused,
+                root.path(),
+                Some(CHAT),
+                &policy(family, Mode::Log),
+            );
+            assert!(refused.is_empty(), "{}", family.key());
+            let log = crate::enforcement::read_log(root.path(), CHAT);
+            assert_eq!(log.len(), 1, "{}", family.key());
+            assert_eq!(log[0].rule, rule);
+            assert_eq!(log[0].family, family.key());
+            assert_eq!(log[0].host, None);
+        }
+    }
+
+    #[test]
+    fn a_finding_whose_family_is_off_is_let_through_with_no_line() {
+        let root = tempfile::tempdir().expect("a folder");
+        for (family, rule) in the_two() {
+            let mut refused = vec![finding(rule)];
+            under_policy(
+                &mut refused,
+                root.path(),
+                Some(CHAT),
+                &policy(family, Mode::Off),
+            );
+            assert!(refused.is_empty(), "{}", family.key());
+        }
+        assert!(crate::enforcement::read_log(root.path(), CHAT).is_empty());
+    }
 }
 
 #[cfg(test)]

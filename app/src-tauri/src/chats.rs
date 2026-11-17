@@ -485,6 +485,11 @@ struct Running {
     /// tools and line the runner compiled there, so this window holds no record of what its
     /// sandbox compiled to, and a restart would not give it one (#2692).
     composed_by_its_host: bool,
+    /// **Whether what its sandbox held of the pools as it started is not known**: a chat
+    /// reattached from a host that kept no record of it ([`SessionHost::pools_held_left`]), whose
+    /// [`Self::confines`] hold what a start holds now in its place. Such a chat is asked to
+    /// restart wherever any pool is held now, with no pool named as why.
+    pools_unknown: bool,
     /// **Whose persona grants it runs with, as its start read them** (#2691): on a profile, the
     /// grants a handoff left it holding, else its own persona's, else the project's default
     /// persona at its start; on no profile, none ([`grants_persona_of`]). The persona its
@@ -1168,6 +1173,11 @@ type Deciding = Box<
 pub struct OlderSandbox {
     /// The chats, by session, lowest first.
     pub chats: Vec<OnOlderSandbox>,
+    /// **What the Notice says where pools on this machine are the only cause for every one of
+    /// them** (#1750, #6472): one sentence true of them all (`PoolMoved::said_for_all`), as a
+    /// pool is the machine's and not a project's. None otherwise.
+    #[specta(optional)]
+    pub pool: Option<String>,
 }
 
 #[cfg(test)]
@@ -1202,17 +1212,82 @@ pub struct OnOlderSandbox {
     /// None where the project's settings moved it.
     #[specta(optional)]
     pub policy: Option<String>,
-    /// **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
-    /// sandbox does not yet keep it from changing the programs that pool runs, which it holds
-    /// once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+    /// **Where pools on this machine are the only cause** (#1750, #6472): the chat's sandbox
+    /// does not yet keep it from changing the programs a cluster pool runs, or from reading
+    /// the files a pool on another machine connects with, which it holds once it restarts. The
+    /// sentence for this chat alone (`PoolMoved::said`); the Notice says
+    /// [`OlderSandbox::pool`]. None otherwise.
     #[specta(optional)]
     pub pool: Option<String>,
 }
 
 /// What the Notice after a sandbox change says where a cluster pool added while chats ran is
 /// its only cause (#1750): what changed, in the person's terms, and why it matters.
-pub const POOL_ADDED: &str = "A cluster pool was added, so purlis now keeps chats from changing \
-                              the programs it runs.";
+pub const NOTICE_CLUSTER_POOL_ADDED: &str =
+    "A cluster pool was added, so purlis now keeps chats from changing the programs it runs.";
+
+/// What the Notice says where a pool on another machine, reached over Docker's API over TLS,
+/// added while chats ran is its only cause (#6472). "The files it connects with" are its
+/// authority's certificate, its certificate and its key, or the first two alone where the key is
+/// in a vault: the sentence is true of both.
+pub const NOTICE_TLS_POOL_ADDED: &str = "A pool on another machine was added, so purlis now keeps \
+                                         chats from reading the files it connects with.";
+
+/// What the Notice says where cluster pools and pools on another machine were added while chats
+/// ran, and nothing else moved (#6472).
+pub const NOTICE_POOLS_ADDED: &str = "Pools were added, so purlis now keeps more of their files \
+                                      from chats.";
+
+/// What the Notice says where no pool was added, but a file a pool on another machine names
+/// leads to another file than it did when the chat started (the review of #6662): the chat
+/// holds the file it led to, and reads the one it leads to now.
+pub const NOTICE_TLS_FILE_RETARGETED: &str = "A file a pool on another machine connects with now \
+                                              leads elsewhere, so purlis now keeps chats from \
+                                              reading where it leads.";
+
+/// **What pools moved of what a chat's sandbox holds**, where they are all that moved
+/// ([`Settled::pool_added`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PoolMoved {
+    /// A cluster pool's programs it does not hold.
+    cluster: bool,
+    /// A file a pool on another machine names that it does not hold by that name: a pool
+    /// added.
+    tls_added: bool,
+    /// Every such file held by its name, but a real path one leads to now that it does not
+    /// hold: a link pointed anew.
+    tls_retargeted: bool,
+}
+
+impl PoolMoved {
+    /// The Notice's sentence for it, where one is true of all of it.
+    fn said(self) -> Option<&'static str> {
+        match (self.cluster, self.tls_added, self.tls_retargeted) {
+            (true, false, false) => Some(NOTICE_CLUSTER_POOL_ADDED),
+            (false, true, _) => Some(NOTICE_TLS_POOL_ADDED),
+            (true, true, _) => Some(NOTICE_POOLS_ADDED),
+            (false, false, true) => Some(NOTICE_TLS_FILE_RETARGETED),
+            // A cluster pool added and a link pointed anew: no one sentence says both.
+            (true, false, true) | (false, false, false) => None,
+        }
+    }
+
+    /// The one sentence for every chat behind, each with what pools moved for it (`None` where
+    /// anything else moved): none where any chat is behind something else.
+    fn said_for_all(chats: &[Option<Self>]) -> Option<&'static str> {
+        let mut all: Option<Self> = None;
+        for chat in chats {
+            let one = (*chat)?;
+            let was = all.unwrap_or_default();
+            all = Some(Self {
+                cluster: was.cluster || one.cluster,
+                tls_added: was.tls_added || one.tls_added,
+                tls_retargeted: was.tls_retargeted || one.tls_retargeted,
+            });
+        }
+        all?.said()
+    }
+}
 
 /// **What a project's settings decide of a chat's sandbox** (#1428, D-1428-10): the hosts it
 /// may reach, what the presets widen, and the folders every chat may write. The Notice after a
@@ -1243,6 +1318,83 @@ struct Settled {
     /// (#3292, #1750), of those the pools have now: a chat started before a pool was added
     /// holds none of its programs until it restarts.
     cluster: Vec<std::path::PathBuf>,
+    /// The files a pool over Docker's TLS API names that the chat's sandbox holds from it
+    /// (#6267, #6472), by name and by real path, of those the pools name now: a chat started
+    /// before such a pool was added reads them until it restarts.
+    tls: Vec<std::path::PathBuf>,
+    /// Of `tls`, those held by the names the pools give them: where these are alike and `tls`
+    /// is not, a link leads elsewhere and no pool was added. Not in [`Settled::key`], since
+    /// `tls` holds every one of them.
+    tls_named: Vec<std::path::PathBuf>,
+}
+
+/// **What every pool on a machine has a chat's sandbox hold** (#1750, #6472), read once for
+/// every chat an ask compares.
+struct PoolsHeld {
+    /// The programs each cluster pool runs ([`purlis_core::sandbox::cluster_programs`]).
+    cluster: Vec<std::path::PathBuf>,
+    /// The files each pool over Docker's TLS API names
+    /// ([`purlis_core::sandbox::tls_pool_files`]).
+    tls: Vec<std::path::PathBuf>,
+    /// Those files by the names the pools give them alone
+    /// ([`purlis_core::sandbox::tls_pool_files_named`]).
+    tls_named: Vec<std::path::PathBuf>,
+}
+
+impl PoolsHeld {
+    fn on(machine: &purlis_core::sandbox::Machine) -> Self {
+        Self {
+            cluster: purlis_core::sandbox::cluster_programs(machine),
+            tls: purlis_core::sandbox::tls_pool_files(machine),
+            tls_named: purlis_core::sandbox::tls_pool_files_named(machine),
+        }
+    }
+
+    /// No pool at all.
+    #[cfg(test)]
+    fn none() -> Self {
+        Self {
+            cluster: Vec::new(),
+            tls: Vec::new(),
+            tls_named: Vec::new(),
+        }
+    }
+}
+
+/// **What the pools on a machine named when last read**, which says whether a read finds a pool
+/// added however it came: from the window, or from `purlis pool add` in a terminal, which tells
+/// the window nothing.
+pub(crate) struct PoolsWatch {
+    last: PoolsHeld,
+}
+
+impl PoolsWatch {
+    /// A watch that starts from what the pools on `machine` name now.
+    pub(crate) fn on(machine: &purlis_core::sandbox::Machine) -> Self {
+        Self {
+            last: PoolsHeld::on(machine),
+        }
+    }
+
+    /// **What every window is told of the pools on `machine` now**, keeping them as the last
+    /// read: [`crate::clusterpools::CLUSTER_POOL_ADDED`] where a cluster pool names a program the
+    /// last read did not, and [`crate::poolsetuptab::TLS_POOL_ADDED`] where a pool over Docker's
+    /// TLS API names a file it did not. A pool removed is told nothing: no chat is behind for it.
+    pub(crate) fn added(&mut self, machine: &purlis_core::sandbox::Machine) -> Vec<&'static str> {
+        let now = PoolsHeld::on(machine);
+        let more = |now: &[std::path::PathBuf], last: &[std::path::PathBuf]| {
+            now.iter().any(|path| !last.contains(path))
+        };
+        let mut told = Vec::new();
+        if more(&now.cluster, &self.last.cluster) {
+            told.push(crate::clusterpools::CLUSTER_POOL_ADDED);
+        }
+        if more(&now.tls, &self.last.tls) {
+            told.push(crate::poolsetuptab::TLS_POOL_ADDED);
+        }
+        self.last = now;
+        told
+    }
 }
 
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
@@ -1265,15 +1417,29 @@ struct StartKey {
 /// or no answer, where it could not be compiled.
 #[derive(Debug, Clone)]
 enum CompiledNow {
-    Sandboxed(Settled),
+    Sandboxed(Box<Settled>),
     Unconfined,
     Refused,
 }
 
 impl Settled {
-    /// What `confines` settles to, with `cluster` the programs every cluster pool runs now
-    /// ([`purlis_core::sandbox::cluster_programs`]).
-    fn of(confines: &purlis_core::sandbox::Confines, cluster: &[std::path::PathBuf]) -> Self {
+    /// What `confines` settles to, with `pools` what every pool has held now: the programs each
+    /// cluster pool runs and the files each pool over Docker's TLS API names. What `confines`
+    /// held of them is what its compile recorded
+    /// ([`purlis_core::sandbox::Confines::pools_held`]), which for a chat taken back from the
+    /// session host is that host's record of its start.
+    fn of(confines: &purlis_core::sandbox::Confines, pools: &PoolsHeld) -> Self {
+        let held = |of: &[std::path::PathBuf]| -> Vec<std::path::PathBuf> {
+            let mut list: Vec<std::path::PathBuf> = confines
+                .pools_held
+                .iter()
+                .filter(|path| of.contains(path))
+                .cloned()
+                .collect();
+            list.sort();
+            list.dedup();
+            list
+        };
         let sorted = |mut list: Vec<std::path::PathBuf>| {
             list.sort();
             list.dedup();
@@ -1324,27 +1490,31 @@ impl Settled {
                 listens.dedup();
                 listens
             },
-            cluster: sorted(
-                confines
-                    .denied
-                    .iter()
-                    .filter(|denial| cluster.contains(&denial.path))
-                    .map(|denial| denial.path.clone())
-                    .collect(),
-            ),
+            cluster: held(&pools.cluster),
+            tls: held(&pools.tls),
+            tls_named: held(&pools.tls_named),
         }
     }
 
-    /// Whether `self` and `other` differ only in the cluster pools' programs they hold.
-    fn differs_only_in_cluster(&self, other: &Self) -> bool {
-        self.cluster != other.cluster
-            && Self {
-                cluster: Vec::new(),
-                ..self.clone()
-            } == Self {
-                cluster: Vec::new(),
-                ..other.clone()
-            }
+    /// **What pools moved for a chat on `self` whose next start would be `now`, where they are
+    /// the only cause** (#1750, #6472): which kind of pool moved what it holds, or a link a pool
+    /// names that leads elsewhere. None where anything else moved too, or nothing did.
+    fn pool_added(&self, now: &Self) -> Option<PoolMoved> {
+        let without_pools = |settled: &Self| Self {
+            cluster: Vec::new(),
+            tls: Vec::new(),
+            tls_named: Vec::new(),
+            ..settled.clone()
+        };
+        if without_pools(self) != without_pools(now) || self == now {
+            return None;
+        }
+        let tls_added = self.tls_named != now.tls_named;
+        Some(PoolMoved {
+            cluster: self.cluster != now.cluster,
+            tls_added,
+            tls_retargeted: !tls_added && self.tls != now.tls,
+        })
     }
 
     /// What stands for `settled`, or for a start with no sandbox: a SHA-256 over one canonical
@@ -1394,6 +1564,10 @@ impl Settled {
                 if !settled.cluster.is_empty() {
                     list("cluster programs", &mut paths(&settled.cluster).into_iter());
                 }
+                // Likewise the TLS pools' files held (#6472).
+                if !settled.tls.is_empty() {
+                    list("tls pool files", &mut paths(&settled.tls).into_iter());
+                }
             }
         }
         let digest = sha2::Sha256::digest(text.as_bytes());
@@ -1429,6 +1603,14 @@ fn nothing_to_resume_on(session: u32) -> String {
     format!(
         "purlis did not resume chat {session}: it has no conversation to resume. Start a new \
          chat in its place."
+    )
+}
+
+/// Why closed chat `number` was not reopened where its harness named no conversation (#6485).
+fn nothing_to_reopen_on(number: u32) -> String {
+    format!(
+        "purlis did not reopen chat {number}: its harness named no conversation to resume. Start \
+         a new chat in its place."
     )
 }
 
@@ -4175,15 +4357,12 @@ impl Chats {
             )),
             Some(was) if was.resume.is_none() => Err(nothing_to_resume_on(session)),
             Some(was) => {
+                // Its number is the one it closed under: kept with those it had (#6486).
                 let again = Chat {
-                    identity: purlis_core::reopen::Identity {
-                        run: None,
-                        ..was.identity.clone()
-                    },
-                    pid: None,
-                    number: None,
+                    number: Some(session),
                     ..was
-                };
+                }
+                .renumbered();
                 self.start_recorded_told(&again, size, Why::Relaunch, None, None)
             }
         };
@@ -4191,6 +4370,44 @@ impl Chats {
             lock(&self.let_go).remove(&session);
         }
         self.unclaim(session);
+        started
+    }
+
+    /// **Reopens the closed chat `record` keeps** (#6485): *Reopen* on its card. It starts again
+    /// on its conversation, the same chat under its id in a new run and under a new number, as
+    /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
+    /// is open again, where nothing was kept, and where its harness named no conversation. Once
+    /// at a time: a second press while it starts is refused.
+    ///
+    /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
+    pub fn reopen_closed(
+        &self,
+        record: &purlis_core::chatrecords::ChatRecord,
+        size: Size,
+    ) -> Result<u32, String> {
+        use purlis_core::chatrecords::CannotReopen;
+        let number = record.number;
+        let again = record.reopened().map_err(|why| match why {
+            CannotReopen::NotKept => format!(
+                "purlis did not reopen chat {number}: it closed before purlis kept what a reopen \
+                 needs. Start a new chat in its place."
+            ),
+            CannotReopen::NoConversation => nothing_to_reopen_on(number),
+        })?;
+        // Claimed before it is asked whether it is open, so a second press while the first
+        // starts it is refused by the claim, and one after finds it open: never started twice.
+        self.claim(number)?;
+        let started = if lock(&self.open)
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
+        {
+            Err(format!(
+                "purlis did not reopen chat {number}: it is open again under another number."
+            ))
+        } else {
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        };
+        self.unclaim(number);
         started
     }
 
@@ -4202,14 +4419,10 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("purlis did not restart chat {session}: it is not open."))?;
         Ok(Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
-            pid: None,
-            number: None,
+            number: Some(session),
             ..was
-        })
+        }
+        .renumbered())
     }
 
     /// `started` takes the place of `session` in the strip's order, and the record says so.
@@ -4274,8 +4487,8 @@ impl Chats {
         let restarting = lock(&self.restarting).clone();
         let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
         let required = locks.forbids_opt_out();
-        // The programs the cluster pools run now, read once for every chat (#1750).
-        let cluster = purlis_core::sandbox::cluster_programs(machine);
+        // What the pools hold now, read once for every chat (#1750, #6472).
+        let pools = PoolsHeld::on(machine);
         let running: Vec<_> = lock(&self.open)
             .iter()
             .filter(|(session, one)| {
@@ -4290,8 +4503,9 @@ impl Chats {
                     one.harness?,
                     one.confines
                         .as_ref()
-                        .map(|confines| Settled::of(confines, &cluster)),
+                        .map(|confines| Settled::of(confines, &pools)),
                     one.started_with.clone(),
+                    one.pools_unknown,
                 ))
             })
             .collect();
@@ -4300,7 +4514,8 @@ impl Chats {
         // chat opens or closes, and chats started alike (most of them) compile alike, so a
         // compile per chat made the asks grow with the square of the chats open.
         let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
-        for (session, chat, harness, started, with) in running {
+        let mut pools_moved: Vec<Option<PoolMoved>> = Vec::new();
+        for (session, chat, harness, started, with, pools_unknown) in running {
             let persona = grants_persona_of(
                 &Chat {
                     held: with.held.clone(),
@@ -4340,7 +4555,7 @@ impl Chats {
                     &key.grants,
                 ) {
                     Ok(Some(Decided::Sandboxed(applied))) => {
-                        CompiledNow::Sandboxed(Settled::of(applied.confines(), &cluster))
+                        CompiledNow::Sandboxed(Box::new(Settled::of(applied.confines(), &pools)))
                     }
                     Ok(Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None) => {
                         CompiledNow::Unconfined
@@ -4356,28 +4571,34 @@ impl Chats {
                 now
             });
             let now = match now {
-                CompiledNow::Sandboxed(settled) => Some(settled),
+                CompiledNow::Sandboxed(settled) => Some(*settled),
                 CompiledNow::Unconfined => None,
                 // A chat whose sandbox could not be compiled now is not counted.
                 CompiledNow::Refused => continue,
             };
-            if now != started {
+            // What it held of the pools is not known, and a start now holds some: it may be
+            // behind, and no pool can be named as why.
+            let pools_unknown = pools_unknown
+                && now
+                    .as_ref()
+                    .is_some_and(|now| !now.cluster.is_empty() || !now.tls.is_empty());
+            if now != started || pools_unknown {
                 // Policy is the cause where the chat runs unconfined and policy requires the
                 // sandbox: no setting of the project's could leave it without one now.
                 let policy = (required && started.is_none() && now.is_some())
                     .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
-                // A cluster pool added since it started is the cause where nothing else moved.
-                let pool = match (&started, &now) {
-                    (Some(started), Some(now)) if started.differs_only_in_cluster(now) => {
-                        Some(POOL_ADDED.to_owned())
-                    }
+                // A pool added since it started is the cause where nothing else moved.
+                // Not where what it held of the pools is not known: no pool is named as why.
+                let moved = match (&started, &now) {
+                    (Some(started), Some(now)) if !pools_unknown => started.pool_added(now),
                     _ => None,
                 };
+                pools_moved.push(moved);
                 chats.push(OnOlderSandbox {
                     session,
                     change: Settled::key(now.as_ref()),
                     policy,
-                    pool,
+                    pool: moved.and_then(PoolMoved::said).map(str::to_owned),
                 });
             }
         }
@@ -4385,7 +4606,8 @@ impl Chats {
             return None;
         }
         chats.sort_unstable_by_key(|one| one.session);
-        Some(OlderSandbox { chats })
+        let pool = PoolMoved::said_for_all(&pools_moved).map(str::to_owned);
+        Some(OlderSandbox { chats, pool })
     }
 
     /// **Why each open chat runs at its level** (#5207): each harness chat, by session, with
@@ -5165,6 +5387,10 @@ impl Chats {
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
+        // Known to mask the chat's kept screen with once it has its number, as it is announced
+        // (#6309): the values themselves go to its start.
+        let signed_in_with =
+            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -5486,6 +5712,7 @@ impl Chats {
                     ended: Arc::clone(&self.nexts_ended),
                 },
                 self.project.clone(),
+                answered_by_the_policy(&self.project, identity.id.clone()),
             )
         });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
@@ -5513,11 +5740,17 @@ impl Chats {
                 // The plan is its network's alone, and says nothing of the files its start
                 // denied: whether that start held the project's git is not on record, so the
                 // chat saves and updates the project with its own git, as one this window did
-                // not compile does.
+                // not compile does. What it held of the pools is on record with its program, as
+                // the window that started it said; where the host kept none, what a start holds
+                // now stands in, and the chat is marked as not known ([`Running::pools_unknown`]).
                 (now == then)
                     .then(|| {
                         sandbox.map(|applied| purlis_core::sandbox::Confines {
                             roots_git: None,
+                            pools_held: self
+                                .sessions
+                                .pools_held_left(number)
+                                .unwrap_or_else(|| applied.confines().pools_held.clone()),
                             ..applied.confines().clone()
                         })
                     })
@@ -5526,6 +5759,11 @@ impl Chats {
             (true, _, _) => None,
             _ => sandbox.map(|applied| applied.confines().clone()),
         };
+        let pools_unknown = reattaching
+            && confines.is_some()
+            && chat
+                .number
+                .is_some_and(|number| self.sessions.pools_held_left(number).is_none());
         let hearing = purlis_core::sandbox::plan::Hearing {
             refusals,
             more: Some(more_refused_by_the_proxy(
@@ -5773,6 +6011,7 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
+            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -5787,7 +6026,25 @@ impl Chats {
         };
         // What the announcement below said, so a start that fails can take it back.
         let announced = std::sync::atomic::AtomicU32::new(0);
+        // Why what a profile's sign-in hands the chat could not be named for its kept screen.
+        let sign_in_unnamed: Mutex<Option<std::io::Error>> = Mutex::new(None);
         let announce = |session: u32| {
+            // Named on disk before its program exists (#6309): a crash after it starts leaves
+            // what masks its screen, and where that fails the chat is ended below.
+            if let Some((named, known)) = &signed_in_with {
+                let remembered = match named {
+                    Ok(named) => purlis_core::secrets::handedto::remember_known(
+                        &self.project,
+                        session,
+                        named,
+                        known.clone(),
+                    ),
+                    Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
+                };
+                if let Err(why) = remembered {
+                    *lock(&sign_in_unnamed) = Some(why);
+                }
+            }
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
@@ -5991,6 +6248,9 @@ impl Chats {
                     // A grade's chat ends with this window (#3274): only it watches the chat.
                     ends_with_its_window: chat.graded,
                     prompt_key: prompt_key.clone(),
+                    // What its sandbox holds of the pools, kept by its host for a window that
+                    // takes it back, with a proxy beside it or none.
+                    pools_held: sandbox.map(|applied| applied.confines().pools_held.clone()),
                 },
                 &announce,
             ),
@@ -6012,6 +6272,10 @@ impl Chats {
                 gone(announced);
             }
         })?;
+        if let Some(why) = lock(&sign_in_unnamed).take() {
+            let _ = self.close(session);
+            return Err(purlis_core::secrets::brokered::not_named_said(&why));
+        }
         // The key its host set in its environment, where the window launched it: a host that
         // answers none set none, and its prompts are marked under none (#3369).
         if !reattaching && !on_the_runner {
@@ -6133,6 +6397,7 @@ impl Chats {
                 },
                 ran,
                 composed_by_its_host: on_the_runner,
+                pools_unknown,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read,
@@ -6345,6 +6610,11 @@ impl Chats {
             {
                 tracing::info!("purlis: chat {session}'s record was not kept as it closed ({why})");
             }
+        }
+        // What it was handed is forgotten once its screen is kept (#6309). Not as the project is
+        // let go of: the chat may come back to this process, and its screen be kept then.
+        if !self.ending.load(Ordering::SeqCst) {
+            purlis_core::secrets::handedto::forget(&self.project, session);
         }
         let closed = self.sessions.close(session);
         self.write_it_down();
@@ -9130,14 +9400,12 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("chat {session} is not open"))?;
         let again = Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
             resume: None,
-            pid: None,
-            number: None,
-            ..was
+            ..Chat {
+                number: Some(session),
+                ..was
+            }
+            .renumbered()
         };
         // **A dispatched chat is handed its brief again** (#1609), as its first message: the
         // brief was the whole of what it was asked, and this run has no conversation to hold it.
@@ -9190,19 +9458,53 @@ impl Chats {
     /// then waits once, until the one deadline it gives them all
     /// ([`crate::chatcard::ScreensComing::wait_until`]).
     pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
-        let finished: Vec<(u32, String)> = self
+        let finished: Vec<purlis_core::dispatchrecord::ChatRef> = self
             .record()
             .chats
             .iter()
             .filter(|chat| crate::finished::left_out(&self.project, chat))
-            .filter_map(|chat| {
-                let number = chat
-                    .number
-                    .filter(|number| lock(&self.open).contains_key(number))?;
-                Some((number, chat.identity.id.clone()?))
+            .filter(|chat| {
+                chat.number
+                    .is_some_and(|number| lock(&self.open).contains_key(&number))
             })
+            .filter_map(task_ref)
             .collect();
         crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
+    }
+
+    /// **Starts keeping the screens of the task chats `finished`, left out of a launch's put
+    /// back, that the session host still runs** (#6504): the window went without quitting, so
+    /// [`Self::start_keeping_finished_screens`] never ran, and
+    /// [`Self::close_what_was_not_reattached`] would close each unread. It returns at once, and
+    /// [`Self::close_finished_left`] waits for the screens and closes the chats.
+    ///
+    /// **The deadline is taken first** (#6504's review), so asking a slow pool which chats it
+    /// still runs counts against it.
+    pub(crate) fn start_keeping_screens_left(&self, finished: &[Chat]) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
+        let left: Vec<purlis_core::dispatchrecord::ChatRef> = finished
+            .iter()
+            .filter(|chat| self.left_running(chat))
+            .filter_map(task_ref)
+            .collect();
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
+        }
+    }
+
+    /// **Waits for the screens `keeping` is keeping, until its deadline, and closes their chats**
+    /// (#6504), each where the session host holds it: a pool the settings no longer route among
+    /// them, which the sweep would leave running with no tab (#6504's review).
+    pub(crate) fn close_finished_left(&self, keeping: KeepingLeft) {
+        let KeepingLeft { screens, by, chats } = keeping;
+        screens.wait_until(by);
+        self.sessions.close_left(&chats);
     }
 
     /// Ends every chat, and does not return until their programs are gone.
@@ -9231,6 +9533,25 @@ impl Default for Chats {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Task chat `chat` as a dispatch record names it, by its number and its id: none where its record
+/// holds neither.
+fn task_ref(chat: &Chat) -> Option<purlis_core::dispatchrecord::ChatRef> {
+    Some(purlis_core::dispatchrecord::ChatRef {
+        chat: chat.number?,
+        id: Some(chat.identity.id.clone()?),
+        ..Default::default()
+    })
+}
+
+/// The screens of the finished task chats a launch found still running, being kept, and the
+/// chats they are of ([`Chats::start_keeping_screens_left`], #6504).
+#[must_use = "the chats whose screens are being kept are closed once they are kept"]
+pub(crate) struct KeepingLeft {
+    screens: crate::chatcard::ScreensComing,
+    by: std::time::Instant,
+    chats: Vec<u32>,
 }
 
 /// What a start in a project being let go of is refused with (#1949).
@@ -9547,7 +9868,11 @@ struct Asking {
 ///
 /// Every answer comes from the window ([`Chats::allow_live`], [`Chats::keep_blocked_live`]);
 /// nothing a chat sends reaches the board.
-fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
+fn asked_by_the_proxy(
+    asking: Asking,
+    root: PathBuf,
+    answered: Option<purlis_core::sandbox::asks::Answered>,
+) -> purlis_core::sandbox::plan::Asking {
     use purlis_core::sandbox::asks::Heard;
     use purlis_core::sandboxblock::{Block, Operation};
     let Asking {
@@ -9649,7 +9974,34 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
             purlis_core::sandbox::grant::allowed_already(&root, host)
                 .map(purlis_core::sandbox::reach::By::from)
         }),
+        answered,
     }
+}
+
+/// **What a chat's board tells of a host it answered Allow** because the project's `[policy]`
+/// does not enforce `asks` (Q308, instruction 50), as its start resolved it: nothing where the
+/// family is enforced (the board asks as before), a log line for chat `chat` where it logs.
+fn answered_by_the_policy(
+    root: &std::path::Path,
+    chat: Option<String>,
+) -> Option<purlis_core::sandbox::asks::Answered> {
+    use purlis_core::enforcement::{self, Family, Mode};
+    let mode = enforcement::mode(root, Family::Asks);
+    if mode == Mode::Enforce {
+        return None;
+    }
+    let root = root.to_path_buf();
+    Some(Arc::new(move |host: &str, port: u16| {
+        if let (Mode::Log, Some(chat)) = (mode, chat.as_deref()) {
+            enforcement::record(
+                &root,
+                chat,
+                Family::Asks,
+                enforcement::RULE_HOST_ASK,
+                Some(&format!("{host}:{port}")),
+            );
+        }
+    }))
 }
 
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
@@ -9830,10 +10182,16 @@ fn what_its_hooks_read(
     cwd: Option<&Path>,
     sandboxed: bool,
     id: Option<&str>,
+    policy: Option<&str>,
 ) {
     purlis_core::hoststart::what_its_hooks_read(
         env,
-        &purlis_core::hoststart::Watched { cwd, sandboxed, id },
+        &purlis_core::hoststart::Watched {
+            cwd,
+            sandboxed,
+            id,
+            policy,
+        },
     );
 }
 

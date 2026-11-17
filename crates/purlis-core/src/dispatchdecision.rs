@@ -489,6 +489,13 @@ pub fn asked_by_a_chat(
         ),
         None => Covers::Covered,
     };
+    // **The `dispatch` family** (Q308, instruction 50): under `off` or `log` a pair nothing
+    // covers starts with no grant. A lock, the person's never, a never above and a nevers record
+    // that does not read hold in every mode, read exactly as before.
+    let grant = crate::dispatchgrant::as_the_policy_runs(
+        grant,
+        crate::enforcement::mode(root, crate::enforcement::Family::Dispatch),
+    );
     let its = AskingChat {
         persona: pair.asking.as_deref(),
         held: asking.held.is_some(),
@@ -1476,6 +1483,13 @@ mod tests {
             )
             .unwrap();
         }
+        // Today's grant check, explicitly (Q308: under the default, `watch`, a pair nothing
+        // covers starts with no grant). A manifest that says its own `[policy]` keeps it.
+        let manifest = if manifest.contains("[policy]") {
+            manifest.to_owned()
+        } else {
+            format!("{manifest}\n[policy]\ntemplate = \"strict\"\n")
+        };
         std::fs::write(crate::names::manifest(root.path()), manifest).unwrap();
         std::fs::create_dir_all(root.path().join("workspaces/alpha")).unwrap();
         root

@@ -45,6 +45,7 @@ import { useTokensOnHover } from "./tasksUsed";
 import {
   arranged,
   asking,
+  closedFound,
   filters,
   found,
   liveBelow,
@@ -55,6 +56,7 @@ import {
   stamped,
   type Filter,
   type Rank,
+  type FoundClosed,
 } from "./chatsList";
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { inScope, keepScope, keptScope, SCOPES, settleScope, type Scope } from "./chatsScope";
@@ -103,6 +105,7 @@ import {
 } from "./taskQuestions";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Tree, TreeRow, TreeSection, useRowDescription, type Key } from "./ui/tree/Tree";
+import { CLOSED_CHATS, closedChatsRow, closedNotRead, useClosedChats } from "./ChatsClosed";
 import { BlockedMarker } from "./BlockedMarker";
 import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { useWindowLeft } from "./ui/windowLeft";
@@ -459,6 +462,23 @@ export function ChatsSection({
     }
     return by;
   }, [finished, filter, filtering]);
+
+  /** **The closed chats the filter finds** (#6484): read only while words or a number are typed,
+   *  and none the list draws already as a finished task. */
+  const openNow = useMemo(() => every.map((row) => row.session).join(","), [every]);
+  const closedAsked = useClosedChats(
+    chats.plane,
+    filter.text.trim() !== "" && ranks.length === 0,
+    openNow,
+  );
+  const closedRead = closedAsked.chats;
+  const closedShown = useMemo((): FoundClosed[] => {
+    if (closedRead.length === 0) return [];
+    const drawnAsTasks = new Set<number>();
+    for (const tasks of finished.values())
+      for (const task of tasks) if (task.chat !== null) drawnAsTasks.add(task.chat);
+    return closedFound(closedRead, filter, drawnAsTasks);
+  }, [closedRead, filter, finished]);
 
   // What the chats' own moves change, each read through the selector: a move that changes
   // none of them draws nothing here.
@@ -849,9 +869,9 @@ export function ChatsSection({
    *  with, by the chat they are of. */
   const [finishedOpen, setFinishedOpen] = useState<ReadonlySet<string>>(NO_KEYS);
   /** **What the tree draws open** (#3198): every chat `opens` says is, the open "Finished (n)"
-   *  lines, and the pinned browsers' row, which never folds. */
+   *  lines, and the pinned browsers' and closed chats' rows (#6484), which never fold. */
   const expanded = useMemo(() => {
-    const keys = new Set<Key>([PINNED, ...finishedOpen]);
+    const keys = new Set<Key>([PINNED, CLOSED_CHATS, ...finishedOpen]);
     for (const [session, open] of opens) if (open) keys.add(session);
     return keys;
   }, [opens, finishedOpen]);
@@ -1017,10 +1037,15 @@ export function ChatsSection({
             ? `${filteredFirst.name} needs you, and the filter hides it.`
             : `${filteredFirst.name} and ${hiddenNeeding.length - 1} more need you, and the filter hides them.`,
         base.length === 0
-          ? "No chat matches the filter."
+          ? closedShown.length === 0
+            ? "No chat matches the filter."
+            : closedShown.length === 1
+              ? "Only a closed chat matches the filter."
+              : `Only ${closedShown.length} closed chats match the filter.`
           : hidden === 0
             ? "The filter hides no chat."
             : `The filter hides ${hidden} of ${steady.length} chats.`,
+        closedNotRead(closedAsked),
         elsewhere,
       ]
         .filter((one) => one !== "")
@@ -1216,7 +1241,7 @@ export function ChatsSection({
             clear();
           }}
         >
-          {drawn.length > 0 && (
+          {(drawn.length > 0 || closedShown.length > 0) && (
             /* **The tree family's tree** (#3198, #2911): a chat's row holds the rows under it,
                its browsers, the chats it asked for and its finished tasks, which fold with it.
                Its one Tab stop is the chat in front (`stopAt`) until the keyboard has been in;
@@ -1272,6 +1297,14 @@ export function ChatsSection({
                   })}
                 </TreeRow>
               )}
+              {/* **Closed chats the filter finds** (#6484): after every open chat, as the pinned
+                  browsers whose chat closed stand; each opens its card. */}
+              {closedChatsRow({
+                closed: closedShown,
+                plane: chats.plane,
+                onPress: press,
+                onSay: setSaid,
+              })}
             </Tree>
           )}
         </div>

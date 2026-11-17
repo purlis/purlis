@@ -24,6 +24,11 @@ export const POLICY_CHANGED = "sandbox-policy-changed";
  *  before it holds none of the programs the pool runs until it restarts. */
 export const CLUSTER_POOL_ADDED = "cluster-pool-added";
 
+/** What the core sends every window when a pool on another machine, over Docker's API over TLS,
+ *  is added (#6472): a chat started before it reads the files the pool connects with until it
+ *  restarts. */
+export const TLS_POOL_ADDED = "tls-pool-added";
+
 /**
  * **The last answer for each project**, kept beside the hook that asked (#1431): what a chat's
  * own tab reads to say that policy now requires the sandbox it runs without, with no second
@@ -120,10 +125,11 @@ export function useOlderSandbox(
     window.addEventListener("focus", again);
     // **And when this machine's policy changes** (#1431): the core reads its file now and
     // then, and says so, so a policy that lands is told with nothing else moving.
-    // **And when a cluster pool is added** (#1750), for the same reason.
+    // **And when a cluster pool is added** (#1750), or a pool over Docker's TLS API (#6472),
+    // for the same reason.
     let gone = false;
     const stops: (() => void)[] = [];
-    for (const event of [POLICY_CHANGED, CLUSTER_POOL_ADDED]) {
+    for (const event of [POLICY_CHANGED, CLUSTER_POOL_ADDED, TLS_POOL_ADDED]) {
       void listen(event, again)
         .then((unlisten) => {
           if (gone) unlisten();
@@ -241,10 +247,9 @@ export function SandboxChangedNotice({
   /** The policy's sentence, where it is the cause for any of them: the same for each. */
   const policy = behind.find((chat) => chat.policy != null)?.policy ?? undefined;
   const allPolicy = policy !== undefined && behind.every((chat) => chat.policy != null);
-  /** Where a cluster pool added while they ran is the only cause for every one (#1750). */
-  const pool = behind.every((chat) => chat.pool != null)
-    ? (behind[0]?.pool ?? undefined)
-    : undefined;
+  /** Where pools on this machine are the only cause for every one (#1750, #6472): the core's
+   *  one sentence true of them all, behind different pools or the same. */
+  const pool = older?.pool ?? undefined;
   const dismissAll = () => {
     for (const cause of causes) dismiss(cause);
   };

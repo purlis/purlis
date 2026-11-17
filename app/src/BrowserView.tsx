@@ -1,7 +1,19 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Globe } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  Copy,
+  Globe,
+  Hand,
+  Lock,
+  RotateCw,
+  ShieldAlert,
+  WifiOff,
+  X,
+} from "lucide-react";
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -12,10 +24,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import {
   type BrowserInput,
+  type BrowserStep,
   type BrowserWatching,
   commands,
   type GrantLevel,
   type Offered,
+  type PageLoadSaid,
 } from "./bindings";
 import {
   SIZE_PRESETS,
@@ -30,8 +44,10 @@ import {
 import { leavesTheSurface } from "./leaveKeys";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
 import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
-import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
+import { useBrowserOrigin, useBrowserPage, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { poolOf, programsOf, secretsOf, useChatBrowsers } from "./chatBrowsers";
+import { DRIVEN } from "./ChatBrowsersShown";
+import { useProjectsBrowsers } from "./browsersGrid";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { asksMoved, useAsks } from "./asks";
 import { OneAsk } from "./BrowserAskNotice";
@@ -42,7 +58,7 @@ import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { SecretMarks, marksOn } from "./SecretMarks";
 import { onAMac } from "./tabKeys";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -55,9 +71,11 @@ const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
 export const DROPPED =
   "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
-/** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
- *  button pressed or let go. A move or a wheel is followed by the next one. */
+/** Whether `input` is one the person would miss if it were dropped: a key pressed, a mouse
+ *  button pressed or let go, or a step through the page's history (#6938). A move or a wheel is
+ *  followed by the next one. */
 function anAct(input: BrowserInput) {
+  if (input.kind === "navigate") return true;
   if (input.kind === "key") return input.action === "down";
   return input.kind === "mouse" && (input.action === "pressed" || input.action === "released");
 }
@@ -174,6 +192,12 @@ export function useSender(
  */
 export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  /** Take control, which the keyboard lands on once Done hands the browser back. */
+  const takeControlButton = useRef<HTMLButtonElement>(null);
+  /** Whether the hand-back under way was Done's: Done goes as it answers, so the keyboard
+   *  would fall to the window's body were it not put on Take control (#6937). */
+  const backFromDone = useRef(false);
   const [driving, setDriving] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
   const [dropped, setDropped] = useState(false);
@@ -209,6 +233,10 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** Where its page is, as its views are told (#2300); before a host says, where it went. */
   const told = useBrowserOrigin(program);
   const origin = told === undefined ? wentTo : told;
+  /** What its page is (#6938): its whole address, title and load, as its views are told. A host
+   *  older than this window tells none, and its view has no history buttons. */
+  const shownPage = useBrowserPage(program);
+  const loading = shownPage?.load.state === "loading";
   const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
   /** The pool whose runner it runs on, as its view said (#2050), until it says: unknown. */
@@ -221,6 +249,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const device = onPool === undefined ? null : deviceOf(onPool, mac);
   /** The secrets purlis filled into it, marked while its page is on their site (#5119). */
   const marks = marksOn(secretsOf(chatBrowsers, kept, program), origin);
+  /** Who drives it where its agent does not, as the chats' browsers list it: purlis while it
+   *  performs a login (#2300). */
+  const listedDriver = [...[...chatBrowsers.values()].flat(), ...kept].find(
+    (one) => one.program === program,
+  )?.driver;
+  /** Its chat, by the name the project's tab gives it (#6937): who the strip says is using it. */
+  const chatName = useProjectsBrowsers()
+    .find((one) => one.plane === plane)
+    ?.tiles.find((one) => one.program === program)?.chat;
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -275,18 +312,30 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   }, [program, drivingNow]);
 
   // After every key already typed: none of them is lost to the hand-back.
-  const handBack = useCallback(() => {
-    after(async () => {
-      const back = await commands.handBackBrowser(program);
-      if (back.status === "error") {
-        setSaid(back.error);
-        return;
-      }
-      setSaid(undefined);
-      setDropped(false);
-      drivingNow(false);
-    });
-  }, [after, program, drivingNow]);
+  const handBack = useCallback(
+    (fromDone = false) => {
+      after(async () => {
+        const back = await commands.handBackBrowser(program);
+        if (back.status === "error") {
+          setSaid(back.error);
+          return;
+        }
+        backFromDone.current = fromDone;
+        setSaid(undefined);
+        setDropped(false);
+        drivingNow(false);
+      });
+    },
+    [after, program, drivingNow],
+  );
+
+  // Done is gone once it has handed the browser back: the keyboard goes to Take control in its
+  // place, or to the page where nobody may take it over now.
+  useEffect(() => {
+    if (driving || !backFromDone.current) return;
+    backFromDone.current = false;
+    (takeControlButton.current ?? surface.current)?.focus();
+  }, [driving]);
 
   // While the person drives, the palette's pass-through key, pressed again, reaches the page.
   useEffect(() => {
@@ -384,6 +433,23 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       }
       page.current = { width: preset.width, height: preset.height };
       setSize(id);
+    });
+  };
+
+  /** **Take control** (#6937): the browser taken over as a click on its page would, and the
+   *  keyboard on its page, so the person's next keys reach it. */
+  const takeControl = () => {
+    void takeOver().then((took) => {
+      if (took) surface.current?.focus();
+    });
+  };
+
+  /** **A step through the page's history** (#6938): the person's own, so it takes the browser
+   *  over first, as a size preset does, and the agent is paused until Done. None is ever sent
+   *  for the agent. */
+  const step = (to: BrowserStep) => {
+    void takeOver().then((took) => {
+      if (took) send({ kind: "navigate", aim: aim.current, step: to });
     });
   };
 
@@ -499,8 +565,44 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       />
     );
   const keyboard = driving ? { [CHAT_KEYBOARD]: "" } : {};
+  /** purlis performs a login in it (#2016): nobody takes it over until it hands it back. */
+  const signingIn = !driving && listedDriver === "purlis";
+  /** Who drives, as the strip says it: nothing while its runner's link is down, since nothing
+   *  reaches the page then, so there is no hint to try. */
+  const driverSaid = driving ? (
+    "You are driving this browser. The agent is paused until you press Done."
+  ) : reconnecting ? null : signingIn ? (
+    DRIVEN.purlis.said
+  ) : theirs ? (
+    // One the person opened has no agent to take it from (#6937): the page is theirs to use.
+    <span className="browser-bar-hint">Click or type in the page to use it.</span>
+  ) : (
+    <>
+      <span className="browser-bar-who">
+        {chatName ? <strong>{chatName}</strong> : "A chat"} is using this browser.{" "}
+      </span>
+      <span className="browser-bar-hint">Click or type in the page to take it over.</span>
+    </>
+  );
   return (
     <div className="browser-view" data-testid="browser-view">
+      {/* **The view's first row** (#6937): on the pane head's row, keeping the room of its grip
+          and its actions (#3147). Where the page is, on which device, and the secrets purlis
+          filled there (#2024, #5119): drawn by purlis, outside the page, so a page cannot fake
+          them. */}
+      <div className="browser-head" data-testid="browser-head">
+        <BrowserChip origin={origin} device={device} address={shownPage?.address ?? null} />
+        {/* Its title, after the site (#6938): the engine's record, never read from the page. */}
+        {shownPage?.title != null && (
+          <Tooltip tip={shownPage.title}>
+            <span className="browser-title" data-testid="browser-title">
+              {shownPage.title}
+            </span>
+          </Tooltip>
+        )}
+        {shownPage?.address != null && <CopyAddress address={shownPage.address} />}
+        <SecretMarks secrets={marks} />
+      </div>
       {(theirs || handed) && (
         <Form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
           {/* One size for the row: the box is as small as Go beside it. */}
@@ -566,21 +668,92 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           ))}
         </NoticePaneRow>
       )}
-      <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
-        {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
-            page, so a page cannot fake it. */}
-        <BrowserChip origin={origin} device={device} />
-        <SecretMarks secrets={marks} />
+      {/* **Who drives it, said as a sentence with the one next step** (#6937): Take control
+          while its agent does, Done while the person does, on the accent while they do (#2014). */}
+      <div
+        className="browser-bar"
+        data-driving={driving ? "person" : "agent"}
+        data-loading={loading || undefined}
+      >
+        {/* Its lower edge, moving while the page loads (#6938); heard in the status below. */}
+        {loading && <span className="browser-progress" aria-hidden="true" />}
+        {/* **Back, Forward, Reload and Stop** (#6938), at the strip's start: the person's, so
+            each takes the browser over first. Drawn once the host says what the page is. */}
+        {shownPage !== undefined && (
+          <div className="browser-nav" role="group" aria-label="Page history">
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<ArrowLeft />}
+              aria-label="Back"
+              tooltip="Go back a page. You drive the browser until you press Done."
+              onPress={() => step("back")}
+            />
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<ArrowRight />}
+              aria-label="Forward"
+              tooltip="Go forward a page. You drive the browser until you press Done."
+              onPress={() => step("forward")}
+            />
+            {loading ? (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<X />}
+                aria-label="Stop"
+                tooltip="Stop loading this page. You drive the browser until you press Done."
+                onPress={() => step("stop")}
+              />
+            ) : (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<RotateCw />}
+                aria-label="Reload"
+                tooltip="Load this page again. You drive the browser until you press Done."
+                onPress={() => step("reload")}
+              />
+            )}
+          </div>
+        )}
+        <DriverMark
+          driving={driving}
+          reconnecting={reconnecting}
+          signingIn={signingIn}
+          theirs={theirs}
+        />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
-          {driving
-            ? "You are driving this browser. The agent is paused until you press Done."
-            : // Nothing reaches the page while its runner's link is down: no hint to try.
-              !reconnecting && "Click or type in the page to take it over."}
+          {driverSaid}
+          {shownPage !== undefined && <LoadSaid load={shownPage.load} />}
           {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
+        {!driving && !reconnecting && !signingIn && (
+          <Button
+            ref={takeControlButton}
+            size="sm"
+            icon={<Hand />}
+            tooltip="Use the page yourself. The agent is paused until you press Done."
+            onPress={takeControl}
+          >
+            Take control
+          </Button>
+        )}
+        {driving && (
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Bot />}
+            tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
+            onPress={() => handBack(true)}
+          >
+            Done
+          </Button>
+        )}
         <Select
           className="browser-bar-size"
           size="sm"
@@ -601,18 +774,9 @@ export function BrowserView({ plane, program }: { plane: string; program: string
             Inspect
           </Button>
         )}
-        {driving && (
-          <Button
-            size="sm"
-            variant="primary"
-            tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
-            onPress={handBack}
-          >
-            Done
-          </Button>
-        )}
       </div>
       <div
+        ref={surface}
         className={reconnecting ? "browser-surface reconnecting" : "browser-surface"}
         data-testid="browser-surface"
         tabIndex={0}
@@ -651,16 +815,118 @@ type SitesAsked = { address: string; sites: string[]; answers: Offered[] };
 /** Keep blocked, where the core offered no answer that refuses. */
 const KEEP_SAID = "Keep blocked";
 
-/** Where a browser's page is and on which device, as its view says them above its page
- *  (#2024, #2300): its origin alone, never its path or title. A browser on a pool's runner names
- *  its pool, so its `localhost` is never taken for this machine's (#2050). */
-function BrowserChip({ origin, device }: { origin: string | null; device: string | null }) {
-  const chip = addressChip(origin, device);
+/** What the strip says while the page is loading (#6938): heard, as its lower edge is seen. */
+export const LOADING_SAID = "Loading the page…";
+
+/** **What the strip says of the page's load** (#6938): that it is loading, or that it did not
+ *  load (with the engine's reason) or stopped working, and what to do. Nothing once loaded. */
+export function loadSaid(load: PageLoadSaid): string | null {
+  switch (load.state) {
+    case "loading":
+      return LOADING_SAID;
+    case "failed":
+      return `This page did not load${load.why === null ? "" : ` (${load.why})`}. Press Reload to try again.`;
+    case "crashed":
+      return "This page stopped working. Press Reload to open it again.";
+    case "loaded":
+      return null;
+  }
+}
+
+/** The strip's words for the page's load, where it says any. */
+function LoadSaid({ load }: { load: PageLoadSaid }) {
+  const said = loadSaid(load);
+  if (said === null) return null;
   return (
-    <Tooltip tip={chip.whole ?? undefined}>
-      <span className="browser-chip" data-testid="browser-chip">
-        {chip.said}
+    <span
+      className={load.state === "loading" ? "browser-bar-loading" : "browser-bar-refused"}
+      data-testid="browser-load"
+    >
+      {" "}
+      {said}
+    </span>
+  );
+}
+
+/** **Copy the page's whole address** (#6938), as the site's tooltip shows it. */
+function CopyAddress({ address }: { address: string }) {
+  return (
+    <IconButton
+      size="sm"
+      variant="ghost"
+      className="browser-copy-address"
+      icon={<Copy />}
+      aria-label="Copy address"
+      tooltip={address}
+      onPress={() => void navigator.clipboard?.writeText(address).catch(() => undefined)}
+    />
+  );
+}
+
+/** Where a browser's page is and on which device, as its view says them above its page
+ *  (#2024, #2300): its origin, with its whole address in its tooltip once the core says it
+ *  (#6938). A browser on a pool's runner names its pool, so its `localhost` is never taken for
+ *  this machine's (#2050). */
+function BrowserChip({
+  origin,
+  device,
+  address,
+}: {
+  origin: string | null;
+  device: string | null;
+  address: string | null;
+}) {
+  const chip = addressChip(origin, device);
+  const safety = siteSafety(origin);
+  return (
+    <Tooltip tip={address ?? chip.whole ?? undefined}>
+      <span className="browser-chip" data-testid="browser-chip" data-safety={safety ?? undefined}>
+        {/* Heard by its name, never part of the chip's words (#6937). */}
+        {safety === "secure" && <Lock role="img" aria-label="Secure connection" />}
+        {safety === "not-secure" && (
+          <>
+            <ShieldAlert aria-hidden="true" />
+            <span className="browser-chip-unsafe">Not secure</span>
+          </>
+        )}
+        <span className="browser-chip-said">{chip.said === "" ? "No page yet" : chip.said}</span>
       </span>
     </Tooltip>
   );
+}
+
+/** Hosts a page served over plain http is safe on: this machine's own (#6937). */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * **Whether the page's connection is secure** (#6937): `secure` over https, `not-secure` over
+ * plain http to any host but this machine's own, and `null` where there is no page on a site.
+ */
+export function siteSafety(origin: string | null): "secure" | "not-secure" | null {
+  if (origin === null) return null;
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "https:") return "secure";
+    if (url.protocol === "http:") return LOOPBACK.has(url.hostname) ? null : "not-secure";
+  } catch {
+    // Not an address: nothing to say of it.
+  }
+  return null;
+}
+
+/** The strip's mark: who drives, as an icon beside the sentence that says it. */
+function DriverMark({
+  driving,
+  reconnecting,
+  signingIn,
+  theirs,
+}: {
+  driving: boolean;
+  reconnecting: boolean;
+  signingIn: boolean;
+  /** One the person opened: no agent drives it, so no agent's mark (#6937). */
+  theirs: boolean;
+}) {
+  const Mark = reconnecting ? WifiOff : driving ? Hand : signingIn ? Lock : theirs ? Globe : Bot;
+  return <Mark className="browser-bar-mark" aria-hidden="true" />;
 }

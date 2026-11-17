@@ -64,7 +64,12 @@ impl Project {
         let home = base.join("home");
         std::fs::create_dir_all(&home).expect("the home");
         std::fs::create_dir_all(&root).expect("the plane");
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         let folder = |piece: &str| {
             let record = root
                 .join("workspaces/alpha/widget/.git/worktrees")

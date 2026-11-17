@@ -1169,11 +1169,17 @@ pub type FrameSink = Box<dyn FnMut(Option<String>, bytes::Bytes) + Send>;
 /// for no page, said where it changes and before the first image of each snapshot.
 pub type OriginSink = Box<dyn FnMut(Option<String>) + Send>;
 
-/// What a browser view is drawn into: its frames, and its page's origin; and, for a view of a
-/// browser on another host, the window's own hold on its frames ([`HeldFrames`]).
+/// Where a browser view's word of what its page is goes (1.90, #6938): as
+/// [`purlis_session_protocol::browsing::PageShown::held`] keeps it.
+pub type PageSink = Box<dyn FnMut(purlis_session_protocol::browsing::PageShown) + Send>;
+
+/// What a browser view is drawn into: its frames, its page's origin, and what its page is; and,
+/// for a view of a browser on another host, the window's own hold on its frames
+/// ([`HeldFrames`]).
 pub struct FrameSinks {
     pub frames: FrameSink,
     pub origins: OriginSink,
+    pub pages: Option<PageSink>,
     pub held: Option<HeldFrames>,
     /// Where a view of a browser's DevTools is told why they closed, its last frame (#2028).
     pub closed: Option<ClosedSink>,
@@ -2652,8 +2658,9 @@ impl HostLink {
         self.id
     }
 
-    /// Draw browser view `view`'s frames into `sink`, each whole (#2012), and its page's origin
-    /// into `origins` (#2300): its stream may already be here.
+    /// Draw browser view `view`'s frames into `sink`, each whole (#2012), its page's origin
+    /// into `origins` (#2300) and what its page is into `pages` (#6938): its stream may already
+    /// be here.
     /// The window holds the view to the link's frames itself where `held` names them (#2050,
     /// #3297): a view of a browser on a runner.
     pub(crate) fn draw_frames(
@@ -2661,11 +2668,13 @@ impl HostLink {
         view: u32,
         sink: FrameSink,
         origins: OriginSink,
+        pages: Option<PageSink>,
         held: Option<purlis_session_protocol::browsing::LinkFrames>,
     ) {
         let sinks = FrameSinks {
             frames: sink,
             origins,
+            pages,
             held: held.map(HeldFrames::to),
             closed: None,
         };
@@ -2678,6 +2687,7 @@ impl HostLink {
         let sinks = FrameSinks {
             frames: sink,
             origins: Box::new(|_| {}),
+            pages: None,
             held: None,
             closed: Some(closed),
         };
@@ -3070,7 +3080,7 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
             reconnect(shared, Reconnect::Drawn(view));
         }
         for frame in whole {
-            use purlis_session_protocol::view::frames::{AIMED_JPEG, CLOSED, JPEG, ORIGIN};
+            use purlis_session_protocol::view::frames::{AIMED_JPEG, CLOSED, JPEG, ORIGIN, PAGE};
             match frame.format {
                 JPEG if !frame.image.is_empty() => {
                     let mut sinks = lock(sink);
@@ -3093,6 +3103,14 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
                 ORIGIN => {
                     if let Some(origin) = frame.origin() {
                         (lock(sink).origins)(an_origin(origin));
+                    }
+                }
+                // What its page is (#6938), held to what a view may draw as it is read.
+                PAGE => {
+                    if let Some(page) = frame.page()
+                        && let Some(pages) = lock(sink).pages.as_mut()
+                    {
+                        pages(page);
                     }
                 }
                 // Why a browser's DevTools closed, the last frame of their view (#2028).
@@ -4593,6 +4611,10 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .prompt_key
             .as_ref()
             .and_then(purlis_core::skillspan::PromptSalt::key),
+        pools_held: opening
+            .pools_held
+            .as_ref()
+            .map(|held| held.iter().map(|path| path.display().to_string()).collect()),
     }
 }
 
@@ -4817,29 +4839,54 @@ impl HostedSessions {
         paced: bool,
     ) -> Result<Watching, String> {
         let (link, program) = self.program(id)?;
-        let attached = match link.call(Command::AttachView {
-            program,
-            kind: ViewKind::Terminal,
-            role: None,
-            rate: None,
-            history: Some(history),
-        })? {
-            Answer::Attached(attached) => attached,
-            other => return Err(format!("the session host answered a view with {other:?}")),
-        };
-        // Listed before it draws, so its first snapshot finds whose view it is (#2496).
-        if let Some(program) = lock(&self.running).get_mut(&id) {
-            program.views.push(attached.view);
-        }
-        link.draw(attached.view, sink, paced);
-        Ok(Watching {
-            view: attached.view,
-            size: Size {
-                columns: attached.cols,
-                rows: attached.rows,
-            },
-            older: attached.older.unwrap_or(0),
+        attach_terminal(&link, program, history, sink, paced, |view| {
+            // Listed before it draws, so its first snapshot finds whose view it is (#2496).
+            if let Some(program) = lock(&self.running).get_mut(&id) {
+                program.views.push(view);
+            }
         })
+    }
+}
+
+/// **Opens a terminal view of `program` on `link`**, with at most `history` lines of history,
+/// drawn into `sink` (`paced` by what the pane reports it drew): `listed` is told the view before
+/// anything is drawn.
+fn attach_terminal(
+    link: &HostLink,
+    program: String,
+    history: u32,
+    sink: Sink,
+    paced: bool,
+    listed: impl FnOnce(u32),
+) -> Result<Watching, String> {
+    let attached = match link.call(Command::AttachView {
+        program,
+        kind: ViewKind::Terminal,
+        role: None,
+        rate: None,
+        history: Some(history),
+    })? {
+        Answer::Attached(attached) => attached,
+        other => return Err(format!("the session host answered a view with {other:?}")),
+    };
+    listed(attached.view);
+    link.draw(attached.view, sink, paced);
+    Ok(Watching {
+        view: attached.view,
+        size: Size {
+            columns: attached.cols,
+            rows: attached.rows,
+        },
+        older: attached.older.unwrap_or(0),
+    })
+}
+
+/// Closes view `view` on `link`: nothing more is drawn from it, and the host is told, where
+/// `program` still names what it is a view of.
+fn detach_terminal(link: &HostLink, program: Option<String>, view: u32) {
+    link.undraw(view);
+    if let Some(program) = program {
+        link.send(Command::DetachView { program, view });
     }
 }
 
@@ -5078,8 +5125,7 @@ impl SessionHost for HostedSessions {
         if !had {
             return Err(format!("session {id} has no view {view}"));
         }
-        link.undraw(view);
-        link.send(Command::DetachView { program, view });
+        detach_terminal(&link, Some(program), view);
         Ok(())
     }
 
@@ -5583,6 +5629,14 @@ impl SessionHost for HostedSessions {
             .ok()
     }
 
+    /// What the window that started it said its sandbox held of the pools: none from a host
+    /// before 1.89, or for a chat started with no sandbox.
+    fn pools_held_left(&self, number: u32) -> Option<Vec<PathBuf>> {
+        self.link().ok()?;
+        let held = lock(&self.left).get(&number)?.pools_held.clone()?;
+        Some(held.into_iter().map(PathBuf::from).collect())
+    }
+
     fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
         self.link().ok()?;
         lock(&self.left)
@@ -5658,6 +5712,30 @@ impl SessionHost for HostedSessions {
                 .collect()
         };
         self.closes_left(left);
+    }
+
+    /// By the program the host said it left (#6504): never drawn into a pane, so nothing paces
+    /// it, and no running chat lists it.
+    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+        let (link, _) = self.link()?;
+        let program = lock(&self.left)
+            .get(&number)
+            .map(|left| left.program.clone())
+            .ok_or_else(|| format!("chat {number} was not left in the session host"))?;
+        // All of its history, as [`SessionHost::watch`] asks.
+        attach_terminal(&link, program, u32::MAX, sink, false, |_| {})
+    }
+
+    fn unwatch_left(&self, number: u32, view: u32) {
+        let Ok((link, _)) = self.link() else {
+            return;
+        };
+        // Read out of the hold first, never held across a send. A chat the sweep closed
+        // meanwhile took its views with it, and the host is told nothing.
+        let program = lock(&self.left)
+            .get(&number)
+            .map(|left| left.program.clone());
+        detach_terminal(&link, program, view);
     }
 }
 

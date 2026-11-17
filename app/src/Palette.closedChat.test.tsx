@@ -31,7 +31,8 @@ const CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -144,8 +145,9 @@ describe("a closed chat found by its number in the palette", () => {
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
   });
 
-  it("a chat no dispatch started opens its card, Closed, with Read it and Reopen disabled", async () => {
-    // #6304: the app kept its number, title and times as it closed, and no screen.
+  it("a chat no dispatch started opens its card, Closed, and Reopen reopens it by its number", async () => {
+    // #6304: the app kept its number, title and times as it closed, and no screen; and what a
+    // reopen needs (#6485).
     const ordinary: ChatCard = {
       number: 702,
       chat: "01K6CHATS0000000000000000C",
@@ -154,11 +156,16 @@ describe("a closed chat found by its number in the palette", () => {
       place: "smart-ide",
       started_by: "you",
       screen_kept: false,
-      dispatched: false,
+      chat_reopen: "reopens",
       task: null,
+      found_by: null,
     };
     core((n) => (n === 702 ? { is: "ended", card: ordinary } : { is: "no_chat" }));
-    const onRun = vi.fn((): Ran => ({ ok: true }));
+    const ran: Offer[] = [];
+    const onRun = vi.fn((offer: Offer): Ran => {
+      ran.push(offer);
+      return { ok: true };
+    });
     render(<Palette offers={[]} chats={{ plane: PLANE }} onRun={onRun} />);
     const palette = await open();
     await userEvent.keyboard("702");
@@ -175,9 +182,14 @@ describe("a closed chat found by its number in the palette", () => {
     expect(within(card).queryByText("Report")).toBeNull();
     expect(within(card).getByText("you")).toBeInTheDocument();
     // The family keeps a disabled button focusable, so its reason is heard: aria-disabled.
-    for (const name of ["Read it", "Reopen"])
-      expect(within(card).getByRole("button", { name })).toHaveAttribute("aria-disabled", "true");
+    expect(within(card).getByRole("button", { name: "Read it" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(onRun).not.toHaveBeenCalled();
+    await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(onRun).toHaveBeenCalledTimes(1));
+    expect(ran[0].does).toEqual({ verb: "reopenClosedChat", number: 702 });
   });
 
   it("a number no chat had adds no row, and words are never looked up", async () => {

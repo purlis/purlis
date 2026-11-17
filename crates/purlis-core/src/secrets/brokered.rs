@@ -2508,8 +2508,14 @@ fn approved_line_is(words: &[String], wanted: &Wanted, command: &[String]) -> bo
 /// its own folder, and the cache homes its sandbox widens to (#1337). A program found in one,
 /// or a `PATH` entry naming one, is never one a run takes.
 pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
+    confined_writes(confines, asker.folder.as_deref())
+}
+
+/// [`chat_writes`] for a chat in `folder` held to `confines`: the one list, for a brokered run
+/// and for the program a chat's start hands it ([`crate::sandbox::Applied::chat_writes`]).
+pub(crate) fn confined_writes(confines: &Confines, folder: Option<&Path>) -> Vec<PathBuf> {
     let mut writable = confines.writable.clone();
-    writable.extend(asker.folder.iter().cloned());
+    writable.extend(folder.map(Path::to_path_buf));
     if let Some(caches) = &confines.widened.caches {
         writable.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
     }
@@ -2613,7 +2619,25 @@ pub fn fill_value(
         return Ok(None);
     };
     goes_into_a_page(asker, &value, vault, key)?;
+    // It goes to the chat's browser and not its terminal, but it is the chat's all the same, so
+    // the chat's kept screen never keeps it either (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key),
+        value.expose(),
+    )
+    .map_err(|why| not_named_said(&why))?;
     Ok(Some(value))
+}
+
+/// **What a chat is told where what it is about to be handed could not be named for its kept
+/// screen** (#6309): nothing is handed, so no screen of it is kept unmasked after a crash.
+pub fn not_named_said(why: &std::io::Error) -> String {
+    format!(
+        "purlis could not note which vault entries this chat was handed ({why}), so it handed \
+         nothing: a screen of it kept after a crash would show them"
+    )
 }
 
 /// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
@@ -2685,9 +2709,16 @@ pub fn fill_code(
     let seed = super::totp::Seed::parse(value.expose())
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
-    Ok(Some(purlis_session_protocol::browsing::Secret::new(
-        seed.code_now(),
-    )))
+    let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
+    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
+        code.expose(),
+    )
+    .map_err(|why| not_named_said(&why))?;
+    Ok(Some(code))
 }
 
 /// What a vault is read through for chat `asker`: the app's record of the chat.
@@ -2807,6 +2838,17 @@ fn read_login(
     goes_into_a_page(asker, &password, vault, pass_key)?;
     if let (Some(user), Some(user_key)) = (&user, user_key) {
         goes_into_a_page(asker, user, vault, user_key)?;
+    }
+    // Filled into the chat's page, they are the chat's, as a fill's are, so its kept screen
+    // never keeps one either (#6309).
+    let handed = user_key
+        .zip(user.as_ref())
+        .into_iter()
+        .chain([(pass_key, &password)]);
+    for (key, value) in handed {
+        let entry = super::handedto::Entry::new(vault, key);
+        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
+            .map_err(|why| not_named_said(&why))?;
     }
     Ok((
         LogIn {
@@ -4171,7 +4213,7 @@ pub(crate) fn serve_recorded(
             ),
         );
     }
-    let _ = values.set(zeroize::Zeroizing::new(prepared.secret_values.clone()));
+    let _ = values.set(prepared.secret_values());
     let mut prepared = prepared;
     let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
@@ -4199,6 +4241,13 @@ pub(crate) fn serve_recorded(
             );
         }
     };
+    // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
+    for one in &prepared.values {
+        let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
+        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+            return refuse(&mut *writer, 1, not_named_said(&why));
+        }
+    }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {
         for target in targets.split_whitespace() {
@@ -4400,19 +4449,22 @@ pub(crate) fn serve_recorded(
         let _ = spawned.wait();
         return;
     }
+    let secret_values = prepared.secret_values();
+    // The app runs this for a chat it knows by number, not by id: a masking the project lets go
+    // under `log` is let go with no line (Q308a).
     let code = run(
         spawned,
         &group,
         reader,
         &mut *writer,
-        &prepared.secret_values,
+        super::masked_of(&ctx.root, None, &secret_values),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()
         .into_iter()
-        .partition(|target| carries_a_value(target, &prepared.secret_values));
+        .partition(|target| carries_a_value(target, &secret_values));
     for target in named {
-        let note = super::redact_str(&refused_note(&target), &prepared.secret_values);
+        let note = super::redact_str(&refused_note(&target), &secret_values);
         let _ = send(&mut *writer, &Frame::Note(note));
     }
     if !withheld.is_empty() {
@@ -4497,10 +4549,11 @@ fn tunnelled(
         } else {
             let swapped = pointed.at(at);
             exec::set_var(&mut prepared.env, name, swapped.clone());
-            prepared.secret_values.push(swapped);
+            prepared.handed_instead(&value, tunnelled_form(&client, at, false), swapped);
         }
     }
     // A value a credential file holds, pointed in the file itself, every other line as it was.
+    let mut pointed_in_files: Vec<(zeroize::Zeroizing<String>, u16, String)> = Vec::new();
     for handed in &mut prepared.handed {
         let mut moved = false;
         for (entry, value) in &mut handed.entries {
@@ -4511,15 +4564,8 @@ fn tunnelled(
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
                 // The value it was is wiped as the file is pointed (#3420).
-                drop(zeroize::Zeroizing::new(std::mem::replace(
-                    value,
-                    pointed.at(at),
-                )));
-                prepared.secret_values.push(value.clone());
-                let escaped = super::dotenv::escaped(value);
-                if escaped != *value {
-                    prepared.secret_values.push(escaped);
-                }
+                let was = zeroize::Zeroizing::new(std::mem::replace(value, pointed.at(at)));
+                pointed_in_files.push((was, at, value.clone()));
                 moved = true;
             }
         }
@@ -4528,7 +4574,30 @@ fn tunnelled(
             std::fs::write(&handed.path, body.as_bytes())?;
         }
     }
+    // Redacted as the value it was, and masked under its entry (#6309), as written and escaped.
+    for (was, at, now) in pointed_in_files {
+        let escaped = super::dotenv::escaped(&now);
+        if escaped != now {
+            prepared.handed_instead(&was, tunnelled_form(&client, at, true), escaped);
+        }
+        prepared.handed_instead(&was, tunnelled_form(&client, at, false), now);
+    }
     Ok((opening.tunnels, opening.notes))
+}
+
+/// How a value pointed at the tunnel on port `at` for `client` is made again from the value
+/// read (#6309), dotenv-escaped where `escaped`.
+fn tunnelled_form(
+    client: &crate::sandbox::tunnel::Client,
+    at: u16,
+    escaped: bool,
+) -> super::handedto::Form {
+    super::handedto::Form::Tunnelled {
+        port: at,
+        pgsslmode: client.pgsslmode.clone(),
+        reads_hostaddr: client.reads_hostaddr,
+        escaped,
+    }
 }
 
 /// What a credential file holds: a `--file`'s one value, or a `--dotenv` file's lines, as

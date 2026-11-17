@@ -6,4 +6,4 @@
 # is a Dockerfile so that Dependabot's `playwright` group moves this tag and digest in the one pull
 # request that moves the npm packages. `tools/story-image.mjs` refuses a version other than the
 # one `app/package-lock.json` locks.
-FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+FROM mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579

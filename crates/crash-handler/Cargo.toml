@@ -23,6 +23,11 @@ crash-handler = "0.8"
 minidumper = "0.11"
 uuid = { version = "1", features = ["v4"] }
 
+# minidumper's own, named here to look up the companion's Mach service before connecting its
+# socket (#6909): the version minidumper takes, so one copy is built.
+[target.'cfg(target_os = "macos")'.dependencies]
+crash-context = "0.8"
+
 [dev-dependencies]
 # A real crash's minidump, made here, is what Reports takes its stack out of: the test that only
 # that stack leaves (ruling (b), #5691) is here, where real crashes are made, not in the core.

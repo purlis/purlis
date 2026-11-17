@@ -99,6 +99,11 @@ pub fn asked(input: &[u8]) -> Result<Item, String> {
         account: field("account")?,
         value: field("value")?,
     };
+    // Never the seal's key (Q308b, Q309): any program can start this writer, and one that could
+    // write the key could forge every seal. It is outside purlis's prefixes too; this says so.
+    if item.service.starts_with(super::seal::SERVICE) {
+        return Err("purlis's app makes the seal's key itself, and never on request".to_owned());
+    }
     // Under `purlis/` or, during the rename window, `charter/`, and shaped as a vault's or an
     // identity's item: nothing else (#1261).
     if !own_service(&item.service)
@@ -440,6 +445,20 @@ pub fn make_own(service: &str, account: &str, value: &str) -> Result<Held, Vault
         Ok(()) if THE_APP.load(Ordering::SeqCst) => Ok(Held::ToTheApp),
         Ok(()) => Ok(Held::NotYet),
         Err(Refused::Owned) => Err(not_ours(service)),
+        Err(Refused::Failed(e)) => Err(e),
+    }
+}
+
+/// **Whether this program owns the item** (the re-review of #6992, S4): it is made again in place
+/// with `value`, a spare holding it meanwhile ([`remake`]), which the Keychain lets only the
+/// item's owner do. `false` where another program owns it; nothing is changed then.
+pub fn owned_here(service: &str, account: &str, value: &str) -> Result<bool, VaultError> {
+    if crate::fence::FENCED {
+        return Err(fenced(service));
+    }
+    match make_here(service, account, value) {
+        Ok(()) => Ok(true),
+        Err(Refused::Owned) => Ok(false),
         Err(Refused::Failed(e)) => Err(e),
     }
 }

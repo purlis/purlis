@@ -281,8 +281,9 @@ describe("every overlay in the window", () => {
   it("is found: the cards, the lists and the controls inside them", () => {
     // The cards are the popover family's: a chat row's and a list row's; and the title bar's two
     // switchers (#2916). A refused tab name's went with the box on the strip (#5343). And a
-    // closed chat's card, beside the palette's finished row (#6214).
-    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(5);
+    // closed chat's card, beside the palette's finished row (#6214). And the list of secrets
+    // purlis filled, from a browser's count of them (#6937).
+    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(6);
   });
 
   it("draws every button and field inside one with the shared control", () => {

@@ -81,12 +81,12 @@ impl TokenSink for Hrefs {
         if tag.kind != TagKind::StartTag {
             return TokenSinkResult::Continue;
         }
-        let name = tag.name.as_ref();
+        let name = &*tag.name;
         if matches!(name, "a" | "area")
             && let Some(href) = tag
                 .attrs
                 .iter()
-                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("href"))
+                .find(|a| (*a.name.local).eq_ignore_ascii_case("href"))
         {
             self.found.borrow_mut().push(href.value.to_string());
         }

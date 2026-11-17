@@ -47,16 +47,34 @@ pub const MIN_ABI: i32 = 6;
 /// What a kernel without [`MIN_ABI`] is told it lacks.
 pub const NEEDS_LANDLOCK: &str = "purlis's sandbox needs Landlock version 6 (Linux 6.12 or later)";
 
-/// What a person can do where this kernel lacks the Landlock the wrap needs: update it, start
-/// the chat on Claude Code, whose own sandbox needs no Landlock, or, where `opt_out` (policy
-/// allows starting a chat without the sandbox), start it without the sandbox.
-pub fn landlock_way_on(opt_out: bool) -> String {
-    if opt_out {
-        "Update to Linux 6.12 or later, start this chat on a Claude Code profile, or start it \
-         without the sandbox from the new-chat picker."
-            .to_owned()
-    } else {
-        "Update to Linux 6.12 or later, or start this chat on a Claude Code profile.".to_owned()
+/// Where a chat refused for want of [`MIN_ABI`] was to run, which decides its ways on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WayOn {
+    /// A person's own machine, where `opt_out` says whether policy lets them start the chat
+    /// without the sandbox.
+    Here { opt_out: bool },
+    /// A pool's runner, where no chat starts without the sandbox (ADR 0067 as amended
+    /// 2026-11-08), so its ways on are its host's kernel and this machine. A container runs on
+    /// its host's kernel, so the host is what is updated.
+    Runner,
+    /// Not known: the wrap itself, which finds the kernel short as it starts.
+    Unknown,
+}
+
+/// What a person can do where this kernel lacks the Landlock the wrap needs. Every sandboxed
+/// chat on Linux runs in this wrap, Claude Code's too (ADR 0067 as amended 2026-11-10), so no
+/// other harness is a way on: only a newer kernel, this machine for a runner's chat, or, where
+/// policy allows, the chat without the sandbox.
+pub fn landlock_way_on(way: WayOn) -> String {
+    match way {
+        WayOn::Here { opt_out: true } => "Update to Linux 6.12 or later, or start this chat \
+             without the sandbox from the new-chat picker."
+            .to_owned(),
+        WayOn::Here { opt_out: false } => "Update to Linux 6.12 or later.".to_owned(),
+        WayOn::Runner => "A container runs on its host's kernel, so update the pool's Docker \
+             host to Linux 6.12 or later, or pick This machine on Start a chat's Runs on row."
+            .to_owned(),
+        WayOn::Unknown => "Update to Linux 6.12 or later.".to_owned(),
     }
 }
 

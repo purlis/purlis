@@ -36,6 +36,7 @@ pub mod cmd;
 pub mod dotenv;
 pub mod exec;
 pub mod fingerprint;
+pub mod handedto;
 pub mod identity;
 pub mod keyhold;
 pub mod keyring;
@@ -50,6 +51,7 @@ pub mod program;
 pub mod reference;
 pub mod registry;
 pub mod run;
+pub mod seal;
 pub mod seen;
 pub mod setup;
 pub mod tokeyring;
@@ -366,6 +368,27 @@ pub fn redact(text: &[u8], secrets: &[String]) -> Vec<u8> {
         out = replace_all(&out, value.as_bytes(), b"***");
     }
     out
+}
+
+/// **The values a command's output is masked of in the project at `root`** (Q308a, the `secrets`
+/// family): `secrets` where the family is enforced, which every template but `open` does; none
+/// where it is off or logs, the log keeping one line that masking was let go, for chat `chat`.
+pub fn masked_of<'a>(root: &Path, chat: Option<&str>, secrets: &'a [String]) -> &'a [String] {
+    use crate::enforcement::{self, Family, Mode};
+    let mode = enforcement::mode(root, Family::Secrets);
+    if mode == Mode::Enforce || secrets.is_empty() {
+        return secrets;
+    }
+    enforcement::judged(
+        root,
+        chat,
+        Family::Secrets,
+        mode,
+        enforcement::RULE_MASK,
+        None,
+        (),
+    );
+    &[]
 }
 
 /// [`redact`] for a string charter is about to record, not print.
@@ -762,6 +785,15 @@ pub fn make_private_dir(dir: &Path) -> std::io::Result<()> {
 /// does not know is held to do so too.
 pub fn reads_on_open(provider: &str) -> bool {
     !matches!(provider, "keyring" | "plain-file" | "reference")
+}
+
+/// **Whether reading one value of a vault of `provider` asks nobody** (#6309): a keyring vault's
+/// value is its own item, and a plain-file vault's is in its own file. Not so a reference
+/// vault's, though opening one does not read ([`reads_on_open`]): its value is what `op read` or
+/// `vault kv get` answers, either of which may ask the person; nor any other provider's, which
+/// reads through its program; nor one this build does not know.
+pub fn reads_a_value_without_asking(provider: &str) -> bool {
+    matches!(provider, "keyring" | "plain-file")
 }
 
 #[cfg(test)]

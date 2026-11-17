@@ -33,7 +33,8 @@ const FINISHED: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -103,8 +104,9 @@ const ORDINARY: ChatCard = {
   place: "smart-ide",
   started_by: "you",
   screen_kept: false,
-  dispatched: false,
+  chat_reopen: "reopens",
   task: null,
+  found_by: null,
 };
 
 /** The palette's finished row, standing in: a press opens the card beside it. */
@@ -226,8 +228,8 @@ export const Outcomes: Story = {
 
 /**
  * **A chat no dispatch started** (#6304): the app kept its number, title and times as it
- * closed, and no screen. Its badge says Closed, it has no report line, and both answers are off
- * and say why.
+ * closed, and no screen; and what its Reopen starts (#6485). Its badge says Closed, it has no
+ * report line, *Read it* is off and says why, and *Reopen* starts it again on its conversation.
  */
 export const ChatNoDispatchStarted: Story = {
   args: { card: ORDINARY },
@@ -239,13 +241,83 @@ export const ChatNoDispatchStarted: Story = {
     await waitFor(() => expect(within(card).getByText("Closed")).toBeVisible());
     await expect(within(card).getByText("you")).toBeVisible();
     await expect(within(card).queryByText("Report")).toBeNull();
-    for (const name of ["Read it", "Reopen"])
-      await expect(within(card).getByRole("button", { name })).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
+    await expect(within(card).getByRole("button", { name: "Read it" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    // Its record kept its conversation, so Reopen starts it again (#6485).
+    await expect(within(card).getByRole("button", { name: "Reopen" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await expect(
       within(card).getByText("Its screen was not kept.", { selector: "p" }),
     ).toBeVisible();
+  },
+};
+
+/**
+ * **A chat that closed before purlis kept what a reopen needs** (#6485): *Reopen* is off, kept
+ * focusable so its reason is heard as its description: why, and what to do instead.
+ */
+export const ChatClosedBeforeItsReopenWasKept: Story = {
+  args: { card: { ...ORDINARY, chat_reopen: "not_kept" } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #702/ }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAccessibleDescription(
+      /closed before purlis kept what a reopen needs\. Start a new chat/,
+    );
+  },
+};
+
+/**
+ * **A chat whose harness named no conversation** (#6485): there is nothing to start it again
+ * on, so *Reopen* is off and says why and what to do instead.
+ */
+export const ChatWithNoConversation: Story = {
+  args: { card: { ...ORDINARY, chat_reopen: "no_conversation" } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #702/ }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAccessibleDescription(
+      /named no conversation to resume\. Start a new chat/,
+    );
+  },
+};
+
+/**
+ * **A closed chat found by a number it had before a restart** (#6685): titled by the number it
+ * closed under, the card says the one it was found by too, so an old link's chat is known.
+ */
+export const ChatFoundByAnEarlierNumber: Story = {
+  args: { card: { ...ORDINARY, number: 731, found_by: 702 } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", {
+        name: /Show closed chat #731 · Tidy the changelog \(was #702\)/,
+      }),
+    );
+    const card = await screen.findByRole("dialog", {
+      name: "#731 · Tidy the changelog (was #702)",
+    });
+    // The popover is in the tree before it has finished opening.
+    await waitFor(() => expect(card).toBeVisible());
   },
 };

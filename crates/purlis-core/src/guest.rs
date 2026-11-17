@@ -2670,8 +2670,7 @@ fn temps_left(dirs: impl Iterator<Item = PathBuf>) -> Option<bool> {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let name = name.to_string_lossy();
-                    if names::GENERATED_TEMP_PREFIX.strip(&name).is_some() && name.ends_with(".tmp")
-                    {
+                    if crate::rewrite::temp_of(&name).is_some() {
                         return Some(true);
                     }
                 }

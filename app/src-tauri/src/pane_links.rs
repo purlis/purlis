@@ -289,7 +289,7 @@ impl ChatsHere<'_> {
             Goes::Ended(_) | Goes::Closed(_) => {
                 let card = (self.card)(at.number, &at.goes)?;
                 (
-                    format!("#{} · {}", at.number, card.title),
+                    card.shown(),
                     ChatSeen::Ended {
                         card: Box::new(card),
                     },
@@ -698,7 +698,11 @@ fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
         open: named,
         card: Box::new(move |number, goes| match goes {
             Goes::Ended(record) => crate::chatcard::card_of(held, number, record, &open),
-            Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(held, chat)),
+            Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
+                held.root(),
+                Some(number),
+                chat,
+            )),
             Goes::ThisChat | Goes::Open => None,
         }),
     };

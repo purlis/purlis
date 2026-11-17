@@ -132,6 +132,9 @@ const AS_SET = "@as-set";
 /** The Runs on choice of this machine for this start: no pool's name is empty. */
 const HERE = "";
 
+/** Why a chat on a pool is offered no "Start without the sandbox": its runner refuses one. */
+export const ON_A_POOL_LOCK = "On a pool's runner, every chat starts only inside purlis's sandbox.";
+
 /** What the opt-out box says of itself: the room a sandbox still being checked keeps (#4736). */
 const OPT_OUT_SAID =
   "This project runs every chat sandboxed: it reaches only the hosts the " +
@@ -427,9 +430,24 @@ export function StartChat({
   // Where the sandbox cannot be applied, the start IS the opt-out, and the button says so.
   const refused = sandbox?.state === "refused";
   const [reason, setReason] = useState("");
+  // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
+  // or this machine here. It never writes a setting, and is not remembered between chats. A chat
+  // at the project's root runs here, so it is offered no choice.
+  const [runsOnChoice, setRunsOnChoice] = useState(() =>
+    pool !== undefined && runsOn !== undefined && !runsOn.at_root && runsOn.pools.includes(pool)
+      ? pool
+      : AS_SET,
+  );
+  // On a pool's runner no chat starts without the sandbox (ADR 0067 as amended 2026-11-08), so
+  // the box is not offered for one: ticked, the runner would only refuse it.
+  const onAPool =
+    runsOn !== undefined &&
+    !runsOn.at_root &&
+    (runsOnChoice === AS_SET ? runsOn.pool !== null : runsOnChoice !== HERE);
   // Policy may forbid the opt-out (#1343): then no box, and a chat the sandbox cannot hold
   // here does not start at all, saying who locked it.
-  const locked = sandbox?.locked ?? null;
+  const locked =
+    sandbox?.locked ?? (onAPool && sandbox?.state === "sandboxed" ? ON_A_POOL_LOCK : null);
   const withoutSandbox: WithoutSandbox | null =
     locked === null && ((sandbox?.state === "sandboxed" && optedOut) || refused)
       ? { reason: reason.trim() === "" ? null : reason }
@@ -495,14 +513,6 @@ export function StartChat({
       setStage(undefined);
     };
   }, [hostSlow, readStage, startedOn]);
-  // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
-  // or this machine here. It never writes a setting, and is not remembered between chats. A chat
-  // at the project's root runs here, so it is offered no choice.
-  const [runsOnChoice, setRunsOnChoice] = useState(() =>
-    pool !== undefined && runsOn !== undefined && !runsOn.at_root && runsOn.pools.includes(pool)
-      ? pool
-      : AS_SET,
-  );
   const runsOnPick: RunsOnPick | undefined =
     runsOn === undefined || runsOn.at_root || runsOnChoice === AS_SET
       ? undefined

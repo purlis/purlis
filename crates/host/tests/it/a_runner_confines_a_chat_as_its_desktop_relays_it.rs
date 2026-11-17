@@ -216,6 +216,7 @@ fn a_launch(harness: Option<&str>, confinement: Option<&str>) -> StartProgram {
             reporting: None,
             confinement: confinement.map(str::to_owned),
             prompt_key: None,
+            pools_held: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

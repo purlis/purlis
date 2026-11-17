@@ -520,6 +520,9 @@ pub(crate) struct Reopening {
     read: bool,
     /// Why the record was refused, where it was: the project then says it failed (#5322).
     refused: Option<String>,
+    /// The task chats left out of the put back, having finished: the session host still runs
+    /// one the window that went did not quit, and its screen is kept before it closes (#6504).
+    finished: Vec<reopen::Chat>,
 }
 
 /// **How putting a project's record back stands** (#5324): what [`Planes::retry_project`] does
@@ -1259,7 +1262,17 @@ impl Held {
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
         let mut arrived = None;
+        // The finished tasks of a record started fresh, which puts none back: the session host
+        // may still run one after a crash, and its screen is kept all the same (#6504's review).
+        let mut finished_fresh = Vec::new();
+        // A number a closed chat's record still answers to is never dealt again (#6740), even
+        // where the record of open chats was lost, reset or cannot be read.
+        let closed = purlis_core::chatrecords::highest_number(&self.root);
         let record = record.map(|record| {
+            let record = reopen::Record {
+                dealt: record.dealt.max(closed),
+                ..record
+            };
             let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
@@ -1279,6 +1292,13 @@ impl Held {
         });
         let record = match record {
             Ok(record) if choice == Choice::StartFresh => {
+                finished_fresh = crate::finished::finished_in(&self.root, &record);
+                // Every chat it held ends for good here, and keeps its card (#6487).
+                crate::chatcard::keep_closed_records(
+                    &self.root,
+                    &record.chats,
+                    "dropped at a fresh start",
+                );
                 let fresh = record.chosen(Choice::StartFresh);
                 self.recorded.write_now(fresh.clone());
                 tracing::info!(
@@ -1301,12 +1321,17 @@ impl Held {
                      put back. Repair or remove {}.",
                     reopen::path(&self.root).display()
                 ));
-                reopen::Record::default()
+                reopen::Record {
+                    dealt: closed,
+                    ..reopen::Record::default()
+                }
             }
         };
         // A task that had reported when the app quit is not started again: it is a finished
         // row from its dispatch record (#1485). Before anything is put back.
-        let record = crate::finished::put_back_without_the_finished(&self.root, &record);
+        let (record, mut finished) =
+            crate::finished::put_back_without_the_finished(&self.root, &record);
+        finished.append(&mut finished_fresh);
         let wanted = record.chats.len();
         // A task that had not reported comes back on its conversation, told to carry on, and
         // one that cannot has ended by itself (#1513). **It reads the dispatch records as they
@@ -1319,6 +1344,7 @@ impl Held {
             wanted,
             read,
             refused,
+            finished,
         }
     }
 
@@ -1336,6 +1362,7 @@ impl Held {
             wanted,
             read,
             refused,
+            finished,
         } = reopening;
         // The project's app state follows where its record came from (#3718), before any chat
         // is put back, on this thread and outside the registry's lock: a move carries its
@@ -1343,7 +1370,12 @@ impl Held {
         if let Some((arrived, was)) = &arrived {
             let _ = purlis_core::appstate::follow_arrival(&self.root, was, *arrived);
         }
+        // A task that had finished when the window went without quitting is still in the
+        // session host, and nothing kept its screen: it is read now, while the chats put back
+        // start, and kept before each is closed where it is held (#6504).
+        let screens = self.chats.start_keeping_screens_left(&finished);
         let back = crate::restored::finish(self, begun, size, read).len();
+        self.chats.close_finished_left(screens);
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
         self.chats.close_what_was_not_reattached();

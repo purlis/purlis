@@ -247,7 +247,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -282,51 +282,19 @@ jobs:
       # hour before the job's limit. The times are each rust part's "Build the tests" step, read
       # from the Actions API's jobs of ci.yml's runs.
       - name: Build the tests
+        id: build
         timeout-minutes: 30
         run: cargo nextest run --workspace --locked --no-run
-      # Every test's result, never the first red only (`fail-fast = false` in the profile): a
-      # flake in one test (charter-app#39) must not hide the rest of the suite.
+      # **The real harnesses' steps run before the suite, on the build above, not after it** (Q324).
+      # After the suite they found that build changed: tests that run a `cargo build` of their own
+      # (`purlis_core::testrun::built`, the probes `purlis-cli`'s tests build) build with other
+      # features or settings, and the next `cargo nextest run --workspace` compiled the workspace
+      # again from `ring` up. In ci.yml's last 40 runs of 2026-11-16, 12 of the 27 part 3 jobs
+      # that reached Claude Code's step compiled there, 9.3 to 14.6 minutes where its 5 tests take
+      # a fifth of a second, and those jobs took 29 to 45 minutes against 18 to 29 for parts 1, 2
+      # and 4: run 43915827609 ran out of the 45 minutes in it with every test passed. The other
+      # 15 took 0.1 minutes in it, which is what the step takes on a fresh build.
       #
-      # Under `tools/no-orphans.sh`, which fails the step when the suite leaves a process of its
-      # own running after it ends (#923) — a stand-in or a signal-ignoring fixture that outlived
-      # its test — and kills each one by pid. `--reap` is safe here because the runner is the
-      # job's own machine.
-      #
-      # `hash:` places each test by its name, not by its place in its binary: `count:` dealt the
-      # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
-      # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
-      # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
-      - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
-      # The slowest tests and test binaries, as notices on the run: what makes the step above
-      # slow, readable through the checks API without the job's log. A report, so it never turns
-      # the job red.
-      - name: Annotate the slowest tests
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
-      # **What a chat on a runner reaches of its link key, tried under the real wrap** (#4207): the
-      # step above skips the live half where it finds no wrap, and naming it here makes that a failure.
-      - name: A runner's chat and its link key
-        if: matrix.part == 1
-        run: |
-          cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
-          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
-            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
-          # A brokered `secret exec` child under purlis's own wrap: the network through its proxy alone.
-          # Red unless the test really ran and passed: it leaves a marker only then.
-          rm -rf target/tests-that-really-ran
-          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
-            -E 'package(purlis-core) & kind(lib) & test(=secrets::brokered::tests::under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy)'
-          test -f target/tests-that-really-ran/brokered-network-under-purlis-wrap || { echo "::error::the brokered network test did not really run"; exit 1; }
-          # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
-          # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
-          # expects this machine to have one.
-          sudo mkdir -p /run/purlis-link
-          sudo mount -t tmpfs -o "mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs /run/purlis-link
-          trap 'sudo umount /run/purlis-link; sudo rmdir /run/purlis-link' EXIT
-          PURLIS_TEST_LINK_HANDOVER=/run/purlis-link PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
-            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
@@ -355,6 +323,8 @@ jobs:
             exit 1
           fi
           (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
+          # Kept, so the suite after these steps runs under the runner's own rule.
+          sysctl -n kernel.apparmor_restrict_unprivileged_userns > "$RUNNER_TEMP/userns-rule"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo nextest run --workspace --locked --profile ci --no-capture \
@@ -387,6 +357,59 @@ jobs:
           PURLIS_CODEX="$RUNNER_TEMP/codex/node_modules/$package/vendor/$triple/bin/codex" \
             cargo nextest run --workspace --locked --profile ci --no-capture --run-ignored only --no-tests fail \
             -E 'package(purlis-core) & binary(it) & test(/^what_codex_keeps_of_a_briefing_and_takes_in_mid_chat_is_measured::/)'
+      # The suite runs where Ubuntu's rule on user namespaces holds, as it did when these steps
+      # came after it: the engine's AppArmor profile above is what lets its sandbox start.
+      - name: The runner's rule on user namespaces, back for the suite
+        if: ${{ !cancelled() && matrix.part == 3 }}
+        run: |
+          if [ -s "$RUNNER_TEMP/userns-rule" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns="$(cat "$RUNNER_TEMP/userns-rule")"
+          fi
+      # Every test's result, never the first red only (`fail-fast = false` in the profile): a
+      # flake in one test (charter-app#39) must not hide the rest of the suite, and a red harness
+      # step above does not keep the suite from running.
+      #
+      # Under `tools/no-orphans.sh`, which fails the step when the suite leaves a process of its
+      # own running after it ends (#923) — a stand-in or a signal-ignoring fixture that outlived
+      # its test — and kills each one by pid. `--reap` is safe here because the runner is the
+      # job's own machine.
+      #
+      # `hash:` places each test by its name, not by its place in its binary: `count:` dealt the
+      # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
+      # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
+      # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
+      - name: Run the tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
+      # The slowest tests and test binaries, as notices on the run: what makes the step above
+      # slow, readable through the checks API without the job's log. A report, so it never turns
+      # the job red.
+      - name: Annotate the slowest tests
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
+      # **What a chat on a runner reaches of its link key, tried under the real wrap** (#4207): the
+      # step above skips the live half where it finds no wrap, and naming it here makes that a failure.
+      - name: A runner's chat and its link key
+        if: matrix.part == 1
+        run: |
+          cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
+          # A brokered `secret exec` child under purlis's own wrap: the network through its proxy alone.
+          # Red unless the test really ran and passed: it leaves a marker only then.
+          rm -rf target/tests-that-really-ran
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & kind(lib) & test(=secrets::brokered::tests::under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy)'
+          test -f target/tests-that-really-ran/brokered-network-under-purlis-wrap || { echo "::error::the brokered network test did not really run"; exit 1; }
+          # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
+          # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
+          # expects this machine to have one.
+          sudo mkdir -p /run/purlis-link
+          sudo mount -t tmpfs -o "mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs /run/purlis-link
+          trap 'sudo umount /run/purlis-link; sudo rmdir /run/purlis-link' EXIT
+          PURLIS_TEST_LINK_HANDOVER=/run/purlis-link PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file
@@ -423,7 +446,7 @@ jobs:
         with:
           shared-key: rust
           save-if: false
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # Where a person's `git lfs install` writes it, for every git of this machine's.
@@ -588,7 +611,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_(over_(ssh|tls)|through_a_docker_context)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -607,7 +630,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -721,7 +744,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_(over_(ssh|tls)|through_a_docker_context)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -740,7 +763,7 @@ jobs:
         with:
           save-if: false
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: The tests, purlis and the fake harness, built
@@ -778,6 +801,16 @@ jobs:
         run: >-
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^a_remote_docker_pool_is_reached_through_a_docker_context::/)'
+      # **Doctor names each fault** (#6272, ADR 0123 §7): each fault of the record's table put in
+      # place against that machine (wrong name, port closed, no agent key, no socket, no docker
+      # group, plain TCP, bad TLS, unsupported architecture, full disk, image unreachable, context
+      # drift, engine ID changed), and the check Check again and purlis pool doctor run finds each
+      # as its own finding. The image faults are `up.sh`'s.
+      - name: Doctor's findings, each from a fault put in place
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --test-threads 1 --test it -E 'test(/^a_remote_docker_pool_doctor_names_each_fault::/)'
       # **Rootless Podman on another machine** (#6269): this runner's own rootless Podman API
       # service behind the same sshd image, sharing its socket and store at their own paths, with
       # latency and loss (`tests/remote-podman/up.sh`). Its route's tests: Docker's client finds a
@@ -797,6 +830,37 @@ jobs:
           tests/remote-podman/as-another-machine.sh
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^a_remote_podman_pool_is_reached_over_ssh::/)'
+      # **purlis installed on a machine without Docker, a new version beside the old** (RR-14,
+      # #723, ADR 0078 §5): an Ubuntu sshd with no purlis, with latency and loss
+      # (`tests/ssh-runner/up.sh`). This build's purlis, signed with a key of the test's own, is
+      # refused where the machine reports another digest, installed as version 1 with five chats
+      # on its host, then as version 2 beside it: version 1's chats keep running and new chats
+      # run on version 2.
+      - name: A machine without Docker, behind an sshd, with latency and loss
+        if: steps.scope.outputs.run == 'true'
+        run: tests/ssh-runner/up.sh target/debug/purlis
+      - name: purlis installed there over SSH, a new version beside the old
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --test-threads 1 --test it -E 'test(/^an_ssh_runner_takes_a_new_version_beside_the_old::/)'
+      # **A runner's host kept by systemd outlives an SSH drop and a sign-out, and comes back after
+      # a restart** (RR-15, #724, ADR 0068 §3 as amended for #724): an Ubuntu machine that boots
+      # systemd, behind an sshd whose sign-ins are logind sessions (`tests/ssh-runner/up-systemd.sh`).
+      # `purlis serve --install` hands the host to the account's user manager with linger; every
+      # SSH connection is cut and the account signed out, and the host and its chats keep running;
+      # `docker restart` restarts the machine, and the host comes back on its own and settles what
+      # the restart ended from its record. Then newer versions beside it: the old version's host
+      # stops itself once idle and the next install prunes it, and one with a live chat is kept
+      # (#6704).
+      - name: A machine that boots systemd, behind an sshd
+        if: steps.scope.outputs.run == 'true'
+        run: tests/ssh-runner/up-systemd.sh
+      - name: A runner's host outlives the sign-out and comes back after a restart
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --test-threads 1 --test it -E 'test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)'
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
@@ -812,6 +876,10 @@ jobs:
           podman ps --all --no-trunc || true
           docker logs --tail 200 sshd-podman || true
           tail -n 200 "$RUNNER_TEMP/podman-service.log" || true
+          docker logs --tail 100 ssh-runner || true
+          docker exec ssh-runner sh -c 'tail -n 200 /home/runner/serve.log; ls -laR /home/runner/.config' || true
+          docker logs --tail 100 ssh-runner-systemd || true
+          docker exec ssh-runner-systemd sh -c 'systemctl --failed --no-pager; loginctl list-users; journalctl -b --no-pager -n 300; ls -laR /home/keeper/.config' || true
 
   # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
@@ -1480,7 +1548,7 @@ jobs:
         run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -1489,6 +1557,16 @@ jobs:
         uses: ./.github/actions/studio-probe-names
       - name: Build the tests
         run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --no-run
+      # **The programs the app's tests run, built once before them** (#2464, as T1.1-06 found for
+      # the sandbox scenarios). The app's tests start `purlis` and `fake-harness`
+      # (`purlis_core::testrun::built`), which the build above does not make: its packages name
+      # neither. Without this, each test process that starts before one exists builds it itself,
+      # one after another on Cargo's lock and inside the tests' own time. Each is built as
+      # `testrun::built` builds it, one package alone, so the binaries the tests run are the same.
+      - name: The programs the app's tests run
+        run: |
+          cargo build --locked -p purlis-cli --bin purlis
+          cargo build --locked -p fake-harness --bin fake-harness
       - name: Run the tests
         run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
       # What makes a part slow, as notices on the run, as in `rust`.

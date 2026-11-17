@@ -37,7 +37,9 @@ const facts = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): MergeSho
   ...shown,
 });
 
-/** The merge chat 3's hook held: request 12 of `o/r` at one head, into main. */
+/** The merge chat 3's hook held: request 12 of `o/r` at one head, into main, two minutes ago.
+ *  The hold's age is drawn, so it is counted from now: a fixed instant read one day more each
+ *  day, and every picture missed once the day turned. */
 const hold = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): Shown => ({
   session: 3,
   ask: `merge:3:o/r#12@${HEAD}`,
@@ -54,7 +56,7 @@ const hold = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): Shown => 
     why: "Merges request 12 of o/r at 0123456 into main, with no undo",
     confirm: "Merge request 12 of o/r at 0123456 into main?",
   },
-  since: 1_763_000_000,
+  since: Math.floor(Date.now() / 1000) - 120,
 });
 
 function MergeRow({ ruleset, shown }: { ruleset: RulesetShown; shown?: Partial<MergeShown> }) {

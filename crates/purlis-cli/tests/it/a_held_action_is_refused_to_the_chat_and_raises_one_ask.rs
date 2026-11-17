@@ -47,13 +47,24 @@ struct Chat {
 
 impl Chat {
     fn new() -> Self {
+        Self::answering(true)
+    }
+
+    /// A chat whose app is of another build than its purlis, where `of_this_build` is false: it
+    /// cannot read the merge's hand-over, and answers with `hookwire::UNKNOWN_LINE` (#6960).
+    fn answering(of_this_build: bool) -> Self {
         let tmp = tempfile::tempdir().expect("a directory");
         let base = tmp.path().canonicalize().expect("a real path");
         let root = base.join("plane");
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         let socket = base.join("app").join("hooks.sock");
         let listener = Listener::bind(&base, &socket).unwrap_or_else(|e| panic!("a socket: {e}"));
         let token = listener
@@ -90,6 +101,11 @@ impl Chat {
                         why: "not asked here".to_owned(),
                     };
                 };
+                if !of_this_build {
+                    return Answer::No {
+                        why: hookwire::UNKNOWN_LINE.to_owned(),
+                    };
+                }
                 let found = |request: &mergehold::Request| {
                     let key = MergeKey {
                         repo: request
@@ -160,7 +176,12 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         Self {
             _tmp: tmp,
             _reading: None,
@@ -177,13 +198,20 @@ impl Chat {
     /// The `permissionDecisionReason` the chat's hook printed for `command` in `mode`, or
     /// `None` where it did not deny.
     fn denial(&self, command: &str, mode: &str) -> Option<String> {
+        self.denial_of("Bash", serde_json::json!({"command": command}), mode)
+    }
+
+    /// The `permissionDecisionReason` the chat's hook printed for a call of `tool` with
+    /// `input` in `mode`, or `None` where it did not deny.
+    fn denial_of(&self, tool: &str, input: serde_json::Value, mode: &str) -> Option<String> {
+        let command = input.to_string();
         let payload = serde_json::json!({
             "session_id": "11111111-2222-4333-8444-555555555555",
             "cwd": ".",
             "hook_event_name": "PreToolUse",
-            "tool_name": "Bash",
+            "tool_name": tool,
             "permission_mode": mode,
-            "tool_input": {"command": command},
+            "tool_input": input,
         })
         .to_string();
         let mut child = support::purlis()
@@ -341,4 +369,82 @@ fn a_merge_the_app_raises_no_ask_for_is_a_block_and_says_nobody_was_asked() {
     assert!(!reason.contains("The person is asked"), "{reason}");
     assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
     assert_eq!(chat.holds.every().len(), mergehold::AT_MOST_PER_CHAT);
+}
+
+/// #6960 (a): where the app answers the hand-over as a line from a purlis it does not know, the
+/// chat is told the app and its purlis are different builds and what to do, restart purlis or
+/// update the plugin, and is named no command, which would only be refused again.
+#[test]
+fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
+    let chat = Chat::answering(false);
+    let reason = chat.denial("gh pr merge 12", "default").expect("refused");
+    assert!(reason.contains("different builds"), "{reason}");
+    assert!(reason.contains("restart purlis"), "{reason}");
+    assert!(reason.contains("update the purlis plugin"), "{reason}");
+    assert!(!reason.contains(hookwire::UNKNOWN_LINE), "{reason}");
+    // The refusal's own words, before the note every guard's refusal ends with.
+    let own = reason
+        .split(purlis_core::toolgate::OVERRIDE_NOTE)
+        .next()
+        .unwrap_or(&reason);
+    assert!(!own.contains('`'), "names a command: {own}");
+    assert!(
+        reason.contains("A yes in this chat merges nothing"),
+        "{reason}"
+    );
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
+    assert!(chat.holds.every().is_empty());
+}
+
+/// #6960 (c): one cell per way out `mergehold::ways_out` can name, each run as the chat or the
+/// person would: it leads to an ask or a run, never to another refusal.
+#[test]
+fn every_named_way_out_leads_to_an_ask_or_a_run() {
+    use mergehold::WayOut;
+    for way in [
+        WayOut::MergeOnItsOwn,
+        WayOut::AskThePerson,
+        WayOut::OneBuild,
+    ] {
+        match way {
+            // Each form, its number filled in, run on its own: one ask, in Asks.
+            WayOut::MergeOnItsOwn => {
+                for (n, form) in way.forms().iter().enumerate() {
+                    let chat = Chat::new();
+                    let cmd = form.replace("<number>", &(n + 7).to_string());
+                    let reason = chat.denial(&cmd, "default").expect("held");
+                    assert!(
+                        reason.contains("The person is asked in Asks"),
+                        "{cmd}: {reason}"
+                    );
+                    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON), "{cmd}");
+                    assert_eq!(chat.holds.every().len(), 1, "{cmd}");
+                }
+            }
+            // The chat asks the person in words: the question runs.
+            WayOut::AskThePerson => {
+                let chat = Chat::new();
+                assert!(way.forms().is_empty());
+                assert_eq!(
+                    chat.denial_of(
+                        "mcp__purlis__ask_operator",
+                        serde_json::json!({"question": "Will you merge request 12 in Asks?"}),
+                        "default",
+                    ),
+                    None
+                );
+            }
+            // Once the app and its purlis are one build, the same merge asks.
+            WayOut::OneBuild => {
+                assert!(way.forms().is_empty());
+                let before = Chat::answering(false);
+                assert!(before.denial("gh pr merge 12", "default").is_some());
+                assert!(before.holds.every().is_empty());
+                let after = Chat::answering(true);
+                let reason = after.denial("gh pr merge 12", "default").expect("held");
+                assert!(reason.contains("The person is asked in Asks"), "{reason}");
+                assert_eq!(after.holds.every().len(), 1);
+            }
+        }
+    }
 }

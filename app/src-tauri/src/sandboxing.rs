@@ -788,18 +788,18 @@ pub(crate) fn claude_is_wrapped_here_for_tests() -> bool {
 /// the test binary. The wrap is purlis's own program run as `<program> _sandbox …`
 /// ([`purlis_core::sandbox::program::checked_wrap`]), which in a test is the test binary, and
 /// libtest refuses that line (`Unrecognized option: 'profile'`): the chat would end at once,
-/// before anything ran inside the wrap. The app program, built beside the test binary for this
-/// crate's integration tests, serves `_sandbox` before anything else, as it does for a person.
-/// Nothing where no wrap is held.
+/// before anything ran inside the wrap. The app program, which Cargo puts with this build's
+/// other binaries for this crate's integration tests, serves `_sandbox` before anything else,
+/// as it does for a person. Nothing where no wrap is held.
 #[cfg(test)]
 pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox::Applied) {
-    let Some(this) = applied.wrap_program() else {
+    if applied.wrap_program().is_none() {
         return;
-    };
-    // `target/<profile>/deps/<test binary>`, and the app program in `target/<profile>`.
-    let app = this
-        .parent()
-        .and_then(std::path::Path::parent)
+    }
+    // The app program is where Cargo copies this build's binaries, which is the target
+    // directory even where the test binary is under a build directory set apart from it
+    // (`purlis_core::testrun::bin_dir`).
+    let app = purlis_core::testrun::bin_dir()
         .map(|built| built.join(env!("CARGO_PKG_NAME")))
         .expect("the test binary is in a folder of the build");
     assert!(
@@ -3689,6 +3689,37 @@ pub(crate) fn watch_policy(app: tauri::AppHandle) {
         tracing::warn!(
             "purlis: the watch on this machine's sandbox policy could not be started ({why}), \
              so a policy that changes is told when the window is next focused"
+        );
+    }
+}
+
+/// How often what the pools on this machine name is read again, as this machine's policy is
+/// ([`POLICY_READ_EVERY`]).
+const POOLS_READ_EVERY: std::time::Duration = POLICY_READ_EVERY;
+
+/// **Reads what the pools on this machine name every [`POOLS_READ_EVERY`]**, and tells every
+/// window that a pool was added when a read finds one ([`crate::chats::PoolsWatch`]): a pool
+/// added from a terminal while the window has focus asks the chats it leaves behind to restart,
+/// as one added from the window does. It only reads. On a thread of its own for the life of the
+/// app.
+pub(crate) fn watch_pools(app: tauri::AppHandle) {
+    use tauri::Emitter as _;
+    let spawned = std::thread::Builder::new()
+        .name("purlis-pools".into())
+        .spawn(move || {
+            let machine = sandbox::Machine::this();
+            let mut watch = crate::chats::PoolsWatch::on(&machine);
+            loop {
+                std::thread::sleep(POOLS_READ_EVERY);
+                for event in watch.added(&machine) {
+                    let _ = app.emit(event, ());
+                }
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: the watch on this machine's pools could not be started ({why}), so a pool \
+             added from a terminal is told when the window is next focused"
         );
     }
 }

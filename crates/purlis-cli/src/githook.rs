@@ -40,7 +40,7 @@ pub fn run(name: &str, args: &[String]) -> ExitCode {
         eprintln!("purlis: this commit could not be scanned for secrets (no working directory)");
         return ExitCode::FAILURE;
     };
-    let scan = match diffscan::checked(&repo) {
+    let mut scan = match diffscan::checked(&repo) {
         Ok(scan) => scan,
         Err(why) => {
             eprintln!("purlis: this commit could not be scanned for secrets ({why})");
@@ -68,10 +68,21 @@ pub fn run(name: &str, args: &[String]) -> ExitCode {
         ));
         return ExitCode::FAILURE;
     }
+    under_policy(&mut scan.refused, &repo);
     if scan.refused.is_empty() {
         return ExitCode::SUCCESS;
     }
     refuse(Stopped::Commit, &repo, &scan)
+}
+
+/// **What the scan refused, as the project's `[policy]` runs each finding's family** (Q308a):
+/// `guards.credential` for a credential, `guards.save` for personal data, read for the chat these
+/// hooks run in, as the app answers it ([`purlis_core::enforcement::in_force`]).
+fn under_policy(refused: &mut Vec<diffscan::Finding>, repo: &Path) {
+    let root = purlis_core::plane::resolve(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let policy = purlis_core::enforcement::in_force(&root);
+    let chat = purlis_core::enforcement::this_chat();
+    diffscan::under_policy(refused, &root, chat.as_deref(), &policy);
 }
 
 /// `commit-msg`: git's argument names the file holding the message it is about to commit. A
@@ -95,9 +106,10 @@ fn message(args: &[String]) -> ExitCode {
         Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
         Err(e) => return cannot(&e.to_string()),
     };
-    let scan = diffscan::message_checked(&top, &said);
+    let mut scan = diffscan::message_checked(&top, &said);
+    under_policy(&mut scan.refused, &top);
     if !scan.refused.is_empty() {
-        refuse(Stopped::Commit, &top, &scan);
+        say_refused(Stopped::Commit, &top, &scan);
         return ExitCode::from(MESSAGE_REFUSED);
     }
     purlis_core::provenance::stamp(&file, &top, &purlis_core::envvar::var);
@@ -122,7 +134,10 @@ fn push(args: &[String]) -> ExitCode {
     if let Err(e) = std::io::stdin().read_to_string(&mut updates) {
         return cannot(&format!("the refs git sent could not be read: {e}"));
     }
-    match diffscan::pushed(&repo, url, &updates) {
+    match diffscan::pushed(&repo, url, &updates).map(|mut scan| {
+        under_policy(&mut scan.refused, &repo);
+        scan
+    }) {
         Ok(scan) if scan.changes_the_allowlist => {
             eprint!("{}", diffscan::PUSH_ALLOWLIST_REFUSAL);
             tell_the_app(format!(
@@ -145,14 +160,20 @@ fn named(repo: &Path) -> String {
     )
 }
 
-/// Says what `scan` refused, masked, on standard error, and tells the app.
+/// Says what `scan` refused, masked, on standard error, tells the app, and fails.
 fn refuse(stopped: Stopped, repo: &Path, scan: &diffscan::Scan) -> ExitCode {
+    say_refused(stopped, repo, scan);
+    ExitCode::FAILURE
+}
+
+/// Says what `scan` refused, masked, on standard error, and tells the app, for a caller that
+/// fails with an exit code of its own.
+fn say_refused(stopped: Stopped, repo: &Path, scan: &diffscan::Scan) {
     eprint!("{}", diffscan::refusal(stopped, &scan.refused));
     for problem in &scan.problems {
         eprintln!("  (and {problem})");
     }
     tell_the_app(diffscan::summary(stopped, repo, &scan.refused));
-    ExitCode::FAILURE
 }
 
 /// The app's needs-you item for this refusal. The commit is refused whatever this answers, and

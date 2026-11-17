@@ -48,3 +48,35 @@ fn a_key_the_password_does_not_open_signs_nothing() {
     assert!(signed(LINE, &secret, Some("wrong"), "0.4.2", 1).is_err());
     assert!(signed(LINE, "not base64!", None, "0.4.2", 1).is_err());
 }
+
+#[test]
+fn a_runner_binary_signed_with_the_updaters_key_is_one_the_desktop_installs_for_that_version_and_platform()
+ {
+    use purlis_core::runnerinstall::{Target, verify};
+    let bytes = b"\x7fELF the purlis of a runner";
+    for password in [None, Some("hunter2")] {
+        let (secret, public) = a_key(password);
+        for target in Target::ALL {
+            let signature =
+                signed_runner(bytes, target, &secret, password, "1.4.0", 1_790_077_121).unwrap();
+            let verified = verify(&public, bytes, &signature, "1.4.0", target)
+                .expect("the desktop takes what the release signed");
+            assert_eq!(
+                verified.digest(),
+                purlis_core::runnerinstall::digest_of(bytes)
+            );
+            // Never as another platform's asset, nor another version's.
+            let other = Target::ALL.into_iter().find(|it| *it != target).unwrap();
+            assert!(verify(&public, bytes, &signature, "1.4.0", other).is_err());
+            assert!(verify(&public, bytes, &signature, "1.4.1", target).is_err());
+        }
+    }
+}
+
+#[test]
+fn a_runner_binary_is_signed_only_under_a_version_it_can_be_published_under() {
+    let (secret, _) = a_key(None);
+    let target = purlis_core::runnerinstall::Target::LinuxX86_64;
+    assert!(signed_runner(b"x", target, &secret, None, "../1.4.0", 1).is_err());
+    assert!(signed_runner(b"x", target, "not base64!", None, "1.4.0", 1).is_err());
+}

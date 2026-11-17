@@ -52,6 +52,16 @@ updates:
       # not compile.
       - dependency-name: cairo-rs
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # rust-minidump's reader (`minidump`, `minidump-unwind`, which Reports reads a crash's
+      # stack with) stays on the release the crash handler's writer (`minidump-writer` 0.13
+      # under `minidumper` 0.11) is built on. 0.27 alone builds a second minidump-common,
+      # scroll, scroll_derive and num-derive, which `deny.toml` refuses, and its reader has not
+      # read a real macOS crash of ours yet. Lifted when minidump-writer and minidumper move to
+      # minidump-common 0.27, and the three move in one PR.
+      - dependency-name: minidump
+        versions: [">= 0.27"]
+      - dependency-name: minidump-unwind
+        versions: [">= 0.27"]
   - package-ecosystem: npm
     directory: /app
     target-branch: main

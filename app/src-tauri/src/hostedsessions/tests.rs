@@ -411,6 +411,7 @@ fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
     let handed = Opening {
         handed: purlis_core::profilesignin::Handed::of(vec![(
             "AWS_REGION".to_owned(),
+            purlis_core::secrets::handedto::Entry::new("team", "aws-region"),
             "a-region-for-this-test".to_owned(),
         )]),
         ..a_shell("true")
@@ -2045,6 +2046,38 @@ fn a_chat_that_ended_with_no_window_there_is_reattached_and_told_ended() {
     assert_eq!(back.sessions.running(), [2], "its tab stays");
 }
 
+/// **A chat left in the host is read through a view of its own, never reattached, and the view
+/// closes after the sweep took the chat** (#6504): what a launch keeps a finished task's screen
+/// from.
+#[test]
+fn a_chat_left_in_the_host_is_read_without_a_reattach_and_its_view_closes_after_the_sweep() {
+    let host = Comeback::new();
+    let first = host.window();
+    first
+        .sessions
+        .open(Some(3), &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = host.runs.last();
+    program.writes(b"check prod: all green");
+    first.crashes();
+
+    let back = host.window();
+    let (sink, seen) = a_pane();
+    let view = back.sessions.watch_left(3, sink).expect("a view opens");
+    until("its screen is drawn", || {
+        seen.lock().unwrap().contains("check prod: all green")
+    });
+    back.sessions.close_what_was_not_reattached();
+    back.sessions.unwatch_left(3, view.view);
+
+    until("the sweep ended it", || program.seen().stopped);
+    assert!(back.sessions.running().is_empty(), "never a running chat");
+    assert!(
+        back.sessions.watch_left(3, a_pane().0).is_err(),
+        "nothing left to read once it is closed"
+    );
+}
+
 #[test]
 fn what_no_put_back_reattached_is_closed_and_what_it_did_runs_on() {
     let host = Comeback::new();
@@ -2144,6 +2177,74 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
             .confined_again(5, refused_by(&heard_back))
             .is_none()
     );
+}
+
+/// **What of the pools a chat's sandbox held as it started comes back with it**: the window that
+/// started it says it in its launch, the host keeps it with the program, and a window that comes
+/// back reads it for that chat. A chat with a proxy beside it and one with none alike; a start
+/// with no sandbox says none.
+#[test]
+fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_came_back() {
+    use purlis_core::sandbox::egress::{PLAIN_PORTS, TUNNEL_PORTS};
+    use purlis_core::sandbox::plan::{Beside, Hearing, Plan};
+    use purlis_core::sandbox::reach::Reach;
+    let plan = Plan {
+        reach: Reach::of(Vec::new()).written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: Beside::Wrapped,
+        given: Vec::new(),
+    };
+    let held = vec![
+        std::path::PathBuf::from("/home/op/.docker/ca.pem"),
+        std::path::PathBuf::from("/home/op/.docker/key.pem"),
+    ];
+    let host = Comeback::new();
+    let first = host.window();
+    let confined = first
+        .sessions
+        .confine(&plan, Hearing::default())
+        .expect("confined");
+    let id = confined.held_as().expect("held in the host").to_owned();
+    // Behind a proxy, as Codex runs.
+    first
+        .sessions
+        .open(
+            Some(4),
+            &Opening {
+                confinement: Some(id),
+                pools_held: Some(held.clone()),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .unwrap();
+    // With no proxy beside it, as Claude Code on its own sandbox runs; holding nothing yet.
+    first
+        .sessions
+        .open(
+            Some(5),
+            &Opening {
+                pools_held: Some(Vec::new()),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .unwrap();
+    // With no sandbox.
+    first
+        .sessions
+        .open(Some(6), &a_shell("true"), &|_| {})
+        .unwrap();
+    std::mem::forget(confined);
+    first.crashes();
+
+    let back = host.window();
+    assert!(back.sessions.left_running(4));
+    assert_eq!(back.sessions.pools_held_left(4), Some(held));
+    assert_eq!(back.sessions.pools_held_left(5), Some(Vec::new()));
+    assert_eq!(back.sessions.pools_held_left(6), None, "it said none");
 }
 
 /// A window that comes back puts its record back as a launch does (#2006): each chat the host
@@ -2271,6 +2372,7 @@ fn a_chat_the_host_composes_by_its_names_is_heard_by_the_window_and_answered_fro
         more: None,
         reached: None,
         asks: Some(Asking {
+            answered: None,
             tell: {
                 let asked = Arc::clone(&asked);
                 Arc::new(move |heard: Heard| {
@@ -2386,6 +2488,7 @@ fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it
     };
     let asking = || Hearing {
         asks: Some(Asking {
+            answered: None,
             tell: Arc::new(|_| {}),
             askable: Arc::new(|| true),
             known: Arc::new(|_| None),
@@ -2841,6 +2944,7 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     let asked = Arc::new(Mutex::new(Vec::new()));
     let hearing = Hearing {
         asks: Some(Asking {
+            answered: None,
             tell: {
                 let asked = Arc::clone(&asked);
                 Arc::new(move |heard: Heard| {

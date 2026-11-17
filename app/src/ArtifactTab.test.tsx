@@ -44,6 +44,7 @@ function core(
   about: ArtifactAbout | (() => ArtifactAbout) = ABOUT,
   opened: Partial<ArtifactOpened> = {},
   after: (cmd: string) => ArtifactAbout | undefined = () => undefined,
+  templateMoved: () => boolean | Promise<boolean> = () => true,
 ) {
   const calls: Call[] = [];
   let now = about;
@@ -57,6 +58,7 @@ function core(
       }
       if (cmd === "artifact_about") return typeof now === "function" ? now() : now;
       if (cmd === "artifact_open" || cmd === "artifact_reload") return { ...OPENED, ...opened };
+      if (cmd === "artifact_template_moved") return templateMoved();
       return null;
     },
     { shouldMockEvents: true },
@@ -562,6 +564,75 @@ describe("an artifact with script (#5959)", () => {
     await changed("workspaces/alpha/artifacts/backlog-state/app.js");
     await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(2));
     expect(asked(calls, "artifact_close").map((one) => one.args.label)).toEqual(["artifact-7"]);
+  });
+  it("keeps its page when a late template change finds the template it already serves (#6697)", async () => {
+    const calls = core(ABOUT, { standing: "approved" }, undefined, () => false);
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+
+    await changed("alpha", "backlog-state/index.html");
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked(calls, "artifact_open")).toHaveLength(1);
+    expect(asked(calls, "artifact_close")).toEqual([]);
+    expect(asked(calls, "artifact_template_moved").map((one) => one.args.label)).toEqual([
+      "artifact-7",
+    ]);
+  });
+
+  it("asks of a template change heard while its page opens only once it is open (#6697)", async () => {
+    let opens = () => {};
+    const opening = new Promise<void>((resolve) => (opens = resolve));
+    const calls: Call[] = [];
+    mockIPC(
+      async (cmd, args) => {
+        calls.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "artifact_about") return ABOUT;
+        if (cmd === "artifact_open") {
+          await opening;
+          return { ...OPENED, standing: "approved" };
+        }
+        if (cmd === "artifact_template_moved") return false;
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+
+    await changed("alpha", "backlog-state/index.html");
+    expect(asked(calls, "artifact_template_moved")).toEqual([]);
+    opens();
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked(calls, "artifact_open")).toHaveLength(1);
+    expect(asked(calls, "artifact_close")).toEqual([]);
+    expect(asked(calls, "artifact_template_moved")).toHaveLength(1);
+  });
+
+  it("opens its page again when its template changes after the core would not open it (#6697)", async () => {
+    const calls: Call[] = [];
+    let opens = 0;
+    mockIPC(
+      (cmd, args) => {
+        calls.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "artifact_about") return ABOUT;
+        if (cmd === "artifact_open") {
+          opens += 1;
+          if (opens === 1) throw "its template does not parse";
+          return { ...OPENED, standing: "approved" };
+        }
+        if (cmd === "artifact_template_moved") return false;
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<Tab />);
+    expect(await screen.findByTestId("artifact-missing")).toHaveTextContent(
+      "Its template does not parse",
+    );
+
+    await changed("alpha", "backlog-state/index.html");
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(2));
+    expect(screen.queryByTestId("artifact-missing")).toBeNull();
   });
 });
 

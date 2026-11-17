@@ -83,7 +83,13 @@ fn sshd_key(fixture: &Fixture) -> HostKey {
 
 /// The machine met, its socket found and its engine read through a forward: Trust this machine.
 fn trusted(fixture: &Fixture, pool: &str) -> Remote {
-    let key = connect::meet(&fixture.ssh, &fixture.route, &fixture.settings_in()).expect("met");
+    let key = connect::meet(
+        &fixture.ssh,
+        &fixture.route,
+        &connect::resolve(&fixture.ssh, &fixture.route).expect("resolved"),
+        &fixture.settings_in(),
+    )
+    .expect("met");
     let found = connect::probe(
         &fixture.ssh,
         &fixture.route,
@@ -136,6 +142,39 @@ fn a_machine_is_met_by_the_key_its_sshd_holds_and_trusted_with_its_engine() {
     let docker = through(&fixture, "met", &remote).expect("the forward opens");
     assert!(docker.answers().is_ok(), "the engine answers through it");
     forward::let_go("met");
+}
+
+/// macOS keeps purlis's data under `~/Library/Application Support`, and ssh reads
+/// `UserKnownHostsFile` as a list of files split at spaces: the key met was written to a stray
+/// `~/Library/Application` and the run's own file stayed empty.
+#[test]
+fn a_machine_is_met_and_signed_in_to_from_a_settings_folder_whose_path_has_a_space() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let settings_in = fixture.folders.path().join("Application Support").join("s");
+    std::fs::create_dir_all(&settings_in).expect("the settings folder");
+    let key = connect::meet(
+        &fixture.ssh,
+        &fixture.route,
+        &connect::resolve(&fixture.ssh, &fixture.route).expect("resolved"),
+        &settings_in,
+    )
+    .expect("met");
+    assert_eq!(key, sshd_key(&fixture));
+    assert!(
+        !fixture.folders.path().join("Application").exists(),
+        "ssh wrote the key it met beside the settings folder"
+    );
+    let found = connect::probe(
+        &fixture.ssh,
+        &fixture.route,
+        "spaced",
+        &key,
+        &settings_in,
+        "pool",
+    )
+    .expect("signed in against the pinned key");
+    assert_eq!(found.socket(), Some("/var/run/docker.sock"));
 }
 
 /// Puts the sshd's original key back, however the test ends.
@@ -242,7 +281,13 @@ fn an_account_that_may_not_use_docker_there_is_told_so() {
         return;
     };
     let route = Route::parse(&outsider).expect("a route");
-    let key = connect::meet(&fixture.ssh, &route, &fixture.settings_in()).expect("met");
+    let key = connect::meet(
+        &fixture.ssh,
+        &route,
+        &connect::resolve(&fixture.ssh, &route).expect("resolved"),
+        &fixture.settings_in(),
+    )
+    .expect("met");
     assert!(matches!(
         connect::probe(
             &fixture.ssh,
@@ -495,7 +540,12 @@ fn sshd_reads_first(fixture: &Fixture, setting: &str) {
 /// Connect's Trust this machine against the fixture: met, signed in, its socket found, and its
 /// engine read through a forward, as [`trusted`] does, answering what that found.
 fn trust_found(fixture: &Fixture, pool: &str) -> Result<EnginePin, Finding> {
-    let key = connect::meet(&fixture.ssh, &fixture.route, &fixture.settings_in())?;
+    let key = connect::meet(
+        &fixture.ssh,
+        &fixture.route,
+        &connect::resolve(&fixture.ssh, &fixture.route)?,
+        &fixture.settings_in(),
+    )?;
     let found = connect::probe(
         &fixture.ssh,
         &fixture.route,

@@ -413,7 +413,7 @@ describe("the workspace strip", () => {
     render(<App />);
     expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await vi.waitFor(async () =>
+    await waitFor(async () =>
       expect(
         within(await openAllWorkspaces()).getByRole("option", { name: /^beta/ }),
       ).toHaveAccessibleDescription("1 waiting"),

@@ -181,7 +181,7 @@ over the appearance as its colours are.
 | `font-size.md` | px at 14px | 11–15 | 13 | 13 | the body role: a tab's title, dense lists, a menu's rows |
 | `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields', buttons' and segmented controls' words, the heading role |
 | `font-size.lg` | px at 14px | 13–22 | 16 | 16 | the title role |
-| `font-size.xl` | px at 14px | 16–28 | 20 | 20 | the Welcome page's heading and its doors' marks |
+| `font-size.xl` | px at 14px | 16–28 | 20 | 20 | marks only, never words: a persona's mark in Start a chat and a Welcome door's mark |
 | `font-weight.regular` | weight | 300–500 | 400 | 400 | the body, secondary, meta and code roles, menu rows |
 | `font-weight.medium` | weight | 400–600 | 500 | 500 | a form's label: a setting's name, a choice's name |
 | `font-weight.strong` | weight | 500–800 | 600 | 600 | titles, headings, labels, a row's strong line |

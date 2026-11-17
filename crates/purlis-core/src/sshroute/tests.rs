@@ -117,7 +117,7 @@ fn the_forward_trusts_the_pinned_key_alone_under_the_pools_alias() {
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
     assert_eq!(
         option(&args, "UserKnownHostsFile"),
-        Some("/data/docker-settings/run-x/known_hosts")
+        Some("\"/data/docker-settings/run-x/known_hosts\"")
     );
     assert_eq!(option(&args, "GlobalKnownHostsFile"), Some("/dev/null"));
     assert_eq!(option(&args, "KnownHostsCommand"), Some("none"));
@@ -200,11 +200,11 @@ fn a_route_with_no_socket_yet_opens_no_forward() {
 #[test]
 fn a_first_contact_learns_the_key_and_signs_in_with_nothing() {
     let route = Route::parse("ssh://me@box").unwrap();
-    let args = contact_args(&route, Path::new("/run/known_hosts"));
+    let args = contact_args(&route, Path::new("/run/known_hosts")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("accept-new"));
     assert_eq!(
         option(&args, "UserKnownHostsFile"),
-        Some("/run/known_hosts")
+        Some("\"/run/known_hosts\"")
     );
     assert_eq!(option(&args, "PubkeyAuthentication"), Some("no"));
     // A system's ssh_config may hash names (Debian's and Ubuntu's do): the key is found by its
@@ -227,11 +227,11 @@ fn the_key_a_first_contact_met_is_read_from_what_ssh_wrote() {
 #[test]
 fn the_probe_runs_pinned_and_checks_only_the_socket_a_route_names() {
     let found = Route::parse("ssh://me@box").unwrap();
-    let args = probe_args(&found, "build", Path::new("/k"));
+    let args = probe_args(&found, "build", Path::new("/k")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
     assert_eq!(args.last().unwrap(), PROBE);
     let named = Route::parse("ssh://me@box/run/podman/podman.sock").unwrap();
-    let args = probe_args(&named, "build", Path::new("/k"));
+    let args = probe_args(&named, "build", Path::new("/k")).unwrap();
     assert!(
         args.last()
             .unwrap()
@@ -303,9 +303,9 @@ fn the_forward_takes_no_command_tunnel_or_forward_clearing_from_the_persons_sett
 fn a_sign_in_a_probe_and_a_first_contact_forward_nothing_and_run_only_their_command() {
     let route = Route::parse("ssh://me@box").unwrap();
     for args in [
-        sign_in_args(&route, "build", Path::new("/k")),
-        probe_args(&route, "build", Path::new("/k")),
-        contact_args(&route, Path::new("/scratch")),
+        sign_in_args(&route, "build", Path::new("/k")).unwrap(),
+        probe_args(&route, "build", Path::new("/k")).unwrap(),
+        contact_args(&route, Path::new("/scratch")).unwrap(),
     ] {
         assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
         assert_eq!(option(&args, "RemoteCommand"), Some("none"));
@@ -429,7 +429,7 @@ fn the_forward_check_asks_sshd_for_one_channel_to_the_engines_socket_pinned_and_
     let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
     let args = forward_check_args(&route, "build", Path::new("/k")).unwrap();
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
-    assert_eq!(option(&args, "UserKnownHostsFile"), Some("/k"));
+    assert_eq!(option(&args, "UserKnownHostsFile"), Some("\"/k\""));
     assert_eq!(option(&args, "ExitOnForwardFailure"), Some("yes"));
     assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
     let w = args.iter().position(|arg| arg == "-W").unwrap();
@@ -461,10 +461,10 @@ fn a_routes_key_file_is_handed_to_every_ssh_it_runs() {
     let known = Path::new("/k/known_hosts");
     for args in [
         forward_args(&route, "p", known, Path::new("/l/docker.sock")).unwrap(),
-        sign_in_args(&route, "p", known),
-        probe_args(&route, "p", known),
+        sign_in_args(&route, "p", known).unwrap(),
+        probe_args(&route, "p", known).unwrap(),
         forward_check_args(&route, "p", known).unwrap(),
-        contact_args(&route, Path::new("/k/scratch")),
+        contact_args(&route, Path::new("/k/scratch")).unwrap(),
         connect::settings_args(&route),
     ] {
         assert_eq!(
@@ -757,4 +757,252 @@ fn a_forward_is_taken_as_refused_only_where_the_channel_fails_and_the_probe_hold
             refused
         );
     }
+}
+
+/// What this machine's own ssh makes of `args` (`ssh -G`, with no settings file of the person's
+/// read): `<key> <value>` lines, the key in lower case. Nothing is contacted.
+fn read_by_ssh(args: &[String]) -> String {
+    let ssh = ssh_here().expect("the system's ssh");
+    let out = crate::forklock::output(
+        std::process::Command::new(ssh)
+            .args(["-G", "-F", "/dev/null"])
+            .args(args),
+    )
+    .expect("ssh runs");
+    assert!(out.status.success(), "ssh -G refused {args:?}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The value of `key` in what ssh read, where it read one.
+fn read_as<'a>(read: &'a str, key: &str) -> Option<&'a str> {
+    read.lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))
+}
+
+/// A run folder under `~/Library/Application Support` (macOS), with a `%` token ssh expands in
+/// its name too. `ssh -G` prints a list of files joined by one space, so the two spaces in
+/// `run  100` show whether ssh read one file or split the path into several.
+const SPACED: &str = "/Users/me/Library/Application Support/purlis/run  100%h/known_hosts";
+
+#[test]
+fn a_first_contacts_known_hosts_whose_path_has_a_space_is_one_file_to_ssh() {
+    let route = Route::parse("ssh://me@box").unwrap();
+    let args = contact_args(&route, Path::new(SPACED)).unwrap();
+    assert_eq!(
+        read_as(&read_by_ssh(&args), "userknownhostsfile"),
+        Some(SPACED)
+    );
+}
+
+#[test]
+fn a_pinned_known_hosts_whose_path_has_a_space_is_one_file_to_ssh() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let known = Path::new(SPACED);
+    for args in [
+        sign_in_args(&route, "build", known).unwrap(),
+        probe_args(&route, "build", known).unwrap(),
+        forward_check_args(&route, "build", known).unwrap(),
+        forward_args(&route, "build", known, Path::new("/s")).unwrap(),
+    ] {
+        let read = read_by_ssh(&args);
+        assert_eq!(
+            read_as(&read, "userknownhostsfile"),
+            Some(SPACED),
+            "{args:?}"
+        );
+        assert_eq!(read_as(&read, "hostkeyalias"), Some("purlis-pool-build"));
+    }
+}
+
+#[test]
+fn a_forwards_socket_whose_path_has_a_space_or_a_percent_is_bound_where_it_is_named() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let local = "/Users/me/Library/Application Support/purlis/links  100%h/docker.sock";
+    let args = forward_args(&route, "build", Path::new("/k"), Path::new(local)).unwrap();
+    assert_eq!(
+        read_as(&read_by_ssh(&args), "localforward"),
+        Some(format!("{local} /var/run/docker.sock").as_str())
+    );
+}
+
+#[test]
+fn a_known_hosts_path_ssh_cannot_be_handed_as_one_file_is_refused() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    for path in [
+        "/data/a\"b/known_hosts",
+        "/data/a\\b/known_hosts",
+        "/data/a\nb/known_hosts",
+        "/data/${HOME}/known_hosts",
+    ] {
+        let why = contact_args(&route, Path::new(path)).unwrap_err();
+        assert!(why.contains("ssh"), "{why}");
+        assert!(
+            sign_in_args(&route, "build", Path::new(path)).is_err(),
+            "{path:?}"
+        );
+        assert!(
+            forward_args(&route, "build", Path::new("/k"), Path::new(path)).is_err(),
+            "{path:?}"
+        );
+    }
+}
+
+/// **A machine on this one's loopback that answers each connection with `greeting`** and closes:
+/// its port.
+fn answering_with(greeting: &'static [u8]) -> u16 {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let _ = stream.write_all(greeting);
+        }
+    });
+    port
+}
+
+fn resolved_at(port: u16, proxied: bool) -> connect::Resolved {
+    connect::Resolved {
+        hostname: "127.0.0.1".into(),
+        port,
+        user: "me".into(),
+        proxied,
+        known_hosts: Vec::new(),
+    }
+}
+
+#[test]
+fn a_server_whose_first_line_starts_ssh_greets_as_ssh_even_after_other_lines() {
+    let port = answering_with(b"Welcome to box\r\nSSH-2.0-OpenSSH_9.6\r\n");
+    assert!(connect::greets_as_ssh(&resolved_at(port, false)));
+}
+
+#[test]
+fn a_port_that_closes_or_answers_otherwise_doesnt_greet_as_ssh() {
+    for greeting in [&b""[..], b"HTTP/1.1 400 Bad Request\r\n\r\n"] {
+        let port = answering_with(greeting);
+        assert!(
+            !connect::greets_as_ssh(&resolved_at(port, false)),
+            "{}",
+            String::from_utf8_lossy(greeting)
+        );
+    }
+}
+
+#[test]
+fn a_first_contact_that_saved_no_key_is_not_met_only_where_ssh_answered() {
+    let route = Route::parse("ssh://me@127.0.0.1").unwrap();
+    let ssh_port = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(ssh_port, false), String::new()),
+        connect::Finding::NotMet { .. }
+    ));
+    let closing = answering_with(b"");
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(closing, false), String::new()),
+        connect::Finding::NotSsh { port, .. } if port == closing
+    ));
+    // Past a jump host this machine can't ask, whatever answers at the address it names, so no
+    // cause is claimed.
+    assert!(matches!(
+        connect::unmet(&route, &resolved_at(ssh_port, true), String::new()),
+        connect::Finding::NotMetThrough { .. }
+    ));
+}
+
+/// **A real first contact, by this machine's ssh**, against a port that closes as it is reached
+/// and one that greets as SSH and then closes: neither leaves a key, and only the second was SSH.
+#[test]
+fn a_first_contact_where_nothing_answers_as_ssh_is_not_ssh_and_one_ssh_answered_is_not_met() {
+    let Ok(ssh) = ssh_here() else { return };
+    let settings = tempfile::tempdir().unwrap();
+    let closing = answering_with(b"");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{closing}")).unwrap();
+    let found =
+        connect::meet(&ssh, &route, &resolved_at(closing, false), settings.path()).unwrap_err();
+    assert!(
+        matches!(found, connect::Finding::NotSsh { .. }),
+        "{found:?}"
+    );
+    let greeting = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{greeting}")).unwrap();
+    let found =
+        connect::meet(&ssh, &route, &resolved_at(greeting, false), settings.path()).unwrap_err();
+    assert!(
+        matches!(found, connect::Finding::NotMet { .. }),
+        "{found:?}"
+    );
+}
+
+/// **A jump host that is down** (#6823 review): ssh meets nothing through it, and the address it
+/// names past the jump is never asked, so the finding claims no cause (#6942 review).
+#[test]
+fn a_first_contact_through_a_jump_host_that_is_down_is_not_met_through_it() {
+    let Ok(ssh) = ssh_here() else { return };
+    let scratch = tempfile::tempdir().unwrap();
+    let known = scratch.path().join("known_hosts");
+    std::fs::write(&known, "").unwrap();
+    // The machine past the jump greets as SSH: only the jump is down.
+    let past = answering_with(b"SSH-2.0-OpenSSH_9.6\r\n");
+    let route = Route::parse(&format!("ssh://me@127.0.0.1:{past}")).unwrap();
+    let mut args = contact_args(&route, &known).unwrap();
+    let at = args.iter().position(|arg| arg == "--").unwrap();
+    args.splice(
+        at..at,
+        [
+            "-F".to_owned(),
+            "/dev/null".to_owned(),
+            "-J".to_owned(),
+            "me@127.0.0.1:1".to_owned(),
+        ],
+    );
+    let ran = run(&ssh, &args).unwrap();
+    assert_eq!(key_met(&std::fs::read_to_string(&known).unwrap()), None);
+    let printed = crate::forklock::output(
+        std::process::Command::new(&ssh)
+            .args(["-G", "-F", "/dev/null", "-J", "me@127.0.0.1:1", "-p"])
+            .arg(past.to_string())
+            .arg("me@127.0.0.1"),
+    )
+    .unwrap();
+    let resolved = connect::resolved_from(&String::from_utf8_lossy(&printed.stdout)).unwrap();
+    assert!(resolved.proxied);
+    assert!(matches!(
+        connect::unmet(&route, &resolved, ran.said),
+        connect::Finding::NotMetThrough { .. }
+    ));
+}
+
+/// **A machine on this one's loopback that answers each connection one byte at a time**, `every`
+/// apart, and never ends a line: its port.
+fn trickling(every: std::time::Duration) -> u16 {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                while stream.write_all(b"x").is_ok() {
+                    std::thread::sleep(every);
+                }
+            });
+        }
+    });
+    port
+}
+
+/// **A server that trickles its answer is given one deadline in all** (#6942 review): each byte
+/// comes well within a read's wait, and the greeting is still given up once the whole wait is
+/// spent, not after every byte the most it may send.
+#[test]
+fn a_server_that_trickles_its_answer_is_given_up_on_within_one_deadline() {
+    use std::time::{Duration, Instant};
+    let port = trickling(Duration::from_millis(100));
+    let started = Instant::now();
+    assert!(!connect::greets_as_ssh_within(
+        &resolved_at(port, false),
+        Duration::from_secs(1)
+    ));
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(3), "took {took:?}");
 }

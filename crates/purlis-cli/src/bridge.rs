@@ -46,9 +46,22 @@ pub enum Asked {
     MintPort { again: bool },
     /// Ask the port for a token, say what it covers, and revoke it (#4207). Prints no token.
     MintCheck { app: String },
+    /// Remove the drained versions installed beside this one (#6688).
+    Prune,
 }
 
 pub fn run(asked: Asked) -> Result<u8, String> {
+    if let Asked::Prune = &asked {
+        let pruned = purlis_core::runnerinstall::prune::prune_here().ok_or(
+            "this purlis isn't installed as a version on this runner, so it removes no other",
+        )?;
+        eprint!("{}", pruned.said());
+        let mut out = std::io::stdout().lock();
+        write!(out, "{}", pruned.printed())
+            .and_then(|()| out.flush())
+            .map_err(|why| format!("what was removed could not be written: {why}"))?;
+        return Ok(0);
+    }
     if let Asked::MakeKey {
         handoff,
         published,

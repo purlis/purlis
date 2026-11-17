@@ -443,7 +443,7 @@ asked for), whatever the system's appearance. Where its values come from:
   list's rows, title-bar chips, a tab's top), menus' and dialogs' 10, panels' and the Welcome
   doors' 12; a control 28 high (#3113, the ruling on #2793; the record's buttons were 26) and a
   chrome row 24; controls' and a dialog's words at 13 (`font-size.base`, the record's 12–13) and
-  headings at 15 and 18 (`font-size.lg`, `font-size.xl`, R160); body text at a line height of
+  headings at 15 and 18 (`font-size.lg`, `font-size.xl`, R160; `xl` draws only marks now, #6390); body text at a line height of
   1.55, and no shadow under a raised surface. Every corner a stylesheet draws in Purlis is on
   the scale, and `app/src/ui/corners.test.ts` holds that.
 - **The Figma pass** (#3177, the operator's ruling of 2026-10-24) took the audit's fifteen
@@ -1682,9 +1682,26 @@ Tailwind reads these tokens and has no geometry of its own (`styles.css` hands t
 - `rounded-sm` to `rounded-xl` are the core corners;
 - its spacing step (`--spacing`) is `--space-2`, so `gap-1` is 4px and `p-3` is `--space-5`;
 - `text-xs` to `text-xl` (with `text-md`) are the six core type sizes, and no other `text-*`
-  size exists.
+  size exists. `text-xl` is the mark step, below, and no view writes it.
 
 The core keeps its own names (`--space-*`, `--font-size-*`), so Tailwind never redefines a token.
+
+### The mark step: `font-size.xl`
+
+**`--font-size-xl` (a theme's `font-size.xl`) is the size for marks, not a type step.** A mark
+is an icon sized by the text around it, so it reads a font size; no word, heading or title reads
+`xl`, and no text role names it. Its users are exactly:
+
+- `.start-chat-who > .persona-mark` (with `.start-chat-no-mark`, its stand-in), a persona's
+  mark in Start a chat (`App.css`);
+- the door card's mark, `[data-scope="card-button"][data-part="mark"]` (`ui/card/card.css`);
+- Tailwind's `text-xl`, which `styles.css` points at it so it has no value of its own.
+
+`primitives/text.test.ts` holds that list, and fails when anything else starts reading it. A word
+that needs to be larger wears the title role (`--font-size-lg`); a new mark is added to the
+list. The step stays in the theme format, bounds and all, so a theme that sets it keeps working
+(#6390: the steward's decision, delegated and reversible, to keep it for marks rather than take
+it out).
 
 ### Component parts
 
@@ -2016,8 +2033,8 @@ window differ, the window was kept and the difference is recorded here for the m
   page's, a pool's setup and the agent identity flow's wear the title. What still reads it is
   two marks, icons sized by the text around them (a persona's mark in Start a chat, a door
   card's mark), and Tailwind's `text-xl`, pointed at it so it has no value of its own.
-  `primitives/text.test.ts` holds that list. Taking `font-size.xl` out of the theme format is
-  the operator's call, since a theme may set it.
+  `primitives/text.test.ts` holds that list. It stays in the theme format as the size for marks
+  ([The mark step](#the-mark-step-font-sizexl), #6390).
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
 - **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
   rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the

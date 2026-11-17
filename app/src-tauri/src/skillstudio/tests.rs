@@ -928,3 +928,30 @@ fn a_built_ins_totals_by_harness_count_its_misses_beside_its_runs_and_a_harness_
         ]
     );
 }
+
+#[test]
+fn a_built_ins_row_counts_a_miss_a_filed_report_logged_beside_its_corrections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "schema = 2\n").unwrap();
+    let log = root.join("personas/_skills");
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-11.box.jsonl"),
+        "{\"missed\": \"purlis-secrets\", \"signal\": \"correction\", \"harness\": \"claude\", \
+         \"ts\": \"2026-11-01T09:01:00+00:00\"}\n\
+         {\"missed\": \"purlis-secrets\", \"signal\": \"report\", \"harness\": \"claude\", \
+         \"harness_version\": \"2.1.40\", \"ts\": \"2026-11-02T09:00:00+00:00\"}\n",
+    )
+    .unwrap();
+
+    let by_harness: Vec<(StatsGroup, u32, u32)> = stats(root, "purlis-secrets")
+        .by_harness
+        .into_iter()
+        .map(|row| (row.group, row.runs, row.misses))
+        .collect();
+    assert_eq!(
+        by_harness,
+        [(StatsGroup::Named("Claude Code".to_owned()), 0, 2)]
+    );
+}

@@ -57,6 +57,12 @@
   animation: popover-arrive var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
+/* A scenario-test build draws it at once (`theme/motion.ts`, `ARRIVALS_ATTRIBUTE`, #4351): WebKit
+   suspends a fade while the window is hidden, and React Aria keeps the popover up until it ends. */
+:root[data-arrivals="at-once"] [data-scope="popover"][data-part="root"][data-entering] {
+  animation: none;
+}
+
 [data-scope="popover"][data-part="root"][data-placement="top"] {
   --popover-arrive-from: 0 0.25rem;
 }

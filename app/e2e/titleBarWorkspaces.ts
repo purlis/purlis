@@ -184,18 +184,36 @@ async function opened(): Promise<void> {
   );
 }
 
+/**
+ * **One step of closing the workspace popover, in the page** (#4351): answers whether it has gone,
+ * and if not, asks it again, by Escape in its filter.
+ *
+ * Asked once, the Escape can go to something else: the palette, while it is up, takes every
+ * Escape on the window before anything under it hears it (`Palette.tsx`), and it is not modal, so
+ * the ⌄ still opens the popover beside it. A palette left up at opacity 0 (its fade suspended in a
+ * hidden window, which `noDialogIsLeftUp` reads as no dialog) took the one Escape a spec's `after`
+ * sent, and the popover stayed: `the workspace popover did not close`. Each step asks again, so
+ * the Escape after the palette's is the popover's. Self-contained, for `browser.execute`.
+ */
+export function closedOrAskedAgain(list: string): boolean {
+  const listed = document.querySelector<HTMLElement>(list);
+  if (listed === null) return true;
+  const filter = document.querySelector<HTMLElement>(
+    '[role="combobox"][aria-label^="Go to a workspace in "]',
+  );
+  (filter ?? listed).dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+  return false;
+}
+
 /** Closes the workspace popover, by Escape in its filter, and waits until it has gone. */
 export async function closed(): Promise<void> {
-  await browser.execute((list: string) => {
-    if (document.querySelector(list) === null) return;
-    document
-      .querySelector<HTMLElement>('[role="combobox"][aria-label^="Go to a workspace in "]')
-      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  }, LISTED);
-  await browser.waitUntil(
-    async () => browser.execute((list: string) => document.querySelector(list) === null, LISTED),
-    { timeout: 10_000, interval: 100, timeoutMsg: "the workspace popover did not close" },
-  );
+  await browser.waitUntil(async () => browser.execute(closedOrAskedAgain, LISTED), {
+    timeout: 10_000,
+    interval: 250,
+    timeoutMsg: "the workspace popover did not close",
+  });
 }
 
 /**

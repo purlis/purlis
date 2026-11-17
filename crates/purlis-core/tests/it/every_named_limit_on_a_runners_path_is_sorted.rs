@@ -151,6 +151,24 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "app/src-tauri/src/runnerlinks.rs",
+        "CHECK_WITHIN",
+        Internal,
+        "how long the check before a link to a Docker runner is waited for",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "FIRST_LINK_WITHIN",
+        Internal,
+        "derived: outlasts the check's and the link protocol's own deadlines",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "SIGN_IN_STARTS_WITHIN",
+        Internal,
+        "derived: the first link's wait and one answer",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
         "KEPT_WITHIN",
         Internal,
         "purlis's own tuning",
@@ -316,6 +334,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "FLAG_NOT_KNOWN",
         Internal,
         "what the format or a tool holds",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool/asked.rs",
+        "PULL_WITHIN",
+        Internal,
+        "how purlis waits or looks",
     ),
     (
         "crates/purlis-core/src/dockerpool/contract.rs",

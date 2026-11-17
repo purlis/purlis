@@ -207,6 +207,33 @@ impl Held {
     }
 }
 
+/// **A filed case-6 draft's miss** (#5739, spec #5714): one `report` miss in the skill log of
+/// the project `one` was written in, of the skill and harness its words name
+/// ([`crate::skilluse::Reported`]), filed under this machine's log name (`config` is the config
+/// root its id is read from). Nothing for a draft of another case. Never the words. No
+/// `skill.missed` event: a filed Report is no moment of a chat's run, and its chat may be gone.
+fn missed_as_reported(one: &Held, config: Option<&Path>) {
+    let ran_as = one
+        .ran_as
+        .as_ref()
+        .map(|said| (said.harness.as_str(), said.harness_version.as_str()));
+    let Some(reported) = crate::skilluse::Reported::of(&one.body, ran_as) else {
+        return;
+    };
+    crate::skilluse::missed(
+        Path::new(&one.from.project),
+        &crate::skilluse::Missing {
+            skill: &reported.skill,
+            harness: reported.harness.as_deref(),
+            harness_version: reported.harness_version.as_deref(),
+            persona: None,
+            signal: crate::skilluse::Signal::Report,
+        },
+        chrono::Utc::now(),
+        &crate::machine::log_name(config, &crate::dispatch::host()),
+    );
+}
+
 #[derive(Serialize, Deserialize)]
 struct OnDisk {
     version: u32,
@@ -505,7 +532,21 @@ impl Reports {
     /// window): on [`UPSTREAM`] as them where they are signed in to GitHub, after the duplicate
     /// search unless `how` says otherwise; to the Report intake where they are not. What left is
     /// listed in the sent list, and the draft leaves the Inbox.
+    ///
+    /// A filed case-6 draft, one saying a purlis skill should have started (#5739), logs a
+    /// `report` miss of the skill and harness its filed words name in its project's skill log.
     pub fn file_held(&self, id: &str, source: &Caller, shown: &str, how: How) -> Filing {
+        // Read before filing, as it leaves the Inbox once filed; the digest holds it to the words
+        // that were filed.
+        let one = self.held().into_iter().find(|one| one.id == id);
+        let filing = self.file_held_once(id, source, shown, how);
+        if let (Filing::Sent { .. } | Filing::Queued, Some(one)) = (&filing, one) {
+            missed_as_reported(&one, self.root.as_deref());
+        }
+        filing
+    }
+
+    fn file_held_once(&self, id: &str, source: &Caller, shown: &str, how: How) -> Filing {
         let Some(one) = self.held().into_iter().find(|one| one.id == id) else {
             return Filing::Refused(Refusal::NotHeld);
         };

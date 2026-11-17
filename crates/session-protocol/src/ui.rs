@@ -105,7 +105,7 @@ pub struct Server {
 ///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
 ///   `resume_session`, `retry_chat_that_did_not_start`, `retry_project`, `reopen_finished_task`,
-///   `curate` (a
+///   `reopen_closed_chat` (Reopen on a closed chat's card, #6485), `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
@@ -345,6 +345,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "retry_chat_that_did_not_start",
     "retry_project",
     "reopen_finished_task",
+    "reopen_closed_chat",
     "curate",
     "relaunch",
     // Discuss in an artifact's bar (#5957, ADR 0122 §5): a chat about the page, typed unsent.
@@ -560,6 +561,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's answer to the project's sandbox off (#2071, SO-8): theirs alone, so no chat
     // turns its own sandbox off through a link.
     "answer_team_sandbox_off",
+    // The person's press accepting a loosening of the project's `[policy]` (Q308a): theirs
+    // alone, so no chat loosens its own enforcement through a link.
+    "accept_project_policy",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",
@@ -1208,6 +1212,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_enter",
     // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
     "artifact_reload",
+    // Whether its template moved from what it was served, before it is opened again (#6697).
+    "artifact_template_moved",
     "artifact_theme",
     "artifact_close",
     // Managing pins from the window (#5953): only the person's press pins or reorders, and an
@@ -1263,6 +1269,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
+    // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
+    // only the window's list looks among them. Its row opens its chat by its ULID (#6685's
+    // review), the window's as `chat_by_number` is.
+    "closed_chats",
+    "chat_by_id",
     // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",
@@ -1475,6 +1486,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "adopt_layout",
     "agents_stopped",
     // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
+    // The project's `[policy]` as it stands for you (Q308): a read; Accept stays the window's.
+    "project_policy_state",
     "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",
@@ -1652,6 +1665,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
+    // Why the session host is not run in the background, if it could not be (FD-17).
+    "session_host_not_in_the_background",
     "session_record",
     "set_dismissed",
     // What setup's Protection row shows: the host's bound and the local project's level, a read.

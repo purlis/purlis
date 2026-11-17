@@ -573,9 +573,29 @@ use crate::view::{Limits, Views};
 /// [`SandboxTold::DroppedNext`] as one ends without its attempt, so the window audits each end
 /// (Q278). A host before 1.88 is not sent them, and the window says it can't allow a next
 /// attempt there.
+///
+/// 1.89 has a host keep with a chat's program what of every pool's programs and files its
+/// sandbox held as it started ([`Launch::pools_held`]), and `programs` answers it
+/// ([`HeldProgram::pools_held`]), so a window that takes the chat back asks it to restart by the
+/// sandbox it started with, not by one compiled now. A host before 1.89 keeps none, and the
+/// window cannot say which pools such a chat holds.
+///
+/// 1.90 tells a browser's views what its page is and lets the person step through its history
+/// (#6938): a page frame on the view's stream (`view::frames::PAGE`), its whole address, title
+/// and load state, sent where any changes and before the image in the view's snapshot; and
+/// `browser_input` may carry the person's Back, Forward, Reload or Stop
+/// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
+/// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 88,
+    minor: 90,
+};
+
+/// The version that first tells a browser's views what its page is and takes the person's
+/// steps through its history (#6938): none is sent to a host before.
+pub const KNOWS_PAGES_SHOWN: Version = Version {
+    major: 1,
+    minor: 90,
 };
 
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
@@ -2256,6 +2276,12 @@ pub struct Launch {
     /// it back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_key: Option<PromptKey>,
+    /// **What of every pool's programs and files the chat's sandbox held as it started** (1.89),
+    /// each path whole, where it started sandboxed: nothing the host does anything with but keep
+    /// it with the program, for a window that takes the chat back
+    /// ([`HeldProgram::pools_held`]). Absent from a window before 1.89.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pools_held: Option<Vec<String>>,
 }
 
 /// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
@@ -2742,6 +2768,12 @@ pub struct HeldProgram {
     /// tab. Absent from a host before 1.83.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills_not_there: Option<SkillsNotThere>,
+    /// What of every pool's programs and files its sandbox held as it started, as its launch
+    /// said ([`Launch::pools_held`], 1.89): what a window that takes the chat back compares with
+    /// what a start would hold now. Absent from a host before 1.89, and for a launch that said
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pools_held: Option<Vec<String>>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).

@@ -61,6 +61,22 @@ docker save "$source_image" | docker exec -i dind docker load
 docker exec dind docker push "$source_image"
 image=$(docker exec dind docker image inspect --format '{{index .RepoDigests 0}}' "$source_image")
 echo "image there: $image"
+# Doctor's faults of the image (#6272): one built for linux/riscv64 alone, from scratch, so no
+# emulator is needed, and one of the parity image whose df says its disk is nearly full. Each is
+# pushed to the registry inside dind and named there by its digest.
+fault_dir=$(docker exec dind mktemp -d)
+docker exec dind sh -c "cd $fault_dir && echo riscv > f && printf 'FROM scratch\nCOPY f /f\n' > Dockerfile \
+  && docker build --quiet --platform linux/riscv64 --tag localhost:5000/doctor-riscv:fault . \
+  && docker push --quiet localhost:5000/doctor-riscv:fault" >/dev/null
+riscv=$(docker exec dind docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/doctor-riscv:fault)
+docker exec dind sh -c "cd $fault_dir && printf '%s\n' '#!/bin/sh' \
+  'echo \"Filesystem 1024-blocks Used Available Capacity Mounted on\"' \
+  'echo \"overlay 1048576 946176 102400 91% /\"' > df \
+  && printf 'FROM $image\nCOPY --chmod=0755 df /usr/local/bin/df\n' > Dockerfile \
+  && docker build --quiet --tag localhost:5000/doctor-full-disk:fault . \
+  && docker push --quiet localhost:5000/doctor-full-disk:fault" >/dev/null
+full_disk=$(docker exec dind docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/doctor-full-disk:fault)
+echo "doctor's fault images there: $riscv $full_disk"
 # ssh signs with an agent, as a person's does.
 eval "$(ssh-agent -s -a "$RUNNER_TEMP/remote-ssh/agent.sock")"
 ssh-add "$RUNNER_TEMP/remote-ssh/id"
@@ -74,4 +90,6 @@ ssh-add "$RUNNER_TEMP/remote-ssh/id"
   echo "REMOTE_DOCKER_TEST_MAY_WRITE_KNOWN_HOSTS=1"
   echo "REMOTE_DOCKER_TEST_TLS_ROUTE=tcp://localhost:2376"
   echo "REMOTE_DOCKER_TEST_TLS_DIR=$tls_dir"
+  echo "REMOTE_DOCKER_TEST_RISCV_IMAGE=$riscv"
+  echo "REMOTE_DOCKER_TEST_FULL_DISK_IMAGE=$full_disk"
 } >> "$GITHUB_ENV"

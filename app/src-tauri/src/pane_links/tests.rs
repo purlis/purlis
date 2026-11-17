@@ -449,6 +449,7 @@ fn chats_here() -> (Resolver, ChatsHere<'static>) {
         .map(|(number, id)| OpenChat {
             number,
             id: Some(format!("01K6{id}")),
+            earlier: Vec::new(),
         })
         .to_vec();
     (
@@ -863,5 +864,50 @@ fn the_window_s_words_for_a_marked_link_are_these() {
         })
         .expect("serialises"),
         serde_json::json!({"about": "misleading", "kind": "url", "host": "a.example"})
+    );
+}
+
+#[test]
+fn a_closed_chat_s_link_by_a_number_it_had_before_a_restart_is_seen_by_its_last_and_that_one() {
+    // #6685's review: the hover says what its card says, `#731 · … (was #702)`.
+    let dir = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(dir.path()).expect("its path");
+    let closed = purlis_core::chatrecords::ChatRecord {
+        number: 731,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T11:00:00Z".to_owned(),
+        started_by: purlis_core::chatrecords::StartedBy::Person,
+        place: "smart-ide".to_owned(),
+        earlier: vec![702],
+        chat: None,
+    };
+    purlis_core::chatrecords::keep(&root, &closed).expect("kept");
+    let (links, _) = chats_here();
+    let card_root = root.clone();
+    let chats = ChatsHere {
+        open: Vec::new(),
+        card: Box::new(move |number, goes| match goes {
+            Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
+                &card_root,
+                Some(number),
+                chat,
+            )),
+            _ => None,
+        }),
+    };
+
+    let shown = |link: &str| {
+        seen_in(&links, &pane_of_652(&root), &chat(link), &chats).map(|seen| seen.shown)
+    };
+
+    assert_eq!(
+        shown("chat 702").as_deref(),
+        Some("#731 · Tidy the changelog (was #702)")
+    );
+    assert_eq!(
+        shown("chat 731").as_deref(),
+        Some("#731 · Tidy the changelog")
     );
 }

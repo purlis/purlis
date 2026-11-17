@@ -159,6 +159,8 @@ fn in_a_docker_pool() {
             failed: None,
             cancelled: false,
             identity: None,
+            // A pool on this machine has no link to another to measure (#6272).
+            link: None,
             workspace: Some(WORKSPACE.to_owned()),
         },
         "Try it passed"

@@ -252,7 +252,7 @@ impl TokenSink for Shown {
                 TokenSinkResult::Continue
             }
             Token::TagToken(tag) => {
-                let name = tag.name.as_ref().to_ascii_lowercase();
+                let name = (*tag.name).to_ascii_lowercase();
                 if tag.kind == TagKind::EndTag {
                     if self.hidden.borrow().as_deref() == Some(name.as_str()) {
                         *self.hidden.borrow_mut() = None;

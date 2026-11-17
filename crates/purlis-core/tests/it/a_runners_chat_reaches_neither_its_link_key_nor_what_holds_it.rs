@@ -142,8 +142,7 @@ fn the_wrap() -> Option<PathBuf> {
         assert!(named.is_file(), "no program at {}", named.display());
         return Some(named);
     }
-    let binary = std::env::current_exe().expect("this test's binary");
-    let beside = binary.parent()?.parent()?.join("sandbox-probe");
+    let beside = purlis_core::testrun::bin_dir()?.join("sandbox-probe");
     beside.is_file().then_some(beside)
 }
 

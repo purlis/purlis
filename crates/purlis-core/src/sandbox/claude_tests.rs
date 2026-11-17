@@ -333,7 +333,7 @@ fn the_line_names_the_chat_s_own_ports_beside_its_hook_socket() {
 
     // Ports alone.
     let line =
-        reporting_on(armed.clone(), &settings, None, Some([41_000, 41_001])).expect("starts");
+        reporting_on(armed.clone(), &settings, None, Some([41_000, 41_001]), None).expect("starts");
     assert_eq!(
         settings_in(&line)["sandbox"],
         settings.through([41_000, 41_001]).sandbox
@@ -347,6 +347,7 @@ fn the_line_names_the_chat_s_own_ports_beside_its_hook_socket() {
         &settings,
         Some(&socket),
         Some([41_000, 41_001]),
+        None,
     )
     .expect("starts");
     let network = &settings_in(&line)["sandbox"]["network"];
@@ -359,9 +360,42 @@ fn the_line_names_the_chat_s_own_ports_beside_its_hook_socket() {
 
     // Neither: as armed.
     assert_eq!(
-        reporting_on(armed.clone(), &settings, None, None).expect("starts"),
+        reporting_on(armed.clone(), &settings, None, None, None).expect("starts"),
         armed
     );
+}
+
+/// The compile cache's socket alone, with no hook socket and no ports, is still never added to
+/// a sandbox the adapter did not compile; carried in one it did, it is the one socket added.
+#[test]
+fn the_compile_cache_socket_is_never_added_to_a_sandbox_the_adapter_did_not_compile() {
+    use crate::harness::claude::reporting_on;
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    let settings = claude::Settings {
+        compile_cache: true,
+        ..claude::settings(&compiled).expect("compiles")
+    };
+    let socket = root.path().join("claude-501/sccache.sock");
+    for armed in [
+        Vec::new(),
+        vec!["--settings".to_owned(), "not json".to_owned()],
+        vec![
+            "--settings".to_owned(),
+            r#"{"sandbox":{"enabled":false}}"#.to_owned(),
+        ],
+    ] {
+        let why =
+            reporting_on(armed.clone(), &settings, None, None, Some(&socket)).expect_err("refused");
+        assert!(why.contains("nothing was started"), "{armed:?}: {why}");
+    }
+    let line =
+        reporting_on(armed_with(&settings), &settings, None, None, Some(&socket)).expect("starts");
+    assert_eq!(
+        settings_in(&line)["sandbox"],
+        settings.serving_compile_cache(&socket).sandbox
+    );
+    assert_ne!(settings_in(&line)["sandbox"], settings.sandbox);
 }
 
 #[test]
@@ -378,7 +412,7 @@ fn ports_are_never_added_to_a_sandbox_the_adapter_did_not_compile() {
             r#"{"sandbox":{"enabled":false}}"#.to_owned(),
         ],
     ] {
-        let why = reporting_on(armed.clone(), &settings, None, Some([41_000, 41_001]))
+        let why = reporting_on(armed.clone(), &settings, None, Some([41_000, 41_001]), None)
             .expect_err("refused");
         assert!(why.contains("nothing was started"), "{armed:?}: {why}");
     }
@@ -422,8 +456,14 @@ fn ports_are_never_added_where_the_compiled_deny_rules_do_not_lead_the_list() {
             )),
         ),
     ] {
-        let why = reporting_on(armed_with(deny), &settings, None, Some([41_000, 41_001]))
-            .expect_err(case);
+        let why = reporting_on(
+            armed_with(deny),
+            &settings,
+            None,
+            Some([41_000, 41_001]),
+            None,
+        )
+        .expect_err(case);
         assert!(why.contains("nothing was started"), "{case}: {why}");
     }
     // The control: the compiled rules as written, then a twin of the operator's, are carried.
@@ -437,6 +477,7 @@ fn ports_are_never_added_where_the_compiled_deny_rules_do_not_lead_the_list() {
         &settings,
         None,
         Some([41_000, 41_001]),
+        None,
     )
     .expect("the compiled rules lead the list");
 }

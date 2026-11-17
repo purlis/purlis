@@ -21,6 +21,10 @@
 //!   dispatch record names the number, or where the one that does draws no card: a handoff's,
 //!   a task's that ended owing no report, or one still running. It is matched to the open
 //!   chats by ULID too.
+//! - **Every number a chat had answers** (#6486): a restart keeps the ULID and deals a new
+//!   number, and the chat keeps the ones it had ([`OpenChat::earlier`], `reopen::Chat::earlier`,
+//!   [`ChatRecord::earlier`]). An open chat that had the number is the chat it names; a closed
+//!   one's record answers to its earlier numbers as to its last.
 //! - **What it knows is what the records know.** A number neither names, or one swept after 30
 //!   days, is "no chat".
 //!
@@ -33,11 +37,13 @@ use std::path::Path;
 use crate::chatrecords::{self, ChatRecord};
 use crate::dispatchrecord::{self, ChatRef, Record};
 
-/// A chat the app has open now: the number it answers to, and its ULID where it has one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A chat the app has open now: the number it answers to, its ULID where it has one, and the
+/// numbers it had before a restart (#6486, `reopen::Chat::earlier`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OpenChat {
     pub number: u32,
     pub id: Option<String>,
+    pub earlier: Vec<u32>,
 }
 
 /// What a number names.
@@ -86,8 +92,37 @@ pub fn by_number(number: u32, open: &[OpenChat], known: &Known) -> Found {
     open_under(number, open).unwrap_or_else(|| not_open(number, open, known))
 }
 
+/// **What the chat whose ULID is `id` is now** in the project at `root`, given the chats open
+/// now (#6685's review): open again under a number, ended with the dispatch record that draws
+/// its card, closed with its own record, or no chat. A row of the Chats list's filter opens its
+/// chat by this, never by the number typed: more than one record may answer to a number where
+/// it was dealt twice (#6740), and only the ULID is the chat's own.
+pub fn by_id_in(root: &Path, id: &str, open: &[OpenChat]) -> Found {
+    if let Some(now) = open.iter().find(|chat| chat.id.as_deref() == Some(id)) {
+        return Found::Restarted { now: now.number };
+    }
+    let known = Known::read(root);
+    if let Some(record) = known.dispatches.iter().find(|record| {
+        record.worker.chat.id.as_deref() == Some(id)
+            && dispatchrecord::sound(record)
+            && makes_a_card(record)
+    }) {
+        return Found::Ended(Box::new(record.clone()));
+    }
+    known
+        .chats
+        .iter()
+        .find(|chat| chat.id == id)
+        .map_or(Found::NoChat, |chat| Found::Closed(Box::new(chat.clone())))
+}
+
 /// What `number` names where no open chat answers to it.
 fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
+    // A chat open under a later number had it before a restart (#6486): a number is never
+    // dealt twice, so the chat that had it is that one.
+    if let Some(now) = open.iter().find(|chat| chat.earlier.contains(&number)) {
+        return Found::Restarted { now: now.number };
+    }
     let Some(record) = known.dispatches.iter().find(|record| {
         record.worker.chat.chat == number
             && !dispatchrecord::never_a_chat(record)
@@ -132,6 +167,21 @@ fn closed(chat: Option<&ChatRecord>, open: &[OpenChat]) -> Found {
         Some(now) => Found::Restarted { now: now.number },
         None => Found::Closed(Box::new(chat.clone())),
     }
+}
+
+/// **The chats that closed and are not open again** (#6484), in `chats` as
+/// [`chatrecords::every`] read them, newest close first: what the Chats list's filter finds a
+/// closed chat among. One open again under another number is that open chat's row, matched by
+/// its ULID.
+pub fn closed_now<'c>(chats: &'c [ChatRecord], open: &[OpenChat]) -> Vec<&'c ChatRecord> {
+    chats
+        .iter()
+        .filter(|chat| {
+            !open
+                .iter()
+                .any(|one| one.id.as_deref() == Some(chat.id.as_str()))
+        })
+        .collect()
 }
 
 fn open_under(number: u32, open: &[OpenChat]) -> Option<Found> {

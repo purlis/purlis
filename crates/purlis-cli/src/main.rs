@@ -55,6 +55,7 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod policy;
 mod pool;
 mod poolsetup;
 mod queries;
@@ -137,6 +138,24 @@ enum Command {
             value_parser = unlinked_for
         )]
         suspends_unlinked: Option<Option<std::time::Duration>>,
+        /// Hand this host to this machine's service manager and start it there, so it keeps
+        /// running after you sign out or the SSH connection drops, and starts again after a
+        /// restart: a systemd user unit with linger on Linux, a LaunchAgent on macOS. In a
+        /// container, run `purlis serve --foreground` instead.
+        #[arg(long, conflicts_with_all = ["remove", "foreground", "suspends_unlinked"])]
+        install: bool,
+        /// Take this host back from the service manager: it stops, with every chat in it, and
+        /// does not start again.
+        #[arg(long, conflicts_with_all = ["install", "foreground", "suspends_unlinked"])]
+        remove: bool,
+        /// Run the host here, in the foreground, until it is ended: what a container's command
+        /// is. The same as `purlis serve` alone.
+        #[arg(long)]
+        foreground: bool,
+        /// Started by the service manager (`--install`): another host of this version already
+        /// serving is a success, so the manager does not restart this one.
+        #[arg(long, hide = true, conflicts_with_all = ["install", "remove"])]
+        as_a_service: bool,
     },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
@@ -178,6 +197,11 @@ enum Command {
         /// a check of the way there, which prints no token (#4207).
         #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port"], value_name = "APP", hide = true)]
         mint_check: Option<String>,
+        /// Remove the folders of every version installed beside this one older than the one
+        /// before it whose host has drained, and print what went (#6688). Run by the desktop
+        /// as it installs this version on the runner.
+        #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port", "mint_check"], hide = true)]
+        prune: bool,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -946,15 +970,115 @@ fn idle_after_asked() -> Option<std::time::Duration> {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve(_suspends_after: Option<std::time::Duration>) -> ExitCode {
+fn serve(_suspends_after: Option<std::time::Duration>, _as_a_service: bool) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
 
+/// **A runner's data home, begun as `purlis/` where it has neither folder**
+/// (`purlis_core::datahome::begin_a_runners`): what could not be made is said, and the runner goes
+/// on with the folder the data home's ladder names.
+#[cfg(unix)]
+fn begin_a_runners_data_home() {
+    if let Err(why) = purlis_core::datahome::begin_a_runners(&purlis_core::envvar::var) {
+        voice::err(format!(
+            "purlis could not begin this runner's data folder: {why}"
+        ));
+    }
+}
+
+/// `purlis serve --install` and `--remove`, on macOS and Linux only.
+#[cfg(not(unix))]
+fn serve_kept(_install: bool) -> ExitCode {
+    voice::err("the session host runs on macOS and Linux only");
+    ExitCode::FAILURE
+}
+
+/// **`purlis serve --install`**, or `--remove` (RR-15, #724): this binary's host handed to this
+/// machine's service manager, or taken back from it (`purlis_core::runnerhost`).
+#[cfg(unix)]
+fn serve_kept(install: bool) -> ExitCode {
+    use purlis_core::runnerhost;
+    let Some(config) = purlis_core::machine::config_root() else {
+        voice::err("there is no home folder to keep the session host's credentials in");
+        return ExitCode::FAILURE;
+    };
+    let binary = match std::env::current_exe().and_then(std::fs::canonicalize) {
+        Ok(binary) => binary,
+        Err(why) => {
+            voice::err(format!("this purlis could not find its own program: {why}"));
+            return ExitCode::FAILURE;
+        }
+    };
+    let service = runnerhost::Service {
+        version: purlis_core::runnerinstall::version_of_binary(&config, &binary),
+        binary,
+        config_home: Some(config.clone()),
+    };
+    let log = purlis_core::machine::host_folder(&config).join("serve.log");
+    let Some(here) = runnerhost::Here::this(log, &config) else {
+        voice::err("this account has no home folder to install the session host in");
+        return ExitCode::FAILURE;
+    };
+    if !install {
+        return match runnerhost::remove(&here, &service) {
+            Ok(removed) => {
+                println!("✓ The session host is no longer kept running by this machine.");
+                match removed.linger {
+                    runnerhost::LingerAfter::Left => {}
+                    runnerhost::LingerAfter::TurnedOff => println!(
+                        "✓ purlis turned linger off again for {}, as it was before purlis.",
+                        here.user
+                    ),
+                    runnerhost::LingerAfter::StillOn(why) => println!(
+                        "! purlis could not turn linger off again for {} ({why}). Turn it off \
+                         with `loginctl disable-linger {}`.",
+                        here.user, here.user
+                    ),
+                }
+                ExitCode::SUCCESS
+            }
+            Err(why) => {
+                voice::err(format!("the session host's service was not removed: {why}"));
+                ExitCode::FAILURE
+            }
+        };
+    }
+    // Where this version's host listens, the same for the host the manager starts: its config
+    // home is pinned in the service's environment, and its runtime folder is the user manager's.
+    let socket = purlis_core::hostsocket::of_version_here(
+        here.runtime.as_deref(),
+        &config,
+        service.version.as_deref(),
+    );
+    let answers = move || std::os::unix::net::UnixStream::connect(&socket).is_ok();
+    match runnerhost::install(&here, &service, &answers) {
+        Ok(installed) => {
+            for line in runnerhost::said(&installed, &service, &here.user) {
+                println!("{line}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(runnerhost::Refused::Foreground(why)) => {
+            voice::err(runnerhost::refused(why));
+            ExitCode::FAILURE
+        }
+        Err(runnerhost::Refused::Manager(why)) => {
+            voice::err(format!(
+                "the session host could not be handed to this machine's service manager: {why}"
+            ));
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
+///
+/// `as_a_service`: a service manager started it (`--install`), so finding another host of its
+/// version serving is a success, which the manager does not restart (FD-17's login item's rule).
 #[cfg(unix)]
-fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
+fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -970,6 +1094,11 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
     // The host keeps its credentials in the config home: it stays where it is while the host
     // runs (`renamelocal::busy::LOCK`, D-RN5-11).
     let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    // A Docker pool's runner (what `--suspends-unlinked` is made for): a fresh home begins as
+    // `purlis/`, one that has its folder keeps it (ADR 0091, amended 2026-11-17).
+    if suspends_after.is_some() {
+        begin_a_runners_data_home();
+    }
     // The skills folders a last host laid out and no running program uses, tidied as it
     // starts, as the window tidies them as it starts (#2879).
     purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
@@ -995,9 +1124,34 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             }),
         }
     });
+    // A runner's host kept by its machine, of a version installed beside a newer one, stops
+    // itself once it has nothing left to run, and its manager does not start it again until the
+    // machine restarts, so pruning finds it drained (#6704). A bare `purlis serve` is a
+    // container's command, or a person's, and is left to them.
+    let superseded = as_a_service
+        .then(|| {
+            purlis_core::runnerinstall::version_of_binary(&config, &std::env::current_exe().ok()?)
+        })
+        .flatten()
+        .and_then(|version| {
+            let config = config.clone();
+            // Only a newer version whose service the manager starts at boot takes over: one a
+            // person disabled or took back, going back to this version, does not (#6704).
+            let here = purlis_core::runnerhost::Here::this(std::path::PathBuf::new(), &config)?;
+            Some(purlis_host::Superseded {
+                after: purlis_host::SUPERSEDED_IDLE_FOR,
+                newer: Box::new(move || {
+                    purlis_core::runnerinstall::prune::newer_beside(&config, &version, &|newer| {
+                        purlis_core::runnerhost::version_started_at_boot(&here, newer)
+                    })
+                }),
+            })
+        });
+    // A runner's binary installed as one version of several keeps a socket and a folder of its
+    // version's own, so it serves beside an older version's host, which drains (RR-14, #723).
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
-        purlis_core::machine::charterd(&config),
+        purlis_core::machine::host_folder(&config),
     );
     // A cluster runner follows a roll of the key it holds the operator's mint port to (#4207).
     purlis_core::forge::mintport::keep_following(config.clone());
@@ -1144,6 +1298,12 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             pairing,
             suspends_after,
             idles,
+            superseded,
+            if as_a_service {
+                purlis_host::Serves::AsARunnersService
+            } else {
+                purlis_host::Serves::Alone
+            },
         ))
         .unwrap_or(1),
     )
@@ -1990,8 +2150,13 @@ impl Common {
 /// Says `why` as purlis's refusal and fails — for a command answered outside [`run`], whose
 /// `Err` is printed the same way.
 fn refused(why: &str) -> ExitCode {
-    eprintln!("purlis: {why}");
+    say_refused(why);
     ExitCode::FAILURE
+}
+
+/// Says `why` as purlis's refusal, for a caller that fails with an exit code of its own.
+fn say_refused(why: &str) {
+    eprintln!("purlis: {why}");
 }
 
 /// Where this invocation is standing: the plane, the directory, and who is asking.
@@ -4579,7 +4744,7 @@ fn profile_sign_in(
     let pinned = match fetched {
         Ok(pinned) => pinned,
         Err(why) if check => {
-            refused(&format!(
+            say_refused(&format!(
                 "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
                 record.name
             ));
@@ -5326,6 +5491,9 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // How each family of refusals runs for this chat is the app's answer (Q308): asked the first
+    // time it is needed, every family enforced where the app does not answer.
+    policy::from_the_app();
     // First: the release build unwinds, and a Rust panic, on any thread, still ends the process
     // (`panicend`). The guard's refusal below replaces it and ends the process its own way.
     #[cfg(not(debug_assertions))]
@@ -5509,8 +5677,18 @@ fn main() -> ExitCode {
         return listen::run(*port, command);
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
-    if let Command::Serve { suspends_unlinked } = &cli.command {
-        return serve(suspends_after(*suspends_unlinked));
+    if let Command::Serve {
+        suspends_unlinked,
+        install,
+        remove,
+        foreground: _,
+        as_a_service,
+    } = &cli.command
+    {
+        if *install || *remove {
+            return serve_kept(*install);
+        }
+        return serve(suspends_after(*suspends_unlinked), *as_a_service);
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {
@@ -5522,6 +5700,7 @@ fn main() -> ExitCode {
         mint_port,
         again,
         mint_check,
+        prune,
     } = &cli.command
     {
         #[cfg(not(unix))]
@@ -5535,8 +5714,14 @@ fn main() -> ExitCode {
                 mint_port,
                 again,
                 mint_check,
+                prune,
             );
             return bridge();
+        }
+        // Its pairing can run before the runner's host has begun its home.
+        #[cfg(unix)]
+        if *pair {
+            begin_a_runners_data_home();
         }
         #[cfg(unix)]
         let asked = match (make_key, publish) {
@@ -5548,6 +5733,7 @@ fn main() -> ExitCode {
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
             },
+            _ if *prune => bridge::Asked::Prune,
             _ if *mint_port => bridge::Asked::MintPort { again: *again },
             _ if mint_check.is_some() => bridge::Asked::MintCheck {
                 app: mint_check.clone().unwrap_or_default(),

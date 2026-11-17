@@ -140,6 +140,9 @@ fn remember<R: Runtime>(app: &AppHandle<R>) {
 /// Brings a window back: shown, unminimised, and in front. Each step can fail on its own and
 /// none is worth refusing to continue over.
 pub fn raise<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    // From the Dock, the Finder or a notification while purlis runs in the background: the Dock
+    // icon comes back and the tray says purlis runs as it always does (FD-17).
+    crate::lifecycle::from_the_background(app);
     if let Some(window) = app.get_window(label) {
         let _ = window.unminimize();
         let _ = window.show();

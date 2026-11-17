@@ -25,7 +25,12 @@ type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 
 fn collecting(frames: &Frames) -> Arc<dyn Fn(Painted) + Send + Sync> {
     let frames = frames.clone();
-    Arc::new(move |painted| frames.lock().unwrap().push(painted.jpeg))
+    // What the page is, said with no image (#6938), is no frame.
+    Arc::new(move |painted| {
+        if !painted.jpeg.is_empty() {
+            frames.lock().unwrap().push(painted.jpeg);
+        }
+    })
 }
 
 #[test]

@@ -98,6 +98,7 @@ fn open(number: u32, id: &str) -> OpenChat {
     OpenChat {
         number,
         id: Some(id.to_owned()),
+        earlier: Vec::new(),
     }
 }
 
@@ -189,6 +190,8 @@ fn a_chat_no_dispatch_started_links_to_its_closed_record() {
         ended: "2026-11-12T09:40:00Z".to_owned(),
         started_by: crate::chatrecords::StartedBy::Person,
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
+        chat: None,
     };
     crate::chatrecords::keep(&root, &closed).unwrap();
     let links = links(vec![open(652, MINE_ID)]);
@@ -224,6 +227,8 @@ fn a_closed_handoff_links_to_its_closed_record() {
             name: "Grill #5820: chat links".to_owned(),
         },
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
+        chat: None,
     };
     crate::chatrecords::keep(&root, &closed).unwrap();
     let links = links(vec![open(652, MINE_ID)]);

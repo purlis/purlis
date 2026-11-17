@@ -798,6 +798,106 @@ pub fn missed(
     crate::dispatch::append(&path_for(root, when, device), root, &row)
 }
 
+/// **What a case-6 Report says was missed** (#5739, spec #5714): the built-in skill its
+/// `Skill:` line names, by the name it has now, and the harness and version its `Harness:` line
+/// names, where it names one purlis starts. The lines are the ones purlis-report's case 6 asks
+/// for (#5698); a Report with no `Skill:` line naming a built-in (`purlis-…`) is of another case.
+///
+/// Read from the words the person filed, never from a harness's output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub skill: String,
+    /// The harness by the word the plane calls it (`claude`).
+    pub harness: Option<String>,
+    pub harness_version: Option<String>,
+}
+
+impl Reported {
+    /// The miss Report `body` says, or none where it is not case 6: it needs both a `Skill:`
+    /// line naming a built-in and the `Words:` line only case 6 asks for. Where the Report names
+    /// no harness purlis starts, `ran_as` (what the drafting chat's start said, its harness's
+    /// title and version) stands in for it.
+    pub fn of(body: &str, ran_as: Option<(&str, &str)>) -> Option<Reported> {
+        Self::of_among(body, ran_as, &crate::skills::built_in_names_here())
+    }
+
+    /// [`Self::of`], with `built_ins` the names of the built-in skills this purlis ships: a
+    /// Report naming another `purlis-` skill (a typo, or the template's `purlis-<name>`) is of
+    /// no skill. Where no bundle was found (`built_ins` empty), a well-formed name is enough.
+    pub fn of_among(
+        body: &str,
+        ran_as: Option<(&str, &str)>,
+        built_ins: &[String],
+    ) -> Option<Reported> {
+        let said = |field: &str| {
+            body.lines().find_map(|line| {
+                let line = line.trim().trim_start_matches(['-', '*', '>', ' ']);
+                let (name, value) = line.split_once(':')?;
+                name.trim_matches(['*', '`', ' '])
+                    .eq_ignore_ascii_case(field)
+                    .then(|| value.trim().trim_matches(['`', '"', '*', ' ']))
+            })
+        };
+        said("Words").filter(|words| !words.is_empty())?;
+        let skill = said("Skill")?
+            .split_whitespace()
+            .next()?
+            .trim_matches(|c: char| !(c.is_alphanumeric() || c == '-' || c == ':'));
+        let skill = purlis_skills::run_name(skill).to_ascii_lowercase();
+        let skill = purlis_skills::name_now(&skill).to_owned();
+        let well_formed = purlis_skills::name_reserved(&skill)
+            && skill.len() > purlis_skills::RESERVED_PREFIX.len()
+            && skill
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !well_formed || !(built_ins.is_empty() || built_ins.contains(&skill)) {
+            return None;
+        }
+        let (harness, harness_version) = said("Harness")
+            .map(harness_named)
+            .filter(|(harness, _)| harness.is_some())
+            .or_else(|| ran_as.map(|(title, version)| harness_named(&format!("{title} {version}"))))
+            .unwrap_or((None, None));
+        Some(Reported {
+            skill,
+            harness,
+            harness_version,
+        })
+    }
+}
+
+/// The harness `value` names by its title or its word (`Claude Code 2.1.40`, `codex`), and the
+/// version it gives after it, where it gives one.
+fn harness_named(value: &str) -> (Option<String>, Option<String>) {
+    let lower = value.to_lowercase();
+    let named = crate::harness::Harness::ALL
+        .into_iter()
+        .find_map(|harness| {
+            let declared = harness.declared();
+            [declared.title.to_lowercase(), declared.name.clone()]
+                .into_iter()
+                .find(|name| {
+                    lower.starts_with(name.as_str())
+                        && !lower[name.len()..].starts_with(|c: char| c.is_alphanumeric())
+                })
+                .map(|name| {
+                    (
+                        declared.name.clone(),
+                        value.get(name.len()..).unwrap_or("").to_owned(),
+                    )
+                })
+        });
+    let Some((word, rest)) = named else {
+        return (None, None);
+    };
+    let version = rest
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | '(' | ')' | ';'))
+        .map(|token| token.trim_start_matches(['v', 'V']).trim_end_matches('.'))
+        .find(|token| token.starts_with(|c: char| c.is_ascii_digit()))
+        .map(str::to_owned);
+    (Some(word), version)
+}
+
 /// One miss of a built-in skill, as the plane's skill log holds it (#5738).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Miss {

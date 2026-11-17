@@ -94,7 +94,7 @@ export const TheCheatSheet: Story = {
   },
 };
 
-/** **Off a Mac** Ctrl takes ⌘'s place, and the keys a chat keeps there say so. */
+/** **Off a Mac** Ctrl takes ⌘'s place, and the keys a terminal keeps there say so. */
 export const OffAMac: Story = {
   args: { mac: false },
   // The same rows with other words on them: `TheCheatSheet`'s picture is the sheet's.
@@ -106,7 +106,7 @@ export const OffAMac: Story = {
     await userEvent.keyboard("sidebar");
     const left = row(list, /left sidebar/);
     expect(left).toHaveTextContent("Ctrl+B");
-    expect(left).toHaveTextContent("Not in a chat");
+    expect(left).toHaveTextContent("Not in a terminal or a browser you drive");
     await userEvent.clear(filter);
     await userEvent.keyboard("pinned");
     expect(row(list, /pinned workspaces/)).toHaveTextContent("Ctrl+1–Ctrl+9");

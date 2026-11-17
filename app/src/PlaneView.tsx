@@ -577,6 +577,7 @@ import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
+import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -7541,13 +7542,9 @@ export const PlaneView = memo(function PlaneView({
    * and it takes the focused pane as any chat started does (#4758). It is an ordinary chat from then on. A
    * refusal is the row's to say.
    */
-  const reopenById = useCallback(
-    async (id: string): Promise<string | undefined> => {
-      const said = await commands
-        .reopenFinishedTask(plane, id, STARTING_SIZE.columns, STARTING_SIZE.rows)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (said.status === "error") return said.error;
-      const chat = said.data;
+  /** A chat a Reopen started, drawn and shown as a resumed one is. */
+  const showReopened = useCallback(
+    (chat: OpenChat) => {
       noteStarted(chat);
       showResumed(
         {
@@ -7558,10 +7555,35 @@ export const PlaneView = memo(function PlaneView({
         },
         filedFor(chat.cwd, focused),
       );
+    },
+    [focused, noteStarted, showResumed],
+  );
+  const reopenById = useCallback(
+    async (id: string): Promise<string | undefined> => {
+      const said = await commands
+        .reopenFinishedTask(plane, id, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") return said.error;
+      showReopened(said.data);
       rereadFinished();
       return undefined;
     },
-    [focused, noteStarted, plane, rereadFinished, showResumed],
+    [plane, rereadFinished, showReopened],
+  );
+  /**
+   * ***Reopen* on a closed chat's card drawn from its chat's record** (#6485): the chat started
+   * again on its conversation, by its number. A refusal is the card's to say.
+   */
+  const reopenClosedChat = useCallback(
+    async (number: number): Promise<string | undefined> => {
+      const said = await commands
+        .reopenClosedChat(plane, number, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") return said.error;
+      showReopened(said.data);
+      return undefined;
+    },
+    [plane, showReopened],
   );
   /** The same, from a finished task's row. */
   const reopenFinished = useCallback(
@@ -8959,6 +8981,10 @@ export const PlaneView = memo(function PlaneView({
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
       },
+      reopenClosedChat: async (number) => {
+        const why = await reopenClosedChat(number);
+        return why === undefined ? { ok: true } : { ok: false, refused: why };
+      },
       paneBack: goBack,
       ownTab,
       beside: besideOf,
@@ -9140,6 +9166,7 @@ export const PlaneView = memo(function PlaneView({
       showChat,
       showNeeding,
       reopenById,
+      reopenClosedChat,
       goBack,
       ownTab,
       besideOf,
@@ -12063,6 +12090,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
           their one Accept. */}
       <TeamSandboxOffNotice plane={plane} />
+      {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
+          one Accept; a value it could not read is said beside it, enforced meanwhile. */}
+      <ProjectPolicyNotice plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
           Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
       <PersonaHostsNotice plane={plane} asked={personasAsked} />

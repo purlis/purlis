@@ -4,14 +4,16 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCard } from "./bindings";
 import { narrow } from "./actions";
+import { reopenOffer } from "./actions";
 import {
-  ORDINARY_NO_REOPEN,
+  NOT_KEPT_NO_REOPEN,
+  NO_CONVERSATION_NO_REOPEN,
   cardRowId,
   cardWhen,
   numberRows,
   opensACard,
   outcomeOf,
-  whyCardCannotReopen,
+  cannotReopen,
 } from "./closedChat";
 
 const TASK: NonNullable<ChatCard["task"]> = {
@@ -43,8 +45,9 @@ const CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
   task: TASK,
+  found_by: null,
 };
 
 describe("a chat found by its number in the palette (#6214)", () => {
@@ -53,6 +56,20 @@ describe("a chat found by its number in the palette (#6214)", () => {
     expect(rows.map((row) => row.title)).toEqual(["Show closed chat #641 · Signed commits #5607"]);
     expect(opensACard(rows[0])).toBe(true);
     expect(rows[0].id).toBe(cardRowId(641));
+  });
+
+  it("a closed chat found by a number it had before a restart says that number too (#6685)", () => {
+    const card: ChatCard = {
+      ...CARD,
+      number: 731,
+      title: "Tidy the changelog",
+      task: null,
+      found_by: 702,
+    };
+    const rows = numberRows({ number: 702, lookup: { is: "ended", card } });
+    expect(rows.map((row) => row.title)).toEqual([
+      "Show closed chat #731 · Tidy the changelog (was #702)",
+    ]);
   });
 
   it("the finished row is found by 641 and by #641, and not by another number", () => {
@@ -93,14 +110,30 @@ describe("a chat found by its number in the palette (#6214)", () => {
     expect(note({ ...CARD, screen_kept: false, task: null })).toMatch(/\. Shows its card\.$/);
   });
 
-  it("says why Reopen does nothing in words that fit how the chat was started", () => {
-    expect(whyCardCannotReopen(CARD)).toBeUndefined();
-    const ordinary = { ...CARD, task: null, dispatched: false };
-    expect(whyCardCannotReopen(ordinary)).toBe(ORDINARY_NO_REOPEN);
-    // A handoff, or a task that owed no report: a dispatch started it, so not the ordinary words.
-    const handedOff = whyCardCannotReopen({ ...ordinary, dispatched: true });
-    expect(handedOff).toMatch(/^It cannot be reopened/);
-    expect(handedOff).not.toBe(ORDINARY_NO_REOPEN);
+  it("a chat's card reopens where its record kept a conversation, and says why not elsewhere", () => {
+    // #6485: a card drawn from its chat's record (no task) reopens from that record.
+    expect(cannotReopen(CARD)).toBeUndefined();
+    const chat = { ...CARD, task: null };
+    expect(cannotReopen({ ...chat, chat_reopen: "reopens" })).toBeUndefined();
+    expect(cannotReopen({ ...chat, chat_reopen: "no_conversation" })).toBe(
+      NO_CONVERSATION_NO_REOPEN,
+    );
+    expect(cannotReopen({ ...chat, chat_reopen: "not_kept" })).toBe(NOT_KEPT_NO_REOPEN);
+  });
+
+  it("a chat's card that does not reopen says what to do instead", () => {
+    const chat = { ...CARD, task: null };
+    for (const why of ["no_conversation", "not_kept"] as const)
+      expect(cannotReopen({ ...chat, chat_reopen: why })).toMatch(/Start a new chat to go on\.$/);
+  });
+
+  it("Reopen on a chat's card reopens it by its number, and on a task's card its task", () => {
+    const chat: ChatCard = { ...CARD, task: null, chat_reopen: "reopens" };
+    expect(reopenOffer(chat).does).toEqual({ verb: "reopenClosedChat", number: 641 });
+    expect(reopenOffer(CARD).does).toEqual({ verb: "reopenTask", id: TASK.id });
+    const kept = reopenOffer({ ...chat, chat_reopen: "not_kept" });
+    expect(kept.available).toBe(false);
+    expect(kept.reason).toBe(NOT_KEPT_NO_REOPEN);
   });
 
   it("the card says how and when it ended, and that its chat has closed", () => {

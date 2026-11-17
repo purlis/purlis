@@ -14,12 +14,11 @@ publish = false
 [dependencies]
 # A level-3 chat's ACP client (HP-2, ADR 0080 §1): the protocol's own Rust SDK, Apache-2.0. It is
 # async, so a chat's protocol runs on a thread of its own under `futures`' executor, and the
-# agent's pipes are made async by `blocking`'s `Unblock`. The SDK brings no runtime of its own;
-# from 3.0 it enables no features by default, and purlis needs none of them: it spawns the agent
-# itself and hands the SDK a `Lines` transport over the child's pipes, so neither `process` nor
-# `stdio` is wanted.
+# agent's stdout is read by a reader thread of the chat's own. The SDK brings no runtime of its
+# own; from 3.0 it enables no features by default, and purlis needs none of them: it spawns the
+# agent itself and hands the SDK a `Lines` transport over the child's pipes, so neither `process`
+# nor `stdio` is wanted.
 agent-client-protocol = "5.0"
-blocking = "1"
 # A brokered `secret exec`'s output crosses the hook socket as base64 (#1407): a child's bytes
 # need not be UTF-8. The version the CLI and the app already use, so no crate is added.
 base64 = "0.23"
@@ -133,7 +132,7 @@ minidump-unwind = "0.26"
 # default features: their `cache` is a statement cache the index does not need, and the
 # `sqlite-wasm-rs` backend is for a target purlis never builds. rusqlite and libsqlite3-sys are
 # MIT; SQLite itself is in the public domain.
-rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.42", default-features = false, features = ["bundled"] }
 # A branch's changes, read in-process (FM-4, D-88f): the explorer reads them by itself after
 # every write an agent makes, so no git process may start in a repository whose config the agent
 # can write. gitoxide reads the index, the working tree and the trees with no program run:
@@ -213,7 +212,7 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # A TLS pool's CA is shown at Connect by its subject (#6267, ADR 0123 §3): the certificate read
 # with `x509-cert`, already in this workspace's lockfile through `sigstore-verify`.
-x509-cert = { version = "0.2", default-features = false, features = ["std"] }
+x509-cert = { version = "0.3", default-features = false, features = ["std"] }
 curve25519-dalek = { version = "5", default-features = false }
 # The request and response types `ureq` speaks, and the URL a token may be sent to is parsed with.
 http = "1"
@@ -254,7 +253,7 @@ percent-encoding = "2"
 # Whether an artifact's template holds script a browser runs (#5959, ADR 0122 §4): its pages
 # read by the HTML tokenizer browsers' parsing is specified by, never by matching text. Servo's,
 # MIT OR Apache-2.0, already in this workspace's lockfile through the webview's crates.
-html5ever = "0.39"
+html5ever = "0.40"
 shell-words = "1"
 # The ids ADR 0066 gives devices, chats, runs and events: ULIDs, whose time part sorts them and
 # dates an event without a timestamp field. The standard crate for them.

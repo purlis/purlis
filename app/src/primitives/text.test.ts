@@ -165,11 +165,10 @@ describe("the text roles", () => {
     expect(named(drawnWith(word, "color"))).toBe("--text-primary");
   });
 
-  it("leaves the largest size, --font-size-xl, to no word: only the two marks drawn in it (#1920)", () => {
-    // The two largest size tokens are each read by a role or by no word (#1920). `lg` is the
-    // title's. `xl` was the Welcome's heading, a settings page's, a pool's setup and the agent
-    // identity flow's, which wear the title now; what reads it is a mark, an icon sized by the
-    // text around it, and never a word. Whether it leaves the theme format is the operator's.
+  it("keeps --font-size-xl for marks only: a word never reads it (#1920, #6390)", () => {
+    // `font-size.xl` is the mark step, not a type step (docs/design-system.md, "The mark step").
+    // A mark is an icon sized by the text around it. A word that needs to be larger wears the
+    // title role (`--font-size-lg`); a new mark joins this list on purpose.
     const reading = sourceFiles((name) => name.endsWith(".css"))
       .filter((file) => !file.startsWith("theme/"))
       .flatMap((file) =>
@@ -177,7 +176,12 @@ describe("the text roles", () => {
           .filter(({ value }) => value.includes("--font-size-xl"))
           .map(({ context, property: name }) => `${file} ${context.join(" ")} | ${name}`),
       );
-    expect(reading).toEqual([
+    expect(
+      reading,
+      "--font-size-xl is the size for marks, never for words: see docs/design-system.md, " +
+        '"The mark step: font-size.xl" (#6390). A word wears the title role (--font-size-lg); ' +
+        "a new mark is added to this list and to that section.",
+    ).toEqual([
       "App.css .start-chat-who > .persona-mark, .start-chat-who > .start-chat-no-mark | font-size",
       // Tailwind's `text-xl`, pointed at the core's token so it has no value of its own; no
       // view writes it (the geometry guard holds named sizes).

@@ -3304,6 +3304,8 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Merge(_) => 23,
             Ask::Chats(_) => 24,
             Ask::Attendance(_) => 25,
+            Ask::Policy(_) => 26,
+            Ask::PolicyLog(_) => 27,
         }
     }
     let asks = vec![
@@ -3475,10 +3477,17 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             unattended: false,
             claude_code_mode: None,
         }),
+        Ask::Policy(purlis_core::hookwire::PolicyAsk { chat }),
+        Ask::PolicyLog(purlis_core::hookwire::PolicyLogAsk {
+            chat,
+            family: "guards.git".to_owned(),
+            rule: "A3".to_owned(),
+            host: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=25).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -15895,4 +15904,75 @@ fn a_report_the_socket_hears_lowers_the_fact_and_the_record_keeps_it() {
         .find(|chat| chat.number == Some(asking))
         .expect("recorded");
     assert!(kept.unattended, "{kept:?}");
+}
+
+#[test]
+fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_port() {
+    // The re-review of #6992, S3: a line a chat's process hands over is checked before it is
+    // written, and nothing is written for a caller the app cannot name.
+    use purlis_core::enforcement;
+    use purlis_core::hookwire::PolicyLogAsk;
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let chat_id = held.chats().id_of(asking).expect("an open chat has an id");
+    let line = |chat: u32, family: &str, rule: &str, host: Option<&str>| PolicyLogAsk {
+        chat,
+        family: family.to_owned(),
+        rule: rule.to_owned(),
+        host: host.map(str::to_owned),
+    };
+    let guard = purlis_core::toolgate::Arm::PlaneRootBranch.id();
+
+    policy_line(&held, &line(asking, "guards.git", guard, None)).expect("kept");
+    policy_line(
+        &held,
+        &line(
+            asking,
+            "asks",
+            enforcement::RULE_HOST_ASK,
+            Some("example.com:443"),
+        ),
+    )
+    .expect("kept");
+    for (refused, why) in [
+        (
+            line(asking, "guards.git", "rm -rf /home/someone", None),
+            "a rule",
+        ),
+        (
+            line(asking, "guards.save", guard, None),
+            "another family's rule",
+        ),
+        (line(asking, "nothing", guard, None), "a family"),
+        (
+            line(
+                asking,
+                "asks",
+                enforcement::RULE_HOST_ASK,
+                Some("https://x/a?b"),
+            ),
+            "a host",
+        ),
+        (
+            line(
+                asking,
+                "asks",
+                enforcement::RULE_HOST_ASK,
+                Some("example.com"),
+            ),
+            "a port",
+        ),
+        (line(asking + 1000, "guards.git", guard, None), "a chat"),
+    ] {
+        assert!(policy_line(&held, &refused).is_err(), "{why}");
+    }
+    assert_eq!(enforcement::read_log(&plane.root, &chat_id).len(), 2);
+    assert!(
+        enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty(),
+        "nothing is written for an unidentified caller"
+    );
 }

@@ -11,6 +11,8 @@ use std::fmt;
 
 use super::Os;
 
+pub use purlis_linux_sandbox::WayOn;
+
 /// Where macOS keeps Seatbelt's front end. Always there on a supported macOS.
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
@@ -90,8 +92,8 @@ pub fn missing(os: Os, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
 
 /// What a person can do where this kernel lacks the Landlock purlis's own wrap needs
 /// ([`purlis_linux_sandbox::landlock_way_on`]).
-pub fn landlock_way_on(opt_out: bool) -> String {
-    purlis_linux_sandbox::landlock_way_on(opt_out)
+pub fn landlock_way_on(way: WayOn) -> String {
+    purlis_linux_sandbox::landlock_way_on(way)
 }
 
 /// **The command that installs what `missing` names** with the package manager of the

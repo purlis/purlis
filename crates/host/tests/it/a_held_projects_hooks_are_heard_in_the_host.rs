@@ -226,6 +226,7 @@ fn the_windows_start(number: Option<u32>) -> StartProgram {
             }),
             confinement: None,
             prompt_key: None,
+            pools_held: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }
