@@ -1160,7 +1160,9 @@ pub fn against_base(base: &Coverage, head: &Coverage, rulings: &Rulings) -> Vec<
     let unruled = |head: Option<&String>, was: Option<&String>, target: Target<'_>| match head {
         None => Some("no Q-id".to_string()),
         Some(q) if Some(q) == was => Some(format!("`{q}`, which its base already cited")),
-        Some(q) => rulings.refuses(q, target).map(|why| format!("{why} of the base")),
+        Some(q) => rulings
+            .refuses(q, target)
+            .map(|why| format!("{why} of the base")),
     };
     let mut refuse = |at: String, what: String, why: String| {
         problems.push(format!("{at}: {what}, with {why}; {RULINGS_ALONE}"));
@@ -1222,7 +1224,10 @@ pub fn against_base(base: &Coverage, head: &Coverage, rulings: &Rulings) -> Vec<
             ));
         }
         if pending(&r.cover) && !pending(&b.cover) {
-            moves.push(format!("its cover `{}` goes back to `{}`", b.cover, r.cover));
+            moves.push(format!(
+                "its cover `{}` goes back to `{}`",
+                b.cover, r.cover
+            ));
         }
         if moves.is_empty() {
             continue;
