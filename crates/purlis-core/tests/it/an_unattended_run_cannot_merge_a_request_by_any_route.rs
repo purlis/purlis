@@ -394,7 +394,7 @@ fn a_write_merely_named_merge_is_not_a_merge() {
     purlis_core::unsteered!();
     allowed_unattended(&[
         "gh api -X PATCH repos/o/r/git/refs/heads/merge-fix -f sha=abc",
-        "gh api -X PUT repos/o/r/contents/docs/merge.md -f message=x -f content=eA==",
+        "gh api -X PUT repos/o/r/contents/docs/merge.md -f branch=merge-fix -f message=x -f content=eA==",
         "gh api -X POST repos/o/r/git/refs -f ref=refs/heads/merge-fix -f sha=abc",
         "glab api -X POST projects/1/repository/branches -f branch=merge-fix -f ref=main",
     ]);

@@ -23,13 +23,19 @@
 //! **A closed frame** (1.45, #2028, [`CLOSED`]) is the last of a view of a browser's DevTools:
 //! why they closed, as one of [`CLOSED_WHY`]'s words, which the window says in its own.
 //!
+//! **A page frame** (1.90, #6938, [`PAGE`]) carries no image: what the page is, as JSON
+//! ([`crate::browsing::PageShown`]): its whole address, its title and where its load stands. The
+//! host sends one where any of them changes and before the image in a view's snapshot, as it
+//! sends an origin frame, and a reader takes what it says only through
+//! [`crate::browsing::PageShown::held`].
+//!
 //! A frame's image is opaque to the host and to this crate: the window decodes it on a canvas.
 //! A reader reads a frame of a format it does not know whole, and passes it on for its caller
 //! to skip, so a later minor may add a format.
 
 use bytes::{Buf, Bytes, BytesMut};
 
-use crate::browsing::Aim;
+use crate::browsing::{Aim, PageShown};
 
 /// A JPEG image, as the engine's screencast makes it.
 pub const JPEG: u8 = 0x01;
@@ -42,6 +48,9 @@ pub const ORIGIN: u8 = 0x03;
 
 /// Why a browser's DevTools closed, the last frame of their view (1.45): [`closed`].
 pub const CLOSED: u8 = 0x04;
+
+/// What a browser's page is (1.90): [`page`].
+pub const PAGE: u8 = 0x05;
 
 /// The words a [`CLOSED`] frame says: the person handed the browser back, the page went,
 /// DevTools fell behind, the page sent more than they show at once, they left their page, they
@@ -84,6 +93,14 @@ pub fn aimed(aim: &Aim, image: &[u8]) -> Bytes {
 /// `origin`, the origin of the page a browser shows, or none, as one [`ORIGIN`] frame.
 pub fn origin(origin: Option<&str>) -> Bytes {
     frame(ORIGIN, origin.unwrap_or_default().as_bytes())
+}
+
+/// What a browser's page is, as one [`PAGE`] frame.
+pub fn page(shown: &PageShown) -> Bytes {
+    frame(
+        PAGE,
+        &serde_json::to_vec(shown).expect("a page's words are JSON"),
+    )
 }
 
 /// Why a browser's DevTools closed, one of [`CLOSED_WHY`], as one [`CLOSED`] frame.
@@ -151,6 +168,17 @@ impl Frame {
         }
         let origin = std::str::from_utf8(&self.image).ok()?;
         Some((!origin.is_empty()).then(|| origin.to_owned()))
+    }
+
+    /// What a [`PAGE`] frame says the page is, as a view may draw it
+    /// ([`PageShown::held`]); `None` for any other frame, or one that does not read.
+    pub fn page(&self) -> Option<PageShown> {
+        if self.format != PAGE {
+            return None;
+        }
+        serde_json::from_slice::<PageShown>(&self.image)
+            .ok()
+            .map(PageShown::held)
     }
 
     /// Why a [`CLOSED`] frame says DevTools closed: one of [`CLOSED_WHY`]; `None` for any other

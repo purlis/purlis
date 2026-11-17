@@ -26,8 +26,8 @@ use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, FillHold, Gate, Hold, Judge,
-    KeptOff, Limits, Outbound, PageId, PageInfo, Painted, Ref, Refusal, RefusedLoad, Settled, Why,
-    lock,
+    KeptOff, Limits, Outbound, PageId, PageInfo, PageLoad, Painted, Ref, Refusal, RefusedLoad,
+    Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
@@ -303,6 +303,24 @@ fn pastes(event: &Value) -> bool {
     });
     let insert = event["key"] == "Insert" && event["modifiers"].as_i64().unwrap_or(0) & 8 != 0;
     commanded || insert
+}
+
+/// **What a view is told of a page** (#6938), from [`State::shown_now`], with no image: where its
+/// address holds a text kept out, it is named by none, since what a view is told of it is written
+/// where a chat can read it (the person's ruling of 2026-11-06). Worked out with no lock held.
+fn told_of(
+    (aim, mut address, title, load, kept): (Aim, String, String, PageLoad, Kept),
+) -> Painted {
+    if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
+        address.clear();
+    }
+    Painted {
+        aim,
+        address,
+        title,
+        load,
+        jpeg: Vec::new(),
+    }
 }
 
 /// The first [`MOST_TITLE_CHARS`] of `title`: of a title already scrubbed, as a text cut first
@@ -964,9 +982,32 @@ struct Page {
     /// that showed a document, or for a page another opened, that page's when it opened it. What
     /// a page holding a secret may leave for without the person being asked.
     chain_began: Option<String>,
+    /// **Where its own document's load stands** (#6938), as the engine tells of it: loading
+    /// from its main frame's start of a load to that load's stop.
+    loading: bool,
+    /// The engine's request for its own document's load under way, as its network tells of it,
+    /// and why that load failed where it said (#6938).
+    document_request: Option<String>,
+    load_failed_why: Option<String>,
+    /// Its renderer crashed (#6938): until it loads again.
+    crashed: bool,
 }
 
 impl Page {
+    /// **Where its load stands** (#6938): crashed, loading, failed (it shows the engine's own page
+    /// for a load that failed) or loaded.
+    fn load(&self) -> PageLoad {
+        if self.crashed {
+            PageLoad::Crashed
+        } else if self.loading {
+            PageLoad::Loading
+        } else if self.failed_load.is_some() {
+            PageLoad::Failed(self.load_failed_why.clone().unwrap_or_default())
+        } else {
+            PageLoad::Loaded
+        }
+    }
+
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
         Scrub::of(&self.scrubbed).text(text)
@@ -1536,6 +1577,20 @@ impl State {
         for page in &mut self.pages {
             page.keep_out(&kept);
         }
+    }
+
+    /// **What `target`'s page is now, as its views are told** (#6938): what a frame of it shows,
+    /// its address, its title as `browser_pages` lists it and where its load stands; and every
+    /// text kept out now, which the address is checked against with no lock held.
+    fn shown_now(&self, target: &str) -> Option<(Aim, String, String, PageLoad, Kept)> {
+        let page = self.page(target)?;
+        Some((
+            self.aim(target)?,
+            self.document_address(target)?,
+            page.shown_title(),
+            page.load(),
+            self.every_kept(),
+        ))
     }
 
     /// What a frame of `target`'s page shows now: the page, and its main frame's document.
@@ -6224,6 +6279,38 @@ impl Inner {
         state.sessions.remove(session);
     }
 
+    /// **Tells a view what the current page is, where an event of `method` may have changed it**
+    /// (#6938): its address, title or load, with no image, while the browser is shown and only
+    /// where any of them changed. A page that is loading may paint nothing for a while, and its
+    /// view still says so.
+    fn tell_page_now(&self, method: &str) {
+        if !matches!(
+            method,
+            "Page.frameStartedLoading"
+                | "Page.frameStoppedLoading"
+                | "Page.frameNavigated"
+                | "Page.navigatedWithinDocument"
+                | "Network.loadingFailed"
+                | "Target.targetInfoChanged"
+                | "Target.targetCrashed"
+                | "Target.targetDestroyed"
+                | "Target.attachedToTarget"
+        ) || !self.cast.showing()
+        {
+            return;
+        }
+        let shown = {
+            let state = lock(&self.state);
+            state
+                .current
+                .as_deref()
+                .and_then(|target| state.shown_now(target))
+        };
+        if let Some(shown) = shown {
+            self.cast.page_now(told_of(shown));
+        }
+    }
+
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
         // The front end of the person's DevTools is DevTools' own, never one of the browser's
@@ -6243,21 +6330,11 @@ impl Inner {
             let shown = event.session_id.as_deref().and_then(|session| {
                 let state = lock(&self.state);
                 let target = state.page_of_session(session)?;
-                Some((
-                    state.aim(&target)?,
-                    state.document_address(&target)?,
-                    state.every_kept(),
-                ))
+                state.shown_now(&target)
             });
-            if let Some((aim, mut address, kept)) = shown {
-                // Where the page's address holds a text kept out, it is named by none: what a
-                // view is told of it is written where a chat can read it (the person's ruling of
-                // 2026-11-06). Worked out with no lock held.
-                if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
-                    address.clear();
-                }
+            if let Some(shown) = shown {
                 self.cast
-                    .frame(&event.params, event.session_id.as_deref(), aim, address);
+                    .frame(&event.params, event.session_id.as_deref(), told_of(shown));
             }
             return;
         }
@@ -6421,6 +6498,10 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 failed_load: None,
+                                loading: false,
+                                document_request: None,
+                                load_failed_why: None,
+                                crashed: false,
                                 leaving: false,
                                 chain_begins: None,
                                 chain_began,
@@ -6597,6 +6678,12 @@ impl Inner {
                 "Page.frameStartedLoading" => {
                     if let (Some(session), Some(frame)) = (&event.session_id, text("/frameId")) {
                         state.frame_started(session, &frame);
+                        // A page's own document loads (#6938): what it said of the last is over.
+                        if let Some(page) = state.page_mut(&frame) {
+                            page.loading = true;
+                            page.crashed = false;
+                            page.load_failed_why = None;
+                        }
                     }
                 }
                 "Page.frameStartedNavigating"
@@ -6612,6 +6699,36 @@ impl Inner {
                 "Page.frameStoppedLoading" => {
                     if let Some(frame) = text("/frameId") {
                         state.frame_stopped(&frame);
+                        if let Some(page) = state.page_mut(&frame) {
+                            page.loading = false;
+                        }
+                    }
+                }
+                // The request for a page's own document, and why it failed where it did: what the
+                // page's view says of a load that failed (#6938).
+                "Network.requestWillBeSent" if text("/type").as_deref() == Some("Document") => {
+                    if let (Some(frame), Some(request)) = (text("/frameId"), text("/requestId"))
+                        && let Some(page) = state.page_mut(&frame)
+                    {
+                        page.document_request = Some(request);
+                    }
+                }
+                "Network.loadingFailed" if params["canceled"].as_bool() != Some(true) => {
+                    if let (Some(session), Some(request)) = (&event.session_id, text("/requestId"))
+                        && let Some(target) = state.page_of_session(session)
+                        && let Some(page) = state.page_mut(&target)
+                        && page.document_request.as_deref() == Some(request.as_str())
+                    {
+                        page.load_failed_why = text("/errorText");
+                    }
+                }
+                // A page's renderer crashed (#6938): its view says so until it loads again.
+                "Target.targetCrashed" => {
+                    if let Some(target) = text("/targetId")
+                        && let Some(page) = state.page_mut(&target)
+                    {
+                        page.crashed = true;
+                        page.loading = false;
                     }
                 }
                 // purlis's own worlds, as the engine tells of them (#2138).
@@ -6913,6 +7030,7 @@ impl Inner {
         if let Some((target, address)) = navigated {
             self.came_back(&target, &address);
         }
+        self.tell_page_now(&event.method);
         self.changed.notify_all();
         for step in follow {
             let step = match step {

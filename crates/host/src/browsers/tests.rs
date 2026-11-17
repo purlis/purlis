@@ -114,6 +114,7 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
             super::Reads {
                 aims: true,
                 origins: true,
+                pages: true,
                 between_hosts: false,
             },
         )
@@ -157,6 +158,7 @@ fn a_view(
             super::Reads {
                 aims: true,
                 origins: true,
+                pages: true,
                 between_hosts,
             },
         )

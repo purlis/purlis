@@ -367,26 +367,16 @@ pub fn answer(
         Ask::Policy(_) => Answer::Policy {
             spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
         },
-        // One log line a hook hands over (Q308): written under the app's own record of the chat
-        // whose token the line carries, by its id, or as "unknown" where it has none.
-        Ask::PolicyLog(line) => {
-            if let Some(family) = purlis_core::enforcement::Family::of_key(&line.family) {
-                let chat = held
-                    .chats()
-                    .id_of(line.chat)
-                    .unwrap_or_else(|| purlis_core::enforcement::UNKNOWN_CHAT.to_owned());
-                purlis_core::enforcement::write_line(
-                    held.root(),
-                    &chat,
-                    family,
-                    &line.rule,
-                    line.host.as_deref(),
-                );
-            }
-            Answer::Policy {
+        // One log line a hook hands over (Q308): written under the app's own record of the open
+        // chat whose token the line carries, by its id. Refused (the re-review of #6992, S3) for
+        // a chat this app has no open record of, a family or rule purlis does not have, or a host
+        // that is no `host:port`; nothing is written for an unidentified caller.
+        Ask::PolicyLog(line) => match policy_line(held, &line) {
+            Ok(()) => Answer::Policy {
                 spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
-            }
-        }
+            },
+            Err(why) => no(why),
+        },
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -1783,6 +1773,33 @@ pub fn close_reported(held: &Arc<Held>, reported: Vec<(u32, ClosesWith)>, decidi
 /// cannot answer one directory two ways (SI-1).
 pub(crate) fn workspace_of(root: &std::path::Path, cwd: &std::path::Path) -> Option<String> {
     purlis_core::active::workspace_of_tree(root, cwd)
+}
+
+/// **Writes one log line a chat's process handed over** ([`Ask::PolicyLog`]), or says why not.
+fn policy_line(held: &Held, line: &purlis_core::hookwire::PolicyLogAsk) -> Result<(), String> {
+    use purlis_core::enforcement::{self, Family};
+    let Some(chat) = held.chats().id_of(line.chat) else {
+        return Err(format!(
+            "purlis kept no log line: chat {} is not open in this project",
+            line.chat
+        ));
+    };
+    let Some(family) = Family::of_key(&line.family) else {
+        return Err("purlis kept no log line: it names no family of the policy".to_owned());
+    };
+    if !enforcement::known_rule(family, &line.rule) {
+        return Err(format!(
+            "purlis kept no log line: it names no rule of {}",
+            family.key()
+        ));
+    }
+    if let Some(host) = &line.host
+        && !enforcement::is_host_and_port(host)
+    {
+        return Err("purlis kept no log line: its host is no host:port".to_owned());
+    }
+    enforcement::write_line(held.root(), &chat, family, &line.rule, line.host.as_deref());
+    Ok(())
 }
 
 fn no(why: String) -> Answer {

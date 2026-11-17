@@ -378,7 +378,15 @@ pub fn masked_of<'a>(root: &Path, chat: Option<&str>, secrets: &'a [String]) -> 
     if mode == Mode::Enforce || secrets.is_empty() {
         return secrets;
     }
-    enforcement::judged(root, chat, Family::Secrets, mode, "mask", None, ());
+    enforcement::judged(
+        root,
+        chat,
+        Family::Secrets,
+        mode,
+        enforcement::RULE_MASK,
+        None,
+        (),
+    );
     &[]
 }
 

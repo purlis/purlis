@@ -28,7 +28,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::browser::Inner;
-use super::{Aim, Painted, lock};
+use super::{PageLoad, Painted, lock};
 
 /// Where each frame goes: its image, and what it showed.
 pub(crate) type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
@@ -47,16 +47,22 @@ enum Ask {
     Frame { session: String, ack: i64 },
 }
 
-/// The screencast's side of a browser: the sink frames go to while shown, and its thread.
+/// The screencast's side of a browser: the sink frames go to while shown, what it was last told
+/// the page is (#6938), and its thread.
 pub(crate) struct Screencast {
     sink: Mutex<Option<Sink>>,
+    told: Mutex<Option<Told>>,
     asks: Mutex<Option<Sender<Ask>>>,
 }
+
+/// What the sink was last told the page is: its address, title and load (#6938).
+type Told = (String, String, PageLoad);
 
 impl Screencast {
     pub(crate) fn new() -> Self {
         Self {
             sink: Mutex::new(None),
+            told: Mutex::new(None),
             asks: Mutex::new(None),
         }
     }
@@ -79,6 +85,7 @@ impl Screencast {
 
     pub(crate) fn show(&self, sink: Sink) {
         *lock(&self.sink) = Some(sink);
+        *lock(&self.told) = None;
         self.ask(Ask::Show);
     }
 
@@ -95,10 +102,36 @@ impl Screencast {
         self.ask(Ask::Narrow(most));
     }
 
+    /// Whether frames are shown now: whether a view is told what the page is (#6938).
+    pub(crate) fn showing(&self) -> bool {
+        lock(&self.sink).is_some()
+    }
+
+    /// **What the page is now, with no image** (#6938): handed over while shown, and only where
+    /// it is not what the sink was last told.
+    pub(crate) fn page_now(&self, shown: Painted) {
+        let Some(sink) = lock(&self.sink).clone() else {
+            return;
+        };
+        let now = (
+            shown.address.clone(),
+            shown.title.clone(),
+            shown.load.clone(),
+        );
+        {
+            let mut told = lock(&self.told);
+            if told.as_ref() == Some(&now) {
+                return;
+            }
+            *told = Some(now);
+        }
+        sink(shown);
+    }
+
     /// A `Page.screencastFrame` event, from the event reader: handed over while shown, with
-    /// `aim`, what it showed (#2014), and `address`, the engine's record of its page's document
-    /// (#2300), and acknowledged on the screencast's thread.
-    pub(crate) fn frame(&self, params: &Value, session: Option<&str>, aim: Aim, address: String) {
+    /// what `shown` says of it (its aim, #2014, the engine's record of its page's document,
+    /// #2300, its title and its load, #6938), and acknowledged on the screencast's thread.
+    pub(crate) fn frame(&self, params: &Value, session: Option<&str>, shown: Painted) {
         let Some(sink) = lock(&self.sink).clone() else {
             return;
         };
@@ -110,7 +143,12 @@ impl Screencast {
             return;
         };
         if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(data) {
-            sink(Painted { aim, address, jpeg });
+            *lock(&self.told) = Some((
+                shown.address.clone(),
+                shown.title.clone(),
+                shown.load.clone(),
+            ));
+            sink(Painted { jpeg, ..shown });
         }
         self.ask(Ask::Frame {
             session: session.to_owned(),

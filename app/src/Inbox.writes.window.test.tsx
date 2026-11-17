@@ -82,7 +82,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
 
     const view = await screen.findByTestId("merge-viewer", undefined, { timeout: 5000 });
     expect(view).toHaveAttribute("aria-label", "Replaces this text, in /work/src/lib.rs");
-    await vi.waitFor(() => expect(view.querySelectorAll(".cm-editor")).toHaveLength(2));
+    await waitFor(() => expect(view.querySelectorAll(".cm-editor")).toHaveLength(2));
     const [before, after] = [...view.querySelectorAll(".cm-editor")];
     expect(lines(before)).toEqual(["fn one() {}", ""]);
     expect(lines(after)).toEqual(["fn two() {}", ""]);

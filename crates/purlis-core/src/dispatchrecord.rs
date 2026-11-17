@@ -2522,20 +2522,9 @@ pub(crate) fn a_record(name: &str) -> bool {
 /// file holding a brief, which nothing reads and [`crate::retention`] collects with the
 /// records.
 pub(crate) fn a_record_s_temp(name: &str) -> bool {
-    let prefix = crate::names::GENERATED_TEMP_PREFIX;
-    std::iter::once(prefix.write)
-        .chain(prefix.reads.iter().copied())
-        .chain(prefix.history.iter().copied())
-        .filter_map(|prefix| name.strip_prefix(prefix))
-        .filter_map(|rest| rest.strip_suffix(".tmp"))
-        // `<ULID>.json.<pid>.<tag>`: a record's name, then the two parts a write adds.
-        .any(|rest| {
-            let mut parts = rest.rsplitn(3, '.');
-            let (tag, pid, record) = (parts.next(), parts.next(), parts.next());
-            tag.is_some_and(|tag| !tag.is_empty())
-                && pid.is_some_and(|pid| !pid.is_empty())
-                && record.is_some_and(|record| a_record(record) || record == SUMMARY_NAME)
-        })
+    crate::rewrite::temp_of(name)
+        .and_then(|temp| temp.of)
+        .is_some_and(|record| a_record(record) || record == SUMMARY_NAME)
 }
 
 fn an_id(id: &str) -> bool {

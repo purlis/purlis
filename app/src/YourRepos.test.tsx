@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ListedRepo, RepoListing, RepoReach } from "./bindings";
@@ -196,12 +196,12 @@ describe("your repos (#1818)", () => {
     const asked = forge.lists();
     forge.next(LISTED);
     await person.type(within(dialog).getByLabelText("Token"), "pasted-for-the-test");
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(within(dialog).getByRole("button", { name: "Sign in" })).toBeEnabled(),
     );
     await person.click(within(dialog).getByRole("button", { name: "Sign in" }));
 
-    await vi.waitFor(() => expect(rows()).toHaveLength(3));
+    await waitFor(() => expect(rows()).toHaveLength(3));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(forge.lists()).toBe(asked + 1);
   });
@@ -234,7 +234,7 @@ describe("your repos (#1818)", () => {
     const asked = forge.lists();
     forge.next(LISTED);
     await person.click(within(forges).getByRole("button", { name: "Retry" }));
-    await vi.waitFor(() => expect(rows()).toHaveLength(3));
+    await waitFor(() => expect(rows()).toHaveLength(3));
     expect(forge.lists()).toBe(asked + 1);
   });
 

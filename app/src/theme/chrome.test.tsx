@@ -31,6 +31,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { AboutCharter } from "../About";
+import { SecretMarks } from "../SecretMarks";
 import { ENDS_IT, OUTSIDE } from "../actions";
 import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
 import { workspaceMade } from "../actionResult";
@@ -384,7 +385,7 @@ const CLOSED_CHAT_CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -727,6 +728,21 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<AboutCharter />);
       await userEvent.click(screen.getByTestId("title-about"));
+    },
+  },
+  {
+    name: "a browser's secrets filled, in its count's popover (#6937)",
+    file: "SecretMarks.tsx",
+    open: async () => {
+      const filled = (key: string) => ({
+        key,
+        origin: "https://dash.example.test",
+        page: null,
+        label: "API key",
+        code: false,
+      });
+      render(<SecretMarks secrets={[filled("dash-api-key"), filled("dash-2fa")]} />);
+      await userEvent.click(screen.getByRole("button", { name: "2 secrets" }));
     },
   },
   {

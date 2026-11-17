@@ -134,7 +134,13 @@ fn an_ssh_context_is_read_into_its_route_and_a_pool_reaches_the_engine_by_it() {
     // Connect, on the route read: met, its socket found and its engine read through a forward.
     let ssh = sshroute::ssh_here().expect("the system's ssh");
     let settings_in = fixture.folders.path().join("s");
-    let key = connect::meet(&ssh, route, &settings_in).expect("met");
+    let key = connect::meet(
+        &ssh,
+        route,
+        &connect::resolve(&ssh, route).expect("resolved"),
+        &settings_in,
+    )
+    .expect("met");
     let found = connect::probe(&ssh, route, "ctx", &key, &settings_in, "pool").expect("its socket");
     let opening = forward::Opening {
         ssh: &ssh,

@@ -3,7 +3,14 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -91,12 +98,12 @@ describe("the window's own lines", () => {
   it("move with the opener and back, as the same line, and stay dismissed", async () => {
     const { fire, listening } = core();
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
     // A project in front: the line is listed in its Notices view (#5645), outside the opener's
     // page, and never under the title bar.
-    const line = await vi.waitFor(() => {
+    const line = await waitFor(() => {
       const one = slowLine();
       expect(one.closest(".inbox-window-lines")).not.toBeNull();
       return one;
@@ -107,7 +114,7 @@ describe("the window's own lines", () => {
     // The project goes: the same line, now at the top of the opener's page.
     fire("plane-closed", { plane: ONE });
     const heading = await screen.findByRole("heading", { level: 1 });
-    await vi.waitFor(() => expect(slowLine().closest(".window-notices-at")).not.toBeNull());
+    await waitFor(() => expect(slowLine().closest(".window-notices-at")).not.toBeNull());
     expect(slowLine()).toBe(line);
     expect(slowLine().closest(".welcome-pane")).not.toBeNull();
     expect(slowLine().compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
@@ -116,8 +123,8 @@ describe("the window's own lines", () => {
 
     // A project comes back from the opener: the same line again, in its Inbox.
     await userEvent.click(await screen.findByRole("row", { name: /^one/ }));
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
-    await vi.waitFor(() => expect(slowLine().closest(".inbox-window-lines")).not.toBeNull());
+    await waitFor(() => expect(projectTabs()).toEqual(["one"]));
+    await waitFor(() => expect(slowLine().closest(".inbox-window-lines")).not.toBeNull());
     expect(slowLine()).toBe(line);
 
     // Dismissed with a project in front, it stays dismissed when the project goes.

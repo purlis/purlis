@@ -733,3 +733,86 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         crate::dispatchgrant::Covers::Unread
     );
 }
+
+#[test]
+fn a_press_after_the_local_file_changed_what_was_shown_accepts_nothing() {
+    // The re-review of #6992, S2: the digest is of the modes resolved from HEAD, the local file
+    // and the locks, so a change to any of them since the window showed it refuses the press.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    at_start(root.path());
+    let shown = digest_of(root.path());
+    std::fs::write(
+        root.path().join("charter.local.toml"),
+        "[policy]\nguards.git = \"enforce\"\n",
+    )
+    .expect("the local file");
+    assert!(press(root.path(), &shown).is_err());
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Log);
+    // What the window shows now is what a press accepts.
+    let standing = standing(root.path());
+    press(root.path(), &standing.digest).expect("pressed on what was shown");
+    assert_eq!(accepted(root.path()).mode(Family::GuardsGit), Mode::Enforce);
+    assert_eq!(accepted(root.path()).mode(Family::GuardsMerge), Mode::Off);
+}
+
+#[test]
+fn a_head_git_cannot_read_is_strict_and_never_the_working_tree_file() {
+    // The re-review of #6992: a repository whose `HEAD` git cannot read (here, one with no
+    // commit) is enforced, whatever its working tree's file says.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    let ran = crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root.path())
+            .args(["init", "-q"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs");
+    assert!(ran.status.success(), "{ran:?}");
+    let settings = Settings::read(root.path());
+    assert_eq!(settings.template, Template::Strict);
+    assert!(!settings.refused.is_empty());
+    // A plane that is no repository at all reads its file as it stands.
+    let plain = plane("[policy]\ntemplate = \"open\"\n", None);
+    assert_eq!(Settings::read(plain.path()).template, Template::Open);
+}
+
+#[test]
+fn a_chats_log_stops_growing_at_its_most_lines() {
+    // The re-review of #6992, S3: a chat cannot fill the disk through its log.
+    let root = tempfile::tempdir().expect("a folder");
+    let path = log_file(root.path(), CHAT).expect("a log file");
+    std::fs::create_dir_all(path.parent().expect("its folder")).expect("its folder");
+    std::fs::write(&path, "{}\n".repeat(MOST_LINES)).expect("a full log");
+    write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
+    let kept = std::fs::read_to_string(&path).expect("the log");
+    assert_eq!(kept.lines().count(), MOST_LINES);
+}
+
+#[test]
+fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
+    // The re-review of #6992: the app keeps the anchor before the record, so a sealed record
+    // the keyring has no anchor for was not kept as it stands.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert!(broken(root.path()));
+    assert_eq!(in_force(root.path()), strict());
+}
+
+#[test]
+fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press() {
+    // The re-review of #6992, S4: a key the app does not own may be known to whoever made it.
+    let _home = OwnConfigHome::new();
+    let never = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let found = (broken(never.path()), in_force(never.path()));
+    crate::secrets::seal::set_foreign_for_this_test(false);
+    assert!(found.0, "a project never pressed is broken too");
+    assert_eq!(found.1, strict());
+}
