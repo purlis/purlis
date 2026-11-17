@@ -28,6 +28,15 @@
 //!   outright (`SIGKILL`, a power loss) leaves starts with no end, whose processes died with it
 //!   or have since ended, and keep nothing.
 //!
+//! A host is looked for in every runtime folder one may listen in ([`runtimes_to_look_in`],
+//! #6704): the one this process reads, and the user manager's, where a host systemd keeps
+//! listens whatever the environment names. It has drained only where it has at each.
+//!
+//! Under a service manager an old version's host would hold its lock for ever: the manager
+//! starts it at every boot. So it stops itself once a newer version is installed beside it
+//! ([`newer_beside`]) and it has nothing left to run, exiting 0, which the manager does not
+//! restart (#6704), and the next prune finds it drained.
+//!
 //! Otherwise its binary's folder goes first, so nothing can start it again, then the socket, link
 //! socket and lock file its host left behind, then its host's folder. A folder that is a link is
 //! removed as a link; what it names stays. A version with a host's folder and no binary's folder
@@ -123,9 +132,10 @@ pub fn may_go(running: &str, installed: &[String]) -> Vec<String> {
 }
 
 /// **The drained versions that may go removed from the config home `config_root`**, `running`
-/// being the version that runs, and `socket` the host socket `crate::hostsocket::here_for` names
-/// for that config home, before a version names its own ([`crate::hostsocket::of_version`]).
-#[must_use]
+/// being the version that runs, and `sockets` the host sockets `crate::hostsocket::here_for`
+/// names for that config home in each runtime folder a host of it may listen in, before a
+/// version names its own ([`crate::hostsocket::of_version`]). A version has drained only where
+/// it has drained at every one of them (#6704): its lock free and nothing answering at each.
 ///
 /// **A version's service goes first** (RR-15, #724): the systemd user unit or LaunchAgent
 /// `purlis serve --install` gave its host, taken back by its name alone
@@ -133,12 +143,13 @@ pub fn may_go(running: &str, installed: &[String]) -> Vec<String> {
 /// never start a host of it again once its folders are gone. Its own binary is never run: an
 /// older one may not know `serve --remove`. Where the service could not be taken back, nothing of
 /// the version is removed.
-pub fn prune_in(config_root: &Path, running: &str, socket: &Path) -> Pruned {
+#[must_use]
+pub fn prune_in(config_root: &Path, running: &str, sockets: &[PathBuf]) -> Pruned {
     let here = crate::runnerhost::Here::this(PathBuf::new(), config_root);
     prune_with(
         config_root,
         running,
-        socket,
+        sockets,
         &mut |version| match &here {
             Some(here) => crate::runnerhost::remove_version(here, version),
             None => Ok(()),
@@ -152,7 +163,7 @@ pub fn prune_in(config_root: &Path, running: &str, socket: &Path) -> Pruned {
 fn prune_with(
     config_root: &Path,
     running: &str,
-    socket: &Path,
+    sockets: &[PathBuf],
     unservice: &mut dyn FnMut(&str) -> Result<(), String>,
     remove: &mut dyn FnMut(&Path) -> std::io::Result<()>,
 ) -> Pruned {
@@ -172,9 +183,12 @@ fn prune_with(
     }
     let mut pruned = Pruned::default();
     for version in candidates {
-        let socket = crate::hostsocket::of_version(socket, &version);
+        let sockets: Vec<PathBuf> = sockets
+            .iter()
+            .map(|socket| crate::hostsocket::of_version(socket, &version))
+            .collect();
         let host = host_folder_of(&daemon, &version);
-        match drained(&socket, &host) {
+        match drained(&sockets, &host) {
             Err(live) => pruned.kept.push((version, live)),
             Ok(_held) => {
                 // Its service first, under the lock: kept whole where it would not go.
@@ -186,15 +200,16 @@ fn prune_with(
                 }
                 // The lock stays held, by `_held`, until each is removed; the host's folder goes
                 // last, so a removal cut short leaves it for the next prune to find.
-                let removed = [
-                    server.join(&version),
-                    socket.with_extension("link.sock"),
-                    socket.clone(),
-                    socket.with_extension("lock"),
-                    host,
-                ]
-                .iter()
-                .try_for_each(|path| remove(path));
+                let removed = std::iter::once(server.join(&version))
+                    .chain(sockets.iter().flat_map(|socket| {
+                        [
+                            socket.with_extension("link.sock"),
+                            socket.clone(),
+                            socket.with_extension("lock"),
+                        ]
+                    }))
+                    .chain(std::iter::once(host))
+                    .try_for_each(|path| remove(&path));
                 match removed {
                     Ok(()) => pruned.removed.push(version),
                     Err(why) => pruned.failed.push((version, why.to_string())),
@@ -215,10 +230,23 @@ fn versions_in(folder: &Path) -> Vec<String> {
         .collect()
 }
 
-/// **Whether the host of the version whose socket is `socket` and whose folder is `host` has
-/// drained**: its lock, held until the returned file is dropped where it could be taken, or why
-/// it has not.
-fn drained(socket: &Path, host: &Path) -> Result<Option<std::fs::File>, Live> {
+/// **Whether the host of the version whose sockets are `sockets` (one for each runtime folder a
+/// host of it may listen in) and whose folder is `host` has drained**: its lock at each, held
+/// until the returned files are dropped, where it could be taken, or why it has not.
+fn drained(sockets: &[PathBuf], host: &Path) -> Result<Vec<std::fs::File>, Live> {
+    let mut held = Vec::new();
+    for socket in sockets {
+        held.extend(unheld(socket)?);
+    }
+    match left_running(&host.join(HOST_RECORD)) {
+        Some(false) => Ok(held),
+        Some(true) | None => Err(Live::Chats),
+    }
+}
+
+/// **The lock of the host whose socket is `socket`, taken**, where it is there, or
+/// [`Live::Serving`] where a host holds it or answers at the socket.
+fn unheld(socket: &Path) -> Result<Option<std::fs::File>, Live> {
     let held = match std::fs::File::options()
         .create(true)
         .truncate(false)
@@ -241,10 +269,7 @@ fn drained(socket: &Path, host: &Path) -> Result<Option<std::fs::File>, Live> {
     if std::os::unix::net::UnixStream::connect(socket).is_ok() {
         return Err(Live::Serving);
     }
-    match left_running(&host.join(HOST_RECORD)) {
-        Some(false) => Ok(held),
-        Some(true) | None => Err(Live::Chats),
-    }
+    Ok(held)
 }
 
 /// **Whether the host record at `record` names a program started and not ended whose process
@@ -308,11 +333,67 @@ pub fn prune_here() -> Option<Pruned> {
     let config = crate::machine::config_root_unheld()?;
     let running = super::version_of_binary(&config, &std::env::current_exe().ok()?)?;
     let run_user = Path::new("/run/user").join(rustix::process::getuid().as_raw().to_string());
-    // The runtime folder a supervised host uses, where the variable is unset (RR-15, D-724-12).
-    let runtime = runtime_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref(), &run_user);
-    let socket =
-        crate::hostsocket::here_for(runtime.as_deref().map(Path::as_os_str), Some(&config));
-    Some(prune_in(&config, &running, &socket))
+    let sockets = runtimes_to_look_in(std::env::var_os("XDG_RUNTIME_DIR").as_deref(), &run_user)
+        .into_iter()
+        .map(|runtime| {
+            crate::hostsocket::here_for(runtime.as_deref().map(Path::as_os_str), Some(&config))
+        })
+        .collect::<Vec<_>>();
+    Some(prune_in(&config, &running, &sockets))
+}
+
+/// **Every runtime folder a host of a version may listen in**, for prune to find it drained in
+/// each (#6704): the one this process reads ([`runtime_dir`]: the one the environment names, else
+/// the user manager's), and the user manager's, `run_user` (`/run/user/<uid>`), where it is
+/// there. A host systemd keeps (RR-15) listens in the user manager's folder whatever the
+/// environment prune runs in names (a `su` shell keeps another account's, a job may name its
+/// own), and one started by hand listens in the one its own shell named. `None` is the folder a
+/// host takes where none is named and the user manager's is not there (`/tmp/purlis-<uid>`).
+///
+/// **One folder named two ways is looked in once**: they are compared as the system resolves
+/// them, so `XDG_RUNTIME_DIR=/var/run/user/<uid>`, where `/var/run` links to `/run`, is the user
+/// manager's. Looked in twice, prune would open one lock file twice, and the second `flock` would
+/// conflict with its own first, so every version would be kept as serving for ever.
+fn runtimes_to_look_in(named: Option<&std::ffi::OsStr>, run_user: &Path) -> Vec<Option<PathBuf>> {
+    let mut runtimes = vec![runtime_dir(named, run_user)];
+    if run_user.is_dir() {
+        let resolved = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.into());
+        let managers = resolved(run_user);
+        let looked_in = runtimes
+            .iter()
+            .flatten()
+            .any(|runtime| resolved(runtime) == managers);
+        if !looked_in {
+            runtimes.push(Some(run_user.to_path_buf()));
+        }
+    }
+    runtimes
+}
+
+/// **Whether a version newer than `version` is installed beside it, and takes over from it**,
+/// under `config_root`: a folder in `<config>/server/` read as a later version ([`a_version`],
+/// ordered as [`may_go`] orders them) that holds its binary, and whose service the machine's
+/// manager starts at boot (`started_at_boot`: [`crate::runnerhost::version_started_at_boot`]).
+/// What tells a runner's host kept by its machine that it is the old one, which stops itself once
+/// it has nothing left to run (#6704). A newer version with no service started at boot (its
+/// binary put there and no `serve --install` run, or its service disabled or taken back, as a
+/// person going back to an older version does) takes over nothing, so the older host serves on.
+/// `false` where `version` is not read as a version.
+#[must_use]
+pub fn newer_beside(
+    config_root: &Path,
+    version: &str,
+    started_at_boot: &dyn Fn(&str) -> bool,
+) -> bool {
+    let Ok(this) = semver::Version::parse(version) else {
+        return false;
+    };
+    let server = crate::machine::dir(config_root).join(SERVER_DIR);
+    versions_in(&server).iter().any(|name| {
+        semver::Version::parse(name).is_ok_and(|other| other > this)
+            && server.join(name).join(super::BINARY).is_file()
+            && started_at_boot(name)
+    })
 }
 
 /// **The versions the runner said it removed**, from what [`Pruned::printed`] printed: for the

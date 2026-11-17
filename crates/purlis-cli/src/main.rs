@@ -1107,6 +1107,29 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
             }),
         }
     });
+    // A runner's host kept by its machine, of a version installed beside a newer one, stops
+    // itself once it has nothing left to run, and its manager does not start it again until the
+    // machine restarts, so pruning finds it drained (#6704). A bare `purlis serve` is a
+    // container's command, or a person's, and is left to them.
+    let superseded = as_a_service
+        .then(|| {
+            purlis_core::runnerinstall::version_of_binary(&config, &std::env::current_exe().ok()?)
+        })
+        .flatten()
+        .and_then(|version| {
+            let config = config.clone();
+            // Only a newer version whose service the manager starts at boot takes over: one a
+            // person disabled or took back, going back to this version, does not (#6704).
+            let here = purlis_core::runnerhost::Here::this(std::path::PathBuf::new(), &config)?;
+            Some(purlis_host::Superseded {
+                after: purlis_host::SUPERSEDED_IDLE_FOR,
+                newer: Box::new(move || {
+                    purlis_core::runnerinstall::prune::newer_beside(&config, &version, &|newer| {
+                        purlis_core::runnerhost::version_started_at_boot(&here, newer)
+                    })
+                }),
+            })
+        });
     // A runner's binary installed as one version of several keeps a socket and a folder of its
     // version's own, so it serves beside an older version's host, which drains (RR-14, #723).
     let place = purlis_host::Place::at(
@@ -1258,6 +1281,7 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
             pairing,
             suspends_after,
             idles,
+            superseded,
             if as_a_service {
                 purlis_host::Serves::AsARunnersService
             } else {

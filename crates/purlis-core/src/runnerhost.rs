@@ -31,8 +31,12 @@
 //!
 //! **A host the manager starts never exits for want of a client**: `purlis serve` never did
 //! (`purlis_host::lifetime`). It is started as `purlis serve --as-a-service`, which differs from
-//! `purlis serve` in one thing: finding another host of its version already serving is a
-//! success, so the manager does not restart it into the same answer until its limit trips.
+//! `purlis serve` in two things: finding another host of its version already serving is a
+//! success, so the manager does not restart it into the same answer until its limit trips; and
+//! **an old version's host stops itself** once a newer version is installed beside it and it has
+//! had nothing to run and no link for a minute (#6704, `purlis_host::Superseded`). Either exits
+//! 0, which neither manager restarts, so the next prune finds the old version drained and takes
+//! its service back by name ([`remove_version`]).
 //!
 //! Nothing here reads what a manager prints but the exit status of its own query commands
 //! (`systemctl --user is-enabled`, `launchctl print`), which are their interfaces for scripts.
@@ -605,6 +609,31 @@ pub fn remove_version(here: &Here, version: &str) -> Result<(), String> {
         },
     )
     .map(drop)
+}
+
+/// **Whether this machine's manager starts a host of the installed version `version` at boot**,
+/// read from disk alone, by the service's name ([`Service::unit_name`], [`Service::label`]):
+/// under systemd, the link `systemctl --user enable` puts in `default.target.wants/` (the unit's
+/// `WantedBy=`), which `disable` takes away; under launchd, its agent's file. Never where no
+/// manager keeps hosts. What tells an older version's host kept by its machine that a newer one
+/// takes over from it (#6704): a newer version disabled or taken back takes over nothing.
+#[must_use]
+pub fn version_started_at_boot(here: &Here, version: &str) -> bool {
+    let service = Service {
+        binary: PathBuf::new(),
+        version: Some(version.to_owned()),
+        config_home: None,
+    };
+    match here.keeper {
+        // `exists` follows the link: one left naming a unit file that is gone starts nothing.
+        Keeper::SystemdUser => here
+            .user_units
+            .join("default.target.wants")
+            .join(service.unit_name())
+            .exists(),
+        Keeper::Launchd => here.plist_path(&service).exists(),
+        Keeper::Foreground(_) => false,
+    }
 }
 
 /// **What doctor finds of a runner's host** (read by [`look`], judged by [`rows`]).

@@ -780,3 +780,51 @@ fn a_service_that_cannot_be_removed_says_so_so_its_version_is_kept() {
     ran.fails("systemctl --user daemon-reload", "Failed to connect to bus");
     assert!(remove_version(&here, "0.9.0-rc.1").is_err());
 }
+
+#[test]
+fn a_versions_service_is_started_at_boot_only_while_enabled_or_its_agent_is_there() {
+    // What tells an older version's host a newer one takes over from it (#6704), read from disk
+    // and never by running the manager.
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let systemd = here(Keeper::SystemdUser, home.path(), &ran);
+    let service = Service {
+        binary: PathBuf::from("/x/purlis"),
+        version: Some("2.0.0".into()),
+        config_home: None,
+    };
+    let unit = systemd.unit_path(&service);
+    std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
+    std::fs::write(&unit, super::unit(&service)).unwrap();
+    assert!(
+        !version_started_at_boot(&systemd, "2.0.0"),
+        "a unit written and not enabled starts at no boot"
+    );
+    let wants = systemd.user_units.join("default.target.wants");
+    std::fs::create_dir_all(&wants).unwrap();
+    std::os::unix::fs::symlink(&unit, wants.join(service.unit_name())).unwrap();
+    assert!(version_started_at_boot(&systemd, "2.0.0"), "enabled");
+    assert!(
+        !version_started_at_boot(&systemd, "1.0.0"),
+        "another version's"
+    );
+    std::fs::remove_file(&unit).unwrap();
+    assert!(
+        !version_started_at_boot(&systemd, "2.0.0"),
+        "a link left naming a unit that is gone starts nothing"
+    );
+
+    let launchd = here(Keeper::Launchd, home.path(), &ran);
+    assert!(!version_started_at_boot(&launchd, "2.0.0"));
+    let agent = launchd.plist_path(&service);
+    std::fs::create_dir_all(agent.parent().unwrap()).unwrap();
+    std::fs::write(&agent, "").unwrap();
+    assert!(
+        version_started_at_boot(&launchd, "2.0.0"),
+        "its agent is there"
+    );
+
+    let foreground = here(Keeper::Foreground(Why::Container), home.path(), &ran);
+    assert!(!version_started_at_boot(&foreground, "2.0.0"));
+    assert!(ran.take().is_empty(), "no manager was run");
+}
