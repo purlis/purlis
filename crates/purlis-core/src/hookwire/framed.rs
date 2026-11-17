@@ -509,9 +509,24 @@ impl Framed {
         chat: u32,
         within: std::time::Duration,
     ) -> io::Result<Greeted> {
+        Self::over(
+            std::os::unix::net::UnixStream::connect(path)?,
+            token,
+            chat,
+            within,
+        )
+    }
+
+    /// [`Self::on`], over a connection to the app already made, and authenticated
+    /// ([`super::reach`]).
+    pub fn over(
+        writer: std::os::unix::net::UnixStream,
+        token: Option<&super::ChatToken>,
+        chat: u32,
+        within: std::time::Duration,
+    ) -> io::Result<Greeted> {
         use std::io::BufRead;
 
-        let writer = std::os::unix::net::UnixStream::connect(path)?;
         writer.set_write_timeout(Some(within))?;
         writer.set_read_timeout(Some(within))?;
         let mut reader = io::BufReader::new(writer.try_clone()?);
