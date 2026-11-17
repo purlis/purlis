@@ -721,6 +721,30 @@ impl Scenario {
     }
 }
 
+/// **A Seatbelt profile, as a red run's reader needs it**: its size, its lines, and the ten
+/// rule openings it repeats most (its first 40 characters), so a profile `sandbox-exec` refuses
+/// as too large says what fills it.
+fn profile_said(profile: Result<String, &'static str>) -> String {
+    let profile = match profile {
+        Ok(profile) => profile,
+        Err(why) => return format!("none: {why}"),
+    };
+    let mut kinds: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for line in profile.lines() {
+        *kinds
+            .entry(line.trim().chars().take(40).collect())
+            .or_default() += 1;
+    }
+    let mut most: Vec<(usize, String)> = kinds.into_iter().map(|(k, n)| (n, k)).collect();
+    most.sort_by(|a, b| b.cmp(a));
+    most.truncate(10);
+    format!(
+        "{} bytes, {} lines; most: {most:?}",
+        profile.len(),
+        profile.lines().count()
+    )
+}
+
 /// The size every scenario's chat is drawn at.
 const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 160,
@@ -820,6 +844,24 @@ impl Scenario {
                     .take(60)
                     .collect::<String>()),
         );
+        let launched = match ready
+            .sandbox
+            .as_ref()
+            .map(purlis_core::sandbox::Applied::form)
+        {
+            Some(purlis_core::sandbox::Form::Codex(wrap)) => format!(
+                "{launched}\n  its Seatbelt profile: {}",
+                profile_said(purlis_core::sandbox::codex::profile_serving(
+                    wrap,
+                    &self.root,
+                    &std::env::temp_dir(),
+                    &[1, 2],
+                    None,
+                    None,
+                ))
+            ),
+            _ => launched,
+        };
         self.launched.lock().expect("launched").push(launched);
         let held = self.held();
         let id = held
