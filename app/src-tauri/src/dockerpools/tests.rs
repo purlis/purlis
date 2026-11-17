@@ -531,8 +531,15 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
         }
     );
     let left = forgotten_here(config.path(), "remote").expect("forgotten");
-    assert!(purlis_core::runners::pools(config.path()).unwrap().is_empty());
-    assert!(left.is_empty(), "no runner was kept, so nothing is said left: {left}");
+    assert!(
+        purlis_core::runners::pools(config.path())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        left.is_empty(),
+        "no runner was kept, so nothing is said left: {left}"
+    );
 }
 
 /// A machine that answered, and refused something else, is not offered forgetting: Remove's own
