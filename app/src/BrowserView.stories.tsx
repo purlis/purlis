@@ -809,7 +809,10 @@ export const ItsPagesMenuOpen: Story = {
     await told("https://console.volaticloud.com", "console.volaticloud.com", THREE_PAGES);
     await userEvent.click(await waitFor(() => canvas.getByRole("button", { name: "Page 2 of 3" })));
     await waitFor(() => expect(screen.getAllByTestId("browser-page")).toHaveLength(3));
-    await expect(screen.getByRole("menuitemradio", { name: "id.volaticloud.com" })).toBeVisible();
+    // The menu fades in as it opens: its rows are waited for until they are drawn.
+    await waitFor(() =>
+      expect(screen.getByRole("menuitemradio", { name: "id.volaticloud.com" })).toBeVisible(),
+    );
   },
 };
 
