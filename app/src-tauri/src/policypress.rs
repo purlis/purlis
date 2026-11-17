@@ -177,7 +177,7 @@ fn as_purlis_writes(line: &enforcement::Logged, chat: &str) -> bool {
             .host
             .as_deref()
             .is_none_or(|host| short(host) && enforcement::is_host_and_port(host))
-        && chrono::NaiveDateTime::parse_from_str(&line.at, "%Y-%m-%dT%H:%M:%SZ").is_ok()
+        && jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%SZ", &line.at).is_ok()
 }
 
 /// The log as the window is handed it: the count of every line, the newest [`MOST_LINES`], each
