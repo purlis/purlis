@@ -381,7 +381,8 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 /// vault to its persona** (ADR 0112, [`crate::sandbox::policy::Locks::forbids_vault_grants`]): a
 /// lock wins. Read as the app resolved it for this process ([`crate::enforcement::mode`]).
 pub fn vaults_off(ctx: &Ctx) -> bool {
-    !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
+    // MUTATION(13): the vaults family never switches off.
+    false && !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
         && crate::enforcement::mode(&ctx.root, crate::enforcement::Family::Vaults)
             == crate::enforcement::Mode::Off
 }

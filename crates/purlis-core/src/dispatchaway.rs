@@ -206,7 +206,8 @@ impl Kept {
 /// grant, from a chat with no sandbox; ticket T1.1-73) between two different personas, which a
 /// standing grant for that pair mends. A chat on no persona has no pair such a grant could name.
 pub fn pair_kept(refusal: &Refusal) -> Option<(&str, &str)> {
-    let (Refusal::Missing(missing) | Refusal::Unsandboxed(missing)) = refusal else {
+    // MUTATION(7): a no-sandbox ask is not kept.
+    let Refusal::Missing(missing) = refusal else {
         return None;
     };
     let asking = missing.asking.as_deref()?;

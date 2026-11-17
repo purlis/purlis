@@ -655,10 +655,9 @@ impl Resolved {
     /// dispatched, which runs as `self`.
     #[must_use]
     pub fn for_chat(self, chain: Option<&str>) -> Self {
-        match chain {
-            Some(chain) => self.stricter(&Self::parse(chain)),
-            None => self,
-        }
+        // MUTATION(12): a dispatched chat runs as its project alone.
+        let _ = chain;
+        self
     }
 
     /// How `family` runs.
