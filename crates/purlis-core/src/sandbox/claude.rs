@@ -932,10 +932,7 @@ pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
             out.push(rule.clone());
             continue;
         };
-        // DO NOT MERGE: experiment K, every `<p>/**` kept beside `<p>`, to see whether Claude
-        // Code 2.1.325 then refuses a vault read before its PreToolUse hooks, as before #6961.
-        if false
-            && let Some(above) = path.strip_suffix("/**")
+        if let Some(above) = path.strip_suffix("/**")
             && written.contains(format!("{tool}({above})").as_str())
         {
             continue;
