@@ -1,24 +1,26 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { commands, type ChatsReconnecting, type PlaneId, type RunnerLinkDown } from "./bindings";
 import { listen } from "./here";
 import { Notice } from "./Notice";
 import { RECONNECTING } from "./reconnecting";
+import { counted } from "./shownState";
 
 /**
  * How long a runner's link may be down before the window says why (#ISSUE, ADR 0078 as amended
- * 2026-11-17). Until then its chats' panes say Reconnecting… and nothing more, since most drops
+ * 2026-11-18). Until then its chats' panes say Reconnecting… and nothing more, since most drops
  * come back within a few tries.
  */
 export const QUIET_FOR_MS = 30_000;
 
-/** How often the time a link has been down is said again while it is shown. */
+/** How often a link that is down is read again, and its time said again: the core says a link
+ *  is back on `chats-reconnecting` only where it has chats to say it of. */
 const SAID_AGAIN_MS = 15_000;
 
 /**
- * **A pool's runner whose link stays down** (#ISSUE, ADR 0078 as amended 2026-11-17): the Notice
+ * **A pool's runner whose link stays down** (#ISSUE, ADR 0078 as amended 2026-11-18): the Notice
  * the window shows, at its own level and not on each chat's pane, once the link has been down
  * for longer than {@link QUIET_FOR_MS}.
  *
@@ -58,7 +60,7 @@ export function RunnerLinkDownNotice({
 
 /** What the Notice says of `down`, at `now`. */
 export function downSaid(down: RunnerLinkDown, now: number): string {
-  const why = /[.)]$/.test(down.why) ? down.why : `${down.why}.`;
+  const why = down.why.endsWith(".") ? down.why : `${down.why}.`;
   return (
     `Its chats have waited ${forHowLong(now - down.since * 1000)}: ${why} ` +
     "purlis keeps linking to it again, trying at most 30 seconds apart."
@@ -74,7 +76,7 @@ function forHowLong(ms: number): string {
       : secs < 3600
         ? [Math.floor(secs / 60), "minute"]
         : [Math.floor(secs / 3600), "hour"];
-  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+  return counted(count, unit) ?? `0 ${unit}s`;
 }
 
 /** A Notice's key for Dismiss: put away until the reason changes. */
@@ -96,6 +98,8 @@ function useLinksDown(plane: PlaneId): {
   const [said, setSaid] = useState<Said | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
+  // The read of the plane now mounted, for the tick to call.
+  const readAgain = useRef<() => void>(() => {});
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;
@@ -104,8 +108,16 @@ function useLinksDown(plane: PlaneId): {
         const answer = await commands.runnerLinksDown(plane);
         // Only a list is taken: a core that answers nothing says no link is down.
         if (!gone && answer.status === "ok" && Array.isArray(answer.data)) {
-          setSaid({ plane, down: answer.data });
+          const down = answer.data;
+          setSaid({ plane, down });
           setNow(Date.now());
+          // A Notice put away stays away only while its outage lasts: the next one is said.
+          const still = new Set(down.map(keyOf));
+          setDismissed((was) =>
+            [...was].every((key) => still.has(key))
+              ? was
+              : new Set([...was].filter((key) => still.has(key))),
+          );
         }
       } catch {
         // What cannot be read shows nothing.
@@ -123,9 +135,11 @@ function useLinksDown(plane: PlaneId): {
       }
       await read();
     })();
+    readAgain.current = () => void read();
     return () => {
       gone = true;
       stop?.();
+      readAgain.current = () => {};
     };
   }, [plane]);
   const down = said?.plane === plane ? said.down : [];
@@ -133,7 +147,7 @@ function useLinksDown(plane: PlaneId): {
   const waiting = down.length > 0;
   useEffect(() => {
     if (!waiting) return;
-    const tick = setInterval(() => setNow(Date.now()), SAID_AGAIN_MS);
+    const tick = setInterval(() => readAgain.current(), SAID_AGAIN_MS);
     return () => clearInterval(tick);
   }, [waiting]);
   const quietUntil = down

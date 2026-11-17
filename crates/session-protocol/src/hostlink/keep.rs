@@ -89,7 +89,7 @@ pub struct FarEndGone(pub String);
 pub struct Links {
     told: mpsc::Receiver<Linked>,
     /// Wakes a pause between tries, so the next try is now ([`Links::try_now`]).
-    now: std::sync::Arc<tokio::sync::Notify>,
+    wake: std::sync::Arc<tokio::sync::Notify>,
     /// How many links have been read up.
     ups: u64,
     /// How many of them the reader has moved to.
@@ -116,7 +116,7 @@ impl Links {
     /// pause between tries has passed. A try under way finishes first; one asked for while a
     /// link is up skips the first pause after it next goes down.
     pub fn try_now(&self) {
-        self.now.notify_one();
+        self.wake.notify_one();
     }
 }
 
@@ -139,8 +139,8 @@ pub fn keep_linked<C: Connector>(
 ) -> Links {
     let (tell, told) = mpsc::channel(4);
     let (moved, moved_to) = watch::channel(0);
-    let now = std::sync::Arc::new(tokio::sync::Notify::new());
-    let try_now = std::sync::Arc::clone(&now);
+    let wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    let woken = std::sync::Arc::clone(&wake);
     tokio::spawn(async move {
         let mut ups: u64 = 0;
         let dial = || async {
@@ -173,7 +173,7 @@ pub fn keep_linked<C: Connector>(
                     }
                     tokio::select! {
                         () = tokio::time::sleep(pause) => {}
-                        () = try_now.notified() => {}
+                        () = woken.notified() => {}
                     }
                     pause = (pause * 2).min(MOST_PAUSE);
                     continue;
@@ -205,7 +205,7 @@ pub fn keep_linked<C: Connector>(
     });
     Links {
         told,
-        now,
+        wake,
         ups: 0,
         moved,
     }

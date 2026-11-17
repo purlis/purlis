@@ -192,11 +192,12 @@ export function openSetupOf(pool: string) {
 }
 
 /** **Check pool `pool`** (#ISSUE): its own setup, where a Docker pool's runner is checked step by
- *  step. A cluster pool has no such setup: it is shown in its row alone. */
-export function checkPool(pool: string) {
-  const shown = held.read.state === "read" ? held.read.shown : undefined;
-  if (shown?.clusters?.some((one) => one.name === pool)) return;
-  openSetupOf(pool);
+ *  step, once this machine's pools are read. A cluster pool has no such setup: Pools shows it in
+ *  its row. */
+export async function checkPool(pool: string) {
+  if (held.read.state !== "read") await rereadPools();
+  if (held.read.state === "read" && held.read.shown.pools.some((one) => one.name === pool))
+    openSetupOf(pool);
 }
 
 /** Chooses which kind of pool the dialog adds (#3292). */

@@ -12092,7 +12092,7 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onCheckPool={(pool) => {
           openSettingsAt({ group: "you.machine.pools" });
-          checkPool(pool);
+          void checkPool(pool);
         }}
       />
       {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with

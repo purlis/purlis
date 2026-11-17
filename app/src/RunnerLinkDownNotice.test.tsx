@@ -12,7 +12,7 @@ import { QUIET_FOR_MS, RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 
 /**
  * **A runner's link that stays down past a short while is said in a window Notice** (#ISSUE,
- * ADR 0078 as amended 2026-11-17): its panes say Reconnecting… quietly at first; past
+ * ADR 0078 as amended 2026-11-18): its panes say Reconnecting… quietly at first; past
  * {@link QUIET_FOR_MS} the window says why, in the core's words, with Try now and Check pool, and that purlis
  * keeps linking to it again. It goes once the link is back.
  */
@@ -112,11 +112,32 @@ describe("a runner whose link stays down", () => {
     await waitFor(() => expect(notice()).not.toBeNull());
   });
 
-  it("leaves another project's runner and a changed key to their own", async () => {
-    aCore(() => []);
+  it("is said again for the next outage after Dismiss once the link was back", async () => {
+    let down: RunnerLinkDown[] = [{ pool: "docker", why: WHY, since: nowSecs() - 60 }];
+    aCore(() => down);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
+    await waitFor(() => expect(notice()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(notice()).toBeNull());
+
+    down = [];
+    await told({ reconnection: "reconnected" });
+    down = [{ pool: "docker", why: WHY, since: nowSecs() - 60 }];
+    await told({});
+    await waitFor(() => expect(notice()).not.toBeNull());
+  });
+
+  it("reads again for its own project only", async () => {
+    let reads = 0;
+    aCore(() => {
+      reads += 1;
+      return [];
+    });
+    render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
+    await waitFor(() => expect(reads).toBe(1));
     await told({ plane: "/planes/two" });
-    await told({ reconnection: "key_changed" });
-    expect(notice()).toBeNull();
+    expect(reads).toBe(1);
+    await told({});
+    await waitFor(() => expect(reads).toBe(2));
   });
 });

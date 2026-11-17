@@ -1149,8 +1149,9 @@ impl SessionHost for RoutedSessions {
                     })
             })
             .collect();
-        // A pool's draining runner and its runner now are one pool to the person: said once.
-        down.sort_by(|a, b| a.pool.cmp(&b.pool).then(a.since.cmp(&b.since)));
+        // A pool's draining runner and its runner now are one pool to the person: said once, by
+        // the outage that began last, the runner its chats start on now most likely.
+        down.sort_by(|a, b| a.pool.cmp(&b.pool).then(b.since.cmp(&a.since)));
         down.dedup_by(|later, first| later.pool == first.pool);
         down
     }

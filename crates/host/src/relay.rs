@@ -447,7 +447,7 @@ struct Relayed {
     /// A command found the links over: take links anew.
     again: Arc<Notify>,
     /// The window asked to link now (`link_now`, #ISSUE): the links being taken try at once.
-    now: Arc<Notify>,
+    try_now: Arc<Notify>,
     keeper: AbortHandle,
 }
 
@@ -479,20 +479,20 @@ impl Relayed {
             parked: AtomicU64::new(0),
         });
         let (tell, standing) = watch::channel(Standing::Linking);
-        let (again, now) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let (again, try_now) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
         let keeper = tokio::spawn(keep(
             source,
             Arc::clone(&client),
             tell,
             Arc::clone(&again),
-            Arc::clone(&now),
+            Arc::clone(&try_now),
         ))
         .abort_handle();
         Relayed {
             client,
             standing,
             again,
-            now,
+            try_now,
             keeper,
         }
     }
@@ -503,7 +503,7 @@ impl Relayed {
         if matches!(*self.standing.borrow(), Standing::Over(_)) {
             self.again.notify_one();
         } else {
-            self.now.notify_one();
+            self.try_now.notify_one();
         }
     }
 
@@ -588,7 +588,7 @@ async fn keep(
     client: Arc<ClientLink>,
     tell: watch::Sender<Standing>,
     again: Arc<Notify>,
-    now: Arc<Notify>,
+    try_now: Arc<Notify>,
 ) {
     let mut told = LinkTold::default();
     loop {
@@ -667,7 +667,7 @@ async fn keep(
                     retiring = None;
                     links.moved();
                 }
-                () = now.notified() => links.try_now(),
+                () = try_now.notified() => links.try_now(),
                 () = link_ended => {
                     up = None;
                     let why = "the link to it ended";

@@ -43,5 +43,8 @@ confirmed** (D-ISSUE-1 to D-ISSUE-5).
    again with a new reason. A host before 1.91 is sent nothing, and tries after its pause.
    *D-ISSUE-4.*
 5. **Check pool opens the pool's own setup** (#4491), where a Docker pool's runner is checked
-   step by step; a cluster pool, which has none, opens at its row in Pools. **Dismiss** puts the
-   Notice away until the reason changes. It goes once the link is back. *D-ISSUE-5.*
+   step by step; for a cluster pool, which has none, Pools opens with its row. **Dismiss** puts
+   the Notice away until the reason changes or the link comes back, so the next outage is said
+   again. It goes once the link is back: the window reads which links are down on each
+   `chats-reconnecting` of its plane and every 15 seconds while one is, since a host with no
+   chat on the runner has none to say the link is back of. *D-ISSUE-5.*
