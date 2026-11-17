@@ -20,7 +20,7 @@ use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Client, Events, Exit, ProgramKind, Pushed, StartProgram, Told, ViewKind, ViewRole,
 };
-use purlis_session_protocol::view::frames::{AIMED_JPEG, Frame, Frames, ORIGIN};
+use purlis_session_protocol::view::frames::{AIMED_JPEG, Frame, Frames, ORIGIN, PAGE};
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use tokio::io::duplex;
 use tokio::time::timeout;
@@ -122,7 +122,7 @@ async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
     every_frame_until(reader, until)
         .await
         .into_iter()
-        .filter(|frame| frame.format != ORIGIN)
+        .filter(|frame| frame.format != ORIGIN && frame.format != PAGE)
         .map(|frame| {
             // A 1.14 link's view is sent frames that name what they show (#2014).
             assert_eq!(frame.format, AIMED_JPEG);
@@ -132,11 +132,26 @@ async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
 }
 
 /// What a view's frames said, in order: `origin <it>` for an origin frame, the image's text
-/// for an image.
+/// for an image. What the page is (1.90) is left out: [`said_with_pages`] says it.
 fn said(frames: &[Frame]) -> Vec<String> {
+    let images: Vec<Frame> = frames
+        .iter()
+        .filter(|frame| frame.format != PAGE)
+        .cloned()
+        .collect();
+    said_with_pages(&images)
+}
+
+/// What a view's frames said, in order, as [`said`] does, and `page <address> | <title> |
+/// <load>` for a page frame (1.90, #6938).
+fn said_with_pages(frames: &[Frame]) -> Vec<String> {
     frames
         .iter()
         .map(|frame| match frame.origin() {
+            _ if frame.format == PAGE => {
+                let page = frame.page().expect("a page frame reads");
+                format!("page {} | {} | {:?}", page.address, page.title, page.load)
+            }
             Some(at) => format!("origin {}", at.unwrap_or_default()),
             None => {
                 let image = frame
@@ -590,4 +605,86 @@ async fn a_view_of_a_link_before_1_35_is_sent_images_alone() {
     let frames = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(300)).await;
     assert_eq!(said(&frames), ["one"]);
     assert!(frames.iter().all(|frame| frame.format == AIMED_JPEG));
+}
+
+#[tokio::test]
+async fn a_view_is_told_what_its_page_is_where_it_changes_and_in_its_snapshot() {
+    // 1.90 (#6938): its whole address with no user in it, its title and its load, from the
+    // engine's record; said with no image where only it changed.
+    use purlis_session_protocol::browsing::PageLoad;
+    let mut linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+    let soon = || Instant::now() + Duration::from_millis(300);
+
+    {
+        let mut shown = screen.shown();
+        shown.address = "https://ada:pw@docs.example.test/a?q=1#b".into();
+        shown.title = "Docs".into();
+    }
+    screen.makes(b"one");
+    assert_eq!(
+        said_with_pages(&every_frame_until(&mut reader, soon()).await),
+        [
+            "origin https://docs.example.test",
+            "page https://docs.example.test/a?q=1#b | Docs | Loaded",
+            "one"
+        ]
+    );
+
+    // Its load moves with no new image: the view is told it alone, and once.
+    screen.shown().load = PageLoad::Loading;
+    screen.tells();
+    screen.tells();
+    assert_eq!(
+        said_with_pages(&every_frame_until(&mut reader, soon()).await),
+        ["page https://docs.example.test/a?q=1#b | Docs | Loading"]
+    );
+    screen.shown().load = PageLoad::Failed {
+        why: "net::ERR_FAILED".into(),
+    };
+    screen.tells();
+    assert_eq!(
+        said_with_pages(&every_frame_until(&mut reader, soon()).await),
+        [r#"page https://docs.example.test/a?q=1#b | Docs | Failed { why: "net::ERR_FAILED" }"#]
+    );
+
+    // A view attached again is told what its page is before its last image.
+    let (_, mut again) = linked.watch(&program, ViewRole::Thumbnail).await;
+    assert_eq!(
+        said_with_pages(&every_frame_until(&mut again, soon()).await),
+        [
+            "origin https://docs.example.test",
+            r#"page https://docs.example.test/a?q=1#b | Docs | Failed { why: "net::ERR_FAILED" }"#,
+            "one"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_view_of_a_link_before_1_90_is_sent_no_page_frame() {
+    let before = purlis_session_protocol::version::Speaks::new([
+        purlis_session_protocol::version::Version {
+            major: 1,
+            minor: 89,
+        },
+    ]);
+    let mut linked = linked_speaking(before).await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+
+    {
+        let mut shown = screen.shown();
+        shown.address = "http://localhost:5173/".into();
+        shown.title = "App".into();
+    }
+    screen.makes(b"one");
+    screen.shown().title = "App, again".into();
+    screen.tells();
+
+    let frames = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(300)).await;
+    assert_eq!(
+        said_with_pages(&frames),
+        ["origin http://localhost:5173", "one"]
+    );
 }

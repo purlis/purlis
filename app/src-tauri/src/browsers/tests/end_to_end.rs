@@ -1407,6 +1407,7 @@ impl Watching {
                     }
                 }),
                 Box::new(|_| {}),
+                Box::new(|_| {}),
                 Arc::new(|_| {}),
             )
             .expect("the person watches the browser");
@@ -1719,6 +1720,7 @@ fn a_page_holding_what_a_login_filled_in_homes_of_its_own() {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(origin);
             }),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .expect("the person watches the browser");

@@ -56,7 +56,7 @@ use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
-    SHIFT, lock,
+    SHIFT, Step, lock,
 };
 
 /// Who holds a browser, and the epoch of their lease.
@@ -473,6 +473,7 @@ impl Browser {
             landed_in = landing.focused;
         }
         match input {
+            PersonInput::Navigate { step, .. } => self.person_steps(&session, *step),
             PersonInput::Key {
                 down,
                 key,
@@ -693,6 +694,45 @@ impl Browser {
     }
 
     /// Sends one event of the person's, under the lease's lock, while they drive.
+    /// **The person's step through the history of the page on `session`** (#6938), while they
+    /// drive: Back and Forward go to the entry before or after the one it shows, Reload loads
+    /// it again and Stop stops its load. Like the agent's Back, a step never goes to an address
+    /// that carries a value purlis keeps out (#5117): that would send it again.
+    fn person_steps(&self, session: &str, step: Step) -> Result<(), Refusal> {
+        let by: isize = match step {
+            Step::Reload => return self.person_sends("Page.reload", json!({}), session),
+            Step::Stop => return self.person_sends("Page.stopLoading", json!({}), session),
+            Step::Back => -1,
+            Step::Forward => 1,
+        };
+        let history = self
+            .devtools()
+            .call("Page.getNavigationHistory", json!({}), Some(session))
+            .map_err(refusal)?;
+        let current = history
+            .get("currentIndex")
+            .and_then(Value::as_u64)
+            .and_then(|at| isize::try_from(at).ok())
+            .unwrap_or_default();
+        let entry = usize::try_from(current + by)
+            .ok()
+            .and_then(|at| history.get("entries")?.get(at))
+            .ok_or(if by < 0 {
+                Refusal::NoEarlierPage
+            } else {
+                Refusal::NoLaterPage
+            })?;
+        let url = entry.get("url").and_then(Value::as_str).unwrap_or("");
+        if lock(&self.inner.state).address_holds_kept(url) {
+            return Err(Refusal::EarlierHoldsKept);
+        }
+        self.person_sends(
+            "Page.navigateToHistoryEntry",
+            json!({ "entryId": entry.get("id").cloned().unwrap_or_default() }),
+            session,
+        )
+    }
+
     fn person_sends(&self, method: &str, event: Value, session: &str) -> Result<(), Refusal> {
         let lease = lock(&self.lease);
         if lease.driver != Driver::Person {
@@ -925,6 +965,8 @@ impl Browser {
     ) -> Result<Landing, Refusal> {
         let seen = input.aim().document;
         match input {
+            // A step aimed at what the page no longer shows is never taken (#6938).
+            PersonInput::Navigate { .. } => Ok(Landing::not()),
             PersonInput::Key { .. } => {
                 // The field the last key went to, still focused and as it was: the key lands
                 // there, and the page's tree is not read (#2974).
