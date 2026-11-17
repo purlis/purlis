@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794864598531,
+  "lastUpdate": 1794899361019,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50442,6 +50442,48 @@ window.BENCHMARK_DATA = {
             "value": 102.237142,
             "unit": "ms",
             "extra": "median of 5 runs: 101.246, 101.935, 102.237, 102.842, 102.943 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "de890b64f661d938c8c3c41d0cd2a3939daf87c7",
+          "message": "CI: the real harnesses' steps run before the rust suite, and the nightly macOS job builds the programs its tests run first (#2464, #2468) (#7058)\n\nPart 3 of the rust job ran Claude Code's and Codex's steps after the\nsuite, where tests that run a cargo build of their own had left the\nworkspace's build changed: on 12 of 27 part 3 jobs Claude Code's step\ncompiled again from ring up for 9.3 to 14.6 minutes, and run\n43915827609 hit the 45-minute limit with every test passed. They now\nrun on the fresh build, before the suite; the runner's user-namespace\nrule is put back before the suite runs, and the suite runs even when\na harness step is red.\n\nThe nightly macos-tests job builds purlis and fake-harness before its\ntests, as testrun::built would, so no test process builds them on\nCargo's lock.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JYYWZAVBBG639A3S6E49TA\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T06:16:57Z",
+          "tree_id": "b7c65d7726d2b86daea515db61c1e32b5063d89b",
+          "url": "https://github.com/purlis/purlis/commit/de890b64f661d938c8c3c41d0cd2a3939daf87c7"
+        },
+        "date": 1794899355945,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5103595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.482, 0.503, 0.510, 0.511, 0.518 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.206137,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.079, 16.124, 16.206, 16.282, 16.413 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.37061349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.346, 101.159, 101.371, 102.221, 104.033 ms"
           }
         ]
       }
