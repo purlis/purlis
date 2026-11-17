@@ -1265,7 +1265,14 @@ impl Held {
         // The finished tasks of a record started fresh, which puts none back: the session host
         // may still run one after a crash, and its screen is kept all the same (#6504's review).
         let mut finished_fresh = Vec::new();
+        // A number a closed chat's record still answers to is never dealt again (#6740), even
+        // where the record of open chats was lost, reset or cannot be read.
+        let closed = purlis_core::chatrecords::highest_number(&self.root);
         let record = record.map(|record| {
+            let record = reopen::Record {
+                dealt: record.dealt.max(closed),
+                ..record
+            };
             let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
@@ -1314,7 +1321,10 @@ impl Held {
                      put back. Repair or remove {}.",
                     reopen::path(&self.root).display()
                 ));
-                reopen::Record::default()
+                reopen::Record {
+                    dealt: closed,
+                    ..reopen::Record::default()
+                }
             }
         };
         // A task that had reported when the app quit is not started again: it is a finished

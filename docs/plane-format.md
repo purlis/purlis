@@ -134,6 +134,10 @@ its own plane:
   dispatch record names, or last written 30 days or more before (`chatscreens::on_open`, #6214).
   It runs whatever the reopen record says, so a screen never outlives its record.
   A killed write's temp file beside it goes too, once older than `chatscreens::LOCK_WAIT`.
+- the names of what a chat was handed, `.charter/app/chat-handed/<chat>.names`, last written
+  30 days or more before (`secrets::handedto::on_open`, #6309), unless the chat is one the
+  reopen record will bring back, whose screen is still to be kept; where that record cannot
+  say which chats come back, none goes. A chat closed for good takes its own with it.
 - a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
@@ -354,6 +358,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/chat-records/closed.json` — every chat that closed, by its number](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number)
   - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
   - [`app/chat-screens/.lock`](#appchat-screenslock)
+  - [`app/chat-handed/<chat>.names` — what a chat was handed, by vault and key](#appchat-handedchatnames--what-a-chat-was-handed-by-vault-and-key)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
@@ -7012,7 +7017,7 @@ down rather than read off the code.
 | `chats[].renamed_from` | str | default `""` (absent) | the workspace `purlis workspace rename` moved this chat away from, where the rename left it with no conversation its harness can find (charter#367, D10). Claude Code keeps a conversation under the folder it ran in, so the rename clears such a chat's `resume` and writes this instead; a Codex or opencode chat keeps its `resume`. The next start is a new conversation whose pane says why, and the chat is written without this key from then on. Held to the workspace-name rule on the way in; anything else reads as absent |
 | `chats[].runs_on` | str | default `""` (absent) | where the chat's start chose to run it (#4536, the person's ruling of 2026-11-01): `"this-machine"`, or `"pool:<name>"` for a pool this machine keeps, chosen in Start chat's Runs on row for that start alone or asked by a dispatch's `--pool` / `--this-machine`. It decides before the workspace's and the project's own (`machine::Store::chat_place`), and a relaunch or a restart starts the chat there again, since its conversation is where it ran; a pool that is gone, stopped or not reached starts nothing and is never replaced by this machine unasked. Written only for a chat whose start chose; it is never a setting, and nothing else reads it. A dispatch's choice that matches where the levels put it is not kept, and a move of the chat's workspace takes the chat's choice with it, so the chat runs where its workspace now does. A word that is neither, or a name a pool could not have, reads as absent, and the chat follows the levels |
 | `chats[].number` | int | default `0` (not known) | the chat's display number in this plane (purlis#90): what `$CHARTER_CHAT` and `$CHARTER_SESSION_ID` carry, and what `.charter/sessions/<n>.*` and `handbacks/chat-<n>/` are keyed on. `0` is a record written before the field, whose chats are dealt numbers in order at the next launch. Unique in this plane on this machine only, and so never what a committed file or an event names a chat by ([ADR 0066](adr/0066-a-chat-is-a-ulid-a-run-is-a-stretch-of-its-conversation-and-a-device-is-random.md)) |
-| `dealt` | int | default `0` | the highest number this plane has dealt, open or closed, so none is dealt twice. Held at or above every `number` the record names, both ways. "Start fresh" keeps it |
+| `dealt` | int | default `0` | the highest number this plane has dealt, open or closed, so none is dealt twice. Held at or above every `number` the record names, both ways. "Start fresh" keeps it. **A launch also holds it at or above every number [`app/chat-records/closed.json`](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number) names** (#6740), each entry's `number` and its `earlier`, so a number a closed chat still answers to is not dealt again where this record was lost, reset or could not be read |
 | `chats[].id` | str | default `""` (absent) | the chat's id, a ULID minted by the app once per clone and device (V43), when it first starts the chat in that clone, and never changed there ([ADR 0066](adr/0066-a-chat-is-a-ulid-a-run-is-a-stretch-of-its-conversation-and-a-device-is-random.md), #834). What an event names the chat by, and what a session record, the audit and OTel will. Absent in a record written before it, and then minted at the launch that reads it, as `number` was. A chat put back, or started again in the place of one whose harness could not bring its conversation back (`lostOnResume`), keeps it |
 | `chats[].device` | str | default `""` (absent) | the chat's origin device: the device id, from the machine store, of the machine that minted `id`. Never a hostname. Absent where that machine had none (ADR 0031), which reads as `unknown` |
 | `chats[].sandbox` | str | default `""` (absent) | `"off"` where the chat's last run started without the sandbox in a project that has it on: a person's opt-out, or a system with no sandbox backend (ADR 0067 §7). A fact about the run that was, **never read as an opt-out**: a relaunch or a resume starts the chat sandboxed — the host then writes `trust.sandbox.on` for it — or refuses it where the sandbox cannot be applied (a Codex chat in a sandboxed project, a program the sandbox will not bind). The chat's session record says `sandbox: off` from it. `"none"` where the run started with no sandbox and no opt-out: the floor could not be applied here, a harness no sandbox is compiled for, or a shell. Also a fact about the run that was: what a command below that chat's program reads to know it is not in a sandboxed chat. Any other word reads as absent |
@@ -7776,7 +7781,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   Kept only for a chat a dispatch record names as its worker; nothing of an ordinary chat is
   kept. `<ULID>` is the chat's own id.
 - **Format:** the screen's text, written whole through a temp file as a grade's kept chat is
-  (`keptscreen`), at most `keptscreen::MOST_SCREEN_BYTES`. Held to 200 screens and 256 MiB in
+  (`keptscreen`), at most `keptscreen::MOST_SCREEN_BYTES`. **Masked before it is written**
+  (#6309): each value purlis handed the chat (a vault value, a brokered credential, a runner
+  tool's value, a profile's sign-in, a page's fill or login) is shown as `‹secret: <key>›`,
+  the name of its vault entry and never the value, matched exactly in the text the screen
+  shows, as read, trimmed, and, for a value of several lines, whole and line by line
+  (`secrets::handedto`). A value, or a line of one, shorter than 4 bytes is not masked: as
+  `secrets::seen` rules, three characters or fewer is an ordinary word as often as a secret.
+  A screen that cannot be masked, or would take more than `handedto::MATCH_STEPS_AT_MOST`
+  window steps to look at, is not kept, never kept unmasked. Held to 200 screens and 256 MiB in
   all, the oldest going first. A file not named by a ULID with `.screen`, a link, or one too
   large is never shown.
 - **Status:** **internal** — **purlis only**. Written by the app as it closes a task's chat for
@@ -7805,6 +7818,43 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   them (#6451's review). Best effort, as `rewrite`'s lock is: on a filesystem that cannot
   `flock`, the store is written and deleted unlocked (#6508's review).
 - **Tier:** Clone state, rebuildable — deleted, it is made again by the next write.
+
+### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
+- **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
+  brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in, a browser fill or
+  a browser login (#6309, parent #5820), named before the value is handed. A launch after a window crashed reads these entries again to mask
+  the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
+  process took what it knew of the values with it. **Never a value**: the values themselves
+  are known only in memory, as a keyed digest (`secrets::handedto`), and here only as a seal.
+- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>", "seal": "<64 hex>"}`,
+  and `"form"`
+  where the value was handed in another form than as read: `"dotenv-escaped"`, as a dotenv file
+  holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>,
+  "escaped": <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or
+  `"unrepeatable"`, a one-time code or a minted token, made once. `seal` is `HMAC-SHA256` of the
+  vault, the key and the value as handed (in its form), each ended by a NUL, under a key derived
+  from `fingerprint.key` for this purpose alone (`fingerprint::seal`, purpose `a value handed
+  to a chat`): no use without the plane's key, which no sandboxed chat reads. Each entry, form
+  and seal once, written whole through a temp file (mode 0600, its folder 0700) and read through
+  no link.
+- **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
+  value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
+  named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
+  is ended as it starts. Denied a sandboxed chat's reading
+  and writing under every harness: a chat that rewrote its own would choose what its kept
+  screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
+  `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
+  will bring back. A file that does not read, a line in it that does not, a line with no seal
+  or one that is not the seal of its entry's value read again and made again in its form (an
+  entry changed since it was handed, or a line purlis did not write), a form that cannot be
+  made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
+  vault whose value is read through a program that may ask the person, as a 1Password vault's
+  is and a reference vault's `op read` or `vault kv get` is, or an entry linked into one; an
+  entry gone; a GitHub App's token) leave that task's screen not kept.
+- **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
+  screen with what was handed before the crash unmasked, and nothing else is lost.
+- **Git:** gitignored (under `/.charter/`).
+- **Written by:** `crates/purlis-core/src/secrets/handedto.rs`.
 
 ### `app/hooks.sock`
 - **Format:** a unix socket, not a file. Each chat's hooks write one JSON line to it with the

@@ -33,6 +33,33 @@ pub const PROJECTS: &str = "projects";
 #[doc(hidden)]
 pub const IN_A_RUNNER_CONTAINER: &str = "\"$HOME\"/.local/share/*";
 
+/// **A runner's data home, begun as `purlis/` where it has none** (ADR 0091, amended
+/// 2026-11-17): the window keeps writing `charter/` where neither folder is, so that a first write
+/// never starts a folder an older build does not read, and nothing runs rename-local on a runner,
+/// so every runner kept the old name. No older build reads a fresh runner's home. One that already
+/// has either folder keeps it: a kept runner's projects are worktrees whose git files, and chats
+/// whose harness sessions, hold paths under it. A data home a variable names is left as it is.
+pub fn begin_a_runners(env: &dyn Fn(&str) -> Option<String>) -> std::io::Result<()> {
+    let Some(base) = base_in(env) else {
+        return Ok(());
+    };
+    let name = &crate::names::DATA_HOME;
+    if name
+        .spellings()
+        .any(|spelling| base.join(spelling).exists())
+    {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&base)?;
+    let mut making = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut making, 0o700);
+    match making.create(base.join(name.write)) {
+        Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        made => made,
+    }
+}
+
 /// `<data>`, from this process's environment.
 ///
 /// A fenced build is held here (charter-app#129): a test run that pins no data home of its own
@@ -242,5 +269,35 @@ mod tests {
         std::os::unix::fs::symlink(repo.join("sub"), &link).unwrap();
 
         assert!(refusal(&link.join("data")).is_some());
+    }
+
+    #[test]
+    fn a_runners_fresh_data_home_is_named_purlis_and_one_it_already_has_keeps_its_name() {
+        // A fresh runner home has neither folder: nothing older reads it, so it starts as purlis.
+        let fresh = tempfile::tempdir().unwrap();
+        let fresh_base = fresh.path().to_str().unwrap();
+        let fresh_pairs = [("XDG_DATA_HOME", fresh_base)];
+        let fresh_env = env(&fresh_pairs);
+        begin_a_runners(&fresh_env).unwrap();
+        assert_eq!(root_in(&fresh_env), Some(fresh.path().join("purlis")));
+        assert!(fresh.path().join("purlis").is_dir());
+
+        // One a runner already keeps its projects in stays where its worktrees point.
+        let kept = tempfile::tempdir().unwrap();
+        std::fs::create_dir(kept.path().join("charter")).unwrap();
+        let kept_base = kept.path().to_str().unwrap();
+        let kept_pairs = [("XDG_DATA_HOME", kept_base)];
+        let kept_env = env(&kept_pairs);
+        begin_a_runners(&kept_env).unwrap();
+        assert_eq!(root_in(&kept_env), Some(kept.path().join("charter")));
+        assert!(!kept.path().join("purlis").exists());
+
+        // A data home a variable names is the operator's, and nothing is made beside it.
+        let named = tempfile::tempdir().unwrap();
+        let named_home = named.path().join("mine");
+        let named_pairs = [(HOME_VAR, named_home.to_str().unwrap())];
+        let named_env = env(&named_pairs);
+        begin_a_runners(&named_env).unwrap();
+        assert!(std::fs::read_dir(named.path()).unwrap().next().is_none());
     }
 }

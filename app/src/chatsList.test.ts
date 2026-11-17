@@ -287,6 +287,7 @@ describe("a closed chat found by the filter (#6484)", () => {
   const CLOSED: ClosedChat[] = [
     {
       number: 731,
+      id: "01K6CHATS0000000000000000C",
       earlier: [702],
       title: "Tidy the changelog",
       place: "smart-ide",
@@ -294,6 +295,7 @@ describe("a closed chat found by the filter (#6484)", () => {
     },
     {
       number: 650,
+      id: "01K6CHATS0000000000000000D",
       earlier: [],
       title: "Sign commits",
       place: "docs",
@@ -314,6 +316,13 @@ describe("a closed chat found by the filter (#6484)", () => {
     expect(words("731").map((one) => one.number)).toEqual([731]);
     expect(words("702").map((one) => one.number)).toEqual([731]);
     expect(words("70")).toEqual([]);
+  });
+
+  it("says the number it was found by only where that is one it had before a restart (#6685)", () => {
+    const foundBy = (text: string) => words(text).map((one) => [one.number, one.foundBy]);
+    expect(foundBy("702")).toEqual([[731, 702]]);
+    expect(foundBy("731")).toEqual([[731, null]]);
+    expect(foundBy("changelog")).toEqual([[731, null]]);
   });
 
   it("is never found by a chip, nor with nothing typed: both ask about running chats", () => {

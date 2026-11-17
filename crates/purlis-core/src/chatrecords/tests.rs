@@ -540,3 +540,17 @@ fn words_longer_than_a_record_keeps_are_cut_as_they_are_read() {
     };
     assert_eq!(name.chars().count(), 200);
 }
+
+#[test]
+fn the_highest_number_counts_every_number_a_closed_chat_answers_to() {
+    // #6740: the counter of numbers dealt is held above these, earlier ones too.
+    let (_dir, root) = project();
+    assert_eq!(highest_number(&root), 0, "no closed chat");
+    let restarted = ChatRecord {
+        earlier: vec![760],
+        ..chat(731, ID, "2026-11-12T09:40:00Z")
+    };
+    keep(&root, &restarted).unwrap();
+    keep(&root, &chat(745, OTHER, "2026-11-12T10:40:00Z")).unwrap();
+    assert_eq!(highest_number(&root), 760);
+}

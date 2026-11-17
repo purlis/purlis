@@ -914,3 +914,53 @@ fn a_runner_too_old_to_list_what_it_holds_leaves_nothing_to_prove() {
         Ok(vec!["a folder ran out".to_owned()])
     );
 }
+
+/// A runner whose check takes `check` before its program, which never answers the handshake.
+fn a_slow_silent_runner(check: Duration) -> ToARunner {
+    use purlis_session_protocol::hostlink::{LinkKey, Pinned};
+    ToARunner {
+        connector: CommandConnector::new(
+            "/bin/sleep",
+            vec!["600".to_owned()],
+            Arc::new(move || {
+                std::thread::sleep(check);
+                Ok(())
+            }),
+        ),
+        device: "01JDESKTOP0000000000000000".to_owned(),
+        key: LinkKey::generate().unwrap(),
+        pinned: Pinned {
+            device: "01JRUNNER00000000000000000".to_owned(),
+            key: LinkKey::generate().unwrap().public(),
+        },
+        pool: "docker".to_owned(),
+    }
+}
+
+/// **A link that fails is said by why, with a way on, never as a runner that did not answer in
+/// time** (finding of 2026-11-17): after a pool's machine restarted, the check before the link
+/// (`docker` over SSH, several times) took most of the desktop's own wait, which then ran out in
+/// the middle of the handshake. The desktop closed the stream, said only "did not answer in
+/// time", and the runner logged a handshake failed against another host. The first link's wait
+/// outlasts the check's and the handshake's own deadlines, so the link's reason is what is said.
+#[test]
+fn a_link_that_fails_after_a_slow_check_says_why_and_where_to_look_not_that_it_was_late() {
+    let to = a_slow_silent_runner(Duration::from_secs(12));
+    let said = on_one_link(&to, async |linked| match linked {
+        Ok(_) => Ok(()),
+        Err(down) => Err(down.why),
+    })
+    .unwrap_err();
+    assert_ne!(said, LATE);
+    assert!(said.contains("did not finish linking within"), "{said}");
+    assert!(said.contains("Pool setup"), "{said}");
+}
+
+#[test]
+fn the_first_link_waits_out_the_checks_and_the_handshakes_own_deadlines() {
+    let handshake = purlis_session_protocol::version::HANDSHAKE_TIMEOUT;
+    // Hello and handshake, then the session protocol's proof: each its own deadline.
+    assert!(FIRST_LINK_WITHIN > CHECK_WITHIN + handshake * 2);
+    // A sign-in waits for the link's first word inside its own wait.
+    assert!(SIGN_IN_STARTS_WITHIN > FIRST_LINK_WITHIN);
+}

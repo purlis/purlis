@@ -144,3 +144,33 @@ async fn a_check_finding_the_runner_gone_is_told_once_and_never_tried_again() {
     assert!(matches!(next, Ok(None)), "the kept link went on");
     assert_eq!(checks.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn a_check_that_outlasts_the_connectors_wait_is_refused_in_time_and_says_so() {
+    // A Docker runner's check runs `docker` over SSH several times: after its machine restarts,
+    // one can hang. The link says why it is down rather than the desktop's own wait running out
+    // in the middle of the handshake that follows.
+    let marker = tempfile::tempdir().unwrap();
+    let ran = marker.path().join("ran");
+    let connector = CommandConnector::new(
+        "/usr/bin/touch",
+        vec![ran.to_str().unwrap().to_owned()],
+        Arc::new(|| {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            Ok(())
+        }),
+    )
+    .within(std::time::Duration::from_millis(200));
+    let started = std::time::Instant::now();
+    let refused = connector.connect().await.err().expect("refused in time");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(
+        refused.to_string().contains("did not finish within"),
+        "{refused}"
+    );
+    assert!(!ran.exists(), "nothing ran");
+}
