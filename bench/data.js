@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794908719810,
+  "lastUpdate": 1794911649393,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50610,6 +50610,48 @@ window.BENCHMARK_DATA = {
             "value": 101.62990099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.227, 101.293, 101.630, 101.751, 106.612 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "11ec780b657def697b26bf6d09a4f9a2da0ac0ce",
+          "message": "A browser's view says the page's title, whole address and load, and the person can go back, forward, reload or stop (#6938, continues #6994) (#7074)\n\n* A browser's views are told its page's whole address, title and load, and take the person's Back, Forward, Reload and Stop (1.90, #6938)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M896QEX6EZS6YJ16Q4JCB7\nPurlis-Persona: steward\n\n* A browser's view says the page's title, whole address and load, and offers Back, Forward, Reload and Stop (#6938)\n\nThe title follows the site, the site's tooltip has the whole address and Copy address copies it.\nThe strip's lower edge moves while the page loads, and it says when a page did not load (with\nthe engine's reason) or stopped working. Back, Forward and Reload (Stop while it loads) take the\nbrowser over first, as a size preset does: they never act for the agent. A host before 1.90 is\ntold no step and its view draws no buttons. Stories for each new state.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M896QEX6EZS6YJ16Q4JCB7\nPurlis-Persona: steward\n\n* The chat browsers' window test as Prettier writes it (#6938)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M896QEX6EZS6YJ16Q4JCB7\nPurlis-Persona: steward\n\n* The loading mark sits inside the strip's lower edge, so the strip never runs a pixel past itself (#6938)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M896QEX6EZS6YJ16Q4JCB7\nPurlis-Persona: steward\n\n* The baselines of the stories of what a page is, drawn by the pull request's run (#6938)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M896QEX6EZS6YJ16Q4JCB7\nPurlis-Persona: steward",
+          "timestamp": "2026-11-17T09:39:27Z",
+          "tree_id": "e4e2a96e5d45ba8882495bb865e4a208f3f9e4d5",
+          "url": "https://github.com/purlis/purlis/commit/11ec780b657def697b26bf6d09a4f9a2da0ac0ce"
+        },
+        "date": 1794911642757,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5437965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.538, 0.544, 0.554, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.355655499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.150, 16.211, 16.356, 16.408, 16.435 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2939815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.535, 101.173, 101.294, 101.596, 103.208 ms"
           }
         ]
       }
