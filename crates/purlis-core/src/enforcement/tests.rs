@@ -32,6 +32,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
         for family in Family::ALL {
             let want = match family {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
+                // The person's own credential files are theirs at the floor (Q325).
+                Family::CredentialFiles => Mode::Off,
                 // The floor is a wrap.
                 Family::Sandbox => Mode::Enforce,
                 _ => Mode::Log,
@@ -45,7 +47,10 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
 #[test]
 fn each_template_runs_each_family_as_the_ruling_says() {
     let secret = [Family::Secrets, Family::Vaults, Family::GuardsCredential];
-    for family in Family::ALL.into_iter().filter(|f| *f != Family::Sandbox) {
+    for family in Family::ALL
+        .into_iter()
+        .filter(|f| !matches!(f, Family::Sandbox | Family::CredentialFiles))
+    {
         assert_eq!(Template::Open.mode(family), Mode::Off, "{}", family.key());
         assert_eq!(
             Template::Strict.mode(family),
@@ -82,6 +87,61 @@ fn each_template_runs_each_family_as_the_ruling_says() {
     assert_eq!(Template::Team.sandbox_level(), Some(SandboxLevel::Full));
     // Strict is today's purlis: `[sandbox]` decides, the floor unless its mode is on (Q316).
     assert_eq!(Template::Strict.sandbox_level(), None);
+}
+
+/// Q325: the person's own credential files are held at the floor by `team` and `strict` alone;
+/// `open`, `watch` and `hold` leave the person's tools working there.
+#[test]
+fn credential_files_are_enforced_by_team_and_strict_alone() {
+    for (template, mode) in [
+        (Template::Open, Mode::Off),
+        (Template::Watch, Mode::Off),
+        (Template::Hold, Mode::Off),
+        (Template::Team, Mode::Enforce),
+        (Template::Strict, Mode::Enforce),
+    ] {
+        assert_eq!(
+            Template::mode(template, Family::CredentialFiles),
+            mode,
+            "{}",
+            template.word()
+        );
+    }
+    assert_eq!(Family::CredentialFiles.key(), "secrets.credential_files");
+    assert!(Family::CredentialFiles.switchable());
+}
+
+/// Q325: a project turns the class on at the floor with `secrets.credential_files = "enforce"`,
+/// as a dotted key, a `[policy.secrets]` table, or a quoted key beside `secrets` itself. It takes
+/// off or enforce: `log` is enforced, and said.
+#[test]
+fn a_project_turns_credential_files_on_by_its_key() {
+    for text in [
+        "[policy]\nsecrets.credential_files = \"enforce\"\n",
+        "[policy.secrets]\ncredential_files = \"enforce\"\n",
+        "[policy]\nsecrets = \"log\"\n\"secrets.credential_files\" = \"enforce\"\n",
+    ] {
+        let settings = said(text);
+        assert_eq!(
+            settings.mode(Family::CredentialFiles),
+            Mode::Enforce,
+            "{text}"
+        );
+        assert!(
+            settings.refused.is_empty(),
+            "{text}: {:?}",
+            settings.refused
+        );
+    }
+    // The `secrets` family stays the template's where only the key under it is said.
+    let settings = said("[policy]\nsecrets.credential_files = \"enforce\"\n");
+    assert_eq!(settings.mode(Family::Secrets), Mode::Enforce);
+    assert_eq!(settings.template, Template::Watch);
+    let logged = said("[policy]\nsecrets.credential_files = \"log\"\n");
+    assert_eq!(logged.mode(Family::CredentialFiles), Mode::Enforce);
+    assert_eq!(logged.refused.len(), 1, "{:?}", logged.refused);
+    let off = said("[policy]\ntemplate = \"team\"\nsecrets.credential_files = \"off\"\n");
+    assert_eq!(off.mode(Family::CredentialFiles), Mode::Off);
 }
 
 #[test]

@@ -1960,18 +1960,21 @@ fn offered_to(
                 ),
             }
         }
-        (_, Kind::ProjectState) => brokered(Class::Integrity),
-        (_, Kind::ProtectedFile) => brokered(Class::LaterCode),
-        // The person's own credentials (ADR 0067 §5 class 6, Q321): their own way out.
-        (Operation::Read, _)
-            if target
-                .zip(purlis_core::sandbox::Machine::this().home)
-                .is_some_and(|(path, home)| {
-                    purlis_core::sandbox::is_credential(Path::new(path), &home)
-                }) =>
+        // The person's own credentials (ADR 0067 §5 class 6, Q321, Q325): their own way out,
+        // read or written, before what else a path there is (gh's and glab's folders are later
+        // code's too, so a refused `~/.config/gh/hosts.yml` is a protected file).
+        (Operation::Read | Operation::Write | Operation::File, _)
+            if target.is_some_and(|path| {
+                purlis_core::sandbox::is_credential(
+                    Path::new(path),
+                    &purlis_core::sandbox::Machine::this(),
+                )
+            }) =>
         {
             brokered(Class::Credentials)
         }
+        (_, Kind::ProjectState) => brokered(Class::Integrity),
+        (_, Kind::ProtectedFile) => brokered(Class::LaterCode),
         (Operation::Read, _) => brokered(Class::Vaults),
         (
             Operation::Write | Operation::File,

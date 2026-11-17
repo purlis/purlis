@@ -3769,43 +3769,84 @@ fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
     assert_eq!(open, Some(1));
 }
 
-/// Q321 (ADR 0067 §5 class 6): a refused read of the person's own credential says that a forge
-/// token comes through purlis's vault, never the vault's own sentence; a vault's read still
-/// says the vault's.
+/// Q321 and Q325 (ADR 0067 §5 class 6): a refused read or write of the person's own credential
+/// says that a forge token comes through purlis's vault, never the vault's sentence or a later
+/// program's, whatever else the path is: gh's and glab's folders are later code's too, so the
+/// block names its kind as `kind_of` reads it, a protected file. A vault's read still says the
+/// vault's, and a write of a later program's file that is no credential still says its own.
 #[test]
-fn a_refused_read_of_a_credential_says_the_credentials_way_out() {
+fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
     use purlis_core::sandbox::{Class, grant};
-    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    use purlis_core::sandboxblock::{Block, Kind, Operation, Place, kind_of};
     let project = tempfile::tempdir().expect("a project");
     let home = purlis_core::sandbox::Machine::this().home.expect("a home");
-    let block = Block {
-        operation: Operation::Read,
-        kind: Kind::Home,
+    let place = Place {
+        root: project.path(),
+        chat: project.path(),
+        cwd: project.path(),
+        home: Some(&home),
+    };
+    let block = |operation, path: &Path| Block {
+        operation,
+        kind: kind_of(path, &place),
         ours: false,
     };
-    for credential in [".ssh/id_ed25519", ".config/gh/hosts.yml", ".netrc"] {
-        let path = home.join(credential).display().to_string();
-        assert_eq!(
-            offered_to(project.path(), &block, Some(&path), false),
-            (
-                BlockOffer::Brokered,
-                None,
-                Some(grant::brokered_route(Class::Credentials).to_owned())
-            ),
-            "{credential}"
-        );
+    let credentials = Some(grant::brokered_route(Class::Credentials).to_owned());
+    assert_eq!(
+        kind_of(&home.join(".config/gh/hosts.yml"), &place),
+        Kind::ProtectedFile,
+        "the case the order is for"
+    );
+    for credential in [
+        ".ssh/id_ed25519",
+        ".config/gh/hosts.yml",
+        ".config/glab-cli/config.yml",
+        ".netrc",
+        ".aws/credentials",
+    ] {
+        let path = home.join(credential);
+        let spelled = path.display().to_string();
+        for operation in [Operation::Read, Operation::Write] {
+            assert_eq!(
+                offered_to(
+                    project.path(),
+                    &block(operation, &path),
+                    Some(&spelled),
+                    false
+                ),
+                (BlockOffer::Brokered, None, credentials.clone()),
+                "{operation:?} {credential}"
+            );
+        }
     }
+    // A plain-file vault kept in the home: not a credential, so the vault's sentence.
+    let vault = home.join("team-store/ops.json");
+    assert_eq!(kind_of(&vault, &place), Kind::Home);
     assert_eq!(
         offered_to(
             project.path(),
-            &block,
-            Some("/p/.purlis/vaults/ops.json"),
+            &block(Operation::Read, &vault),
+            Some(&vault.display().to_string()),
             false
         ),
         (
             BlockOffer::Brokered,
             None,
             Some(grant::brokered_route(Class::Vaults).to_owned())
+        )
+    );
+    let gh_config = home.join(".config/gh/config.yml");
+    assert_eq!(
+        offered_to(
+            project.path(),
+            &block(Operation::Write, &gh_config),
+            Some(&gh_config.display().to_string()),
+            false
+        ),
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::brokered_route(Class::LaterCode).to_owned())
         )
     );
 }

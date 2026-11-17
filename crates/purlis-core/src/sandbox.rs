@@ -1032,16 +1032,23 @@ impl Class {
     }
 }
 
-/// **The forge and cloud credential files no sandboxed chat reads**, each under the home and
-/// with what is below it (ADR 0067 §5 class 6, ruling Q321): git's stored passwords and
-/// `.netrc`, AWS's, gcloud's credentials database and legacy files, Azure's folder, Docker's
-/// registry logins, and gh's and glab's tokens. A chat at the full sandbox or the floor gets a
-/// forge token only through purlis's vault.
+/// **The forge and cloud credential files no chat at the full sandbox reads**, each under the
+/// home and with what is below it (ADR 0067 §5 class 6, rulings Q321 and Q325): git's stored
+/// passwords (both of its files) and `.netrc`, AWS's keys and its SSO and CLI token caches,
+/// gcloud's credentials and token databases, its application default credentials and legacy
+/// files, Azure's folder, Docker's registry logins, and gh's and glab's tokens. Where a tool's own
+/// variable moves one, the moved one is denied too ([`credential_paths`]). A chat that is held
+/// from them gets a forge token only through purlis's vault.
 pub const CREDENTIAL_FILES: &[&str] = &[
     ".git-credentials",
+    ".config/git/credentials",
     ".netrc",
     ".aws/credentials",
+    ".aws/sso/cache",
+    ".aws/cli/cache",
     ".config/gcloud/credentials.db",
+    ".config/gcloud/access_tokens.db",
+    ".config/gcloud/application_default_credentials.json",
     ".config/gcloud/legacy_credentials",
     ".azure",
     ".docker/config.json",
@@ -1049,67 +1056,118 @@ pub const CREDENTIAL_FILES: &[&str] = &[
     ".config/glab-cli/config.yml",
 ];
 
-/// **The names an SSH private key has by default** (`ssh-keygen`'s, and `ssh`'s own identity
-/// files), denied whether or not they are there, so a key made while a chat runs is held.
-pub const SSH_KEY_NAMES: &[&str] = &[
-    "id_rsa",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ecdsa_sk",
-    "id_ed25519",
-    "id_ed25519_sk",
-    "id_xmss",
-    "identity",
-];
+/// **The SSH folder**, under the home: denied whole, so a key made in it while a chat runs, by any
+/// name, is held, and only [`SSH_OPEN`] is read in it.
+pub const SSH_FOLDER: &str = ".ssh";
 
-/// **What `~/.ssh` holds that is no secret**, read by `ssh` and `git` to work through an agent.
-const SSH_OPEN: &[&str] = &["config", "config.d", "allowed_signers", "environment", "rc"];
+/// **What `~/.ssh` holds that is no secret**, read by `ssh` and `git` to work through an agent:
+/// read again inside the denied folder, and nothing else in it (ruling Q321, the review of
+/// #7008). A public key is a name ending in [`SSH_PUBLIC`].
+pub const SSH_OPEN: &[&str] = &["config", "known_hosts", "known_hosts.old"];
 
-/// **The SSH private keys in `ssh`**, the folder `~/.ssh` (ruling Q321): every name of
-/// [`SSH_KEY_NAMES`], there or not, and every other entry directly in it as the chat starts,
-/// but what holds no secret: a public key, `known_hosts*`, `authorized_keys*` and [`SSH_OPEN`].
-/// A key named otherwise and added after the start is a stated residual.
-fn ssh_private_keys(ssh: &Path) -> Vec<PathBuf> {
-    let mut keys: Vec<PathBuf> = SSH_KEY_NAMES.iter().map(|name| ssh.join(name)).collect();
-    let Ok(entries) = std::fs::read_dir(ssh) else {
-        return keys;
-    };
-    let mut found: Vec<PathBuf> = entries
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_str()?.to_owned();
-            (!ssh_open(&name)).then(|| entry.path())
-        })
-        .filter(|path| !keys.contains(path))
-        .collect();
-    found.sort();
-    keys.extend(found);
-    keys
-}
+/// The end of a public key's name in `~/.ssh`, read like [`SSH_OPEN`].
+pub const SSH_PUBLIC: &str = ".pub";
 
-/// Whether `name`, directly in `~/.ssh`, holds no secret: a public key, `known_hosts*`,
-/// `authorized_keys*` or one of [`SSH_OPEN`].
+/// Whether `name`, directly in `~/.ssh`, is one a chat reads: [`SSH_OPEN`] or a public key.
 fn ssh_open(name: &str) -> bool {
-    name.ends_with(".pub")
-        || name.starts_with("known_hosts")
-        || name.starts_with("authorized_keys")
-        || SSH_OPEN.contains(&name)
+    SSH_OPEN.contains(&name) || (name.len() > SSH_PUBLIC.len() && name.ends_with(SSH_PUBLIC))
 }
 
-/// **Whether `path` is one of the person's own credentials under `home`** ([`Class::Credentials`]):
-/// what a refused read names, so its Notice says the way that works for a credential rather
-/// than for a vault.
-pub fn is_credential(path: &Path, home: &Path) -> bool {
-    let ssh = home.join(".ssh");
-    if path.parent() == Some(ssh.as_path()) {
-        return path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| !ssh_open(name));
+/// Whether `denial` is the SSH folder's ([`SSH_FOLDER`]), inside which [`SSH_OPEN`] and a public
+/// key are read again: what each compiler writes after its rule ([`seatbelt::denial_rules`],
+/// Claude Code's `allowRead`).
+pub fn is_the_ssh_folder(denial: &Denial) -> bool {
+    denial.class == Class::Credentials
+        && denial.reach == Reach::AndBelow
+        && denial.path.file_name() == Some(std::ffi::OsStr::new(SSH_FOLDER))
+}
+
+/// The value of `name` in `env` as a path a credential moved to: absolute, and neither `/`, the
+/// home, nor a folder above it, which no denial may cover ([`for_start`]).
+fn moved_to(env: &crate::secrets::Env, name: &str, home: &Path) -> Option<PathBuf> {
+    env.get(name)
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && !home.starts_with(path))
+}
+
+/// **Every credential path of class 6 on `machine`**, under `home`: the SSH folder, each of
+/// [`CREDENTIAL_FILES`], and where a tool's own variable moves one, the file it moves it to
+/// (the review of #7008): `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` gh's, `XDG_CONFIG_HOME` git's
+/// and glab's, `CLOUDSDK_CONFIG` gcloud's, `AWS_SHARED_CREDENTIALS_FILE` AWS's, `DOCKER_CONFIG`
+/// Docker's, and `NETRC` the `.netrc`.
+pub fn credential_paths(home: &Path, env: &crate::secrets::Env) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = vec![home.join(SSH_FOLDER)];
+    out.extend(CREDENTIAL_FILES.iter().map(|file| home.join(file)));
+    let moved = |name| moved_to(env, name, home);
+    let config = moved("XDG_CONFIG_HOME");
+    if let Some(config) = &config {
+        out.push(config.join("git/credentials"));
+        out.push(config.join("glab-cli/config.yml"));
     }
-    CREDENTIAL_FILES
-        .iter()
-        .any(|file| path.starts_with(home.join(file)))
+    if let Some(gh) = moved("GH_CONFIG_DIR").or_else(|| config.as_ref().map(|it| it.join("gh"))) {
+        out.push(gh.join("hosts.yml"));
+    }
+    if let Some(gcloud) = moved("CLOUDSDK_CONFIG") {
+        for file in [
+            "credentials.db",
+            "access_tokens.db",
+            "application_default_credentials.json",
+            "legacy_credentials",
+        ] {
+            out.push(gcloud.join(file));
+        }
+    }
+    if let Some(docker) = moved("DOCKER_CONFIG") {
+        out.push(docker.join("config.json"));
+    }
+    out.extend(moved("AWS_SHARED_CREDENTIALS_FILE"));
+    out.extend(moved("NETRC"));
+    let mut seen = Vec::new();
+    out.retain(|path| {
+        let new = !seen.contains(path);
+        seen.push(path.clone());
+        new
+    });
+    out
+}
+
+/// `path` as one compares it with another: off macOS's data volume, where a firmlink gives it
+/// a second name, and lower-cased, as macOS's disk folds case.
+fn compared(path: &Path) -> String {
+    let path = path
+        .strip_prefix(DATA_VOLUME)
+        .map_or_else(|_| path.to_path_buf(), |below| Path::new("/").join(below));
+    path.display().to_string().to_lowercase()
+}
+
+/// **Whether `path` is one of the person's own credentials on `machine`** ([`Class::Credentials`]):
+/// what a refused read or write names, so its Notice says the way that works for a credential
+/// rather than for a vault or a later program. Under every spelling a case-folding disk takes
+/// for it, under either name across a firmlink, and at any depth below a credential folder; in
+/// `~/.ssh`, all but what holds no secret ([`SSH_OPEN`], a public key).
+pub fn is_credential(path: &Path, machine: &Machine) -> bool {
+    let Some(home) = &machine.home else {
+        return false;
+    };
+    let path = compared(path);
+    let below = |held: &Path| {
+        let held = compared(held);
+        path == held || path.starts_with(&format!("{}/", held.trim_end_matches('/')))
+    };
+    credential_paths(home, &machine.env).iter().any(|held| {
+        if !below(held) {
+            return false;
+        }
+        if held.file_name() != Some(std::ffi::OsStr::new(SSH_FOLDER)) {
+            return true;
+        }
+        let ssh = compared(held);
+        match path.strip_prefix(&format!("{ssh}/")) {
+            Some(rest) if !rest.contains('/') => !ssh_open(rest),
+            Some(_) => true,
+            None => false,
+        }
+    })
 }
 
 /// How much of a [`Planted`] name a chat is denied writing.
@@ -2405,13 +2463,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
-        // 6. The person's own credentials (ruling Q321): an SSH private key, and each forge and
-        // cloud credential file, neither read nor written.
-        for key in ssh_private_keys(&home.join(".ssh")) {
-            deny(Class::Credentials, key, Access::ReadWrite);
-        }
-        for file in CREDENTIAL_FILES {
-            deny(Class::Credentials, home.join(file), Access::ReadWrite);
+        // 6. The person's own credentials (rulings Q321 and Q325): the SSH folder, all but what
+        // holds no secret in it, and each forge and cloud credential file, wherever its tool's
+        // variable moves it, neither read nor written. The floor leaves them out unless the
+        // project's policy enforces them ([`Compiled::floor`]).
+        for path in credential_paths(home, &machine.env) {
+            deny(Class::Credentials, path, Access::ReadWrite);
         }
         // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
         // for a later one. A declared tool's run has a home of its own.
@@ -4361,6 +4418,17 @@ impl Compiled {
     pub fn floor(root: &Path, machine: &Machine, chat: &grant::Grants) -> Self {
         let locks = policy::Locks::of(root);
         let mut denied = Denied::of(root, machine);
+        // The person's own credentials (ruling Q325): held at the floor only where the project's
+        // policy enforces `secrets.credential_files` (`team`, `strict`, or the key itself), so
+        // under `watch` their own gh, https git and cloud tools work as before. Left out whole,
+        // so no folder above one is held either.
+        if crate::enforcement::mode(root, crate::enforcement::Family::CredentialFiles)
+            != crate::enforcement::Mode::Enforce
+        {
+            denied
+                .paths
+                .retain(|denial| denial.class != Class::Credentials);
+        }
         // The keychain's files, by path: the floor allows the lookups the full sandbox's profile
         // denies by default, and the items' own access rule holds the rest (V90a, Q5).
         if let Some(keychains) = seatbelt::keychains(machine.home.as_deref())

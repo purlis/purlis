@@ -1683,9 +1683,8 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                 Class::Vaults => (root.join(".charter/vaults").display().to_string(), true),
                 Class::Integrity => (root.join(".charter/app").display().to_string(), false),
                 Class::HumanPowers => (config_dir.display().to_string(), false),
-                Class::Credentials => {
-                    (home_dir.join(".ssh/id_ed25519").display().to_string(), true)
-                }
+                // The SSH folder, held whole (the review of #7008).
+                Class::Credentials => (home_dir.join(".ssh").display().to_string(), true),
                 // Off a runner it names nothing (RR-5), which its own test holds.
                 Class::RunnerInternals => continue,
                 Class::LaterCode => match harness {
