@@ -1,12 +1,12 @@
 # 0126. One project policy governs every chat decision (Cedar)
 
-Status: proposed (2026-11-16), a draft for review. It follows the person's rulings Q307, Q308b,
-Q309 to Q319, Q320 and Q322, and the orchestrator's Q319a (O1–O4), Q320a (N1–N5), Q320b
-(R2-1–R2-4), Q320c (R5-1–R5-3), Q320d and Q320e (R6-1, R6-2), in the who-judges orchestration
-(`work/who-judges/decisions.md` on the plane). It also takes in the calls of the spec's first
-seven Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` to
-`review-round-5.md` on the plane; review round 6's calls are Q320c and Q320d, and review round
-7's are Q320e and Q322).
+Status: accepted (2026-11-16), by the person's sign-off Q323 after eight review rounds. It follows
+the person's rulings Q307, Q308b, Q309 to Q319, Q320 and Q322, and the orchestrator's Q319a (O1–O4),
+Q320a (N1–N5), Q320b (R2-1–R2-4), Q320c (R5-1–R5-3), Q320d and Q320e (R6-1, R6-2), in the who-judges
+orchestration (`work/who-judges/decisions.md` on the plane). It also takes in the calls of the
+spec's first seven Fable review rounds (`work/who-judges/tickets/m75-policy/review-round-1.md` to
+`review-round-5.md` on the plane; review round 6's calls are Q320c and Q320d, and review round 7's
+are Q320e and Q322).
 Q320a.N1 amends Q319 C6: with the seal opt-in on, the Linux and Windows seal gap is narrowed, not
 closed, and stays declared. The rulings come from the wayfinder map "One project policy governs everything a chat can do" (#6969)
 and its fifteen tickets (#6970 to #6981, #6986 to #6988).
@@ -299,9 +299,9 @@ the rule.
   - its enforcement log, which is folded into the event log with no store of its own (Q313
     point 3).
 
-  Each lands as an amendment file under `docs/adr/0125/`.
+  Each is an amendment file in [`0125/`](0125/).
 - **ADR 0124:** §3's "Project recommends" row and item 3, the wording of §4.1 and §4.6, and §9's
-  "timed exception where it exists" (Q312 point 3), as an amendment file under `docs/adr/0124/`.
+  "timed exception where it exists" (Q312 point 3), as an amendment file in [`0124/`](0124/).
 - **Rulings rather than records:** Q307 Q5's "the start is refused" (Q319 C1); Q311 point 8's
   family `off` "skips the family's rules" (Q319 C2); Q315 point 5's "nothing is carried over",
   for nevers (Q320); Q309 point 4's "counts as no acceptance", which under a current manifest

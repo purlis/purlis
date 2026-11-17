@@ -1948,12 +1948,17 @@ mode (ADR 0124, proposed).
 _Avoid_: bypass, yolo, mode (that is the harness's), supervised
 
 **Policy**:
-An admin's locks on settings, kept on this machine or for the organisation. A locked value
-cannot be changed at any **level**, the strictest value wins, and Settings shows it as "locked
-by policy". It never loosens what a project or a person sets. One that forbids the opt-out
-requires the sandbox in every project on that machine, which Settings shows as "On, required by
-policy" (ADR 0067 §1, §4 as amended).
-_Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings
+The project's complete, committed statement of what a chat may run, act on or change, and when,
+by whom and where: the sandbox, the network, ports and processes, guards, asks and consents,
+dispatch and personas, vaults and secrets, the browser, skills, tools and the harness permission
+mode. It is written as Cedar rules, each named by its `@id`, and only the session host judges
+it; every allow, ask and refusal names the rule that decided it. An administrator's locks, on
+this machine or for the organisation, are part of it and sit above the project: a locked value
+cannot be loosened at any **level**, and Settings shows it as locked. One that forbids the
+opt-out requires the sandbox in every project on that machine, which Settings shows as "On,
+required by policy" (ADR 0067 §1, §4 as amended; ADR 0126).
+_Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings,
+sandbox policy (that was `[sandbox] policy`), an admin's locks alone
 
 ### Core and extensions
 
