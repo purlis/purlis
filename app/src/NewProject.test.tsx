@@ -411,7 +411,7 @@ describe("making a project", () => {
 
     await userEvent.click(await createProject(dialog));
 
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "New project" })).not.toBeInTheDocument(),
     );
     expect(calls("create_project").map((one) => one.args.protection)).toEqual(["off"]);
@@ -545,7 +545,7 @@ describe("making a project", () => {
 
     await userEvent.click(within(question).getByRole("button", { name: "GitHub" }));
 
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(within(dialog).getByRole("alert")).toHaveTextContent("is not empty"),
     );
     expect(within(dialog).getByRole("alert")).not.toHaveTextContent("could not be opened");

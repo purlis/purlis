@@ -245,7 +245,7 @@ describe("what the window does with the chats the core already has", () => {
 
     render(<App />);
 
-    await vi.waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
+    await waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
     expect(of("close_session", asked)).toEqual([]);
   });
 
@@ -314,7 +314,7 @@ describe("what the window does with the chats the core already has", () => {
 
     render(<App />);
 
-    await vi.waitFor(() => expect(tabs()).toEqual(["steward 5", "billing fix"]));
+    await waitFor(() => expect(tabs()).toEqual(["steward 5", "billing fix"]));
     expect((await screen.findByText(/new chat/i)).querySelector("strong")).toHaveTextContent(
       /^steward 5$/,
     );
@@ -362,7 +362,7 @@ describe("what the window does with the chats the core already has", () => {
 
     render(<App />);
 
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
     expect(screen.queryByText(/new chat/i)).not.toBeInTheDocument();
   });
 
@@ -396,7 +396,7 @@ describe("what the window does with the chats the core already has", () => {
   it("tells the core which chat is in front, so the next quit records it", async () => {
     const { asked } = core([chat({ session: 7, in_front: true }), chat({ session: 8 })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
+    await waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
 
     await userEvent.click(within(stripNamed("Tabs")).getAllByRole("tab")[1]);
 
@@ -438,7 +438,7 @@ describe("what the window is told about the chats", () => {
   it("takes a move in the plane it is showing", async () => {
     const { move } = core([chat({ session: 7, name: "ide.7" })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toEqual(["claude ide.7"]));
+    await waitFor(() => expect(tabs()).toEqual(["claude ide.7"]));
 
     move(moving("/home/dev/plane", 7, "waiting", [7]));
 
@@ -457,12 +457,12 @@ describe("what the window is told about the chats", () => {
       chat({ session: 8, name: "ide.8" }),
     ]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
+    await waitFor(() => expect(tabs()).toEqual(["claude ide.7", "claude ide.8"]));
 
     move(moving("/home/dev/another-plane", 7, "waiting", [7]));
     move(moving("/home/dev/plane", 8, "running"));
 
-    await vi.waitFor(() => expect(stateShown("claude ide.8")).toBe("working"));
+    await waitFor(() => expect(stateShown("claude ide.8")).toBe("working"));
     expect(stateShown("claude ide.7")).toBe("running (no detail)");
   });
 });
@@ -471,7 +471,7 @@ describe("being asked to quit", () => {
   it("names every session it is about to end", async () => {
     const { askToQuit } = core([chat({ session: 7 }), chat({ session: 8, harness: null })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(2));
+    await waitFor(() => expect(tabs()).toHaveLength(2));
 
     await askToQuit();
 
@@ -512,7 +512,7 @@ describe("being asked to quit", () => {
       [doing(7, "running"), doing(8, "waiting")],
     );
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(2));
+    await waitFor(() => expect(tabs()).toHaveLength(2));
 
     await askToQuit();
 
@@ -544,7 +544,7 @@ describe("being asked to quit", () => {
   it("says plainly when nothing is mid-turn", async () => {
     const { askToQuit } = core([chat({ session: 7 })], [], [doing(7, "waiting")]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
 
     await askToQuit();
 
@@ -559,7 +559,7 @@ describe("being asked to quit", () => {
     // claiming something it cannot see.
     const { askToQuit } = core([chat({ session: 7, name: "ide.7", harness: "codex" })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
 
     await askToQuit();
 
@@ -573,7 +573,7 @@ describe("being asked to quit", () => {
   it("quits when that is the answer", async () => {
     const { asked, askToQuit } = core([chat({ session: 7 })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
     await askToQuit();
 
     await userEvent.click(
@@ -586,7 +586,7 @@ describe("being asked to quit", () => {
   it("stays open when the answer is no, and ends nothing", async () => {
     const { asked, askToQuit } = core([chat({ session: 7 })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
     await askToQuit();
 
     await userEvent.click(
@@ -607,7 +607,7 @@ describe("being asked to quit", () => {
     // straight out.
     const { asked, askToQuit } = core([chat({ session: 7 })]);
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
     await askToQuit();
 
     await userEvent.keyboard("{Escape}");
@@ -647,7 +647,7 @@ describe("being asked to quit", () => {
       payload: null,
     });
 
-    await vi.waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
     expect(of("quit", asked)).toEqual([]);
     letTheChatsArrive();
   });

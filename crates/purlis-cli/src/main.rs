@@ -1259,7 +1259,7 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
             suspends_after,
             idles,
             if as_a_service {
-                purlis_host::Serves::AsALoginItem
+                purlis_host::Serves::AsARunnersService
             } else {
                 purlis_host::Serves::Alone
             },

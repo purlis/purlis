@@ -230,7 +230,7 @@ describe("a pinned tab (#4762: the one pin, the tab's)", () => {
     core([chat(1, "one", "alpha"), chat(2, "two", "alpha"), chat(3, "three", "alpha", true)]);
     render(<App />);
 
-    await vi.waitFor(() => expect(chatNames()).toEqual(["three", "one", "two"]));
+    await waitFor(() => expect(chatNames()).toEqual(["three", "one", "two"]));
     expect(pinned()).toContain("pinned tab");
   });
 
@@ -238,7 +238,7 @@ describe("a pinned tab (#4762: the one pin, the tab's)", () => {
     core([chat(1, "one", "alpha"), chat(2, "two", "alpha", true)]);
     render(<App />);
 
-    await vi.waitFor(() => expect(chatNames()).toEqual(["two", "one"]));
+    await waitFor(() => expect(chatNames()).toEqual(["two", "one"]));
     const marks = within(strip("Tabs")).getAllByRole("tab");
     expect(within(marks[0]).getByRole("img", { name: "pinned tab" })).toBeInTheDocument();
     expect(within(marks[1]).queryByRole("img", { name: "pinned tab" })).toBeNull();
@@ -265,7 +265,7 @@ describe("a pinned tab (#4762: the one pin, the tab's)", () => {
   it("offers Unpin once it is pinned, and nothing else", async () => {
     core([chat(1, "one", "alpha", true)]);
     render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one"]));
+    await waitFor(() => expect(chatNames()).toEqual(["one"]));
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
@@ -330,7 +330,7 @@ describe("a pinned workspace", () => {
     // name — and a row that wrote one would put a name in the store that resolves to nothing.
     core([chat(1, "one", "elsewhere")]);
     render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one"]));
+    await waitFor(() => expect(chatNames()).toEqual(["one"]));
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
@@ -595,7 +595,7 @@ describe("a pinned project", () => {
   it("is pinned by the palette, and the core is told which project", async () => {
     const { asked: asks } = core([chat(1, "one", "alpha")]);
     render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one"]));
+    await waitFor(() => expect(chatNames()).toEqual(["one"]));
 
     await runFromPalette("Pin project plane");
 
@@ -610,7 +610,7 @@ describe("a pinned project", () => {
     // does not work.
     core([chat(1, "one", "alpha")], undefined, "charter pins at most 32 projects.");
     render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one"]));
+    await waitFor(() => expect(chatNames()).toEqual(["one"]));
 
     await runFromPalette("Pin project plane");
 

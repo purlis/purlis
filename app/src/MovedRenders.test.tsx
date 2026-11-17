@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
@@ -159,8 +159,8 @@ describe("a chat moving", () => {
   async function fiveChats() {
     const move = core([chat(1), chat(2), chat(3), chat(4), chat(5)]);
     render(<App />);
-    await vi.waitFor(() => expect(marksOnTheStrip()).toHaveLength(5));
-    await vi.waitFor(() => expect(screen.getByTestId("pane")).toBeTruthy());
+    await waitFor(() => expect(marksOnTheStrip()).toHaveLength(5));
+    await waitFor(() => expect(screen.getByTestId("pane")).toBeTruthy());
     // And let every answer the first draw asked for land, so what is counted after this is the
     // move and not the window still settling.
     for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
