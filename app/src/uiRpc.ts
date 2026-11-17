@@ -1613,6 +1613,7 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
+	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
 	setTaskScreens: __WINDOW_ONLY_RESULT,
@@ -1623,6 +1624,7 @@ export const commands = {
 	finishedTasks: (plane: PlaneId) => typedError<FinishedTask[], string>(__TAURI_INVOKE("finished_tasks", { plane })),
 	clearFinishedTasks: __WINDOW_ONLY_RESULT,
 	reopenFinishedTask: __WINDOW_ONLY_RESULT,
+	reopenClosedChat: __WINDOW_ONLY_RESULT,
 	resumeEndedChat: __WINDOW_ONLY_RESULT,
 	taskBrief: __WINDOW_ONLY_RESULT,
 	activity: __WINDOW_ONLY_RESULT,
@@ -4723,11 +4725,11 @@ export type ChatCard = {
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
 	/**
-	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
-	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
-	 *  nothing in words of its own.
+	 *  **Whether *Reopen* starts a card drawn from its chat's record again** (#6485), and why
+	 *  not where it cannot. `None` for a card drawn from its task, whose Reopen is its finished
+	 *  row's (`task.reopens`).
 	 */
-	dispatched: boolean,
+	chat_reopen: ChatReopen | null,
 };
 
 /**
@@ -4961,6 +4963,18 @@ export type ChatPromptRouting = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**
+ *  **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
+ *  started, a handoff, or a task that ended owing no report.
+ */
+export type ChatReopen = 
+/**  It starts again on its conversation (`reopen_closed_chat`). */
+"reopens" | 
+/**  It closed before purlis kept what a reopen needs. */
+"not_kept" | 
+/**  Its harness named no conversation to resume. */
+"no_conversation";
 
 /**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
@@ -5279,6 +5293,20 @@ export type CloneToVouch = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+ *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+ *  card (`chat_by_number`).
+ */
+export type ClosedChat = {
+	number: number,
+	earlier: number[],
+	title: string,
+	place: string,
+	/**  When it closed, UTC, RFC 3339. */
+	ended: string,
 };
 
 /**

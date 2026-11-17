@@ -1281,7 +1281,7 @@ const NETWORK_RULE: [&str; 7] = [
 ///   asked and authenticated against.
 /// - `GH_EDITOR`, `EDITOR`, `PAGER`, `GH_PAGER`, `BROWSER`: each names a program. Nothing
 ///   here is interactive, and the output is captured rather than paged.
-/// - `GH_PROMPT_DISABLED`, `NO_PROMPT`, `NO_COLOR`, `GH_NO_UPDATE_NOTIFIER`,
+/// - `GH_PROMPT_DISABLED`, `GLAB_NO_PROMPT`, `NO_COLOR`, `GH_NO_UPDATE_NOTIFIER`,
 ///   `GLAB_CHECK_UPDATE`: charter SETS these itself rather than inheriting them, so an
 ///   environment cannot switch a prompt back on in a process with no terminal.
 /// - `GH_DEBUG`, `GIT_CURL_VERBOSE` and the trace family: they write diagnostics — headers

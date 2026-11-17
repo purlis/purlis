@@ -24,9 +24,9 @@
 //! - its host record ([`HOST_RECORD`]) names a program started and not ended whose process still
 //!   runs, by the host's own check ([`purlis_host::Started::still_running`]): noted in this boot,
 //!   and its process number's start the one noted. It stays ([`Live::Chats`]). A host that ends
-//!   as it should empties its record; one stopped by a signal leaves each start beside its end;
-//!   one killed outright (`SIGKILL`, a reboot, #6700) leaves starts with no end, whose processes
-//!   died with it or have since ended, and keep nothing.
+//!   as it should empties its record, as `purlis serve` does on `SIGTERM` too (#6700); one killed
+//!   outright (`SIGKILL`, a power loss) leaves starts with no end, whose processes died with it
+//!   or have since ended, and keep nothing.
 //!
 //! Otherwise its binary's folder goes first, so nothing can start it again, then the socket, link
 //! socket and lock file its host left behind, then its host's folder. A folder that is a link is
@@ -250,8 +250,8 @@ fn drained(socket: &Path, host: &Path) -> Result<Option<std::fs::File>, Live> {
 /// **Whether the host record at `record` names a program started and not ended whose process
 /// still runs** ([`purlis_host::Started::still_running`]): `Some(false)` where there is no
 /// record, or none it names started and not ended is still the process it started (a host that
-/// ended as it should empties it; one stopped by a signal leaves each start beside its end; one
-/// killed outright leaves starts whose processes died with it, or ran on and have since ended).
+/// ended as it should empties it, `SIGTERM` included (#6700); one killed outright leaves starts
+/// whose processes died with it, or ran on and have since ended).
 /// `None` where it can't be read: not a regular file, or larger than any host writes
 /// ([`READ_AT_MOST`]). A line that can't be read, a torn last one among them, is passed over, as
 /// the host passes it over.

@@ -29,7 +29,7 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
-import { ORDINARY_NO_REOPEN, chatScreenTitle, chatScreenView } from "./closedChat";
+import { cannotReopen, chatScreenTitle, chatScreenView } from "./closedChat";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
@@ -482,6 +482,7 @@ export type Does =
   /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
    *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
   | { verb: "reopenTask"; id: string }
+  | { verb: "reopenClosedChat"; number: number }
   /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
@@ -1241,6 +1242,8 @@ export type Doing = {
   focusChat: (session: number) => void;
   /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
   reopenTask: (id: string) => Promise<Ran>;
+  /** *Reopen* on a closed chat's card drawn from its chat's record (#6485), by its number. */
+  reopenClosedChat: (number: number) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
@@ -3854,6 +3857,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "reopenTask":
       return doing.reopenTask(does.id);
+    case "reopenClosedChat":
+      return doing.reopenClosedChat(does.number);
     case "paneBack":
       doing.paneBack();
       return DID;
@@ -6743,13 +6748,17 @@ export function showLinkedChatOffer(session: number): Offer {
 }
 
 /** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
- *  ordinary chat, as Reopen on its finished row does. */
-export function reopenTaskOffer(card: ChatCard): Offer {
-  // A chat no dispatch started has no task to reopen (#6304): its card's Reopen is disabled.
+ *  ordinary chat, as Reopen on its finished row does; or, for a card drawn from its chat's
+ *  record, that chat started again on its conversation (#6485). Unavailable with the card's
+ *  own words where it cannot. */
+export function reopenOffer(card: ChatCard): Offer {
+  const title = `Reopen ${card.title}`;
+  const why = cannotReopen(card);
+  if (why !== undefined) return cannot(`chat.reopen:${card.chat}`, title, why);
   if (card.task === null)
-    return cannot(`chat.reopen:${card.chat}`, `Reopen ${card.title}`, ORDINARY_NO_REOPEN);
-  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.title}`, {
-    verb: "reopenTask",
-    id: card.task.id,
-  });
+    return can(`chat.reopen:${card.chat}`, title, {
+      verb: "reopenClosedChat",
+      number: card.number,
+    });
+  return can(`chat.reopen:${card.task.id}`, title, { verb: "reopenTask", id: card.task.id });
 }

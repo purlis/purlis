@@ -558,12 +558,46 @@ pub fn replace(root: &Path, path: &Path, bytes: &[u8], mode: Mode) -> io::Result
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     // Hidden, and unique per call: the pid separates two processes and the tag two threads.
-    let temp = dir.join(format!(
-        "{TEMP_PREFIX}{name}.{}.{}.tmp",
-        std::process::id(),
-        crate::workspaces::scratch_tag()
+    let temp = dir.join(temp_name(
+        &name,
+        &std::process::id().to_string(),
+        &crate::workspaces::scratch_tag(),
     ));
     replace_through(root, path, &temp, bytes, mode)
+}
+
+/// The temp [`replace`] writes `name` through: `<prefix><name>.<pid>.<tag>.tmp`, which
+/// [`temp_of`] reads back.
+fn temp_name(name: &str, pid: &str, tag: &str) -> String {
+    format!("{TEMP_PREFIX}{name}.{pid}.{tag}.tmp")
+}
+
+/// **A temp file [`replace`] writes**, as its name tells it ([`temp_of`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Temp<'n> {
+    /// The file it was written for, where its name says (`closed.json`,
+    /// `<ULID>.json`): `<prefix><file>.<pid>.<tag>.tmp`. `None` for a temp that names no
+    /// file, as an older charter's did (`.charter-generated.<n>.tmp`).
+    pub of: Option<&'n str>,
+}
+
+/// **Whether `name` is a temp file a write leaves when it is cut short**, and the file it was
+/// written for: every spelling of [`crate::names::GENERATED_TEMP_PREFIX`], then anything, then
+/// `.tmp`, the pattern a guest checkout's exclude block hides. The one reading of a temp's name
+/// (#6506): a store that sweeps its own temps asks it which file each was for.
+pub fn temp_of(name: &str) -> Option<Temp<'_>> {
+    let rest = crate::names::GENERATED_TEMP_PREFIX
+        .strip(name)?
+        .strip_suffix(".tmp")?;
+    // `<file>.<pid>.<tag>`: the file's name, then the two parts a write adds.
+    let mut parts = rest.rsplitn(3, '.');
+    let (tag, pid, file) = (parts.next(), parts.next(), parts.next());
+    let of = file.filter(|file| {
+        !file.is_empty()
+            && pid.is_some_and(|pid| !pid.is_empty())
+            && tag.is_some_and(|tag| !tag.is_empty())
+    });
+    Some(Temp { of })
 }
 
 /// [`replace`] with the temp file named by the caller — so a test can plant a link, or a

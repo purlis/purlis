@@ -3312,3 +3312,43 @@ fn a_piece_that_does_not_read_whole_or_is_not_of_its_shape_is_left_out_5750() {
     );
     assert!(back[1].own_pieces.is_empty());
 }
+
+#[test]
+fn a_chat_renumbered_by_a_restart_keeps_the_numbers_it_had() {
+    // #6486: a restart deals a new number and keeps the ULID.
+    let was = Chat {
+        number: Some(715),
+        earlier: vec![702],
+        pid: Some(4242),
+        identity: Identity {
+            id: Some(CHAT.to_owned()),
+            run: Some(RUN.to_owned()),
+            ..Default::default()
+        },
+        ..claude("steward 715", Some(ID))
+    };
+
+    let again = was.renumbered();
+
+    assert_eq!(again.earlier, [702, 715]);
+    assert_eq!(again.number, None, "a new number is dealt as it starts");
+    assert_eq!(again.pid, None);
+    assert_eq!(again.identity.run, None, "a new run");
+    assert_eq!(again.identity.id.as_deref(), Some(CHAT), "the same chat");
+}
+
+#[test]
+fn the_numbers_a_chat_had_are_written_and_read_back() {
+    let plane = tempfile::tempdir().unwrap();
+    let record = Record {
+        chats: vec![Chat {
+            number: Some(731),
+            earlier: vec![702, 715],
+            ..claude("steward 731", Some(ID))
+        }],
+        ..Default::default()
+    };
+    write(plane.path(), &record).unwrap();
+    let read = read_or_refusal(plane.path()).unwrap();
+    assert_eq!(read.chats[0].earlier, [702, 715]);
+}

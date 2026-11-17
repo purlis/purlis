@@ -145,7 +145,7 @@ describe("a project's close, with a view's unsaved work in it", () => {
   it("asks about the work first: Keep editing keeps the project, Discard and leave closes it", async () => {
     const { sent } = core([ONE, TWO]);
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
     const deploy = work(TWO);
 
     await closeFromTheRail("two");
@@ -167,7 +167,7 @@ describe("a project's close, with a view's unsaved work in it", () => {
   it("is not asked about another project's work", async () => {
     const { sent } = core([ONE, TWO]);
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
     const elsewhere = work(ONE);
 
     await closeFromTheRail("two");
@@ -179,13 +179,13 @@ describe("a project's close, with a view's unsaved work in it", () => {
   it("lets the work go with the project when the core let go of it", async () => {
     const { fire, listening } = core([ONE, TWO]);
     render(<App />);
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
     const deploy = work(TWO);
 
     fire("plane-closed", { plane: TWO });
 
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one"]));
     expect(deploy.discard).toHaveBeenCalledOnce();
     expect(unsavedNow()).toEqual([]);
   });
@@ -240,7 +240,7 @@ describe("a view tab's close, with its unsaved work", () => {
     const { fire, listening } = core([ONE]);
     render(<App />);
     // The project in front first: Settings opens as its tab.
-    await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
+    await waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("settings-asked")).toBe(true));
     fire("settings-asked", null);
     /** The view tabs on the strip, by their names. */

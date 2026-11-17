@@ -245,7 +245,10 @@ describe("PoolSetupTab", () => {
     const calls = core(() => CHOSEN);
     const { unmount } = render(<PoolSetupTab plane="p" />);
     const box = await screen.findByRole("textbox", { name: /Name/ });
-    vi.useFakeTimers();
+    // Only the name's wait, a setTimeout, is counted. Setting the box's value can start jsdom's
+    // own focus-fixup setInterval, depending on whether the last one had gone idle yet, and
+    // that interval is jsdom's, not a wait the tab left behind (#6920).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.change(box, { target: { value: "dev" } });
     const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
     expect(kept()).toEqual([]);

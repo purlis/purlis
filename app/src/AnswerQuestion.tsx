@@ -192,6 +192,15 @@ export function useAnswerQuestion({
     if (ready && takesFocus) box.current?.focus();
   }, [ready, takesFocus]);
 
+  // The box is disabled while an answer is on its way, so it loses the keyboard, and a disabled
+  // box refuses focus: a refused send gives it back once the box is enabled again.
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (sending || !refocus.current) return;
+    refocus.current = false;
+    box.current?.focus();
+  }, [sending]);
+
   /* Closed under the person: not while their own send is on its way, whose answer is what
      closes it. */
   const shut = closed !== undefined && !sending ? `${closed} ${TEXT_IS_KEPT}` : undefined;
@@ -210,9 +219,10 @@ export function useAnswerQuestion({
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     setSending(false);
     if (answer.status === "error") {
-      // Said as the core says it, with what was typed still in the box.
+      // Said as the core says it, with what was typed still in the box, which has the keyboard
+      // back once it is drawn enabled again.
       refuse(answer.error);
-      box.current?.focus();
+      refocus.current = true;
       return;
     }
     onDone();
