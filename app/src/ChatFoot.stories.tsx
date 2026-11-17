@@ -497,8 +497,9 @@ function fits(frame: HTMLElement): boolean {
 /** The policy's width in `HEAD_DROPS`, which this measure holds. */
 const POLICY_BELOW = HEAD_DROPS.find((drop) => drop.part === "policy")?.below ?? 0;
 
-/** The widths measured: 2 px apart, from well above the policy's width to the number's. */
-const POLICY_MEASURED = Array.from({ length: 80 }, (_, n) => POLICY_BELOW + 60 - n * 2);
+/** The widths measured: 2 px apart, from 20 px above the policy's width to past the most it may
+ *  spare under it, few enough that the picture stays inside a baseline's 4096 px. */
+const POLICY_MEASURED = Array.from({ length: 40 }, (_, n) => POLICY_BELOW + 20 - n * 2);
 
 /**
  * **The policy goes where the longest head no longer has room for it** (Q308a): the longest head,
