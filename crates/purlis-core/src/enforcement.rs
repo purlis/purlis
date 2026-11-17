@@ -432,7 +432,7 @@ impl SandboxLevel {
         let mode = table.get("mode")?;
         let team = crate::sandbox::team::Team::of_top(Some(top));
         Some(match mode.as_str() {
-            Some("off") => SandboxLevel::Off,
+            Some("off") if team.off || !team.off => SandboxLevel::Off,
             _ => SandboxLevel::Full,
         })
     }
