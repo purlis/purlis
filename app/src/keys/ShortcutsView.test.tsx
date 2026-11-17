@@ -23,11 +23,19 @@ describe("the cheat sheet (N25)", () => {
     }
   });
 
-  it("says this keyboard's keys, and where a chat keeps one", () => {
+  it("says this keyboard's keys, and where a terminal or a browser you drive keeps one (#6824)", () => {
     const mac = sheetRows(true).find((row) => row.id === "region.navigation");
     const other = sheetRows(false).find((row) => row.id === "region.navigation");
     expect(mac).toMatchObject({ keys: "⌘B", where: "" });
-    expect(other).toMatchObject({ keys: "Ctrl+B", where: "Not in a chat" });
+    // Kept by whatever has the keyboard as a terminal does (`CHAT_KEYBOARD`): any terminal pane,
+    // a shell's as much as a chat's, and a browser being driven.
+    expect(other).toMatchObject({
+      keys: "Ctrl+B",
+      where: "Not in a terminal or a browser you drive",
+    });
+    expect(sheetRows(true).find((row) => row.id === "region.next")?.where).toBe(
+      "Not in a terminal or a browser you drive",
+    );
     expect(sheetRows(true).find((row) => row.id === "palette.open")?.keys).toBe("⌘K · F2");
     expect(sheetRows(false).some((row) => row.id === "app.hide")).toBe(false);
   });
@@ -84,16 +92,47 @@ describe("the cheat sheet (N25)", () => {
         keys,
         where: "In a pane",
       });
-      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toEqual([
-        "pane.back",
-        "pane.focus",
-        "pane.move",
-        "pane.links",
-      ]);
     }
     render(<ShortcutsView mac />);
     const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
     const row = within(list).getByRole("row", { name: /^The links on the pane.s screen/ });
     expect(row.querySelector('[data-part="shortcut"]')).toHaveTextContent("⇧⌘L");
+  });
+
+  it("lists every key a terminal answers in any pane with the pane's acts, and only a chat's own under In a chat (#6483)", () => {
+    for (const mac of [true, false]) {
+      const rows = sheetRows(mac);
+      // Find, the menu key and Ctrl+Tab out are the terminal's, a shell's pane's as much as a chat's.
+      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toEqual([
+        "pane.back",
+        "pane.focus",
+        "pane.move",
+        "chat.find",
+        "pane.links",
+        "chat.menu",
+        "chat.leave",
+      ]);
+      for (const id of ["chat.find", "pane.links", "chat.menu", "chat.leave"]) {
+        expect(rows.find((row) => row.id === id)).toMatchObject({ where: "In a pane" });
+      }
+      // Shift+Enter is a new line only for a chat's harness: a shell keeps its own Enter.
+      const inAChat = rows.filter((row) => row.where === "In a chat");
+      expect(inAChat.map((row) => [row.id, row.group])).toEqual([
+        ["chat.newline", "Tabs and chats"],
+      ]);
+    }
+    render(<ShortcutsView mac />);
+    const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
+    expect(within(list).getByRole("row", { name: /^Find in the pane/ })).toHaveTextContent(
+      "In a pane",
+    );
+    expect(
+      within(list).getByRole("row", {
+        name: /^Out of the terminal, a browser you drive or DevTools \(with Shift, back\)/,
+      }),
+    ).toHaveTextContent("In a pane");
+    expect(
+      within(list).getByRole("row", { name: /^The pane.s menu, under its cursor/ }),
+    ).toHaveTextContent("In a pane");
   });
 });
