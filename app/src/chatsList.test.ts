@@ -318,6 +318,14 @@ describe("a closed chat found by the filter (#6484)", () => {
     expect(words("70")).toEqual([]);
   });
 
+  it("says the number it was found by only where that is one it had before a restart (#6685)", () => {
+    const foundBy = (text: string) => words(text).map((one) => [one.number, one.foundBy]);
+    expect(foundBy("702")).toEqual([[731, 702]]);
+    expect(foundBy("#702")).toEqual([[731, 702]]);
+    expect(foundBy("731")).toEqual([[731, null]]);
+    expect(foundBy("changelog")).toEqual([[731, null]]);
+  });
+
   it("is never found by a chip, nor with nothing typed: both ask about running chats", () => {
     expect(closedFound(CLOSED, { text: "", ranks: [] }, new Set())).toEqual([]);
     expect(closedFound(CLOSED, { text: "tidy", ranks: [0] }, new Set())).toEqual([]);
