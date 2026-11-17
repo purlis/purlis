@@ -3505,6 +3505,48 @@ fn a_value_in_a_credential_file_the_chat_may_reach_is_pointed_at_a_tunnel_there(
     drop(database);
 }
 
+/// #6309: a value a `--file` holds that ends a line, pointed at a tunnel there, is masked as a
+/// dotenv file would escape it too, whole, in this process and after a crash. Binds sockets:
+/// first run on CI.
+#[test]
+fn a_tunnelled_value_in_a_file_is_masked_in_its_escaped_form_too() {
+    let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
+    let at = database.local_addr().unwrap();
+    let project = project();
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders\n", at.port());
+    holding_dsn(project.path(), &dsn);
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"d=$(cat "$DSN_FILE"); printf '%s' "${d#*@}""#),
+    );
+    want.file = vec!["DSN_FILE=DSN".into()];
+    let listed = format!("127.0.0.1:{}", at.port());
+    let (frames, _, _) = served_recorded(
+        &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
+        want,
+    );
+    let went = stdout(&frames);
+    assert!(went.starts_with("127.0.0.1:"), "{frames:?}");
+    assert!(!went.contains(&listed), "pointed at the tunnel: {went}");
+    let escaped = format!("postgres://app:pw@{went}\\n");
+    use super::super::handedto::{as_a_crash_leaves_it, masked_for};
+    let shown = format!("dsn {escaped}\r\n");
+    assert_eq!(
+        masked_for(project.path(), 7, &shown, &|_| None).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "as handed"
+    );
+    as_a_crash_leaves_it(project.path(), 7);
+    let read = |_: &super::super::handedto::Entry| Some(zeroize::Zeroizing::new(dsn.clone()));
+    assert_eq!(
+        masked_for(project.path(), 7, &shown, &read).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "after a crash"
+    );
+    drop(database);
+}
+
 #[test]
 fn a_connection_string_to_this_machine_is_said_by_its_variable_and_never_tunnelled() {
     let project = project();
