@@ -788,8 +788,10 @@ export const ItsOtherPages: Story = {
     pages.focus();
     await untilFocused(() => pages, "the count takes the keyboard");
     await userEvent.keyboard("{Enter}");
-    const menu = await waitFor(() => screen.getByRole("menu", { name: "This browser's pages" }));
-    await expect(menu).toBeVisible();
+    // The menu fades in as it opens: it is waited for until it is drawn.
+    await waitFor(() =>
+      expect(screen.getByRole("menu", { name: "This browser's pages" })).toBeVisible(),
+    );
     await expect(screen.getByRole("menuitemradio", { name: DOCS.title ?? "" })).toHaveAttribute(
       "aria-checked",
       "true",
