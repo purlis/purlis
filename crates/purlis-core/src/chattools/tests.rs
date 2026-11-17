@@ -1884,15 +1884,16 @@ mod forge_milestones_tool {
             );
             assert_eq!(said.is_ok(), read, "{policy:?}: {said:?}");
             if !read {
-                assert!(said.unwrap_err().contains("is not a repo of this workspace"));
+                assert!(
+                    said.unwrap_err()
+                        .contains("is not a repo of this workspace")
+                );
             }
             let logged = crate::enforcement::read_log(p.path(), CHAT);
             assert_eq!(logged.len(), lines, "{policy:?}");
             assert!(
-                logged
-                    .iter()
-                    .all(|line| line.family == "guards.forge"
-                        && line.rule == "forge.milestones.workspace")
+                logged.iter().all(|line| line.family == "guards.forge"
+                    && line.rule == "forge.milestones.workspace")
             );
         }
     }

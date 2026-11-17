@@ -637,7 +637,13 @@ fn a_profile_with_its_prompts_off_is_refused_a_dispatched_chat_as_policy_mode_ru
     // A profile that asks is never refused, whatever the mode.
     let root = a_project_whose_policy_is("template = \"strict\"\n");
     assert_eq!(
-        bypass_refusal_in(root.path(), None, "work", &words(&["claude"]), NamedBy::TheDispatch),
+        bypass_refusal_in(
+            root.path(),
+            None,
+            "work",
+            &words(&["claude"]),
+            NamedBy::TheDispatch
+        ),
         None
     );
 }

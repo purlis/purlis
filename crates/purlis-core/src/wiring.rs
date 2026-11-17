@@ -150,17 +150,17 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
     crate::profiletrust::declaration_approval_needed_in(root, p, declared)
         .filter(|_| !waived("declaration.approval"))
         .map(|(state, d)| {
-        (
-            format!(
-                "harness '{}', declared in {}, is {} on this machine, and nobody has approved \
+            (
+                format!(
+                    "harness '{}', declared in {}, is {} on this machine, and nobody has approved \
                  it — nothing was started. Approve it once so purlis can run it.",
-                shown::short(&d.name),
-                d.file,
-                state.as_str()
-            ),
-            fix,
-        )
-    })
+                    shown::short(&d.name),
+                    d.file,
+                    state.as_str()
+                ),
+                fix,
+            )
+        })
 }
 
 /// The harness declaration `p` runs on, where its kind is one the project or this machine

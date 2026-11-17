@@ -327,13 +327,17 @@ fn the_shape_arms_run_as_guards_shape_says_where_nothing_else_reads_the_command(
                 agent,
                 &nothing_planted,
             );
-            assert_eq!(judged.refused.and_then(|v| v.arm), refused, "{mode} {}", arm.id());
             assert_eq!(
-                judged.logged.iter().map(|v| v.arm).collect::<Vec<_>>(),
-                logged,
+                judged.refused.and_then(|v| v.arm),
+                refused,
                 "{mode} {}",
                 arm.id()
             );
+            // Under `log` every shape arm the line trips is kept, the one it is about first: a
+            // dispatch's text beside a substitution is also a rider (A10).
+            let kept = judged.logged.iter().map(|v| v.arm).collect::<Vec<_>>();
+            assert_eq!(kept.first(), logged.first(), "{mode} {}", arm.id());
+            assert_eq!(kept.is_empty(), logged.is_empty(), "{mode} {}", arm.id());
         }
     }
     // And `strict` with only the shape off lifts every shape arm but the caps (below).
@@ -359,7 +363,11 @@ fn a_command_too_big_to_read_is_refused_while_any_family_that_reads_it_is_enforc
         "template = \"open\"\nsecrets = \"enforce\"\n",
     ] {
         let judged = judged_under(text, &huge, None, &nothing_planted);
-        assert_eq!(judged.refused.and_then(|v| v.arm), Some(Arm::Caps), "{text}");
+        assert_eq!(
+            judged.refused.and_then(|v| v.arm),
+            Some(Arm::Caps),
+            "{text}"
+        );
     }
     // Where the strictest of them only logs, the caps log.
     let judged = judged_under(
@@ -382,7 +390,11 @@ fn the_plane_roots_branch_and_reset_arms_run_as_guards_plane_says() {
     assert_eq!(Arm::PlaneRootReset.family(), Some(Family::GuardsPlane));
     let cmd = "git checkout feature";
     for (text, refused, logged) in [
-        ("template = \"strict\"\n", Some(Arm::PlaneRootBranch), vec![]),
+        (
+            "template = \"strict\"\n",
+            Some(Arm::PlaneRootBranch),
+            vec![],
+        ),
         (
             "template = \"strict\"\nguards.git = \"off\"\n",
             Some(Arm::PlaneRootBranch),
@@ -393,7 +405,11 @@ fn the_plane_roots_branch_and_reset_arms_run_as_guards_plane_says() {
             None,
             vec![Some(Arm::PlaneRootBranch)],
         ),
-        ("template = \"strict\"\nguards.plane = \"off\"\n", None, vec![]),
+        (
+            "template = \"strict\"\nguards.plane = \"off\"\n",
+            None,
+            vec![],
+        ),
         ("template = \"team\"\n", Some(Arm::PlaneRootBranch), vec![]),
     ] {
         let judged = judged_under(text, cmd, None, &nothing_planted);
@@ -420,7 +436,10 @@ fn the_persons_own_ask_and_deny_rules_hold_under_every_spelling_in_every_mode() 
     };
     for template in crate::enforcement::Template::ALL {
         let judged = judged_under(
-            &format!("template = \"{}\"\nguards.shape = \"off\"\n", template.word()),
+            &format!(
+                "template = \"{}\"\nguards.shape = \"off\"\n",
+                template.word()
+            ),
             "/usr/local/bin/terraform apply",
             None,
             &plant,

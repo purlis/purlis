@@ -124,9 +124,16 @@ fn every_inventory_row_maps_to_exactly_one_family() {
         *per_section.entry(row.section.as_str()).or_default() += 1;
         match named(&row.family) {
             Ok(family) => *per_family.entry(family).or_default() += 1,
-            Err(why) => wrong.push(format!("{} › {} #{}: {why}", row.section, row.subsection, row.id)),
+            Err(why) => wrong.push(format!(
+                "{} › {} #{}: {why}",
+                row.section, row.subsection, row.id
+            )),
         }
-        if !seen.insert((row.section.as_str(), row.subsection.as_str(), row.id.as_str())) {
+        if !seen.insert((
+            row.section.as_str(),
+            row.subsection.as_str(),
+            row.id.as_str(),
+        )) {
             wrong.push(format!(
                 "{} › {} #{} is listed twice",
                 row.section, row.subsection, row.id

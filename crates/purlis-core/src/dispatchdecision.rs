@@ -2104,13 +2104,12 @@ mod tests {
             "{deep}[policy]\ntemplate = \"strict\"\nlimits = \"log\"\n"
         ));
         assert_eq!(logged, Decision::Start);
-        assert_eq!(
-            lines,
-            [("limits".to_owned(), "dispatch.depth".to_owned())]
-        );
+        assert_eq!(lines, [("limits".to_owned(), "dispatch.depth".to_owned())]);
         // The loop rule is `dispatch`'s, and a 0 is the project switching dispatch off: neither
         // is a count, so `limits` lifts neither.
-        let (off, _) = ask("[dispatch]\nrunning-per-chat = 0\n[policy]\ntemplate = \"strict\"\nlimits = \"log\"\n");
+        let (off, _) = ask(
+            "[dispatch]\nrunning-per-chat = 0\n[policy]\ntemplate = \"strict\"\nlimits = \"log\"\n",
+        );
         assert!(matches!(
             off,
             Decision::Refused(Refused::Limit(dispatchlimits::Refused::Off { .. }))
@@ -2135,7 +2134,11 @@ mod tests {
         assert_eq!(lifted.running, u32::MAX);
         assert_eq!(lifted.lineage, 2, "the administrator's ceiling holds");
         assert!(!limits.liftable(Limit::LivePerLineage));
-        assert!(dispatchlimits::Refused::Loop("x".into()).counted().is_none());
+        assert!(
+            dispatchlimits::Refused::Loop("x".into())
+                .counted()
+                .is_none()
+        );
         assert_eq!(
             dispatchlimits::Refused::TooDeep { limit: 1, depth: 1 }.counted(),
             Some(Limit::Depth)

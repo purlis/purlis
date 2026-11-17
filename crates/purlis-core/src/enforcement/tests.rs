@@ -875,7 +875,9 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
     assert_eq!(found.1, strict());
+}
 
+#[test]
 fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults() {
     // Q308b, item 7 of the follow-up: the nine families switch, each at its template's mode.
     let nine = Family::ALL
@@ -904,7 +906,12 @@ fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults(
             "[policy]\ntemplate = \"strict\"\n{} = \"off\"\n",
             family.key()
         ));
-        assert_eq!(under(&off, &Locks::none(), family), Mode::Off, "{}", family.key());
+        assert_eq!(
+            under(&off, &Locks::none(), family),
+            Mode::Off,
+            "{}",
+            family.key()
+        );
         // An administrator's lock still wins.
         assert_eq!(
             under(&off, &Locks::locking_enforcement(family), family),

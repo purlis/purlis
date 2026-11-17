@@ -364,7 +364,11 @@ fn the_commit_cap_is_counted_not_applied_where_policy_limits_logs() {
         assert_eq!(paced(root.path(), 7, now).is_err(), refused, "{policy:?}");
         let logged = crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
         assert_eq!(logged.len(), lines, "{policy:?}");
-        assert!(logged.iter().all(|line| line.rule == "commit.rate" && line.family == "limits"));
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.rule == "commit.rate" && line.family == "limits")
+        );
     }
 }
 
