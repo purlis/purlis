@@ -1032,7 +1032,11 @@ pub struct JoinedSegment {
 /// [`JoinedSegment::after`]. The argv are exactly [`segment_tokens`]' — that function is this
 /// one with the operators dropped.
 pub fn joined_segments(toks: Vec<Tok>) -> Vec<JoinedSegment> {
-    walk_segments(toks).0
+    walk_segments(toks)
+        .0
+        .into_iter()
+        .map(|w| w.joined)
+        .collect()
 }
 
 std::thread_local! {
@@ -1068,6 +1072,50 @@ pub fn met_a_string_too_deep() {
     TOO_DEEP.with(|flag| flag.set(true));
 }
 
+/// One segment as [`walk_segments`] closes it: its [`JoinedSegment`], whose argv is its
+/// [`Reading::outward`] words, and its [`Reading::own`] words, both from the same walk.
+struct Walked {
+    joined: JoinedSegment,
+    own: Vec<String>,
+}
+
+/// What [`Reading::own`] writes where a substitution stands in the command around it, after
+/// what opened it: `id=$` becomes `id=$(…)`. A word the shell fills in, to any reader.
+pub const SUBSTITUTED: &str = "(…)";
+
+/// **One segment read two ways** (#7092): [`Reading::outward`], its argv as [`segment_argv`]
+/// reads it, with every word of a substitution inside it handed out to it, and [`Reading::own`],
+/// the words its own command runs with, each substitution one word in its place.
+///
+/// `id=$(gh api "repos/o/r/actions/runs?x=$H" | head -1)` is three segments: `gh api …`,
+/// `head -1`, and one whose outward argv is `id=$ gh api … head -1`, a `gh api` call with
+/// `head`'s `-1` among its flags, and whose own is `id=$(…)`, which runs nothing. And
+/// `A=$(true) gh pr merge 12`'s outward argv is a `true`, where its own is a `gh pr merge 12`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reading {
+    pub outward: Vec<String>,
+    pub own: Vec<String>,
+}
+
+/// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
+/// of a segment made by one walk, so each own reading is paired with its own segment's outward
+/// one by the segment itself, never by position (#7092). A line that will not lex is read as
+/// [`segment_argv`] reads it, a logical line at a time, by the same walk.
+pub fn segment_readings(cmd: &str) -> Vec<Reading> {
+    let cmd = unbacktick(cmd);
+    let walked = match lex(&cmd) {
+        Ok(toks) => walk_segments(toks).0,
+        Err(_) => fallback_walk(&cmd).0,
+    };
+    walked
+        .into_iter()
+        .map(|w| Reading {
+            outward: w.joined.argv,
+            own: w.own,
+        })
+        .collect()
+}
+
 /// [`joined_segments`], and how many substitutions were open at once at the deepest.
 ///
 /// **Linear in the tokens, however deep they nest** (#1355). Each token goes to every segment
@@ -1076,7 +1124,7 @@ pub fn met_a_string_too_deep() {
 /// further out. **A walk that has to stop short like that fails closed**: it is reported to
 /// [`too_deep_within`], and every guard's caller refuses the call as too big to check. An outer
 /// segment that never received a token is not a reading anyone may decide on, so none does.
-fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
+fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
     /// What is open at this point, innermost last.
     enum Open {
         Subst,
@@ -1085,23 +1133,41 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
         Funsub,
     }
 
-    let mut out: Vec<JoinedSegment> = Vec::new();
-    let mut open_segs: Vec<Vec<Tok>> = vec![Vec::new()]; // outermost first
+    /// A segment still open: its outward tokens, which every decision below reads, and its own
+    /// words ([`Reading::own`]).
+    #[derive(Default)]
+    struct Seg {
+        outward: Vec<Tok>,
+        own: Vec<Tok>,
+    }
+    let texts = |toks: Vec<Tok>| toks.into_iter().map(|t| t.text).collect::<Vec<_>>();
+
+    let mut out: Vec<Walked> = Vec::new();
+    let mut open_segs: Vec<Seg> = vec![Seg::default()]; // outermost first
     // What ended the last segment at each open level, parallel to `open_segs`.
     let mut befores: Vec<Option<String>> = vec![None];
     let mut stack: Vec<Open> = Vec::new();
     let mut deepest = 0usize;
-    let mut close = |seg: Vec<Tok>, before: &mut Option<String>, after: &str| {
-        out.push(JoinedSegment {
-            argv: seg.into_iter().map(|t| t.text).collect(),
-            before: before.clone(),
-            after: Some(after.to_string()),
+    // Where the last substitution closed: a word that starts there is, in the own reading, the
+    // rest of the word the substitution stands in (`A=$(true)x`).
+    let mut word_goes_on_at: Option<isize> = None;
+    let mut close = |seg: Seg, before: &mut Option<String>, after: &str| {
+        out.push(Walked {
+            joined: JoinedSegment {
+                argv: texts(seg.outward),
+                before: before.clone(),
+                after: Some(after.to_string()),
+            },
+            own: texts(seg.own),
         });
         *before = Some(after.to_string());
     };
     for t in split_punctuation(toks) {
+        let goes_on = word_goes_on_at
+            .take()
+            .is_some_and(|at| at >= 0 && at == t.start);
         if t.is_op(&["("]) {
-            let prev = open_segs.last().and_then(|s| s.last());
+            let prev = open_segs.last().and_then(|s| s.outward.last());
             let substitution = prev.is_some_and(|p| {
                 p.bare
                     && (p.text.ends_with('$')
@@ -1109,13 +1175,18 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
                         || opens_equals_substitution(p, &t))
             });
             if substitution {
-                open_segs.push(Vec::new());
+                // In its own words, the segment around keeps one word where the substitution
+                // stands, which the shell fills in: `id=$(…)`, `<(…)`.
+                if let Some(opener) = open_segs.last_mut().and_then(|s| s.own.last_mut()) {
+                    opener.text.push_str(SUBSTITUTED);
+                }
+                open_segs.push(Seg::default());
                 befores.push(None);
                 stack.push(Open::Subst);
                 deepest = deepest.max(open_segs.len() - 1);
                 continue;
             }
-            if open_segs.last().is_some_and(|s| s.is_empty()) {
+            if open_segs.last().is_some_and(|s| s.outward.is_empty()) {
                 // command position: a subshell opens
                 stack.push(Open::Subshell);
                 if let Some(b) = befores.last_mut() {
@@ -1132,6 +1203,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
                     let mut before = befores.pop().flatten();
                     close(seg, &mut before, ")");
                     stack.pop();
+                    word_goes_on_at = Some(t.end);
                     continue;
                 }
                 Some(Open::Subshell) => {
@@ -1145,7 +1217,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
                 Some(Open::Funsub) | None => {}
             }
         } else if t.is_op(&["{", "}"]) {
-            if open_segs.last().is_some_and(|s| s.is_empty()) {
+            if open_segs.last().is_some_and(|s| s.outward.is_empty()) {
                 if t.text == "}" && matches!(stack.last(), Some(Open::Funsub)) {
                     let seg = open_segs.pop().unwrap_or_default();
                     let mut before = befores.pop().flatten();
@@ -1166,29 +1238,53 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<JoinedSegment>, usize) {
         // contents are. An older bash refuses the line as a bad substitution, so reading it as
         // one only ever shows the guards more.
         let funsub = t.bare && t.text.ends_with("${");
-        // every open segment, the outer ones included, as far out as the cap reaches
+        // outward, to every open segment, the outer ones included, as far out as the cap reaches
         let from = open_segs.len().saturating_sub(MAX_NESTING + 1);
         for seg in open_segs[from..].iter_mut() {
-            seg.push(t.clone());
+            seg.outward.push(t.clone());
+        }
+        // in its own words, to the innermost alone, where a word right after a substitution's
+        // `)` goes on with the word the substitution stands in. A redirection or any other
+        // punctuation the shell reads there is never part of a word, and a quoted piece leaves
+        // the word quoted.
+        let punctuation = t.bare && t.text.chars().any(|c| PUNCTUATION_CHARS.contains(c));
+        let glued = goes_on && !punctuation;
+        match open_segs.last_mut() {
+            Some(seg) if glued && !seg.own.is_empty() => {
+                if let Some(word) = seg.own.last_mut() {
+                    word.text.push_str(&t.text);
+                    word.bare = word.bare && t.bare;
+                    word.end = t.end;
+                }
+            }
+            Some(seg) => seg.own.push(t),
+            None => {}
         }
         if funsub {
-            open_segs.push(Vec::new());
+            open_segs.push(Seg::default());
             befores.push(None);
             stack.push(Open::Funsub);
         }
         deepest = deepest.max(open_segs.len() - 1);
     }
     for (seg, before) in open_segs.into_iter().zip(befores) {
-        out.push(JoinedSegment {
-            argv: seg.into_iter().map(|t| t.text).collect(),
-            before,
-            after: None,
+        out.push(Walked {
+            joined: JoinedSegment {
+                argv: texts(seg.outward),
+                before,
+                after: None,
+            },
+            own: texts(seg.own),
         });
     }
     if deepest > MAX_NESTING {
         TOO_DEEP.with(|flag| flag.set(true));
     }
-    let out = out.into_iter().filter(|c| !c.argv.is_empty()).collect();
+    // A segment's own words are among its outward ones, so one with no outward words has none.
+    let out = out
+        .into_iter()
+        .filter(|w| !w.joined.argv.is_empty())
+        .collect();
     (out, deepest)
 }
 
@@ -1408,10 +1504,16 @@ pub fn splice_continuations(cmd: &str) -> String {
 /// line is then lexed on its OWN, and only a line that still will not lex falls back to the
 /// crude [`resegment`], whose stranding is confined to that one line.
 fn fallback_segments(cmd: &str) -> (Vec<Vec<String>>, usize) {
+    let (walked, deepest) = fallback_walk(cmd);
+    (walked.into_iter().map(|w| w.joined.argv).collect(), deepest)
+}
+
+/// [`fallback_segments`], each segment as [`walk_segments`] closed it, own words and all.
+fn fallback_walk(cmd: &str) -> (Vec<Walked>, usize) {
     let spliced = splice_continuations(cmd);
     let chars: Vec<char> = spliced.chars().collect();
     let q = quote_map(&spliced);
-    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut out: Vec<Walked> = Vec::new();
     let mut deepest = 0usize;
     let mut bounds: Vec<usize> = (0..chars.len())
         .filter(|&i| chars[i] == '\n' && !q[i])
@@ -1434,7 +1536,7 @@ fn fallback_segments(cmd: &str) -> (Vec<Vec<String>>, usize) {
             Ok(toks) => walk_segments(toks),
             Err(_) => walk_segments(resegment(&py_split(&line))),
         };
-        out.extend(argvs(segments));
+        out.extend(segments);
         deepest = deepest.max(depth);
     }
     (out, deepest)
@@ -1486,7 +1588,8 @@ fn read(cmd: &str) -> (Vec<Vec<String>>, bool, usize) {
         // the raw string on `false` does so here too (#1355).
         Ok(toks) => {
             let (segments, deepest) = walk_segments(toks);
-            (argvs(segments), deepest <= MAX_NESTING, deepest)
+            let argv = segments.into_iter().map(|w| w.joined.argv).collect();
+            (argv, deepest <= MAX_NESTING, deepest)
         }
         // Tokenized, and segmented: the leak guard has to see `--reveal` among the arguments AND
         // has to see the second command at all. Quoting is not honoured on this path — it is
@@ -1498,11 +1601,6 @@ fn read(cmd: &str) -> (Vec<Vec<String>>, bool, usize) {
             (segments, false, deepest)
         }
     }
-}
-
-/// The argv of each segment.
-fn argvs(segments: Vec<JoinedSegment>) -> Vec<Vec<String>> {
-    segments.into_iter().map(|s| s.argv).collect()
 }
 
 /// [`segment_argv_parsed`]'s segments with the operators around each ([`joined_segments`]), or

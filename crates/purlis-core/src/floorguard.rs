@@ -279,7 +279,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
     // A heredoc body nothing runs is data, and only the substitutions of one the shell
     // expands run (#6293).
-    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
+    let segments = commands_of(&crate::heredoc::commands_a_shell_runs(cmd));
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
@@ -293,146 +293,344 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
         }
     }
+    // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
+    // command with any words after it, so it is unreadable outright (#7131). Read only where a
+    // shell runs the line as a command: a heredoc body's substitution is data in its place.
+    let lines = crate::heredoc::lines_a_shell_runs(cmd);
+    for reading in shellseg::segment_readings(&lines) {
+        let (prog, ..) = shellwrap::split_env(&reading.own);
+        if program_built_by_the_shell(&prog) {
+            return Some(format!(
+                "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
+                 command this is. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+    }
     for toks in &segments {
-        // Each segment is split once, and every reading below shares it: at every level the
-        // floor reads, a segment is as long as the line, so a second split is a second line
-        // (#1355).
-        let (prog, env, argv) = shellwrap::split_env(toks);
-        // A string a shell runs is read as the command it is (#866).
-        let scripts = shellwrap::shell_scripts_of(&prog, &argv)
-            .into_iter()
-            .chain(shellwrap::here_string_script(toks));
-        let fed = if a_shell_reads_stdin && !shellwrap::reads_script_from_stdin(toks) {
-            fed_lines(toks)
-        } else {
-            Vec::new()
+        let said = segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin);
+        if said.is_some() {
+            return said;
+        }
+    }
+    None
+}
+
+/// The floor's refusal of one segment of `cmd` at `depth`, read as its program's command.
+fn segment_reason(
+    toks: &[String],
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+) -> Option<String> {
+    let fix = RELEASE_FLOOR_FIX;
+    let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
+    // Each segment is split once, and every reading below shares it: at every level the
+    // floor reads, a segment is as long as the line, so a second split is a second line
+    // (#1355).
+    let (prog, env, argv) = shellwrap::split_env(toks);
+    // A string a shell runs is read as the command it is (#866).
+    let scripts = shellwrap::shell_scripts_of(&prog, &argv)
+        .into_iter()
+        .chain(shellwrap::here_string_script(toks));
+    let fed = if a_shell_reads_stdin && !shellwrap::reads_script_from_stdin(toks) {
+        fed_lines(toks)
+    } else {
+        Vec::new()
+    };
+    for inner in scripts.chain(fed) {
+        if let Some(said) = inner_floor(&inner) {
+            return Some(said);
+        }
+    }
+    if !only_merges()
+        && let Some(said) = token::keychain_read_reason(&prog, &argv)
+    {
+        return Some(said);
+    }
+    // A program the shell fills in is read as each CLI it could be (#7124).
+    // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
+    if prog.contains(['$', '`']) {
+        let as_cli = |cli: &str| {
+            let toks: Vec<String> = env
+                .iter()
+                .cloned()
+                .chain(std::iter::once(cli.to_owned()))
+                .chain(argv.iter().skip(1).cloned())
+                .collect();
+            segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin)
         };
-        for inner in scripts.chain(fed) {
-            if let Some(said) = inner_floor(&inner) {
-                return Some(said);
+        if let Some(cli) = FILLED_IN_PROGRAM_READ_AS
+            .into_iter()
+            .find(|cli| as_cli(cli).is_some())
+        {
+            return Some(format!(
+                "{fix}{} The program `{prog}` is filled in by the shell, and as `{cli}` this \
+                 command would be refused. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+    }
+    // `GIT tag v1` is a tag — see A2's fold.
+    let base = base_lower(&prog);
+    let args: &[String] = argv.get(1..).unwrap_or(&[]);
+    let words: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
+    if base == "git" || base.starts_with("git-credential-") {
+        let sub = git_subcommand(args);
+        // A subcommand the shell fills in could be a push of tags or of a merge option, as
+        // one word or several (#7124).
+        if let Some(sub) = sub.as_deref().filter(|sub| merge::opaque(sub)) {
+            return Some(format!(
+                "{fix}{} git's subcommand `{sub}` is filled in by the shell. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+        // A git alias defined on the line is read as what it stands for (#866).
+        match merge::git_alias(args, &env, sub.as_deref()) {
+            merge::GitAlias::Resolved(inner) => {
+                if let Some(said) = inner_floor(&inner) {
+                    return Some(said);
+                }
+            }
+            merge::GitAlias::Unreadable => return Some(format!("{fix}{}", merge::UNREADABLE)),
+            merge::GitAlias::None => {}
+        }
+        if sub.as_deref() == Some("tag") && !only_merges() {
+            // `git tag` alone lists; a bare name is a CREATION — the choke point, since a tag
+            // that does not exist locally cannot be pushed.
+            //
+            // A harmless flag clears THIS segment and the walk carries on (#348): a read
+            // standing before a publish must not clear the floor for the publish.
+            if args.iter().any(|a| TAG_HARMLESS.contains(&a.as_str())) {
+                return None;
+            }
+            if words.len() > 1 {
+                return Some(format!(
+                    "{fix}Creating a tag is the first step of a publish."
+                ));
             }
         }
+        if sub.as_deref() == Some("push") && !only_merges() {
+            if args.iter().any(|a| a == "--tags" || a == "--follow-tags") {
+                return Some(format!("{fix}`--tags`/`--follow-tags` pushes tags."));
+            }
+            // A flag whose name the shell fills in could be `--tags` (#7124), and one whose
+            // value it fills in is no better read (#7131).
+            if let Some(flag) = args.iter().find(|a| push_flag_filled_in(a)) {
+                return Some(format!(
+                    "{fix}The flag `{flag}` is filled in by the shell, and could push tags. \
+                     {WRITE_IT_OUT}"
+                ));
+            }
+            // Defence in depth: a tag that already existed locally, or a refspec whose
+            // destination is a tag (`HEAD:refs/tags/v1`, #7131).
+            let ends: Vec<&str> = words.iter().skip(1).map(|w| refspec_end(w)).collect();
+            if ends.iter().any(|end| end.starts_with("refs/tags/")) {
+                return Some(format!("{fix}This pushes a tag ref."));
+            }
+            if ends.iter().any(|end| version_tag_re().is_match(end)) {
+                return Some(format!("{fix}This pushes what looks like a version tag."));
+            }
+        }
+        // A push option that sets auto-merge, an alias that would publish, or a command that
+        // prints the forge token (#866).
+        // A token refusal is whole: it opens with its own sentence (#6314).
         if !only_merges()
-            && let Some(said) = token::keychain_read_reason(&prog, &argv)
+            && let Some(said) = token::git_reason(&base, args, sub.as_deref())
         {
             return Some(said);
         }
-        // `GIT tag v1` is a tag — see A2's fold.
-        let base = base_lower(&prog);
-        let args: &[String] = argv.get(1..).unwrap_or(&[]);
-        let words: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
-        if base == "git" || base.starts_with("git-credential-") {
-            let sub = git_subcommand(args);
-            // A git alias defined on the line is read as what it stands for (#866).
-            match merge::git_alias(args, &env, sub.as_deref()) {
-                merge::GitAlias::Resolved(inner) => {
-                    if let Some(said) = inner_floor(&inner) {
-                        return Some(said);
-                    }
-                }
-                merge::GitAlias::Unreadable => return Some(format!("{fix}{}", merge::UNREADABLE)),
-                merge::GitAlias::None => {}
+        let why = merge::git_reason(args, &env, sub.as_deref(), unattended, depth);
+        if let Some(why) = why {
+            return Some(format!("{fix}{why}"));
+        }
+    } else if base == "gh" || base == "glab" || leakguard::is_charter(&prog, args) {
+        // **The reader had to widen with the set.** `PUBLISH_FORGE`'s charter row would be a
+        // tuple nothing could reach if this branch were still `base in ("gh", "glab")`.
+        let forge = base == "gh" || base == "glab";
+        // Every name of charter's own is read as the one its table row is keyed on, so
+        // `purlis change land` and `edm change land` are `charter change land` (RN-3).
+        let name = if forge {
+            base.clone()
+        } else {
+            crate::cliname::ALIAS.to_string()
+        };
+        // `edm change land` and `python3 -m charter change land` put charter's own NAME in
+        // `words` instead of in `prog` — and `-m` drops out with the other flags — so the
+        // pair sits one place further along and is put back on the same footing here. A
+        // forge CLI's words are read past its repository flag (#866).
+        let words: Vec<&str> = if forge {
+            merge::forge_words(args).into_iter().map(|w| w.1).collect()
+        } else {
+            match words.first() {
+                Some(w) if CHARTER_PROGS.contains(&w.to_lowercase().as_str()) => &words[1..],
+                _ => &words[..],
             }
-            if sub.as_deref() == Some("tag") && !only_merges() {
-                // `git tag` alone lists; a bare name is a CREATION — the choke point, since a tag
-                // that does not exist locally cannot be pushed.
-                //
-                // A harmless flag clears THIS segment and the walk carries on (#348): a read
-                // standing before a publish must not clear the floor for the publish.
-                if args.iter().any(|a| TAG_HARMLESS.contains(&a.as_str())) {
-                    continue;
-                }
-                if words.len() > 1 {
-                    return Some(format!(
-                        "{fix}Creating a tag is the first step of a publish."
-                    ));
-                }
+            .iter()
+            .map(|w| w.as_str())
+            .collect()
+        };
+        // A noun the shell fills in could be any command, and a verb after a noun that has a
+        // held verb could be that verb (#7124).
+        if let Some(word) = filled_in_command_word(&name, &words) {
+            return Some(format!(
+                "{fix}{} `{word}` is filled in by the shell, so purlis can't read which `{name}` \
+                 command this is. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+        if let [noun, verb, ..] = words[..] {
+            // A CLI's own alias of a verb is that verb (#866).
+            let held = merge::canonical_verb(&name, noun, verb);
+            let row = (name.as_str(), noun, held);
+            let floored = if only_merges() {
+                MERGE_ROWS.contains(&row)
+            } else {
+                PUBLISH_FORGE.contains(&row) || PUBLISH_SINCE.contains(&row)
+            };
+            if floored {
+                return Some(format!(
+                    "{fix}`{name} {noun} {verb}` publishes or lands code."
+                ));
             }
-            if sub.as_deref() == Some("push") && !only_merges() {
-                if args.iter().any(|a| a == "--tags" || a == "--follow-tags") {
-                    return Some(format!("{fix}`--tags`/`--follow-tags` pushes tags."));
-                }
-                // Defence in depth: a tag that already existed locally.
-                if args.iter().any(|a| a.starts_with("refs/tags/")) {
-                    return Some(format!("{fix}This pushes a tag ref."));
-                }
-                if words.iter().skip(1).any(|w| version_tag_re().is_match(w)) {
-                    return Some(format!("{fix}This pushes what looks like a version tag."));
-                }
-            }
-            // A push option that sets auto-merge, an alias that would publish, or a command that
-            // prints the forge token (#866).
-            // A token refusal is whole: it opens with its own sentence (#6314).
+        }
+        if forge {
             if !only_merges()
-                && let Some(said) = token::git_reason(&base, args, sub.as_deref())
+                && let Some(said) = token::forge_reason(args)
             {
                 return Some(said);
             }
-            let why = merge::git_reason(args, &env, sub.as_deref(), unattended, depth);
+            // A commit to the default branch through the API is a push, said whole (#6962).
+            if !only_merges()
+                && let Some(said) = merge::default_branch_push(args)
+            {
+                return Some(said);
+            }
+            let why = merge::forge_reason(&name, args, cmd, unattended, depth);
             if let Some(why) = why {
                 return Some(format!("{fix}{why}"));
-            }
-        } else if base == "gh" || base == "glab" || leakguard::is_charter(&prog, args) {
-            // **The reader had to widen with the set.** `PUBLISH_FORGE`'s charter row would be a
-            // tuple nothing could reach if this branch were still `base in ("gh", "glab")`.
-            let forge = base == "gh" || base == "glab";
-            // Every name of charter's own is read as the one its table row is keyed on, so
-            // `purlis change land` and `edm change land` are `charter change land` (RN-3).
-            let name = if forge {
-                base.clone()
-            } else {
-                crate::cliname::ALIAS.to_string()
-            };
-            // `edm change land` and `python3 -m charter change land` put charter's own NAME in
-            // `words` instead of in `prog` — and `-m` drops out with the other flags — so the
-            // pair sits one place further along and is put back on the same footing here. A
-            // forge CLI's words are read past its repository flag (#866).
-            let words: Vec<&str> = if forge {
-                merge::forge_words(args).into_iter().map(|w| w.1).collect()
-            } else {
-                match words.first() {
-                    Some(w) if CHARTER_PROGS.contains(&w.to_lowercase().as_str()) => &words[1..],
-                    _ => &words[..],
-                }
-                .iter()
-                .map(|w| w.as_str())
-                .collect()
-            };
-            if let [noun, verb, ..] = words[..] {
-                // A CLI's own alias of a verb is that verb (#866).
-                let held = merge::canonical_verb(&name, noun, verb);
-                let row = (name.as_str(), noun, held);
-                let floored = if only_merges() {
-                    MERGE_ROWS.contains(&row)
-                } else {
-                    PUBLISH_FORGE.contains(&row) || PUBLISH_SINCE.contains(&row)
-                };
-                if floored {
-                    return Some(format!(
-                        "{fix}`{name} {noun} {verb}` publishes or lands code."
-                    ));
-                }
-            }
-            if forge {
-                if !only_merges()
-                    && let Some(said) = token::forge_reason(args)
-                {
-                    return Some(said);
-                }
-                // A commit to the default branch through the API is a push, said whole (#6962).
-                if !only_merges()
-                    && let Some(said) = merge::default_branch_push(args)
-                {
-                    return Some(said);
-                }
-                let why = merge::forge_reason(&name, args, cmd, unattended, depth);
-                if let Some(why) = why {
-                    return Some(format!("{fix}{why}"));
-                }
             }
         }
     }
     None
+}
+
+/// The CLIs a program the shell fills in is read as (#7124): each one the floor reads a
+/// command of. `$(echo gh) pr merge 12` is refused because it would be as `gh`; `$EDITOR
+/// notes.md` is read as each and refused as none.
+const FILLED_IN_PROGRAM_READ_AS: [&str; 4] = ["gh", "glab", "git", crate::cliname::ALIAS];
+
+/// How a refusal of a command word the shell fills in ends (#7124).
+const WRITE_IT_OUT: &str = "Write the command's program, noun and verb out literally.";
+
+/// The nouns whose verb can merge a request: a verb the shell fills in after one of them is
+/// held by the merge hold (#7124). After any other noun with a held verb, it is refused only
+/// unattended.
+const NOUNS_THAT_MERGE: [&str; 4] = ["pr", "mr", "alias", "change"];
+
+/// The word of a forge CLI's or charter's command that the shell fills in where it could name
+/// a held command (#7124): its noun, which could be any, or its verb after a noun that has a
+/// held verb ([`merge::held_commands`]). `gh pr $(echo merge) 12` is one; `gh pr view $(cat
+/// n)` and `gh issue $(echo view) 3` are not.
+fn filled_in_command_word<'a>(name: &str, words: &[&'a str]) -> Option<&'a str> {
+    match words {
+        [noun, ..] if merge::opaque(noun) => Some(noun),
+        [noun, verb, ..] if merge::opaque(verb) => {
+            let held = merge::held_commands(name)
+                .into_iter()
+                .chain(
+                    PUBLISH_SINCE
+                        .iter()
+                        .filter(|(cli, ..)| *cli == name)
+                        .map(|(_, noun, verb)| vec![*noun, *verb]),
+                )
+                .any(|command| command.len() > 1 && command[0] == *noun);
+            let matters = held && (!only_merges() || NOUNS_THAT_MERGE.contains(noun));
+            matters.then_some(verb)
+        }
+        _ => None,
+    }
+}
+
+/// Whether a `git push` flag is one the shell fills in, its name (`--$(echo tags)`, #7124) or
+/// its value (`--repo=$T`, #7131). `--force-with-lease=main:$SHA` only says what the remote
+/// must hold, so its value may be filled in.
+fn push_flag_filled_in(word: &str) -> bool {
+    word.starts_with('-') && !word.starts_with("--force-with-lease=") && merge::opaque(word)
+}
+
+/// The refs a refspec pushes to, as the remote reads it: `HEAD:refs/tags/v1` is `refs/tags/v1`,
+/// `+main:main` is `main`, and a ref with no `:` is its own destination (#7131).
+fn refspec_end(spec: &str) -> &str {
+    spec.rsplit(':')
+        .next()
+        .unwrap_or(spec)
+        .trim_start_matches('+')
+}
+
+/// Whether a program is one the shell builds, so its words cannot be read (#7131): its last
+/// path component holds a command substitution (`$(echo gh pr)`, `` `echo gh` ``), a brace
+/// expansion (`{gh,pr,merge,12}`) or a glob (`g[h]`). `$(git rev-parse --show-toplevel)/x.sh`
+/// is a path to `x.sh`, and `[` and `[[` are the test builtins.
+fn program_built_by_the_shell(prog: &str) -> bool {
+    if prog == "[" || prog == "[[" {
+        return false;
+    }
+    let mut last = String::new();
+    let mut chars = prog.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '/' => last.clear(),
+            '$' if chars.peek() == Some(&'(') => {
+                let mut depth = 0;
+                for c in chars.by_ref() {
+                    depth += match c {
+                        '(' => 1,
+                        ')' => -1,
+                        _ => 0,
+                    };
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                last.push('\u{0}');
+            }
+            '`' => {
+                chars.by_ref().find(|c| *c == '`');
+                last.push('\u{0}');
+            }
+            c => last.push(c),
+        }
+    }
+    // `[` opens a glob only where a `]` closes it.
+    let glob_class = last
+        .find('[')
+        .is_some_and(|open| last[open + 1..].contains(']'));
+    last.contains('\u{0}')
+        || last.contains(['*', '?'])
+        || glob_class
+        || merge::brace_expansion(&last)
+}
+
+/// **The commands the floor reads in a line** (#7092): each segment's own words, a
+/// substitution one word in its place ([`shellseg::Reading::own`]), and its words with every
+/// substitution's handed out to it ([`shellseg::Reading::outward`]), which shows the floor
+/// what a substitution could put on the line, unless its own words name no program.
+///
+/// `A=$(true) gh pr merge 12` is a `gh pr merge` only in its own words. `id=$(gh api … | head
+/// -1)` runs nothing but its substitution, whose commands are segments of their own, so it is
+/// not read outward as a `gh api` with `head`'s `-1` among its flags.
+fn commands_of(line: &str) -> Vec<Vec<String>> {
+    let mut commands = Vec::new();
+    for reading in shellseg::segment_readings(line) {
+        let runs_a_program = !shellwrap::split_env(&reading.own).0.is_empty();
+        if runs_a_program && reading.outward != reading.own {
+            commands.push(reading.outward);
+        }
+        commands.push(reading.own);
+    }
+    commands
 }
 
 /// What a segment could print into a shell reading stdin: its words as one line, with and
