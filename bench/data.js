@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794956599084,
+  "lastUpdate": 1794959414098,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50946,6 +50946,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7671995,
             "unit": "ms",
             "extra": "median of 5 runs: 101.669, 102.426, 102.767, 103.370, 103.519 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba5eb7065903d766206710a55a917ba283ecde5c",
+          "message": "A browser's view lists its pages and downloads, and the person can watch another page (1.91, #6989, #6990) (#7120)\n\n* A browser's view lists its pages, and the person can watch another (1.91, #6989)\n\nThe core tells a browser's views its pages with the page frame of 1.90: each one's id, its title\nscrubbed as browser_pages scrubs it, its origin alone (none where its address holds a kept value)\nand which is current, listed through the same way out as the chat's browser_pages. A view of a\nlink before 1.91 is sent the frame without the list. The header says \"Page 2 of 3\" after the\ntitle, with a menu of the pages; picking another takes the browser over first, as Back does, so\nit is never sent for the agent, and the engine refuses it unless the person drives. ADR 0068 is\namended for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* A browser's view counts its downloads and lists them (1.91, #6990)\n\nThe core tells a browser's views its downloads with the page frame, as browser_downloads lists\nthem to the chat: each one's id, its name as named there (never a value purlis keeps out), its\nstate, the bytes received and its size; never its file, path or origin. The engine tells them\nwith each frame and as a download begins or moves on, and a view of a link before 1.91 is sent\nnone. The header counts them (\"3 downloads\") with a popover listing each name, every character\na reader would not see marked (#2020), and how far it came; Enter opens it and Escape gives the\nkeyboard back. Saving one stays the chat's. ADR 0068 is amended for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* The review's fixes: the agent keeps its page, every change of page is told, progress is paced (#6989, #6990)\n\nWatching another page never moves the agent: the first pick keeps the agent's page, and the\nhand-back makes it current again before the agent has the browser (ADR 0068's amendment for\n#6989 says so now). The view is told the current page wherever it changes (the cast tells it as\nit follows another), not only on a switch. A download's progress is told at most every 250 ms,\nand what was left untold is told once the pace allows. The kept-out pass is the browser state's\nalone, with no forwarders; the window says a site and a size the one way it already did.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* The story of a browser's pages waits for its menu to be drawn, as it fades in (#6989)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* The downloads popover is listed among the window's dialogs and overlays, and the pages menu's stories wait for it to fade in (#6989, #6990)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* A narrow browser view keeps its site readable: the counts of pages and downloads say their numbers alone; and the baselines of the four wide stories, drawn by the pull request's run (#6989, #6990)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* A narrow browser view says its secrets' count by its number alone too, so its site keeps room beside every count (#6990)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n* The baselines of the browser view's stories, drawn by the pull request's run (#6989, #6990)\n\nThe six new stories in every pictured cell, and the narrow and secrets stories of #6937 and\n#6938, which now say a count by its number alone in a narrow head.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7N32VB0D2W9P465CYPH5W2G\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T22:14:09Z",
+          "tree_id": "ebc87a8dbd58b1ab64c2aff0a23aebfb4acea3bf",
+          "url": "https://github.com/purlis/purlis/commit/ba5eb7065903d766206710a55a917ba283ecde5c"
+        },
+        "date": 1794959404617,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5801244999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.562, 0.569, 0.580, 0.585, 0.593 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.355773,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.207, 16.302, 16.356, 16.498, 16.560 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.621375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.891, 100.203, 100.621, 101.574, 101.607 ms"
           }
         ]
       }
