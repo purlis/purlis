@@ -432,6 +432,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "fixedlimits::RUNNER_OUTPUT",
     ),
     (
+        "crates/purlis-core/src/dockerpool/kernel.rs",
+        "FLOOR",
+        Security,
+        "the kernel purlis's sandbox needs: Landlock 6, by the person's ruling (#7084)",
+    ),
+    (
         "crates/purlis-core/src/dockerpool/settings.rs",
         "MOST_READ",
         Security,
