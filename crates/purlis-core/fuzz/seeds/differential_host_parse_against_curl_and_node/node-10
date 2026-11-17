@@ -1,0 +1,6 @@
+http://bücher.example/
+GET http://xn--bcher-kva.example/ HTTP/1.1
+Host: xn--bcher-kva.example
+proxy-connection: close
+Connection: close
+

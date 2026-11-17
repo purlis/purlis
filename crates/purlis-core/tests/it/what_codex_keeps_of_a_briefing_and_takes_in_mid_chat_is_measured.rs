@@ -10,8 +10,11 @@
 //! another version would be recorded under the wrong one.
 //!
 //! **No model and no credential.** Codex is pointed at a model provider on a loopback port that
-//! refuses the connection, so a turn fails at its first request. Everything measured is decided
-//! before that request: what a `SessionStart` hook's output becomes in the conversation, which
+//! answers every request at once with the end of a turn ([`answering_port`]). Until Codex 0.147
+//! a port that refused the connection did as well, failing the turn at its first request; from
+//! 0.169 Codex waits for a model it cannot reach for ever ("Reconnecting... waiting for
+//! network", whatever its retry settings), and a turn never ended (T1.1-03, the pin's bump).
+//! Everything measured is decided before that request: what a `SessionStart` hook's output becomes in the conversation, which
 //! Codex records in the session's rollout (`$CODEX_HOME/sessions/**/rollout-*.jsonl`) before
 //! it sends anything, and the skills catalogue `codex debug prompt-input` renders. The hooks are
 //! trusted the way purlis trusts the hooks it arms on a sandboxed chat
@@ -50,11 +53,98 @@ fn codex() -> PathBuf {
     path
 }
 
-/// A loopback port nothing listens on, so Codex's first model request is refused at once.
-fn refused_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|listener| listener.local_addr())
-        .map_or(9, |address| address.port())
+/// A loopback port whose server answers every request at once, for as long as the test runs:
+/// a model request with a Responses stream that ends the turn with one word, anything else with
+/// 404. Nothing it is sent is read but the headers and the body's length.
+fn answering_port() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("its address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().map_while(Result::ok) {
+            std::thread::spawn(move || answer_each(stream));
+        }
+    });
+    port
+}
+
+/// Answers every request `stream` carries ([`answering_port`]).
+fn answer_each(stream: std::net::TcpStream) {
+    use std::io::Read;
+    let Ok(read) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(read);
+    let mut stream = stream;
+    loop {
+        let mut first = String::new();
+        if reader.read_line(&mut first).unwrap_or(0) == 0 {
+            return;
+        }
+        let mut length = 0usize;
+        loop {
+            let mut header = String::new();
+            if reader.read_line(&mut header).unwrap_or(0) == 0 {
+                return;
+            }
+            let header = header.trim_end();
+            if header.is_empty() {
+                break;
+            }
+            if let Some((name, value)) = header.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                length = value.trim().parse().unwrap_or(0);
+            }
+        }
+        let mut body = vec![0; length];
+        if reader.read_exact(&mut body).is_err() {
+            return;
+        }
+        let (status, kind, text) = if first.starts_with("POST") {
+            let message = json!({"type": "message", "id": "msg_1", "role": "assistant",
+                "status": "completed", "content": [{"type": "output_text", "text": "done",
+                "annotations": []}]});
+            let usage = json!({"input_tokens": 1, "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 1, "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 2});
+            let events = [
+                (
+                    "response.created",
+                    json!({"type": "response.created",
+                    "response": {"id": "resp_1", "status": "in_progress", "output": []}}),
+                ),
+                (
+                    "response.output_item.done",
+                    json!({"type": "response.output_item.done",
+                    "output_index": 0, "item": message}),
+                ),
+                (
+                    "response.completed",
+                    json!({"type": "response.completed",
+                    "response": {"id": "resp_1", "status": "completed", "output": [message],
+                    "usage": usage}}),
+                ),
+            ];
+            let text: String = events
+                .iter()
+                .map(|(name, data)| format!("event: {name}\ndata: {data}\n\n"))
+                .collect();
+            ("200 OK", "text/event-stream", text)
+        } else {
+            (
+                "404 Not Found",
+                "text/plain",
+                "no such thing here".to_owned(),
+            )
+        };
+        let reply = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\n\r\n{text}",
+            text.len()
+        );
+        if stream.write_all(reply.as_bytes()).is_err() {
+            return;
+        }
+    }
 }
 
 /// A Codex home and a folder to work in, under one temporary root.
@@ -126,7 +216,7 @@ impl Here {
     }
 
     /// The `-c` words that arm `hooks` on `SessionStart`, with the config that trusts exactly
-    /// them and points Codex at a provider that refuses, written into its home.
+    /// them and points Codex at a provider that answers at once, written into its home.
     fn armed(&self, hooks: &[PathBuf]) -> Vec<String> {
         let groups: Vec<String> = hooks
             .iter()
@@ -146,7 +236,7 @@ impl Here {
              [model_providers.standin]\nname = \"standin\"\n\
              base_url = \"http://127.0.0.1:{}/v1\"\nwire_api = \"responses\"\n\
              request_max_retries = 0\nstream_max_retries = 0\n",
-            refused_port()
+            answering_port()
         )
         .parse()
         .unwrap();
@@ -168,6 +258,11 @@ impl Here {
             .current_dir(self.work())
             .env("CODEX_HOME", self.home())
             .env("HOME", &self.root)
+            // Only its loopback provider: every other host, any call Codex makes of its own (an
+            // update check, its model catalogue, its telemetry), goes to a proxy that refuses it.
+            .env("HTTPS_PROXY", "http://127.0.0.1:9")
+            .env("HTTP_PROXY", "http://127.0.0.1:9")
+            .env("ALL_PROXY", "http://127.0.0.1:9")
             .env("NO_PROXY", "127.0.0.1,localhost")
             .env("no_proxy", "127.0.0.1,localhost")
             .stdin(Stdio::null());

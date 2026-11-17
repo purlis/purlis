@@ -45,6 +45,11 @@ allow = [
   # the licence text travel with source copies — nothing of it for a binary.
   "BSL-1.0",
 ]
+# One crate, not the whole build: borrow-or-share, under fluent-uri, under the JSON Schema
+# validator the sandbox scenario cells are checked with (`tests/scenarios`, a dev-dependency
+# of a test-only crate; T1.1-05). MIT-0 is MIT without its notice clause: OSI approved, and
+# asks nothing of a copy.
+exceptions = [{ crate = "borrow-or-share", allow = ["MIT-0"] }]
 
 [bans]
 multiple-versions = "allow"

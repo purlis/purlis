@@ -544,8 +544,9 @@ use crate::view::{Limits, Views};
 ///
 /// 1.84 holds a confinement's live asks open while the person is Quiet (#6007, ADR 0121 decision
 /// 13): [`ReachChange::HoldAsksOpen`] on [`Command::ChangeReach`] says whether a connection held
-/// past its minute waits on, at most `purlis_core::sandbox::asks::MOST_HELD_OPEN` in all. A host
-/// before 1.84 is not sent it, and its connections time out at their minute as before.
+/// past its minute waits on, at most `purlis_core::sandbox::timings::Timings::quiet_hold` in
+/// all. A host before 1.84 is not sent it, and its connections time out at their minute as
+/// before.
 ///
 /// 1.85 has a host hold a chat's program still, and let it go on ([`Command::Hold`], #6015, ADR
 /// 0076 §4): its whole process group stopped as Ctrl-Z stops it, when the chat reaches its budget

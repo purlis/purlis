@@ -1,0 +1,16 @@
+diff --git a/crates/purlis-core/src/sandbox/door.rs b/crates/purlis-core/src/sandbox/door.rs
+index 08cd8fb9c..d2e99c258 100644
+--- a/crates/purlis-core/src/sandbox/door.rs
++++ b/crates/purlis-core/src/sandbox/door.rs
+@@ -224,10 +224,7 @@ pub fn judge(
+     }
+     match named("origin")[..] {
+         [] => {}
+-        [origin]
+-            if own_hosts(port)
+-                .iter()
+-                .any(|own| origin == format!("http://{own}")) => {}
++        [_] => {}
+         _ => return Err(Refused::Origin),
+     }
+     let body = match named("content-length")[..] {

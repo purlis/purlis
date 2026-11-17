@@ -1,0 +1,6 @@
+http://EXAMPLE.com./a?b
+GET http://example.com./a?b HTTP/1.1
+Host: example.com.
+proxy-connection: close
+Connection: close
+
