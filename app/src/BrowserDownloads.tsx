@@ -58,8 +58,13 @@ export function BrowserDownloads({ downloads }: { downloads: readonly DownloadLi
         tooltip={going ? "A download is under way." : "What this browser's pages downloaded."}
         className="browser-downloads"
         data-testid="browser-downloads"
+        // Named whole, while a narrow head shows its number alone (`browser-count-word`).
+        aria-label={downloadsCounted(downloads.length)}
       >
-        {downloadsCounted(downloads.length)}
+        {downloads.length}
+        <span className="browser-count-word">
+          {downloads.length === 1 ? " download" : " downloads"}
+        </span>
       </Button>
       <PopoverDialog aria-label="This browser's downloads">
         <ul className="browser-downloads-list">

@@ -9709,6 +9709,19 @@ nav.piece-files-head {
   flex: 0 0 auto;
 }
 
+/* **A narrow head keeps the site readable** (#6989, #6990): the counts of pages and downloads
+   say their numbers alone ("2 of 3", "3"), each still named whole, so the site keeps room for
+   its host beside the pane's own actions. */
+.browser-head {
+  container: browser-head / inline-size;
+}
+
+@container browser-head (max-width: 36rem) {
+  .browser-count-word {
+    display: none;
+  }
+}
+
 /* **The browser's downloads** (#6990): the count keeps its words whole, as the pages' does; its
    list says each name whole, over as many lines as it takes, and how far it came under it. */
 .browser-downloads {

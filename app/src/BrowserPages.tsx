@@ -13,6 +13,23 @@ export function pagesCounted(pages: readonly PageListed[]): string {
   return at < 0 ? `${pages.length} pages` : `Page ${at + 1} of ${pages.length}`;
 }
 
+/** **The count's words as drawn** (#6989): in a narrow head, "Page" and "pages" are left out
+ *  and the numbers kept, which are part of its name (WCAG 2.5.3). */
+function PagesCount({ pages }: { pages: readonly PageListed[] }) {
+  const at = pages.findIndex((page) => page.current);
+  return at < 0 ? (
+    <>
+      {pages.length}
+      <span className="browser-count-word"> pages</span>
+    </>
+  ) : (
+    <>
+      <span className="browser-count-word">Page </span>
+      {at + 1} of {pages.length}
+    </>
+  );
+}
+
 /** What a page's row is named: its title, or its site where it has none, or that it is blank. */
 export function pageNamed(page: PageListed): string {
   if (page.title !== null) return page.title;
@@ -51,8 +68,10 @@ export function BrowserPages({
         tooltip={WATCH_SAID}
         className="browser-pages"
         data-testid="browser-pages"
+        // Named whole, while a narrow head shows its number alone (`browser-count-word`).
+        aria-label={pagesCounted(pages)}
       >
-        {pagesCounted(pages)}
+        <PagesCount pages={pages} />
       </Button>
       <Menu aria-label="This browser's pages" align="start">
         <MenuSection

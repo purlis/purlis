@@ -830,6 +830,10 @@ export const ItsPagesInANarrowSplitPane: Story = {
     });
     const count = await waitFor(() => canvas.getByRole("button", { name: "Page 2 of 3" }));
     await fitsThePane(canvas);
+    // The site keeps room for its host: the counts say their numbers alone.
+    await expect(canvas.getByTestId("browser-chip").getBoundingClientRect().width).toBeGreaterThan(
+      72,
+    );
     await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
     await expect(canvas.getByRole("button", { name: "3 secrets" })).toBeVisible();
   },
@@ -909,6 +913,10 @@ export const ItsDownloadsInANarrowSplitPane: Story = {
     });
     const count = await waitFor(() => canvas.getByRole("button", { name: "3 downloads" }));
     await fitsThePane(canvas);
+    // The site keeps room for its host: the counts say their numbers alone.
+    await expect(canvas.getByTestId("browser-chip").getBoundingClientRect().width).toBeGreaterThan(
+      72,
+    );
     await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
     await expect(canvas.getByRole("button", { name: "Page 2 of 3" })).toBeVisible();
   },
