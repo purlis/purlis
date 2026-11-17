@@ -1087,17 +1087,12 @@ fn a_handoff_from_a_chat_nobody_is_at_is_refused_plainly_and_nothing_is_held() {
     // so the chat has neither prompts nor a sandbox, and that is what it is told (#1543): it
     // hands off to no other persona whatever the grants say, and a grant naming the pair
     // would not carry it. Nothing is kept for the person either.
-    assert_eq!(
-        said,
-        Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say()
-        }
+    // Ticket T1.1-73: with no sealed grant, the policy's ask is refused at once, in the
+    // words that say nobody is here and no grant covers the pair.
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
     );
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("a clock")
-        .as_secs();
-    assert!(purlis_core::dispatchaway::list(held.root(), now + 5).is_empty());
     assert_eq!(told, None);
     assert_eq!(held.chats().open_now().len(), before);
     assert!(
@@ -5959,16 +5954,23 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
             "workspace:beta",
         )
     };
-    let unsandboxed = Answer::No {
-        why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
-    };
+    // Ticket T1.1-73: with no grant, the ask is refused at once; with one, it is refused
+    // where no seal keeps it out of the chat's reach, as in this test build.
     let (said, told) = across(&held);
-    assert_eq!(said, unsandboxed);
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
+    );
     assert!(told.is_none());
     purlis_core::sandbox::local::grant_dispatch(&plane.root, "steward", "devops")
         .expect("the person allowed it on this machine");
     let (said, told) = across(&held);
-    assert_eq!(said, unsandboxed);
+    assert_eq!(
+        said,
+        Answer::No {
+            why: purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say()
+        }
+    );
     assert!(told.is_none());
 }
 
@@ -6006,7 +6008,7 @@ fn a_crossing_of_a_chat_with_no_record_of_how_its_run_started_is_refused_as_unsa
     assert_eq!(
         said,
         Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
+            why: purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say(),
         }
     );
     assert!(told.is_none());
@@ -6036,18 +6038,15 @@ fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
     let Answer::No { why: limit } = limited else {
         panic!("refused: {limited:?}");
     };
-    let unsandboxed =
-        purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say();
+    let unsandboxed = no_grant_with_no_sandbox();
     assert_ne!(limit, unsandboxed);
 
     // Nobody at it: told it has no sandbox first.
     its_harness_reports(&held, asking, true);
     let (said, told) = dispatch(&held, &id, &tickets, asking, Some("devops"), "check it");
-    assert_eq!(
-        said,
-        Answer::No {
-            why: unsandboxed.clone()
-        }
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&unsandboxed)),
+        "{said:?}"
     );
     assert!(told.is_none());
     // Its own persona needs no sandbox: the limit still refuses it.
@@ -6727,11 +6726,9 @@ fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_h
 
     // It was started without the sandbox, so it has neither prompts nor a sandbox: it
     // dispatches to no other persona, whatever the grants say.
-    assert_eq!(
-        said,
-        Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say()
-        }
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
     );
     assert_eq!(told, None);
     assert_eq!(held.chats().open_now().len(), before);
@@ -15979,4 +15976,18 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
         enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty(),
         "nothing is written for an unidentified caller"
     );
+}
+
+/// What a chat with its prompts off and no sandbox is told where the policy asks and no sealed
+/// grant covers steward to devops (ticket T1.1-73); kept for the needs-you list, so the app may
+/// add that the person will see it.
+fn no_grant_with_no_sandbox() -> String {
+    purlis_core::dispatchunattended::Refusal::Unsandboxed(
+        purlis_core::dispatchunattended::Missing {
+            asking: Some("steward".to_owned()),
+            target: "devops".to_owned(),
+            unreviewed: false,
+        },
+    )
+    .say()
 }

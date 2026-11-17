@@ -351,7 +351,12 @@ fn seal_in_step(
     let mut set = set_of(whole, entries);
     let texts: Vec<String> = entries.iter().map(Entry::text).collect();
     let adds: Vec<(&str, &str)> = adds.iter().map(|text| (NEVER, text.as_str())).collect();
-    set.rewrite(STORE, anchor, |_, text| texts.iter().any(|t| t == text), &adds)?;
+    set.rewrite(
+        STORE,
+        anchor,
+        |_, text| texts.iter().any(|t| t == text),
+        &adds,
+    )?;
     for entry in entries.iter_mut() {
         entry.seal = set
             .entries

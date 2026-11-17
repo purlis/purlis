@@ -173,7 +173,11 @@ fn a_grant_never_lifts_a_policy_deny() {
     };
     assert_eq!(refusal, Refusal::Denied("devops".to_owned()));
     assert_eq!(crate::dispatchaway::pair_kept(&refusal), None);
-    assert!(refusal.say().contains("No grant lifts it"), "{}", refusal.say());
+    assert!(
+        refusal.say().contains("No grant lifts it"),
+        "{}",
+        refusal.say()
+    );
 }
 
 #[test]
@@ -185,7 +189,9 @@ fn a_policy_deny_is_read_from_the_project_s_committed_file() {
     assert_eq!(grants.denied, vec![pair("steward", "devops")]);
     assert_eq!(grants.denied_any, vec!["qa".to_owned()]);
     assert_eq!(
-        committed_denies(Some("[dispatch.denies]\nsteward = [\"Not A Name\", 3]\n")).refused.len(),
+        committed_denies(Some("[dispatch.denies]\nsteward = [\"Not A Name\", 3]\n"))
+            .refused
+            .len(),
         2
     );
     // And the limits reader does not refuse the table as a limit it does not know.
@@ -230,7 +236,9 @@ fn same_persona_dispatch_needs_no_grant() {
 fn a_policy_allow_needs_no_grant() {
     // The project's committed `[dispatch.grants]` is the policy allow; this machine's sealed
     // acceptance is the loosening press, and nothing of the person's own is granted.
-    let project = Project::new(&format!("{STRICT}[dispatch.grants]\nsteward = [\"devops\"]\n"));
+    let project = Project::new(&format!(
+        "{STRICT}[dispatch.grants]\nsteward = [\"devops\"]\n"
+    ));
     acknowledge_pair(project.root(), &pair("steward", "devops")).expect("accepted");
     let grants = project.grants();
     assert!(grants.you.is_empty() && grants.chat.is_empty());
@@ -346,9 +354,7 @@ fn a_grant_edited_by_a_chat_or_copied_from_another_clone_is_dropped_and_shown_re
         covers(Some("steward"), "prod", &project.grants(), &Locks::none()),
         Covers::NeedsGrant
     );
-    assert!(
-        dispatch_unsealed(root).contains(&(DispatchKind::Mine, "steward -> prod".to_owned()))
-    );
+    assert!(dispatch_unsealed(root).contains(&(DispatchKind::Mine, "steward -> prod".to_owned())));
     // Copied from another clone: its seal is bound to that clone.
     let other = Project::new(STRICT);
     grant_dispatch(other.root(), "steward", "ops").expect("granted there");
@@ -425,12 +431,18 @@ fn there_is_no_bulk_reseal_of_entries_on_disk() {
 
 #[test]
 fn an_acceptance_of_the_project_s_grant_is_sealed() {
-    let project = Project::new(&format!("{STRICT}[dispatch.grants]\nsteward = [\"devops\"]\n"));
+    let project = Project::new(&format!(
+        "{STRICT}[dispatch.grants]\nsteward = [\"devops\"]\n"
+    ));
     let root = project.root();
     // Written by hand, as a chat with no sandbox could: no acceptance.
     let mut held = serde_json::json!({"dispatch_seen": ["steward -> devops"]});
-    std::fs::create_dir_all(crate::sandbox::local::path(root).parent().expect("a folder"))
-        .expect("made");
+    std::fs::create_dir_all(
+        crate::sandbox::local::path(root)
+            .parent()
+            .expect("a folder"),
+    )
+    .expect("made");
     write_record(root, &held);
     assert_eq!(crate::sandbox::local::dispatch_seen(root), Some(Vec::new()));
     // Accepted in the window: sealed, and in force.
@@ -444,7 +456,10 @@ fn an_acceptance_of_the_project_s_grant_is_sealed() {
     held = record(root);
     held["dispatch_any_seen"] = serde_json::json!(["qa"]);
     write_record(root, &held);
-    assert_eq!(crate::sandbox::local::dispatch_any_seen(root), Vec::<String>::new());
+    assert_eq!(
+        crate::sandbox::local::dispatch_any_seen(root),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -647,7 +662,11 @@ fn off_macos_an_unsandboxed_unattended_chat_is_still_refused_with_why() {
         panic!("refused: {answer:?}")
     };
     assert_eq!(refusal, Refusal::NotSealedHere("devops".to_owned()));
-    assert!(refusal.say().contains("only the macOS Keychain"), "{}", refusal.say());
+    assert!(
+        refusal.say().contains("only the macOS Keychain"),
+        "{}",
+        refusal.say()
+    );
     // Not kept for the needs-you list: a grant stands already.
     assert_eq!(crate::dispatchaway::pair_kept(&refusal), None);
     // The nevers still hold there.
@@ -702,7 +721,10 @@ fn under_log_a_deny_and_an_ask_go_ahead_and_the_asking_chat_s_log_names_the_rule
         );
         let logged = crate::enforcement::read_log(root, CHAT);
         assert_eq!(logged.last().map(|line| line.rule.as_str()), Some(rule));
-        assert_eq!(logged.last().map(|line| line.family.as_str()), Some("dispatch"));
+        assert_eq!(
+            logged.last().map(|line| line.family.as_str()),
+            Some("dispatch")
+        );
     }
     // Under enforce, nothing is logged and the deny stands.
     assert_eq!(
@@ -730,7 +752,11 @@ fn a_dispatched_chat_is_never_looser_than_its_asker() {
     let child = project.clone().for_chat(Some(&asker.spelled()));
     for family in Family::ALL {
         assert!(child.mode(family) >= asker.mode(family), "{}", family.key());
-        assert!(child.mode(family) >= project.mode(family), "{}", family.key());
+        assert!(
+            child.mode(family) >= project.mode(family),
+            "{}",
+            family.key()
+        );
     }
     assert_eq!(child.mode(Family::Dispatch), Mode::Enforce);
     // A chat nobody dispatched runs as its project does.

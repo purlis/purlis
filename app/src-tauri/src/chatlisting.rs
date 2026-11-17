@@ -269,7 +269,6 @@ mod tests {
             long: false,
             policy: None,
         }
-        policy: None,
     }
 
     #[test]

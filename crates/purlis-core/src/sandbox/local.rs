@@ -295,7 +295,10 @@ struct OnDisk {
     /// each grant of yours and each acceptance of the project's, sealed by the app alone
     /// ([`crate::secrets::sealed_set`]). The six lists grant and accept only what this seals,
     /// in the app ([`dispatch_sealed`]).
-    #[serde(default, skip_serializing_if = "crate::secrets::sealed_set::Set::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::secrets::sealed_set::Set::is_empty"
+    )]
     dispatch_sealed: crate::secrets::sealed_set::Set,
     /// The project's dispatch grants as this machine last showed them to the person (#1437),
     /// each as [`crate::dispatchgrant::Pair`] is displayed; absent before the first.
@@ -2196,7 +2199,11 @@ impl DispatchKind {
 
 /// `asking -> target`, `asking -> *` or either `in <workspace>`: a dispatch answer's text.
 fn answer_text(asking: &str, target: &str, any: bool, workspace: Option<&str>) -> String {
-    let target = if any { crate::dispatchgrant::ANY } else { target };
+    let target = if any {
+        crate::dispatchgrant::ANY
+    } else {
+        target
+    };
     match workspace {
         Some(workspace) => format!("{asking} -> {target} in {workspace}"),
         None => format!("{asking} -> {target}"),
@@ -2271,7 +2278,9 @@ fn reseal(
     let moved = |kind: DispatchKind, text: &str| {
         DispatchKind::ALL.into_iter().any(|from| {
             from.yours() == kind.yours()
-                && before.iter().any(|(k, t)| *k == from && core_of(t) == core_of(text))
+                && before
+                    .iter()
+                    .any(|(k, t)| *k == from && core_of(t) == core_of(text))
                 && verified
                     .of_kind(from.word())
                     .iter()
@@ -2299,11 +2308,7 @@ fn reseal(
             ))
         };
     }
-    let still = |kind: &str, text: &str| {
-        after
-            .iter()
-            .any(|(k, t)| k.word() == kind && t == text)
-    };
+    let still = |kind: &str, text: &str| after.iter().any(|(k, t)| k.word() == kind && t == text);
     if new.is_empty()
         && !matches!(verified.standing, Standing::Broken | Standing::Unanchored)
         && verified.holding.iter().all(|(k, t)| still(k, t))
@@ -2320,8 +2325,10 @@ fn reseal(
 /// seals do not decide here (a process that is not the app, a test build of another crate):
 /// there the lists are read as they are written, as before ticket T1.1-73.
 fn sealed_dispatch(root: &Path, held: &OnDisk) -> Option<crate::secrets::sealed_set::Verified> {
-    crate::secrets::sealed_set::decides()
-        .then(|| held.dispatch_sealed.verify(DISPATCH_STORE, &anchor_key(root)))
+    crate::secrets::sealed_set::decides().then(|| {
+        held.dispatch_sealed
+            .verify(DISPATCH_STORE, &anchor_key(root))
+    })
 }
 
 /// **The dispatch answers kept for the project at `root` that do not count**: each by its kind
@@ -2430,7 +2437,13 @@ pub fn revoke_dispatch(root: &Path, asking: &str, target: &str) -> io::Result<bo
 pub fn dispatch_seen(root: &Path) -> Option<Vec<String>> {
     let held = read(root);
     let seen = held.dispatch_seen.clone()?;
-    Some(counting(root, &held, DispatchKind::Seen, seen, Clone::clone))
+    Some(counting(
+        root,
+        &held,
+        DispatchKind::Seen,
+        seen,
+        Clone::clone,
+    ))
 }
 
 /// Records that the person was told of `shown`, the project's dispatch grants as the Notice

@@ -4697,6 +4697,7 @@ pub(crate) fn said_to_the_person(why: &dispatchdecision::Refused) -> String {
         | Refused::Held
         | Refused::NoPersonaNamed
         | Refused::Never(_)
+        | Refused::Denied(_)
         | Refused::Limit(Limit::TooManyMessages { .. }) => why.say(),
     }
 }

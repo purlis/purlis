@@ -253,7 +253,10 @@ impl Set {
             .collect();
         entries.dedup_by(|a, b| a.kind == b.kind && a.text == b.text);
         for (kind, text) in add {
-            if entries.iter().any(|one| one.kind == *kind && one.text == *text) {
+            if entries
+                .iter()
+                .any(|one| one.kind == *kind && one.text == *text)
+            {
                 continue;
             }
             let mac = mac_of(store, clone, kind, text, generation)

@@ -50,7 +50,10 @@ fn an_entry_with_a_kind_changed_is_dropped() {
     let mut set = fresh();
     with(&mut set, "plane-a", &[("seen", "steward -> devops")]);
     set.entries[0].kind = "mine".to_owned();
-    assert!(!set.verify(STORE, "plane-a").holds("mine", "steward -> devops"));
+    assert!(
+        !set.verify(STORE, "plane-a")
+            .holds("mine", "steward -> devops")
+    );
 }
 
 #[test]
@@ -83,7 +86,10 @@ fn a_revoked_entry_put_back_from_a_copy_counts_as_nothing() {
     let before = set.clone();
     set.rewrite(STORE, "plane-a", |_, text| text != "steward -> devops", &[])
         .expect("revoked");
-    assert!(!set.verify(STORE, "plane-a").holds("mine", "steward -> devops"));
+    assert!(
+        !set.verify(STORE, "plane-a")
+            .holds("mine", "steward -> devops")
+    );
     // The entry alone, put back: its seal holds, and it is in no live list.
     let mut entry_back = set.clone();
     entry_back.entries.push(before.entries[0].clone());

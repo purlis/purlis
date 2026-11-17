@@ -330,11 +330,14 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
     let Answer::Refused(why) = answer else {
         panic!("refused: {answer:?}")
     };
-    assert_eq!(why, Refusal::Unsandboxed(Missing {
-        asking: Some("steward".to_owned()),
-        target: "devops".to_owned(),
-        unreviewed: false,
-    }));
+    assert_eq!(
+        why,
+        Refusal::Unsandboxed(Missing {
+            asking: Some("steward".to_owned()),
+            target: "devops".to_owned(),
+            unreviewed: false,
+        })
+    );
     assert_eq!(
         why.say(),
         "this chat runs with its harness's permission prompts off and with no sandbox, so \

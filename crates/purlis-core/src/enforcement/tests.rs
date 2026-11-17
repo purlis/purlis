@@ -903,7 +903,11 @@ fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced(
         .expect("the registry");
         at_start(root.path());
         press(root.path(), &digest_of(root.path())).expect("the press is kept");
-        assert_eq!(mode(root.path(), Family::Vaults) == Mode::Off, opened, "{text}");
+        assert_eq!(
+            mode(root.path(), Family::Vaults) == Mode::Off,
+            opened,
+            "{text}"
+        );
         let ctx = Ctx::new(root.path(), Env::of(&[]));
         assert_eq!(
             brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
@@ -912,6 +916,9 @@ fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced(
         );
         // Its own persona, always; a vault the project does not register, never.
         assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
-        assert!(brokered::authorise(&ctx, Some("devops"), "nope").is_err(), "{text}");
+        assert!(
+            brokered::authorise(&ctx, Some("devops"), "nope").is_err(),
+            "{text}"
+        );
     }
 }

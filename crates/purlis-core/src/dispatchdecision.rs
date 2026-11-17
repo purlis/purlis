@@ -1592,7 +1592,10 @@ mod tests {
         // Dispatched by a chat on no persona, which has since closed.
         let steward = kept(1, &[None], Some("steward"));
         let got = asked(&steward, None, None);
-        assert!(got.policy.is_some(), "the asker's policy goes with the new chat");
+        assert!(
+            got.policy.is_some(),
+            "the asker's policy goes with the new chat"
+        );
         assert_eq!(
             got,
             Asked {

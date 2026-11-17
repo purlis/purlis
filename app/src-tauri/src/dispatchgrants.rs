@@ -667,6 +667,9 @@ impl Store {
                 Requested::Refused(dispatchgrant::never_above_said(&above, target)),
                 None,
             ),
+            // The project's policy denies it (ticket T1.1-73): no grant lifts it, so nobody is
+            // asked and nothing is held.
+            Covers::Denied(_) => (Requested::Refused(dispatchgrant::denied_said(target)), None),
             // The person said no on this chat's tab already: their answer, and no second
             // question.
             Covers::NeedsGrant | Covers::Unread if self.is_kept_blocked(&asking, target) => {
