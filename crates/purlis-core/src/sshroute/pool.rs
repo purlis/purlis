@@ -170,71 +170,121 @@ pub fn docker_through(
     if !opened && checked_lately(pool, &remote.pin) {
         return Ok(through);
     }
-    {
-        let check = |through: &Docker| connect::engine_holds(through, &remote.route, &remote.pin);
-        let mut open_again = || {
-            forward::let_go(pool);
-            let (socket, _) = forward::hold_noting(&opening)
-                .map_err(|said| diagnosed(ssh, remote, pool, settings_in, said))?;
-            pointed(docker, ssh, pool, remote, socket, settings_in)
-        };
-        let (through, opened, checked) =
-            checked_or_opened_again(through, opened, &check, &mut open_again);
-        if let Err(finding) = checked {
-            // Nothing more goes over a forward to an engine that isn't the pinned one.
-            forget_checked(pool);
-            // Asked of a forward just opened only, so at most once an opening: a server that
-            // refuses it is let go of below, and its next try opens it again.
-            let finding = match finding {
-                Finding::EngineSilent { said, .. } if opened => {
-                    connect::silent_or_refused(&opening, said)
-                }
-                finding => finding,
-            };
-            if matches!(
-                finding,
-                Finding::EngineChanged { .. } | Finding::ForwardingRefused { .. }
-            ) {
-                forward::let_go(pool);
-            }
-            if matches!(finding, Finding::ForwardingRefused { .. }) {
-                // A forward the server refuses opens here all the same and carries nothing: it
-                // waits, and is looked at again, as one that won't open does (#6349).
-                let now = Instant::now();
-                let failed = match kept {
-                    Some(kept) => kept.failed_again(now, Some(finding.clone())),
-                    None => Failing::first(finding.clone(), now),
-                };
-                note_failing(pool, &remote.pin, failed);
-            }
-            return Err(finding);
+    let check = |through: &Docker| connect::engine_holds(through, &remote.route, &remote.pin);
+    let mut open_again = || {
+        // Opened again only once its ssh has ended: one that runs on carries the other links'
+        // streams, and an engine that is only slow is not cut from them.
+        if !dropped_within(pool, NOTICED_WITHIN) {
+            return Ok(None);
         }
-        note_checked(pool, &remote.pin);
-        Ok(through)
+        let (socket, _) = forward::hold_noting(&opening)
+            .map_err(|said| diagnosed(ssh, remote, pool, settings_in, said))?;
+        pointed(docker, ssh, pool, remote, socket, settings_in).map(Some)
+    };
+    let Through {
+        docker: through,
+        opened,
+        checked,
+    } = checked_or_opened_again(through, opened, &check, &mut open_again);
+    if let Err(finding) = checked {
+        // Nothing more goes over a forward to an engine that isn't the pinned one.
+        forget_checked(pool);
+        // Asked of a forward just opened only, so at most once an opening: a server that
+        // refuses it is let go of below, and its next try opens it again.
+        let finding = match finding {
+            Finding::EngineSilent { said, .. } if opened => {
+                connect::silent_or_refused(&opening, said)
+            }
+            finding => finding,
+        };
+        if matches!(
+            finding,
+            Finding::EngineChanged { .. } | Finding::ForwardingRefused { .. }
+        ) {
+            forward::let_go(pool);
+        }
+        if matches!(finding, Finding::ForwardingRefused { .. }) {
+            // A forward the server refuses opens here all the same and carries nothing: it
+            // waits, and is looked at again, as one that won't open does (#6349).
+            let now = Instant::now();
+            let failed = match kept {
+                Some(kept) => kept.failed_again(now, Some(finding.clone())),
+                None => Failing::first(finding.clone(), now),
+            };
+            note_failing(pool, &remote.pin, failed);
+        }
+        return Err(finding);
     }
+    note_checked(pool, &remote.pin);
+    Ok(through)
+}
+
+/// How long a forward's `ssh` is given to notice that its far end went away, once a check
+/// through it failed: the check's own write is what tells it, and it ends within moments.
+const NOTICED_WITHIN: Duration = Duration::from_secs(2);
+
+/// Whether pool `pool`'s forward has dropped, or drops within `within`.
+fn dropped_within(pool: &str, within: Duration) -> bool {
+    let until = Instant::now() + within;
+    loop {
+        if forward::dropped(pool) {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// What [`checked_or_opened_again`] ends on: the `docker` pointed at the forward, whether that
+/// forward was opened now, and the engine's check through it.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Through<D> {
+    pub docker: D,
+    pub opened: bool,
+    pub checked: Result<(), Finding>,
 }
 
 /// **The engine's check through `held`, opened once again where a forward held from before went
 /// silent** (ADR 0123, amended 2026-11-17): after its machine restarts, a forward's `ssh` runs on
 /// and its socket stays until something crosses it, so it looks alive while nothing gets through.
-/// One held from before (`opened` false) whose engine is silent is opened again by `open_again`
-/// and checked once more; one just opened, or an engine that answers as another, is not. What
-/// it ends on, whether that was opened now, and the check.
+/// One held from before (`opened` false) whose engine is silent is handed to `open_again`, which
+/// opens it again and answers the new one, or answers `None` where it still holds (its `ssh`
+/// runs on: the engine is slow, and the forward is kept for the links on it); the new one is
+/// checked once more. One just opened, or an engine that answers as another, is not.
 pub(crate) fn checked_or_opened_again<D>(
     held: D,
     opened: bool,
     check: &dyn Fn(&D) -> Result<(), Finding>,
-    open_again: &mut dyn FnMut() -> Result<D, Finding>,
-) -> (D, bool, Result<(), Finding>) {
+    open_again: &mut dyn FnMut() -> Result<Option<D>, Finding>,
+) -> Through<D> {
     match check(&held) {
-        Err(Finding::EngineSilent { .. }) if !opened => match open_again() {
-            Ok(again) => {
+        Err(silent @ Finding::EngineSilent { .. }) if !opened => match open_again() {
+            Ok(Some(again)) => {
                 let checked = check(&again);
-                (again, true, checked)
+                Through {
+                    docker: again,
+                    opened: true,
+                    checked,
+                }
             }
-            Err(finding) => (held, false, Err(finding)),
+            Ok(None) => Through {
+                docker: held,
+                opened,
+                checked: Err(silent),
+            },
+            Err(finding) => Through {
+                docker: held,
+                opened,
+                checked: Err(finding),
+            },
         },
-        checked => (held, opened, checked),
+        checked => Through {
+            docker: held,
+            opened,
+            checked,
+        },
     }
 }
 
@@ -715,43 +765,61 @@ mod tests {
 
     #[test]
     fn a_forward_held_from_before_that_went_silent_is_opened_once_again_before_it_refuses() {
-        // Its machine restarted: ssh still runs and its socket is there, and nothing crosses.
+        // Its machine restarted: ssh ran on and its socket stayed, and nothing crossed.
         let check = |through: &u32| if *through == 1 { Err(silent()) } else { Ok(()) };
         let mut opened = 0;
-        let (through, fresh, checked) = checked_or_opened_again(1, false, &check, &mut || {
+        let through = checked_or_opened_again(1, false, &check, &mut || {
             opened += 1;
-            Ok(2)
+            Ok(Some(2))
         });
-        assert_eq!((through, fresh, checked), (2, true, Ok(())));
+        assert_eq!(
+            through,
+            Through {
+                docker: 2,
+                opened: true,
+                checked: Ok(())
+            }
+        );
         assert_eq!(opened, 1, "opened again once");
 
         // Silent again through the new one: said, with nothing more opened.
         let mut opened = 0;
-        let (_, fresh, checked) =
-            checked_or_opened_again(1, false, &|_: &u32| Err(silent()), &mut || {
-                opened += 1;
-                Ok(2)
-            });
-        assert_eq!((fresh, checked), (true, Err(silent())));
+        let through = checked_or_opened_again(1, false, &|_: &u32| Err(silent()), &mut || {
+            opened += 1;
+            Ok(Some(2))
+        });
+        assert_eq!((through.opened, through.checked), (true, Err(silent())));
         assert_eq!(opened, 1);
+    }
+
+    #[test]
+    fn a_forward_whose_ssh_runs_on_is_kept_for_its_links_when_the_engine_is_only_slow() {
+        let through = checked_or_opened_again(1, false, &|_: &u32| Err(silent()), &mut || Ok(None));
+        assert_eq!(
+            through,
+            Through {
+                docker: 1,
+                opened: false,
+                checked: Err(silent())
+            }
+        );
     }
 
     #[test]
     fn a_forward_just_opened_or_an_engine_not_the_pinned_one_is_never_opened_again() {
         let mut opened = 0;
-        let (_, _, checked) =
-            checked_or_opened_again(1, true, &|_: &u32| Err(silent()), &mut || {
-                opened += 1;
-                Ok(2)
-            });
-        assert_eq!(checked, Err(silent()));
+        let through = checked_or_opened_again(1, true, &|_: &u32| Err(silent()), &mut || {
+            opened += 1;
+            Ok(Some(2))
+        });
+        assert_eq!(through.checked, Err(silent()));
         let changed = Finding::Here("another engine".to_owned());
-        let (_, _, checked) =
+        let through =
             checked_or_opened_again(1, false, &|_: &u32| Err(changed.clone()), &mut || {
                 opened += 1;
-                Ok(2)
+                Ok(Some(2))
             });
-        assert_eq!(checked, Err(changed));
+        assert_eq!(through.checked, Err(changed));
         assert_eq!(opened, 0);
     }
 }
