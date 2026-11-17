@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794924972899,
+  "lastUpdate": 1794928657939,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50778,6 +50778,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8954105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.444, 100.632, 101.895, 102.406, 104.595 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "180ef4fc0fd443a24809f08172de7bec8fa6d636",
+          "message": "A sandboxed chat never reads your SSH keys or forge and cloud credential files (ADR 0067 amended, Q321) (#7008)\n\n* A sandboxed chat never reads the person's SSH keys or forge and cloud credential files (ADR 0067 amended 2026-11-16, Q321)\n\nA sixth denial class, credentials, holds at the full sandbox and the floor in\nevery compile: Claude Code's settings, the Seatbelt profile and the Linux wrap.\nIt covers the SSH private keys in ~/.ssh and the ruled forge and cloud files,\nunder every spelling on macOS. A refused read of one gets its own Notice: a\nforge token comes only through purlis's vault. The person's own SSH agent stays\nunreachable until granted, now pinned by tests; the per-chat agent is owed to\n#1350.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JNHWCRKW80W0VV4YVGKA9H\nPurlis-Persona: steward\n\n* The credentials tests keep the person's agent outside the temp folder, so its grant holds on Linux too\n\nThe fixture bound the agent's socket in a tempfile folder, inside the\nsystem temp folder a chat may write, where SocketGround refuses every\nsocket grant. On Linux CI that is /tmp, and both agent tests failed\n(\"MacOs at Full: the person's agent is not reached once allowed\"; the\nClaude Code settings listed no socket). The agent's path now sits at the\nroot, outside every writable folder, unbound: a kept grant stands while\nthe agent is not running, and what a chat reaches is read from its rules.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JY2QJ5WV6TBWYB6V2EYPG8\nPurlis-Persona: steward\n\n* Credential files are held at Full, and at the floor only where [policy] enforces secrets.credential_files (Q325); the review of #7008\n\n- Q325: a new policy family, secrets.credential_files (off or enforce): team and strict\n  enforce it, open, watch and hold leave the class out of the floor whole, so no folder\n  above a credential is pinned there. The full sandbox holds it always.\n- ~/.ssh is denied as a folder, with config, known_hosts, known_hosts.old and *.pub read\n  again (Seatbelt allow after the deny; Claude Code allowRead), so a key made later by any\n  name is held and a large ~/.ssh no longer overflows the profile.\n- GH_CONFIG_DIR, XDG_CONFIG_HOME, AWS_SHARED_CREDENTIALS_FILE, DOCKER_CONFIG, CLOUDSDK_CONFIG\n  and NETRC move the denied files with them.\n- Adds gcloud's access_tokens.db and application_default_credentials.json, git's XDG\n  credentials, and AWS's SSO and CLI caches.\n- The credentials Notice comes before the protected-file and project-state arms, covers a\n  refused write, and offers the SSH agent only on macOS; is_credential folds case,\n  firmlink twins and subfolders, and follows the same variables.\n- Tests: launchd's agent socket under /private/tmp is grantable; Linux Codex and opencode\n  credential cells; the hooks test reads a real kind_of.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M18CDKGXV468XAQQV5YECZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T13:56:20Z",
+          "tree_id": "c39399267599d3cfb31136feddb3d4421649054a",
+          "url": "https://github.com/purlis/purlis/commit/180ef4fc0fd443a24809f08172de7bec8fa6d636"
+        },
+        "date": 1794928651677,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.51193,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.507, 0.512, 0.514, 0.515 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.250144,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.999, 16.094, 16.250, 16.283, 16.310 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.673419,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.596, 101.320, 101.673, 102.537, 103.540 ms"
           }
         ]
       }
