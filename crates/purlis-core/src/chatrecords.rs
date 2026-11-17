@@ -415,6 +415,19 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
         .collect()
 }
 
+/// **The highest number a closed chat in the project at `root` answers to** (#6740): the one it
+/// closed under or one it had before a restart, or 0 where none closed. A launch holds the
+/// counter of numbers dealt (`reopen::Record::dealt`) at or above it, so a number a closed
+/// record still answers to is never dealt to a new chat, even where the record of open chats was
+/// lost.
+pub fn highest_number(root: &Path) -> u32 {
+    every(root)
+        .iter()
+        .flat_map(|chat| std::iter::once(chat.number).chain(chat.earlier.iter().copied()))
+        .max()
+        .unwrap_or(0)
+}
+
 /// **The chat that closed under `number`**, or had it before a restart (#6486), in `chats` as
 /// [`every`] read them: the newest close, as a number is never dealt twice in a project
 /// (`reopen::Record::dealt`).
