@@ -266,9 +266,10 @@ fn the_pins_left_out_change_no_write_a_command_may_make() {
         - after.sandbox["filesystem"]["denyWrite"]
             .as_array()
             .map_or(0, Vec::len);
+    // At least every other workspace's branch folders' pins, by each of their names.
     assert!(
-        left_out > 400,
-        "most of the plane's pins are left out: {left_out}"
+        left_out >= (WORKSPACES - 1) * BRANCH_FOLDERS,
+        "every other workspace's pins are left out: {left_out}"
     );
 
     let cwd = cwd.display().to_string();
