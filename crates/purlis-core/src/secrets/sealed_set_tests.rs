@@ -6,7 +6,7 @@ use super::*;
 const STORE: &str = "test-answers";
 
 fn fresh() -> Set {
-    super::super::seal::forget_kept_for_this_test(None);
+    super::super::seal::forget_kept_for_this_test();
     super::super::seal::set_for_this_test(Some(vec![7; 32]));
     Set::default()
 }
@@ -123,7 +123,7 @@ fn a_rewrite_never_seals_what_it_did_not_verify() {
 fn a_set_whose_anchor_is_gone_counts_nothing() {
     let mut set = fresh();
     with(&mut set, "plane-a", &[("mine", "steward -> devops")]);
-    super::super::seal::forget_kept_for_this_test(None);
+    super::super::seal::forget_kept_for_this_test();
     assert_eq!(set.verify(STORE, "plane-a").standing, Standing::Broken);
 }
 

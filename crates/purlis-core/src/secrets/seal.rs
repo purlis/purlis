@@ -261,18 +261,6 @@ pub fn kept_exists(kind: &str, clone: &str) -> bool {
     }
 }
 
-/// **A test's keyring loses what it kept** for this thread: every kept seal, or the one of
-/// `kind` and `clone`.
-#[cfg(test)]
-pub(crate) fn forget_kept_for_this_test(which: Option<(&str, &str)>) {
-    TEST_KEPT.with(|kept| match which {
-        Some((kind, clone)) => {
-            kept.borrow_mut().remove(&kept_account(kind, clone));
-        }
-        None => kept.borrow_mut().clear(),
-    });
-}
-
 /// **Whether the seal kept for `kind` and `clone` holds for `text`**: `None` where none was ever
 /// kept, or this process cannot verify (only the app can); `Some(false)` where one was kept and
 /// `text` is not what it sealed, or the keyring cannot be read.

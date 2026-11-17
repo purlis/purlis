@@ -408,6 +408,7 @@ fn a_closed_handoff_reopens_as_an_ordinary_chat_that_owes_nobody_anything() {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..as_it_ran(Some(CONVERSATION))
     };

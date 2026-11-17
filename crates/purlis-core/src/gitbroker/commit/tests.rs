@@ -1289,7 +1289,7 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
         common: t.here.common.clone(),
         clone: t.here.clone.clone(),
     };
-    git::isolated(&plain, || made(&held.1, 4, &ask, &here, &identity))
+    git::isolated(&plain, || made(&held.1, 4, None, &ask, &here, &identity))
         .map_err(|refused| refused.why)
         .expect("the held project's `open` lets the scan's finding through");
 }

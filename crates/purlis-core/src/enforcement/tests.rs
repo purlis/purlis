@@ -875,6 +875,7 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
     assert_eq!(found.1, strict());
+}
 
 /// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
 /// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
