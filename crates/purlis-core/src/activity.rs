@@ -416,7 +416,7 @@ fn lines_in(tasks: Vec<(&Record, u32)>) -> Vec<Line> {
 /// ([`dispatchrecord::expire_in`]), so a timeline never shows words past their time, however
 /// long the project has been open. **The store is read once**, within [`Bounds::TAB`], and the
 /// expiry works on that one read (#1520).
-pub fn timeline(root: &Path, session: &ChatRef, now: chrono::DateTime<chrono::Utc>) -> Timeline {
+pub fn timeline(root: &Path, session: &ChatRef, now: jiff::Timestamp) -> Timeline {
     timeline_within(root, session, now, Bounds::TAB)
 }
 
@@ -424,7 +424,7 @@ pub fn timeline(root: &Path, session: &ChatRef, now: chrono::DateTime<chrono::Ut
 pub fn timeline_within(
     root: &Path,
     session: &ChatRef,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     bounds: Bounds,
 ) -> Timeline {
     let (mut read, unread) = dispatchrecord::newest(root, bounds.records, now);

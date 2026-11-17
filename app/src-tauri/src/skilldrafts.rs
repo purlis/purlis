@@ -431,7 +431,7 @@ pub(crate) async fn skill_draft_chat(
                     None,
                     level.clone(),
                     StudioWork::Draft,
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                 )),
             },
             purlis_core::engine::Size { columns, rows },
@@ -569,7 +569,7 @@ fn on_a_skill(
         Some(name.to_owned()),
         level.clone(),
         work,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -773,7 +773,7 @@ pub(crate) async fn skill_draft_redo(
                     Some(draft.name.clone()),
                     draft.level.clone(),
                     StudioWork::Redo,
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                 )),
             },
             purlis_core::engine::Size { columns, rows },
@@ -991,9 +991,7 @@ mod tests {
     #[test]
     fn the_window_reads_a_studio_chats_skill_level_and_job_off_its_record() {
         // #5185: what the chat's chip and the skill page's line are drawn from.
-        let started = chrono::DateTime::parse_from_rfc3339("2026-11-04T17:31:00Z")
-            .expect("a time")
-            .with_timezone(&chrono::Utc);
+        let started = str::parse::<jiff::Timestamp>("2026-11-04T17:31:00Z").expect("a time");
         let link = StudioLink::from(&StudioJob::new(
             Some("test-design".to_owned()),
             purlis_core::skills::verbs::Level::workspace("purlis-demo"),

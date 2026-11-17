@@ -628,7 +628,7 @@ fn a_task_record(project: &Path, folder: &str) -> String {
             brief: "Look.".to_owned(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a task's record")
     .id

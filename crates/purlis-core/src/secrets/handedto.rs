@@ -1,0 +1,738 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The secrets purlis handed each chat, known well enough to mask them** (#6309, parent
+//! #5820): what a dispatched task's kept screen ([`crate::chatscreens`]) is masked with before
+//! it is written, so a kept screen never holds one of purlis's own secrets.
+//!
+//! The person ruled it on 2026-11-15: every vault value purlis handed the chat and every
+//! credential it brokered for it, matched exactly, each shown as a named mask,
+//! `‹secret: github-token›` ([`mask`]), so *Read it* says what was there without showing it.
+//!
+//! - **Never the value itself**, as [`super::seen`] keeps none: each is held as its entry's name,
+//!   its length and its keyed digest under [`super::seen`]'s key for the process, so nothing here
+//!   can give a value back, in a crash report or anywhere else.
+//! - **Per chat, by project and chat number**: what the app's own code knows of the chat asking
+//!   (`brokered::Asker`), remembered as each value is handed ([`remember`]) and forgotten when
+//!   the chat closes for good ([`forget`]).
+//! - **And named on disk, never a value**: each chat's entries, by vault and key, in
+//!   `<state>/app/chat-handed/<chat>.names` ([`dir`]), each with the form its value was handed
+//!   in ([`Form`]: escaped for a dotenv file, pointed at a tunnel's port) and a seal of that
+//!   value under the plane's key ([`Named`]), so a launch after a crash, which kept nothing in
+//!   memory of what the chat was handed before, reads those entries again, makes each form
+//!   again, and masks its screen with it where it is the value handed ([`masked_for`]). Clone state, denied
+//!   to every sandboxed chat, gone as the chat closes for good, and swept at the project's open
+//!   once 30 days old, but a chat's the plane will bring back ([`on_open`]).
+//! - **Matched in the text a screen shows, not the sequences that draw it** ([`masked`]): a
+//!   value a colour change or a soft wrap runs through is still one run of characters there.
+//!   A hard line break is not: a value the program printed in two pieces is two words. A value
+//!   of several lines is known by each of its lines too ([`Known::of`]), so it is masked
+//!   however a program lays its lines out.
+//! - **Every overlapping find masked whole**: two values that overlap on a screen become one
+//!   stretch, shown as the mask of each, in the order they start, so no tail of either is left.
+//! - **A value shorter than [`super::seen::SHORTEST`] is not masked**: as `seen` says, three
+//!   characters or fewer is an ordinary word as often as a secret.
+//! - **It fails closed**: a value whose entry cannot be named on disk is not handed
+//!   ([`remember`]), and a screen with a value handed that cannot be known is not maskable
+//!   ([`masked_for`] answers `None`), so it is not kept. That is where no key could be made for
+//!   the process, where the names on disk do not read, and where an entry named there cannot be
+//!   read again without asking the
+//!   person ([`read_again`]): a vault whose value is read through a program that may ask (1Password,
+//!   a reference to another store, an entry linked into either), an entry gone, an entry whose
+//!   value changed since it was handed (its seal is not the value's read again), and a
+//!   value made once ([`Form::Unrepeatable`]): a one-time code, a GitHub App token.
+//! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
+//!   where no app answered, and anything the chat found on its own.
+
+use std::collections::{BTreeSet, HashMap};
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+use super::seen::{self, Digest};
+
+/// How a masked value is shown: its entry's name in angle quotes, never its value.
+pub fn mask(name: &str) -> String {
+    format!("‹secret: {name}›")
+}
+
+/// One secret handed to a chat, as it is known: its entry's name, and its length, its digest
+/// and its print ([`Print`]).
+#[derive(Clone)]
+pub struct Known {
+    name: String,
+    length: usize,
+    digest: Digest,
+    print: u64,
+}
+
+/// **A rolling hash of a run of bytes** (Rabin–Karp, modulo the Mersenne prime 2⁶¹−1), under a
+/// base drawn from the process's key: what [`masked`] slides along a screen to find the few
+/// windows worth a digest, one step a byte, so the cost of a screen is its length times the
+/// number of lengths looked for, and not that times the lengths themselves. A print says no more
+/// of a value than its digest does, to anyone without the key.
+#[derive(Clone, Copy)]
+struct Print {
+    base: u64,
+}
+
+impl Print {
+    const MODULUS: u64 = (1 << 61) - 1;
+
+    /// The process's: `None` where no key could be made for it.
+    fn of_the_process() -> Option<Self> {
+        let digest = seen::digest(
+            seen::keyed()?,
+            b"purlis: the base a kept screen is printed by",
+        );
+        let drawn = u64::from_le_bytes(digest[..8].try_into().ok()?);
+        Some(Self {
+            base: drawn % (Self::MODULUS - 2) + 2,
+        })
+    }
+
+    /// `a` times `b`, each below the modulus: the product, under 2¹²², reduced as a Mersenne
+    /// prime allows, its bits above the 61st added to those below.
+    fn times(a: u64, b: u64) -> u64 {
+        let product = u128::from(a) * u128::from(b);
+        // Both halves are under 2⁶¹: the one by the mask, the other as the product's top.
+        let (low, high) = ((product as u64) & Self::MODULUS, (product >> 61) as u64);
+        Self::plus(low, high)
+    }
+
+    /// `a` plus `b`, each below the modulus.
+    fn plus(a: u64, b: u64) -> u64 {
+        let sum = a + b;
+        if sum >= Self::MODULUS {
+            sum - Self::MODULUS
+        } else {
+            sum
+        }
+    }
+
+    /// `bytes`' print: each byte counted as one more than its value, so a run of zero bytes is
+    /// not the empty run.
+    fn of(self, bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0, |print, &byte| {
+            Self::plus(Self::times(print, self.base), u64::from(byte) + 1)
+        })
+    }
+
+    /// The print of every run of `length` bytes of `text`, by where it starts.
+    fn rolled(self, text: &[u8], length: usize) -> impl Iterator<Item = u64> + '_ {
+        let first = (length > 0 && length <= text.len()).then(|| self.of(&text[..length]));
+        // What the byte leaving a window had counted for: the base to the power `length - 1`.
+        let top = (1..length).fold(1, |power, _| Self::times(power, self.base));
+        let mut print = first.unwrap_or_default();
+        let windows = first.map_or(0, |_| text.len() - length + 1);
+        (0..windows).map(move |start| {
+            if start > 0 {
+                let gone = Self::times(u64::from(text[start - 1]) + 1, top);
+                let kept = Self::plus(print, Self::MODULUS - gone);
+                print = Self::plus(
+                    Self::times(kept, self.base),
+                    u64::from(text[start + length - 1]) + 1,
+                );
+            }
+            print
+        })
+    }
+}
+
+/// **The most window steps one screen is looked at with** ([`masked`]): its length times the
+/// number of lengths looked for. A screen it would take more is not maskable, so it is not kept
+/// (never kept unmasked): 4 MiB, the most a kept screen holds, against 64 lengths, which three
+/// dozen values of several lines each come to.
+pub const MATCH_STEPS_AT_MOST: usize = 4 * 1024 * 1024 * 64;
+
+impl Known {
+    /// `value`, handed as `name`, as it is known: as written and with the white space around it
+    /// trimmed, which a value read from a file often carries. A value of several lines is known
+    /// as a terminal shows it too, its lines ended by a carriage return and a line feed, and by
+    /// each line alone, trimmed, as a program that prints it line by line, or indents it, shows
+    /// it. Any form shorter than [`seen::SHORTEST`] is left out; `None` where no key could be
+    /// made for the process.
+    pub fn of(name: &str, value: &str) -> Option<Vec<Self>> {
+        let keyed = seen::keyed()?;
+        let printed = Print::of_the_process()?;
+        let trimmed = value.trim();
+        let mut forms: Vec<zeroize::Zeroizing<String>> = [value, trimmed]
+            .into_iter()
+            .map(|one| zeroize::Zeroizing::new(one.to_owned()))
+            .collect();
+        if trimmed.contains('\n') {
+            let lines: Vec<&str> = trimmed
+                .split('\n')
+                .map(|line| line.trim_end_matches('\r'))
+                .collect();
+            forms.push(zeroize::Zeroizing::new(lines.join("\r\n")));
+            forms.extend(
+                lines
+                    .iter()
+                    .map(|line| zeroize::Zeroizing::new(line.trim().to_owned())),
+            );
+        }
+        let mut known: Vec<Self> = Vec::new();
+        for one in &forms {
+            let bytes = one.as_bytes();
+            if bytes.len() < seen::SHORTEST {
+                continue;
+            }
+            let digest = seen::digest(keyed, bytes);
+            if known.iter().any(|k| k.digest == digest) {
+                continue;
+            }
+            known.push(Self {
+                name: name.to_owned(),
+                length: bytes.len(),
+                digest,
+                print: printed.of(bytes),
+            });
+        }
+        Some(known)
+    }
+}
+
+/// What a chat was handed, or that something was handed it that could not be known.
+#[derive(Clone, Default)]
+struct Handed {
+    known: Vec<Known>,
+    /// The entries `known` holds, each with its value's seal: named on disk once, and not read
+    /// again.
+    entries: BTreeSet<Named>,
+    blind: bool,
+}
+
+/// A vault's entry, by its vault and its key, and the form its value was handed in: what [`dir`]
+/// names, never a value.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct Entry {
+    pub vault: String,
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Form::is_as_read")]
+    pub form: Form,
+}
+
+impl Entry {
+    /// The entry `key` of vault `vault`, its value handed as it was read.
+    pub fn new(vault: &str, key: &str) -> Self {
+        Self {
+            vault: vault.to_owned(),
+            key: key.to_owned(),
+            form: Form::AsRead,
+        }
+    }
+
+    /// This entry, its value handed in `form`.
+    #[must_use]
+    pub fn in_form(self, form: Form) -> Self {
+        Self { form, ..self }
+    }
+}
+
+/// The purpose an entry's seal ([`Named`]) is made for, and no other seal is.
+const SEALED_FOR: &str = "a value handed to a chat";
+
+/// **An entry as [`dir`] names it: and the seal of the value it was handed**, `HMAC-SHA256` of
+/// its vault, its key and that value in its form, under a key derived from the plane's
+/// ([`super::fingerprint::seal`]), which lasts beyond the process and which no sandboxed chat
+/// reads. Never the value: a launch after a crash reads the entry again, makes its form again
+/// and seals that, and a value that does not seal the same (an entry changed since it was
+/// handed) leaves the screen unmaskable, as does a line with no seal of purlis's.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct Named {
+    #[serde(flatten)]
+    entry: Entry,
+    seal: String,
+}
+
+impl Named {
+    /// `entry`, handed `value` in its form, as the project at `root` names it: an error where
+    /// no seal can be made, as there is no plane key and none can be made.
+    pub fn of(root: &Path, entry: Entry, value: &str) -> std::io::Result<Self> {
+        let ctx = super::Ctx::new(root, super::Env::from_process());
+        let seal = super::fingerprint::seal(&ctx, SEALED_FOR, &[&entry.vault, &entry.key, value])
+            .ok_or_else(|| {
+            std::io::Error::other(
+                "the plane's key, which seals what a chat was handed, could not be made",
+            )
+        })?;
+        Ok(Self { entry, seal })
+    }
+
+    /// Whether `value`, `self`'s entry's value made again in its form, is the value it was
+    /// handed: never where the plane has no key.
+    fn seals(&self, ctx: &super::Ctx, value: &str) -> bool {
+        super::fingerprint::seal_with_the_key_there(
+            ctx,
+            SEALED_FOR,
+            &[&self.entry.vault, &self.entry.key, value],
+        )
+        .is_some_and(|seal| seal == self.seal)
+    }
+}
+
+/// **The form an entry's value was handed in**, as a launch after a crash makes it again from
+/// the value read ([`Form::of`]): nothing in it is secret.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Form {
+    /// As it was read.
+    #[default]
+    AsRead,
+    /// As a dotenv file holds it ([`super::dotenv::escaped`]).
+    DotenvEscaped,
+    /// Pointed at a tunnel on the loopback's port `port` (#1667) for a client with `pgsslmode`
+    /// and `reads_hostaddr` ([`crate::sandbox::tunnel::Client`]), dotenv-escaped too where
+    /// `escaped`.
+    Tunnelled {
+        port: u16,
+        pgsslmode: Option<String>,
+        reads_hostaddr: bool,
+        escaped: bool,
+    },
+    /// Made once and never again: a one-time code, a token minted with the entry. A launch after
+    /// a crash cannot know it.
+    Unrepeatable,
+}
+
+impl Form {
+    fn is_as_read(&self) -> bool {
+        *self == Self::AsRead
+    }
+
+    /// **`value` in this form**: `None` where it cannot be made again.
+    pub fn of(&self, value: &str) -> Option<zeroize::Zeroizing<String>> {
+        let made = match self {
+            Self::AsRead => value.to_owned(),
+            Self::DotenvEscaped => super::dotenv::escaped(value),
+            Self::Tunnelled {
+                port,
+                pgsslmode,
+                reads_hostaddr,
+                escaped,
+            } => {
+                let client = crate::sandbox::tunnel::Client {
+                    pgsslmode: pgsslmode.clone(),
+                    reads_hostaddr: *reads_hostaddr,
+                };
+                let pointed = zeroize::Zeroizing::new(
+                    crate::sandbox::tunnel::pointed_for(value, &client)?.at(*port),
+                );
+                if *escaped {
+                    super::dotenv::escaped(&pointed)
+                } else {
+                    pointed.to_string()
+                }
+            }
+            Self::Unrepeatable => return None,
+        };
+        Some(zeroize::Zeroizing::new(made))
+    }
+}
+
+static HANDED: Mutex<Option<HashMap<(PathBuf, u32), Handed>>> = Mutex::new(None);
+
+fn handed() -> MutexGuard<'static, Option<HashMap<(PathBuf, u32), Handed>>> {
+    HANDED.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The store's folder under the state folder's `app/`.
+pub const DIR_NAME: &str = "chat-handed";
+
+const SUFFIX: &str = ".names";
+
+/// The store of the project at `root`: each chat's entries, by its number.
+pub fn dir(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join(DIR_NAME)
+}
+
+fn file(root: &Path, chat: u32) -> PathBuf {
+    dir(root).join(format!("{chat}{SUFFIX}"))
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed `value`, `entry`'s value in
+/// its form**: from now on its kept screen masks it ([`masked_for`]). Called before the value
+/// is handed: where its entry could not be named on disk, it answers why, and the value is not
+/// handed, or a launch after a crash would keep the chat's screen unmasked.
+pub fn remember(root: &Path, chat: u32, entry: &Entry, value: &str) -> std::io::Result<()> {
+    remember_known(
+        root,
+        chat,
+        &[Named::of(root, entry.clone(), value)?],
+        Known::of(&entry.key, value),
+    )
+}
+
+/// **Remembers that chat `chat` of the project at `root` was handed `entries`, each sealed with
+/// its value ([`Named::of`]), known as `known`**, or, for `None`, as something that could not
+/// be known ([`Known::of`]): for values read before the chat had its number, as a profile's
+/// sign-in is. Each entry not named for the chat before is named on disk ([`dir`]); where that
+/// fails, it answers why, as [`remember`] does, and the entries are named again at the next
+/// hand-out.
+pub fn remember_known(
+    root: &Path,
+    chat: u32,
+    entries: &[Named],
+    known: Option<Vec<Known>>,
+) -> std::io::Result<()> {
+    let key = (root.to_path_buf(), chat);
+    let mut held = handed();
+    let one = held
+        .get_or_insert_with(HashMap::new)
+        .entry(key.clone())
+        .or_default();
+    match known {
+        Some(known) => one.known.extend(known),
+        None => one.blind = true,
+    }
+    let new: Vec<Named> = entries
+        .iter()
+        .filter(|entry| one.entries.insert((*entry).clone()))
+        .cloned()
+        .collect();
+    drop(held);
+    if new.is_empty() {
+        return Ok(());
+    }
+    name_on_disk(root, chat, &new).inspect_err(|_| {
+        if let Some(one) = handed().as_mut().and_then(|handed| handed.get_mut(&key)) {
+            for entry in &new {
+                one.entries.remove(entry);
+            }
+        }
+    })
+}
+
+/// `new` added to what chat `chat` has named on disk, the file written whole and private. A
+/// file there that does not read is not written over: what it named would be lost.
+fn name_on_disk(root: &Path, chat: u32, new: &[Named]) -> std::io::Result<()> {
+    let mut all = named(root, chat)?;
+    for entry in new {
+        if !all.contains(entry) {
+            all.push(entry.clone());
+        }
+    }
+    let mut text = String::new();
+    for entry in &all {
+        text.push_str(&serde_json::to_string(entry).map_err(std::io::Error::other)?);
+        text.push('\n');
+    }
+    crate::keptscreen::made_private(&dir(root))?;
+    crate::rewrite::replace(
+        &dir(root),
+        &file(root, chat),
+        text.as_bytes(),
+        crate::rewrite::Mode::Private,
+    )
+}
+
+/// **Forgets what chat `chat` of the project at `root` was handed**, as it closes for good: a
+/// chat number is given again to a later chat.
+pub fn forget(root: &Path, chat: u32) {
+    if let Some(handed) = handed().as_mut() {
+        handed.remove(&(root.to_path_buf(), chat));
+    }
+    match std::fs::remove_file(file(root, chat)) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
+            tracing::info!("purlis: what chat {chat} was handed is still named on disk ({why})");
+        }
+        _ => {}
+    }
+}
+
+/// What this process holds of chat `chat` of the project at `root` let go of, its names left on
+/// disk: as a crash leaves them.
+#[cfg(test)]
+pub(crate) fn as_a_crash_leaves_it(root: &Path, chat: u32) {
+    if let Some(handed) = handed().as_mut() {
+        handed.remove(&(root.to_path_buf(), chat));
+    }
+}
+
+/// The entries named on disk for chat `chat`, read through no link: none where it has no file.
+/// A file that cannot be read, or a line in it that does not parse, is an error: what it names
+/// is not known.
+fn named(root: &Path, chat: u32) -> std::io::Result<Vec<Named>> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let mut text = String::new();
+    match crate::contain::nofollow(&mut options)
+        .open(file(root, chat))
+        .and_then(|mut opened| std::io::Read::read_to_string(&mut opened, &mut text))
+    {
+        Ok(_) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(why) => return Err(why),
+    }
+    text.lines()
+        .map(|line| serde_json::from_str(line).map_err(std::io::Error::other))
+        .collect()
+}
+
+/// **Sweeps the store at the project's open**: a chat's names last written
+/// [`crate::retention::KEEP_FOR`] or more before go, as a task's screen and its record do, but
+/// never those of a chat in `live`, one the plane's reopen record brings back, whose screen is
+/// still to be kept. `None` where that record cannot say which they are: then none goes.
+pub fn on_open(root: &Path, now: std::time::SystemTime, live: Option<&[u32]>) {
+    let Some(live) = live else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(dir(root)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(chat) = name
+            .to_str()
+            .and_then(|name| name.strip_suffix(SUFFIX))
+            .and_then(|chat| chat.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|written| now.duration_since(written).ok())
+            .is_some_and(|age| age >= crate::retention::KEEP_FOR);
+        if old && !live.contains(&chat) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// What reads an entry's value again, by its vault and key, as it was read: the value, or
+/// `None`.
+pub type ReadAgain<'a> = &'a dyn Fn(&Entry) -> Option<zeroize::Zeroizing<String>>;
+
+/// **Reads an entry of the project at `root` again, where that asks nobody**: through its vault's
+/// provider, the read every hand-out makes ([`super::cmd::get_value`]), where reading its value
+/// asks nobody ([`asks_nobody`]). `None` for any other provider, whose read macOS or the store's
+/// program may ask the person about, and for an entry gone, or one never read raw (a GitHub App's
+/// key).
+pub fn read_again(root: &Path) -> impl Fn(&Entry) -> Option<zeroize::Zeroizing<String>> + '_ {
+    move |entry| {
+        let ctx = super::Ctx::new(root, super::Env::from_process());
+        if !asks_nobody(&ctx, entry)? {
+            return None;
+        }
+        let vault = super::cmd::provider(&ctx, &entry.vault).ok()?;
+        super::cmd::get_value(&ctx, &vault, &entry.key)
+            .ok()
+            .map(zeroize::Zeroizing::new)
+    }
+}
+
+/// **Whether `entry`'s value is read without asking anybody**
+/// ([`super::reads_a_value_without_asking`]): by its vault's provider, and, where the entry is a
+/// link, by the provider of the vault it reads through ([`super::links`]), which is the one
+/// that is read. `None` where either cannot be told.
+fn asks_nobody(ctx: &super::Ctx, entry: &Entry) -> Option<bool> {
+    let quiet = |vault: &str| {
+        super::cmd::provider(ctx, vault)
+            .ok()
+            .map(|vault| super::reads_a_value_without_asking(&vault.provider))
+    };
+    if !quiet(&entry.vault)? {
+        return Some(false);
+    }
+    match super::links::of(ctx, &entry.vault, &entry.key).ok()? {
+        Some(to) => quiet(&to.vault),
+        None => Some(true),
+    }
+}
+
+/// **`screen`, what chat `chat` of the project at `root` showed, masked** with every secret it
+/// was handed ([`masked`]): those this process knows, and each entry named on disk that it does
+/// not, read again by `read` (a launch after a crash). `None` where one could not be known,
+/// and where one read again is not the value it was handed ([`Named`]).
+pub fn masked_for(root: &Path, chat: u32, screen: &str, read: ReadAgain<'_>) -> Option<String> {
+    let one = handed()
+        .as_ref()
+        .and_then(|handed| handed.get(&(root.to_path_buf(), chat)).cloned())
+        .unwrap_or_default();
+    if one.blind {
+        return None;
+    }
+    let mut known = one.known;
+    let ctx = super::Ctx::new(root, super::Env::from_process());
+    for named in named(root, chat).ok()? {
+        if one.entries.contains(&named) {
+            continue;
+        }
+        let value = read(&named.entry)?;
+        let handed = named.entry.form.of(&value)?;
+        if !named.seals(&ctx, &handed) {
+            return None;
+        }
+        known.extend(Known::of(&named.entry.key, &handed)?);
+    }
+    masked(screen, &known)
+}
+
+/// **`screen` with each of `known` it shows replaced by its [`mask`]**, the sequences that draw
+/// it left as they were. `None` where no key could be made for the process to look with, and
+/// where looking would take more than [`MATCH_STEPS_AT_MOST`].
+///
+/// A string sequence's payload (a window title, a link's address) is text a reader may be
+/// shown too, so it is looked in as text, and a value there is masked in it.
+pub fn masked(screen: &str, known: &[Known]) -> Option<String> {
+    if known.is_empty() {
+        return Some(screen.to_owned());
+    }
+    let keyed = seen::keyed()?;
+    let raw = screen.as_bytes();
+    let pieces = pieces(raw);
+    // The text the screen shows, and where in `screen` each of its bytes stands.
+    let at: Vec<usize> = pieces
+        .iter()
+        .filter(|piece| piece.shown)
+        .flat_map(|piece| piece.bytes.clone())
+        .collect();
+    let shown: Vec<u8> = at.iter().map(|&i| raw[i]).collect();
+
+    let mut by_length: HashMap<usize, Vec<&Known>> = HashMap::new();
+    for one in known {
+        by_length.entry(one.length).or_default().push(one);
+    }
+    if shown.len().saturating_mul(by_length.len()) > MATCH_STEPS_AT_MOST {
+        return None;
+    }
+    let printed = Print::of_the_process()?;
+    let mut found: Vec<(Range<usize>, &str)> = Vec::new();
+    for (length, of_it) in &by_length {
+        let prints: std::collections::HashSet<u64> = of_it.iter().map(|one| one.print).collect();
+        for (start, print) in printed.rolled(&shown, *length).enumerate() {
+            if !prints.contains(&print) {
+                continue;
+            }
+            let digest = seen::digest(keyed, &shown[start..start + length]);
+            for one in of_it.iter().filter(|one| one.digest == digest) {
+                found.push((start..start + length, one.name.as_str()));
+            }
+        }
+    }
+    let spans = joined(found);
+
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut spans = spans.iter().peekable();
+    let mut index = 0;
+    for piece in &pieces {
+        if !piece.shown {
+            out.extend_from_slice(&raw[piece.bytes.clone()]);
+            continue;
+        }
+        for i in piece.bytes.clone() {
+            while spans.next_if(|(span, _)| span.end <= index).is_some() {}
+            match spans.peek() {
+                Some((span, names)) if span.start == index => {
+                    for name in names {
+                        out.extend_from_slice(mask(name).as_bytes());
+                    }
+                }
+                Some((span, _)) if span.contains(&index) => {}
+                _ => out.push(raw[i]),
+            }
+            index += 1;
+        }
+    }
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// `found` in order, each run of finds that overlap joined into one stretch, named by each
+/// entry found in it once, in the order they start.
+fn joined(mut found: Vec<(Range<usize>, &str)>) -> Vec<(Range<usize>, Vec<&str>)> {
+    found.sort_by_key(|(span, name)| (span.start, std::cmp::Reverse(span.end), *name));
+    let mut joined: Vec<(Range<usize>, Vec<&str>)> = Vec::new();
+    for (span, name) in found {
+        match joined.last_mut() {
+            Some((last, names)) if span.start < last.end => {
+                last.end = last.end.max(span.end);
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            _ => joined.push((span, vec![name])),
+        }
+    }
+    joined
+}
+
+/// A stretch of a screen's bytes: text it shows, or a sequence that draws it.
+struct Piece {
+    bytes: Range<usize>,
+    shown: bool,
+}
+
+/// `raw` cut into the text it shows and the escape sequences that draw it (ECMA-48): a control
+/// sequence (`ESC [` … final byte), a string sequence's introducer and terminator (`ESC ]`,
+/// `ESC P`, `ESC X`, `ESC ^`, `ESC _` … `BEL` or `ESC \`) with its payload as text, and any
+/// other escape with its intermediates and final byte. Every other byte is shown, a line break
+/// among them.
+fn pieces(raw: &[u8]) -> Vec<Piece> {
+    const ESC: u8 = 0x1b;
+    const BEL: u8 = 0x07;
+    let mut pieces: Vec<Piece> = Vec::new();
+    let mut push = |bytes: Range<usize>, shown: bool| {
+        if bytes.is_empty() {
+            return;
+        }
+        match pieces.last_mut() {
+            Some(last) if last.shown == shown && last.bytes.end == bytes.start => {
+                last.bytes.end = bytes.end;
+            }
+            _ => pieces.push(Piece { bytes, shown }),
+        }
+    };
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] != ESC {
+            push(i..i + 1, true);
+            i += 1;
+            continue;
+        }
+        let start = i;
+        i += 1;
+        match raw.get(i) {
+            Some(b'[') => {
+                i += 1;
+                while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
+                    i += 1;
+                }
+                i = (i + 1).min(raw.len());
+                push(start..i, false);
+            }
+            Some(b']' | b'P' | b'X' | b'^' | b'_') => {
+                i += 1;
+                push(start..i, false);
+                let payload = i;
+                while i < raw.len() && raw[i] != BEL && raw[i] != ESC {
+                    i += 1;
+                }
+                push(payload..i, true);
+                let end = match raw.get(i) {
+                    Some(&BEL) => i + 1,
+                    Some(&ESC) if raw.get(i + 1) == Some(&b'\\') => i + 2,
+                    _ => i,
+                };
+                push(i..end, false);
+                i = end;
+            }
+            Some(_) => {
+                while i < raw.len() && (0x20..=0x2f).contains(&raw[i]) {
+                    i += 1;
+                }
+                i = (i + 1).min(raw.len());
+                push(start..i, false);
+            }
+            None => push(start..i, false),
+        }
+    }
+    pieces
+}
+
+#[cfg(test)]
+mod tests;

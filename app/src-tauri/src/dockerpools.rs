@@ -544,6 +544,18 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
     Ok(row(pool))
 }
 
+/// **What a pool's Remove came to**: removed, with what could not be removed where something
+/// stays; or nothing removed because the pool's machine doesn't answer, in Pool setup's words,
+/// so the window offers to forget it here ([`forget_docker_pool`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PoolRemoval {
+    /// It is gone, or what of it stays is said in `left`.
+    Removed { left: Option<String> },
+    /// Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent.
+    Unreachable { why: String, host: String },
+}
+
 /// **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
 /// its own while the runner answers, then its container and home volume are removed, and the
 /// pool with them. What could not be removed is answered, with how to remove it; nothing when
@@ -553,16 +565,20 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// goes. Where that is no longer so, or the other way round, nothing is done (#4325).
 /// `discarding` names the held runners whose conversations the person was asked about, and agreed
 /// to discard with the pool (#4860): a runner held now that it does not name removes nothing.
+/// A pool on another machine that doesn't answer is removed not at all: the answer says so, and
+/// the window offers to forget it here.
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
     app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
     name: String,
     elsewhere: bool,
     discarding: Vec<String>,
-) -> Result<Option<String>, String> {
+) -> Result<PoolRemoval, String> {
     #[cfg(unix)]
     {
+        let held = planes.every_held();
         crate::off_the_window("removing a pool", move || {
             let config = config_root()?;
             // A cluster pool's runner is its claim, deleted through kubectl (#3292).
@@ -578,16 +594,15 @@ pub async fn remove_docker_pool(
                     purlis_core::pools::forget_where_untrusted(&config, &name, elsewhere, &found)
                 {
                     let left = forgot.map_err(|why| refused_said(&why.to_string()))?;
-                    crate::notheld::recheck(&config);
-                    crate::poolfollow::forget_waiting(&config, &name);
-                    if let Some(host) =
-                        tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
-                    {
-                        links_end_once_gone(&host.connection(), &config, &name);
-                    }
-                    return Ok(Some(left));
+                    let_go_of(&config, &name);
+                    return Ok(PoolRemoval::Removed {
+                        left: gone_from_here(&app, &held, &config, &name, &left),
+                    });
                 }
                 let machine = Machine::here(&config)?;
+                if let Some(unreachable) = unreachable_of(&machine, &name) {
+                    return Ok(unreachable);
+                }
                 as_the_person_was_told(&machine, &name, elsewhere)?;
                 elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
                 remove_on(&machine, &name, &discarding)
@@ -595,15 +610,105 @@ pub async fn remove_docker_pool(
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
             }
-            removed
+            removed.map(|left| PoolRemoval::Removed { left })
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, name, elsewhere, discarding);
+        let _ = (app, planes, name, elsewhere, discarding);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **Forgets pool `name` on this machine without contacting its machine**: the window's Forget it
+/// here, offered where Remove found that machine doesn't answer. Its runners stay there, and the
+/// answer says what stays and the commands that remove it there. Refused for a pool on this
+/// machine's Docker, which is removed, never only forgotten.
+#[tauri::command]
+#[specta::specta]
+pub async fn forget_docker_pool(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    name: String,
+) -> Result<Option<String>, String> {
+    #[cfg(unix)]
+    {
+        let held = planes.every_held();
+        crate::off_the_window("forgetting a pool", move || {
+            let config = config_root()?;
+            let left = forgotten_here(&config, &name)?;
+            Ok(gone_from_here(&app, &held, &config, &name, &left))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, planes, name);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, and
+/// [`let_go_of`]. What stays on its machine, as the core says it.
+#[cfg(unix)]
+fn forgotten_here(config: &std::path::Path, name: &str) -> Result<String, String> {
+    let left = purlis_core::pools::forget_untrusted(config, name)
+        .map_err(|why| refused_said(&why.to_string()))?;
+    let_go_of(config, name);
+    Ok(left)
+}
+
+/// **Pool `name`, forgotten here without contacting its machine, is let go of under `config`**:
+/// the projects that ran their chats on it unmarked (#2846), and nothing of it waiting on chats
+/// (#2865). Both ways of forgetting it come here, the pin-changed Remove's and Forget it here.
+#[cfg(unix)]
+fn let_go_of(config: &std::path::Path, name: &str) {
+    crate::notheld::recheck(config);
+    crate::poolfollow::forget_waiting(config, name);
+}
+
+/// **The window lets go of pool `name`, forgotten here**: the login opt-ins given on it in every
+/// project held (#2050), and its links, with the chats on them. What stays, `left`, said safely;
+/// `None` where nothing does.
+#[cfg(unix)]
+fn gone_from_here(
+    app: &tauri::AppHandle,
+    held: &[std::sync::Arc<crate::planes::Held>],
+    config: &std::path::Path,
+    name: &str,
+    left: &str,
+) -> Option<String> {
+    for project in held {
+        project.browsers().forget_pool_logins(name);
+    }
+    if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
+        links_end_once_gone(&host.connection(), config, name);
+    }
+    (!left.is_empty()).then(|| crate::devices::shown_safely(left))
+}
+
+/// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window
+/// offers to forget it here. `None` for a pool on this machine, or one whose machine answers.
+#[cfg(unix)]
+fn unreachable_of(machine: &Machine, name: &str) -> Option<PoolRemoval> {
+    let pools = purlis_core::runners::pools(&machine.config).ok()?;
+    let pool = pools.iter().find(|pool| pool.name() == name)?;
+    let host = pool.remote_engine()?.host().to_owned();
+    let finding = purlis_core::sshroute::pool::docker_of(&machine.docker, pool).err()?;
+    unreachable_said(&host, &finding)
+}
+
+/// [`unreachable_of`], once the machine `host` was found: only one that can't be reached.
+#[cfg(unix)]
+fn unreachable_said(
+    host: &str,
+    finding: &purlis_core::sshroute::connect::Finding,
+) -> Option<PoolRemoval> {
+    purlis_core::poolsetup::connecting::unreachable(finding).then(|| PoolRemoval::Unreachable {
+        why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
+        host: host.to_owned(),
+    })
 }
 
 /// Refused, with nothing done, where what Remove would do to pool `name` is no longer what the

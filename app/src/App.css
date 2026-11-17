@@ -9712,3 +9712,43 @@ nav.piece-files-head {
 .browser-bar-loading {
   color: var(--text-primary);
 }
+
+/* **The browser's pages** (#6989): "Page 2 of 3" keeps its words whole, and gives up its room
+   after the title does. */
+.browser-pages {
+  flex: 0 0 auto;
+}
+
+/* **A narrow head keeps the site readable** (#6989, #6990): the counts of pages, downloads and
+   secrets say their numbers alone ("2 of 3", "3"), each still named whole, so the site keeps
+   room for its host beside the pane's own actions. */
+.browser-head {
+  container: browser-head / inline-size;
+}
+
+@container browser-head (max-width: 36rem) {
+  .browser-count-word {
+    display: none;
+  }
+}
+
+/* **The browser's downloads** (#6990): the count keeps its words whole, as the pages' does; its
+   list says each name whole, over as many lines as it takes, and how far it came under it. */
+.browser-downloads {
+  flex: 0 0 auto;
+}
+
+.browser-downloads-list {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-downloads-list > li {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}

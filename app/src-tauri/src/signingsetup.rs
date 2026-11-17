@@ -384,7 +384,7 @@ pub async fn signing_check(
                             )
                         })?,
                 };
-                let when = chrono::Utc::now().timestamp();
+                let when = jiff::Timestamp::now().as_second();
                 let checked = signingsetup::check_with_a_test_commit(
                     transport.as_ref(),
                     &forge,

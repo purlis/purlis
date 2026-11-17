@@ -280,7 +280,7 @@ impl Report {
                 {
                     crate::harness::claude::ownwork::read(
                         read.as_ref(),
-                        chrono::Local::now().naive_local(),
+                        jiff::Zoned::now().datetime(),
                     )
                 } else {
                     crate::ownwork::Said::default()
@@ -3393,13 +3393,13 @@ impl Output {
         }
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
         let session = read["session_id"].as_str().unwrap_or_default();
-        let local = chrono::Local::now();
+        let local = jiff::Zoned::now();
         // The conversation's task folder, looked for once for every piece (the hook's 50 ms).
         let tasks = std::cell::OnceCell::new();
         let pieces = crate::harness::claude::ownwork::pieces(
             Some(&read),
-            local.naive_local(),
-            local.timestamp(),
+            local.datetime(),
+            local.timestamp().as_second(),
             &|id| {
                 tasks
                     .get_or_init(|| crate::harness::claude::ownwork::tasks_folder(session, env))

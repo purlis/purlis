@@ -15,6 +15,8 @@ import {
   makeRunnerAgain,
   removedSaid,
   removePool,
+  forgetPool,
+  dismissUnreachable,
   openSetupOf,
   startAddingAPool,
   useHeldRunners,
@@ -22,6 +24,7 @@ import {
   usePools,
   type HeldRunners,
   type NamedBy,
+  type Unreachable,
 } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button, ButtonRow } from "../ui/button/Button";
@@ -509,6 +512,9 @@ function PoolEntry({
   notHeld,
   profiles,
   plane,
+  unreachable,
+  onForget,
+  onDismissUnreachable,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
@@ -527,6 +533,11 @@ function PoolEntry({
   /** This machine's profiles on its runner (#2049). */
   profiles: ReactNode;
   plane: string | undefined;
+  /** Why its machine didn't answer its last Remove, and which machine that is. */
+  unreachable: Unreachable | undefined;
+  /** Forgets it on this machine without contacting its machine. */
+  onForget: () => void;
+  onDismissUnreachable: () => void;
 }) {
   const remove = onAsk;
   const owed = owedSaid(version, useNow());
@@ -598,6 +609,16 @@ function PoolEntry({
               </Notice>
             )}
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
+            {unreachable !== undefined && (
+              <UnreachableNotice
+                name={pool.name}
+                host={unreachable.host}
+                why={unreachable.why}
+                removing={removing}
+                onForget={onForget}
+                onDismiss={onDismissUnreachable}
+              />
+            )}
             {typeof link === "object" && link.state === "removed" && (
               <RemovedNotice
                 name={pool.name}
@@ -666,6 +687,43 @@ function KeyChangedNotice({
     </Notice>
   );
 }
+
+/**
+ * **Remove found a pool's machine doesn't answer**: nothing was removed, so the row says why and
+ * offers Forget it here, which forgets the pool on this machine without contacting the machine,
+ * and says plainly what stays there. What stays, by name, and how to remove it there, is said
+ * once it is forgotten.
+ */
+export function UnreachableNotice({
+  name,
+  host,
+  why,
+  removing,
+  onForget,
+  onDismiss,
+}: {
+  name: string;
+  host: string;
+  why: string;
+  removing: boolean;
+  onForget: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <Notice
+      cause={`pool-unreachable:${name}`}
+      tone="trouble"
+      fixes={[{ label: "Forget it here", onPress: onForget, busy: removing }]}
+      onDismiss={onDismiss}
+    >
+      {unreachableSaid(name, host, why)}
+    </Notice>
+  );
+}
+
+/** What {@link UnreachableNotice} says of pool `name` on `host`, which didn't answer for `why`. */
+export const unreachableSaid = (name: string, host: string, why: string) =>
+  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Its runner's container and home volume stay on ${host}. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
@@ -913,6 +971,9 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
                     profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                     plane={plane}
+                    unreachable={now.unreachable[pool.name]}
+                    onForget={() => void forgetPool(pool.name)}
+                    onDismissUnreachable={() => dismissUnreachable(pool.name)}
                   />
                 ))}
                 {clusters.map((pool) => (

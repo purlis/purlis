@@ -49,7 +49,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::active::{self, Ids};
@@ -115,7 +115,7 @@ pub struct Ask<'a> {
     pub payload: &'a Value,
     /// The environment, as a lookup.
     pub env: &'a dyn Fn(&str) -> Option<String>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     /// **Whether anyone is at the chat** (R-111, T1-20, #6411): the chat's attendance fact
     /// ([`crate::attendance::Fact::attendance`]), the same on every harness. The briefing never
     /// reads it from the payload's `permission_mode`, so a mode that asks never makes an
@@ -1302,9 +1302,9 @@ fn todo_digest(ask: &Ask, workspace: &str, summaries: &Summaries) -> Option<Stri
     if !crate::contain::workspace_name_ok(workspace) {
         return None;
     }
-    let today = ask.now.with_timezone(&chrono::Local).date_naive();
-    let age = |recorded: Option<chrono::NaiveDate>| {
-        recorded.map_or(0, |recorded| (today - recorded).num_days())
+    let today = ask.now.to_zoned(jiff::tz::TimeZone::system()).date();
+    let age = |recorded: Option<jiff::civil::Date>| {
+        recorded.map_or(0, |recorded| i64::from((today - recorded).get_days()))
     };
     let (n, shown): (usize, Vec<String>) = match summaries {
         Summaries::Index(reader) => {
@@ -1399,11 +1399,11 @@ pub(crate) fn last_active(root: &Path, name: &str) -> Option<f64> {
 }
 
 /// `_age_phrase`.
-fn age_phrase(ts: f64, now: DateTime<Utc>) -> String {
+fn age_phrase(ts: f64, now: Timestamp) -> String {
     if ts == 0.0 {
         return "not worked yet".to_string();
     }
-    let now = now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1e9;
+    let now = now.as_duration().as_secs_f64();
     let days = ((now - ts) / 86400.0).floor() as i64;
     if days <= 0 {
         "today".to_string()
@@ -1529,7 +1529,7 @@ fn workspaces_to_manage(ask: &Ask, summaries: &Summaries) -> Option<String> {
 /// `_piece_announcement`: which piece this session holds and what it owes, and whether another
 /// session holds it too. Computed BEFORE this session's own heartbeat is written, or a visitor
 /// would overwrite the holder's mark and the collision could never be seen.
-pub fn piece_announcement(root: &Path, payload: &Value, now: DateTime<Utc>) -> Option<String> {
+pub fn piece_announcement(root: &Path, payload: &Value, now: Timestamp) -> Option<String> {
     let cwd = payload
         .get("cwd")
         .and_then(Value::as_str)

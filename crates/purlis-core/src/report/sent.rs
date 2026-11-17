@@ -131,13 +131,13 @@ impl SentList {
     /// among them; empty when there is no file or one purlis will not read. A report that has
     /// waited longer than [`DAYS_WAITING`] is not read, and goes with the next write.
     pub fn read(config_root: &Path) -> Vec<Sent> {
-        let oldest_waiting = chrono::Utc::now() - chrono::Duration::days(DAYS_WAITING);
+        let oldest_waiting =
+            jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * DAYS_WAITING);
         SentList::read_all(config_root)
             .into_iter()
             .filter(|one| {
                 !one.waiting
-                    || chrono::DateTime::parse_from_rfc3339(&one.at)
-                        .is_ok_and(|at| at >= oldest_waiting)
+                    || str::parse::<jiff::Timestamp>(&one.at).is_ok_and(|at| at >= oldest_waiting)
             })
             .collect()
     }
@@ -257,16 +257,16 @@ impl SentList {
     /// gives it the time it left.
     pub(super) fn within_the_daily_cap(
         config_root: &Path,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
         holding: usize,
     ) -> Result<(), super::Refusal> {
-        let today = now.date_naive();
+        let today = crate::wallclock::utc_day(now);
         let drafts = SentList::read(config_root)
             .iter()
             .filter(|one| one.unread_draft && !one.waiting)
             .filter(|one| {
-                chrono::DateTime::parse_from_rfc3339(&one.at)
-                    .is_ok_and(|at| at.with_timezone(&chrono::Utc).date_naive() == today)
+                str::parse::<jiff::Timestamp>(&one.at)
+                    .is_ok_and(|at| crate::wallclock::utc_day(at) == today)
             })
             .count();
         if drafts + holding < DRAFTS_A_DAY {
@@ -280,12 +280,10 @@ impl SentList {
     /// [`DAYS_KEPT`].
     fn change<R>(config_root: &Path, change: impl FnOnce(&mut Vec<Sent>) -> R) -> io::Result<R> {
         crate::machine::supported()?;
-        let oldest = chrono::Utc::now() - chrono::Duration::days(DAYS_KEPT);
+        let oldest = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * DAYS_KEPT);
         let mut kept: Vec<Sent> = SentList::read(config_root)
             .into_iter()
-            .filter(|one| {
-                chrono::DateTime::parse_from_rfc3339(&one.at).is_ok_and(|at| at >= oldest)
-            })
+            .filter(|one| str::parse::<jiff::Timestamp>(&one.at).is_ok_and(|at| at >= oldest))
             .collect();
         let said = change(&mut kept);
         let dir = crate::machine::private_dir(config_root)?;
@@ -304,9 +302,9 @@ mod tests {
     use super::*;
     use crate::report::Refusal;
 
-    fn entry(at: chrono::DateTime<chrono::Utc>, unread_draft: bool) -> Sent {
+    fn entry(at: jiff::Timestamp, unread_draft: bool) -> Sent {
         Sent {
-            at: at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            at: at.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
             title: "a report".into(),
             to: SentTo::Intake,
             address: "an event".into(),
@@ -323,7 +321,7 @@ mod tests {
     #[test]
     fn a_sixth_unread_draft_in_a_utc_day_is_refused_as_cap_reached() {
         let home = tempfile::tempdir().unwrap();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         for _ in 0..DRAFTS_A_DAY - 1 {
             SentList::add(home.path(), entry(now, true)).unwrap();
         }
@@ -340,7 +338,7 @@ mod tests {
     #[test]
     fn drafts_held_to_send_count_against_the_cap() {
         let home = tempfile::tempdir().unwrap();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         for _ in 0..DRAFTS_A_DAY - 2 {
             SentList::add(home.path(), entry(now, true)).unwrap();
         }
@@ -354,8 +352,8 @@ mod tests {
     #[test]
     fn an_unread_draft_waiting_offline_counts_on_the_day_it_leaves() {
         let home = tempfile::tempdir().unwrap();
-        let today = chrono::Utc::now();
-        let tomorrow = today + chrono::Duration::days(1);
+        let today = jiff::Timestamp::now();
+        let tomorrow = today + jiff::SignedDuration::from_hours(24);
         for _ in 0..DRAFTS_A_DAY {
             assert!(SentList::wait(home.path(), entry(today, true)).unwrap());
         }
@@ -384,9 +382,13 @@ mod tests {
     #[test]
     fn the_cap_counts_neither_yesterdays_drafts_nor_crash_reports() {
         let home = tempfile::tempdir().unwrap();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         for _ in 0..DRAFTS_A_DAY {
-            SentList::add(home.path(), entry(now - chrono::Duration::days(1), true)).unwrap();
+            SentList::add(
+                home.path(),
+                entry(now - jiff::SignedDuration::from_hours(24), true),
+            )
+            .unwrap();
             SentList::add(home.path(), entry(now, false)).unwrap();
         }
         SentList::add(home.path(), entry(now, true)).unwrap();

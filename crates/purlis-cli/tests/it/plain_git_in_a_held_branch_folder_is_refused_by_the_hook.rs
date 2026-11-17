@@ -117,7 +117,7 @@ impl Project {
             piece,
             None,
             &who,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("the claim");
     }
@@ -176,7 +176,7 @@ impl Project {
                     },
                     &asked,
                     &git::Isolated::default(),
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                 )
             }),
         );

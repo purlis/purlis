@@ -842,7 +842,7 @@ impl Asks {
                 ("chat", Value::from(chat)),
                 ("waiting", Value::from(waiting)),
             ],
-            chrono::Local::now().naive_local(),
+            jiff::Zoned::now().datetime(),
         );
     }
 

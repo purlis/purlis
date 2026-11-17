@@ -1668,6 +1668,13 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     });
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
+            // Its guards fail as the project's policy runs them (#7067): armed failing closed,
+            // and loosened here to what its start resolves, the same its hooks are handed.
+            let args = if harness == Harness::ClaudeCode {
+                crate::harness::claude::under_policy(args, &crate::enforcement::at_start(root))
+            } else {
+                args
+            };
             env.extend(held);
             env.extend(prompt_router);
             env.retain(|(key, _)| key != "TMPDIR" && key != crate::sandbox::claude_wrap::TMP_ENV);

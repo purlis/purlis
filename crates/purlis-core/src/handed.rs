@@ -67,8 +67,8 @@ const DAY: &str = "%Y-%m-%d";
 /// **This is what keeps [`what`]'s "never what a memory says" true.** What leaves here is never a
 /// string read out of the file: it is a date *parsed* out of it and written again by charter, so
 /// whatever a file holds, a program learns a day from it and nothing else.
-fn day(date: Option<chrono::NaiveDate>) -> String {
-    date.map(|date| date.format(DAY).to_string())
+fn day(date: Option<jiff::civil::Date>) -> String {
+    date.map(|date| date.strftime(DAY).to_string())
         .unwrap_or_default()
 }
 
@@ -78,13 +78,13 @@ fn day(date: Option<chrono::NaiveDate>) -> String {
 /// of its request and nothing else. That is what makes a request replayable by hand — paste the
 /// line into the program in a terminal and get the same chart — which is ADR 0041's first
 /// argument for a subprocess: *"its whole conversation with charter is a log a human can read."*
-pub fn personas(root: &Path, now: chrono::NaiveDateTime) -> serde_json::Value {
+pub fn personas(root: &Path, now: jiff::civil::DateTime) -> serde_json::Value {
     personas_within(root, now, MOST_STAMPS)
 }
 
 /// [`personas`], handing at most `most` stamps. The bound is a parameter so that a test can
 /// reach it with a plane of three memories rather than twenty thousand files.
-fn personas_within(root: &Path, now: chrono::NaiveDateTime, most: usize) -> serde_json::Value {
+fn personas_within(root: &Path, now: jiff::civil::DateTime, most: usize) -> serde_json::Value {
     let plane = crate::workspaces::Plane::open(root);
     let default = plane.default_persona();
     let mut handed = 0usize;
@@ -128,7 +128,7 @@ fn personas_within(root: &Path, now: chrono::NaiveDateTime, most: usize) -> serd
     let mut doc = serde_json::Map::new();
     doc.insert(
         "now".into(),
-        serde_json::Value::String(now.format(STAMP).to_string()),
+        serde_json::Value::String(now.strftime(STAMP).to_string()),
     );
     doc.insert("personas".into(), serde_json::Value::Array(listed));
     doc.insert("truncated".into(), serde_json::Value::Bool(truncated));
@@ -174,9 +174,9 @@ mod tests {
         dir
     }
 
-    fn at_noon() -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 9, 23)
-            .and_then(|day| day.and_hms_opt(12, 0, 0))
+    fn at_noon() -> jiff::civil::DateTime {
+        crate::wallclock::day(2026, 9, 23)
+            .map(|day| day.at(12, 0, 0, 0))
             .expect("a time")
     }
 

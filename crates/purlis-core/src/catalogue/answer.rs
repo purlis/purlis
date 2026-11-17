@@ -30,8 +30,8 @@ pub fn ask(
     query: &Query,
     args: &Value,
     forge: &super::milestones::Reach,
-    at: chrono::DateTime<chrono::Utc>,
-    now: chrono::NaiveDateTime,
+    at: jiff::Timestamp,
+    now: jiff::civil::DateTime,
 ) -> Answer {
     let args = match checked(&query.parameters(), args) {
         Ok(args) => args,
@@ -54,7 +54,7 @@ pub fn ask(
 }
 
 /// `data` as an answer with its cursor, or `too-large` over [`MOST_BYTES`].
-fn sized(data: Value, cursor: Option<String>, at: chrono::DateTime<chrono::Utc>) -> Answer {
+fn sized(data: Value, cursor: Option<String>, at: jiff::Timestamp) -> Answer {
     let size = serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len());
     if size > MOST_BYTES {
         return Answer::error(ErrorKind::TooLarge, at);
@@ -105,7 +105,7 @@ fn data(
     _place: &Place,
     _name: &str,
     _args: &Map<String, Value>,
-    _now: chrono::NaiveDateTime,
+    _now: jiff::civil::DateTime,
 ) -> Result<(Value, Option<String>), ErrorKind> {
     // Fail closed, as the MCP tools do: the stores are held only on unix yet.
     Err(ErrorKind::Failed)
@@ -118,7 +118,7 @@ fn data(
     place: &Place,
     name: &str,
     args: &Map<String, Value>,
-    _now: chrono::NaiveDateTime,
+    _now: jiff::civil::DateTime,
 ) -> Result<(Value, Option<String>), ErrorKind> {
     use crate::chattools as tools;
     use crate::held::Store;

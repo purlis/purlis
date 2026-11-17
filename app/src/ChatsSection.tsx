@@ -56,6 +56,7 @@ import {
   stamped,
   type Filter,
   type Rank,
+  type FoundClosed,
 } from "./chatsList";
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { inScope, keepScope, keptScope, SCOPES, settleScope, type Scope } from "./chatsScope";
@@ -471,8 +472,8 @@ export function ChatsSection({
     openNow,
   );
   const closedRead = closedAsked.chats;
-  const closedShown = useMemo(() => {
-    if (closedRead.length === 0) return closedRead;
+  const closedShown = useMemo((): FoundClosed[] => {
+    if (closedRead.length === 0) return [];
     const drawnAsTasks = new Set<number>();
     for (const tasks of finished.values())
       for (const task of tasks) if (task.chat !== null) drawnAsTasks.add(task.chat);

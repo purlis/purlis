@@ -229,7 +229,7 @@ fn missed_as_reported(one: &Held, config: Option<&Path>) {
             persona: None,
             signal: crate::skilluse::Signal::Report,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &crate::machine::log_name(config, &crate::dispatch::host()),
     );
 }
@@ -265,12 +265,10 @@ impl HeldDrafts {
     /// [`AT_MOST_KEPT`].
     pub fn write(config_root: &Path, held: Vec<Held>) -> io::Result<()> {
         crate::machine::supported()?;
-        let oldest = chrono::Utc::now() - chrono::Duration::days(DAYS_KEPT);
+        let oldest = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * DAYS_KEPT);
         let mut kept: Vec<Held> = held
             .into_iter()
-            .filter(|one| {
-                chrono::DateTime::parse_from_rfc3339(&one.at).is_ok_and(|at| at >= oldest)
-            })
+            .filter(|one| str::parse::<jiff::Timestamp>(&one.at).is_ok_and(|at| at >= oldest))
             .collect();
         let over = kept.len().saturating_sub(AT_MOST_KEPT);
         kept.drain(..over);
@@ -696,7 +694,7 @@ impl Reports {
         let Some((_, root)) = &self.intake else {
             return Err(Refusal::NoIntake);
         };
-        SentList::within_the_daily_cap(root, chrono::Utc::now(), holding)
+        SentList::within_the_daily_cap(root, jiff::Timestamp::now(), holding)
     }
 
     /// **Always send, pressed on a draft in the Inbox** (#5695): the held draft `id` is held to
@@ -725,15 +723,15 @@ impl Reports {
     /// machine for the intake to answer. One that may no longer go unread (Always send was
     /// turned off, today's cap was reached, the intake did not take it) falls back to asking: it
     /// waits in the Inbox.
-    pub fn send_held_due(&self, now: chrono::DateTime<chrono::Utc>) -> usize {
+    pub fn send_held_due(&self, now: jiff::Timestamp) -> usize {
         let Some(root) = self.root.as_deref() else {
             return 0;
         };
         let _turn = holding();
         let due = HeldDrafts::read(root).into_iter().filter(|one| {
-            one.sends_at.as_deref().is_some_and(|at| {
-                chrono::DateTime::parse_from_rfc3339(at).map_or(true, |at| at <= now)
-            })
+            one.sends_at
+                .as_deref()
+                .is_some_and(|at| str::parse::<jiff::Timestamp>(at).map_or(true, |at| at <= now))
         });
         let mut left = 0;
         for one in due {
@@ -779,8 +777,8 @@ fn held_to_send(all: &[Held], but: Option<&str>) -> usize {
 
 /// When a hold that starts now ends.
 fn hold_ends() -> String {
-    (chrono::Utc::now() + chrono::Duration::seconds(i64::from(HOLD_SECS)))
-        .format("%Y-%m-%dT%H:%M:%SZ")
+    (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(i64::from(HOLD_SECS)))
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
         .to_string()
 }
 

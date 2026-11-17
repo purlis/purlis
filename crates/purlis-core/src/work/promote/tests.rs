@@ -16,11 +16,10 @@ use crate::work::tracker::Todos;
 const DEVICE: &str = "01K6H0Z8Y3V1N3G4QK0A9T5B7C";
 const CHAT: &str = "01K6H10000AAAAAAAAAAAAAAAA";
 
-fn stamp(second: u32) -> chrono::NaiveDateTime {
-    chrono::NaiveDate::from_ymd_opt(2026, 10, 2)
+fn stamp(second: i8) -> jiff::civil::DateTime {
+    crate::wallclock::day(2026, 10, 2)
         .unwrap()
-        .and_hms_opt(8, 0, second)
-        .unwrap()
+        .at(8, 0, second, 0)
 }
 
 /// A project with workspace `alpha` holding `repos`, each in the inventory on GitHub.
@@ -104,7 +103,10 @@ fn a_todo_promoted_to_a_github_issue_keeps_its_chat_link_and_is_one_card() {
         root,
         "alpha",
         DEVICE,
-        stamp(1).and_utc(),
+        stamp(1)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp(),
         &Op::link_chat(todo.clone(), CHAT),
     )
     .unwrap();
@@ -315,7 +317,10 @@ fn a_promote_that_stopped_after_its_alias_is_closed_at_the_next_look() {
         root,
         "alpha",
         DEVICE,
-        stamp(1).and_utc(),
+        stamp(1)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp(),
         todo,
         issue.clone(),
         Cause::Promoted,
@@ -343,7 +348,10 @@ fn a_todo_already_promoted_is_not_promoted_twice() {
         root,
         "alpha",
         DEVICE,
-        stamp(1).and_utc(),
+        stamp(1)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp(),
         todo,
         issue,
         Cause::Promoted,

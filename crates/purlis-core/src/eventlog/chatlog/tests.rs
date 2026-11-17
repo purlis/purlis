@@ -98,9 +98,7 @@ fn kinds(events: &[Event]) -> Vec<&str> {
 }
 
 fn the_activity(root: &Path) -> crate::activity::Timeline {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-08T12:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let now = str::parse::<jiff::Timestamp>("2026-10-08T12:00:00Z").unwrap();
     crate::activity::timeline(root, &chat_ref(3, "steward 3"), now)
 }
 
@@ -147,9 +145,7 @@ fn a_chats_timeline_and_the_fleet_counts_are_queries_of_the_event_log() {
             brief: brief.to_owned(),
             report_owed: true,
         },
-        chrono::DateTime::parse_from_rfc3339("2026-10-08T10:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc),
+        str::parse::<jiff::Timestamp>("2026-10-08T10:00:00Z").unwrap(),
     )
     .unwrap();
     dispatchrecord::said(
@@ -157,9 +153,7 @@ fn a_chats_timeline_and_the_fleet_counts_are_queries_of_the_event_log() {
         &record.id,
         crate::dispatchtalk::Kind::Note,
         note,
-        chrono::DateTime::parse_from_rfc3339("2026-10-08T10:05:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc),
+        str::parse::<jiff::Timestamp>("2026-10-08T10:05:00Z").unwrap(),
     )
     .unwrap();
     let activity_before = the_activity(&root);

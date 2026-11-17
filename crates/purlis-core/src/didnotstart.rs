@@ -127,7 +127,7 @@ pub fn record(
     id: Option<String>,
     opening: Opening,
     why: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<Record> {
     let earlier: Vec<Record> = dispatchrecord::list(root)
         .into_iter()
@@ -170,7 +170,7 @@ pub fn not_put_back(
     record: &Record,
     why: &str,
     conversation: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> io::Result<bool> {
     if !dispatchrecord::did_not_start(root, &record.id, why, 1, now)? {
         return Ok(false);

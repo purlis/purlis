@@ -81,6 +81,12 @@ pub fn landlock_way_on(way: WayOn) -> String {
 /// The hidden command a wrapped chat's line starts with, after purlis's own program.
 pub const COMMAND: &str = "_sandbox";
 
+/// **The hidden command that prints this kernel's Landlock ABI** (#7084): `purlis _landlock`
+/// prints one number, the version `abi` reads (`0` where the kernel grants none, and on
+/// any system but Linux), and exits 0. Pool setup runs it in a pool's runner image to learn
+/// whether chats can start on that pool's host before one is tried. Not a public command line.
+pub const LANDLOCK: &str = "_landlock";
+
 /// **The hidden command that starts a program unable to make a namespace** (#3298,
 /// D-2050-25): `purlis _no-namespaces -- <program> <args>…` applies a filter that refuses every
 /// namespace-making `clone` and `unshare`, and `clone3`, then becomes `program`. A runner's host
@@ -130,6 +136,10 @@ pub fn serve_if_asked_telling(
     if first == NO_NAMESPACES {
         return Some(without_namespaces(words.collect()));
     }
+    if first == LANDLOCK {
+        println!("{}", landlock_abi());
+        return Some(0);
+    }
     if first != COMMAND {
         return None;
     }
@@ -150,6 +160,14 @@ pub fn serve_if_asked_telling(
         eprintln!("purlis: this sandbox is purlis's own on Linux, so nothing was started.");
         Some(126)
     }
+}
+
+/// The Landlock ABI this kernel grants: none but on Linux.
+fn landlock_abi() -> i32 {
+    #[cfg(target_os = "linux")]
+    return abi();
+    #[cfg(not(target_os = "linux"))]
+    0
 }
 
 /// `purlis _no-namespaces`, given the words after it: [`END`], the program, its arguments.

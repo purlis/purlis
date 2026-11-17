@@ -1121,7 +1121,7 @@ fn follow_in_links(
             "there is no config home to keep this device's id in",
         )),
     };
-    crate::work::log::follow_rename(root, old, new, &device, chrono::Utc::now())
+    crate::work::log::follow_rename(root, old, new, &device, jiff::Timestamp::now())
 }
 
 /// The state charter keeps under the workspace's name in `.charter/`, moved to the new one.

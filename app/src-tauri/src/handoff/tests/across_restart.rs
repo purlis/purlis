@@ -240,9 +240,8 @@ fn a_task_brought_back_by_a_launch_is_as_old_as_its_dispatch_record_says() {
     let (_relaunched, _planes, _again, held, _opened) =
         launches_again(&plane, (host.clone(), planes, held), &at_quit);
 
-    let then = std::time::SystemTime::from(
-        chrono::DateTime::parse_from_rfc3339(&started).expect("a stamp"),
-    );
+    let then =
+        std::time::SystemTime::from(str::parse::<jiff::Timestamp>(&started).expect("a stamp"));
     assert_eq!(
         held.tasks()
             .ledger()
@@ -257,9 +256,7 @@ fn a_task_s_last_note_is_read_back_from_its_dispatch_record_after_a_restart() {
     // back says its last note again, by its record, and not "no note yet".
     let (plane, host, planes, _id, held, _steward, task) = a_steward_and_a_working_task();
     let id = record_of(&held, task).id;
-    let sent = chrono::DateTime::parse_from_rfc3339("2026-10-07T12:10:00Z")
-        .expect("a stamp")
-        .with_timezone(&chrono::Utc);
+    let sent = str::parse::<jiff::Timestamp>("2026-10-07T12:10:00Z").expect("a stamp");
     dispatchrecord::said(
         held.root(),
         &id,
@@ -314,7 +311,7 @@ fn a_turn_s_roster_names_a_task_only_its_dispatch_record_knows_and_drops_it_once
             brief: "# Forms".to_owned(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a record");
 
@@ -344,7 +341,7 @@ fn a_turn_s_roster_names_a_task_only_its_dispatch_record_knows_and_drops_it_once
                 report: None,
                 usage: None,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("closed")
     );
@@ -913,7 +910,7 @@ fn try_to_start_again_on_a_task_whose_dispatch_ended_meanwhile_tells_it_nothing(
         held.root(),
         &record.id,
         dispatchrecord::Ending::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("closed");
 

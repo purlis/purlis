@@ -250,7 +250,7 @@ pub async fn worktree_list(
 /// name, none of them read (#5321). What a folder has uncommitted is [`states_of`]'s, asked
 /// after this answer, so sixty folders are named as fast as one.
 fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, String> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     worktree::list(plane, workspace, repo)
         .map(|pieces| {
             let mut unclaimed =
@@ -496,7 +496,7 @@ fn declare_done(
         piece,
         purlis_core::pieces::Declaration::Done,
         &who,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .map(|_| ())
     .map_err(|why| why.in_window())
@@ -516,7 +516,7 @@ const UNLOGGED: &str = "purlis could not record that it cut this branch, so it w
 /// window's words: what the cut found (ADR 0072 §3), and a log that could not be written.
 fn claimed(plane: &Path, config: Option<&Path>, cut: &chatpiece::Cut) -> Vec<String> {
     let mut said: Vec<String> = cut.notes.iter().map(Note::in_window).collect();
-    if chatpiece::claim(plane, cut, &window(config), chrono::Utc::now()).is_none() {
+    if chatpiece::claim(plane, cut, &window(config), jiff::Timestamp::now()).is_none() {
         said.push(UNLOGGED.to_string());
     }
     said
@@ -1039,7 +1039,7 @@ mod tests {
             brief: "b".to_owned(),
             report_owed: true,
         };
-        dispatchrecord::open(root, opening, chrono::Utc::now())
+        dispatchrecord::open(root, opening, jiff::Timestamp::now())
             .unwrap()
             .id
     }
@@ -1165,7 +1165,7 @@ mod tests {
                 report: None,
                 usage: None,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
 
@@ -1262,8 +1262,8 @@ mod tests {
             let (head, message) = first.split_once('\t').unwrap();
             assert!(message.starts_with("branch: Created from"), "{first}");
             let mut fields: Vec<&str> = head.rsplitn(3, ' ').collect();
-            let seconds = (chrono::Utc::now() - chrono::Duration::from_std(ago).unwrap())
-                .timestamp()
+            let seconds = (jiff::Timestamp::now() - jiff::SignedDuration::try_from(ago).unwrap())
+                .as_second()
                 .to_string();
             fields[1] = &seconds;
             fields.reverse();

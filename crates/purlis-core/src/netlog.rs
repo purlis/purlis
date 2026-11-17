@@ -399,7 +399,9 @@ pub fn record(call: Call<'_>) {
         return;
     };
     let entry = Entry {
-        at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        at: jiff::Timestamp::now()
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+            .to_string(),
         feature: call.feature,
         via: call.via,
         host: call.host.to_ascii_lowercase(),

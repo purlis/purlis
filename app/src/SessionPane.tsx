@@ -447,7 +447,15 @@ export function SessionPane({
           {reconnecting ? RECONNECTING_SAID : ""}
         </span>
       </div>
-      {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
+      {finding && (
+        <FindBar
+          search={finding.search}
+          asked={finding.asked}
+          // A shell's pane has no title and is no chat (#6826).
+          label={title === undefined ? "Find in the pane" : "Find in the chat"}
+          onClose={closeFind}
+        />
+      )}
       {linkSurfaces}
       {chatSurfaces}
     </>

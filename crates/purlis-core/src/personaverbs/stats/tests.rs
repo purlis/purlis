@@ -31,25 +31,28 @@ fn advice_is_followed_only_by_what_came_at_or_after_it() {
 #[test]
 fn a_stamp_is_read_as_fromisoformat_reads_it_and_dated_in_its_own_offset() {
     let at = |raw: &str| ts(&serde_json::json!({ "ts": raw }));
-    let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+    let d = |s: &str| jiff::civil::Date::strptime("%Y-%m-%d", s).unwrap();
     assert_eq!(at("2026-03-02T09:33").unwrap().1, d("2026-03-02"));
     assert_eq!(
-        at("2026-03-04T10").unwrap().0.to_string(),
+        crate::oldspelling::date_and_time(at("2026-03-04T10").unwrap().0),
         "2026-03-04 10:00:00"
     );
     assert_eq!(
-        at("20260303T101010").unwrap().0.to_string(),
+        crate::oldspelling::date_and_time(at("20260303T101010").unwrap().0),
         "2026-03-03 10:10:10"
     );
     assert_eq!(
-        at("2026-03-02").unwrap().0.to_string(),
+        crate::oldspelling::date_and_time(at("2026-03-02").unwrap().0),
         "2026-03-02 00:00:00"
     );
     let late = at("2026-03-01T23:30:00-05:00").unwrap();
-    assert_eq!(late.0.to_string(), "2026-03-02 04:30:00");
+    assert_eq!(
+        crate::oldspelling::date_and_time(late.0),
+        "2026-03-02 04:30:00"
+    );
     assert_eq!(late.1, d("2026-03-01"));
     assert_eq!(
-        at("2026-03-02T09:00:00Z").unwrap().0.to_string(),
+        crate::oldspelling::date_and_time(at("2026-03-02T09:00:00Z").unwrap().0),
         "2026-03-02 09:00:00"
     );
     assert!(at("yesterday").is_none());
@@ -61,7 +64,7 @@ fn a_stamp_is_read_as_fromisoformat_reads_it_and_dated_in_its_own_offset() {
 fn a_time_is_refused_exactly_where_fromisoformat_refuses_it() {
     let at = |raw: &str| {
         ts(&serde_json::json!({ "ts": format!("2026-03-04T{raw}") }))
-            .map(|(utc, _)| utc.format("%H:%M:%S%.6f").to_string())
+            .map(|(utc, _)| utc.strftime("%H:%M:%S%.6f").to_string())
     };
     let read = [
         ("10", "10:00:00.000000"),
@@ -121,7 +124,7 @@ fn a_time_is_refused_exactly_where_fromisoformat_refuses_it() {
 fn any_one_character_separates_the_date_from_the_time() {
     let at = |raw: &str| {
         ts(&serde_json::json!({ "ts": raw }))
-            .map(|(utc, _)| utc.format("%Y-%m-%d %H:%M:%S").to_string())
+            .map(|(utc, _)| utc.strftime("%Y-%m-%d %H:%M:%S").to_string())
     };
     assert_eq!(at("2026-03-04x10").as_deref(), Some("2026-03-04 10:00:00"));
     assert_eq!(at("2026-03-04é10").as_deref(), Some("2026-03-04 10:00:00"));
@@ -142,7 +145,7 @@ fn any_one_character_separates_the_date_from_the_time() {
 fn an_offset_is_read_to_the_microsecond_and_must_stay_inside_a_day() {
     let at = |raw: &str| {
         ts(&serde_json::json!({ "ts": raw }))
-            .map(|(utc, _)| utc.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+            .map(|(utc, _)| utc.strftime("%Y-%m-%d %H:%M:%S%.6f").to_string())
     };
     let utc = |raw: &str| at(&format!("2026-03-04T10:00{raw}"));
     assert_eq!(utc("+05:99").as_deref(), Some("2026-03-04 03:21:00.000000"));
@@ -177,7 +180,7 @@ fn a_memory_blind_role_is_never_dormant() {
     let p = dir.path().join("personas/router");
     std::fs::create_dir_all(&p).unwrap();
     std::fs::write(p.join("persona.md"), "---\nactivity: Orchestrator\n---\n").unwrap();
-    let today = NaiveDate::from_ymd_opt(2026, 9, 24).unwrap();
+    let today = crate::wallclock::day(2026, 9, 24).unwrap();
     assert_eq!(row(dir.path(), "router", 14, today).status, "orchestrator");
 }
 

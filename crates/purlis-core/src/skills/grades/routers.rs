@@ -392,7 +392,7 @@ impl RouterGraded {
     /// Whether a row read back says only what purlis writes, as a skill's grade is held
     /// ([`super::Graded`]): plain names, whole commit ids, a time, and each skill's report one
     /// the built-in runner could have written.
-    pub(super) fn sound(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+    pub(super) fn sound(&self, now: jiff::Timestamp) -> bool {
         let names = |name: &Option<String>| name.as_deref().is_none_or(plain);
         let copies = self.library.len() <= MOST_SKILLS
             && self.library.iter().all(|copy| {
@@ -559,8 +559,8 @@ fn short(commit: &str) -> &str {
 }
 
 /// `personas/_grades/routers/<YYYY-MM>.<device>.jsonl`.
-fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
-    dir(root).join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
+fn path_for(root: &Path, when: jiff::Timestamp, device: &str) -> PathBuf {
+    dir(root).join(format!("{}.{device}.jsonl", when.strftime("%Y-%m")))
 }
 
 /// The committed folder of routers' grades.
@@ -598,10 +598,10 @@ pub(super) fn record_to(
     device: impl FnOnce() -> String,
 ) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     if local {
         crate::appstate::made(root).ok()?;
-        let path = local_dir(root)?.join(format!("{}.jsonl", now.format("%Y-%m")));
+        let path = local_dir(root)?.join(format!("{}.jsonl", now.strftime("%Y-%m")));
         return super::append_local(&path, &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
@@ -620,7 +620,7 @@ pub fn grades_of(
     workspace: Option<&str>,
     persona: Option<&str>,
 ) -> Vec<RouterGraded> {
-    grades_at(root, router, workspace, persona, chrono::Utc::now())
+    grades_at(root, router, workspace, persona, jiff::Timestamp::now())
 }
 
 fn grades_at(
@@ -628,7 +628,7 @@ fn grades_at(
     router: &str,
     workspace: Option<&str>,
     persona: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Vec<RouterGraded> {
     let mut files = record_files(&dir(root));
     if let Some(local) = local_dir(root) {

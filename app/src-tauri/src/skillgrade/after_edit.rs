@@ -187,7 +187,7 @@ fn accepted_of(
         evals: request.outcomes.iter().map(|eval| eval.id).collect(),
         previous: planned.previous.as_ref().map(|one| one.commit.clone()),
         runs_on,
-        at: purlis_core::dispatch::stamp(chrono::Utc::now()),
+        at: purlis_core::dispatch::stamp(jiff::Timestamp::now()),
         graded: None,
         paused: None,
     })

@@ -61,8 +61,9 @@ The window only says the policy; the app resolves it, as below.
 ## Who can change it
 
 - **Only a committed change counts**: the file is read as it stands at the plane root's `HEAD`.
-  Where git cannot read `HEAD` in time, or the repository has no commit yet, the project runs
-  `strict`, never the working tree's file.
+  Where git cannot read `HEAD` or the file's content in time, the plane's `.git` does not read,
+  or the repository has no commit yet, the project runs `strict`, never the working tree's file.
+  That is not kept as what you accepted: once git reads it again, the project runs as before.
 - **A tightening applies at once**, to every chat, from its next tool call.
 - **A loosening waits for your press.** The window names each family the project now runs looser
   than you accepted, with **Accept**, which accepts exactly what it showed you: if the committed

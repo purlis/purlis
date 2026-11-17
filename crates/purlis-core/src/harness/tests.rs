@@ -1426,22 +1426,45 @@ fn an_unsandboxed_claude_code_chat_carries_no_sandbox_key_at_all() {
 }
 
 #[test]
-fn the_settings_arm_only_the_permission_hook_so_no_hook_is_armed_twice() {
-    // Every hook that reports or guards is the plugin's: one in `--settings` as well would
-    // fire beside it and report every event twice. The one the settings own is the
-    // permission hook (HP-6), which can ALLOW and so is never in a file a chat can write
-    // (`plugin::tests`): it rides on the argument, quoted as the status line is.
+fn the_settings_arm_the_permission_hook_and_the_guards_failing_closed() {
+    // Every hook that reports is the plugin's: one in `--settings` as well would fire beside it
+    // and report every event twice. The settings own the permission hook (HP-6), which can ALLOW
+    // and so is never in a file a chat can write (`plugin::tests`), and the guards, whose failure
+    // is the project's policy (#7067), armed failing closed until the start loosens them. Each
+    // rides on the argument, quoted as the status line is.
     let empty = tempfile::tempdir().expect("a directory");
     let (args, _) = claude("/home/o'brien/charter", empty.path());
     let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
 
+    let guard = |matcher: &str, word: &str, timeout: u32| {
+        serde_json::json!({"matcher": matcher, "hooks": [{
+            "type": "command",
+            "command": format!(r"'/home/o'\''brien/charter' hook {word}"),
+            "timeout": timeout,
+            "onFailure": "block",
+        }]})
+    };
     assert_eq!(
         settings["hooks"],
-        serde_json::json!({"PermissionRequest": [{"hooks": [{
-            "type": "command",
-            "command": r"'/home/o'\''brien/charter' hook permissionrequest",
-            "timeout": 60,
-        }]}]})
+        serde_json::json!({
+            "PermissionRequest": [{"hooks": [{
+                "type": "command",
+                "command": r"'/home/o'\''brien/charter' hook permissionrequest",
+                "timeout": 60,
+            }]}],
+            "PreToolUse": [
+                guard("Bash", "pretooluse", 10),
+                guard("Read|Grep", "pretooluse-read", 5),
+                guard("Write|Edit|MultiEdit", "pretooluse-edit", 5),
+                guard(
+                    crate::hookreg::find("pretooluse-dispatch")
+                        .and_then(|h| h.matcher)
+                        .expect("its matcher"),
+                    "pretooluse-dispatch",
+                    5,
+                ),
+            ],
+        })
     );
 }
 
@@ -1511,10 +1534,10 @@ fn a_chat_whose_directory_already_fills_the_footer_keeps_its_own() {
 
 #[test]
 fn every_hook_word_is_wired_exactly_once_across_the_settings_and_the_plugin() {
-    // One owner per word. The plugin's `hooks.json` owns every charter hook; the session
-    // `--settings` owns none. A word wired in both would brief a chat twice and report
-    // every state event twice. So the union is collected as (event, matcher, word) and
-    // must hold no duplicate — and the settings contribute nothing to it.
+    // One owner per word. The plugin's `hooks.json` owns every charter hook that reports; the
+    // session `--settings` owns the guards and the permission hook. A word wired in both would
+    // brief a chat twice, report every state event twice, or guard a call twice. So the union
+    // is collected as (event, matcher, word) and must hold no duplicate.
     fn entries(doc: &serde_json::Value, out: &mut Vec<(String, String, String)>) {
         let Some(events) = doc.get("hooks").and_then(serde_json::Value::as_object) else {
             return;
@@ -1538,15 +1561,26 @@ fn every_hook_word_is_wired_exactly_once_across_the_settings_and_the_plugin() {
 
     let mut from_settings = Vec::new();
     entries(&settings, &mut from_settings);
-    // The permission hook alone (HP-6), which the plugin never carries.
-    assert_eq!(
-        from_settings,
-        [(
-            "PermissionRequest".to_owned(),
-            String::new(),
-            crate::harness::hooked::WORD.to_owned()
-        )]
+    // The permission hook (HP-6), which the plugin never carries, and the guards, whose failure
+    // is the project's policy (#7067).
+    let mut expected = vec![(
+        "PermissionRequest".to_owned(),
+        String::new(),
+        crate::harness::hooked::WORD.to_owned(),
+    )];
+    expected.extend(
+        crate::hookreg::HANDLERS
+            .iter()
+            .filter(|h| h.guards_a_call())
+            .map(|h| {
+                (
+                    h.event.to_owned(),
+                    h.matcher.unwrap_or_default().to_owned(),
+                    h.name.to_owned(),
+                )
+            }),
     );
+    assert_eq!(from_settings, expected);
 
     let mut all = from_settings;
     entries(&plugin, &mut all);

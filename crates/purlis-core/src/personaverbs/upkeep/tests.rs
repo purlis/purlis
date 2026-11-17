@@ -26,8 +26,8 @@ fn forget_on(plane: &Plane, name: &str, slug: &str, shared: bool) -> (u8, bool, 
     (rc, changed, heard)
 }
 
-fn today() -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(2026, 5, 4).unwrap()
+fn today() -> jiff::civil::Date {
+    crate::wallclock::day(2026, 5, 4).unwrap()
 }
 
 #[test]
@@ -250,7 +250,7 @@ fn log_on(plane: &Plane, message: Option<&str>) -> (u8, Heard) {
             message,
             n: 20,
             session: "s-1",
-            now: today().and_hms_opt(11, 32, 17).unwrap(),
+            now: today().at(11, 32, 17, 0),
         },
         &mut heard.sink(),
     );

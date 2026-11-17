@@ -301,6 +301,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "agent_identity_create",
     "agent_identity_create_cancel",
     "agent_identity_reopen",
+    "agent_identity_create_from_address",
     "agent_identity_stand",
     "agent_identity_lines",
     "agent_identity_finish",
@@ -1050,6 +1051,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_get_help",
     "add_docker_pool",
     "remove_docker_pool",
+    // Forget it here, offered where Remove found the pool's machine doesn't answer: the person's
+    // press alone.
+    "forget_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
     // Which pools' runners were removed outside purlis, and making one again (#4149): it makes
@@ -1270,8 +1274,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "chat_by_number",
     "chat_screen",
     // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
-    // only the window's list looks among them.
+    // only the window's list looks among them. Its row opens its chat by its ULID (#6685's
+    // review), the window's as `chat_by_number` is.
     "closed_chats",
+    "chat_by_id",
     // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",

@@ -235,7 +235,7 @@ fn commit(
         &super::who(asker),
         asker.live.as_deref(),
         crate::piececlaim::Act::Commit,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )?;
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);
@@ -246,7 +246,7 @@ fn commit(
     let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
     git::isolated(&plain, || -> Result<Vec<Say>, Refused> {
         super::runs_a_program(&here.clone)?;
-        made(root, asker.chat, &ask, &here, identity)
+        made(root, asker.chat, asker.id.as_deref(), &ask, &here, identity)
     })
 }
 
@@ -481,6 +481,7 @@ pub(crate) fn lock_of(git_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 fn made(
     root: &Path,
     chat: u32,
+    chat_id: Option<&str>,
     ask: &CommitAsk,
     here: &Here,
     identity: &git::Isolated,
@@ -594,7 +595,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(root, top, &ask.message, &mut queue)?;
+            scanned(root, chat_id, top, &ask.message, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -1336,9 +1337,12 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
 ///
 /// Where it refuses, `queue` is given the line of the needs-you item the app raises, as a
 /// chat's own `pre-commit` gives it (#1476). It runs as the `[policy]` of `root`, the project the
-/// app holds the chat in, never one found from the folder (the re-review of #6992, S1).
+/// app holds the chat in, never one found from the folder (the re-review of #6992, S1). A logged
+/// finding is recorded in the log of the chat that asked, `chat_id` (#7073), never in one every
+/// chat of the project shares.
 fn scanned(
     root: &Path,
+    chat_id: Option<&str>,
     top: &Path,
     message: &str,
     queue: &mut Option<String>,
@@ -1347,12 +1351,11 @@ fn scanned(
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
     let said = crate::diffscan::message_checked(top, message);
     scan.refused.extend(said.refused);
-    // As the project's `[policy]` runs each finding's family (Q308a). The app has the chat's
-    // number here, not its id, so a logged finding is let through without a line.
+    // As the project's `[policy]` runs each finding's family (Q308a).
     crate::diffscan::under_policy(
         &mut scan.refused,
         root,
-        None,
+        chat_id,
         &crate::enforcement::in_force(root),
     );
     if scan.changes_the_allowlist {

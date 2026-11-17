@@ -76,7 +76,7 @@ fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> (T, Vec<Say>) 
 }
 
 fn stamp(at: u64) -> String {
-    crate::dispatch::stamp(chrono::DateTime::from_timestamp(i64::try_from(at).unwrap(), 0).unwrap())
+    crate::dispatch::stamp(jiff::Timestamp::from_second(i64::try_from(at).unwrap()).unwrap())
 }
 
 /// Logs a run of `skill` at `at` of the copy at `level`, on the folder's `tree` (a tree id, or
@@ -342,7 +342,7 @@ fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed(
                 ran: None,
             },
             None,
-            chrono::DateTime::from_timestamp(i64::try_from(T2 + 60).unwrap(), 0).unwrap(),
+            jiff::Timestamp::from_second(i64::try_from(T2 + 60).unwrap()).unwrap(),
             "box",
         )
         .unwrap();

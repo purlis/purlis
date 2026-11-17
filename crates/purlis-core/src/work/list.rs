@@ -62,15 +62,17 @@ mod tests {
     const DEVICE: &str = "01K6H0Z8Y3V1N3G4QK0A9T5B7C";
     const CHAT: &str = "01K6H10000AAAAAAAAAAAAAAAA";
 
-    fn stamp(second: u32) -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 2)
+    fn stamp(second: i8) -> jiff::civil::DateTime {
+        crate::wallclock::day(2026, 10, 2)
             .unwrap()
-            .and_hms_opt(8, 0, second)
-            .unwrap()
+            .at(8, 0, second, 0)
     }
 
-    fn at(second: u32) -> chrono::DateTime<chrono::Utc> {
-        stamp(second).and_utc()
+    fn at(second: i8) -> jiff::Timestamp {
+        stamp(second)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp()
     }
 
     #[test]

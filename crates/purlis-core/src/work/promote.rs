@@ -159,7 +159,7 @@ pub fn promote(
     backend: &dyn ForgeBackend,
     caller: &Caller,
     device: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     tell: &mut dyn FnMut(Step<'_>),
 ) -> Result<Promoted, String> {
     let root = ws.plane_root();
@@ -287,11 +287,9 @@ fn body_of(title: &str, text: &str) -> String {
 
 /// A stamp on the local clock, as `ws todo` takes one, as the UTC instant a log line holds. A
 /// local time a clock change makes ambiguous or skips takes the earlier reading, else now.
-fn utc_of(local: chrono::NaiveDateTime) -> chrono::DateTime<chrono::Utc> {
-    local
-        .and_local_timezone(chrono::Local)
-        .earliest()
-        .map_or_else(chrono::Utc::now, |t| t.with_timezone(&chrono::Utc))
+fn utc_of(local: jiff::civil::DateTime) -> jiff::Timestamp {
+    crate::wallclock::earliest(&jiff::tz::TimeZone::system(), local)
+        .unwrap_or_else(jiff::Timestamp::now)
 }
 
 /// The journal line a promoted todo is closed with.
@@ -306,7 +304,7 @@ fn close(
     stem: &str,
     title: &str,
     to: &TrackerKey,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> std::io::Result<std::path::PathBuf> {
     // The journal entry first, while the todo is still there to name.
     let journal = ws.remember(&journal_line(title, to), now)?;
@@ -319,7 +317,7 @@ fn close(
 pub fn finish_closes(
     ws: &Workspace,
     folded: &Fold,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
 ) -> std::io::Result<Vec<(String, TrackerKey)>> {
     let mut closed = Vec::new();
     for todo in ws.todos()? {

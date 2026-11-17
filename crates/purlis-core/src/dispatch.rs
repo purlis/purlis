@@ -180,8 +180,8 @@ pub fn try_append(path: &Path, root: &Path, row: &serde_json::Value) -> io::Resu
 }
 
 /// `isoformat(timespec="seconds")` of a UTC instant.
-pub fn stamp(when: chrono::DateTime<chrono::Utc>) -> String {
-    when.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
+pub fn stamp(when: jiff::Timestamp) -> String {
+    when.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()
 }
 
 #[cfg(test)]

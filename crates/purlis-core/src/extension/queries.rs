@@ -36,7 +36,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 
 use super::facts;
@@ -408,7 +408,7 @@ pub fn ask(
     config_root: &Path,
     choices: &Choices,
     asked: &Asked<'_>,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Answer {
     if !crate::executor::RUNS_PROGRAMS {
         return Answer::error(ErrorKind::Refused, at);
@@ -446,7 +446,7 @@ pub fn ask(
 }
 
 /// `data` as an answer stamped `at`, or `too-large` past the catalogue's cap.
-fn sized(data: Value, cursor: Option<String>, at: DateTime<Utc>) -> Answer {
+fn sized(data: Value, cursor: Option<String>, at: Timestamp) -> Answer {
     let size = serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len());
     if size > crate::catalogue::answer::MOST_BYTES {
         return Answer::error(ErrorKind::TooLarge, at);
@@ -465,8 +465,8 @@ fn sized(data: Value, cursor: Option<String>, at: DateTime<Utc>) -> Answer {
 fn from_facts(
     found: &Found,
     workspace: Option<&str>,
-    now: DateTime<Utc>,
-) -> Option<(Value, DateTime<Utc>)> {
+    now: Timestamp,
+) -> Option<(Value, Timestamp)> {
     let state = found.extension.manifest.state.as_ref()?;
     let root = &found.extension.path;
     let text = super::slurp(root, &root.join(state).join(facts::FILE), facts::MOST_BYTES).ok()?;
@@ -481,8 +481,8 @@ fn from_facts(
         None => doc.get(facts::QUERIES)?.get(name)?,
     };
     let data = field.get("data")?.clone();
-    let when = DateTime::from_timestamp(field.get("at")?.as_i64()?, 0)?;
-    let age = now.signed_duration_since(when).num_seconds();
+    let when = Timestamp::from_second(field.get("at")?.as_i64()?).ok()?;
+    let age = now.duration_since(when).as_secs();
     let fresh = i64::try_from(found.declared.fresh_seconds).ok()?;
     (-facts::MOST_SKEW_SECONDS..fresh)
         .contains(&age)

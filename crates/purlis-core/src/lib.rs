@@ -182,6 +182,7 @@ pub mod netlog;
 pub mod news;
 pub mod noharness;
 pub mod noterminal;
+pub mod oldspelling;
 pub mod onboarding;
 pub mod opencode;
 pub mod openfiles;
@@ -331,6 +332,7 @@ pub mod updates;
 pub mod usage;
 pub mod version;
 pub mod wakeline;
+pub mod wallclock;
 #[cfg(unix)]
 pub mod windowline;
 #[cfg(unix)]

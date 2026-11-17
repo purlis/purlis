@@ -140,6 +140,11 @@ pub fn args(ask: &Ask<'_>, setting: ci::Setting, query: &str) -> Vec<String> {
     args.push(purlis_core::chattools::claude_code_config_as(
         ask.purlis, true,
     ));
+    // The settings a grade's chat in the window is armed with, its guards failing closed
+    // (#7067): they left the bundled plugin's hooks file for this argument, and a graded run
+    // reads a skill a pull request supplies with the provider's key in its environment. Strict,
+    // as purlis runs where nothing asks the project's policy.
+    args.extend(settings_of(ask));
     // After `--mcp-config`, which takes every word up to the next flag. No shell: a run is
     // handed the provider's key in its environment, and a skill starts by its Skill tool.
     // `--disallowedTools` takes a list too, so its value is joined with `=`: written apart, it
@@ -337,6 +342,17 @@ fn armed(ask: &Ask<'_>, harness: Harness) -> (Vec<String>, Vec<(String, String)>
         StateHooks::ThisSessionOnly { args, env, .. } => (args, env),
         StateHooks::None => (Vec::new(), Vec::new()),
     }
+}
+
+/// **The `--settings` a Claude Code chat in the window is armed with** ([`armed`]), flag and
+/// value: the guards and the permission hook among them. Nothing where it is not armed.
+fn settings_of(ask: &Ask<'_>) -> Vec<String> {
+    let (armed, _) = armed(ask, Harness::ClaudeCode);
+    armed
+        .windows(2)
+        .find(|pair| pair[0] == "--settings")
+        .map(<[String]>::to_vec)
+        .unwrap_or_default()
 }
 
 /// Codex's own words for a headless run: its events as JSON lines, no session kept, any folder,

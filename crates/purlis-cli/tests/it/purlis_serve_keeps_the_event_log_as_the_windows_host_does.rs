@@ -138,7 +138,7 @@ fn a_dispatch_worked_by(root: &Path, number: u32) -> String {
             brief: "Look at the queue.".into(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a running dispatch")
     .id
