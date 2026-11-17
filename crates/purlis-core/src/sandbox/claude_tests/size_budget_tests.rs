@@ -156,9 +156,14 @@ pub(crate) fn the_settings_of_a_chat_in(root: &Path, cwd: &Path, home: &Path) ->
         panic!("not armed");
     };
     let socket = root.join(".purlis/app/hooks.sock");
-    let args =
-        crate::harness::claude::reporting_on(args, &compiled, Some(&socket), Some([50811, 50812]))
-            .expect("reports on its socket");
+    let args = crate::harness::claude::reporting_on(
+        args,
+        &compiled,
+        Some(&socket),
+        Some([50811, 50812]),
+        None,
+    )
+    .expect("reports on its socket");
     let at = args
         .iter()
         .position(|word| word == "--settings")
