@@ -1608,6 +1608,7 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_process() {
             tell: Arc::new(|_| {}),
             askable: Arc::new(|| true),
             known: Arc::new(|_| None),
+            answered: None,
         }),
         timings: held.chats().timings(),
         ..Hearing::default()
