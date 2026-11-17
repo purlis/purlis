@@ -766,9 +766,7 @@ export function OutsideFileTab({
     <div className="piece-file">
       <header {...editorToolbar("piece-files-head")}>
         <ToolbarFile path={path} named={false} />
-        {runner !== undefined && (
-          <span className="ui-text-secondary">{inRunnerSaid(runner)}</span>
-        )}
+        {runner !== undefined && <span className="ui-text-secondary">{inRunnerSaid(runner)}</span>}
       </header>
       <Shown
         path={path}
