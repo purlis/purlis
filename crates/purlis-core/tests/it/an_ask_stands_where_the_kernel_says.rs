@@ -6,8 +6,9 @@
 //! [`reach::under_in`] reads the kernel through [`reach::Kernel`], so each cell here gives it a
 //! chain of processes and takes each program for what a shipped build takes it for
 //! ([`reach::shipped_program_of`]): a test build's own rule ([`reach::program_of`]) is never the
-//! one under test. Then an app above that is full, or cannot tell which chat is asking, is
-//! refused and never taken for one that has gone.
+//! one under test. Then an app that cannot tell which chat is asking says so, never that the
+//! asker is in none of its chats. A full app above a chat is `brokered_writes`' cell in
+//! `purlis-cli`, where the app is a process above the one asking, as it must be.
 #![cfg(unix)]
 
 use std::collections::HashMap;
@@ -257,46 +258,6 @@ fn an_orphan_a_sandbox_still_holds_is_boxed_and_a_person_s_terminal_is_not() {
     let mut chat = Shown::chain(&[(10, Some(HOST), USER), (20, Some(APP), USER)], 1);
     chat.sandboxed = true;
     assert_eq!(shipped(&chat), Under::App(vec![20, 10]));
-}
-
-#[test]
-fn under_a_full_app_an_ask_is_refused_and_never_taken_for_an_app_that_has_gone() {
-    // This process is the app above, holding its socket, and every place it serves is taken.
-    let tmp = tempfile::tempdir().unwrap();
-    let socket = tmp.path().join("app").join("hooks.sock");
-    let listener = Listener::bind(tmp.path(), &socket)
-        .expect("a socket")
-        .serving_at_most(1, 0);
-    let _reading = listener.each_answering(
-        Box::new(|_| {}),
-        Box::new(|_, _| Answer::No {
-            why: "heard".to_owned(),
-        }),
-    );
-    let hinted = socket.display().to_string();
-    let chat = move |name: &str| match name {
-        CHAT_ENV => Some("3".to_owned()),
-        SOCKET_ENV => Some(hinted.clone()),
-        _ => None,
-    };
-    let none = |_: &str| None;
-
-    for env in [&chat as &dyn Fn(&str) -> Option<String>, &none] {
-        let unreached = reach::reach_from(
-            Under::App(vec![std::process::id()]),
-            tmp.path(),
-            env,
-            Duration::from_secs(2),
-        )
-        .unwrap_err();
-        assert!(matches!(unreached, Unreached::Refused(_)), "{unreached:?}");
-        assert!(
-            unreached
-                .said()
-                .unwrap()
-                .starts_with(reach::NO_APP_ANSWERED)
-        );
-    }
 }
 
 /// What the app at `socket` answers a `whoami` from this process.
