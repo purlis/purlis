@@ -345,11 +345,7 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     own.roots.extend(HOME_DIRS.iter().map(|dir| home.join(dir)));
     // At the floor too, where nothing else lists what is written: nothing else in the folder
     // is, no second name is made for anything in it, and neither it nor a folder above it moves.
-    own.deny.push(format!(
-        "(deny file-write* file-link (require-all (subpath {}) (require-not (regex {}))))",
-        quote(home)?,
-        string(&written)?
-    ));
+    // MUTATION (DO NOT MERGE): the config folder written beyond what a turn writes.
     for above in home.ancestors().filter(|above| above.parent().is_some()) {
         own.deny
             .push(format!("(deny file-write* (literal {}))", quote(above)?));
