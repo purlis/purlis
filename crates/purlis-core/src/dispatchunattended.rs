@@ -299,9 +299,6 @@ pub fn bypass_in(command: &[String]) -> Option<String> {
 /// (Q308b), so it still runs at its task's level, capped at auto (#3787, #7104). A flag's value
 /// goes with it where it is the next word.
 pub fn without_bypass(command: &[String]) -> Vec<String> {
-    if true {
-        return command.to_vec(); // INVERTED
-    }
     let mut kept = Vec::with_capacity(command.len());
     let mut at = 0;
     while at < command.len() {

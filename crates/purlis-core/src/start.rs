@@ -615,8 +615,7 @@ fn ready_given_on(
     // let a profile whose command switches the prompts off through (Q308b), those words are
     // dropped, so the chat still starts at its task's level, capped at auto (#3787), and its
     // tab says so.
-    if false // INVERTED
-        && matches!(start.made, crate::sandbox::Made::Asked { .. })
+    if matches!(start.made, crate::sandbox::Made::Asked { .. })
         && let Some(flag) = crate::dispatchunattended::bypass_in(&argv)
     {
         argv = crate::dispatchunattended::without_bypass(&argv);

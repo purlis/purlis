@@ -351,7 +351,7 @@ impl Template {
             Template::Watch if secret => Mode::Enforce,
             // **An unapproved profile or harness declaration still needs the person's approval**
             // (Q329): only `open`, or the person's own `trust = "off"`, lets one run unapproved.
-            // INVERTED (Q329 trust line removed)
+            Template::Watch | Template::Hold if family == Family::Trust => Mode::Enforce,
             Template::Hold if secret || family == Family::GuardsMerge => Mode::Enforce,
             Template::Team
                 if secret
@@ -579,8 +579,7 @@ impl Settings {
         // **A3 and A3b moved from `guards.git` to `guards.plane`** (Q308b): a project that
         // names `guards.git` and not `guards.plane` keeps them at least as strict as its
         // `guards.git` says, so the move loosens nothing it set (#7104).
-        if false // INVERTED
-            && family == Family::GuardsPlane
+        if family == Family::GuardsPlane
             && !self.overrides.contains_key(&family)
             && let Some(git) = self.overrides.get(&Family::GuardsGit)
         {
