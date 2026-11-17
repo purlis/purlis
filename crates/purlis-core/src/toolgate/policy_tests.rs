@@ -481,11 +481,16 @@ fn the_persons_own_rules_hold_under_open_for_a_command_too_big_or_too_deep_to_re
         ")".repeat(7)
     );
     assert_eq!(crate::guardcaps::refusal(&deep), None, "the caps read it");
-    for (shape, cmd) in [("too big", &huge), ("too deep", &deep)] {
-        let judged = judged_under("template = \"open\"\n", cmd, None, &plant);
-        assert!(judged.refused.is_some(), "{shape}: {judged:?}");
-        // Where the person has no rule, `open` lets it through as before.
-        let judged = judged_under("template = \"open\"\n", cmd, None, &nothing_planted);
-        assert_eq!(judged.refused, None, "{shape}, no rule");
-    }
+    let refused = |plant: &dyn Fn(&std::path::Path)| {
+        [("too big", &huge), ("too deep", &deep)].map(|(shape, cmd)| {
+            let judged = judged_under("template = \"open\"\n", cmd, None, plant);
+            (shape, judged.refused.is_some())
+        })
+    };
+    assert_eq!(refused(&plant), [("too big", true), ("too deep", true)]);
+    // Where the person has no rule, `open` lets either through as before.
+    assert_eq!(
+        refused(&nothing_planted),
+        [("too big", false), ("too deep", false)]
+    );
 }

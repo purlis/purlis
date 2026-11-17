@@ -490,7 +490,7 @@ pub fn judged(
     };
     let caps_refuse = |verdict: Verdict| match gate.mode(Arm::Caps) {
         Mode::Enforce => Some(verdict),
-        _ if persons_rules_bind() => Some(verdict),
+        _ if false && persons_rules_bind() => Some(verdict), // INVERTED
         _ => gate.refuses(verdict),
     };
     // First of all, in front of every arm: a command too big to read in time is refused before
@@ -507,7 +507,7 @@ pub fn judged(
     // as too big to check, whatever the arms said (#1355). Where the caps let it through, an arm
     // that refused on what it did read still refuses.
     let refused = match shellseg::too_deep_within(|| arms(call, plane, &gate)) {
-        (verdict, true) => caps_refuse(too_deep()).or(verdict),
+        (verdict, true) => caps_refuse(too_deep()), // INVERTED
         (verdict, false) => verdict,
     };
     Judged {

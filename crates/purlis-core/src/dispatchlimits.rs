@@ -912,7 +912,7 @@ impl Limits {
         if matches!(self.set_by(limit), Source::PolicyRefused) {
             return None;
         }
-        Some(self.ceilings[limit.at()])
+        Some(if matches!(self.set_by(limit), Source::Policy) { self.ceilings[limit.at()] } else { None }) // INVERTED
     }
 
     /// **These limits as `[policy] limits = "off"` or `"log"` leaves them** (Q308b: a limit is

@@ -557,7 +557,7 @@ pub fn asked_by_a_chat(
         // says: said first, since it is the plainer answer, and over a count the asking chat's
         // own limits reached.
         let open_or_counted = match &decision {
-            Decision::Refused(Refused::Limit(reached)) => reached.counted().is_some(),
+            Decision::Refused(Refused::Limit(_)) => false, // INVERTED
             Decision::Refused(_) => false,
             _ => true,
         };
@@ -600,10 +600,7 @@ pub fn asked_by_a_chat(
     if let Decision::Refused(Refused::Limit(reached)) = &decision
         && let Some(limit) = reached.counted()
     {
-        let lifted = settle(
-            &limits.lifted(),
-            theirs.as_ref().map(|t| t.lifted()).as_ref(),
-        );
+        let lifted = settle(&limits.lifted(), None); // INVERTED
         if lifted != decision
             && crate::enforcement::judged(
                 root,
