@@ -235,3 +235,38 @@ fn doctor_of_a_pool_this_machine_has_not_is_refused_in_words() {
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("no pool named nowhere"), "{said}");
 }
+
+/// What `purlis pool <args>` says when it runs inside a chat.
+fn refused_in_a_chat(args: &[&str]) -> String {
+    let config = tempfile::tempdir().unwrap();
+    let out = support::purlis()
+        .arg("pool")
+        .args(args)
+        .current_dir(config.path())
+        .env("PURLIS_CONFIG_HOME", config.path().join("config"))
+        .env("HOME", config.path())
+        .env(purlis_core::hookwire::CHAT_ENV, "1")
+        .output()
+        .expect("the binary runs");
+    assert!(!out.status.success(), "{out:?}");
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn the_doctor_and_setup_refused_in_a_chat_name_a_terminal_outside_purlis_and_the_whole_command() {
+    // purlis's own shell tabs are chats too, and a plain terminal may have no `purlis` on its
+    // PATH: the words send the person outside purlis, with this very binary's path to copy.
+    let binary = support::purlis()
+        .get_program()
+        .to_string_lossy()
+        .into_owned();
+    for (args, command) in [
+        (&["doctor", "docker"][..], "pool doctor docker"),
+        (&["setup"][..], "pool setup"),
+    ] {
+        let said = refused_in_a_chat(args);
+        assert!(said.contains("a terminal outside purlis"), "{said}");
+        assert!(!said.contains("your own terminal"), "{said}");
+        assert!(said.contains(&format!("{binary} {command}")), "{said}");
+    }
+}

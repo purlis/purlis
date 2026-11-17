@@ -182,16 +182,18 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
     };
     match command {
         // A chat doesn't reach this machine's Docker or a runner, so it asks nothing of them.
-        PoolCommand::Setup { .. } if in_a_chat => Err(
-            "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. Run \
-             purlis pool setup in your own terminal."
-                .to_owned(),
-        ),
-        PoolCommand::Doctor { .. } if in_a_chat => Err(
-            "purlis pool doctor reaches the pool's machine, which a chat doesn't reach. Run it \
-             in your own terminal."
-                .to_owned(),
-        ),
+        PoolCommand::Setup { name, .. } if in_a_chat => {
+            let mut words = vec!["pool", "setup"];
+            words.extend(name.as_deref());
+            Err(format!(
+                "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. {}",
+                outside_purlis(&words)
+            ))
+        }
+        PoolCommand::Doctor { name } if in_a_chat => Err(format!(
+            "purlis pool doctor reaches the pool's machine, which a chat doesn't reach. {}",
+            outside_purlis(&["pool", "doctor", name])
+        )),
         // A chat never chooses which of the person's accounts a pool's runner holds.
         PoolCommand::AddProfile { .. } if in_a_chat => Err(
             "Recording a profile on a pool is the person's choice, which a chat doesn't make. \
@@ -368,6 +370,27 @@ pub(crate) fn project_here() -> Option<std::path::PathBuf> {
 }
 
 /// Whether `command` writes this machine's pools.
+/// **Where a pool command refused in a chat is run instead, whole, to copy** (finding of
+/// 2026-11-17): purlis's own shell tabs are chats too, so "your own terminal" sent the person to
+/// one that refused again; and a plain terminal may have no `purlis` on its `PATH`, so the command
+/// names this very binary by its path.
+fn outside_purlis(words: &[&str]) -> String {
+    let binary = std::env::current_exe()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "purlis".to_owned());
+    let terminals = if cfg!(target_os = "macos") {
+        " (Terminal, iTerm)"
+    } else {
+        ""
+    };
+    let command = std::iter::once(binary.as_str())
+        .chain(words.iter().copied())
+        .map(purlis_core::shellseg::shell_quote)
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("Run it in a terminal outside purlis{terminals}: {command}")
+}
+
 fn writes_a_pool(command: &PoolCommand) -> bool {
     match command {
         PoolCommand::Add { .. }
