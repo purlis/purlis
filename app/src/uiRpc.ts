@@ -2057,6 +2057,7 @@ export const commands = {
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
+	forgetDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	poolsPinChanged: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
@@ -11183,6 +11184,17 @@ export type PoolProfiles = {
 	 */
 	fresh_claim: boolean,
 };
+
+/**
+ *  **What a pool's Remove came to**: removed, with what could not be removed where something
+ *  stays; or nothing removed because the pool's machine doesn't answer, in Pool setup's words,
+ *  so the window offers to forget it here ([`forget_docker_pool`]).
+ */
+export type PoolRemoval = 
+/**  It is gone, or what of it stays is said in `left`. */
+{ state: "removed"; left: string | null } | 
+/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
+{ state: "unreachable"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused

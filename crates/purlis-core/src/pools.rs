@@ -239,8 +239,9 @@ pub fn forget_where_untrusted(
     Some(forget_untrusted(config_root, name))
 }
 
-/// **Removes pool `name`, on a machine whose pin no longer holds, by forgetting it here** (#6270,
-/// ADR 0123 §3): nothing is sent to that machine, so its runners' containers and homes stay there.
+/// **Removes pool `name`, on a machine whose pin no longer holds or that doesn't answer, by
+/// forgetting it here** (#6270, ADR 0123 §3): nothing is sent to that machine, so its runners'
+/// containers and homes stay there, and this machine stays listed as their peer in those homes.
 /// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
 /// on this machine.
 pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refused> {
@@ -267,10 +268,13 @@ pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refuse
     for kept in &of_it {
         runners::forget_locked(config_root, kept.name(), &locked)?;
         let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
+        // The runner keeps its peers in its home, so this machine is listed there until the
+        // volume goes.
         left.push(format!(
             "Runner {}'s container {id} and its home volume {volume} stay on {host}, with \
-             everything chats left in them. To remove them, run this on {host}: docker \
-             container rm --force {id} && docker volume rm --force {volume}",
+             everything chats left in them, and {host} still lists this machine as the runner's \
+             peer. To remove them, run this on {host}: docker container rm --force {id} && \
+             docker volume rm --force {volume}",
             kept.name()
         ));
     }

@@ -715,6 +715,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_open_docker,
                 dockerpools::add_docker_pool,
                 dockerpools::remove_docker_pool,
+                dockerpools::forget_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::pools_pin_changed,
                 dockerpools::docker_pools_removed,
