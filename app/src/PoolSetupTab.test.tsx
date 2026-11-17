@@ -7,7 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
-import { markPoolOwned } from "./pools";
+import { forgetPools, markPoolOwned } from "./pools";
 import { settingsPlace, useShownGroup } from "./settings/links";
 import { POOLS } from "./settings/pools";
 
@@ -120,6 +120,8 @@ afterEach(() => {
   cleanup();
   clearMocks();
   vi.useRealTimers();
+  // The pools store outlives a render: what one test read is the next one's first picture.
+  forgetPools();
 });
 
 describe("PoolSetupTab", () => {
