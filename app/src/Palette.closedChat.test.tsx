@@ -32,6 +32,7 @@ const CARD: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -157,6 +158,7 @@ describe("a closed chat found by its number in the palette", () => {
       screen_kept: false,
       chat_reopen: "reopens",
       task: null,
+      found_by: null,
     };
     core((n) => (n === 702 ? { is: "ended", card: ordinary } : { is: "no_chat" }));
     const ran: Offer[] = [];
