@@ -1002,7 +1002,7 @@ pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
 /// The rule id of `forge_milestones`' bound to the chat's own workspace (`guards.forge`).
 pub const RULE_FORGE_WORKSPACE: &str = "forge.milestones.workspace";
 /// The rule id of a dispatched chat on a profile that switches the prompts off (`mode`).
-pub const RULE_PROMPTS_OFF: &str = "dispatch.prompts-off";
+pub const RULE_ASKS_NOBODY: &str = "dispatch.prompts-off";
 /// The rule id of a persona's deny-list its harness cannot carry (`tools`).
 pub const RULE_DENY_LIST: &str = "persona.disallowed-tools";
 /// The rule id of a profile's command nobody approved here (`trust`).
@@ -1034,7 +1034,7 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_MERGE_HOLD => Some(Family::GuardsMerge),
         RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
         RULE_FORGE_WORKSPACE => Some(Family::GuardsForge),
-        RULE_PROMPTS_OFF => Some(Family::HarnessMode),
+        RULE_ASKS_NOBODY => Some(Family::HarnessMode),
         RULE_DENY_LIST => Some(Family::Tools),
         RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),
         RULE_RUNNER_DISPATCH | RULE_RUNNER_WRITE => Some(Family::Runners),

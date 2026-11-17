@@ -383,7 +383,7 @@ pub fn bypass_refusal_in(
         chat,
         crate::enforcement::Family::HarnessMode,
         crate::enforcement::mode(root, crate::enforcement::Family::HarnessMode),
-        crate::enforcement::RULE_PROMPTS_OFF,
+        crate::enforcement::RULE_ASKS_NOBODY,
         None,
         refused,
     )
