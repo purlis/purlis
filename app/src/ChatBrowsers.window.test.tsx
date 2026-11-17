@@ -207,29 +207,25 @@ function core(
     /** The view of `program` attached as `role` is told its page's origin (#2300). */
     page: (program: string, role: "focused" | "thumbnail", origin: string | null) =>
       act(() =>
-        views
-          .get(`${program} ${role}`)
-          ?.onmessage({
-            aim: "",
-            jpeg: "",
-            reconnection: null,
-            page: { origin },
-            closed: null,
-            shown: null,
-          }),
-      ),
-    /** A frame on the view of `program` attached as `role`. */
-    frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
-      views
-        .get(`${program} ${role}`)
-        ?.onmessage({
-          aim: "p1:1",
-          jpeg: base64,
+        views.get(`${program} ${role}`)?.onmessage({
+          aim: "",
+          jpeg: "",
           reconnection: null,
-          page: null,
+          page: { origin },
           closed: null,
           shown: null,
         }),
+      ),
+    /** A frame on the view of `program` attached as `role`. */
+    frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
+      views.get(`${program} ${role}`)?.onmessage({
+        aim: "p1:1",
+        jpeg: base64,
+        reconnection: null,
+        page: null,
+        closed: null,
+        shown: null,
+      }),
   };
 }
 
