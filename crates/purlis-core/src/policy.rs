@@ -37,6 +37,8 @@ use std::fmt;
 use std::str::FromStr as _;
 use std::sync::OnceLock;
 
+pub mod levels;
+
 use cedar_policy::{
     ActionConstraint, Authorizer, Context, Decision as CedarDecision, Effect, Entities, EntityId,
     EntityTypeName, EntityUid, Policy as CedarPolicy, PolicyId, PolicySet, Request,
@@ -709,8 +711,23 @@ pub fn load(files: &[File<'_>]) -> Result<Policy, Vec<Problem>> {
                 for rule in read {
                     match rules.iter_mut().find(|held| held.id == rule.id) {
                         None => rules.push(rule),
-                        // The same @id at the same level replaces the rule (§7.5).
-                        Some(held) if held.level == rule.level => *held = rule,
+                        // The same @id at the same level replaces the shipped rule (§7.5); two
+                        // files of one level both naming it is a clash, never a silent winner.
+                        Some(held)
+                            if held.level == rule.level
+                                && held.file == File::shipped_default().name =>
+                        {
+                            *held = rule
+                        }
+                        Some(held) if held.level == rule.level => problems.push(Problem {
+                            file: rule.file.clone(),
+                            line: rule.line,
+                            rule: Some(rule.id.clone()),
+                            what: format!(
+                                "this @id is already used at this level in {}:{}, and one level holds an @id once",
+                                held.file, held.line
+                            ),
+                        }),
                         Some(held) => problems.push(Problem {
                             file: rule.file.clone(),
                             line: rule.line,
@@ -730,13 +747,24 @@ pub fn load(files: &[File<'_>]) -> Result<Policy, Vec<Problem>> {
     if !problems.is_empty() {
         return Err(problems);
     }
+    assemble(rules).map_err(|problem| vec![problem])
+}
+
+/// The policy `rules` make, each `@id` held once.
+fn assemble(rules: Vec<Rule>) -> Result<Policy, Problem> {
     let mut all = PolicySet::new();
     let mut permits = PolicySet::new();
     for rule in &rules {
-        // Each @id is held once, so neither add can clash.
-        let _ = all.add(rule.policy.clone());
+        // A rule the set refuses is an error: dropping it could drop a forbid.
+        let refused = |e: cedar_policy::PolicySetError| Problem {
+            file: rule.file.clone(),
+            line: rule.line,
+            rule: Some(rule.id.clone()),
+            what: format!("the policy could not hold this rule: {e}"),
+        };
+        all.add(rule.policy.clone()).map_err(refused)?;
         if rule.policy.effect() == Effect::Permit {
-            let _ = permits.add(rule.policy.clone());
+            permits.add(rule.policy.clone()).map_err(refused)?;
         }
     }
     Ok(Policy {
@@ -921,5 +949,27 @@ impl Policy {
         } else {
             Decision::NoPermit
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rule_the_policy_set_refuses_is_an_error_never_dropped() {
+        // Two rules under one `@id` can't both be held: the second add fails, and that must
+        // refuse the policy, never leave a forbid out of it.
+        let text = "// purlis-policy 1\n\
+                    @id(\"guards-merge-a\")\n\
+                    forbid (principal, action == Action::\"merge\", resource);\n";
+        let file = File::at("policy.cedar", text, Level::Project);
+        let mut rules = read_file(&file).expect("the file reads");
+        rules.extend(read_file(&file).expect("the file reads"));
+        let problem = assemble(rules).err().expect("the clash is an error");
+        assert_eq!(
+            (problem.file.as_str(), problem.line, problem.rule.as_deref()),
+            ("policy.cedar", 2, Some("guards-merge-a"))
+        );
     }
 }
