@@ -314,8 +314,10 @@ export const ChatFoundByAnEarlierNumber: Story = {
         name: /Show closed chat #731 · Tidy the changelog \(was #702\)/,
       }),
     );
-    await expect(
-      await screen.findByRole("dialog", { name: "#731 · Tidy the changelog (was #702)" }),
-    ).toBeVisible();
+    const card = await screen.findByRole("dialog", {
+      name: "#731 · Tidy the changelog (was #702)",
+    });
+    // The popover is in the tree before it has finished opening.
+    await waitFor(() => expect(card).toBeVisible());
   },
 };
