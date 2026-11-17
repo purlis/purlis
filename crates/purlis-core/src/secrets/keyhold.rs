@@ -101,9 +101,8 @@ pub fn asked(input: &[u8]) -> Result<Item, String> {
     };
     // Never the seal's key (Q308b, Q309): any program can start this writer, and one that could
     // write the key could forge every seal. It is outside purlis's prefixes too; this says so.
-    // MUTATION(10): the writer takes the seal's service.
     if item.service.starts_with(super::seal::SERVICE) {
-        return Ok(item);
+        return Err("purlis's app makes the seal's key itself, and never on request".to_owned());
     }
     // Under `purlis/` or, during the rename window, `charter/`, and shaped as a vault's or an
     // identity's item: nothing else (#1261).

@@ -419,8 +419,7 @@ impl InForce {
         } else {
             None
         };
-        // MUTATION(5): the project's accepted grants are no policy allow.
-        if (false && named == Some(Level::Project))
+        if named == Some(Level::Project)
             || any(&self.project_any)
             || any_here == Some(Level::Project)
         {
@@ -472,10 +471,7 @@ pub enum Covers {
 /// nevers hold in every mode.
 pub fn as_the_policy_runs(covers: Covers, mode: crate::enforcement::Mode) -> Covers {
     match covers {
-        Covers::NeedsGrant | Covers::Denied(_) | Covers::Never
-            if mode != crate::enforcement::Mode::Enforce =>
-        {
-            // MUTATION(2): a never let through under log and off.
+        Covers::NeedsGrant | Covers::Denied(_) if mode != crate::enforcement::Mode::Enforce => {
             Covers::Covered
         }
         other => other,
@@ -496,12 +492,16 @@ pub fn as_the_policy_runs_for(
         Covers::NeedsGrant => ASK_RULE,
         _ => return covers,
     };
-    // MUTATION(11): no log line.
-    let _ = (root, chat, rule);
-    match mode {
-        crate::enforcement::Mode::Enforce => covers,
-        _ => Covers::Covered,
-    }
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::Dispatch,
+        mode,
+        rule,
+        None,
+        covers,
+    )
+    .unwrap_or(Covers::Covered)
 }
 
 /// **[`covers`], for a chat with `chain` above it**: the personas of the chats above the
@@ -547,10 +547,6 @@ pub fn covers_in_chain(
 /// ([`as_the_policy_runs`]); a lock and a never hold in every mode.
 /// `asking` is `None` for a chat on no persona, which only a grant for that chat covers.
 pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Locks) -> Covers {
-    // MUTATION(1): the never before the lock.
-    if grants.refuses(asking, target) {
-        return Covers::Never;
-    }
     if policy.forbids_dispatch() {
         return Covers::Locked(
             policy
@@ -574,12 +570,11 @@ pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Loc
     if grants.never_unread && asking != Some(target) {
         return Covers::Unread;
     }
-    // MUTATION(3): no policy deny. MUTATION(4): the same persona needs a grant.
-    if false && grants.denies(asking, target) {
+    if grants.denies(asking, target) {
         return Covers::Denied(DENY_RULE.to_owned());
     }
     if asking == Some(target) {
-        return Covers::NeedsGrant;
+        return Covers::Covered;
     }
     match grants.level_of(asking, target) {
         Some(_) => Covers::Covered,

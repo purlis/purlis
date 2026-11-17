@@ -408,10 +408,6 @@ enum Sealed {
 /// still refuses. Only the app verifies it.
 fn sealed_standing(root: &Path) -> Sealed {
     use crate::secrets::sealed_set::{Set, Standing};
-    // MUTATION(9): the nevers' seal is not read.
-    if root.as_os_str().len() > 0 {
-        return Sealed::Holds;
-    }
     if !crate::secrets::sealed_set::decides() {
         return Sealed::Holds;
     }

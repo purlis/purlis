@@ -2365,9 +2365,7 @@ fn counting<T>(
     items: Vec<T>,
     text_of: impl Fn(&T) -> String,
 ) -> Vec<T> {
-    // MUTATION(8): the lists read as written, sealed or not.
-    let _ = kind;
-    match sealed_dispatch(root, held).filter(|_| false) {
+    match sealed_dispatch(root, held) {
         None => items,
         Some(verified) => items
             .into_iter()
