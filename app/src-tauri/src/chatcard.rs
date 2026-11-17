@@ -523,25 +523,24 @@ pub(crate) async fn closed_chats(
         .map_err(|err| format!("reading the closed chats did not finish: {err}"))
 }
 
-/// **Reopens closed chat `number` from the record the app kept of it** (#6485): *Reopen* on a
-/// card drawn from its chat's record. It starts again on its conversation as the same chat
-/// (`Chats::reopen_closed`); a card drawn from a task reopens through its finished row
-/// (`reopen_finished_task`) instead. Answers the chat it started.
+/// **Reopens the closed chat whose ULID is `id`, from the record the app kept of it** (#6485):
+/// *Reopen* on a card drawn from its chat's record. By its ULID, never its number, as more
+/// than one record may answer to a number (#6740, #7123). It starts again on its conversation
+/// as the same chat (`Chats::reopen_closed`); a card drawn from a task reopens through its
+/// finished row (`reopen_finished_task`) instead. Answers the chat it started.
 pub(crate) fn reopen_closed(
     held: &Held,
-    number: u32,
+    id: &str,
     size: purlis_core::engine::Size,
 ) -> Result<u32, String> {
-    let record =
-        purlis_core::chatrecords::of_number(&purlis_core::chatrecords::every(held.root()), number)
-            .cloned()
-            .ok_or_else(|| {
-                format!(
-                    "purlis did not reopen chat {number}: it keeps no record of it as it closed, \
-                     as it closed more than 30 days ago or before purlis kept one. Start a new \
-                     chat in its place."
-                )
-            })?;
+    let chats = purlis_core::chatrecords::every(held.root());
+    let record = purlis_core::chatrecords::of_id(&chats, id)
+        .cloned()
+        .ok_or_else(|| {
+            "purlis did not reopen this chat: it keeps no record of it as it closed, as it closed \
+             more than 30 days ago or before purlis kept one. Start a new chat in its place."
+                .to_owned()
+        })?;
     held.chats().reopen_closed(&record, size)
 }
 
@@ -753,31 +752,37 @@ pub(crate) mod fixtures {
             chat: None,
         }
     }
+
+    /// **A project on disk, held as a window holds it**: the folder, the registry that holds it
+    /// (kept, so the project stays held) and the project.
+    pub(crate) fn a_project() -> (
+        tempfile::TempDir,
+        crate::planes::Planes,
+        std::sync::Arc<crate::planes::Held>,
+    ) {
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
+        let planes = crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        );
+        let held = planes.held(&planes.open(&root)).expect("held");
+        (dir, planes, held)
+    }
 }
 
 /// A chat found by its ULID, from the Chats list's filter (#7125).
 #[cfg(test)]
 mod found_by_id_tests {
-    use std::sync::Arc;
-
     use purlis_core::chatrecords::ChatRecord;
     use purlis_core::dispatchrecord::{
         self, Asker, Changed, ChatRef, Ending, Mode, Opening, Outcome, Place, Report, Worker,
     };
 
-    use super::fixtures::{TIDY_THE_CHANGELOG, tidy_the_changelog};
+    use super::fixtures::{TIDY_THE_CHANGELOG, a_project, tidy_the_changelog};
     use super::*;
-
-    /// A project on disk, held as a window holds it.
-    fn a_project() -> (tempfile::TempDir, Planes, Arc<Held>) {
-        let dir = tempfile::tempdir().expect("a folder");
-        let root = std::fs::canonicalize(dir.path()).expect("canonical");
-        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
-        let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
-        let plane = planes.open(&root);
-        let held = planes.held(&plane).expect("held");
-        (dir, planes, held)
-    }
 
     /// Task chat `number` (ULID `id`), dispatched by the person, done and reported.
     fn a_finished_task(root: &std::path::Path, number: u32, id: &str) {
@@ -889,6 +894,67 @@ mod found_by_id_tests {
         assert_eq!(found(Some(731)), [(731, None)]);
         assert_eq!(found(Some(5)), []);
         assert_eq!(found(None), [(702, None), (731, None)]);
+    }
+}
+
+/// *Reopen* on a closed chat's card (#7123).
+#[cfg(test)]
+mod reopen_tests {
+    use purlis_core::chatrecords::ChatRecord;
+
+    use super::fixtures::{a_project, tidy_the_changelog};
+    use super::*;
+
+    const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
+        columns: 80,
+        rows: 24,
+    };
+
+    #[test]
+    fn reopen_on_a_card_starts_the_chat_clicked_where_a_newer_record_answers_to_its_number() {
+        // #7123: 702 was dealt twice (#6740). Each record's Reopen is refused for a reason of its
+        // own, so which record a press reaches is what it says.
+        let (_dir, _planes, held) = a_project();
+        // Closed before purlis kept what a reopen needs.
+        let older = ChatRecord {
+            number: 702,
+            id: "01K6CHATS0000000000000000D".to_owned(),
+            ended: "2026-11-12T10:00:00Z".to_owned(),
+            ..tidy_the_changelog(Vec::new())
+        };
+        // Kept, but its harness named no conversation.
+        let newer = ChatRecord {
+            number: 702,
+            id: "01K6CHATS0000000000000000E".to_owned(),
+            chat: Some(purlis_core::reopen::Chat {
+                program: "claude".to_owned(),
+                ..Default::default()
+            }),
+            ..tidy_the_changelog(Vec::new())
+        };
+        purlis_core::chatrecords::keep_all(held.root(), &[newer.clone(), older.clone()])
+            .expect("kept");
+
+        let pressed_older = reopen_closed(&held, &older.id, SIZE).unwrap_err();
+        let pressed_newer = reopen_closed(&held, &newer.id, SIZE).unwrap_err();
+
+        assert!(
+            pressed_older.contains("before purlis kept what a reopen needs"),
+            "{pressed_older}"
+        );
+        assert!(
+            pressed_newer.contains("no conversation to resume"),
+            "{pressed_newer}"
+        );
+    }
+
+    #[test]
+    fn reopen_on_a_card_whose_record_was_swept_says_so() {
+        let (_dir, _planes, held) = a_project();
+
+        let refused = reopen_closed(&held, "01K6CHATS0000000000000000D", SIZE).unwrap_err();
+
+        assert!(refused.contains("keeps no record of it"), "{refused}");
     }
 }
 

@@ -179,7 +179,7 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     const card = await screen.findByRole("dialog", { name: "#731 · Tidy the changelog" });
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(pressed).toHaveLength(1));
-    expect(pressed[0].does).toEqual({ verb: "reopenClosedChat", number: 731 });
+    expect(pressed[0].does).toEqual({ verb: "reopenClosedChat", chat: CLOSED.id });
   });
 
   it("is found by a number it had before a restart, and its row and card say that number (#6685)", async () => {
@@ -236,6 +236,28 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     expect(
       await screen.findByRole("dialog", { name: "#731 · Tidy the changelog (was #702)" }),
     ).toBeInTheDocument();
+  });
+
+  it("Reopen on each card of two found by one number reopens that card's own chat (#7123)", async () => {
+    const { pressed } = draw({
+      closed: (typed) => (typed === 702 ? [{ ...CLOSED, found_by: 702 }, CLOSED_UNDER_702] : []),
+    });
+    await typeInTheFilter("702");
+    const tree = await theTree();
+    const reopenFrom = async (row: RegExp, card: string) => {
+      await userEvent.click(await findRow(tree, row));
+      const shown = await screen.findByRole("dialog", { name: card });
+      await userEvent.click(within(shown).getByRole("button", { name: "Reopen" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    };
+
+    await reopenFrom(/^#702 · Sort the inbox/, "#702 · Sort the inbox");
+    await reopenFrom(/^#731 · Tidy the changelog/, "#731 · Tidy the changelog (was #702)");
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "reopenClosedChat", chat: CLOSED_UNDER_702.id },
+      { verb: "reopenClosedChat", chat: CLOSED.id },
+    ]);
   });
 
   it("found by the number it closed under, says no other (#6685)", async () => {

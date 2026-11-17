@@ -3549,11 +3549,12 @@ export const commands = {
 	 */
 	reopenFinishedTask: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_finished_task", { plane, id, columns, rows })),
 	/**
-	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
-	 *  again on its conversation, as the same chat under a new number
-	 *  ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
+	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat whose
+	 *  ULID is `chat` started again on its conversation, as the same chat under a new number
+	 *  ([`chatcard::reopen_closed`]). By its ULID, as more than one record may answer to its number
+	 *  (#7123). The answer is the chat as the window draws it.
 	 */
-	reopenClosedChat: (plane: PlaneId, number: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, number, columns, rows })),
+	reopenClosedChat: (plane: PlaneId, chat: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, chat, columns, rows })),
 	/**
 	 *  **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
 	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The

@@ -7572,12 +7572,12 @@ export const PlaneView = memo(function PlaneView({
   );
   /**
    * ***Reopen* on a closed chat's card drawn from its chat's record** (#6485): the chat started
-   * again on its conversation, by its number. A refusal is the card's to say.
+   * again on its conversation, by its ULID (#7123). A refusal is the card's to say.
    */
   const reopenClosedChat = useCallback(
-    async (number: number): Promise<string | undefined> => {
+    async (chat: string): Promise<string | undefined> => {
       const said = await commands
-        .reopenClosedChat(plane, number, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .reopenClosedChat(plane, chat, STARTING_SIZE.columns, STARTING_SIZE.rows)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (said.status === "error") return said.error;
       showReopened(said.data);
@@ -8981,8 +8981,8 @@ export const PlaneView = memo(function PlaneView({
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
       },
-      reopenClosedChat: async (number) => {
-        const why = await reopenClosedChat(number);
+      reopenClosedChat: async (chat) => {
+        const why = await reopenClosedChat(chat);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
       },
       paneBack: goBack,

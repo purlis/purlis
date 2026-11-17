@@ -127,9 +127,13 @@ describe("a chat found by its number in the palette (#6214)", () => {
       expect(cannotReopen({ ...chat, chat_reopen: why })).toMatch(/Start a new chat to go on\.$/);
   });
 
-  it("Reopen on a chat's card reopens it by its number, and on a task's card its task", () => {
+  it("Reopen on a chat's card reopens it by its own ULID, and on a task's card its task", () => {
+    // By its ULID, never its number, which another closed chat's record may answer to (#7123).
     const chat: ChatCard = { ...CARD, task: null, chat_reopen: "reopens" };
-    expect(reopenOffer(chat).does).toEqual({ verb: "reopenClosedChat", number: 641 });
+    expect(reopenOffer(chat).does).toEqual({
+      verb: "reopenClosedChat",
+      chat: "01K6W0RKER000000000000000B",
+    });
     expect(reopenOffer(CARD).does).toEqual({ verb: "reopenTask", id: TASK.id });
     const kept = reopenOffer({ ...chat, chat_reopen: "not_kept" });
     expect(kept.available).toBe(false);
