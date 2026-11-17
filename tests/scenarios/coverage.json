@@ -8,6 +8,7 @@
     "fixture": {
       "fault": {"seed":3,"cap":3},
       "internal_state": {"seed":18,"cap":18},
+      "machine_wide_state": {"seed":3,"cap":3,"approved":"Q321"},
       "no_inert_probe": {"seed":3,"cap":3},
       "race": {"seed":2,"cap":2},
       "third_party_service": {"seed":7,"cap":7},
@@ -1075,6 +1076,9 @@
     {"row":"M-OBS-07","os":"linux","reason":"third_party_service","cover":"pending: 19"},
     {"row":"M-OBS-11","os":"linux","reason":"time","cover":"pending: 19"},
     {"row":"M-SET-05","os":"linux","reason":"third_party_service","cover":"pending: 19"},
+    {"row":"M-POL-01","os":"linux","reason":"machine_wide_state","cover":"pending: 19"},
+    {"row":"M-POL-02","os":"linux","reason":"machine_wide_state","cover":"pending: 19"},
+    {"row":"M-POL-03","os":"linux","reason":"machine_wide_state","cover":"pending: 19"},
     {"row":"R-006","os":"linux","reason":"internal_state","cover":"pending: 19"},
     {"row":"R-008","os":"linux","reason":"internal_state","cover":"pending: 19"},
     {"row":"R-012","os":"linux","reason":"internal_state","cover":"pending: 19"},

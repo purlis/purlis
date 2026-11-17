@@ -1,12 +1,30 @@
 {
-  "$comment": "The issues the cells' expected_fail marks name, and whether each is open (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`.",
+  "$comment": "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`. A mark added on an existing cell must name an issue opened after the change's base.",
   "fetched": "2026-11-17",
   "issues": {
-    "6657": "open",
-    "6672": "open",
-    "6673": "open",
-    "6674": "open",
-    "6675": "open",
-    "6676": "open"
+    "6657": {
+      "state": "open",
+      "opened": "2026-11-14T18:34:13Z"
+    },
+    "6672": {
+      "state": "open",
+      "opened": "2026-11-15T05:08:34Z"
+    },
+    "6673": {
+      "state": "open",
+      "opened": "2026-11-15T05:08:37Z"
+    },
+    "6674": {
+      "state": "open",
+      "opened": "2026-11-15T05:08:39Z"
+    },
+    "6675": {
+      "state": "open",
+      "opened": "2026-11-15T05:08:42Z"
+    },
+    "6676": {
+      "state": "open",
+      "opened": "2026-11-15T05:08:45Z"
+    }
   }
 }

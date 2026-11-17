@@ -12,7 +12,8 @@
 use std::process::Command;
 
 use purlis_scenarios::coverage::{
-    Coverage, Issues, Ran, Repo, at_gate, check, issues, judge_runs, ratchet, report, row_table,
+    Coverage, Issues, Ran, Repo, Required, Rulings, against_base, at_gate, check, expectations,
+    issues, judge_runs, ratchet, report, row_table,
 };
 use purlis_scenarios::model::{
     Batch, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict, TimingsMode,
@@ -60,8 +61,15 @@ fn repo(batches: Vec<(String, Batch)>, table: RowTable, escapes: Value) -> Repo 
         rows: table,
         escapes: serde_json::from_value(escapes).expect("escape rows"),
         issues: Issues::default(),
+        rulings: rulings(),
+        required: Required::default(),
         catalogue: catalogue(),
     }
+}
+
+/// The rulings the small lists here cite.
+fn rulings() -> Rulings {
+    Rulings::of(&["Q330", "Q331", "Q340"])
 }
 
 fn list(value: Value) -> Coverage {
@@ -145,6 +153,30 @@ fn base() -> String {
         .expect("no base to judge the marks against: set SCENARIOS_BASE to a commit")
 }
 
+/// When `commit` was committed, in UTC, as issues.json writes `opened`.
+fn committed_at(commit: &str) -> String {
+    let out = Command::new("git")
+        .args([
+            "show",
+            "-s",
+            "--date=format-local:%Y-%m-%dT%H:%M:%SZ",
+            "--format=%cd",
+            commit,
+        ])
+        .env("TZ", "UTC")
+        .current_dir(root())
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "{commit}'s date can't be read");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// The coverage list at `commit`, if it has one.
+fn coverage_at(commit: &str) -> Option<Coverage> {
+    let text = git(&["show", &format!("{commit}:./coverage.json")])?;
+    Some(list(serde_json::from_str(&text).expect("json")))
+}
+
 /// The cells files at `commit`.
 fn cells_at(commit: &str) -> Vec<(String, Batch)> {
     let names = git(&["ls-tree", "--name-only", commit, "cells/"])
@@ -196,24 +228,100 @@ fn every_matrix_row_names_a_cover_that_exists() {
 }
 
 #[test]
+fn deleting_a_fixture_row_from_the_list_alone_fails_the_gate() {
+    let repo = Repo::read().expect("the repo's cells, rows, escapes and issues");
+    let list = Coverage::read().expect("coverage.json");
+    for row in ["M-POL-01", "M-OBS-11", "R-006"] {
+        let mut short = list.clone();
+        short.fixtures.retain(|f| f.row != row);
+        short.caps.clear();
+        let found = check(&short, &repo);
+        assert!(
+            mentions(&found, &[row, "no cover", "fixtures"]),
+            "{row}: {found:#?}"
+        );
+    }
+    // A fixture row the matrix doesn't leave to fixtures is no cover of one.
+    let mut extra = list.clone();
+    let mut stray = extra.fixtures[0].clone();
+    stray.row = "M-NET-01".into();
+    extra.fixtures.push(stray);
+    let found = check(&extra, &repo);
+    assert!(
+        mentions(
+            &found,
+            &["M-NET-01", "not a row the matrix leaves to fixtures"]
+        ),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_list_at_version_0_still_owes_every_real_binary_probe() {
+    let repo = Repo::read().expect("the repo's cells, rows, escapes and issues");
+    let list = Coverage::read().expect("coverage.json");
+    assert_eq!(
+        list.real_binary.len(),
+        24,
+        "three dialects × two OSes × two probes × Full and Basic"
+    );
+    let mut none = list.clone();
+    none.version = 0;
+    none.real_binary.clear();
+    let found = check(&none, &repo);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|p| p.contains("probe") && p.contains("no cover"))
+            .count(),
+        24,
+        "{found:#?}"
+    );
+}
+
+#[test]
 fn every_cell_carries_each_expectation_kind_its_row_states() {
     let repo = Repo::read().expect("the repo's cells");
-    let list = Coverage::read().expect("coverage.json");
+    let the_list = Coverage::read().expect("coverage.json");
     assert!(
-        !row_table(&list).entries.is_empty(),
+        !row_table(&the_list).entries.is_empty(),
         "the list carries no Log/Window/Chat flags"
     );
     // Every cell a scenario cover names is held to its row's flags; a cell no cover names yet
     // (B0 before ticket 11 gives it the Window and Chat expectations its rows state) is not
     // coverage, and its rows stay pending.
-    let mut covering = list.clone();
-    covering.rows.retain(|r| r.cover.starts_with("scenario: "));
-    let table = row_table(&covering);
-    let validator = Validator::repo().expect("the validator").with_rows(table);
+    let mut validator = Validator::repo().expect("the validator");
+    let found = expectations(&the_list, &repo, &mut validator);
+    assert!(found.is_empty(), "{found:#?}");
+    let plain = Validator::repo().expect("the validator");
     for (file, batch) in &repo.batches {
-        let found = validator.check(batch);
+        let found = plain.check(batch);
         assert!(found.is_empty(), "{file}: {found:#?}");
     }
+
+    // A scenario cover naming a cell with a Log expectation only, for a row that states a
+    // Window and a Chat expectation too, is refused; the cell's id need not be the row's.
+    let cells = vec![batch("cells/T.json", "full", json!([cell("M-T-01-cell")]))];
+    let fixture = repo_with(cells, &repo_rows_only());
+    let mut stated = entry(
+        "M-T-01",
+        "codex",
+        "linux",
+        "scenario: cells/T.json#M-T-01-cell",
+    );
+    stated["window"] = json!(true);
+    stated["chat"] = json!(true);
+    let found = expectations(
+        &list(json!({"rows": [stated.clone()]})),
+        &fixture,
+        &mut validator,
+    );
+    assert!(mentions(&found, &["M-T-01-cell", "window"]), "{found:#?}");
+    assert!(mentions(&found, &["M-T-01-cell", "chat"]), "{found:#?}");
+    // The same row while its cover is pending holds no cell to anything.
+    stated["cover"] = json!("pending: 11");
+    let found = expectations(&list(json!({"rows": [stated]})), &fixture, &mut validator);
+    assert_eq!(found, Vec::<String>::new());
 }
 
 #[test]
@@ -221,7 +329,27 @@ fn every_cell_carries_each_expectation_kind_its_row_states() {
 fn the_marks_keep_their_ratchet_against_the_base() {
     let repo = Repo::read().expect("the repo's cells");
     let base = base();
-    let found = ratchet(&cells_at(&base), &repo.batches);
+    let found = ratchet(
+        &cells_at(&base),
+        &repo.batches,
+        &repo.issues,
+        &committed_at(&base),
+    );
+    assert!(found.is_empty(), "against {base}: {found:#?}");
+}
+
+#[test]
+#[ignore = "needs the change's base: sandbox-scenarios-linux runs it with SCENARIOS_BASE"]
+fn the_list_keeps_its_anchors_against_the_base() {
+    let repo = Repo::read().expect("the repo's rulings");
+    let head = Coverage::read().expect("coverage.json");
+    let base = base();
+    // A base with no list is the change that brings it: the generator and `diff` are its anchor.
+    let Some(was) = coverage_at(&base) else {
+        println!("{base} has no coverage.json: nothing to anchor against");
+        return;
+    };
+    let found = against_base(&was, &head, &repo.rulings);
     assert!(found.is_empty(), "against {base}: {found:#?}");
 }
 
@@ -238,7 +366,7 @@ fn no_mark_names_a_closed_issue_or_one_this_change_closes() {
 fn at_m74_1_s_gate_nothing_is_pending_and_every_mark_is_approved() {
     let repo = Repo::read().expect("the repo's cells");
     let list = Coverage::read().expect("coverage.json");
-    let found = at_gate(&list, &repo.batches);
+    let found = at_gate(&list, &repo.batches, &repo.rulings);
     assert!(found.is_empty(), "{found:#?}");
 }
 
@@ -291,6 +419,8 @@ fn repo_with(batches: Vec<(String, Batch)>, like: &Repo) -> Repo {
         rows: like.rows.clone(),
         escapes: like.escapes.clone(),
         issues: like.issues.clone(),
+        rulings: like.rulings.clone(),
+        required: like.required.clone(),
         catalogue: catalogue(),
     }
 }
@@ -356,10 +486,31 @@ fn an_unrecorded_cap_raise_fails_the_gate() {
     assert_eq!(check(&approved, &repo), Vec::<String>::new());
 
     let not_a_ruling = list(
-        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "yes"}}}, "rows": [e2e]}),
+        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "yes"}}}, "rows": [e2e.clone()]}),
     );
     let found = check(&not_a_ruling, &repo);
     assert!(mentions(&found, &["window", "Q-id"]), "{found:#?}");
+
+    // A Q-id of the right shape that is none of the person's rulings approves nothing; a point of
+    // one of them does.
+    let unknown = list(
+        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "Q999"}}}, "rows": [e2e.clone()]}),
+    );
+    let found = check(&unknown, &repo);
+    assert!(mentions(&found, &["Q999", "rulings.json"]), "{found:#?}");
+    let point = list(
+        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "Q330.2"}}}, "rows": [e2e]}),
+    );
+    assert_eq!(check(&point, &repo), Vec::<String>::new());
+}
+
+#[test]
+fn the_repo_s_rulings_are_the_person_s_m74_1_rulings() {
+    let repo = Repo::read().expect("rulings.json");
+    assert!(repo.rulings.names("Q321"), "the matrix v5 ruling");
+    assert!(repo.rulings.names("Q321.8"), "a point of it");
+    assert!(!repo.rulings.names("Q999"), "no such ruling");
+    assert!(!repo.rulings.names("Q12"), "not a ruling of M74.1");
 }
 
 #[test]
@@ -376,9 +527,259 @@ fn moving_a_row_off_scenario_without_a_q_id_fails_the_gate() {
         "{found:#?}"
     );
 
+    moved["moved"] = json!("Q999");
+    let found = check(&list(json!({"caps": caps, "rows": [moved.clone()]})), &repo);
+    assert!(
+        mentions(&found, &["M-T-01", "Q999", "rulings.json"]),
+        "{found:#?}"
+    );
+
     moved["moved"] = json!("Q331");
     let found = check(&list(json!({"caps": caps, "rows": [moved]})), &repo);
     assert_eq!(found, Vec::<String>::new());
+}
+
+// ---- the list against its base ------------------------------------------------------------------
+
+fn capped(seed: usize, cap: usize, approved: Option<&str>) -> Coverage {
+    let mut c = json!({"seed": seed, "cap": cap});
+    if let Some(q) = approved {
+        c["approved"] = json!(q);
+    }
+    list(json!({"caps": {"fixture": {"race": c}}}))
+}
+
+#[test]
+fn raising_a_seed_with_its_cap_against_the_base_needs_a_q_id() {
+    let base = capped(2, 2, None);
+    // Seed and cap raised together pass the list's own rule, and not the base's.
+    let raised = capped(4, 4, None);
+    assert_eq!(check(&raised, &repo_rows_only()), Vec::<String>::new());
+    let found = against_base(&base, &raised, &rulings());
+    assert!(
+        mentions(
+            &found,
+            &["fixture cap", "race", "4", "base allowed", "Q-id"]
+        ),
+        "{found:#?}"
+    );
+    // With the person's ruling it holds; with a ruling the base's cap already named, it doesn't.
+    assert_eq!(
+        against_base(&base, &capped(4, 4, Some("Q330")), &rulings()),
+        Vec::<String>::new()
+    );
+    let reused = against_base(
+        &capped(2, 3, Some("Q330")),
+        &capped(4, 4, Some("Q330")),
+        &rulings(),
+    );
+    assert!(mentions(&reused, &["race", "Q-id"]), "{reused:#?}");
+    // A cap the base already allowed, or one lowered, needs nothing.
+    assert_eq!(
+        against_base(
+            &capped(2, 3, Some("Q330")),
+            &capped(3, 3, Some("Q330")),
+            &rulings()
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        against_base(&base, &capped(1, 1, None), &rulings()),
+        Vec::<String>::new()
+    );
+    // A reason the base had no cap for starts from nothing.
+    let found = against_base(&list(json!({})), &capped(1, 1, None), &rulings());
+    assert!(mentions(&found, &["race", "Q-id"]), "{found:#?}");
+}
+
+fn row_entry(carried: &str, kind: &str, binary: Option<&str>, moved: Option<&str>) -> Value {
+    let mut e = entry("M-T-01", "codex", "linux", "pending: 19");
+    e["carried"] = json!(carried);
+    e["kind"] = json!(kind);
+    if kind != "scenario" {
+        e["reason"] = json!("race");
+    }
+    if let Some(b) = binary {
+        e["binary"] = json!(b);
+    }
+    if let Some(q) = moved {
+        e["moved"] = json!(q);
+    }
+    e
+}
+
+#[test]
+fn moving_carried_with_kind_against_the_base_needs_moved() {
+    let base = list(json!({"rows": [row_entry("scenario", "scenario", None, None)]}));
+    // `carried` and `kind` moved together pass the list's own rule, and not the base's.
+    let both = list(json!({
+        "caps": {"fixture": {"race": {"seed": 1, "cap": 1}}},
+        "rows": [row_entry("fixture", "fixture", None, None)],
+    }));
+    let table = rows(json!([table_entry("M-T-01", "codex", "linux")]));
+    assert_eq!(
+        check(&both, &repo(vec![], table, json!([]))),
+        Vec::<String>::new()
+    );
+    let found = against_base(&base, &both, &rulings());
+    assert!(
+        mentions(
+            &found,
+            &[
+                "M-T-01 codex linux",
+                "carried",
+                "scenario to fixture",
+                "moved"
+            ]
+        ),
+        "{found:#?}"
+    );
+    let ruled = list(json!({"rows": [row_entry("fixture", "fixture", None, Some("Q331"))]}));
+    assert_eq!(
+        against_base(&base, &ruled, &rulings()),
+        Vec::<String>::new()
+    );
+    let not_a_ruling = list(json!({"rows": [row_entry("fixture", "fixture", None, Some("Q999"))]}));
+    assert!(!against_base(&base, &not_a_ruling, &rulings()).is_empty());
+}
+
+#[test]
+fn dropping_a_binary_leg_against_the_base_is_refused() {
+    let base = list(json!({"rows": [row_entry("scenario", "scenario", Some("both"), None)]}));
+    for fewer in ["fake", "real"] {
+        let head = list(json!({"rows": [row_entry("scenario", "scenario", Some(fewer), None)]}));
+        let found = against_base(&base, &head, &rulings());
+        assert!(
+            mentions(
+                &found,
+                &["M-T-01 codex linux", "both binaries", "a leg is dropped"]
+            ),
+            "{fewer}: {found:#?}"
+        );
+    }
+    // Leaving `binary` out is the fake binary alone.
+    let mut bare = row_entry("scenario", "scenario", None, None);
+    bare.as_object_mut().map(|o| o.remove("binary"));
+    let found = against_base(&base, &list(json!({"rows": [bare]})), &rulings());
+    assert!(mentions(&found, &["a leg is dropped"]), "{found:#?}");
+    // Adding a leg is not dropping one.
+    let fake = list(json!({"rows": [row_entry("scenario", "scenario", Some("fake"), None)]}));
+    assert_eq!(against_base(&fake, &base, &rulings()), Vec::<String>::new());
+}
+
+// ---- the list's other rules ----------------------------------------------------------------------
+
+#[test]
+fn a_row_whose_flags_are_not_the_matrix_s_fails_the_gate() {
+    let table = rows(json!([table_entry("M-T-01", "claude", "linux")]));
+    let repo = repo(vec![], table, json!([]));
+    let mut flagged = entry("M-T-01", "claude", "linux", "pending: 11");
+    flagged["window"] = json!(true);
+    let found = check(&list(json!({"rows": [flagged]})), &repo);
+    assert!(
+        mentions(&found, &["M-T-01 claude linux", "Log/Window/Chat flags"]),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_row_the_matrix_s_table_does_not_have_fails_the_gate() {
+    let table = rows(json!([table_entry("M-T-01", "claude", "linux")]));
+    let repo = repo(vec![], table, json!([]));
+    let found = check(
+        &list(json!({"rows": [
+            entry("M-T-01", "claude", "linux", "pending: 11"),
+            entry("M-T-01", "claude", "macos", "pending: 11"),
+        ]})),
+        &repo,
+    );
+    assert!(
+        mentions(
+            &found,
+            &["M-T-01 claude macos", "not in the matrix's row table"]
+        ),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_row_listed_twice_fails_the_gate() {
+    let table = rows(json!([table_entry("M-T-01", "claude", "linux")]));
+    let repo = repo(vec![], table, json!([]));
+    let found = check(
+        &list(json!({"rows": [
+            entry("M-T-01", "claude", "linux", "pending: 11"),
+            entry("M-T-01", "claude", "linux", "pending: 11"),
+        ]})),
+        &repo,
+    );
+    assert!(
+        mentions(&found, &["M-T-01 claude linux", "listed twice"]),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_cover_of_another_kind_than_its_entry_fails_the_gate() {
+    let table = rows(json!([table_entry("M-T-01", "claude", "linux")]));
+    let repo = repo(vec![], table, json!([]));
+    let mut e2e = entry(
+        "M-T-01",
+        "claude",
+        "linux",
+        "fixture: tests/scenarios/tests/coverage.rs::a_cover_of_another_kind_than_its_entry_fails_the_gate",
+    );
+    e2e["carried"] = json!("e2e");
+    e2e["kind"] = json!("e2e");
+    e2e["reason"] = json!("window");
+    let found = check(
+        &list(json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 1}}}, "rows": [e2e]})),
+        &repo,
+    );
+    assert!(
+        mentions(&found, &["M-T-01", "a fixture cover", "kind is e2e"]),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn an_e2e_cover_names_its_test_by_its_exact_title() {
+    let dir = tempfile::tempdir().expect("a folder");
+    std::fs::write(
+        dir.path().join("window.spec.ts"),
+        "test(\"the marker counts every block\", async () => {});\ntest(\n  'a long title, broken by the formatter',\n  async () => {},\n);\n",
+    )
+    .expect("a spec");
+    let table = rows(json!([table_entry("M-T-01", "claude", "linux")]));
+    let mut fixture = repo(vec![], table, json!([]));
+    fixture.root = dir.path().to_path_buf();
+    let e2e = |title: &str| {
+        let mut e = entry(
+            "M-T-01",
+            "claude",
+            "linux",
+            &format!("e2e: window.spec.ts#{title}"),
+        );
+        e["carried"] = json!("e2e");
+        e["kind"] = json!("e2e");
+        e["reason"] = json!("window");
+        list(json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 1}}}, "rows": [e]}))
+    };
+    assert_eq!(
+        check(&e2e("the marker counts every block"), &fixture),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        check(&e2e("a long title, broken by the formatter"), &fixture),
+        Vec::<String>::new()
+    );
+    for part in ["the marker", "counts every block", "marker counts every"] {
+        let found = check(&e2e(part), &fixture);
+        assert!(
+            mentions(&found, &["has no test", part]),
+            "{part}: {found:#?}"
+        );
+    }
 }
 
 #[test]
@@ -439,8 +840,23 @@ fn mark(issue: u64, scope: Value) -> Value {
     m
 }
 
+/// The issues the marks here name: 7001 and 7003 opened before [`BASE_TIME`], 7002 after it.
+fn cache() -> Issues {
+    serde_json::from_value(json!({"issues": {
+        "7001": {"state": "open", "opened": "2026-11-01T09:00:00Z"},
+        "7002": {"state": "open", "opened": "2026-11-20T09:00:00Z"},
+        "7003": {"state": "open", "opened": "2026-11-02T09:00:00Z"},
+    }}))
+    .expect("an issue cache")
+}
+
+const BASE_TIME: &str = "2026-11-10T00:00:00Z";
+
 #[test]
 fn a_mark_on_an_existing_cell_without_a_new_issue_fails_the_gate() {
+    let ratchet = |base: &[(String, Batch)], head: &[(String, Batch)]| {
+        ratchet(base, head, &cache(), BASE_TIME)
+    };
     let base = vec![batch(
         "cells/T.json",
         "full",
@@ -529,6 +945,45 @@ fn a_mark_on_an_existing_cell_without_a_new_issue_fails_the_gate() {
 }
 
 #[test]
+fn a_mark_for_an_issue_opened_before_the_base_is_not_a_new_issue_s() {
+    let base = vec![batch(
+        "cells/T.json",
+        "full",
+        json!([marked(
+            "M-T-01",
+            json!([mark(7001, json!({"dialect": "claude"}))])
+        )]),
+    )];
+    let with = |issue: u64| {
+        vec![batch(
+            "cells/T.json",
+            "full",
+            json!([marked(
+                "M-T-01",
+                json!([
+                    mark(7001, json!({"dialect": "claude"})),
+                    mark(issue, json!({"dialect": "codex"})),
+                ])
+            )]),
+        )]
+    };
+    // No mark of the base names #7003, and it was opened before the base: not new.
+    let found = ratchet(&base, &with(7003), &cache(), BASE_TIME);
+    assert!(
+        mentions(&found, &["M-T-01", "7003", "opened after the base"]),
+        "{found:#?}"
+    );
+    // An issue the cache doesn't have is not known to be new.
+    let found = ratchet(&base, &with(7004), &cache(), BASE_TIME);
+    assert!(mentions(&found, &["M-T-01", "7004"]), "{found:#?}");
+    // #7002 was opened after the base.
+    assert_eq!(
+        ratchet(&base, &with(7002), &cache(), BASE_TIME),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn an_expected_fail_on_a_closed_issue_fails_the_gate() {
     let head = vec![batch(
         "cells/T.json",
@@ -540,7 +995,10 @@ fn an_expected_fail_on_a_closed_issue_fails_the_gate() {
         ]),
     )];
     let cache: Issues = serde_json::from_value(json!({
-        "issues": {"7001": "open", "7002": "closed"}
+        "issues": {
+            "7001": {"state": "open", "opened": "2026-11-01T09:00:00Z"},
+            "7002": {"state": "closed", "opened": "2026-11-01T09:00:00Z"},
+        }
     }))
     .expect("an issue cache");
     let found = issues(&head, &cache, &[]);
@@ -578,12 +1036,18 @@ fn the_gate_fails_on_any_expected_fail_the_person_did_not_approve() {
             "rows": [entry("M-T-01", "claude", "linux", "scenario: cells/T.json#M-T-01")],
         }))
     };
-    let found = at_gate(&covered(json!([])), &head);
+    let found = at_gate(&covered(json!([])), &head, &rulings());
     assert!(mentions(&found, &["M-T-01", "7001"]), "{found:#?}");
     assert!(mentions(&found, &["M-T-01", "7002"]), "{found:#?}");
 
+    // A Q-id that is none of the person's rulings approves nothing.
+    let unknown =
+        covered(json!([{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q999"}]));
+    let found = at_gate(&unknown, &head, &rulings());
+    assert!(mentions(&found, &["M-T-01", "7001"]), "{found:#?}");
+
     let one = covered(json!([{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q340"}]));
-    let found = at_gate(&one, &head);
+    let found = at_gate(&one, &head, &rulings());
     assert!(!mentions(&found, &["7001"]), "{found:#?}");
     assert!(mentions(&found, &["M-T-01", "7002"]), "{found:#?}");
 
@@ -591,11 +1055,11 @@ fn the_gate_fails_on_any_expected_fail_the_person_did_not_approve() {
         {"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q340"},
         {"issue": 7002, "cell": "cells/T.json#M-T-01", "approved": "Q340"},
     ]));
-    assert_eq!(at_gate(&both, &head), Vec::<String>::new());
+    assert_eq!(at_gate(&both, &head, &rulings()), Vec::<String>::new());
 
     // A pending cover is no cover at the gate.
     let pending = list(json!({"rows": [entry("M-T-02", "codex", "linux", "pending: 11")]}));
-    let found = at_gate(&pending, &[]);
+    let found = at_gate(&pending, &[], &rulings());
     assert!(mentions(&found, &["M-T-02", "pending"]), "{found:#?}");
 }
 
@@ -755,6 +1219,103 @@ fn a_macos_claude_cell_outside_ticket_10s_leg_is_not_coverage() {
         &[on(ReportLeg::ClaudeSandbox)],
     );
     assert_eq!(found, Vec::<String>::new());
+}
+
+#[test]
+fn a_run_that_left_out_a_leg_its_cover_requires_owes_that_leg() {
+    let cells = vec![batch("cells/T.json", "full", json!([cell("M-T-01")]))];
+    let table = rows(json!([table_entry("M-T-01", "codex", "linux")]));
+    let repo = repo(cells, table, json!([]));
+    let mut both = entry("M-T-01", "codex", "linux", "scenario: cells/T.json#M-T-01");
+    both["binary"] = json!("both");
+    let covered = list(json!({"rows": [both]}));
+    let fake = record(
+        EntryKind::Cell,
+        "M-T-01",
+        Some("codex"),
+        Some(Protection::Full),
+        Os::Linux,
+        ReportLeg::Fake,
+        ReportVerdict::Pass,
+    );
+    // The run ran the scenario pass on Linux without ticket 53's leg: it still owes it.
+    let found = judge_runs(
+        &covered,
+        &repo,
+        Trigger::PullRequest,
+        &[scaled(ReportLeg::Fake, Os::Linux)],
+        std::slice::from_ref(&fake),
+    );
+    assert!(
+        mentions(
+            &found,
+            &["M-T-01", "codex", "linux", "real_wrap", "did not run"]
+        ),
+        "{found:#?}"
+    );
+    let mut real = fake.clone();
+    real.leg = ReportLeg::RealWrap;
+    assert_eq!(
+        judge_runs(
+            &covered,
+            &repo,
+            Trigger::PullRequest,
+            &[scaled(ReportLeg::Fake, Os::Linux)],
+            &[fake, real],
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_escape_the_table_runs_on_the_real_binary_owes_ticket_53_s_leg() {
+    let escape = json!({"id": "E-T-03", "escape": true, "dialects": ["codex"], "steps": [step()]});
+    let cells = vec![batch(
+        "cells/E.json",
+        "full",
+        json!([escape, cell("E-T-03/control")]),
+    )];
+    let mut row = escape_row("E-T-03", "codex", "linux", "yes");
+    row["Basic"] = json!("n/a: Full only");
+    let repo = repo(cells, RowTable::default(), json!([row]));
+    let covered = list(json!({"escapes": [{
+        "id": "E-T-03",
+        "covers": {"full": "scenario: cells/E.json#E-T-03"},
+        "control": "scenario: cells/E.json#E-T-03/control",
+    }]}));
+    let on = |kind, row: &str, leg| {
+        record(
+            kind,
+            row,
+            Some("codex"),
+            Some(Protection::Full),
+            Os::Linux,
+            leg,
+            ReportVerdict::Pass,
+        )
+    };
+    let ran = [
+        scaled(ReportLeg::Fake, Os::Linux),
+        scaled(ReportLeg::RealWrap, Os::Linux),
+    ];
+    let fake_only = [
+        on(EntryKind::Escape, "E-T-03", ReportLeg::Fake),
+        on(EntryKind::Cell, "E-T-03/control", ReportLeg::Fake),
+    ];
+    let found = judge_runs(&covered, &repo, Trigger::PullRequest, &ran, &fake_only);
+    assert!(
+        mentions(
+            &found,
+            &["E-T-03", "codex", "linux", "real_wrap", "did not run"]
+        ),
+        "{found:#?}"
+    );
+    let mut both = fake_only.to_vec();
+    both.push(on(EntryKind::Escape, "E-T-03", ReportLeg::RealWrap));
+    assert_eq!(
+        judge_runs(&covered, &repo, Trigger::PullRequest, &ran, &both),
+        Vec::<String>::new()
+    );
 }
 
 /// An escape table row for `id`, refused at Full and Basic and n/a with no sandbox.

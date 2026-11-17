@@ -14,10 +14,12 @@
 //   matrix, every cover `pending: <the ticket that ports it>`, and each cap's seed from the count
 //   ticket 43's cover-kind column gives. Run once; after that the list is edited, not generated.
 // - `node tools/scenario-coverage.mjs diff <test-matrix-phase-1.md>` is the orchestrator's check
-//   at every re-carry (tickets 32, 42, 43, 52) and at the gate: the matrix's row ids and the
-//   cover kind it carries for each, against the list. It exits 1 on any difference. The rows'
-//   dialect and OS applicability and their Log/Window/Chat flags are `rows.json`'s, which the
-//   gate's `the_list_matches_the_matrix_s_row_table` holds the list to.
+//   at every re-carry (tickets 32, 42, 43, 52) and at the gate: the matrix's row ids, the cover
+//   kind and binaries it carries for each, and the rows it leaves to fixtures, against the list.
+//   It exits 1 on any difference, and on a §3 row that neither §3.22 carries nor the matrix
+//   leaves to fixtures. The rows' dialect and OS applicability and their Log/Window/Chat flags
+//   are `rows.json`'s, which the gate's `every_matrix_row_names_a_cover_that_exists` holds the
+//   list to.
 //
 // - `node tools/scenario-coverage.mjs issues` refreshes `tests/scenarios/issues.json`, the
 //   cache of every issue a cell's `expected_fail` names and whether it is open, from GitHub
@@ -59,7 +61,8 @@ export const FIXTURE_REASON = {
   "M-ATT-07": "internal_state", "M-ATT-08": "no_inert_probe", "M-RST-05": "internal_state",
   "M-HOLD-11": "third_party_service", "M-HOLD-14": "fault", "M-BH-02": "fault", "M-BH-07": "fault",
   "M-BH-08b": "race", "M-OBS-07": "third_party_service", "M-OBS-11": "time",
-  "M-SET-05": "third_party_service",
+  "M-SET-05": "third_party_service", "M-POL-01": "machine_wide_state",
+  "M-POL-02": "machine_wide_state", "M-POL-03": "machine_wide_state",
 };
 
 /** Ticket 43's cover-kind column (§3.22), as a kind, the binaries it needs and a reason. */
@@ -72,7 +75,22 @@ export function carried(cover) {
   throw new Error(`a cover kind the generator does not know: ${cover}`);
 }
 
-/** Each §3 table row's id and section, §3.22's cover column, and §3.20's fixture rows. */
+/** The row ids a table's first cell names: one id, or a range (`M-ATT-01…04`). */
+function idsOf(id) {
+  const range = id.match(/^(M-[A-Z0-9]+-)(\d+)…(\d+)$/);
+  if (range) {
+    const ids = [];
+    for (let n = Number(range[2]); n <= Number(range[3]); n++) ids.push(`${range[1]}${String(n).padStart(2, "0")}`);
+    return ids;
+  }
+  return /^M-[A-Z0-9]+-\d/.test(id) ? [id] : [];
+}
+
+/**
+ * Each §3 table row's id and section, §3.22's cover column, and the rows the matrix leaves to
+ * fixtures: §3.20's, and any other §3 row whose last column, its Need, is `F: <why>` (§3.19's
+ * M-POL-01…03).
+ */
 export function readMatrix(text) {
   const section = {};
   const cover = {};
@@ -93,21 +111,25 @@ export function readMatrix(text) {
       continue;
     }
     if (at === "3.20") {
-      const range = id.match(/^(M-[A-Z0-9]+-)(\d+)…(\d+)$/);
-      if (range) {
-        for (let n = Number(range[2]); n <= Number(range[3]); n++) {
-          fixtures.push(`${range[1]}${String(n).padStart(2, "0")}`);
-        }
-      } else if (/^M-[A-Z0-9]+-\d/.test(id)) {
-        fixtures.push(id);
-      } else if (id === "—") {
-        fixtures.push(...cells[1].split(",").map((r) => r.trim()));
-      }
+      if (id === "—") fixtures.push(...cells[1].split(",").map((r) => r.trim()));
+      else fixtures.push(...idsOf(id));
       continue;
     }
-    if (/^M-[A-Z0-9]+-\d/.test(id) && !(id in section)) section[id] = at;
+    const need = cells[cells.length - 1].replace(/\s*\|\s*$/, "").trim();
+    for (const row of idsOf(id)) {
+      if (row in section) continue;
+      section[row] = at;
+      if (/^F\b/.test(need)) fixtures.push(row);
+    }
   }
   return { section, cover, fixtures };
+}
+
+/** Every §3 row that §3.22 doesn't carry and the matrix doesn't leave to fixtures. */
+export function uncarried({ section, cover, fixtures }) {
+  return Object.keys(section)
+    .filter((row) => !(row in cover) && !fixtures.includes(row))
+    .map((row) => `${row}: a §${section[row]} row that §3.22 doesn't carry and the matrix doesn't leave to fixtures`);
 }
 
 function ticketOf(row, section) {
@@ -123,7 +145,10 @@ function readJson(name) {
 }
 
 export function generate(matrix, rows, escapes) {
-  const { section, cover, fixtures } = readMatrix(matrix);
+  const read = readMatrix(matrix);
+  const { section, cover, fixtures } = read;
+  const missing = uncarried(read);
+  if (missing.length > 0) throw new Error(missing.join("\n"));
   const list = { rows: [], fixtures: [], real_binary: [], escapes: [] };
   for (const r of rows) {
     const text = cover[r.row];
@@ -206,20 +231,33 @@ export function format(doc) {
   return `${out.join("\n")}\n`;
 }
 
-/** The matrix's row ids and carried cover kinds that the list does not have, or has otherwise. */
+/**
+ * The matrix's row ids, carried cover kinds and binaries, and fixture rows, that the list does
+ * not have or has otherwise; and every §3 row the matrix itself leaves without a cover.
+ */
 export function diff(matrix, list) {
-  const { cover, fixtures } = readMatrix(matrix);
-  const problems = [];
+  const read = readMatrix(matrix);
+  const { cover, fixtures } = read;
+  const problems = uncarried(read);
   const listed = new Map();
-  for (const r of list.rows) listed.set(r.row, r.carried);
+  for (const r of list.rows) listed.set(r.row, [...(listed.get(r.row) ?? []), r]);
   for (const [row, text] of Object.entries(cover)) {
-    if (!listed.has(row)) problems.push(`${row}: in the matrix's §3.22, not in the list`);
-    else if (listed.get(row) !== carried(text).kind) problems.push(`${row}: the matrix carries ${carried(text).kind}, the list ${listed.get(row)}`);
+    if (!listed.has(row)) {
+      problems.push(`${row}: in the matrix's §3.22, not in the list`);
+      continue;
+    }
+    const want = carried(text);
+    for (const r of listed.get(row)) {
+      const at = r.dialect ? `${row} ${r.dialect} ${r.os}` : row;
+      if (r.carried !== want.kind) problems.push(`${at}: the matrix carries ${want.kind}, the list ${r.carried}`);
+      const binary = r.binary ?? "fake";
+      if (want.kind === "scenario" && binary !== (want.binary ?? "fake")) problems.push(`${at}: the matrix runs it under ${want.binary ?? "fake"} binaries, the list ${binary}`);
+    }
   }
   for (const row of listed.keys()) if (!(row in cover)) problems.push(`${row}: in the list, not in the matrix's §3.22`);
   const fixtureRows = new Set(list.fixtures.map((f) => f.row));
-  for (const row of fixtures) if (!fixtureRows.has(row)) problems.push(`${row}: in the matrix's §3.20, not in the list's fixtures`);
-  for (const row of fixtureRows) if (!fixtures.includes(row)) problems.push(`${row}: in the list's fixtures, not in the matrix's §3.20`);
+  for (const row of fixtures) if (!fixtureRows.has(row)) problems.push(`${row}: the matrix leaves it to fixtures, and the list's fixtures don't name it`);
+  for (const row of fixtureRows) if (!fixtures.includes(row)) problems.push(`${row}: in the list's fixtures, and the matrix doesn't leave it to fixtures`);
   return problems;
 }
 
@@ -237,16 +275,16 @@ export function markedIssues() {
 function refreshIssues(repo) {
   const issues = {};
   for (const number of markedIssues()) {
-    const state = execFileSync("gh", ["issue", "view", String(number), "-R", repo, "--json", "state", "-q", ".state"], { encoding: "utf8" }).trim();
-    issues[number] = state === "OPEN" ? "open" : "closed";
+    const { state, createdAt } = JSON.parse(execFileSync("gh", ["issue", "view", String(number), "-R", repo, "--json", "state,createdAt"], { encoding: "utf8" }));
+    issues[number] = { state: state === "OPEN" ? "open" : "closed", opened: new Date(createdAt).toISOString().replace(/\.\d{3}Z$/, "Z") };
   }
   const doc = {
-    $comment: "The issues the cells' expected_fail marks name, and whether each is open (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`.",
+    $comment: "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`. A mark added on an existing cell must name an issue opened after the change's base.",
     fetched: new Date().toISOString().slice(0, 10),
     issues,
   };
   writeFileSync(join(SCENARIOS, "issues.json"), `${JSON.stringify(doc, null, 2)}\n`);
-  const closed = Object.entries(issues).filter(([, s]) => s === "closed").map(([n]) => `#${n}`);
+  const closed = Object.entries(issues).filter(([, i]) => i.state === "closed").map(([n]) => `#${n}`);
   console.log(`${Object.keys(issues).length} issues${closed.length ? `; closed: ${closed.join(", ")}` : ", all open"}`);
   return 0;
 }

@@ -889,6 +889,8 @@ const FIELD_HELP_GROUNDS: &[&str] = &["surface.raised", "surface.overlay"];
 const WASH_LAID_ON: &[(&str, &[&str])] = &[
     ("danger.wash", &["surface.overlay", "terminal.background"]),
     ("wash.warning", &["terminal.background"]),
+    // A browser's strip while the person drives it, over the view's sunken ground (#6937).
+    ("accent.wash", &["surface.sunken"]),
 ];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
@@ -948,6 +950,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "wash.warning",
     // An attention Notice's ground, under its ways out (#3678).
     "attention.surface",
+    // A browser's strip while the person drives it, under Done and the page size (#6937).
+    "accent.wash",
     "layer.project",
     "layer.workspace",
     "layer.chat",

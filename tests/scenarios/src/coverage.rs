@@ -10,7 +10,11 @@
 //!
 //! - [`check`]: the list itself. Every entry has a cover that exists, of the kind the matrix
 //!   carries unless a ruling moved it, with a reason from the closed list for its kind, under
-//!   its reason's cap; and the list has exactly the matrix's rows, dialects and OSes.
+//!   its reason's cap; and the list has exactly the matrix's rows, dialects and OSes, every row
+//!   the matrix leaves to fixtures ([`FIXTURE_ROWS`]) and every real-binary probe.
+//! - [`against_base`]: what the list may not change by itself against its base: a cap above the
+//!   base's seed, a row's carried kind or binaries, and a fixture row, each only with a ruling.
+//! - [`expectations`]: every cell a scenario cover names states what its row states.
 //! - [`ratchet`]: an `expected_fail` mark is added on an existing cell only with a new issue.
 //! - [`issues`]: no mark names a closed issue, or one the change closes.
 //! - [`at_gate`]: at M74.1's gate nothing is pending and every mark is one the person approved.
@@ -30,7 +34,7 @@ use crate::model::{
 };
 use crate::plan::{Scheduled, Trigger, schedule};
 use crate::timings::TimingsCatalogue;
-use crate::validate::{RowEntry, RowTable};
+use crate::validate::{RowEntry, RowTable, Validator};
 
 /// **The closed list of reasons a row may be left to the live pass** (ticket 37): model
 /// behaviour; a person's look at wording or timing; an OS privacy prompt (TCC); a third-party
@@ -65,6 +69,50 @@ pub const FIXTURE_REASONS: [&str; 8] = [
 /// focus or grouping.
 pub const E2E_REASONS: [&str; 1] = ["window"];
 
+/// **Every row the matrix leaves to fixtures** (test-matrix-phase-1.md §3.20, and §3.19's
+/// M-POL-01…03, whose Need is `F: the policy file is machine-wide`): the list names a cover for
+/// each, so deleting one from `coverage.json` alone is refused. A re-carry that changes §3.20
+/// changes this list, and `node tools/scenario-coverage.mjs diff` says so.
+pub const FIXTURE_ROWS: [&str; 37] = [
+    "M-WAY-04",
+    "M-LOOP-11",
+    "M-HC-02",
+    "M-HC-07",
+    "M-ASK-03",
+    "M-ASK-12",
+    "M-GRD-08",
+    "M-GRD-10",
+    "M-ATT-01",
+    "M-ATT-02",
+    "M-ATT-03",
+    "M-ATT-04",
+    "M-ATT-07",
+    "M-ATT-08",
+    "M-RST-05",
+    "M-HOLD-11",
+    "M-HOLD-14",
+    "M-BH-02",
+    "M-BH-07",
+    "M-BH-08b",
+    "M-OBS-07",
+    "M-OBS-11",
+    "M-SET-05",
+    "M-POL-01",
+    "M-POL-02",
+    "M-POL-03",
+    "R-006",
+    "R-008",
+    "R-012",
+    "R-032",
+    "R-169",
+    "R-281",
+    "R-284",
+    "R-289",
+    "R-315",
+    "R-327",
+    "R-355",
+];
+
 /// The tickets of M74.1 (T1.1-01 to T1.1-57): a `pending` cover names one of them.
 const TICKETS: std::ops::RangeInclusive<u32> = 1..=57;
 
@@ -78,6 +126,8 @@ const OSES: [Os; 2] = [Os::Linux, Os::Macos];
 pub struct Coverage {
     #[serde(rename = "$comment", default)]
     pub comment: Option<String>,
+    /// The list's format. Nothing the gate requires depends on it: the probes and fixture rows
+    /// every list owes are in this file's code ([`Repo::required`]).
     #[serde(default)]
     pub version: u32,
     /// Per cover kind (`live`, `fixture`, `e2e`), per reason: how many rows may use it.
@@ -432,7 +482,16 @@ pub struct Issues {
     pub comment: Option<String>,
     #[serde(default)]
     pub fetched: Option<String>,
-    pub issues: BTreeMap<u64, IssueState>,
+    pub issues: BTreeMap<u64, Issue>,
+}
+
+/// **One issue in the cache**: whether it is open, and when it was opened (GitHub's
+/// `createdAt`, `2026-11-15T05:08:34Z`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Issue {
+    pub state: IssueState,
+    pub opened: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -443,14 +502,67 @@ pub enum IssueState {
 }
 
 /// **Everything the list is checked against**: the repo's root, the cells files (by their path
-/// in `tests/scenarios`, `cells/B0.json`), the row table, the escape table and the issue cache.
+/// in `tests/scenarios`, `cells/B0.json`), the row table, the escape table, the issue cache, the
+/// person's rulings (`rulings.json`), and what every list owes beside the row table.
 pub struct Repo {
     pub root: PathBuf,
     pub batches: Vec<(String, Batch)>,
     pub rows: RowTable,
     pub escapes: Vec<EscapeRow>,
     pub issues: Issues,
+    pub rulings: Rulings,
+    pub required: Required,
     pub catalogue: Box<dyn TimingsCatalogue>,
+}
+
+/// **The person's rulings of M74.1** (`rulings.json`): the Q-ids that may move a row, raise a
+/// cap or approve a mark.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rulings {
+    #[serde(rename = "$comment", default)]
+    pub comment: Option<String>,
+    /// Each ruling's id, and the day it was made.
+    pub rulings: BTreeMap<String, String>,
+}
+
+impl Rulings {
+    pub fn of(ids: &[&str]) -> Self {
+        Rulings {
+            comment: None,
+            rulings: ids
+                .iter()
+                .map(|id| (id.to_string(), String::new()))
+                .collect(),
+        }
+    }
+
+    /// Whether `text` names one of these rulings, or a point of one (`Q321.8`).
+    pub fn names(&self, text: &str) -> bool {
+        is_q_id(text)
+            && self
+                .rulings
+                .contains_key(text.split('.').next().unwrap_or(text))
+    }
+}
+
+/// **What every list owes beside the row table and the escape table**, from this file's code,
+/// never from the list: the rows the matrix leaves to fixtures, and whether each dialect's
+/// real-binary probes are owed. A test's few lines owe neither ([`Required::default`]).
+#[derive(Debug, Clone, Default)]
+pub struct Required {
+    pub fixtures: Vec<String>,
+    pub probes: bool,
+}
+
+impl Required {
+    /// The repo's: [`FIXTURE_ROWS`], and every probe.
+    pub fn repo() -> Self {
+        Required {
+            fixtures: FIXTURE_ROWS.iter().map(|r| r.to_string()).collect(),
+            probes: true,
+        }
+    }
 }
 
 impl Repo {
@@ -476,6 +588,8 @@ impl Repo {
             rows: read_json(&here.join("rows.json"))?,
             escapes: escapes.rows,
             issues: read_json(&here.join("issues.json"))?,
+            rulings: read_json(&here.join("rulings.json"))?,
+            required: Required::repo(),
             catalogue: crate::timings::catalogue(),
         })
     }
@@ -637,7 +751,9 @@ fn cover_problems(text: &str, want: &Want<'_>, repo: &Repo, problems: &mut Vec<S
             }
         }
         Cover::E2e { spec, test } => {
-            if !holds(spec, test) {
+            let titled =
+                fs::read_to_string(repo.root.join(spec)).is_ok_and(|text| names_test(&text, test));
+            if !titled {
                 problems.push(format!("{at}: `{text}`: {spec} has no test {test}"));
             }
         }
@@ -653,6 +769,18 @@ fn cover_problems(text: &str, want: &Want<'_>, repo: &Repo, problems: &mut Vec<S
         }
         Cover::Pending { .. } => {}
     }
+}
+
+/// Whether a spec's `text` has a `test(` whose title is exactly `title`, in any quotes, across
+/// whatever line breaks a formatter puts after `test(`.
+fn names_test(text: &str, title: &str) -> bool {
+    ['"', '\'', '`'].iter().any(|q| {
+        let quoted = format!("{q}{title}{q}");
+        text.match_indices(&quoted).any(|(at, _)| {
+            text[..at].trim_end().ends_with("test(")
+                && text[at + quoted.len()..].trim_start().starts_with(',')
+        })
+    })
 }
 
 fn reason_problems(at: &str, kind: Kind, reason: Option<&str>, problems: &mut Vec<String>) {
@@ -716,8 +844,8 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
                     "{at}: moved off scenario to {} without a Q-id",
                     r.kind.word()
                 )),
-                Some(q) if !is_q_id(q) => problems.push(format!(
-                    "{at}: moved off scenario by `{q}`, which is not a Q-id"
+                Some(q) if !repo.rulings.names(q) => problems.push(format!(
+                    "{at}: moved off scenario by `{q}`, which is no Q-id of the person's rulings (rulings.json)"
                 )),
                 Some(_) => {}
             }
@@ -732,7 +860,28 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
         cover_problems(&r.cover, &want, repo, &mut problems);
     }
 
-    // The rows left to fixtures.
+    // The rows left to fixtures: every one the matrix leaves there, and no other.
+    let fixture_rows: BTreeSet<&str> = list.fixtures.iter().map(|f| f.row.as_str()).collect();
+    for row in &repo.required.fixtures {
+        if !fixture_rows.contains(row.as_str()) {
+            problems.push(format!(
+                "{row}: no cover: the matrix leaves it to fixtures and the list does not name it"
+            ));
+        }
+    }
+    let mut fixture_seen = BTreeSet::new();
+    for f in &list.fixtures {
+        if !fixture_seen.insert((f.row.as_str(), f.os)) {
+            problems.push(format!("{} {}: listed twice", f.row, os_word(f.os)));
+        }
+        if !repo.required.fixtures.is_empty() && !repo.required.fixtures.contains(&f.row) {
+            problems.push(format!(
+                "{} {}: not a row the matrix leaves to fixtures",
+                f.row,
+                os_word(f.os)
+            ));
+        }
+    }
     for f in &list.fixtures {
         let at = format!("{} {}", f.row, os_word(f.os));
         reason_problems(&at, Kind::Fixture, Some(&f.reason), &mut problems);
@@ -769,8 +918,8 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
         };
         cover_problems(&p.cover, &want, repo, &mut problems);
     }
-    // A whole list (`version` 1 on), not a test's few lines, names every probe.
-    if list.version > 0 {
+    // The repo's list names every probe, whatever its `version` says.
+    if repo.required.probes {
         for probe in [Probe::Network, Probe::File] {
             for d in Dialect::ALL {
                 for os in OSES {
@@ -891,8 +1040,8 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
                         "{at}: raised from its seed {} to {} with no approving Q-id",
                         cap.seed, cap.cap
                     )),
-                    Some(q) if !is_q_id(q) => problems.push(format!(
-                        "{at}: raised from its seed {} to {} by `{q}`, which is not a Q-id",
+                    Some(q) if !repo.rulings.names(q) => problems.push(format!(
+                        "{at}: raised from its seed {} to {} by `{q}`, which is no Q-id of the person's rulings (rulings.json)",
                         cap.seed, cap.cap
                     )),
                     Some(_) => {}
@@ -905,6 +1054,117 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
         if g.reason.trim().is_empty() {
             problems.push(format!("the gap for {}: no reason", g.rows.join(", ")));
         }
+    }
+    problems
+}
+
+fn binary_word(b: Binary) -> &'static str {
+    match b {
+        Binary::Fake => "the fake binary",
+        Binary::Real => "the real binary",
+        Binary::Both => "both binaries",
+    }
+}
+
+/// Whether going from `base`'s binaries to `head`'s drops a leg the row ran in.
+fn drops_a_leg(base: Binary, head: Binary) -> bool {
+    base != head && head != Binary::Both
+}
+
+/// **What the list may not change against its base by itself** (`base` is the base's
+/// `coverage.json`): a cap above the most the base allowed (its seed, or a cap a ruling raised
+/// it to); a row's `carried` kind; and a row's binaries, going from `both` to one. Each needs a
+/// ruling of the person's that the base's entry did not already name (`approved` for a cap,
+/// `moved` for a row). A row or cap new in this change is held to [`check`] alone.
+pub fn against_base(base: &Coverage, head: &Coverage, rulings: &Rulings) -> Vec<String> {
+    let mut problems = Vec::new();
+    let new_ruling = |head: Option<&String>, base: Option<&String>| {
+        head.is_some_and(|q| rulings.names(q)) && head != base
+    };
+    for (kind, caps) in &head.caps {
+        for (reason, cap) in caps {
+            let was = base.caps.get(kind).and_then(|c| c.get(reason));
+            let allowed = was.map_or(0, |c| c.seed.max(c.cap));
+            let top = cap.seed.max(cap.cap);
+            if top > allowed
+                && !new_ruling(cap.approved.as_ref(), was.and_then(|c| c.approved.as_ref()))
+            {
+                problems.push(format!(
+                    "the {} cap for `{reason}`: its seed and cap reach {top}, above the {allowed} its base allowed, with no new approving Q-id",
+                    kind.word()
+                ));
+            }
+        }
+    }
+    let before: BTreeMap<(&str, Dialect, Os), &RowCover> = base
+        .rows
+        .iter()
+        .map(|r| ((r.row.as_str(), r.dialect, r.os), r))
+        .collect();
+    for r in &head.rows {
+        let Some(b) = before.get(&(r.row.as_str(), r.dialect, r.os)) else {
+            continue;
+        };
+        let at = format!("{} {} {}", r.row, r.dialect.word(), os_word(r.os));
+        let ruled = new_ruling(r.moved.as_ref(), b.moved.as_ref());
+        if r.carried != b.carried && !ruled {
+            problems.push(format!(
+                "{at}: carried moves from {} to {} against its base with no new Q-id in `moved`; the matrix carries a row's kind, and only a ruling moves it",
+                b.carried.word(),
+                r.carried.word()
+            ));
+        }
+        if drops_a_leg(b.binary, r.binary) && !ruled {
+            problems.push(format!(
+                "{at}: runs under {}, and its base under {}: a leg is dropped with no new Q-id in `moved`",
+                binary_word(r.binary),
+                binary_word(b.binary)
+            ));
+        }
+    }
+    problems
+}
+
+/// **Every cell a scenario cover names, held to the Log, Window and Chat expectations its row
+/// states**: ticket 5's validator over each cells file such a cover names, with the list's
+/// flags keyed by the cell the cover names. A row whose cover is still pending holds no cell to
+/// anything yet.
+pub fn expectations(list: &Coverage, repo: &Repo, validator: &mut Validator) -> Vec<String> {
+    let mut per_file: BTreeMap<String, BTreeMap<(String, Dialect, Os), RowEntry>> = BTreeMap::new();
+    for r in list.rows.iter().filter(|r| r.kind == Kind::Scenario) {
+        let Ok(Cover::Scenario { file, cell }) = Cover::parse(&r.cover) else {
+            continue;
+        };
+        let e = per_file
+            .entry(file)
+            .or_default()
+            .entry((cell.clone(), r.dialect, r.os))
+            .or_insert(RowEntry {
+                row: cell,
+                dialect: r.dialect,
+                os: r.os,
+                log: false,
+                window: false,
+                chat: false,
+            });
+        e.log |= r.log;
+        e.window |= r.window;
+        e.chat |= r.chat;
+    }
+    let mut problems = Vec::new();
+    for (file, entries) in per_file {
+        let Some((_, batch)) = repo.batches.iter().find(|(f, _)| *f == file) else {
+            continue;
+        };
+        validator.rows = RowTable {
+            entries: entries.into_values().collect(),
+        };
+        problems.extend(
+            validator
+                .check(batch)
+                .into_iter()
+                .map(|p| format!("{file}: {p}")),
+        );
     }
     problems
 }
@@ -947,16 +1207,30 @@ fn marks(batches: &[(String, Batch)]) -> (BTreeSet<MarkKey>, BTreeSet<String>, B
 }
 
 /// **The marks a change adds against `base`'s cells**, where it may not: on a cell `base` has,
-/// for an issue no mark of `base` names. Per cell × dialect × OS × leg × timings.
-pub fn ratchet(base: &[(String, Batch)], head: &[(String, Batch)]) -> Vec<String> {
+/// for an issue that is not new. A new issue is one no mark of `base` names, opened after the
+/// base was committed (`base_time`, `2026-11-15T05:08:34Z`, as `cache` writes `opened`); an
+/// issue the cache doesn't have is not known to be new. Per cell × dialect × OS × leg × timings.
+pub fn ratchet(
+    base: &[(String, Batch)],
+    head: &[(String, Batch)],
+    cache: &Issues,
+    base_time: &str,
+) -> Vec<String> {
     let (before, cells, issues) = marks(base);
     let (after, _, _) = marks(head);
+    let new = |issue: &u64| {
+        !issues.contains(issue)
+            && cache
+                .issues
+                .get(issue)
+                .is_some_and(|i| i.opened.as_str() > base_time)
+    };
     after
         .difference(&before)
-        .filter(|(cell, .., issue)| cells.contains(cell) && issues.contains(issue))
+        .filter(|(cell, .., issue)| cells.contains(cell) && !new(issue))
         .map(|(cell, d, os, leg, t, issue)| {
             format!(
-                "{cell}: a mark for #{issue} is added for {} on {} in the {} leg at {} timings; on an existing cell only a new issue's mark may be added, otherwise marks there are only removed",
+                "{cell}: a mark for #{issue} is added for {} on {} in the {} leg at {} timings; on an existing cell only the mark of an issue opened after the base ({base_time}) may be added, otherwise marks there are only removed",
                 d.word(),
                 os_word(*os),
                 leg_word(model_leg(*leg)),
@@ -974,7 +1248,7 @@ pub fn issues(head: &[(String, Batch)], cache: &Issues, closing: &[u64]) -> Vec<
             for m in &cell.expected_fail {
                 let at = format!("{file}#{}", cell.id);
                 let n = m.issue;
-                match cache.issues.get(&n) {
+                match cache.issues.get(&n).map(|i| i.state) {
                     None => problems.insert(format!(
                         "{at}: #{n} is not in issues.json; refresh it with `node tools/scenario-coverage.mjs issues`"
                     )),
@@ -1030,7 +1304,7 @@ fn every_cover(list: &Coverage) -> Vec<(String, &str)> {
 
 /// **What M74.1's gate refuses beyond [`check`]**: a cover still pending, and a mark the person
 /// did not approve by name.
-pub fn at_gate(list: &Coverage, head: &[(String, Batch)]) -> Vec<String> {
+pub fn at_gate(list: &Coverage, head: &[(String, Batch)], rulings: &Rulings) -> Vec<String> {
     let mut problems = Vec::new();
     for (at, cover) in every_cover(list) {
         if let Ok(Cover::Pending { ticket }) = Cover::parse(cover) {
@@ -1045,7 +1319,7 @@ pub fn at_gate(list: &Coverage, head: &[(String, Batch)]) -> Vec<String> {
                 let approved = list
                     .approved_marks
                     .iter()
-                    .any(|a| a.issue == m.issue && a.cell == name && is_q_id(&a.approved));
+                    .any(|a| a.issue == m.issue && a.cell == name && rulings.names(&a.approved));
                 if !approved {
                     unapproved.insert(format!(
                         "{name}: an expected_fail for #{} the person did not approve by name",
@@ -1280,9 +1554,22 @@ fn pinned(
     })
 }
 
-/// **Every covered entry the legs that ran owed, with neither a pass nor a pinned
-/// `expected_fail`** in their reports. A leg that did not run in this run owes nothing; a cover
-/// still pending is judged by [`at_gate`].
+/// The pass a leg belongs to: the scenario legs run together, and the live pass, the fixtures
+/// and the e2e specs each on their own.
+fn pass_of(leg: ReportLeg) -> u8 {
+    match leg {
+        ReportLeg::Fake | ReportLeg::ClaudeSandbox | ReportLeg::RealWrap => 0,
+        ReportLeg::Live => 1,
+        ReportLeg::Fixture => 2,
+        ReportLeg::E2e => 3,
+    }
+}
+
+/// **Every covered entry this run owed, with neither a pass nor a pinned `expected_fail`** in
+/// its reports. A run owes every entry of each pass it ran on an OS at a timings, in the leg its
+/// cover requires, whether or not that leg is in `ran`: a scenario run on Linux that left out
+/// ticket 53's real-binary leg owes that leg's verdicts. A pass that did not run on an OS owes
+/// nothing there; a cover still pending is judged by [`at_gate`].
 pub fn judge_runs(
     list: &Coverage,
     repo: &Repo,
@@ -1292,9 +1579,11 @@ pub fn judge_runs(
 ) -> Vec<String> {
     let mut problems = Vec::new();
     for n in needs(list, repo, trigger) {
-        let in_this_run = ran
-            .iter()
-            .any(|r| r.leg == n.leg && r.os == n.os && n.timings.is_none_or(|t| r.timings == t));
+        let in_this_run = ran.iter().any(|r| {
+            pass_of(r.leg) == pass_of(n.leg)
+                && r.os == n.os
+                && n.timings.is_none_or(|t| r.timings == t)
+        });
         if !in_this_run {
             continue;
         }
