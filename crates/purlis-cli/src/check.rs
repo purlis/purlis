@@ -123,7 +123,7 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
     {
         return Ok(code);
     }
-    match checks::report(root, place, &file, chrono::Utc::now()) {
+    match checks::report(root, place, &file, jiff::Timestamp::now()) {
         Ok(_) => {
             voice::ok(format!("{tools} recorded for {branch}"));
             Ok(0)
@@ -181,7 +181,7 @@ fn through(
         place,
         &reporter.extension,
         answered,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         Ok(done) => {
             voice::ok(format!(

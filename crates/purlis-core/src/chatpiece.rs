@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::pieces::{self, Event, Who};
 use crate::worktree::{self, Base, Note, Refusal, name};
@@ -265,7 +265,7 @@ fn taken_back_unless_recorded(
 /// A claim the log refused still leaves a mark on the branch ([`pieces::mark_claimed`]), so a
 /// chat that did start is never listed as one that never did (#835). The answer stays `None`:
 /// the log, which says how long the branch has been quiet, has nothing.
-pub fn claim(plane: &Path, cut: &Cut, who: &Who, now: DateTime<Utc>) -> Option<PathBuf> {
+pub fn claim(plane: &Path, cut: &Cut, who: &Who, now: Timestamp) -> Option<PathBuf> {
     let logged = pieces::record(
         plane,
         &cut.workspace,

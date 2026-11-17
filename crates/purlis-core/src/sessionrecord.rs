@@ -130,7 +130,7 @@ pub struct Facts {
     /// Where the chat worked: a workspace, or the plane root.
     pub place: Place,
     /// When the record is made, on this machine's clock.
-    pub at: chrono::NaiveDateTime,
+    pub at: jiff::civil::DateTime,
     /// The chat, where the command runs inside one the app started.
     pub chat: Option<ChatFacts>,
     /// The persona the chat runs as, or `None` for none.
@@ -499,7 +499,7 @@ pub fn record(root: &Path, new: &New) -> Result<Recorded, Refused> {
     }
     gated(root, place, &dir, Verb::Write)?;
     let text = render(new);
-    let stamp = new.facts.at.format("%Y%m%d-%H%M%S").to_string();
+    let stamp = new.facts.at.strftime("%Y%m%d-%H%M%S").to_string();
     let slug = crate::memstore::slug(new.title.trim());
     let name = |n: usize| {
         if n == 1 {
@@ -584,7 +584,7 @@ fn render(new: &New) -> String {
     let mut lines = vec![
         "---".to_owned(),
         format!("title: {}", new.title.trim()),
-        format!("date: {}", facts.at.format("%Y-%m-%d %H:%M:%S")),
+        format!("date: {}", facts.at.strftime("%Y-%m-%d %H:%M:%S")),
         format!(
             "chat: {}",
             chat.map_or_else(|| UNKNOWN.to_owned(), |c| c.number.to_string())
@@ -1124,7 +1124,7 @@ pub fn brokered(
     root: &Path,
     asker: &Asker,
     ask: &crate::hookwire::RecordAsk,
-    at: chrono::NaiveDateTime,
+    at: jiff::civil::DateTime,
 ) -> Result<Recorded, String> {
     if ask.chat != asker.number {
         return Err(format!(

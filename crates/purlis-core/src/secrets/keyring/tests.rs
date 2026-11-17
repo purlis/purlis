@@ -351,7 +351,7 @@ fn a_keys_age_is_whole_days_since_it_was_written_and_none_when_the_time_is_unrea
     set_with(&store, &ctx, &ops, "OLD", VALUE, "2026-09-20T23:59:59Z").unwrap();
     set_with(&store, &ctx, &ops, "TODAY", VALUE, "2026-09-24T00:00:00Z").unwrap();
     set_with(&store, &ctx, &ops, "UNDATED", VALUE, "not a time").unwrap();
-    let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 24).unwrap();
+    let today = crate::wallclock::day(2026, 9, 24).unwrap();
     assert_eq!(
         ages(&ctx, &ops, today).unwrap(),
         [
@@ -385,15 +385,13 @@ fn a_keyring_vaults_health_counts_its_keys_and_names_its_service_from_the_index(
 #[test]
 fn a_write_through_the_builds_own_store_is_stamped_with_the_time_it_was_made() {
     let (_dir, ctx, ops) = plane();
-    let before = chrono::Utc::now().timestamp();
+    let before = jiff::Timestamp::now().as_second();
     set(&ctx, &ops, "A", VALUE).unwrap();
-    let after = chrono::Utc::now().timestamp();
+    let after = jiff::Timestamp::now().as_second();
     let updated = &listed(&ctx, &ops).unwrap()[0].updated;
     assert_eq!(updated.len(), "2026-09-24T11:32:17Z".len(), "{updated}");
     assert!(updated.ends_with('Z'), "{updated}");
-    let at = chrono::DateTime::parse_from_rfc3339(updated)
-        .unwrap()
-        .timestamp();
+    let at = str::parse::<jiff::Timestamp>(updated).unwrap().as_second();
     assert!((before..=after).contains(&at), "{updated}");
 }
 

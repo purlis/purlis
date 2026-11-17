@@ -452,7 +452,7 @@ pub fn asked_by_a_chat(
             moment.open,
             moment.default,
             crate::dispatchchain::MOST_RECORDS_READ,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     {
         lineage.depth = lineage.depth.max(chain_depth(&chain));
@@ -3452,7 +3452,7 @@ mod tests {
                 brief: "Do the work.".to_owned(),
                 report_owed: true,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("a record");
     }

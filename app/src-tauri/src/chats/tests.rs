@@ -7267,7 +7267,7 @@ fn a_dispatched_chat_whose_conversation_was_lost_is_handed_its_brief_on_its_fres
             brief: BRIEF.to_owned(),
             report_owed: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     chats.brief_was_sent(&record, BRIEF);
@@ -11439,7 +11439,7 @@ fn a_studio_chats_job_is_done_once_its_draft_came_and_stays_done() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::OutcomeEvals,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(
@@ -11514,7 +11514,7 @@ fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::Checks,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(

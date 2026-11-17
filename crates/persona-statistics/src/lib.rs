@@ -38,7 +38,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
+use jiff::civil::Date;
+use jiff::{Span, ToSpan};
 use purlis_core::counts::counted;
 use purlis_core::personaverbs::stats;
 use serde_json::{Value, json};
@@ -72,7 +73,7 @@ struct Persona {
     name: String,
     default: bool,
     /// The date each memory was written, when its stamp had one.
-    dated: Vec<NaiveDate>,
+    dated: Vec<Date>,
     /// Memories whose stamp had no date charter could hand — counted, not placed in time.
     undated: usize,
     refused: Option<String>,
@@ -83,7 +84,7 @@ impl Persona {
         self.dated.len() + self.undated
     }
 
-    fn last(&self) -> Option<NaiveDate> {
+    fn last(&self) -> Option<Date> {
         self.dated.iter().max().copied()
     }
 }
@@ -105,7 +106,7 @@ fn statistics(request: &Value) -> Result<Vec<Value>, String> {
     let now = given
         .get("now")
         .and_then(Value::as_str)
-        .and_then(|now| NaiveDateTime::parse_from_str(now, "%Y-%m-%d %H:%M").ok())
+        .and_then(|now| jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M", now).ok())
         .ok_or("the request does not say what time it is")?
         .date();
     let personas = read_personas(given)?;
@@ -180,7 +181,7 @@ fn read_personas(given: &Value) -> Result<Vec<Persona>, String> {
             match stamp
                 .as_str()
                 .and_then(|stamp| stamp.get(..10))
-                .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
+                .and_then(|day| jiff::civil::Date::strptime("%Y-%m-%d", day).ok())
             {
                 Some(day) => dated.push(day),
                 None => undated += 1,
@@ -205,12 +206,12 @@ fn note(text: &str) -> Value {
 }
 
 /// The memories `charter persona stats` counts as RECENT, counted by its own code.
-fn recent(persona: &Persona, now: NaiveDate) -> usize {
-    let days: Vec<Option<NaiveDate>> = persona.dated.iter().copied().map(Some).collect();
+fn recent(persona: &Persona, now: Date) -> usize {
+    let days: Vec<Option<Date>> = persona.dated.iter().copied().map(Some).collect();
     stats::recent(&days, stats::RECENT_DAYS, now)
 }
 
-fn about_all(personas: &[Persona], now: NaiveDate) -> String {
+fn about_all(personas: &[Persona], now: Date) -> String {
     let total: usize = personas.iter().map(Persona::count).sum();
     let lately: usize = personas.iter().map(|it| recent(it, now)).sum();
     let undated: usize = personas.iter().map(|it| it.undated).sum();
@@ -227,10 +228,10 @@ fn about_all(personas: &[Persona], now: NaiveDate) -> String {
     said
 }
 
-fn about_one(persona: &Persona, now: NaiveDate) -> String {
+fn about_one(persona: &Persona, now: Date) -> String {
     let last = persona.last().map_or_else(
         || "nothing dated yet".to_owned(),
-        |day| format!("last on {}", day.format("%Y-%m-%d")),
+        |day| format!("last on {}", day.strftime("%Y-%m-%d")),
     );
     format!(
         "{} remembers {} · {} in the last {} days · {last}",
@@ -272,24 +273,27 @@ fn per_persona(personas: &[Persona]) -> Value {
     })
 }
 
+/// The Monday of the week `day` is in.
+fn monday_of(day: Date) -> Date {
+    day - Span::new().days(day.weekday().to_monday_zero_offset())
+}
+
 /// Memories written in each of the last [`WEEKS`] weeks, Monday to Sunday, oldest first.
-fn weekly(title: &str, personas: &[Persona], now: NaiveDate) -> Value {
-    let this_week = now - Duration::days(i64::from(now.weekday().num_days_from_monday()));
-    let first = this_week - Duration::weeks(WEEKS - 1);
-    let mut counts: BTreeMap<NaiveDate, usize> = (0..WEEKS)
-        .map(|n| (first + Duration::weeks(n), 0))
-        .collect();
+fn weekly(title: &str, personas: &[Persona], now: Date) -> Value {
+    let this_week = monday_of(now);
+    let first = this_week - (WEEKS - 1).weeks();
+    let mut counts: BTreeMap<Date, usize> = (0..WEEKS).map(|n| (first + n.weeks(), 0)).collect();
     for day in personas.iter().flat_map(|it| it.dated.iter()) {
         if *day < first || *day > now {
             continue;
         }
-        let monday = *day - Duration::days(i64::from(day.weekday().num_days_from_monday()));
+        let monday = monday_of(*day);
         *counts.entry(monday).or_default() += 1;
     }
     let points: Vec<Value> = counts
         .iter()
         .map(|(monday, written)| {
-            json!({ "label": monday.format("%b %-d").to_string(), "value": count(*written) })
+            json!({ "label": monday.strftime("%b %-d").to_string(), "value": count(*written) })
         })
         .collect();
     json!({
@@ -300,8 +304,8 @@ fn weekly(title: &str, personas: &[Persona], now: NaiveDate) -> Value {
 
 /// Days since each persona last learned something, quietest first — and, as a sentence, the
 /// ones that never have.
-fn quietest(personas: &[Persona], now: NaiveDate) -> Vec<Value> {
-    let mut dated: Vec<(&Persona, NaiveDate)> = personas
+fn quietest(personas: &[Persona], now: Date) -> Vec<Value> {
+    let mut dated: Vec<(&Persona, Date)> = personas
         .iter()
         .filter_map(|it| it.last().map(|last| (it, last)))
         .collect();
@@ -312,11 +316,11 @@ fn quietest(personas: &[Persona], now: NaiveDate) -> Vec<Value> {
             .iter()
             .take(MOST_BARS)
             .map(|(persona, last)| {
-                let days = (now - *last).num_days().max(0);
+                let days = i64::from((now - *last).get_days()).max(0);
                 json!({
                     "label": persona.name,
                     "value": count(usize::try_from(days).unwrap_or(0)),
-                    "note": last.format("%Y-%m-%d").to_string(),
+                    "note": last.strftime("%Y-%m-%d").to_string(),
                 })
             })
             .collect();

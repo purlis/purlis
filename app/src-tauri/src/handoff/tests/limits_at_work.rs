@@ -17,7 +17,7 @@ use purlis_core::handback::{LIMIT_ENDED, PERSON_ENDED};
 const ESCAPE: &[u8] = purlis_core::dispatched::INTERRUPT;
 
 /// The app's clock looks at `at`.
-fn the_clock_looks_at(held: &Held, at: chrono::DateTime<chrono::Utc>) {
+fn the_clock_looks_at(held: &Held, at: jiff::Timestamp) {
     let held = kept(held);
     bounded("the clock's look", move || {
         crate::overlimit::look_at(&held, at);
@@ -81,12 +81,12 @@ fn answers_its_pause(held: &Held, task: u32, option: &str) {
 }
 
 /// The moment of the first look.
-fn now() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc::now()
+fn now() -> jiff::Timestamp {
+    jiff::Timestamp::now()
 }
 
-fn secs(n: i64) -> chrono::Duration {
-    chrono::Duration::seconds(n)
+fn secs(n: i64) -> jiff::SignedDuration {
+    jiff::SignedDuration::from_secs(n)
 }
 
 #[test]

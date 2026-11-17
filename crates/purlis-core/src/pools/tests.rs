@@ -2480,9 +2480,10 @@ mod cluster {
         added(config.path(), &cluster);
         let added_at = judged(config.path()).paired;
         let at = |seconds: u64| {
-            chrono::DateTime::from_timestamp(i64::try_from(seconds).unwrap(), 0)
+            jiff::Timestamp::from_second(i64::try_from(seconds).unwrap())
                 .unwrap()
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+                .to_string()
         };
         let now = added_at + 4 * 3600;
         let ours = crate::clusterpool::desktop_label(OURS);

@@ -12,7 +12,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_sarif::sarif;
 
@@ -311,7 +311,7 @@ pub fn report(
     plane: &Path,
     branch: Branch<'_>,
     file: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Reported, String> {
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
     let results = results_in(file, &folder).map_err(|why| not_recorded(file, &why))?;
@@ -325,7 +325,7 @@ pub fn report_inside(
     plane: &Path,
     branch: Branch<'_>,
     relative: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Reported, String> {
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
     let file = folder.join(relative);
@@ -346,7 +346,7 @@ pub fn report_converted(
     branch: Branch<'_>,
     reporter: &str,
     answered: Result<Vec<u8>, String>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Reported, String> {
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
     let results = answered.and_then(|sarif| {
@@ -437,7 +437,7 @@ pub fn report_converted_inside(
     status: i32,
     executor: &crate::executor::Executor,
     config_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Reported, String> {
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
     let file = folder.join(relative);
@@ -461,7 +461,7 @@ fn faulted(
     branch: Branch<'_>,
     reporter: &str,
     said: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), String> {
     let path = store_path(plane, branch.ws, branch.repo, branch.piece);
     let held = crate::piececlaim::locked(plane, branch.ws)?;
@@ -470,7 +470,7 @@ fn faulted(
     record.faults.push(Fault {
         extension: reporter.to_owned(),
         said: said.to_owned(),
-        reported_at: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        reported_at: now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
     });
     written(plane, branch.ws, &path, &record)?;
     drop(held);
@@ -485,14 +485,14 @@ fn recorded(
     folder: &Path,
     results: Vec<ToolResults>,
     reporter: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Reported, String> {
     let piece = branch.piece;
     let head = line_of(folder, &["rev-parse", "--verify", "--quiet", "HEAD"]);
     let name = line_of(folder, &["symbolic-ref", "--short", "--quiet", "HEAD"])
         .unwrap_or_else(|| "(detached)".to_owned());
     let path = store_path(plane, branch.ws, branch.repo, piece);
-    let stamp = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
     let mut fresh: Vec<Set> = Vec::new();
     for one in results {
         // A file may hold several runs of one tool: together they are what it said.

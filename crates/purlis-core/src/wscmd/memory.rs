@@ -268,7 +268,7 @@ pub fn move_memory(
     slug: &str,
     to: &Scope,
     persona: Option<&str>,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     say: Sink,
 ) -> (u8, bool) {
     if !crate::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) {

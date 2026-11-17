@@ -115,7 +115,7 @@ fn a_moved_projects_vault_is_recorded_in_the_old_spelling_and_lives_in_the_moved
         &p,
         "A",
         "1",
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 6).unwrap(),
+        crate::wallclock::day(2026, 10, 6).unwrap(),
     )
     .unwrap();
     assert!(tmp.path().join(".purlis/vaults/p.json").is_file());

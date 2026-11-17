@@ -235,7 +235,7 @@ fn commit(
         &super::who(asker),
         asker.live.as_deref(),
         crate::piececlaim::Act::Commit,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )?;
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);

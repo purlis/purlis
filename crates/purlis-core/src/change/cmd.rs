@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::observe::Observation;
 use super::record::{
@@ -42,8 +42,8 @@ pub(super) fn named(value: &str) -> String {
     shown::short(value)
 }
 
-pub(super) fn now_iso(now: DateTime<Utc>) -> String {
-    now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
+pub(super) fn now_iso(now: Timestamp) -> String {
+    now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()
 }
 
 /// Who is recorded as creating a change: `git config user.name`, first line, contained; else
@@ -192,7 +192,7 @@ pub fn create(
     slug: &str,
     why: Option<&str>,
     by: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     if !workspace_ok(plane, ws, say) {
@@ -327,7 +327,7 @@ pub fn drop(
     slug: &str,
     repo: &str,
     why: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     if !workspace_ok(plane, ws, say) {
@@ -471,13 +471,7 @@ pub fn list(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> u8 {
 /// merged, the checks at its head, and whether a blocker still stands. That half is a reading
 /// taken at `now` and never written back; when charter cannot ask, it says so and the record
 /// above it still stands.
-pub fn show(
-    plane: &Path,
-    ws: &str,
-    slug: &str,
-    now: DateTime<Utc>,
-    say: &mut dyn FnMut(Say),
-) -> u8 {
+pub fn show(plane: &Path, ws: &str, slug: &str, now: Timestamp, say: &mut dyn FnMut(Say)) -> u8 {
     if !workspace_ok(plane, ws, say) {
         return 1;
     }

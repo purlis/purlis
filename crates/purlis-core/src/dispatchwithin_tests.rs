@@ -518,8 +518,8 @@ fn no_standing_grant_is_made_accepted_or_set_for_a_name_that_is_no_workspace() {
 
 // ---- purlis's own workspace commands -------------------------------------------------------------
 
-fn now() -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(1_760_000_000, 0).expect("a time")
+fn now() -> jiff::Timestamp {
+    jiff::Timestamp::from_second(1_760_000_000).expect("a time")
 }
 
 /// A project whose workspaces `names` purlis itself made.

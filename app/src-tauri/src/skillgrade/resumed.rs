@@ -127,8 +127,8 @@ fn refused(stopped: &resumable::Stopped, now: &Now) -> Option<String> {
 }
 
 /// `resets_at` while it is still ahead of `now`.
-fn still_ahead(resets_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
-    let at = chrono::DateTime::parse_from_rfc3339(resets_at?).ok()?;
+fn still_ahead(resets_at: Option<&str>, now: jiff::Timestamp) -> Option<String> {
+    let at = str::parse::<jiff::Timestamp>(resets_at?).ok()?;
     (at > now).then(|| resets_at.unwrap_or_default().to_owned())
 }
 
@@ -142,7 +142,7 @@ pub(crate) fn plan_of(
         stopped,
         read_now(root, stopped),
         running_of(plane, &stopped.skill),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -152,7 +152,7 @@ fn shown(
     stopped: &resumable::Stopped,
     now: Result<Now, String>,
     running: Option<String>,
-    at: chrono::DateTime<chrono::Utc>,
+    at: jiff::Timestamp,
 ) -> SkillGradeResumePlan {
     let earlier = stopped.kept.earlier;
     let mut shown = SkillGradeResumePlan {
@@ -302,13 +302,13 @@ pub(crate) fn begin_resume(
 /// and when Resume can run. A press opens its scorecard, where Resume is; nothing resumes by
 /// itself.
 pub(crate) fn needs(root: &std::path::Path) -> Vec<crate::skillstudio::needs::NeedsYou> {
-    needs_of(resumable::all(root), chrono::Utc::now())
+    needs_of(resumable::all(root), jiff::Timestamp::now())
 }
 
 /// [`needs`], of the stopped grades `all`, at `now`.
 fn needs_of(
     all: Vec<resumable::Stopped>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Vec<crate::skillstudio::needs::NeedsYou> {
     use crate::skillstudio::needs::{NeedFix, NeedKind, NeedsYou};
     all.into_iter()
@@ -347,14 +347,14 @@ fn needs_of(
 /// The RFC 3339 time `at` on this machine's clock, as a person reads it: `14:00`, or with its day
 /// where it is not today.
 fn clock(at: &str) -> String {
-    let Ok(at) = chrono::DateTime::parse_from_rfc3339(at) else {
+    let Ok(at) = str::parse::<jiff::Timestamp>(at) else {
         return at.to_owned();
     };
-    let local = at.with_timezone(&chrono::Local);
-    if local.date_naive() == chrono::Local::now().date_naive() {
-        local.format("%H:%M").to_string()
+    let local = at.to_zoned(jiff::tz::TimeZone::system());
+    if local.date() == jiff::Zoned::now().date() {
+        local.strftime("%H:%M").to_string()
     } else {
-        local.format("%a %H:%M").to_string()
+        local.strftime("%a %H:%M").to_string()
     }
 }
 

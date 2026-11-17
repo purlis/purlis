@@ -77,7 +77,7 @@ pub struct Request<'a> {
     /// Clone the inherited repos now — see the module docs.
     pub restore: bool,
     /// The instant the manifest and the fork's note are stamped with.
-    pub now: chrono::DateTime<chrono::Utc>,
+    pub now: jiff::Timestamp,
     /// The folders extensions keep inside a workspace, each carried like the memory
     /// (`extension::events::carried`, charter-app#343): whether or not the extension is on,
     /// because a fork is not the moment to decide an extension's data stays behind.
@@ -265,7 +265,7 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
             .or_insert_with(|| Value::String(String::new()));
         doc.insert(
             "updated_at".into(),
-            Value::String(now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()),
+            Value::String(now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()),
         );
         doc.insert("updated_by".into(), Value::String(wscmd::git_user(root)));
         // Under the new workspace's manifest lock (#1292), as every writer of one is: a
@@ -287,7 +287,7 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     } else {
         format!("Forked from '{src}' — without the {not_carried} purlis could not read there.")
     };
-    let _ = fresh.remember(&note, now.naive_utc());
+    let _ = fresh.remember(&note, now.to_zoned(jiff::tz::TimeZone::UTC).datetime());
 
     let live = live
         && match wscmd::set_live(root, new, true) {

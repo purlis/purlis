@@ -114,9 +114,9 @@ impl Shipped {
     }
 }
 
-fn noon() -> chrono::NaiveDateTime {
-    chrono::NaiveDate::from_ymd_opt(2026, 9, 23)
-        .and_then(|day| day.and_hms_opt(12, 0, 0))
+fn noon() -> jiff::civil::DateTime {
+    purlis_core::wallclock::day(2026, 9, 23)
+        .map(|day| day.at(12, 0, 0, 0))
         .expect("a time")
 }
 

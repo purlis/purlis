@@ -115,7 +115,7 @@ pub(super) fn answer<R: tauri::Runtime>(
     if is_chats(asked) {
         return match admitted(config, of, snapshot, declared, asked, params) {
             Ok(_) => chats_answer(app, &of.plane, &of.workspace, params),
-            Err(kind) => Answer::error(kind, chrono::Utc::now()),
+            Err(kind) => Answer::error(kind, jiff::Timestamp::now()),
         };
     }
     let root = app
@@ -149,7 +149,7 @@ pub(super) fn chats_answer<R: tauri::Runtime>(
     params: &Value,
 ) -> Answer {
     use purlis_core::catalogue::{answer, chats};
-    let at = chrono::Utc::now();
+    let at = jiff::Timestamp::now();
     let asked = answer::checked(&chats::parameters(), params)
         .and_then(|args| chats::asked(&args).map_err(|_| ErrorKind::Refused));
     let asked = match asked {
@@ -170,7 +170,7 @@ pub(super) fn chats_answer<R: tauri::Runtime>(
 
 /// `data` as an answer read `at`, or `too-large` where it is past the cap every answer is
 /// held to.
-fn capped(data: Value, at: chrono::DateTime<chrono::Utc>) -> Answer {
+fn capped(data: Value, at: jiff::Timestamp) -> Answer {
     use purlis_core::catalogue::answer::MOST_BYTES;
     if serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len()) > MOST_BYTES {
         return Answer::error(ErrorKind::TooLarge, at);
@@ -188,7 +188,7 @@ fn answer_in(
     asked: &str,
     params: &Value,
 ) -> Answer {
-    let at = chrono::Utc::now();
+    let at = jiff::Timestamp::now();
     let query = match admitted(config, of, snapshot, declared, asked, params) {
         Ok(query) => query,
         Err(kind) => return Answer::error(kind, at),
@@ -203,7 +203,7 @@ fn answer_in(
         params,
         &as_the_person(),
         at,
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
     )
 }
 
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn a_chats_answer_past_the_cap_is_too_large_and_one_at_it_is_given() {
         use purlis_core::catalogue::answer::MOST_BYTES;
-        let at = chrono::Utc::now();
+        let at = jiff::Timestamp::now();
         // `{"chats":["…"]}` is 14 bytes around the text.
         let of = |text: usize| json!({ "chats": ["x".repeat(text)] });
         assert!(capped(of(MOST_BYTES - 14), at).outcome.is_ok());

@@ -21,10 +21,8 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 fn alpha() -> Place {
@@ -1007,7 +1005,7 @@ fn a_report_that_is_no_task_s_marks_nothing_at_close() {
 fn only_what_a_chat_dispatched_before_its_run_began_is_looked_among() {
     let (_d, root) = project();
     let minted_at = |time: &str| {
-        ulid::Ulid::from_parts(u64::try_from(at(time).timestamp_millis()).unwrap(), 1).to_string()
+        ulid::Ulid::from_parts(u64::try_from(at(time).as_millisecond()).unwrap(), 1).to_string()
     };
     let made = dispatchrecord::open_as(
         &root,

@@ -145,8 +145,8 @@ mod tests {
         let ws = crate::workspaces::Plane::open(dir.path())
             .workspace("alpha")
             .expect("alpha");
-        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 13)
-            .and_then(|day| day.and_hms_opt(9, 0, 0))
+        let now = crate::wallclock::day(2026, 10, 13)
+            .map(|day| day.at(9, 0, 0, 0))
             .expect("a time");
         ws.add_todo("Ship it", now).expect("a todo");
         ws.remember("Deploys go through the pipeline", now)

@@ -124,7 +124,7 @@ impl purlis_host::Record for EventLog {
             .unwrap_or_else(PoisonError::into_inner)
             .chat_of(root, number);
         if let Some(chat) = chat {
-            crate::dispatchrecord::ended_unwatched(root, &chat, number, chrono::Utc::now());
+            crate::dispatchrecord::ended_unwatched(root, &chat, number, jiff::Timestamp::now());
         }
     }
 

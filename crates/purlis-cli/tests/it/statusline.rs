@@ -153,7 +153,7 @@ fn a_badge_in_the_footer(plane: &Path, value: &str, age: i64) -> PathBuf {
                                         "fresh_seconds": 600}]}}"#,
     )
     .expect("a manifest");
-    let at = chrono::Utc::now().timestamp() - age;
+    let at = jiff::Timestamp::now().as_second() - age;
     std::fs::write(
         ext.join("state").join(extension::facts::FILE),
         format!(r#"{{"badges": {{"open": {{"value": "{value}", "at": {at}}}}}}}"#),

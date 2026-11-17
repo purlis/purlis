@@ -128,12 +128,7 @@ pub fn generated(folder: &Path, declared: Option<&Declared>) -> bool {
 
 /// **The answer to a page asking for data file `name`**, from `folder` (the artifact's folder as
 /// [`super::resolve`] answered it), when its page declared `declared`.
-pub fn read(
-    folder: &Path,
-    declared: Option<&Declared>,
-    name: &str,
-    at: chrono::DateTime<chrono::Utc>,
-) -> Answer {
+pub fn read(folder: &Path, declared: Option<&Declared>, name: &str, at: jiff::Timestamp) -> Answer {
     if !declared.is_some_and(|d| d.data.iter().any(|n| n == name)) {
         return Answer::error(ErrorKind::NotApproved, at);
     }
@@ -265,10 +260,8 @@ impl TokenSink for Block {
 mod tests {
     use super::*;
 
-    fn now() -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339("2026-11-09T12:00:00Z")
-            .unwrap()
-            .into()
+    fn now() -> jiff::Timestamp {
+        str::parse::<jiff::Timestamp>("2026-11-09T12:00:00Z").unwrap()
     }
 
     fn page(block: &str) -> String {

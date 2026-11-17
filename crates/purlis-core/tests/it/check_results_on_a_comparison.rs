@@ -365,7 +365,7 @@ mod the_store {
             &fixture("codeql-2.27.4-actions.sarif"),
         );
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
-        let done = report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+        let done = report(&f.plane, branch, &file, jiff::Timestamp::now()).unwrap();
         assert_eq!(done.tools, [("CodeQL".to_owned(), 3)]);
         assert_eq!(done.branch, "feature");
         let head = head_of(&cut.path);
@@ -385,7 +385,7 @@ mod the_store {
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
         for (tool, message) in [("eslint", "old"), ("clippy", "kept"), ("eslint", "new")] {
             let file = sarif_file(dir.path(), "out.sarif", &a_tool(tool, message));
-            report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+            report(&f.plane, branch, &file, jiff::Timestamp::now()).unwrap();
         }
         let sets = read_sets(&f.plane, &f.ws, &f.repo, Some("feature")).unwrap();
         let said: Vec<(&str, &str)> = sets
@@ -404,13 +404,13 @@ mod the_store {
         let dir = tempfile::tempdir().unwrap();
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
         let good = sarif_file(dir.path(), "good.sarif", &a_tool("eslint", "kept"));
-        report(&f.plane, branch, &good, chrono::Utc::now()).unwrap();
+        report(&f.plane, branch, &good, jiff::Timestamp::now()).unwrap();
         let bad = sarif_file(
             dir.path(),
             "bad.sarif",
             &fixture("malformed/wrong-version.sarif"),
         );
-        let why = report(&f.plane, branch, &bad, chrono::Utc::now()).unwrap_err();
+        let why = report(&f.plane, branch, &bad, jiff::Timestamp::now()).unwrap_err();
         assert!(why.contains("bad.sarif"), "{why}");
         assert!(why.contains("2.0.0"), "{why}");
         assert!(why.contains("Have the tool write SARIF 2.1.0"), "{why}");
@@ -430,7 +430,7 @@ mod the_store {
             branch,
             "mypy-sarif",
             Ok(a_tool("mypy", "an error")),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         assert_eq!(done.tools, [("mypy".to_owned(), 1)]);
@@ -449,13 +449,13 @@ mod the_store {
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
         let dir = tempfile::tempdir().unwrap();
         let good = sarif_file(dir.path(), "good.sarif", &a_tool("mypy", "kept"));
-        report(&f.plane, branch, &good, chrono::Utc::now()).unwrap();
+        report(&f.plane, branch, &good, jiff::Timestamp::now()).unwrap();
         let why = report_converted(
             &f.plane,
             branch,
             "mypy-sarif",
             Ok(b"error: x.py:3: not SARIF at all".to_vec()),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap_err();
         assert!(why.contains("mypy-sarif"), "{why}");
@@ -482,7 +482,7 @@ mod the_store {
             branch,
             "mypy-sarif",
             Err("'mypy-sarif' exited with status 3".to_owned()),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap_err();
         assert!(why.contains("exited with status 3"), "{why}");
@@ -497,7 +497,7 @@ mod the_store {
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         for reporter in ["mypy-sarif", "pytest-sarif"] {
             let _ = report_converted(&f.plane, branch, reporter, Ok(b"nope".to_vec()), now);
         }
@@ -568,7 +568,7 @@ mod the_store {
             4,
             &executor,
             &config,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         let sets = read_sets(&f.plane, &f.ws, &f.repo, None).unwrap();
@@ -597,7 +597,7 @@ mod the_store {
             4,
             &executor,
             &config,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap_err();
         assert!(why.contains("was not handed to 'sh-reporter'"), "{why}");
@@ -642,7 +642,7 @@ mod the_store {
             {"message":{"text":"elsewhere"},"locations":[{"physicalLocation":{
              "artifactLocation":{"uri":"b.txt"},"region":{"startLine":9}}}]}]}]}"#;
         let file = sarif_file(dir.path(), "out.sarif", sarif);
-        report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+        report(&f.plane, branch, &file, jiff::Timestamp::now()).unwrap();
         let reader = reader();
         let read = purlis_core::files::what_changed(&reader, &f.plane, branch, "a.txt").unwrap();
         assert_eq!(read.checks.on_lines[0].diagnostic.message, "on it");
@@ -702,7 +702,7 @@ mod the_store {
         std::os::unix::fs::symlink(&elsewhere, &record).unwrap();
         let file = sarif_file(dir.path(), "out.sarif", &a_tool("eslint", "m"));
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
-        assert!(report(&f.plane, branch, &file, chrono::Utc::now()).is_err());
+        assert!(report(&f.plane, branch, &file, jiff::Timestamp::now()).is_err());
         assert_eq!(std::fs::read_to_string(&elsewhere).unwrap(), "untouched");
     }
 }

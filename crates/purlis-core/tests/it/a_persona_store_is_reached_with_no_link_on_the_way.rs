@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use purlis_core::memstore::Base;
 use purlis_core::workspaces::Plane;
 
-fn at() -> chrono::NaiveDateTime {
+fn at() -> jiff::civil::DateTime {
     "2026-10-09T09:00:00".parse().unwrap()
 }
 

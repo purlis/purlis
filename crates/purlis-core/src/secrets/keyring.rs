@@ -1206,14 +1206,14 @@ pub fn delete_with(
 pub fn ages(
     ctx: &Ctx,
     vault: &Vault,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> Result<Vec<(String, Option<i64>)>, VaultError> {
     Ok(listed(ctx, vault)?
         .into_iter()
         .map(|l| {
-            let age = chrono::DateTime::parse_from_rfc3339(&l.updated)
+            let age = str::parse::<jiff::Timestamp>(&l.updated)
                 .ok()
-                .map(|t| (today - t.date_naive()).num_days());
+                .map(|t| i64::from((today - crate::wallclock::utc_day(t)).get_days()));
             (l.key, age)
         })
         .collect())
@@ -1241,7 +1241,9 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
 
 /// Now, as the index writes it.
 pub(super) fn now() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+    jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 #[cfg(test)]

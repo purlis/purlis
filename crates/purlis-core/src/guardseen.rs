@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 
 use crate::hookstate::State;
@@ -62,7 +62,7 @@ pub const CLAUDE_CODE: &str = "claude-code";
 /// The latest sighting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sighting {
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
     /// The harness the chat ran, when its environment named one.
     pub harness: Option<String>,
     /// `plugin` or `settings`, or `None` for a record that predates the field.
@@ -94,7 +94,7 @@ pub fn mark(
     harness: Option<&str>,
     source: Source,
     folder: Option<&Path>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> std::io::Result<()> {
     let mut rec = Map::new();
     rec.insert(
@@ -104,7 +104,7 @@ pub fn mark(
     rec.insert("source".to_owned(), Value::String(source.word().to_owned()));
     rec.insert(
         "ts".to_owned(),
-        Value::String(now.to_rfc3339_opts(SecondsFormat::Secs, false)),
+        Value::String(now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string()),
     );
     if harness == Some(CLAUDE_CODE) || source == Source::Plugin {
         rec.insert(
@@ -130,8 +130,7 @@ pub fn last(state: &State) -> Option<Sighting> {
     let at = rec
         .get("ts")
         .and_then(Value::as_str)
-        .and_then(|ts| DateTime::parse_from_rfc3339(ts).ok())?
-        .with_timezone(&Utc);
+        .and_then(|ts| str::parse::<Timestamp>(ts).ok())?;
     let text_of = |key: &str| {
         rec.get(key)
             .and_then(Value::as_str)
@@ -179,10 +178,8 @@ mod tests {
         (dir, State::of(&root))
     }
 
-    fn at(text: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(text)
-            .unwrap()
-            .with_timezone(&Utc)
+    fn at(text: &str) -> Timestamp {
+        str::parse::<Timestamp>(text).unwrap()
     }
 
     #[test]

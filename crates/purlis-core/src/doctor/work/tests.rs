@@ -53,10 +53,7 @@ fn a_todo_promoted_but_left_open_is_reported_with_where_it_went() {
     let ws = crate::workspaces::Plane::open(tmp.path())
         .workspace("alpha")
         .unwrap();
-    let stamp = chrono::NaiveDate::from_ymd_opt(2026, 10, 2)
-        .unwrap()
-        .and_hms_opt(8, 0, 0)
-        .unwrap();
+    let stamp = crate::wallclock::day(2026, 10, 2).unwrap().at(8, 0, 0, 0);
     let path = ws.add_todo("Port the picker", stamp).unwrap();
     let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
     let d = doctor(tmp.path());
@@ -64,7 +61,7 @@ fn a_todo_promoted_but_left_open_is_reported_with_where_it_went() {
         tmp.path(),
         "alpha",
         "01K6H0Z8Y3V1N3G4QK0A9T5B7C",
-        stamp.and_utc(),
+        stamp.to_zoned(jiff::tz::TimeZone::UTC).unwrap().timestamp(),
         crate::work::TrackerKey::todo("alpha", &stem).unwrap(),
         crate::work::TrackerKey::parse("github:github.com/o/r#1").unwrap(),
         log::Cause::Promoted,

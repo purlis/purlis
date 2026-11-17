@@ -224,7 +224,7 @@ pub(crate) fn session_tokens(
 #[derive(Debug, Clone, Copy)]
 struct Clock {
     worked: u64,
-    seen: chrono::DateTime<chrono::Utc>,
+    seen: jiff::Timestamp,
 }
 
 /// **The working time of every task at work**, by project and record, and the sessions past
@@ -352,11 +352,11 @@ fn the_person_is_in(held: &Held, chat: u32) -> bool {
 
 /// **Holds every task at work in `held` to its limits, now** (#1512): the clock's one look.
 pub(crate) fn look(held: &Arc<Held>) {
-    look_at(held, chrono::Utc::now());
+    look_at(held, jiff::Timestamp::now());
 }
 
 /// [`look`], as of `now`.
-pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
+pub(crate) fn look_at(held: &Arc<Held>, now: jiff::Timestamp) {
     let root = held.root();
     let files = dispatchlimits::Files::read(root);
     let policy = purlis_core::sandbox::policy::Locks::of(root);
@@ -464,7 +464,7 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
             held,
             task,
             crate::pausing::Why::Budget(reached),
-            now.timestamp(),
+            now.as_second(),
         );
     }
 }
@@ -473,11 +473,7 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
 /// topmost task at work on each branch, with everything below it held still, as the time limit
 /// pauses one. A branch the person is in the middle of is left for the next look; one already
 /// being stopped is left to its stop.
-fn pause_at_the_token_limit(
-    held: &Arc<Held>,
-    spent: &[(u32, u64, u32)],
-    now: chrono::DateTime<chrono::Utc>,
-) {
+fn pause_at_the_token_limit(held: &Arc<Held>, spent: &[(u32, u64, u32)], now: jiff::Timestamp) {
     for (top, used, limit) in spent {
         let reached = Reached::Tokens {
             limit: *limit,
@@ -505,7 +501,7 @@ fn pause_at_the_token_limit(
                 held,
                 task,
                 crate::pausing::Why::Budget(reached),
-                now.timestamp(),
+                now.as_second(),
             );
         }
     }
@@ -551,7 +547,7 @@ fn time_each(
     records: &[Record],
     files: &dispatchlimits::Files,
     policy: &purlis_core::sandbox::policy::Locks,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     found: &mut Found,
 ) {
     let mut kept = kept();
@@ -584,7 +580,10 @@ fn time_each(
         });
         // A task paused into an ask is held still: its time does not count (#6015).
         if works_now(held.board(), *task) && !held.pauses().holds(*task) {
-            let since = (now - clock.seen).num_seconds().clamp(0, MOST_PER_LOOK);
+            let since = now
+                .duration_since(clock.seen)
+                .as_secs()
+                .clamp(0, MOST_PER_LOOK);
             let before = clock.worked;
             clock.worked = clock
                 .worked
@@ -736,13 +735,13 @@ mod tests {
             brief: "# Check".to_owned(),
             report_owed: true,
         };
-        let record = dispatchrecord::open(root, opening, chrono::Utc::now()).expect("opened");
+        let record = dispatchrecord::open(root, opening, jiff::Timestamp::now()).expect("opened");
         if ended {
             dispatchrecord::close(
                 root,
                 &record.id,
                 dispatchrecord::Ending::default(),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             )
             .expect("closed");
         }
