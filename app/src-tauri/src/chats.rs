@@ -6037,12 +6037,18 @@ impl Chats {
             // what masks its screen, and where that fails the chat is ended below.
             if let Some((named, known)) = &signed_in_with {
                 let remembered = match named {
-                    Ok(named) => purlis_core::secrets::handedto::remember_known(
-                        &self.project,
-                        session,
-                        named,
-                        known.clone(),
-                    ),
+                    // Named for its id, which `named` was sealed with: one it had none for
+                    // failed above.
+                    Ok(named) => match identity.id.as_deref() {
+                        Some(id) => purlis_core::secrets::handedto::remember_known(
+                            &self.project,
+                            session,
+                            id,
+                            named,
+                            known.clone(),
+                        ),
+                        None => Err(purlis_core::secrets::handedto::no_chat_id()),
+                    },
                     Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
                 };
                 if let Err(why) = remembered {

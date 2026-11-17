@@ -551,3 +551,38 @@ fn a_line_sealed_for_one_chat_beside_another_chat_s_screen_leaves_it_unmaskable(
         "its own chat's screen"
     );
 }
+
+#[test]
+fn a_later_chat_dealt_a_crashed_chat_s_number_names_its_own_and_its_screen_is_masked() {
+    // #7129's review: chat A's names, left by a crash, are not this chat's; they go as chat B
+    // names its own, so B's screen is masked by what it was handed, not left unmaskable.
+    let (_dir, root) = a_project();
+    let chat_a = "01K6CHATA00000000000000059";
+    let chat_b = "01K6CHATB00000000000000059";
+    remember(
+        &root,
+        59,
+        Some(chat_a),
+        &Entry::new("team", "old-key"),
+        "FAKE-HANDED-VALUE-0036",
+    )
+    .expect("named");
+    as_a_crash_leaves_it(&root, 59);
+
+    remember(
+        &root,
+        59,
+        Some(chat_b),
+        &Entry::new("team", "new-key"),
+        "FAKE-HANDED-VALUE-0037",
+    )
+    .expect("named");
+    as_a_crash_leaves_it(&root, 59);
+
+    assert_eq!(
+        masked_for(&root, 59, chat_b, "x FAKE-HANDED-VALUE-0037").as_deref(),
+        Some("x ‹secret: new-key›")
+    );
+    let written = std::fs::read_to_string(file(&root, 59)).expect("named");
+    assert_eq!(written.lines().count(), 1, "{written}");
+}

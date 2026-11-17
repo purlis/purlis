@@ -2714,7 +2714,8 @@ pub fn fill_code(
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
     let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
-    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    // A code is made for now from its seed, once: named so (#6309), and found after a crash by
+    // what is named of it (#6907).
     super::handedto::remember(
         &asker.root,
         asker.chat,

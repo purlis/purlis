@@ -228,9 +228,7 @@ impl Handed {
         root: &std::path::Path,
         chat: Option<&str>,
     ) -> std::io::Result<Vec<crate::secrets::handedto::Named>> {
-        let chat = chat.ok_or_else(|| {
-            std::io::Error::other("this chat has no id to seal what it was handed for")
-        })?;
+        let chat = chat.ok_or_else(crate::secrets::handedto::no_chat_id)?;
         self.pairs
             .iter()
             .zip(&self.entries)
