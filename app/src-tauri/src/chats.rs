@@ -9929,7 +9929,7 @@ fn answered_by_the_policy(
                 &root,
                 chat,
                 Family::Asks,
-                "host-ask",
+                enforcement::RULE_HOST_ASK,
                 Some(&format!("{host}:{port}")),
             );
         }

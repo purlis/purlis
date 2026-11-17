@@ -449,6 +449,20 @@ pub fn make_own(service: &str, account: &str, value: &str) -> Result<Held, Vault
     }
 }
 
+/// **Whether this program owns the item** (the re-review of #6992, S4): it is made again in place
+/// with `value`, a spare holding it meanwhile ([`remake`]), which the Keychain lets only the
+/// item's owner do. `false` where another program owns it; nothing is changed then.
+pub fn owned_here(service: &str, account: &str, value: &str) -> Result<bool, VaultError> {
+    if crate::fence::FENCED {
+        return Err(fenced(service));
+    }
+    match make_here(service, account, value) {
+        Ok(()) => Ok(true),
+        Err(Refused::Owned) => Ok(false),
+        Err(Refused::Failed(e)) => Err(e),
+    }
+}
+
 /// What a fenced build says instead of reaching the operating system's store.
 fn fenced(service: &str) -> VaultError {
     VaultError::new(format!(

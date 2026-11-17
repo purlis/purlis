@@ -4783,7 +4783,11 @@ write into this folder cannot make its own text arrive as the person's.
   (`keyhold::is_the_app`), the first time the app seals. On macOS the Keychain then lets that one
   program read it without asking. **Its service is outside purlis's own prefixes**, so the app's
   one-item writer (`keyhold::HOLD_ARG`), which any program can start, refuses it: no other program
-  can put a key of its choosing there.
+  can put a key of its choosing there. **A key item already there is used only once the app has
+  shown it owns it**: it makes the item again in place with the same key, which the Keychain lets
+  only the item's owner do. An item another program owns makes every sealed answer read as
+  broken until the person presses again. An item made to let every program in (`-A`) is not
+  caught yet (#7007).
 - **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
   cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
@@ -4820,7 +4824,7 @@ write into this folder cannot make its own text arrive as the person's.
   writes the record**, keyed by the plane's real path, never the clone key (a `.git` copied aside
   and back makes a new clone key). With no anchor this is a fresh install and the shipped default
   (`watch`) stands. **With an anchor, a record that is missing, edited, older, or under a clone
-  key that has none is broken**: every family is enforced, every dispatch across personas is
+  key that has none is broken**, and so is a sealed record with no anchor: every family is enforced, every dispatch across personas is
   refused, and the window offers Accept on the committed file as it stands. It is never re-sealed
   in bulk.
 - **`every-project.json`**, in the same folder: what you allowed **for every project on this
@@ -7700,8 +7704,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   app did not start has none, and writes nothing.
 - **Status:** **internal** — **purlis only**. **Written by the app alone**: a hook, a git hook
   or `purlis secret exec` hands its line to the app over the hook socket, which writes it under
-  its own record of the chat; a line with no chat it can name is written as chat `unknown`.
-  Best effort: a line that cannot be written changes no outcome. **Out of a chat's reach**: the
+  its own record of the chat. The app refuses a handed line for a chat it has no open record of
+  (nothing goes to `unknown.jsonl` from such a caller), a family or rule purlis does not have, or
+  a host that is no `host:port`. A log stops at 10,000 lines (`enforcement::MOST_LINES`); a line
+  past it is dropped. Best effort: a line that cannot be written changes no outcome. **Out of a chat's reach**: the
   folder is in the app's own (`app/`), which every harness's compiled sandbox denies a chat
   writing; a chat with no sandbox runs as the person and can write it.
 - **Tier:** Clone state, transient — what a chat was let do past a rule; lost, nothing is

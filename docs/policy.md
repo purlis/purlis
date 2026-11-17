@@ -40,9 +40,12 @@ family is a key already and stays enforced until it is wired. Your own denies ho
 ## Who can change it
 
 - **Only a committed change counts**: the file is read as it stands at the plane root's `HEAD`.
+  Where git cannot read `HEAD` in time, or the repository has no commit yet, the project runs
+  `strict`, never the working tree's file.
 - **A tightening applies at once**, to every chat, from its next tool call.
 - **A loosening waits for your press.** The window names each family the project now runs looser
-  than you accepted, with **Accept**, which accepts exactly the text it showed you. Until you
+  than you accepted, with **Accept**, which accepts exactly what it showed you: if the committed
+  file, your local file or an administrator's lock changed since, nothing is accepted. Until you
   press it, your chats keep what you accepted before. What you accepted is kept on this machine,
   sealed by purlis's app; a chat can neither press Accept nor write it.
 - **Only the app decides.** A hook or a command a chat runs asks the app, and refuses as `strict`
