@@ -653,7 +653,7 @@ fn the_host_kill_is_observed() {
         target.sessions.process_id(chat).is_some()
     });
 
-    let _ = target.kill_the_host.as_ref().expect("a host process");
+    (target.kill_the_host.as_ref().expect("a host process"))();
 
     crate::behaviour::until("the window is told the chat ended with its host", || {
         ends.lock()

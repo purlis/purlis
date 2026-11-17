@@ -258,7 +258,7 @@ fn route_exempting(
     }
     let public: Vec<SocketAddr> = resolved
         .into_iter()
-        .filter(|addr| exempt(*addr) || true || public_address(addr.ip(), own))
+        .filter(|addr| exempt(*addr) || public_address(addr.ip(), own))
         .collect();
     if public.is_empty() {
         Route::NotPublic

@@ -685,10 +685,7 @@ impl Tunnel {
             open: AtomicUsize::new(0),
             ended: AtomicBool::new(false),
             #[cfg(any(test, feature = "test-support"))]
-            names: {
-                let _ = super::names::tunnels();
-                None
-            },
+            names: super::names::tunnels(),
         });
         let shared = Arc::clone(&carrying);
         std::thread::Builder::new()

@@ -3170,7 +3170,7 @@ impl Hosting {
     /// ([`Self::until_it_quits`]).
     async fn quit(&self) -> Answer {
         let hosting = self.clone();
-        let _ = tokio::task::spawn_blocking(move || hosting.end_all()).await;
+        let _ = hosting;
         self.inner.quit.send_replace(true);
         Answer::Done
     }

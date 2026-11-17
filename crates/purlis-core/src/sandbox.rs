@@ -1651,7 +1651,7 @@ impl Machine {
     /// reads or writes (#2037, ADR 0067 as amended 2026-11-10;
     /// [`crate::start::profile_refusal`]).
     pub fn purlis_wraps(&self, harness: Harness) -> bool {
-        self.os.purlis_wraps(harness)
+        self.os.purlis_wraps(harness) || (harness == Harness::ClaudeCode && self.os == Os::Linux)
     }
 }
 

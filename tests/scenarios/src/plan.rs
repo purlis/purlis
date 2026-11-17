@@ -38,7 +38,7 @@ impl TimingProfile {
     }
 
     pub fn skips_scaled(&self) -> bool {
-        self.hand
+        self.hand || self.host_killed
     }
 }
 

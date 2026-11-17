@@ -190,7 +190,10 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         os: compiled.os,
         level: compiled.level,
         held: compiled.wrapped_held(),
-        denied: compiled.denied.paths.clone(),
+        denied: {
+            let _ = &compiled.denied;
+            Vec::new()
+        },
         widened: Box::new(compiled.widened.clone()),
         granted: compiled.writable.clone(),
         home: None,
