@@ -1,0 +1,284 @@
+// The project policy's vocabulary (M75 spec §3; Q311, Q315, Q316, Q318, Q319, Q320e).
+// Compiled into purlis and read by `policy::schema`, once. A policy file names its version on
+// its first line, `// purlis-policy 1` (Q309.7); this is version 1.
+//
+// No namespace. Entity types are PascalCase and singular; actions are lowercase verbs (Q311.7).
+// Every family is an action group of the same name, and every action is in exactly one group
+// (Q311.4, Q311.8, Q318.3).
+//
+// Every attribute a rule can read says where purlis takes it from (spec §3.2; review round 6):
+// `@source("sealed")`, `@source("committed")` or `@source("host-supplied")`, or two of them
+// joined by `|`. Never a plain file a chat can write. A record's fields take their attribute's
+// source.
+
+// ── entities (§3.1) ───────────────────────────────────────────────────────────────────────
+
+entity Plane;
+entity Workspace in [Plane];
+entity Persona in [PersonaSet];
+entity Harness;
+entity Runner;
+
+// The only principal. A root chat sits directly in its Plane (Q311.2). `workspace` and
+// `persona` are proposed: they serve §11.6's residual.
+entity Chat in [Workspace, Persona, Harness, Runner, Plane] {
+  @source("host-supplied") workspace: Workspace,
+  @source("host-supplied") persona: Persona,
+};
+
+// Named sets: long lists are entity sets (Q316.3, Q318.4).
+entity PathSet, HostSet, BranchSet, SkillSet, ToolSet, PersonaSet;
+
+entity Repo;
+entity Branch in [Repo, BranchSet];
+// A path's ancestors are its folders, its owning workspace, repo and branch folder (Q311.3).
+entity Path in [Path, Workspace, Repo, Branch, PathSet] {
+  @source("committed") workspace?: Workspace,
+};
+entity Host in [HostSet];
+// A vault's tags are the committed `vaults.json`'s at HEAD, or a local tag the app sealed at
+// registration (Q315.10, Q320d.3).
+@source("committed|sealed")
+entity Vault in [Persona] tags String;
+entity Secret in [Vault];
+entity Skill in [SkillSet];
+// A tool's declaration is `[tools.<name>]` at HEAD; the accepted side is sealed (Q315.3).
+entity Tool in [ToolSet] {
+  @source("committed|sealed") declaration?: { command: String },
+};
+entity Port, Socket, Command;
+entity EnvVar;
+
+// ── context (§3.2) ────────────────────────────────────────────────────────────────────────
+// There is no clock: decisions stay deterministic (Q311.5). The fields every action has come
+// first in each record; the narrowing fields after them are per action (Q311.4).
+
+type Ctx = {
+  @source("host-supplied") sandbox: String,       // "off" | "floor" | "full"
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,             // the device id, unset until confirmed
+  @source("host-supplied") harness_mode: String,  // from the host's start record (Q320e.R6-1)
+  @source("host-supplied") depth: Long,
+};
+
+type NetworkCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") port: Long,
+  @source("host-supplied") via: String,
+};
+
+type GitCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") force: Bool,
+  @source("host-supplied") "skip-hooks": Bool,
+  @source("host-supplied") brokered: Bool,
+  @source("host-supplied") amend: Bool,
+};
+
+type ViaCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") via: String,
+};
+
+type SaveCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") extent: String,        // commit | push | pr | pr-merge
+};
+
+type CredentialCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") transport: String,
+  @source("host-supplied") surface: String,
+  @source("host-supplied") kind: String,
+};
+
+type ForgeCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") verb: String,          // issue.create, ...
+  @source("host-supplied") via: String,
+};
+
+type ShapeCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") surface: String,
+};
+
+type PlaneCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") op: String,
+  @source("host-supplied") kind: String,
+};
+
+type DispatchCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") kind: String,          // dispatch | handoff
+  @source("host-supplied") profile: String,
+  @source("host-supplied") subagent: Bool,
+};
+
+type VaultCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") program: String,
+  @source("host-supplied") declared: Bool,
+};
+
+type BrowserCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") port: Long,
+  @source("host-supplied") origin: String,
+};
+
+type StartCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") profile: String,
+  @source("host-supplied") gaps: Set<String>,     // families with a known gap here (Q319.C1)
+};
+
+// ── families (§3.3): ADR 0125's 24 and `audit`, each an action group ───────────────────────
+
+action "sandbox", "network", "ports", "processes",
+       "guards.git", "guards.merge", "guards.release", "guards.save", "guards.credential",
+       "guards.forge", "guards.shape", "guards.plane",
+       "asks", "dispatch", "vaults", "secrets", "browser", "skills",
+       "mode", "tools", "trust", "runners", "consents", "limits", "audit";
+
+// ── actions (§3.3): 51, each in exactly one family ─────────────────────────────────────────
+
+action read, write in ["sandbox"]
+  appliesTo { principal: Chat, resource: Path, context: Ctx };
+
+action connect in ["network"]
+  appliesTo { principal: Chat, resource: Host, context: NetworkCtx };
+action dial in ["network"]
+  appliesTo { principal: Chat, resource: Socket, context: NetworkCtx };
+
+action reach, listen in ["ports"]
+  appliesTo { principal: Chat, resource: Port, context: Ctx };
+
+action exec in ["processes"]
+  appliesTo { principal: Chat, resource: Command, context: Ctx };
+
+action commit, push, update, cut, discard in ["guards.git"]
+  appliesTo { principal: Chat, resource: Branch, context: GitCtx };
+action clone in ["guards.git"]
+  appliesTo { principal: Chat, resource: Repo, context: GitCtx };
+
+action merge in ["guards.merge"]
+  appliesTo { principal: Chat, resource: Branch, context: ViaCtx };
+action land in ["guards.merge"]
+  appliesTo { principal: Chat, resource: Repo, context: ViaCtx };
+
+action release, tag in ["guards.release"]
+  appliesTo { principal: Chat, resource: Repo, context: ViaCtx };
+
+action save in ["guards.save"]
+  appliesTo { principal: Chat, resource: [Plane, Repo], context: SaveCtx };
+
+action authenticate in ["guards.credential"]
+  appliesTo { principal: Chat, resource: Host, context: CredentialCtx };
+action sign in ["guards.credential"]
+  appliesTo { principal: Chat, resource: Repo, context: CredentialCtx };
+action expose in ["guards.credential"]
+  appliesTo { principal: Chat, resource: Path, context: CredentialCtx };
+
+action call, mint in ["guards.forge"]
+  appliesTo { principal: Chat, resource: Repo, context: ForgeCtx };
+
+action interpolate, chain in ["guards.shape"]
+  appliesTo { principal: Chat, resource: Command, context: ShapeCtx };
+
+action rewrite in ["guards.plane"]
+  appliesTo { principal: Chat, resource: Plane, context: PlaneCtx };
+action record, remove in ["guards.plane"]
+  appliesTo { principal: Chat, resource: [Workspace, Persona], context: PlaneCtx };
+action propose in ["guards.plane"]
+  appliesTo { principal: Chat, resource: Path, context: PlaneCtx };
+action create in ["guards.plane"]
+  appliesTo { principal: Chat, resource: Workspace, context: PlaneCtx };
+
+action "dispatch-to" in ["dispatch"]
+  appliesTo { principal: Chat, resource: Persona, context: DispatchCtx };
+
+action use, request in ["vaults"]
+  appliesTo { principal: Chat, resource: Secret, context: VaultCtx };
+action store in ["vaults"]
+  appliesTo { principal: Chat, resource: [Secret, Vault], context: VaultCtx };
+
+action reveal in ["secrets"]
+  appliesTo { principal: Chat, resource: [Secret, Vault], context: ViaCtx };
+action inherit in ["secrets"]
+  appliesTo { principal: Chat, resource: EnvVar, context: ViaCtx };
+
+action browse in ["browser"]
+  appliesTo { principal: Chat, resource: Host, context: BrowserCtx };
+action fill, "log-in" in ["browser"]
+  appliesTo { principal: Chat, resource: Secret, context: BrowserCtx };
+action upload, download in ["browser"]
+  appliesTo { principal: Chat, resource: Path, context: BrowserCtx };
+
+action install, load in ["skills"]
+  appliesTo { principal: Chat, resource: Skill, context: Ctx };
+
+action enter in ["mode"]
+  appliesTo { principal: Chat, resource: Harness, context: Ctx };
+
+action run, mount in ["tools"]
+  appliesTo { principal: Chat, resource: Tool, context: Ctx };
+
+action start in ["trust"]
+  appliesTo { principal: Chat, resource: Harness, context: StartCtx };
+
+action offload, forward in ["runners"]
+  appliesTo { principal: Chat, resource: Runner, context: Ctx };
+
+// A press in the window. The resource is the plane (proposed: §3.3 names none).
+action report, promote in ["consents"]
+  appliesTo { principal: Chat, resource: Plane, context: Ctx };

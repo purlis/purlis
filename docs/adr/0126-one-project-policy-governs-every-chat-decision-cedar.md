@@ -331,3 +331,8 @@ the rule.
   (#6988). How it compiles them is the spec's, and still proposed (review round 2, F2-4; trimmed
   by review round 3, F3 nit).
 - Every existing settings file with a moved key reads as broken until a person rewrites it.
+
+## Amendments
+
+An amendment to this decision is a file of its own in [`0126/`](0126/), named
+`<yyyy-mm-dd>-<slug>.md`.
