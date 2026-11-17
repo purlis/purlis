@@ -96,12 +96,21 @@ fn owned_builds(_config: &Path, _pool: &str) -> Result<Bound, NotSent> {
 
 /// The gate for `ask` with every check passing: chat 6 open in its sandbox as `devops`, kubectl
 /// declared and allowed, the vault allowed, and pool `builds` this machine's Docker.
+/// The project every gate here is of unless a test says otherwise: a folder of its own, where
+/// what a run was handed is named (#6309).
+fn a_project() -> &'static Path {
+    static PROJECT: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    PROJECT
+        .get_or_init(|| tempfile::tempdir().expect("a folder"))
+        .path()
+}
+
 fn a_gate(ask: &brokered::Ask) -> Gate<'_> {
     Gate {
         pool: "builds",
         ask,
         chat: Some((Some("devops".into()), false)),
-        root: Path::new("/project"),
+        root: a_project(),
         pools_in: Some(PathBuf::from("/config")),
         tools: &kubectl_declared_and_allowed,
         vaults: &EveryVaultNothingLinked,
@@ -397,6 +406,26 @@ fn a_run_waits_on_the_person_and_once_allowed_is_sent_its_values_for_that_run() 
     assert_eq!(handed.keys().collect::<Vec<_>>(), ["kubeconfig"]);
     assert_eq!(*reads.lock().unwrap(), 1);
     assert!(tools.waiting().is_empty(), "the Ask is gone");
+}
+
+/// #6309: what a run on a runner was sent masks its chat's kept screen, under its entry's name.
+#[test]
+fn a_value_sent_for_a_run_on_a_runner_masks_its_chat_s_kept_screen() {
+    let (tools, _gone, _reads, _owned, decided) = a_run_deciding(Duration::from_secs(60));
+    let asked = the_run_asked(&tools);
+    tools.answer(6, asked.run, true);
+    assert!(
+        decided
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .is_ok()
+    );
+
+    assert_eq!(
+        purlis_core::secrets::handedto::masked_for(a_project(), 6, "got v-kubeconfig", &|_| None)
+            .as_deref(),
+        Some("got ‹secret: kubeconfig›")
+    );
 }
 
 #[test]

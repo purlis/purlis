@@ -5387,6 +5387,10 @@ impl Chats {
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
+        // Known to mask the chat's kept screen with once it has its number, as it is announced
+        // (#6309): the values themselves go to its start.
+        let signed_in_with =
+            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -6022,7 +6026,25 @@ impl Chats {
         };
         // What the announcement below said, so a start that fails can take it back.
         let announced = std::sync::atomic::AtomicU32::new(0);
+        // Why what a profile's sign-in hands the chat could not be named for its kept screen.
+        let sign_in_unnamed: Mutex<Option<std::io::Error>> = Mutex::new(None);
         let announce = |session: u32| {
+            // Named on disk before its program exists (#6309): a crash after it starts leaves
+            // what masks its screen, and where that fails the chat is ended below.
+            if let Some((named, known)) = &signed_in_with {
+                let remembered = match named {
+                    Ok(named) => purlis_core::secrets::handedto::remember_known(
+                        &self.project,
+                        session,
+                        named,
+                        known.clone(),
+                    ),
+                    Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
+                };
+                if let Err(why) = remembered {
+                    *lock(&sign_in_unnamed) = Some(why);
+                }
+            }
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
@@ -6250,6 +6272,10 @@ impl Chats {
                 gone(announced);
             }
         })?;
+        if let Some(why) = lock(&sign_in_unnamed).take() {
+            let _ = self.close(session);
+            return Err(purlis_core::secrets::brokered::not_named_said(&why));
+        }
         // The key its host set in its environment, where the window launched it: a host that
         // answers none set none, and its prompts are marked under none (#3369).
         if !reattaching && !on_the_runner {
@@ -6584,6 +6610,11 @@ impl Chats {
             {
                 tracing::info!("purlis: chat {session}'s record was not kept as it closed ({why})");
             }
+        }
+        // What it was handed is forgotten once its screen is kept (#6309). Not as the project is
+        // let go of: the chat may come back to this process, and its screen be kept then.
+        if !self.ending.load(Ordering::SeqCst) {
+            purlis_core::secrets::handedto::forget(&self.project, session);
         }
         let closed = self.sessions.close(session);
         self.write_it_down();
