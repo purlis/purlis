@@ -267,6 +267,36 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     expect(row).not.toHaveTextContent("was");
   });
 
+  it("asks nothing for a number past any a chat is dealt, and says no failure (#7125's review)", async () => {
+    const { sent } = draw({
+      // As the core refuses it: its `typed` is a u32, so a larger number is no argument.
+      closed: (typed) => {
+        if (typed !== null && typed > 0xffff_ffff) throw new Error("invalid args `typed`");
+        return [];
+      },
+    });
+    await typeInTheFilter("99999999999");
+    await act(() => Promise.resolve());
+
+    const typed = sent
+      .filter((one) => one.cmd === "closed_chats")
+      .map((one) => (one.args as { typed: number | null }).typed);
+    expect(typed.filter((number) => number !== null && number > 0xffff_ffff)).toEqual([]);
+    expect(screen.queryByText(/could not read the closed chats/)).toBeNull();
+  });
+
+  it("draws two closed chats that share a number as two rows (#6740)", async () => {
+    draw({
+      closed: (typed) =>
+        typed === 702 ? [CLOSED_UNDER_702, { ...CLOSED_UNDER_702, id: CLOSED.id }] : [],
+    });
+    await typeInTheFilter("702");
+    const tree = await theTree();
+    await waitFor(() =>
+      expect(within(tree).getAllByRole("row", { name: /^#702 · Sort the inbox/ })).toHaveLength(2),
+    );
+  });
+
   it("says so when the closed chats could not be read", async () => {
     draw({
       closed: () => {

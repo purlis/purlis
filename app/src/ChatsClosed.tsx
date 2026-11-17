@@ -115,7 +115,8 @@ export function closedChatsRow({
     >
       {closed.map((chat) => (
         <ClosedChatRow
-          key={chat.number}
+          // By its ULID: two closed chats may share a number (#6740).
+          key={chat.id}
           chat={chat}
           typed={typed}
           plane={plane}
@@ -178,7 +179,7 @@ function ClosedChatRow({
   return (
     <TreeRow
       ref={row}
-      id={`closed:${chat.number}`}
+      id={`closed:${chat.id}`}
       textValue={name}
       description={at === undefined ? "closed" : `closed at ${at}`}
       onAction={choose}
