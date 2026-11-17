@@ -652,7 +652,7 @@ fn closed_by_more_than_its_mode(folder: &Path) -> bool {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let mut names = vec![0u8; 4096];
-        match rustix::fs::listxattr(folder, &mut names) {
+        match rustix::fs::listxattr(folder, &mut names[..]) {
             Ok(len) => names[..len]
                 .split(|byte| *byte == 0)
                 .any(|name| name.starts_with(b"system.posix_acl")),
@@ -693,7 +693,8 @@ pub fn program_named(name: &str) -> Ran {
 ///
 /// **A test build** (`test-support`, which only `cargo test` turns on) believes only programs
 /// of its own build folder, so an app above the test run never stands in for the one a test
-/// plays, and takes any program there for the app's, where a test binary plays it. A test of
+/// plays, and takes any program there that holds a plane's hook socket for the app's, where a
+/// test binary plays it. A test of
 /// this very trust sets `REACH_TRUSTS_ONLY_THE_APP` (read only in a test build), and plays the
 /// app from a copy of itself named as the app's program is.
 pub fn program_of(exe: &Path) -> Ran {
@@ -708,8 +709,10 @@ pub fn program_of(exe: &Path) -> Ran {
     let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_owned());
     match build {
         Some(build) if exe.starts_with(&build) => {
+            // A test binary plays the app only where it holds a plane's hook socket, as `purlis
+            // serve` is the app only there ([`under`]).
             if ran == Ran::Other && std::env::var_os("REACH_TRUSTS_ONLY_THE_APP").is_none() {
-                Ran::App
+                Ran::Purlis
             } else {
                 ran
             }

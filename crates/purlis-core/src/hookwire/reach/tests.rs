@@ -199,6 +199,7 @@ fn a_mode_that_lets_its_owner_write_and_a_sandbox_s_refusal_are_what_a_held_fold
 
 /// Set on the child [`a_folder_a_sandbox_keeps_this_process_from_writing_is_believed`] runs
 /// under Seatbelt: the folder its profile denies.
+#[cfg(target_os = "macos")]
 const DENIED: &str = "REACH_TEST_DENIED_FOLDER";
 
 #[cfg(target_os = "macos")]
