@@ -751,6 +751,42 @@ fn profile_said(profile: Result<String, &'static str>) -> String {
     )
 }
 
+/// The process group of each of `pids`, as `ps` says it, each once, never this test's own.
+fn process_groups(pids: &[u32]) -> Vec<u32> {
+    let own = process_group_of(std::process::id());
+    let mut groups: Vec<u32> = Vec::new();
+    for pid in pids {
+        if let Some(group) = process_group_of(*pid)
+            .filter(|group| *group > 1 && Some(*group) != own && !groups.contains(group))
+        {
+            groups.push(group);
+        }
+    }
+    groups
+}
+
+/// `pid`'s process group, as `ps` says it.
+fn process_group_of(pid: u32) -> Option<u32> {
+    let out = purlis_core::forklock::output(std::process::Command::new("/bin/ps").args([
+        "-o",
+        "pgid=",
+        "-p",
+        &pid.to_string(),
+    ]))
+    .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+/// Whether any process of `group` runs.
+fn group_alive(group: u32) -> bool {
+    purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
+        "-0",
+        "--",
+        &format!("-{group}"),
+    ]))
+    .is_ok_and(|status| status.success())
+}
+
 /// The size every scenario's chat is drawn at.
 const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 160,
@@ -881,6 +917,18 @@ impl Scenario {
             self.panes.lock().expect("panes").push((id, pane));
         }
         if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
+            // Typed once the harness says its session, as a person types at a harness that is
+            // ready: a harness that takes the terminal raw drops what came before.
+            let said = format!("{} session ", self.dialect.word());
+            let deadline = std::time::Instant::now() + crate::scenarios::PLAYS_WITHIN;
+            while !self.screen_of(id).contains(&said) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "chat {id} never said its session\n{}",
+                    self.said()
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            }
             self.types(id, prompt);
         }
         id
@@ -915,6 +963,17 @@ impl Scenario {
             self.confines.started(),
             self.transcript()
         )
+    }
+
+    /// Chat `id`'s screen as the window's view of it draws it, as text.
+    pub(crate) fn screen_of(&self, id: u32) -> String {
+        self.panes
+            .lock()
+            .expect("panes")
+            .iter()
+            .find(|(chat, _)| *chat == id)
+            .map(|(_, pane)| pane.text())
+            .unwrap_or_default()
     }
 
     /// The sandbox-only profile its chats start on: one per dialect, as a person signs one in.
@@ -1035,14 +1094,32 @@ impl Drop for Scenario {
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
-        kept.pids.extend(left.pids);
+        kept.pids.extend(left.pids.iter().copied());
         kept.folders.extend(left.folders);
         if let Ok(text) = serde_json::to_string(&kept) {
             let _ = std::fs::write(self.homes.left(), text);
         }
+        let groups = process_groups(&left.pids);
         if let Some(window) = self.window.take() {
             window.planes().let_go_of_all();
             window.quits();
+        }
+        // Every process of each chat's group ends with the scenario, a process its chat left in
+        // the background included. Where the host's quit left one, it is said: a person's quit
+        // would have left it too.
+        for group in groups {
+            if group_alive(group) {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "the host's quit left chat process group {group} running; the teardown ends it"
+                );
+                let _ =
+                    purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
+                        "-KILL",
+                        "--",
+                        &format!("-{group}"),
+                    ]));
+            }
         }
         self.hosting.take();
         if let Some(runtime) = self.runtime.take() {
