@@ -31,7 +31,7 @@ use super::super::{
     Answer, Content, DownloadInfo, FieldInfo, KeptOff, ListedPage, MOST_FILE_NAME_CHARS, PageId,
     PageInfo, Refusal, Settled, lock, plain_file_name,
 };
-use super::{Browser, Inner, State, login};
+use super::{Inner, State, login};
 
 /// What a call says of a site it held back whose address holds a text kept out: that site is not
 /// said, and so nobody is asked about it.
@@ -360,24 +360,6 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
         | Refusal::FieldUnread
         | Refusal::FieldUnreadAfterKey
         | Refusal::DragKeptOut) => fixed,
-    }
-}
-
-impl Browser {
-    /// [`kept_off_told`], where this browser keeps the agent off a site.
-    pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
-        self.inner.with_kept_off_told(answer)
-    }
-
-    /// **`outcome`, as the chat may read it** (module docs). Nothing the agent's calls answer
-    /// leaves the browser but through this.
-    pub(super) fn kept_out(&self, outcome: Result<Answer, Refusal>) -> Result<Answer, Refusal> {
-        self.inner.kept_out(outcome)
-    }
-
-    /// `downloads`, each named as an answer would name it.
-    pub(super) fn names_kept_out(&self, downloads: Vec<DownloadInfo>) -> Vec<DownloadInfo> {
-        self.inner.names_kept_out(downloads)
     }
 }
 

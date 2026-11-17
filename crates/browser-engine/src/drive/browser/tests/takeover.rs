@@ -2329,3 +2329,50 @@ fn watching_a_page_the_browser_does_not_have_is_refused_and_changes_nothing() {
     );
     assert!(engine.sent("Target.activateTarget").is_empty());
 }
+
+#[test]
+fn the_hand_back_makes_the_agents_page_current_again_after_the_person_watched_another() {
+    // #6989: watching another page is the person's alone, and never moves the agent.
+    let (browser, engine) = browser();
+    super::a_second_page(&browser, &engine);
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&watch(&aim, "p2")).unwrap();
+    let aim = aim_now(&browser);
+    browser.person_input(&watch(&aim, "p1")).unwrap();
+    let aim = aim_now(&browser);
+    browser.person_input(&watch(&aim, "p2")).unwrap();
+
+    browser.hand_back();
+
+    assert_eq!(
+        super::super::lock(&browser.inner.state).current.as_deref(),
+        Some("PAGE-1")
+    );
+    assert_eq!(
+        engine.sent("Target.activateTarget").last().unwrap().params["targetId"],
+        json!("PAGE-1")
+    );
+}
+
+#[test]
+fn a_hand_back_with_no_page_watched_leaves_the_current_page_as_it_is() {
+    let (browser, engine) = browser();
+    super::a_second_page(&browser, &engine);
+    browser
+        .call(
+            &id(1),
+            Call::SwitchPage {
+                page: PageId::new("p2"),
+            },
+        )
+        .unwrap();
+    let activated = engine.sent("Target.activateTarget").len();
+    browser.take_over();
+    browser.hand_back();
+    assert_eq!(
+        super::super::lock(&browser.inner.state).current.as_deref(),
+        Some("PAGE-7")
+    );
+    assert_eq!(engine.sent("Target.activateTarget").len(), activated);
+}

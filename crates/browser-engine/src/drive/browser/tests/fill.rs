@@ -1468,15 +1468,17 @@ fn a_window_takes_on_what_its_opener_keeps_and_what_a_page_kept_outlives_it() {
             .page("PAGE-1")
             .is_none()
     });
-    let named = browser.names_kept_out(vec![crate::drive::DownloadInfo {
-        id: "d1".to_owned(),
-        name: "token-5310.txt".to_owned(),
-        origin: None,
-        received: 0,
-        total: None,
-        state: crate::drive::DownloadState::Done,
-        file: "guid".to_owned(),
-    }]);
+    let named = browser
+        .inner
+        .names_kept_out(vec![crate::drive::DownloadInfo {
+            id: "d1".to_owned(),
+            name: "token-5310.txt".to_owned(),
+            origin: None,
+            received: 0,
+            total: None,
+            state: crate::drive::DownloadState::Done,
+            file: "guid".to_owned(),
+        }]);
     assert_eq!(named[0].name, "(blanked).txt");
 }
 

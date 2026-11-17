@@ -4099,6 +4099,21 @@ fn a_view_is_told_which_page_is_current_as_the_agent_switches() {
 }
 
 #[test]
+fn a_view_is_told_which_page_is_current_however_it_became_so() {
+    // A page a call opened or a login moved to is current with no event of the engine's
+    // saying so: the cast follows it, and tells the view (#6989).
+    let (browser, engine) = browser();
+    let told = pages_told_into(&browser, &engine);
+    a_second_page(&browser, &engine);
+    super::lock(&browser.inner.state).current = Some("PAGE-7".into());
+    wait_for("the second is told current", || {
+        last_pages(&told)
+            .iter()
+            .any(|page| page.id == PageId::new("p2") && page.current)
+    });
+}
+
+#[test]
 fn a_pages_title_told_to_a_view_is_scrubbed_and_an_address_holding_a_kept_value_has_no_origin() {
     let (browser, engine) = browser();
     let told = pages_told_into(&browser, &engine);
@@ -4183,6 +4198,34 @@ fn a_view_is_told_the_browsers_downloads_as_they_begin_and_move_on() {
         (one.id.as_str(), one.name.as_str(), one.total),
         ("d1", "report.pdf", Some(4096))
     );
+}
+
+#[test]
+fn a_downloads_progress_is_told_to_a_view_paced_and_its_last_word_is_never_lost() {
+    let (browser, engine) = browser();
+    let told = downloads_told_into(&browser, &engine);
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAGE-1", "guid": "GUID-1", "url": "http://fixture.test/big.bin", "suggestedFilename": "big.bin" }),
+        None,
+    );
+    wait_for("its beginning is told", || last_downloads(&told).len() == 1);
+    let before = super::lock(&told).len();
+    for received in 1..=200_u64 {
+        engine.emit(
+            "Browser.downloadProgress",
+            json!({ "guid": "GUID-1", "receivedBytes": received * 10, "totalBytes": 100_000, "state": "inProgress" }),
+            None,
+        );
+    }
+    // The engine goes quiet: the last it said still reaches the view.
+    wait_for("the last progress is told", || {
+        last_downloads(&told)
+            .first()
+            .is_some_and(|one| one.received == 2000)
+    });
+    let words = super::lock(&told).len() - before;
+    assert!(words < 50, "{words} words for 200 events");
 }
 
 #[test]

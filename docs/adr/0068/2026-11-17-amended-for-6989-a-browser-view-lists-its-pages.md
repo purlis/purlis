@@ -18,14 +18,16 @@ note says what the view is told of them, and what the person's pick of one does.
    from a runner's host, so what it is told is held again as it is read (`PageShown::held`): at
    most 64 pages, ids of letters, digits, `-` and `_`, titles one plain line, an origin only
    where it is exactly one, one current page at most. *D-6989-2.*
-3. **Watching another page is the person's act, and moves the browser.** Picking a page in the
-   view's menu takes the browser over first, as Back does (#6938), so the agent is paused and the
-   window never sends a pick for it. The engine refuses a pick unless the person drives
+3. **Watching another page is the person's act, and never moves the agent.** Picking a page in
+   the view's menu takes the browser over first, as Back does (#6938), so the agent is paused and
+   the window never sends a pick for it. The engine refuses a pick unless the person drives
    (`not_driving`) and drops one aimed at a page that has moved on (`input_missed`). The page
-   picked becomes the browser's current page: its views cast it, and once the person hands the
-   browser back, the agent's next call acts there, as after the person's Back. The agent is told
-   nothing of the pick (D-2014-3); its answers name the page they acted on, as always. A host
-   before 1.91 is sent no pick: the window refuses it in words. *D-6989-3.*
+   picked is current while the person drives, so its views cast it. The page the agent's calls
+   acted on is kept from the first pick (`Lease::agents_page`), and the hand-back makes it current
+   again before the agent has the browser, where it is still open: the agent never acts on a page
+   it did not choose, and is told nothing of the pick (D-2014-3). The person's Back, Forward and
+   Reload act on the page they watch, as before. A host before 1.91 is sent no pick: the window
+   refuses it in words. *D-6989-3.*
 4. **The words.** "Page 2 of 3" after the page's title, drawn only when the browser has two
    pages or more; its menu is "This browser's pages", each row the page's title with its site
    under it, or its site alone, or "A page with no web address". *D-6989-4.*

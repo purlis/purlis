@@ -3,6 +3,7 @@
 
 import { Layers } from "lucide-react";
 import type { PageListed } from "./bindings";
+import { siteOf } from "./SecretMarks";
 import { Button } from "./ui/button/Button";
 import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 
@@ -10,11 +11,6 @@ import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "./ui/menu/M
 export function pagesCounted(pages: readonly PageListed[]): string {
   const at = pages.findIndex((page) => page.current);
   return at < 0 ? `${pages.length} pages` : `Page ${at + 1} of ${pages.length}`;
-}
-
-/** A site as a page's row says it: its host, and the scheme where it isn't https. */
-function siteOf(origin: string): string {
-  return origin.startsWith("https://") ? origin.slice("https://".length) : origin;
 }
 
 /** What a page's row is named: its title, or its site where it has none, or that it is blank. */
@@ -26,7 +22,7 @@ export function pageNamed(page: PageListed): string {
 
 /** The menu's hint: what picking a page does. */
 export const WATCH_SAID =
-  "Watch another of this browser's pages. Picking one takes the browser over until you press Done.";
+  "Watch another of this browser's pages. Picking one takes the browser over; when you press Done, the agent goes on with its own page.";
 
 /**
  * **The browser's pages, and a way to watch another** (#6989): "Page 2 of 3" in the view's first
@@ -35,7 +31,7 @@ export const WATCH_SAID =
  * shown now ticked. Drawn by purlis, outside the page, so a page cannot fake it (#2024).
  *
  * Picking another page is the person's act: `onWatch` takes the browser over first, as Back does
- * (#6938), so it is never done for the agent.
+ * (#6938), so it is never done for the agent, and the hand-back gives the agent its own page.
  */
 export function BrowserPages({
   pages,
@@ -70,8 +66,10 @@ export function BrowserPages({
               id={page.id}
               textValue={pageNamed(page)}
               data-testid="browser-page"
-              // The page shown now, picked again, changes nothing.
-              onAction={() => page.id !== current && onWatch(page.id)}
+              onAction={() => {
+                // The page shown now, picked again, changes nothing.
+                if (page.id !== current) onWatch(page.id);
+              }}
             >
               <MenuWords
                 said={pageNamed(page)}

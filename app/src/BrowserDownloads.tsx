@@ -3,6 +3,7 @@
 
 import { Download } from "lucide-react";
 import type { DownloadListed } from "./bindings";
+import { sizeSaid } from "./devices";
 import { marked } from "./invisible";
 import { Button } from "./ui/button/Button";
 import { PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
@@ -12,17 +13,9 @@ export function downloadsCounted(count: number): string {
   return count === 1 ? "1 download" : `${count} downloads`;
 }
 
-/** A size in bytes, as a person reads it: bytes, KB, MB or GB, one decimal past KB. */
-export function sizeSaid(bytes: number): string {
-  if (bytes < 1000) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = bytes / 1000;
-  let unit = 0;
-  while (size >= 1000 && unit < units.length - 1) {
-    size /= 1000;
-    unit += 1;
-  }
-  return `${size.toFixed(1)} ${units[unit]}`;
+/** `bytes` as a person reads it, in the window's one way of saying a size (`devices.ts`). */
+function bytesSaid(bytes: number): string {
+  return sizeSaid(Math.round(bytes / 1000));
 }
 
 /** **How far a download came, in words** (#6990): going (with how much of how much, where the
@@ -33,10 +26,10 @@ export function downloadSaid(one: DownloadListed): string {
   switch (one.state) {
     case "going":
       return one.total === null
-        ? `Downloading, ${sizeSaid(received)} so far`
-        : `Downloading, ${sizeSaid(received)} of ${sizeSaid(one.total)}`;
+        ? `Downloading, ${bytesSaid(received)} so far`
+        : `Downloading, ${bytesSaid(received)} of ${bytesSaid(one.total)}`;
     case "done":
-      return `Downloaded, ${sizeSaid(received)}`;
+      return `Downloaded, ${bytesSaid(received)}`;
     case "cancelled":
       return "Cancelled";
     case "too_large":

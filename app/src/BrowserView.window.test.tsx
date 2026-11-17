@@ -1494,8 +1494,8 @@ describe("the browser's downloads (#6990)", () => {
     const list = await screen.findByRole("dialog", { name: "This browser's downloads" });
     const rows = within(list).getAllByTestId("browser-download");
     expect(rows.map((row) => row.textContent)).toEqual([
-      "data.csvDownloading, 1.5 KB of 3.0 KB",
-      "notes.txtDownloaded, 800 B",
+      "data.csvDownloading, 2 kB of 3 kB",
+      "notes.txtDownloaded, 1 kB",
       "big.isoCancelled by purlis: larger than a browser may download",
     ]);
     expect(list).toHaveTextContent("Only the chat saves a download into the project.");

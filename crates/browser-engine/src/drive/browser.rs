@@ -2526,7 +2526,8 @@ impl Browser {
     /// the browser over before it answers.
     pub fn call_at(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
         let outcome = self.answering(epoch, id, call);
-        self.kept_out(outcome.map(|answer| self.with_kept_off_told(answer)))
+        self.inner
+            .kept_out(outcome.map(|answer| self.inner.with_kept_off_told(answer)))
     }
 
     fn answering(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
@@ -2625,7 +2626,7 @@ impl Browser {
     /// is kept out of as an answer's is; its origin is the engine's, for its caller to judge by.
     pub fn downloads(&self) -> Vec<super::DownloadInfo> {
         let all = lock(&self.inner.state).downloads.all();
-        self.names_kept_out(all)
+        self.inner.names_kept_out(all)
     }
 
     /// **The site the agent is kept off that download `id` is of, now** (#5152, the person's
@@ -6293,7 +6294,18 @@ impl Inner {
     ///
     /// The browser's pages are told with it (#6989): a page opened, gone or retitled; and its
     /// downloads (#6990): one begun or moved on.
-    fn tell_page_now(&self, method: &str) {
+    ///
+    /// A download's progress under way is paced ([`Screencast::progress_may_be_told`]): the
+    /// engine says it far more often than a person reads it. Its beginning and its end are told
+    /// at once.
+    fn tell_page_now(&self, event: &Event) {
+        let method = event.method.as_str();
+        if method == "Browser.downloadProgress"
+            && event.params["state"].as_str() == Some("inProgress")
+            && !self.cast.progress_may_be_told()
+        {
+            return;
+        }
         if matches!(
             method,
             "Page.frameStartedLoading"
@@ -7054,7 +7066,7 @@ impl Inner {
         if let Some((target, address)) = navigated {
             self.came_back(&target, &address);
         }
-        self.tell_page_now(&event.method);
+        self.tell_page_now(event);
         self.changed.notify_all();
         for step in follow {
             let step = match step {
