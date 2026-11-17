@@ -439,19 +439,20 @@ fn an_accepted_star_with_nothing_in_the_project_s_file_grants_nothing() {
     let grants = InForce::read(root, Vec::new());
     assert_eq!(grants.project_any, Vec::<String>::new());
     assert_eq!(asked("steward", "devops", &grants), Covers::NeedsGrant);
-    // With no project file to read, nothing stored is changed either.
-    assert_eq!(crate::sandbox::local::dispatch_any_seen(root), ["steward"]);
+    // An acceptance written by hand is none (ticket T1.1-73): only the app seals one.
+    assert_eq!(
+        crate::sandbox::local::dispatch_any_seen(root),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
 fn a_never_written_by_hand_is_held_as_written() {
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
-    by_hand(
-        root,
-        r#"{"dispatch_mine": [{"asking": "steward", "target": "devops"}],
-            "dispatch_any": ["steward"]}"#,
-    );
+    // Grants the app sealed (ticket T1.1-73).
+    crate::sandbox::local::grant_dispatch(root, "steward", "devops").expect("kept");
+    crate::sandbox::local::grant_dispatch_any(root, "steward").expect("kept");
     let file = crate::dispatchnever::path(root);
     std::fs::create_dir_all(file.parent().expect("a folder")).expect("made");
     std::fs::write(

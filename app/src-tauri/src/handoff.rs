@@ -2690,8 +2690,14 @@ fn dispatch_it(
 /// `dispatchgrants::asking_from` read it), so the no-sandbox refusal answers instead
 /// ([`purlis_core::dispatchunattended::answer_of`]). The same comparison that refusal makes,
 /// so the rule never stands aside for a dispatch the refusal would let through.
+///
+/// **Only where no seal keeps a grant out of the chat's reach** (ticket T1.1-73): where one
+/// does (`dispatchunattended::sealed_here`), a sealed grant covers such a chat, so the
+/// refusal does not answer and the crossing rule holds as for a sandboxed chat.
 fn crossing_stands_aside(to: Option<&str>, runs_with: Option<&str>, sandboxed: bool) -> bool {
-    !sandboxed && to.is_some_and(|to| runs_with != Some(to))
+    !sandboxed
+        && !purlis_core::dispatchunattended::sealed_here()
+        && to.is_some_and(|to| runs_with != Some(to))
 }
 
 /// Why a dispatch started nothing ([`dispatch_noting`]).

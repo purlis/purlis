@@ -4255,7 +4255,8 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             above: Some(vec![Some("steward".to_owned())]),
             by_person: false,
             long: false,
-            policy: None,
+            // Never looser than the chat that asked (Q308a, Q308b): its policy goes with it.
+            policy: Some(purlis_core::enforcement::in_force(held.root()).spelled()),
         })
     );
     // In the asking chat's folder, on its profile, as its persona.
@@ -5862,7 +5863,7 @@ fn the_crossing_rule_stands_aside_exactly_where_the_no_sandbox_refusal_answers()
         // covered, and it is the one case the refusal lets by with no sandbox.
         let refused = matches!(
             answer_of(Covers::Covered, runs_with, to, false, false),
-            Answer::Refused(Refusal::Unsandboxed(_))
+            Answer::Refused(Refusal::Unsandboxed(_) | Refusal::NotSealedHere(_))
         );
         assert_eq!(
             crossing_stands_aside(Some(to), runs_with, false),
@@ -7483,7 +7484,8 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
             above: Some(vec![Some("steward".to_owned())]),
             by_person: true,
             long: false,
-            policy: None,
+            // Never looser than the chat that asked (Q308a, Q308b): its policy goes with it.
+            policy: Some(purlis_core::enforcement::in_force(held.root()).spelled()),
         }
     );
     // No handoff brief: its first message is purlis's two lines saying the person asked,

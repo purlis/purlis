@@ -130,7 +130,7 @@ fn a_set_whose_anchor_is_gone_counts_nothing() {
     let mut set = fresh();
     with(&mut set, "plane-a", &[("mine", "steward -> devops")]);
     super::super::seal::forget_kept_for_this_test();
-    assert_eq!(set.verify(STORE, "plane-a").standing, Standing::Broken);
+    assert_eq!(set.verify(STORE, "plane-a").standing, Standing::Unanchored);
 }
 
 #[test]

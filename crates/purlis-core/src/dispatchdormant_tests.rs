@@ -628,11 +628,12 @@ fn a_star_written_as_a_pair_s_target_is_never_given_back_as_any_persona() {
     // `steward` is seen gone, so what names it is set aside when it is another's.
     std::fs::write(
         &path,
-        r#"{"dispatch_mine": [{"asking": "steward", "target": "*"},
-                              {"asking": "steward", "target": "devops"}],
-            "dispatch_known": [{"name": "steward", "away": true}]}"#,
+        r#"{"dispatch_known": [{"name": "steward", "away": true}]}"#,
     )
     .expect("written by hand");
+    // Kept as a grant the app sealed would be (ticket T1.1-73): a star as a pair's target.
+    local::grant_dispatch(root, "steward", "*").expect("kept");
+    local::grant_dispatch(root, "steward", "devops").expect("kept");
 
     let done = judged(root, &[]).expect("judged");
 

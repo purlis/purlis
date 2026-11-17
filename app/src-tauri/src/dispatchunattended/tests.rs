@@ -323,12 +323,10 @@ fn an_unattended_chat_started_with_no_sandbox_dispatches_to_no_other_persona() {
             "devops",
             None
         ),
+        // Granted, and no seal keeps the grant out of its reach in this test build (ticket
+        // T1.1-73): refused, saying why.
         Requested::Refused(
-            "this chat runs with its harness's permission prompts off and with no sandbox. A \
-             chat with neither can change who it may dispatch to, so purlis starts nobody for \
-             it but a chat of its own persona, and devops is another. Run this work in a \
-             sandboxed chat, or in one a person answers."
-                .to_owned()
+            purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say()
         )
     );
     // Its own persona still starts.
@@ -410,10 +408,13 @@ fn a_held_chat(persona: &str) -> (tempfile::TempDir, std::sync::Arc<crate::plane
     (dir, held, session)
 }
 
+/// What a chat with its prompts off and no sandbox is told where the policy asks and no sealed
+/// grant covers the pair (ticket T1.1-73).
 const NO_SANDBOX: &str = "this chat runs with its harness's permission prompts off and with no \
-    sandbox. A chat with neither can change who it may dispatch to, so purlis starts nobody for \
-    it but a chat of its own persona, and devops is another. Run this work in a sandboxed chat, \
-    or in one a person answers.";
+    sandbox, so nobody is here to answer for a dispatch, and no grant the person made covers \
+    this chat's persona dispatching to devops. The person will see this pair in their needs-you \
+    list, where one press grants it; until then, do this work without devops, or say in what \
+    you leave behind that it is waiting.";
 
 #[test]
 fn an_unattended_chat_s_ask_raises_no_notice_and_its_sandbox_is_the_app_s_own_record() {

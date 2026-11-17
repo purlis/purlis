@@ -88,8 +88,9 @@ pub struct Said {
     pub chat: Option<String>,
 }
 
-/// One entry of the file: the pair, and what is known of when it was said.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One entry of the file: the pair, and what is known of when it was said. Two entries are the
+/// same never whatever their seals say.
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub asking: String,
     pub target: String,
@@ -100,6 +101,17 @@ pub struct Entry {
     /// Every other key of the entry, kept as it is written.
     rest: serde_json::Map<String, serde_json::Value>,
 }
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.asking == other.asking
+            && self.target == other.target
+            && self.said == other.said
+            && self.rest == other.rest
+    }
+}
+
+impl Eq for Entry {}
 
 impl Entry {
     fn pair(&self) -> (String, String) {

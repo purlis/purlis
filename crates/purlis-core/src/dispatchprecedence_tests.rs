@@ -77,6 +77,13 @@ impl Project {
         Self { _home: home, dir }
     }
 
+    /// Another project in this test's config home.
+    fn beside(&self, settings: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a project");
+        std::fs::write(crate::names::manifest(dir.path()), settings).expect("written");
+        dir
+    }
+
     fn root(&self) -> &Path {
         self.dir.path()
     }
@@ -356,9 +363,9 @@ fn a_grant_edited_by_a_chat_or_copied_from_another_clone_is_dropped_and_shown_re
     );
     assert!(dispatch_unsealed(root).contains(&(DispatchKind::Mine, "steward -> prod".to_owned())));
     // Copied from another clone: its seal is bound to that clone.
-    let other = Project::new(STRICT);
-    grant_dispatch(other.root(), "steward", "ops").expect("granted there");
-    let theirs = record(other.root());
+    let other = project.beside(STRICT);
+    grant_dispatch(other.path(), "steward", "ops").expect("granted there");
+    let theirs = record(other.path());
     let mut held = record(root);
     held["dispatch_mine"]
         .as_array_mut()

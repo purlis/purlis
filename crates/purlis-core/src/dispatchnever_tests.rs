@@ -46,12 +46,24 @@ fn no_record_is_no_nevers_and_one_is_kept_in_a_file_of_its_own() {
     add(root, "steward", "devops").expect("kept");
     add(root, "steward", "devops").expect("kept once");
     add(root, "qa", "prod").expect("kept");
-    assert_eq!(
-        std::fs::read_to_string(path(root)).expect("the record"),
-        "{\n  \"never\": [\n    {\n      \"asking\": \"steward\",\n      \"target\": \
-         \"devops\"\n    },\n    {\n      \"asking\": \"qa\",\n      \"target\": \"prod\"\n    \
-         }\n  ]\n}\n"
-    );
+    // Each never as it is said, each sealed by the app (ticket T1.1-73).
+    let kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path(root)).expect("the record"))
+            .expect("json");
+    let pairs: Vec<(&str, &str)> = kept["never"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|one| {
+            assert!(one["mac"].is_string(), "{one}");
+            (
+                one["asking"].as_str().expect("asking"),
+                one["target"].as_str().expect("target"),
+            )
+        })
+        .collect();
+    assert_eq!(pairs, [("steward", "devops"), ("qa", "prod")]);
+    assert_eq!(kept["live"].as_array().map(Vec::len), Some(2));
     assert!(path(root).ends_with("app/dispatch-never.json"));
     // Nothing of it is in this machine's other record, or in the project's file.
     assert!(!crate::sandbox::local::path(root).exists());
@@ -183,8 +195,10 @@ fn a_build_that_does_not_know_of_nevers_rewrites_its_record_and_drops_none() {
     std::fs::write(&record, serde_json::to_string_pretty(&older).expect("json")).expect("written");
 
     // The grant it kept is still beaten by the never it never saw.
+    // The older build dropped the grant's seal (ticket T1.1-73), so the grant counts as none;
+    // the never stands either way.
     let grants = InForce::read(root, Vec::new());
-    assert_eq!(grants.you.len(), 1);
+    assert_eq!(grants.you.len(), 0);
     assert_eq!(asked(&grants), Covers::Never);
 }
 
@@ -316,6 +330,8 @@ fn deleting_the_record_behind_the_apps_back_never_says_never_to_nothing() {
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
     crate::sandbox::local::grant_dispatch(root, "steward", "devops").expect("kept");
+    // A never the app sealed (ticket T1.1-73): its anchor is the presence marker.
+    add(root, "qa", "prod").expect("kept");
     by_hand(&path(root), "not json");
     assert_eq!(asked(&InForce::read(root, Vec::new())), Covers::Unread);
     std::fs::remove_file(path(root)).expect("deleted");
@@ -421,12 +437,12 @@ fn nevers_that_cannot_be_moved_into_a_record_that_does_not_read_are_not_lost() {
             .expect("read")
             .contains("dispatch_never")
     );
-    // Mended by deleting it by hand, behind the app's back: still unread (the review of #6992,
-    // S4), and the pairs the earlier build left are still kept for when it reads again.
+    // Mended by deleting it by hand: the app never sealed a never here, so there is nothing to
+    // miss (ticket T1.1-73), and the pairs the earlier build left are moved in and sealed.
     std::fs::remove_file(path(root)).expect("mended");
-    assert_eq!(read(root), Nevers::Unread);
+    assert_eq!(read(root), Nevers::Read(one("steward", "devops")));
     assert!(
-        std::fs::read_to_string(&record)
+        !std::fs::read_to_string(&record)
             .expect("read")
             .contains("dispatch_never")
     );

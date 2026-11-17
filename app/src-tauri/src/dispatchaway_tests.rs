@@ -260,18 +260,11 @@ fn a_refusal_for_any_other_reason_is_not_kept() {
         None
     );
 
-    // A chat with no sandbox, one that holds another chat's grants, one on no persona, and a
-    // name that is no persona's.
+    // A chat that holds another chat's grants, one on no persona, and a name that is no
+    // persona's. (A chat with no sandbox that no sealed grant covers is kept since ticket
+    // T1.1-73: a grant mends it.)
     let world = World::new();
     for (persona, target, runs) in [
-        (
-            Some("steward"),
-            "devops",
-            Runs {
-                sandboxed: false,
-                ..SANDBOXED
-            },
-        ),
         (
             Some("steward"),
             "devops",
@@ -289,6 +282,23 @@ fn a_refusal_for_any_other_reason_is_not_kept() {
     }
     assert!(world.pairs().is_empty());
     assert!(!purlis_core::dispatchaway::path(world.root()).exists());
+}
+
+/// Ticket T1.1-73: a chat with its prompts off and no sandbox, refused where the policy asks
+/// and no sealed grant covers the pair, is kept for the needs-you list with a one-press grant.
+#[test]
+fn a_no_sandbox_refusal_at_an_ask_with_no_sealed_grant_is_kept() {
+    let world = World::new();
+    let (said, kept) = world.asks(
+        Some("steward"),
+        "devops",
+        Runs {
+            sandboxed: false,
+            ..SANDBOXED
+        },
+    );
+    assert!(said.is_some());
+    assert!(kept);
 }
 
 #[test]
