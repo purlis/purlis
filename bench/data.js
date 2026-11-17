@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794911649393,
+  "lastUpdate": 1794916630561,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50652,6 +50652,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2939815,
             "unit": "ms",
             "extra": "median of 5 runs: 100.535, 101.173, 101.294, 101.596, 103.208 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f25d12b23d29ace0c22bb75e5fb720d645429833",
+          "message": "deny.toml ignores RUSTSEC-2026-0543 (chrono unmaintained) with a dated reason, tracked in #7089 (#7086) (#7090)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7MHHB3PH7B52TZ30NDKF7KT\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T11:24:39Z",
+          "tree_id": "228e8030f9f58d6659b2260ca608cc651d6e69bf",
+          "url": "https://github.com/purlis/purlis/commit/f25d12b23d29ace0c22bb75e5fb720d645429833"
+        },
+        "date": 1794916624286,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35294800000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.343, 0.346, 0.353, 0.355, 0.367 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4276805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.116, 16.184, 16.428, 16.493, 16.942 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8634185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.949, 101.531, 101.863, 101.908, 102.721 ms"
           }
         ]
       }
