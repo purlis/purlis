@@ -16,4 +16,4 @@ confirmed* (D-7091-5):
    clones whose `.git` files and `worktrees/*/gitdir` hold absolute paths under it, its chats'
    harnesses key their sessions by those paths (Claude Code's `~/.claude/projects/<path>`), and a
    running chat's folder is under it. Renaming it under them would break each, so moving a kept
-   runner's home is a migration of its own, filed as an issue, not part of this change.
+   runner's home is a migration of its own (#7114), not part of this change.
