@@ -609,7 +609,7 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -633,7 +633,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -699,7 +699,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -790,7 +790,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
         crate::dispatchgrant::Covers::Unread
@@ -865,7 +865,7 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -877,7 +877,7 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, strict());
+    assert_eq!(found.1, broken_accepted());
 }
 
 // ---- The Q308 follow-up, item 1: the sandbox level ------------------------------------------
@@ -1024,6 +1024,13 @@ fn ports_are_never_logged_the_kernel_tells_nothing_it_let_through() {
     let settings = said("[policy]\ntemplate = \"open\"\nports = \"log\"\n");
     assert_eq!(settings.mode(Family::Ports), Mode::Enforce);
     assert!(!settings.refused.is_empty());
+    // Only `ports` is enforced: the rest of the project's policy stands (the review of #7105).
+    assert_eq!(settings.template, Template::Open);
+    assert_eq!(settings.mode(Family::Network), Mode::Off);
+    assert_eq!(settings.mode(Family::GuardsGit), Mode::Off);
+    // A value purlis cannot read still makes the whole policy strict.
+    let unread = said("[policy]\ntemplate = \"open\"\nports = \"loud\"\n");
+    assert_eq!(unread.template, Template::Strict);
     for template in Template::ALL {
         assert_ne!(
             template.mode(Family::Ports),
@@ -1036,4 +1043,34 @@ fn ports_are_never_logged_the_kernel_tells_nothing_it_let_through() {
         said("[policy]\nports = \"off\"\n").mode(Family::Ports),
         Mode::Off
     );
+}
+
+#[test]
+fn a_team_off_answer_the_project_never_committed_never_lowers_the_accepted_level() {
+    // The review of #7105: the team's-off answer is kept unsealed, so it lowers the sealed level
+    // only for an off the project committed and still says, which this person accepted.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    crate::sandbox::local::answer_team_off(
+        root.path(),
+        crate::sandbox::local::TeamOffAnswer { accepted: true },
+    )
+    .expect("an answer written beside the seal");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_broken_acceptance_runs_the_full_sandbox_never_the_floor() {
+    // The review of #7105: a broken acceptance is never looser than the full sandbox it may have
+    // kept.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert!(broken(root.path()));
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(accepted(root.path()), broken_accepted());
 }

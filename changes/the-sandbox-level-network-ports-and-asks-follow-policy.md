@@ -7,5 +7,6 @@
 - **`network`, `ports` and folder and socket asks follow `[policy]`.** With `network` off or
   logged, a chat's proxy carries a host nothing lists instead of asking. `ports = "off"` lets a
   wrapped chat reach local sockets and ports of this Mac (purlis's own excepted); `ports` takes no
-  `log`. With `asks` off or logged, a folder a chat may be granted is allowed for it and logged;
-  a socket is allowed so only under `asks = "off"` (Q328).
+  `log`. With `asks` off or logged, a folder of the project a chat may be granted is allowed for it
+  and logged, while a folder a later program loads code from still asks; a socket is allowed so
+  only under `asks = "off"`. A host you kept blocked stays blocked in every mode (Q328).

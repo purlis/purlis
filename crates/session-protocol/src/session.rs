@@ -604,13 +604,6 @@ pub const KNOWS_PAGES_SHOWN: Version = Version {
     minor: 90,
 };
 
-/// The version that first takes the families a window does not enforce for a confinement
-/// ([`Confine::lifted`]), and tells what it let through for them: an older host reads none.
-pub const KNOWS_LIFTED: Version = Version {
-    major: 1,
-    minor: 91,
-};
-
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
 /// T1-34): none is sent to a host before.
 pub const KNOWS_ALLOW_NEXT: Version = Version {

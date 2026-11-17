@@ -3774,11 +3774,13 @@ pub(crate) const ASK_ANSWERED_RULE: &str = purlis_core::enforcement::RULE_SANDBO
 /// **A folder or socket ask the project's `[policy]` answers itself** (Q308a; the Q308
 /// follow-up, item 3): where `asks` is off or logged ([`answers`]: a socket under off alone), a
 /// block whose Notice would offer Allow for a folder to write or a local socket is answered
-/// Allow **for this chat**, with nobody asked,
-/// and a line in the chat's enforcement log where the family logs. It is the very grant the
-/// Notice's Allow makes ([`judged_and_kept`]): judged by the core, so a denial class, a folder
-/// off the allowlist and a policy lock are refused as they always were, and then the Notice is
-/// raised as before; audited; and taken at the chat's restart once its turn ends. The person's
+/// Allow **for this chat**, with nobody asked, and a line naming it in the chat's enforcement log
+/// where the family logs. A folder is answered only in the project or a folder the person
+/// listed ([`sandbox::grant::unasked_write`]): never a held folder a later program loads code
+/// from, nor one the floor holds on `PATH`, which still raise the Notice. It is the very grant
+/// the Notice's Allow makes ([`judged_and_kept`]): judged by the core, so a denial class, a
+/// folder off the allowlist and a policy lock are refused as they always were, and then the
+/// Notice is raised as before; audited; and taken at the chat's restart once its turn ends. The person's
 /// Keep blocked and an administrator's lock still hold. `true` where it was answered, and no
 /// Notice is owed.
 pub(crate) fn answered_by_the_policy(
@@ -3787,7 +3789,7 @@ pub(crate) fn answered_by_the_policy(
     network: Option<&purlis_core::sandboxblock::record::Record>,
 ) -> bool {
     use crate::hooks::BlockOffer;
-    use purlis_core::enforcement::{self, Family, Mode};
+    use purlis_core::enforcement::{self, Family};
     let what = match told.offer {
         BlockOffer::Write => GrantWhat::Write,
         BlockOffer::Socket => GrantWhat::Socket,
@@ -3801,12 +3803,39 @@ pub(crate) fn answered_by_the_policy(
     };
     let root = held.root();
     let mode = enforcement::mode(root, Family::Asks);
+    answered_at(held, told, (what, target), network, mode)
+}
+
+/// [`answered_by_the_policy`] with `asks` at `mode`, as the project's `[policy]` resolved it.
+pub(crate) fn answered_at(
+    held: &crate::planes::Held,
+    told: &crate::hooks::ChatBlocked,
+    (what, target): (GrantWhat, &str),
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    mode: purlis_core::enforcement::Mode,
+) -> bool {
+    use purlis_core::enforcement::{self, Family, Mode};
     if !answers(what, mode) {
         return false;
     }
+    let root = held.root();
+    let machine = sandbox::Machine::this();
+    // **Never a folder a later program loads code from** (the review of #7105, blocker 1): a
+    // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
+    // Only the project and the folders the person listed are answered; the rest still raise
+    // the Notice, in every mode.
+    if what == GrantWhat::Write {
+        let Some(folder) = held.chats().folder_of(told.session) else {
+            return false;
+        };
+        let ground = sandbox::grant::Ground::of(root, &folder, &machine);
+        if sandbox::grant::unasked_write(target, &ground).is_err() {
+            return false;
+        }
+    }
     let answered = judged_and_kept(
         root,
-        &sandbox::Machine::this(),
+        &machine,
         held.chats(),
         Some(told.session),
         (what, target, GrantLevel::Chat),
@@ -3821,7 +3850,8 @@ pub(crate) fn answered_by_the_policy(
             .chats()
             .id_of(told.session)
             .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
-        enforcement::record(root, &chat, Family::Asks, ASK_ANSWERED_RULE, None);
+        // The line names what was allowed, so the person can read back what the policy let in.
+        enforcement::record(root, &chat, Family::Asks, ASK_ANSWERED_RULE, Some(target));
     }
     true
 }

@@ -3622,3 +3622,97 @@ fn the_policy_answers_a_folder_under_off_or_log_and_a_socket_under_off_alone() {
         assert!(!super::answers(what, Mode::Enforce), "{what:?}");
     }
 }
+
+/// **A folder a later program loads code from still asks under `watch`** (the review of #7105,
+/// blocker 1): `asks` logs there, so a folder of the project is answered Allow for the chat with
+/// nobody asked, but a held folder the Notice would lift for this chat (fish's
+/// `vendor_conf.d`, here) is never answered by the policy, and its Notice is raised.
+#[test]
+fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_code_still_asks() {
+    use crate::hooks::{BlockOffer, HeardBlock, blocked};
+    use purlis_core::enforcement::{Family, Mode, Template};
+    use purlis_core::engine::Size;
+    use purlis_core::hookwire::SandboxBlocked;
+    use purlis_core::reopen::Chat;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    // What `watch`, the shipped default, runs `asks` at.
+    assert_eq!(Template::Watch.mode(Family::Asks), Mode::Log);
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("its manifest");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("it is open");
+    let session = held
+        .chats()
+        .start(
+            &Chat {
+                program: "/bin/sleep".to_owned(),
+                args: vec!["5".to_owned()],
+                name: "steward 1".to_owned(),
+                cwd: Some(root.clone()),
+                ..Default::default()
+            },
+            Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("started");
+    let told = |target: &str| crate::hooks::ChatBlocked {
+        offer: BlockOffer::Write,
+        target: Some(target.to_owned()),
+        session,
+        ours: false,
+        quiet: None,
+        ..blocked(
+            &plane,
+            &HeardBlock::from(SandboxBlocked {
+                chat: session,
+                sandbox_blocked: Block {
+                    operation: Operation::Write,
+                    kind: Kind::Home,
+                    ours: false,
+                },
+                harness: Some("claude".to_owned()),
+                target: Some(target.to_owned()),
+                read_back: false,
+                suggested: None,
+            }),
+        )
+    };
+    let answered = |target: &str, mode: Mode| {
+        answered_at(&held, &told(target), (GrantWhat::Write, target), None, mode)
+    };
+    let home = sandbox::Machine::this().home.expect("a home folder");
+    for later in [
+        ".local/share/fish/vendor_conf.d",
+        ".local/share/nvim/site/plugin",
+        ".config/gh",
+    ] {
+        let later = home.join(later).display().to_string();
+        assert!(!answered(&later, Mode::Log), "{later} still asks");
+        assert!(!answered(&later, Mode::Off), "{later} still asks");
+    }
+    let out = root.join("out");
+    std::fs::create_dir_all(&out).expect("a folder of the project");
+    let out = out.display().to_string();
+    assert!(!answered(&out, Mode::Enforce), "enforced, it asks");
+    assert!(
+        answered(&out, Mode::Log),
+        "a folder of the project is allowed"
+    );
+    assert!(held.chats().holds_for(
+        session,
+        &sandbox::grant::What::Write(std::path::PathBuf::from(&out))
+    ));
+    // Nothing of later code was kept for the chat.
+    assert!(!held.chats().holds_for(
+        session,
+        &sandbox::grant::What::Write(home.join(".config/gh"))
+    ));
+}

@@ -464,6 +464,10 @@ pub struct Settings {
     /// What the table holds that purlis could not read, one sentence each, for the window's
     /// Notice. Each was taken in the strict direction.
     pub refused: Vec<String>,
+    /// What the table says that purlis read, but enforces in place of what it says, one
+    /// sentence each: `log` for a family that takes off or enforce only. Said in the Notice with
+    /// [`Self::refused`], but it makes only its own family stricter, never the whole policy.
+    taken: Vec<String>,
 }
 
 impl Settings {
@@ -479,6 +483,10 @@ impl Settings {
             said.template_said = true;
             said.overrides.clear();
         }
+        // A `log` a family does not take is that family enforced, and said (the review of
+        // #7105): read, so never the whole policy strict.
+        let taken = std::mem::take(&mut said.taken);
+        said.refused.extend(taken);
         said
     }
 
@@ -574,7 +582,7 @@ impl Settings {
         match value.as_str().and_then(Mode::parse) {
             Some(Mode::Log) if !family.logs() => {
                 self.overrides.insert(family, Mode::Enforce);
-                self.refused.push(format!(
+                self.taken.push(format!(
                     "{TABLE}.{key} takes off or enforce, so log is enforced"
                 ));
             }
@@ -607,6 +615,7 @@ impl Settings {
                 // No level of its own: what this person accepted holds, never a looser one.
                 sandbox: None,
                 refused: vec![why],
+                taken: Vec::new(),
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
@@ -896,8 +905,9 @@ pub fn committed(root: &Path) -> Resolved {
 ///
 /// **The team's off is the sandbox family's press** (the follow-up's item 1): the person's answer
 /// to a committed `[sandbox] mode = "off"` ([`crate::sandbox::team::answer`]) is what they
-/// accepted of the level while it is kept: Accept is no sandbox, and Keep it on for me never
-/// below the floor. A broken acceptance is never loosened by it.
+/// accepted of the level while it is kept: Accept is no sandbox, only for an off the project
+/// committed and still says, and Keep it on for me never below the floor. A broken acceptance is
+/// never loosened by it, and runs the full sandbox.
 pub fn accepted(root: &Path) -> Resolved {
     use crate::sandbox::local::PolicyAccepted;
     let kept = match crate::sandbox::local::policy_accepted_record(root) {
@@ -905,14 +915,28 @@ pub fn accepted(root: &Path) -> Resolved {
         PolicyAccepted::Never => {
             Resolved::of(&Settings::default(), &crate::sandbox::policy::Locks::none())
         }
-        PolicyAccepted::Broken => return Resolved::all(Mode::Enforce),
+        // Every family enforced, and the full sandbox: never the floor, which would loosen a
+        // full sandbox that was kept (the review of #7105).
+        PolicyAccepted::Broken => return broken_accepted(),
     };
     let level = kept.level();
-    match crate::sandbox::local::team_off_answer(root) {
-        Some(answer) if answer.accepted => kept.at_level(SandboxLevel::Off),
-        Some(_) => kept.at_level(level.max(SandboxLevel::Floor)),
-        None => kept,
+    // The answer is kept unsealed, so it lowers the sealed level only for an off the project
+    // committed and still says, which this person accepted ([`crate::sandbox::team::team_off`]);
+    // Keep it on for me only ever raises it (the review of #7105).
+    use crate::sandbox::team::{TeamOff, team_off};
+    if matches!(team_off(root), TeamOff::Accepted(_)) {
+        return kept.at_level(SandboxLevel::Off);
     }
+    match crate::sandbox::local::team_off_answer(root) {
+        Some(answer) if !answer.accepted => kept.at_level(level.max(SandboxLevel::Floor)),
+        _ => kept,
+    }
+}
+
+/// **What a broken acceptance counts as** ([`accepted`]): every family enforced, at the full
+/// sandbox.
+pub fn broken_accepted() -> Resolved {
+    Resolved::all(Mode::Enforce).at_level(SandboxLevel::Full)
 }
 
 /// **Whether what this person accepted was kept and is not here now** (the M75 review): removed,

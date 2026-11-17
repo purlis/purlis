@@ -516,7 +516,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             "network": {
                 "allowedDomains": compiled.hosts,
                 "strictAllowlist": true,
-                "allowAllUnixSockets": every_unix_socket(compiled),
+                "allowAllUnixSockets": false,
                 "allowLocalBinding": false,
             },
             "filesystem": filesystem,
@@ -542,18 +542,15 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     }
 }
 
-/// **Whether a chat's Claude Code sandbox lets it connect to every local socket**: only where the
-/// project's `[policy]` turns `ports` off ([`super::Widened::every_local`], the Q308 follow-up,
-/// item 5).
-///
-/// **`allowLocalBinding` stays `false` even then, on purpose.** In Claude Code it opens every
-/// loopback port at once, and nothing after it can hold one back, so purlis's own listeners
-/// (another chat's proxy, a door) would be reached with them: a chat could leave through
-/// another's proxy, past its own network policy. A Claude Code chat reaches a service on this
-/// Mac by its one port, through its proxy ([`super::localport`]), as before.
-fn every_unix_socket(compiled: &Compiled) -> bool {
-    compiled.widened.every_local.is_some()
-}
+// **A Claude Code chat's sandbox never opens every local socket or every loopback port**, even
+// where the project's `[policy]` turns `ports` off ([`super::Widened::every_local`], the Q308
+// follow-up, item 5; the review of #7105): `allowAllUnixSockets` and `allowLocalBinding` each
+// open them all at once, and nothing after them can hold one back, so purlis's own (every hook
+// socket, the session host's, another chat's proxy and doors) would be reached with them: a
+// chat could leave through another's proxy, past its own network policy. A Claude Code chat
+// reaches a local socket a person allowed by its path, and a service on this Mac by its one
+// port, through its proxy ([`super::localport`]), as before. Only a wrapped chat's profile,
+// which can hold purlis's own after the lift ([`super::seatbelt::every_local_held`]), lifts.
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
 /// denial class, and the floor's held folders, with every other folder writable), and its
@@ -575,7 +572,7 @@ fn floor(
         "allowUnsandboxedCommands": false,
         "enableWeakerNetworkIsolation": compiled.widened.trust,
         "network": {
-            "allowAllUnixSockets": every_unix_socket(compiled),
+            "allowAllUnixSockets": false,
             "allowLocalBinding": false,
         },
         "filesystem": filesystem,

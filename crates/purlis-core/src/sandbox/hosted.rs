@@ -79,6 +79,9 @@ pub fn start(
     let planned_as = Plan::from_wire(&confine.plan)?;
     let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
     let root = project_path.to_path_buf();
+    // This machine's own locks hold over what the window named (the review of #7105): a family
+    // an administrator holds enforced here is never lifted, whoever relayed the chat.
+    let locks = super::policy::Locks::of(project_path);
     let board = (confine.asks && hosts_askable(planned, project_path)).then(|| {
         Asking {
             tell: {
@@ -100,11 +103,21 @@ pub fn start(
             // to the window, which knows the chat and writes its line (the follow-up, item 3).
             // Only the app resolves the policy: a confinement the window named nothing for, the
             // host's own composed start among them, asks as before.
-            answered: lifted(confine, crate::enforcement::Family::Asks, &tell),
+            answered: lifted(
+                &confine.lifted,
+                crate::enforcement::Family::Asks,
+                &locks,
+                &tell,
+            ),
         }
         .board()
     });
-    let network = lifted(confine, crate::enforcement::Family::Network, &tell);
+    let network = lifted(
+        &confine.lifted,
+        crate::enforcement::Family::Network,
+        &locks,
+        &tell,
+    );
     let telling = Telling {
         refusals: egress::Refusals::telling({
             let tell = Arc::clone(&tell);
@@ -161,14 +174,19 @@ pub fn start(
 }
 
 /// **What a confinement tells of a host it let through only because the window named `family`
-/// as not enforced for its chat** ([`session::Confine::lifted`], 1.91): told to the window as
-/// [`SandboxTold::Lifted`]. None where the window did not name it, and the family is enforced.
+/// as not enforced for its chat** (`named`, [`session::Confine::lifted`], 1.91): told to the
+/// window as [`SandboxTold::Lifted`]. None, and the family is enforced, where the window did not
+/// name it, or where `locks`, this machine's, hold it enforced: a runner applies its own locks
+/// over what a desktop relays.
 fn lifted(
-    confine: &session::Confine,
+    named: &[String],
     family: crate::enforcement::Family,
+    locks: &super::policy::Locks,
     tell: &Tell,
 ) -> Option<super::asks::Answered> {
-    if !confine.lifted.iter().any(|named| named == family.key()) {
+    if !named.iter().any(|named| named == family.key())
+        || locks.enforcement_floor(family) == Some(crate::enforcement::Mode::Enforce)
+    {
         return None;
     }
     let tell = Arc::clone(tell);

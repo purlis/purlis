@@ -1905,3 +1905,109 @@ fn with_network_not_enforced_this_machine_is_still_refused() {
     assert!(listener.accept().is_err(), "the proxy reached this machine");
     assert!(told.lock().unwrap().is_empty());
 }
+
+/// A proxy that lifts `network` over `reach`, with `serving`'s other parts, and what it was told.
+fn lifting_with(
+    reach: Reach,
+    serving: impl FnOnce(super::Serving) -> super::Serving,
+) -> (Proxy, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let proxy = Proxy::serving(serving(super::Serving {
+        network: Some({
+            let told = std::sync::Arc::clone(&told);
+            std::sync::Arc::new(move |host: &str, port: u16| {
+                told.lock().unwrap().push(super::host_and_port(host, port));
+            })
+        }),
+        ..super::Serving::of(reach)
+    }))
+    .expect("a proxy");
+    (proxy, told)
+}
+
+/// A link-local or cloud metadata address is never carried by a lift of `network`: refused as
+/// this machine is, before any ask, and never told as lifted.
+#[test]
+fn with_network_not_enforced_a_metadata_address_is_still_refused() {
+    let (proxy, told) = lifting();
+    for target in [
+        "169.254.169.254:80",
+        "[fd00:ec2::254]:80",
+        "169.254.1.1:443",
+    ] {
+        let said = status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{target}");
+    }
+    let told = told.lock().unwrap().clone();
+    assert!(told.is_empty(), "{told:?}");
+}
+
+/// A host an administrator's policy pins as never allowed is refused under a lift of `network`,
+/// as it is with the family enforced.
+#[test]
+fn with_network_not_enforced_a_host_policy_pins_as_never_allowed_is_still_refused() {
+    let never = crate::sandbox::hosts::Host::parse("never.invalid").expect("a host");
+    let (proxy, told) = lifting_with(none().never(vec![never]), |serving| serving);
+    for target in ["never.invalid:443", "never.invalid:8443"] {
+        let said = status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{target}");
+    }
+    let told = told.lock().unwrap().clone();
+    assert!(told.is_empty(), "{told:?}");
+}
+
+/// **Keep blocked holds in every mode** (Q308b; the review of #7105, blocker 2): under `team`,
+/// whose `network` logs, a host the person kept blocked from its Notice is refused on the next
+/// attempt, and never told as lifted; another host is still carried.
+#[test]
+fn with_network_not_enforced_a_host_kept_blocked_is_refused_on_the_next_attempt() {
+    use crate::enforcement::{Family, Mode, Template};
+    assert_eq!(Template::Team.mode(Family::Network), Mode::Log);
+    let asks = std::sync::Arc::new(crate::sandbox::asks::Asks::timed(
+        std::sync::Arc::new(|_| {}),
+        Duration::from_millis(300),
+        Duration::from_millis(20),
+    ));
+    let (proxy, told) = lifting_with(none(), |serving| super::Serving {
+        asks: Some(std::sync::Arc::clone(&asks)),
+        ..serving
+    });
+    let connect = |target: &str| {
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        )
+    };
+    // Lifted, so tried: `.invalid` never resolves.
+    assert_eq!(connect("kept.invalid:443"), "HTTP/1.1 502 Bad Gateway");
+    asks.keep_blocked(&crate::sandbox::hosts::Host::parse("kept.invalid").expect("a host"));
+    assert_eq!(connect("kept.invalid:443"), "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "kept.invalid", 443), 2);
+    assert_eq!(connect("other.invalid:443"), "HTTP/1.1 502 Bad Gateway");
+    assert_eq!(
+        *told.lock().unwrap(),
+        ["kept.invalid:443", "other.invalid:443"]
+    );
+}
+
+/// A confined extension's proxy carries only what its question names: a lift of `network` never
+/// reaches it.
+#[test]
+fn with_network_not_enforced_a_confined_proxy_still_refuses_a_host_nothing_lists() {
+    let (proxy, told) = lifting_with(none(), |serving| super::Serving {
+        confined: true,
+        ..serving
+    });
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(told.lock().unwrap().is_empty());
+}
