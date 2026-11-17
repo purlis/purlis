@@ -11,6 +11,7 @@ import type {
   PoolLink,
   PoolNamedBy,
   PoolProfileRow,
+  PoolRemoval,
   PoolRow,
   PoolVersion,
   PoolsShown,
@@ -88,6 +89,9 @@ let namedBy: PoolNamedBy[];
 let heldRunners: string[];
 /** What each removal was told to discard (#4860). */
 let discarded: unknown[];
+/** What Remove answers, where a test says: a `throw`n refusal or a PoolRemoval. */
+let removeCame: { refused: string } | PoolRemoval | undefined;
+let forgotten: unknown[];
 /** Every command the window sent, in order (#6271). */
 let calls: { cmd: string; args: unknown }[];
 
@@ -142,6 +146,8 @@ beforeEach(() => {
   namedBy = [];
   heldRunners = [];
   discarded = [];
+  removeCame = undefined;
+  forgotten = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -240,9 +246,16 @@ beforeEach(() => {
       if (cmd === "remove_docker_pool") {
         removed.push(a.name);
         discarded.push(a.discarding);
+        if (removeCame !== undefined && "refused" in removeCame) throw removeCame.refused;
+        if (removeCame !== undefined) return removeCame;
         pools = pools.filter((one) => one.name !== a.name);
         clusters = clusters.filter((one) => one.name !== a.name);
         return null;
+      }
+      if (cmd === "forget_docker_pool") {
+        forgotten.push(a.name);
+        pools = pools.filter((one) => one.name !== a.name);
+        return "Runner build-box's container c0ffee and its home volume purlis-home-build-box stay on lab.";
       }
       return null;
     },
@@ -1477,6 +1490,55 @@ describe("A cluster pool (#3292)", () => {
     await within(group).findByRole("radiogroup", { name: "Who can sign in to lab?" });
     expect(within(group).getByText(/If lab's CA ever changes/)).toBeInTheDocument();
     expect(within(group).queryByText(/key ever changes/)).toBeNull();
+  });
+
+  const removeIt = async (group: HTMLElement, name: string) => {
+    await userEvent.click(
+      await within(group).findByRole("button", { name: `Remove pool ${name}` }),
+    );
+    const asked = await screen.findByRole("alertdialog", { name: `Remove pool ${name}?` });
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+  };
+  const NO_ANSWER =
+    "lab didn't answer on port 22. Check that it's on and on this network, and connect your VPN if you use one.";
+
+  it("on another machine that doesn't answer offers Forget it here, which forgets the pool here and says what stays there", async () => {
+    pools = [onAnother(true)];
+    removeCame = { state: "unreachable", why: NO_ANSWER, host: "lab" };
+    const group = await poolsGroup();
+    expect(within(group).queryByRole("button", { name: "Forget it here" })).toBeNull();
+    await removeIt(group, "build-box");
+    const forget = await within(group).findByRole("button", { name: "Forget it here" });
+    expect(
+      within(group).getByText(
+        /lab didn.t answer on port 22\..*Nothing was removed\. Forget it here forgets pool build-box on this machine without contacting lab: its runner.s container and home volume stay on lab, and lab still lists this machine as the runner.s peer\./,
+      ),
+    ).toBeInTheDocument();
+    expect(forgotten).toEqual([]);
+    await userEvent.click(forget);
+    await waitFor(() => expect(forgotten).toEqual(["build-box"]));
+    await waitFor(() =>
+      expect(within(group).queryByRole("button", { name: "Remove pool build-box" })).toBeNull(),
+    );
+    expect(
+      await screen.findByText(
+        /container c0ffee and its home volume purlis-home-build-box stay on lab/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "Forget it here" })).toBeNull();
+  });
+
+  it("on another machine that answers and refuses offers no Forget it here", async () => {
+    pools = [onAnother(true)];
+    removeCame = { refused: "lab didn't accept your sign-in." };
+    const group = await poolsGroup();
+    await removeIt(group, "build-box");
+    expect(await screen.findByText(/lab didn.t accept your sign-in/)).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "Forget it here" })).toBeNull();
+    expect(forgotten).toEqual([]);
   });
 
   it("on this machine's own Docker asks nobody who can sign in (#6271)", async () => {

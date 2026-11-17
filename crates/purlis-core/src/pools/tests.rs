@@ -5340,6 +5340,24 @@ fn a_pool_on_a_machine_no_longer_trusted_is_forgotten_here_and_nothing_is_sent_t
     assert!(runners::pools(config.path()).unwrap().is_empty());
 }
 
+/// **A pool forgotten here says its machine still lists this one as its runner's peer** (Remove of
+/// a pool whose machine doesn't answer): the peer is kept in the runner's home, so it goes with
+/// the home volume the words already say how to remove.
+#[test]
+fn a_pool_forgotten_here_says_its_machine_still_lists_this_one_as_its_runners_peer() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    let left = forget_untrusted(config.path(), "first").unwrap();
+
+    assert!(
+        left.contains("build-box still lists this machine as the runner's peer"),
+        "{left}"
+    );
+}
+
 #[test]
 fn a_pool_on_this_machine_is_never_only_forgotten() {
     let config = tempfile::tempdir().unwrap();

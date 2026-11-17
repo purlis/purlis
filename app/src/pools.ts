@@ -18,6 +18,7 @@ import {
   type PoolLimitsPage,
   type PoolNamedBy,
   type PoolProfiles as PoolProfilesAnswered,
+  type PoolRemoval,
   type PoolRemoved,
   type PoolSetupPrefill,
   type PoolVersion,
@@ -89,6 +90,10 @@ export type Held = {
   remade: Readonly<Record<string, string>>;
   /** Why the last removal was refused, or what it left, in the core's words. */
   said: string | undefined;
+  /** The pools whose Remove found their machine doesn't answer, by name: why, in Pool setup's
+   *  words, and the machine, for the row's Forget it here to offer, until the pool is forgotten,
+   *  removed or the Notice dismissed. */
+  unreachable: Readonly<Record<string, { why: string; host: string }>>;
 };
 
 /** A pool's kind: a runner on this machine's Docker, or one in a team's cluster (#3292). */
@@ -108,6 +113,7 @@ const START: Held = {
   remaking: undefined,
   remade: {},
   said: undefined,
+  unreachable: {},
 };
 let held: Held = START;
 const listeners = new Set<() => void>();
@@ -644,16 +650,36 @@ export async function askVersion(name: string) {
 }
 
 /** What a pool's Remove came to (#6270): `removed`, with what could not be removed in `left`
- *  where something stays; or `refused`, with nothing removed and why in `why`. Both in purlis's
+ *  where something stays; or `refused`, with nothing removed and why in `why`, and `host` where
+ *  that is because its machine doesn't answer, so the row offers Forget it here. Both in purlis's
  *  or Docker's words already shown safely. */
-export type RemoveCame = { removed: true; left?: string } | { removed: false; why: string };
+export type RemoveCame =
+  { removed: true; left?: string } | { removed: false; why: string; host?: string };
+
+/** What the core answered a Remove with, as {@link RemoveCame} says it: an answer of no known
+ *  shape is removed with nothing left, as an older core's empty answer was. */
+function removeCameOf(said: Said<PoolRemoval | null>): RemoveCame {
+  if (said.status === "error") return { removed: false, why: said.error };
+  const data = said.data;
+  if (typeof data !== "object" || data === null) return { removed: true };
+  if (data.state === "unreachable") return { removed: false, why: data.why, host: data.host };
+  return typeof data.left === "string" ? { removed: true, left: data.left } : { removed: true };
+}
+
+/** `name`'s entries gone from what is held of each pool, by name. */
+function without<T>(of: Readonly<Record<string, T>>, name: string): Record<string, T> {
+  const left = { ...of };
+  Reflect.deleteProperty(left, name);
+  return left;
+}
 
 /** Removes pool `name`, its runner, its container and its home; answers whether it was removed,
  *  with what could not be, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
  *  is what the person was told: that its runner is on an engine Docker no longer reaches, so nothing
  *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325).
  *  `discarding` names the held runners the person agreed to discard with it (#4860): a runner held
- *  now that it does not name removes nothing. */
+ *  now that it does not name removes nothing. A pool whose machine doesn't answer is kept, and its
+ *  row offers Forget it here ({@link forgetPool}). */
 export async function removePool(
   name: string,
   elsewhere = false,
@@ -664,36 +690,63 @@ export async function removePool(
       removed: false,
       why: `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`,
     };
-  set((was) => ({ ...was, removing: name, said: undefined }));
-  const said = await caught(commands.removeDockerPool(name, elsewhere, [...discarding]));
-  const came: RemoveCame =
-    said.status === "error"
-      ? { removed: false, why: said.error }
-      : said.data === null || said.data === undefined
-        ? { removed: true }
-        : { removed: true, left: said.data };
-  const left = came.removed ? came.left : came.why;
-  set((was) => {
-    const links = { ...was.links };
-    Reflect.deleteProperty(links, name);
-    const versions = { ...was.versions };
-    Reflect.deleteProperty(versions, name);
-    const profiles = { ...was.profiles };
-    Reflect.deleteProperty(profiles, name);
-    const limits = { ...was.limits };
-    Reflect.deleteProperty(limits, name);
-    return {
+  set((was) => ({
+    ...was,
+    removing: name,
+    said: undefined,
+    unreachable: without(was.unreachable, name),
+  }));
+  const came = removeCameOf(
+    await caught(commands.removeDockerPool(name, elsewhere, [...discarding])),
+  );
+  const host = !came.removed ? came.host : undefined;
+  if (!came.removed && host !== undefined) {
+    // Nothing was removed: the row keeps what it knows, and says why with Forget it here.
+    set((was) => ({
       ...was,
       removing: undefined,
-      links,
-      versions,
-      profiles,
-      limits,
-      said: left,
-    };
-  });
+      unreachable: { ...was.unreachable, [name]: { why: came.why, host } },
+    }));
+    return came;
+  }
+  gone(name, came.removed ? came.left : came.why);
   await rereadPools();
   return came;
+}
+
+/** **Forgets pool `name` on this machine without contacting its machine**: its row's Forget it
+ *  here, offered once Remove found that machine doesn't answer. What stays there, and how to
+ *  remove it, is said as a removal's left is. */
+export async function forgetPool(name: string): Promise<void> {
+  if (held.removing !== undefined) return;
+  set((was) => ({ ...was, removing: name, said: undefined }));
+  const said = await caught(commands.forgetDockerPool(name));
+  if (said.status === "error") {
+    set((was) => ({ ...was, removing: undefined, said: said.error }));
+    return;
+  }
+  gone(name, said.data === "" ? undefined : said.data);
+  await rereadPools();
+}
+
+/** Puts away the Notice that pool `name`'s machine doesn't answer: the pool stays. */
+export function dismissUnreachable(name: string) {
+  set((was) => ({ ...was, unreachable: without(was.unreachable, name) }));
+}
+
+/** What the window holds of pool `name` goes, as a removal or forgetting leaves it; `said`, what
+ *  it left or why it was refused, is said under the list. */
+function gone(name: string, said: string | undefined) {
+  set((was) => ({
+    ...was,
+    removing: undefined,
+    links: without(was.links, name),
+    versions: without(was.versions, name),
+    profiles: without(was.profiles, name),
+    limits: without(was.limits, name),
+    unreachable: without(was.unreachable, name),
+    said,
+  }));
 }
 
 /** **What names a pool** (#4678): the projects and workspaces its removal sets back to this
