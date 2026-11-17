@@ -1904,8 +1904,9 @@ pub const CANNOT_START_IN_THE_PICKER: &str =
 
 /// **How each of `pools` stands in the chat picker of the project at `plane`**: read from what
 /// this machine keeps, its Pool setup choices and the plane's personas (read once), and nothing
-/// asked of Docker or a runner, since the picker opens often. A Docker pool with no runner that
-/// starts chats isn't offered. One whose agent identity step was skipped there is offered as the
+/// asked of Docker or a runner, since the picker opens often. A pool whose host doctor found
+/// short of the Landlock purlis's sandbox needs isn't offered, with why (#7084). A Docker pool
+/// with no runner that starts chats isn't offered. One whose agent identity step was skipped there is offered as the
 /// person left it. A pool that isn't a Docker pool kept here is offered as it is: Pool setup
 /// reads only Docker pools so far.
 pub fn in_the_picker(
@@ -1921,8 +1922,12 @@ pub fn in_the_picker(
     pools
         .iter()
         .map(|pool| {
-            let standing = if !kept.iter().any(|one| one.name() == pool) {
+            let kept_pool = kept.iter().find(|one| one.name() == pool);
+            let short = kept_pool.and_then(doctoring::kernel_short_of);
+            let standing = if kept_pool.is_none() {
                 InThePicker::Offered
+            } else if let Some(said) = short {
+                InThePicker::NotOffered(said)
             } else if runners::runner_for(config, pool).is_err() {
                 InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.to_owned())
             } else if skipped
