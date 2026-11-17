@@ -1353,6 +1353,48 @@ impl Transports for ChatsLoseAnImport {
 pub(super) const IMPORTED_LOGIN_IS_THE_PERSONS: &str = "this host's CLI login was imported into purlis, so it is the human's now, and a chat has no \
      forge credential of its own here yet";
 
+/// **An answer read as JSON, past lines a CLI wrote before it** (#6960): where the whole answer
+/// is not JSON, it is read again from its first line that opens an object or an array, once. A
+/// CLI's own warning on its standard output (glab's of a variable it renamed) then costs no
+/// read; anything else that is not JSON is still an error.
+fn past_leading_lines(out: &str) -> Result<Value, serde_json::Error> {
+    let whole = serde_json::from_str(out);
+    if whole.is_ok() {
+        return whole;
+    }
+    let mut at = 0;
+    for line in out.split_inclusive('\n') {
+        if at > 0 && line.trim_start().starts_with(['{', '[']) {
+            return serde_json::from_str(&out[at..]).or(whole);
+        }
+        at += line.len();
+    }
+    whole
+}
+
+/// **An answer read as JSON** (#6960): a CLI's answer, which has no HTTP status, past lines
+/// it wrote before its JSON ([`past_leading_lines`]); a native transport's as it came.
+fn read_json(out: &str, status: Option<u16>) -> Result<Value, serde_json::Error> {
+    match status {
+        None => past_leading_lines(out),
+        Some(_) => serde_json::from_str(out),
+    }
+}
+
+/// An answer's first line, without its control characters and cut to 120 characters, in
+/// quotes, for an error that says what came.
+fn first_line(out: &str) -> String {
+    let line: String = out
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(120)
+        .collect();
+    format!("\"{line}\"")
+}
+
 /// A forge and the transports its requests take: what both backends are built on.
 pub(super) struct Asker {
     pub(super) forge: Forge,
@@ -1398,10 +1440,18 @@ impl Asker {
                 format!("{doing} failed: {}", answer.said(kind)),
             ));
         }
-        serde_json::from_str(&answer.out).map_err(|e| {
+        read_json(&answer.out, answer.status).map_err(|e| {
+            // A CLI's answer has no HTTP status: say which CLI it was (#6960).
+            let version = match answer.status {
+                None => super::cli::version(kind)
+                    .map(|version| format!(" ({version})"))
+                    .unwrap_or_default(),
+                Some(_) => String::new(),
+            };
             ForgeError::new(format!(
-                "{doing}: {} answered malformed JSON: {e}",
-                kind.cli()
+                "{doing}: {}{version} answered malformed JSON: {e}; its first line: {}",
+                kind.cli(),
+                first_line(&answer.out)
             ))
         })
     }
@@ -1520,6 +1570,37 @@ impl Asker {
             return None;
         }
         serde_json::from_str(&answer.out).ok()
+    }
+}
+
+#[cfg(test)]
+mod answer_read_tests {
+    use super::*;
+
+    /// #6960: only a CLI's answer (no HTTP status) is read past a line before its JSON; a
+    /// native transport's answer is JSON from its first byte or an error.
+    #[test]
+    fn only_a_cli_answer_is_read_past_a_leading_line() {
+        let noisy = "A notice of some kind.\n{\"a\": 1}";
+        assert_eq!(read_json(noisy, None).unwrap(), serde_json::json!({"a": 1}));
+        for status in [200, 201, 304] {
+            assert!(read_json(noisy, Some(status)).is_err(), "{status}");
+        }
+        assert!(read_json("{\"a\": 1}", Some(200)).is_ok());
+    }
+
+    /// #6960: the error quotes the answer's first line alone, without control characters, cut
+    /// to 120 characters.
+    #[test]
+    fn the_quoted_line_is_the_first_stripped_of_control_characters_and_cut() {
+        assert_eq!(
+            first_line("\u{1b}[31mWarn\ting\u{7}\r\nsecond line"),
+            "\"[31mWarning\""
+        );
+        assert_eq!(first_line("Not JSON at all\n"), "\"Not JSON at all\"");
+        let long = "x".repeat(300);
+        assert_eq!(first_line(&long), format!("\"{}\"", "x".repeat(120)));
+        assert_eq!(first_line(""), "\"\"");
     }
 }
 

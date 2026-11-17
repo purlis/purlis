@@ -277,3 +277,45 @@ fn the_fact_a4_reads_is_kept_across_a_relaunch() {
     let relaunched = Fact::resumed(prior, Begun::Person, Some(Harness::ClaudeCode), &[]);
     assert_eq!(relaunched.attendance(), Attendance::Attended);
 }
+
+/// #6960 (d): a line that is one merge asking for its help merges nothing, so the release floor
+/// lets it run in a chat nobody is at, as in one the app did not start. A help beside anything
+/// but known boolean flags, spelled singly, is still a merge to the floor.
+#[test]
+fn a_merge_help_runs_unattended() {
+    purlis_core::unsteered!();
+    let unattended = Fact::at_start(Begun::Task, Some(Harness::ClaudeCode), &[]).attendance();
+    assert_eq!(unattended, Attendance::Unattended);
+    for help in [
+        "gh pr merge --help",
+        "gh pr merge 12 --squash -h",
+        "glab mr merge -h",
+        "gh help pr merge",
+    ] {
+        assert_eq!(
+            refused_by(
+                help,
+                Some(unattended),
+                Some("claude"),
+                Some("bypassPermissions")
+            ),
+            None,
+            "{help} was refused in an unattended chat"
+        );
+        assert_eq!(
+            refused_by(help, None, Some("claude"), Some("bypassPermissions")),
+            None,
+            "{help} was refused in an unattended harness the app did not start"
+        );
+    }
+    for merge in [
+        "gh pr merge 12 -st -h",
+        "gh pr merge --help; gh pr merge 12",
+    ] {
+        assert_eq!(
+            refused_by(merge, None, Some("claude"), Some("bypassPermissions")),
+            Some(Arm::ReleaseFloor),
+            "{merge} ran unattended"
+        );
+    }
+}
