@@ -228,8 +228,9 @@ pub fn unread_said(root: &Path) -> String {
         .to_string();
     format!(
         "purlis could not read the list of pairs you said never to ({shown} in this project), \
-         so it changed nothing there and no dispatch grant counts until it reads. Fix that \
-         file, or delete it to say never to nothing."
+         or it was changed or removed by something other than purlis's app, so it changed \
+         nothing there and no dispatch grant counts until it reads. Restore that file as \
+         purlis last wrote it."
     )
 }
 
@@ -254,14 +255,60 @@ fn change(root: &Path, how: impl FnOnce(&mut Vec<Entry>)) -> io::Result<()> {
         serde_json::to_string_pretty(&whole)
             .map(|text| Some(format!("{text}\n")))
             .map_err(io::Error::other)
-    })
-    .map(|_| ())
+    })?;
+    // The app keeps the seal of what it wrote (the review of #6992, S4).
+    sealed_as_written(root);
+    Ok(())
+}
+
+/// The kind the nevers file's presence marker is sealed as.
+const SEAL_KIND: &str = "dispatch-nevers";
+
+/// The file's text as it stands, or none where it is not there.
+fn text_on_disk(root: &Path) -> String {
+    std::fs::read_to_string(path(root)).unwrap_or_default()
+}
+
+/// Keeps the seal of the file as it stands now, where this process is the app.
+fn sealed_as_written(root: &Path) {
+    let clone = crate::sandbox::local::anchor_key(root);
+    crate::secrets::seal::keep(SEAL_KIND, &clone, &text_on_disk(root));
+}
+
+/// **Whether the file is as the app last wrote it** (the review of #6992, S4): a presence
+/// marker the app seals in the keyring, so a nevers file deleted or edited by anything else —
+/// a chat that runs without a sandbox, say — is told from one nobody ever wrote, and reads as
+/// [`Nevers::Unread`], which refuses every dispatch across personas until the person fixes it.
+/// Only the app verifies it; the first read in the app of a file it never sealed seals it as
+/// it stands.
+fn as_the_app_left_it(root: &Path) -> bool {
+    if !crate::enforcement::in_the_app() {
+        return true;
+    }
+    // An acceptance of the project's `[policy]` that was kept and is not here now (the M75
+    // review): the nevers it may have carried are unknown, so every dispatch across personas is
+    // refused until the person presses again.
+    if crate::enforcement::broken(root) {
+        return false;
+    }
+    let clone = crate::sandbox::local::anchor_key(root);
+    let text = text_on_disk(root);
+    match crate::secrets::seal::kept_holds(SEAL_KIND, &clone, &text) {
+        Some(holds) => holds,
+        None => {
+            crate::secrets::seal::keep(SEAL_KIND, &clone, &text);
+            true
+        }
+    }
 }
 
 /// **The pairs the person said never to in the project at `root`**, or that the record does
 /// not read. What an earlier build left in `app/sandbox.json` is moved here first, and is
 /// counted either way.
 pub fn read(root: &Path) -> Nevers {
+    if !as_the_app_left_it(root) {
+        return Nevers::Unread;
+    }
     let Some(left) = crate::sandbox::local::legacy_dispatch_nevers(root) else {
         return Nevers::Unread;
     };

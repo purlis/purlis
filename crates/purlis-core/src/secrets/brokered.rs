@@ -4400,12 +4400,14 @@ pub(crate) fn serve_recorded(
         let _ = spawned.wait();
         return;
     }
+    // The app runs this for a chat it knows by number, not by id: a masking the project lets go
+    // under `log` is let go with no line (Q308a).
     let code = run(
         spawned,
         &group,
         reader,
         &mut *writer,
-        &prepared.secret_values,
+        super::masked_of(&ctx.root, None, &prepared.secret_values),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()

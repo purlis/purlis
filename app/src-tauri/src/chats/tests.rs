@@ -198,6 +198,7 @@ fn with_no_notice_to_raise_a_held_connection_is_refused_at_once() {
             ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709"),
+        None,
     )
     .board(&purlis_core::sandbox::timings::Timings::production());
     let quick = |host: &str| {
@@ -252,6 +253,7 @@ fn a_live_ask_is_held_for_its_chat_and_the_window_told_though_no_notice_went_up(
             ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-2"),
+        None,
     )
     .board(&purlis_core::sandbox::timings::Timings::production());
     let held = {
@@ -300,6 +302,7 @@ fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
             ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-3"),
+        None,
     )
     .board(&purlis_core::sandbox::timings::Timings::production());
     let many = purlis_core::sandboxblock::AT_MOST_PER_RESULT + 2;
@@ -363,6 +366,7 @@ fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiti
             ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-290"),
+        None,
     )
     .tell;
     let call = |tool: &str| purlis_core::hookwire::ToolCall {
@@ -451,6 +455,7 @@ fn a_waiting_once_used_up_or_put_out_is_audited_for_its_chat() {
             ended: Arc::clone(&chats.nexts_ended),
         },
         std::env::temp_dir().join("purlis-no-such-project-t1-34"),
+        None,
     )
     .tell;
     tell(Heard::UsedNext("registry.example.com:443".to_owned()));
@@ -621,6 +626,7 @@ fn a_chats_hooks_are_told_its_folder_and_only_a_sandboxed_chat_is_called_sandbox
         Some(Path::new("/plane/workspaces/a")),
         false,
         None,
+        None,
     );
     assert_eq!(
         of(&env, "PURLIS_SANDBOXED"),
@@ -631,7 +637,13 @@ fn a_chats_hooks_are_told_its_folder_and_only_a_sandboxed_chat_is_called_sandbox
         of(&env, "PURLIS_CHAT_DIR").as_deref(),
         Some("/plane/workspaces/a")
     );
-    what_its_hooks_read(&mut env, Some(Path::new("/plane/workspaces/a")), true, None);
+    what_its_hooks_read(
+        &mut env,
+        Some(Path::new("/plane/workspaces/a")),
+        true,
+        None,
+        None,
+    );
     assert_eq!(of(&env, "PURLIS_SANDBOXED").as_deref(), Some("1"));
     assert_eq!(
         env.iter().filter(|(n, _)| n == "PURLIS_CHAT_DIR").count(),
@@ -656,7 +668,13 @@ fn a_chats_harness_is_told_its_id_by_the_app_and_never_by_a_profile() {
         ("CHARTER_CHAT_ULID".to_owned(), "someone-else".to_owned()),
         ("CHARTER_SANDBOXED".to_owned(), "1".to_owned()),
     ];
-    what_its_hooks_read(&mut env, None, false, Some("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    what_its_hooks_read(
+        &mut env,
+        None,
+        false,
+        Some("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"),
+        None,
+    );
     assert_eq!(
         of(&env, purlis_core::hookwire::CHAT_ID_ENV),
         vec!["01J9ZQ3V7K8M2N4P6R8T0V2X4Z".to_owned()]
@@ -665,7 +683,7 @@ fn a_chats_harness_is_told_its_id_by_the_app_and_never_by_a_profile() {
         of(&env, purlis_core::hookwire::SANDBOXED_ENV).is_empty(),
         "a profile cannot claim it under its old name either"
     );
-    what_its_hooks_read(&mut env, None, false, None);
+    what_its_hooks_read(&mut env, None, false, None, None);
     assert!(of(&env, purlis_core::hookwire::CHAT_ID_ENV).is_empty());
 }
 
@@ -11889,6 +11907,7 @@ mod moved_on {
                 ended: Arc::new(Mutex::new(None)),
             },
             plane.path().to_path_buf(),
+            None,
         );
         let board = Arc::new(Asks::timed(asking.tell, hold, Duration::from_millis(10)));
         let mut chat = a_resumable_chat_in(plane.path());
@@ -12349,6 +12368,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
             ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-290-log"),
+        None,
     )
     .tell;
     chats.called(&purlis_core::hookwire::ToolCall {

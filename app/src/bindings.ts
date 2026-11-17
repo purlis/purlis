@@ -756,6 +756,19 @@ export const commands = {
 	 */
 	answerTeamSandboxOff: (plane: PlaneId, accept: boolean) => typedError<SandboxState, string>(__TAURI_INVOKE("answer_team_sandbox_off", { plane, accept })),
 	/**
+	 *  **The project's `[policy]` as it stands for you**: what waits for your press, and what the
+	 *  file says that purlis could not read. Off the window's thread: it reads the project's files,
+	 *  the administrator's policy and this machine's acceptance.
+	 */
+	projectPolicyState: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("project_policy_state", { plane })),
+	/**
+	 *  **Your press: accept the project's `[policy]` as its committed file said it when it was
+	 *  shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
+	 *  machine by the app; refused where it cannot be sealed, or where the file changed since it was
+	 *  shown. The window's alone.
+	 */
+	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -14101,6 +14114,31 @@ export type PolicyRefused = {
 	 *  was made.
 	 */
 	until: number | null,
+};
+
+/**  What the window says about the project's `[policy]` on this machine. */
+export type PolicyState = {
+	/**  Each family that waits for your press to loosen. */
+	waiting: PolicyWaiting[],
+	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
+	refused: string[],
+	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
+	unsealed: boolean,
+	/**
+	 *  The digest of the committed text this was read from: what Accept names, so a press on a
+	 *  file that changed since it was shown accepts nothing.
+	 */
+	digest: string,
+};
+
+/**  One family the project now runs looser than you accepted. */
+export type PolicyWaiting = {
+	/**  The family's key, as `[policy]` spells it. */
+	family: string,
+	/**  What you accepted: `off`, `log` or `enforce`. */
+	accepted: string,
+	/**  What the project's file says now. */
+	committed: string,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */

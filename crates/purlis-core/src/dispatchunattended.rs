@@ -236,6 +236,21 @@ pub fn answer_of(
     }
 }
 
+/// **`answer` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50):
+/// under `off` or `log`, a pair nothing covers, and one refused only because the asking chat has
+/// no sandbox ([`Refusal::Unsandboxed`]), is covered. A lock, the person's nevers, a never above
+/// and a nevers record that does not read stand in every mode.
+pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Answer {
+    match answer {
+        Answer::Refused(Refusal::Unsandboxed(_) | Refusal::Missing(_))
+            if mode != crate::enforcement::Mode::Enforce =>
+        {
+            Answer::Covered
+        }
+        other => other,
+    }
+}
+
 /// The words of a harness's command line that start it with its permission prompts off, as a
 /// profile's command would carry them: Claude Code's and Codex's.
 const BYPASS_FLAGS: [&str; 4] = [

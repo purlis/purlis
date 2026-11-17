@@ -2374,6 +2374,7 @@ fn a_chat_the_host_composes_by_its_names_is_heard_by_the_window_and_answered_fro
         more: None,
         reached: None,
         asks: Some(Asking {
+            answered: None,
             tell: {
                 let asked = Arc::clone(&asked);
                 Arc::new(move |heard: Heard| {
@@ -2489,6 +2490,7 @@ fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it
     };
     let asking = || Hearing {
         asks: Some(Asking {
+            answered: None,
             tell: Arc::new(|_| {}),
             askable: Arc::new(|| true),
             known: Arc::new(|_| None),
@@ -2944,6 +2946,7 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     let asked = Arc::new(Mutex::new(Vec::new()));
     let hearing = Hearing {
         asks: Some(Asking {
+            answered: None,
             tell: {
                 let asked = Arc::clone(&asked);
                 Arc::new(move |heard: Heard| {
