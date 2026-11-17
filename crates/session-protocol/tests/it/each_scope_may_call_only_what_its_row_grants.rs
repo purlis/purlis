@@ -243,6 +243,7 @@ fn every_command() -> Vec<Command> {
                 given: Vec::new(),
             },
             asks: true,
+            lifted: Vec::new(),
         })),
         Command::ChangeReach {
             confinement: CONFINEMENT.into(),

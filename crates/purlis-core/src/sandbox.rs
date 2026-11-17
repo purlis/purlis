@@ -4207,6 +4207,19 @@ pub struct Widened {
     /// Whether the chat keeps to its own terminal alone, on macOS: the project's
     /// `own-terminal-only` ([`OWN_TERMINAL_ONLY`]). Nothing a person grants turns it off.
     pub own_terminal_only: bool,
+    /// **Where the project's `[policy]` turns `ports` off** (the Q308 follow-up, item 5): every
+    /// local socket and every port of this Mac's loopback may be connected to, save the ports
+    /// purlis listened on as the chat was compiled, each held still ([`localport::own_now`]).
+    /// `None` holds them as before. Off only, never `log` ([`crate::enforcement::Family::logs`]),
+    /// and only where the app resolved it: every other process compiles it enforced.
+    pub every_local: Option<Vec<u16>>,
+}
+
+/// [`Widened::every_local`] for a chat starting in the project at `root`: purlis's own ports
+/// now, where the project's `[policy]` turns `ports` off ([`crate::enforcement::mode`]).
+pub fn every_local(root: &Path) -> Option<Vec<u16>> {
+    use crate::enforcement::{Family, Mode};
+    (crate::enforcement::mode(root, Family::Ports) == Mode::Off).then(localport::own_now)
 }
 
 impl Widened {
@@ -4231,6 +4244,7 @@ impl Widened {
             listen_only: Vec::new(),
             unserved: Vec::new(),
             lifted: Vec::new(),
+            every_local: every_local(root),
         }
     }
 
@@ -4509,6 +4523,7 @@ impl Compiled {
         let widened = Widened {
             trust: written.certificate_checks,
             own_terminal_only: written.own_terminal_only,
+            every_local: every_local(root),
             ..Widened::default()
         }
         .lifting(grant::still_lifted(
@@ -5587,6 +5602,7 @@ impl Applied {
                     refusals,
                     reached,
                     asks,
+                    network: None,
                 })
             })
             .transpose()
@@ -5638,6 +5654,7 @@ impl Applied {
                 refusals,
                 reached,
                 asks: None,
+                network: None,
             },
         )
     }
@@ -7576,6 +7593,15 @@ pub fn floor_below_full_allowed(root: &Path, locks: &policy::Locks) -> bool {
     team::allowed_levels_under(root, locks).allows(personal::Choice::Floor)
 }
 
+/// **Whether a start that takes no level of a person's runs the full sandbox** in the project at
+/// `root`: its file turned the sandbox on (or an administrator's policy requires it), or the
+/// project's level is the full sandbox (the follow-up's item 1: the `team` template, or a level
+/// this person accepted and the file has since loosened, which waits for their press).
+pub fn project_runs_full(root: &Path, plane: &Plane, locks: &policy::Locks) -> bool {
+    plane.in_force(locks).is_some()
+        || team::allowed_levels_under(root, locks).default == personal::Choice::On
+}
+
 /// [`for_start_granted`] at `at`, a level a person's own setting chose ([`decide_granted`]),
 /// or `None` for the project's own: **the full sandbox** where the project turned it on, or with
 /// the defaults its file says where it has not; **the floor** where the project has not turned
@@ -7605,6 +7631,11 @@ fn for_start_at(
         (Some(_), Some(Level::Floor)) if floor_below_full_allowed(root, &locks) => None,
         (Some(policy), _) => Some(policy),
         (None, Some(Level::Full)) => Some(plane.said().unset.unwrap_or_else(Policy::defaults)),
+        // The project's own level is the full sandbox though its file does not turn it on: its
+        // template's, or one this person accepted (the follow-up's item 1).
+        (None, None) if project_runs_full(root, &plane, &locks) => {
+            Some(plane.said().unset.unwrap_or_else(Policy::defaults))
+        }
         (None, _) => None,
     };
     let Some(policy) = policy else {

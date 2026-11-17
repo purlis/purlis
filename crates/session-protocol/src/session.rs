@@ -586,9 +586,15 @@ use crate::view::{Limits, Views};
 /// `browser_input` may carry the person's Back, Forward, Reload or Stop
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
+///
+/// 1.91 has a window name the families its resolution of the project's policy does not enforce
+/// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
+/// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host before
+/// 1.91 reads no families, and enforces both, as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 90,
+    minor: 91,
 };
 
 /// The version that first tells a browser's views what its page is and takes the person's
@@ -596,6 +602,13 @@ pub const VERSION: Version = Version {
 pub const KNOWS_PAGES_SHOWN: Version = Version {
     major: 1,
     minor: 90,
+};
+
+/// The version that first takes the families a window does not enforce for a confinement
+/// ([`Confine::lifted`]), and tells what it let through for them: an older host reads none.
+pub const KNOWS_LIFTED: Version = Version {
+    major: 1,
+    minor: 91,
 };
 
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
@@ -1595,6 +1608,14 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+    /// **The families the window's resolution of the project's policy does not enforce for this
+    /// chat** (1.91, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
+    /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.91 reads it:
+    /// both enforced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<String>,
 }
 
 /// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
@@ -1759,6 +1780,10 @@ pub enum SandboxTold {
     /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
+    /// It let `target`, a host and port, through only because `family` (one of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.91): the window writes the line of
+    /// the chat's enforcement log where the family logs. Told only where the window named it.
+    Lifted { family: String, target: String },
 }
 
 /// What a [`Command::Start`] asks for.

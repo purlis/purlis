@@ -17,7 +17,7 @@ use crate::planes::{PlaneId, Planes};
 pub struct PolicyWaiting {
     /// The family's key, as `[policy]` spells it.
     pub family: String,
-    /// What you accepted: `off`, `log` or `enforce`.
+    /// What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`.
     pub accepted: String,
     /// What the project's file says now.
     pub committed: String,
@@ -30,6 +30,9 @@ pub struct PolicyState {
     pub waiting: Vec<PolicyWaiting>,
     /// Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile.
     pub refused: Vec<String>,
+    /// The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+    /// where the project's level is no sandbox: said beside the press that would make it so.
+    pub not_in_force: Vec<String>,
     /// Whether this machine keeps an acceptance whose seal does not hold, which counts as none.
     pub unsealed: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
@@ -48,8 +51,19 @@ fn state_of(root: &std::path::Path) -> PolicyState {
                 accepted: accepted.word().to_owned(),
                 committed: committed.word().to_owned(),
             })
+            // The sandbox waits by its level (the follow-up's item 1): `off`, `floor` or `full`.
+            .chain(standing.level.map(|(accepted, committed)| PolicyWaiting {
+                family: enforcement::Family::Sandbox.key().to_owned(),
+                accepted: accepted.word().to_owned(),
+                committed: committed.word().to_owned(),
+            }))
             .collect(),
         refused: standing.refused,
+        not_in_force: standing
+            .not_in_force
+            .into_iter()
+            .map(|family| family.key().to_owned())
+            .collect(),
         unsealed: standing.unsealed,
         digest: standing.digest,
     }

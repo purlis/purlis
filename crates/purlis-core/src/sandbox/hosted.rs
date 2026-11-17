@@ -95,14 +95,16 @@ pub fn start(
             },
             askable: Arc::new(move || askable()),
             known: Arc::new(move |host| super::grant::allowed_already(&root, host).map(By::from)),
-            // The `asks` family off or logged (Q308): answered Allow. The host knows the chat by
-            // its plan alone, so a logged one is let through with no line.
-            answered: (crate::enforcement::mode(project_path, crate::enforcement::Family::Asks)
-                != crate::enforcement::Mode::Enforce)
-                .then(|| -> super::asks::Answered { Arc::new(|_: &str, _: u16| {}) }),
+            // The `asks` family off or logged (Q308), as the window resolved the project's policy
+            // for this chat and named it ([`session::Confine::lifted`]): answered Allow, and told
+            // to the window, which knows the chat and writes its line (the follow-up, item 3).
+            // Only the app resolves the policy: a confinement the window named nothing for, the
+            // host's own composed start among them, asks as before.
+            answered: lifted(confine, crate::enforcement::Family::Asks, &tell),
         }
         .board()
     });
+    let network = lifted(confine, crate::enforcement::Family::Network, &tell);
     let telling = Telling {
         refusals: egress::Refusals::telling({
             let tell = Arc::clone(&tell);
@@ -140,6 +142,7 @@ pub fn start(
             },
         )),
         asks: board.clone(),
+        network,
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
@@ -155,6 +158,27 @@ pub fn start(
         left_out,
         planned,
     })
+}
+
+/// **What a confinement tells of a host it let through only because the window named `family`
+/// as not enforced for its chat** ([`session::Confine::lifted`], 1.91): told to the window as
+/// [`SandboxTold::Lifted`]. None where the window did not name it, and the family is enforced.
+fn lifted(
+    confine: &session::Confine,
+    family: crate::enforcement::Family,
+    tell: &Tell,
+) -> Option<super::asks::Answered> {
+    if !confine.lifted.iter().any(|named| named == family.key()) {
+        return None;
+    }
+    let tell = Arc::clone(tell);
+    let family = family.key().to_owned();
+    Some(Arc::new(move |host: &str, port: u16| {
+        tell(SandboxTold::Lifted {
+            family: family.clone(),
+            target: egress::host_and_port(host, port),
+        });
+    }))
 }
 
 /// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this

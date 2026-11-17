@@ -2568,3 +2568,58 @@ fn the_floors_refusal_of_programs_holds_under_every_policy() {
         }
     }
 }
+
+/// **The floor's socket and localhost holds follow `ports`, off or enforce alone** (the Q308
+/// follow-up, item 5; ruling Q328): kept under `watch`, `hold` and `team` and wherever `ports`
+/// logs (the kernel tells nothing of a connection it let through), and lifted only where the
+/// person pressed a project's `ports = "off"`, purlis's own ports still held. Claude Code's
+/// `allowLocalBinding` stays `false` under every policy: it would open purlis's own listeners too.
+#[test]
+fn the_floors_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off() {
+    let _home = super::local::OwnConfigHome::new();
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    let lifted_in =
+        |profile: &str| profile.contains("(allow network-outbound (remote unix-socket))");
+    for (policy, press, lifted) in [
+        ("", true, false),
+        ("[policy]\ntemplate = \"team\"\n", true, false),
+        ("[policy]\nports = \"log\"\n", true, false),
+        ("[policy]\nports = \"off\"\n", false, false),
+        ("[policy]\nports = \"off\"\n", true, true),
+    ] {
+        let (_dir, root) = project();
+        std::fs::write(root.join("charter.toml"), format!("schema = 1\n{policy}"))
+            .expect("charter.toml");
+        crate::enforcement::at_start(&root);
+        if press {
+            crate::enforcement::press(&root, &crate::enforcement::digest_of(&root))
+                .expect("pressed");
+        }
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
+            // The floor's holds are always written; a lift follows them, so it wins.
+            assert!(profile.contains(super::seatbelt::FLOOR_HELD), "{policy:?}");
+            assert_eq!(
+                lifted_in(&profile),
+                lifted,
+                "{policy:?} {press} {harness:?}"
+            );
+            assert!(profile.contains("(deny job-creation)"), "{policy:?}");
+            if lifted {
+                let at = |rule: &str| profile.find(rule).expect(rule);
+                assert!(at("(remote ip \"localhost:*\"))\n") > at(super::seatbelt::FLOOR_HELD));
+                // The proxy's own port in this process stays purlis's.
+                for port in super::localport::own_now() {
+                    assert!(profile.contains(&format!(
+                        "(deny network-outbound (remote ip \"localhost:{port}\"))"
+                    )));
+                }
+            }
+        }
+        let settings = settings_of(&floor_of(decided(Harness::ClaudeCode, &root, &machine)));
+        let network = &settings.sandbox["network"];
+        assert_eq!(network["allowAllUnixSockets"], lifted, "{policy:?} {press}");
+        assert_eq!(network["allowLocalBinding"], false, "{policy:?} {press}");
+    }
+}

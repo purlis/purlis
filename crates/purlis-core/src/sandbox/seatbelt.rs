@@ -443,8 +443,26 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     {
         own.after.push(super::localport::seatbelt_rule(*port));
     }
+    // The `ports` family off (the Q308 follow-up, item 5): every local socket and every port of
+    // this Mac's loopback, after the floor's and the full profile's holds of them, so it wins;
+    // then purlis's own ports as the chat was compiled, held still.
+    if let Some(own_ports) = &widened.every_local {
+        own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
+        for port in own_ports {
+            own.after.push(format!(
+                "(deny network-outbound (remote ip \"localhost:{port}\"))"
+            ));
+        }
+    }
     Ok(())
 }
+
+/// What the `ports` family off lets a chat connect to ([`super::Widened::every_local`]): every
+/// local socket and every port of this Mac's loopback, which [`FLOOR_HELD`] and the full
+/// profile otherwise hold.
+pub const EVERY_LOCAL: &str = "(allow network-outbound (remote unix-socket))
+(allow network-outbound (remote ip \"localhost:*\"))
+";
 
 /// Lets a wrapped chat serve on each of `ports` (#2019): on its own socket for each in `folder`,
 /// the folder purlis made for the chat, behind the door on that port

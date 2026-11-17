@@ -516,7 +516,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             "network": {
                 "allowedDomains": compiled.hosts,
                 "strictAllowlist": true,
-                "allowAllUnixSockets": false,
+                "allowAllUnixSockets": every_unix_socket(compiled),
                 "allowLocalBinding": false,
             },
             "filesystem": filesystem,
@@ -542,6 +542,19 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     }
 }
 
+/// **Whether a chat's Claude Code sandbox lets it connect to every local socket**: only where the
+/// project's `[policy]` turns `ports` off ([`super::Widened::every_local`], the Q308 follow-up,
+/// item 5).
+///
+/// **`allowLocalBinding` stays `false` even then, on purpose.** In Claude Code it opens every
+/// loopback port at once, and nothing after it can hold one back, so purlis's own listeners
+/// (another chat's proxy, a door) would be reached with them: a chat could leave through
+/// another's proxy, past its own network policy. A Claude Code chat reaches a service on this
+/// Mac by its one port, through its proxy ([`super::localport`]), as before.
+fn every_unix_socket(compiled: &Compiled) -> bool {
+    compiled.widened.every_local.is_some()
+}
+
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
 /// denial class, and the floor's held folders, with every other folder writable), and its
 /// network through the chat's own proxy, whose reach carries every host
@@ -562,7 +575,7 @@ fn floor(
         "allowUnsandboxedCommands": false,
         "enableWeakerNetworkIsolation": compiled.widened.trust,
         "network": {
-            "allowAllUnixSockets": false,
+            "allowAllUnixSockets": every_unix_socket(compiled),
             "allowLocalBinding": false,
         },
         "filesystem": filesystem,

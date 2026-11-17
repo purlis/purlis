@@ -3604,3 +3604,21 @@ fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_bo
     assert!(revoke(root, &chats, &listed[0].id, &audit).is_err());
     assert_eq!(seen.lock().unwrap().len(), 1, "nothing more audited");
 }
+
+/// **Which asks the project's `[policy]` answers itself** (the Q308 follow-up, item 3; ruling
+/// Q328): a folder under `asks` off or log, a socket under off alone, and nothing else.
+#[test]
+fn the_policy_answers_a_folder_under_off_or_log_and_a_socket_under_off_alone() {
+    use purlis_core::enforcement::Mode;
+    for (what, off, log) in [
+        (GrantWhat::Write, true, true),
+        (GrantWhat::Socket, true, false),
+        (GrantWhat::Host, false, false),
+        (GrantWhat::Port, false, false),
+        (GrantWhat::Service, false, false),
+    ] {
+        assert_eq!(super::answers(what, Mode::Off), off, "{what:?}");
+        assert_eq!(super::answers(what, Mode::Log), log, "{what:?}");
+        assert!(!super::answers(what, Mode::Enforce), "{what:?}");
+    }
+}
