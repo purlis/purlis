@@ -151,6 +151,24 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "app/src-tauri/src/runnerlinks.rs",
+        "CHECK_WITHIN",
+        Internal,
+        "how long the check before a link to a Docker runner is waited for",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "FIRST_LINK_WITHIN",
+        Internal,
+        "derived: outlasts the check's and the link protocol's own deadlines",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "SIGN_IN_STARTS_WITHIN",
+        Internal,
+        "derived: the first link's wait and one answer",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
         "KEPT_WITHIN",
         Internal,
         "purlis's own tuning",

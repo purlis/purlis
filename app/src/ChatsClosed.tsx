@@ -22,7 +22,8 @@ import { commands, type ChatCard, type ClosedChat, type PlaneId } from "./bindin
 import { readItOffer, reopenOffer, showLinkedChatOffer, type Offer } from "./actions";
 import { ClosedChatCardPopover } from "./ClosedChatCard";
 import { endedAt } from "./chatEnded";
-import { numberedName } from "./chatNumber";
+import { numberedNameWas } from "./chatNumber";
+import type { FoundClosed } from "./chatsList";
 import { TreeRow } from "./ui/tree/Tree";
 import { RowLabel, RowTrail } from "./ui/list/Row";
 
@@ -88,7 +89,7 @@ export function closedChatsRow({
   onPress,
   onSay,
 }: {
-  closed: readonly ClosedChat[];
+  closed: readonly FoundClosed[];
   plane: PlaneId | undefined;
   /** Runs the card's *Read it* and *Reopen*, and shows a chat open again. */
   onPress?: (offer: Offer) => void;
@@ -128,25 +129,28 @@ function ClosedChatRow({
   onPress,
   onSay,
 }: {
-  chat: ClosedChat;
+  chat: FoundClosed;
   plane: PlaneId;
   onPress?: (offer: Offer) => void;
   onSay?: (said: string) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const [card, setCard] = useState<ChatCard | null>(null);
-  const name = numberedName(chat.number, chat.title);
+  // Found by a number it had before a restart, it says that one too (#6685).
+  const name = numberedNameWas(chat.number, chat.title, chat.foundBy);
   const at = endedAt(chat.ended);
   const choose = () => {
     void commands
-      .chatByNumber(plane, chat.number)
+      // By its own ULID, never the number typed, which another record may answer to (#6740).
+      .chatById(plane, chat.id)
       .then((said) => {
         if (said.status !== "ok") {
           onSay?.(notOpened(chat.number, whyOf(said.error)));
           return;
         }
         const lookup = said.data;
-        if (lookup.is === "ended") setCard(lookup.card);
+        // Found by a number it had before a restart, its card says that one too (#6685).
+        if (lookup.is === "ended") setCard({ ...lookup.card, found_by: chat.foundBy });
         // Open again since the filter read it: that chat, as a link to it shows it.
         else if (lookup.is === "restarted") onPress?.(showLinkedChatOffer(lookup.now));
         else if (lookup.is === "open") onPress?.(showLinkedChatOffer(lookup.number));

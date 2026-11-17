@@ -357,8 +357,9 @@ export function LinkAnswer({
  * the family's rule that an ask starts on its safe answer. `home` is the chat's workspace, or
  * the project for a chat at its root; with none, its row is left out. `chat` is the chat whose
  * output named the file, said under the title as the prototype's S7 draws it (#6355): none for
- * a shell's pane, which is no chat. `runner` names the runner a runner chat's file is on (#6387),
- * and `home` is then the chat's home there: the ask is the same, with the runner's row.
+ * a shell's pane, which is no chat, so its ask says the pane's output named it (#6516). `runner`
+ * names the runner a runner chat's file is on (#6387), and `home` is then the chat's home there:
+ * the ask is the same, with the runner's row.
  */
 export function FileOutsideAsk({
   target,
@@ -381,7 +382,7 @@ export function FileOutsideAsk({
     <Dialog
       title={workspace ? "Open a file outside this workspace?" : "Open a file outside the project?"}
       subtitle={chat === undefined ? undefined : fromChatSaid(chat)}
-      description={`This chat's output names a file that is not in ${within}.`}
+      description={`This ${chat === undefined ? "pane" : "chat"}'s output names a file that is not in ${within}.`}
       cancel={{ children: "Don't open" }}
       alternative={{
         children: "Copy path",

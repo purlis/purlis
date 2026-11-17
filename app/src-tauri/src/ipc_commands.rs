@@ -560,6 +560,7 @@ macro_rules! app_commands {
                 taskchanges::tasks_sharing_a_folder,
                 taskchanges::task_folder_shared,
                 chatcard::chat_by_number,
+                chatcard::chat_by_id,
                 chatcard::closed_chats,
                 chatcard::chat_screen,
                 chatcard::task_screens,

@@ -152,6 +152,13 @@ impl ChatRecord {
         self.reopened().err()
     }
 
+    /// **The number this chat was found by, where it is not the one it closed under**
+    /// (#6685): `asked`, where it is one it had before a restart, so what shows it can say
+    /// `(was #702)` beside `#731`. The one place this rule is written for the core and the app.
+    pub fn found_by(&self, asked: u32) -> Option<u32> {
+        (asked != self.number && self.earlier.contains(&asked)).then_some(asked)
+    }
+
     /// Whether this chat had `number`, as it closed or before a restart (#6486).
     pub fn answers_to(&self, number: u32) -> bool {
         self.number == number || self.earlier.contains(&number)
@@ -413,6 +420,19 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
         .filter_map(sound)
         .take(MOST_KEPT)
         .collect()
+}
+
+/// **The highest number a closed chat in the project at `root` answers to** (#6740): the one it
+/// closed under or one it had before a restart, or 0 where none closed. A launch holds the
+/// counter of numbers dealt (`reopen::Record::dealt`) at or above it, so a number a closed
+/// record still answers to is never dealt to a new chat, even where the record of open chats was
+/// lost.
+pub fn highest_number(root: &Path) -> u32 {
+    every(root)
+        .iter()
+        .flat_map(|chat| std::iter::once(chat.number).chain(chat.earlier.iter().copied()))
+        .max()
+        .unwrap_or(0)
 }
 
 /// **The chat that closed under `number`**, or had it before a restart (#6486), in `chats` as

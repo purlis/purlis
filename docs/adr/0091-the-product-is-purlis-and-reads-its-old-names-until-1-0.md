@@ -165,3 +165,9 @@ line where two old names would read the same afterwards, which is left for a per
   when someone starts it by hand on `main`.
 - **D-RN11c-2: the site's npm package keeps the name `charter-site`** until RN-13 renames the
   packages.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0091/`](0091/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record.

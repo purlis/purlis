@@ -16,6 +16,16 @@ export function numberedName(number: number, name: string): string {
 }
 
 /**
+ * **A closed chat by the number it closed under, its name, and the number it was found by**
+ * where that is one it had before a restart (#6685): `#731 · Tidy the changelog (was #702)`, so
+ * a person following an old link knows it for the chat they asked for.
+ */
+export function numberedNameWas(number: number, name: string, was: number | null): string {
+  const named = numberedName(number, name);
+  return was === null ? named : `${named} (was ${chatNumberSaid(was)})`;
+}
+
+/**
  * **The chat number a search asks for** (#6213): `641` or `#641`, spaces round it ignored, or
  * nothing for any other words. Only a whole number is one: `#64` asks for chat 64, never 641.
  */
