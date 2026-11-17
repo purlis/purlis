@@ -7,15 +7,17 @@
 //! the merge hold stands too, a merge is the hold's: the person is asked, and A4 does not refuse
 //! it first.
 //!
-//! Tested at the core seam, [`purlis_core::toolgate::verdict`], which `purlis hook pretooluse`
-//! asks with the fact it asked the app for ([`Launched::attendance`]).
+//! Tested at the core seam, [`purlis_core::toolgate::judged`] under the `strict` template, set
+//! explicitly (Q308), which `purlis hook pretooluse` asks with the fact it asked the app for
+//! ([`Launched::attendance`]).
 
 use purlis_core::attendance::{Begun, ClaudeCodeMode, Fact};
 use purlis_core::dispatchunattended::Attendance;
+use purlis_core::enforcement::Template;
 use purlis_core::handoffguard::Caller;
 use purlis_core::harness::Harness;
 use purlis_core::mergehold::{self, Held, Request};
-use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, verdict};
+use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, judged};
 
 /// A publish A4 refuses an unattended chat.
 const RELEASE: &str = "gh release create v1.0.0";
@@ -67,7 +69,9 @@ fn refused_by(
             permission_mode: mode,
         },
     };
-    verdict(&call, Some(&plane)).and_then(|said| said.arm)
+    judged(&call, Some(&plane), &|family| Template::Strict.mode(family))
+        .refused
+        .and_then(|said| said.arm)
 }
 
 #[test]

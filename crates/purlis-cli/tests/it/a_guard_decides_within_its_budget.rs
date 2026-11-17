@@ -122,16 +122,29 @@ fn every_pretooluse_word_that_runs_out_of_its_budget_refuses_the_call() {
     }
 }
 
+/// `PURLIS_POLICY` spelling every family as the `strict` template runs it (Q308): the tests of
+/// #6962 run strict explicitly, not only because no app answers their hook.
+fn strict() -> String {
+    use purlis_core::enforcement::{Family, Template};
+    Family::ALL
+        .iter()
+        .map(|family| format!("{}={}", family.key(), Template::Strict.mode(*family).word()))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// **A check that ran out of time says so, and to try again** (#6962, PURLIS-APP-D): on a
 /// loaded machine a short line can run out of the check's time, and that is no fault of the
 /// line's length or nesting, whose caps keep their own words.
 #[test]
 fn a_check_out_of_time_says_so_and_to_retry() {
     let here = Here::new();
+    let strict = strict();
     let (code, out, err, _) = here.answer(
         "pretooluse",
         &bash("grep -rn needle src", "default"),
         &[
+            ("PURLIS_POLICY", strict.as_str()),
             ("PURLIS_TEST_GUARD_DEADLINE_MS", "300"),
             ("PURLIS_TEST_GUARD_STALLS", "1"),
         ],
@@ -149,10 +162,15 @@ fn a_check_out_of_time_says_so_and_to_retry() {
 #[test]
 fn a_line_over_the_cap_still_says_too_long_or_too_deeply_nested() {
     let here = Here::new();
+    let strict = strict();
     let long = format!("echo {}", "a".repeat(200 * 1024));
     let deep = format!("echo {}x{}", "$(echo ".repeat(200), ")".repeat(200));
     for (cmd, words) in [(long, "too long"), (deep, "too deeply nested")] {
-        let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, "default"), &[]);
+        let (code, out, err, _) = here.answer(
+            "pretooluse",
+            &bash(&cmd, "default"),
+            &[("PURLIS_POLICY", strict.as_str())],
+        );
         assert_eq!(code, Some(0), "{words}: {err}");
         assert!(
             out.contains("\"permissionDecision\": \"deny\""),
