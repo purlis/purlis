@@ -687,6 +687,11 @@ pub enum Input {
     /// so a step meant for a page that has since moved on is dropped, and refused as any input
     /// is unless the person drives. A host before 1.90 is not sent one.
     Navigate { aim: Aim, step: Step },
+    /// **The person watches another of the browser's pages** (1.91, #6989), picked from the
+    /// pages its view was told ([`PageShown::pages`]): it becomes the browser's current page.
+    /// Aimed and refused as any input is, so it is never sent for the agent. A host before 1.91
+    /// is not sent one.
+    Watch { aim: Aim, page: String },
 }
 
 /// **A step through a page's history the person takes** (1.90, #6938).
@@ -716,6 +721,43 @@ pub struct PageShown {
     /// Where its load stands.
     #[serde(default)]
     pub load: PageLoad,
+    /// **The browser's pages** (1.91, #6989), as `browser_pages` lists them to its chat, in the
+    /// order they opened, and which is current. Empty from a host before 1.91.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pages: Vec<ListedPage>,
+    /// **The browser's downloads** (1.91, #6990), as `browser_downloads` lists them to its chat,
+    /// in the order they began. Empty from a host before 1.91.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadShown>,
+}
+
+/// **One download of a browser's, as its views are told** (1.91, #6990): its id (`d1`), its
+/// name as `browser_downloads` names it (never a value purlis keeps out), how far it came and
+/// its size where the site said. Never its file, its path or the origin it came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadShown {
+    pub id: String,
+    pub name: String,
+    pub state: DownloadState,
+    #[serde(default)]
+    pub received: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+}
+
+/// **One of a browser's pages, as its views are told** (1.91, #6989): its id (`p2`), its title
+/// as `browser_pages` lists it (scrubbed of what purlis keeps out; none for a page on a site the
+/// agent is kept off), the origin of its address alone (none for one with no web origin, or
+/// whose address holds a value purlis keeps out), and whether it is the current page.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListedPage {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current: bool,
 }
 
 /// **Where a page's load stands** (1.90, #6938): loading its document, loaded, failed with the
@@ -743,6 +785,20 @@ pub const MOST_SHOWN_TITLE_BYTES: usize = 1024;
 /// The longest reason a failed load carries: the engine's are short (`net::ERR_FAILED`).
 pub const MOST_SHOWN_WHY_BYTES: usize = 128;
 
+/// The most pages a [`PageShown`] lists (1.91): past them, the rest are left out.
+pub const MOST_SHOWN_PAGES: usize = 64;
+
+/// The longest id of a page or download a [`PageShown`] lists (1.91): the engine's are `p1`,
+/// `d2`.
+pub const MOST_SHOWN_PAGE_ID_BYTES: usize = 32;
+
+/// The most downloads a [`PageShown`] lists (1.91): a browser makes at most 64.
+pub const MOST_SHOWN_DOWNLOADS: usize = 64;
+
+/// The longest name of a download a [`PageShown`] lists (1.91): the engine's are at most 120
+/// characters.
+pub const MOST_SHOWN_DOWNLOAD_NAME_BYTES: usize = 512;
+
 impl PageShown {
     /// **What of it a view may draw** (#6938): its address as [`shown_address`] keeps it, its
     /// title and its reason cut to their bounds, each without a character that is not shown as
@@ -759,8 +815,75 @@ impl PageShown {
                 },
                 other => other,
             },
+            pages: held_pages(self.pages),
+            downloads: held_downloads(self.downloads),
         }
     }
+}
+
+/// Whether `id` is one a view may send back: letters, digits, `-` and `_`, at most
+/// [`MOST_SHOWN_PAGE_ID_BYTES`].
+fn plain_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MOST_SHOWN_PAGE_ID_BYTES
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// **The downloads a view may draw** (1.91, #6990): at most [`MOST_SHOWN_DOWNLOADS`], each with a
+/// plain id, its name cut at a character to [`MOST_SHOWN_DOWNLOAD_NAME_BYTES`] and none received
+/// past its size. A character a reader does not see is left in the name for the window to mark,
+/// by purlis's one rule for it (#2020), never dropped unseen.
+fn held_downloads(downloads: Vec<DownloadShown>) -> Vec<DownloadShown> {
+    downloads
+        .into_iter()
+        .filter(|one| plain_id(&one.id))
+        .take(MOST_SHOWN_DOWNLOADS)
+        .map(|one| {
+            let mut name = String::new();
+            for c in one.name.chars() {
+                if name.len() + c.len_utf8() > MOST_SHOWN_DOWNLOAD_NAME_BYTES {
+                    break;
+                }
+                name.push(c);
+            }
+            DownloadShown {
+                received: one
+                    .total
+                    .map_or(one.received, |total| one.received.min(total)),
+                name,
+                ..one
+            }
+        })
+        .collect()
+}
+
+/// **The pages a view may draw** (1.91, #6989): at most [`MOST_SHOWN_PAGES`], each with an id of
+/// letters, digits, `-` and `_` alone and at most [`MOST_SHOWN_PAGE_ID_BYTES`] (any other is left
+/// out, since the window sends it back), its title held as a page's is, its origin only where it
+/// is one exactly as [`origin_of`] writes it, and one current at most, the first said.
+fn held_pages(pages: Vec<ListedPage>) -> Vec<ListedPage> {
+    let mut current = false;
+    pages
+        .into_iter()
+        .filter(|page| plain_id(&page.id))
+        .take(MOST_SHOWN_PAGES)
+        .map(|page| {
+            let is_current = page.current && !current;
+            current |= is_current;
+            ListedPage {
+                title: plain_cut(&page.title, MOST_SHOWN_TITLE_BYTES),
+                origin: if origin_of(&page.origin).as_deref() == Some(page.origin.as_str()) {
+                    page.origin
+                } else {
+                    String::new()
+                },
+                current: is_current,
+                id: page.id,
+            }
+        })
+        .collect()
 }
 
 /// **The address a view may show of `address`** (1.90, #6938): an http or https address

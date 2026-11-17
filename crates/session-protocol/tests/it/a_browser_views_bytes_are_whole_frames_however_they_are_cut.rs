@@ -252,6 +252,7 @@ fn a_page_frame_says_the_whole_address_the_title_and_the_load_and_no_image() {
         load: PageLoad::Failed {
             why: "net::ERR_NAME_NOT_RESOLVED".into(),
         },
+        ..PageShown::default()
     };
     let read = read_one(&frames::page(&shown));
     assert_eq!(read.format, frames::PAGE);
@@ -335,4 +336,151 @@ fn the_persons_step_is_input_aimed_as_a_click_is() {
         serde_json::json!({"kind": "navigate", "aim": {"page": "p1", "document": 3}, "step": "back"})
     );
     assert_eq!(serde_json::from_value::<Input>(said).unwrap(), step);
+}
+
+// ---- The browser's pages (1.91, #6989) ----
+
+use purlis_session_protocol::browsing::ListedPage;
+
+fn listed(id: &str, title: &str, origin: &str, current: bool) -> ListedPage {
+    ListedPage {
+        id: id.into(),
+        title: title.into(),
+        origin: origin.into(),
+        current,
+    }
+}
+
+#[test]
+fn a_page_frame_lists_the_browsers_pages_and_which_is_current() {
+    let shown = PageShown {
+        address: "https://example.com/a".into(),
+        pages: vec![
+            listed("p1", "Docs", "https://example.com", false),
+            listed("p2", "Sign in", "https://id.example.com", true),
+        ],
+        ..PageShown::default()
+    };
+    let read = read_one(&frames::page(&shown)).page().unwrap();
+    assert_eq!(read.pages, shown.pages);
+}
+
+#[test]
+fn a_page_frame_from_a_host_before_1_91_lists_no_pages() {
+    let read = read_one(&frames::frame(
+        frames::PAGE,
+        br#"{"address":"https://example.com/","title":"T"}"#,
+    ));
+    assert_eq!(read.page().unwrap().pages, []);
+}
+
+#[test]
+fn pages_held_have_plain_ids_and_titles_exact_origins_and_one_current() {
+    let shown = PageShown {
+        pages: vec![
+            listed("p1", "One\n\u{202e}line", "https://example.com/path", true),
+            listed("p2", "Two", "https://ann:pw@example.com", true),
+            listed("p 3", "Spaced id", "https://example.com", false),
+            listed("", "No id", "", false),
+            listed("p4", "Not on the web", "file:///etc", false),
+        ],
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(
+        shown.pages,
+        [
+            listed("p1", "One line", "", true),
+            listed("p2", "Two", "", false),
+            listed("p4", "Not on the web", "", false),
+        ]
+    );
+    let many = PageShown {
+        pages: (0..100)
+            .map(|n| listed(&format!("p{n}"), "", "", false))
+            .collect(),
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(many.pages.len(), 64);
+}
+
+#[test]
+fn the_persons_pick_of_a_page_to_watch_is_input_aimed_as_a_click_is() {
+    let watch = Input::Watch {
+        aim: Aim {
+            page: "p1".into(),
+            document: 3,
+        },
+        page: "p2".into(),
+    };
+    let said = serde_json::to_value(&watch).unwrap();
+    assert_eq!(
+        said,
+        serde_json::json!({"kind": "watch", "aim": {"page": "p1", "document": 3}, "page": "p2"})
+    );
+    assert_eq!(serde_json::from_value::<Input>(said).unwrap(), watch);
+}
+
+// ---- The browser's downloads (1.91, #6990) ----
+
+use purlis_session_protocol::browsing::{DownloadShown, DownloadState};
+
+fn download(id: &str, name: &str, received: u64, total: Option<u64>) -> DownloadShown {
+    DownloadShown {
+        id: id.into(),
+        name: name.into(),
+        state: DownloadState::Going,
+        received,
+        total,
+    }
+}
+
+#[test]
+fn a_page_frame_lists_the_browsers_downloads_and_how_far_each_came() {
+    let shown = PageShown {
+        downloads: vec![
+            download("d1", "report.pdf", 2048, Some(4096)),
+            download("d2", "data.csv", 10, None),
+        ],
+        ..PageShown::default()
+    };
+    let said = serde_json::to_value(&shown).unwrap();
+    assert_eq!(
+        said["downloads"][0],
+        serde_json::json!({"id": "d1", "name": "report.pdf", "state": "going", "received": 2048, "total": 4096})
+    );
+    let read = read_one(&frames::page(&shown)).page().unwrap();
+    assert_eq!(read.downloads, shown.downloads);
+}
+
+#[test]
+fn downloads_held_have_plain_ids_names_cut_at_a_character_and_no_more_received_than_their_size() {
+    let shown = PageShown {
+        downloads: vec![
+            download("d1", &format!("{}.pdf", "é".repeat(400)), 9000, Some(100)),
+            download("d 2", "spaced id", 0, None),
+            download("d3", "inv\u{202e}fdp.exe", 0, None),
+        ],
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(shown.downloads.len(), 2);
+    assert!(shown.downloads[0].name.len() <= 512);
+    assert!(
+        shown.downloads[0]
+            .name
+            .is_char_boundary(shown.downloads[0].name.len())
+    );
+    assert_eq!(shown.downloads[0].received, 100);
+    // Left for the window to mark, never dropped unseen (#2020).
+    assert_eq!(shown.downloads[1].name, "inv\u{202e}fdp.exe");
+    let many = PageShown {
+        downloads: (0..100)
+            .map(|n| download(&format!("d{n}"), "x", 0, None))
+            .collect(),
+        ..PageShown::default()
+    }
+    .held();
+    assert_eq!(many.downloads.len(), 64);
 }

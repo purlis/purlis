@@ -7618,7 +7618,12 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number } | 
 /**  Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed. */
-{ kind: "navigate"; aim: string; step: BrowserStep };
+{ kind: "navigate"; aim: string; step: BrowserStep } | 
+/**
+ *  The person watches another of the browser's pages (#6989): `page` is its id, as the view
+ *  was told it.
+ */
+{ kind: "watch"; aim: string; page: string };
 
 /**  Which limit a row sets. */
 export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
@@ -9650,6 +9655,26 @@ export type Doing = {
 	 */
 	over: boolean,
 };
+
+/**
+ *  **One download of a browser's, as its view is told** (#6990): its id (`d1`), its name as
+ *  `browser_downloads` names it (which the view draws with every character a reader does not see
+ *  marked, #2020), how far it came, and its size in bytes, `null` where the site did not say.
+ *  Bytes are `f64`, so they are a `number` in TypeScript and not a `bigint`: whole up to 2⁵³.
+ */
+export type DownloadListed = {
+	id: string,
+	name: string,
+	state: DownloadStateSaid,
+	received: number | null,
+	total: number | null,
+};
+
+/**
+ *  **How far a download came** (#6990): under way, done, cancelled by the page or the engine,
+ *  or cancelled by purlis for its size.
+ */
+export type DownloadStateSaid = "going" | "done" | "cancelled" | "too_large";
 
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
@@ -13332,6 +13357,18 @@ export type OwnerRow = {
  */
 export type PageAt = {
 	origin: string | null,
+};
+
+/**
+ *  **One of a browser's pages, as its view is told** (#6989): its id (`p2`), what the person's
+ *  pick of it names; its title as `browser_pages` lists it, `null` for none; the origin of its
+ *  address alone, `null` for none; and whether it is the page shown now.
+ */
+export type PageListed = {
+	id: string,
+	title: string | null,
+	origin: string | null,
+	current: boolean,
 };
 
 /**
@@ -18154,6 +18191,16 @@ export type ShownPage = {
 	address: string | null,
 	title: string | null,
 	load: PageLoadSaid,
+	/**
+	 *  **The browser's pages** (#6989), as `browser_pages` lists them to its chat, in the order
+	 *  they opened: empty from a host before 1.91, and the view then lists none.
+	 */
+	pages: PageListed[],
+	/**
+	 *  **The browser's downloads** (#6990), as `browser_downloads` lists them to its chat, in the
+	 *  order they began: empty from a host before 1.91, and the view then counts none.
+	 */
+	downloads: DownloadListed[],
 };
 
 /**
