@@ -1610,24 +1610,28 @@ mod a_guard_that_fails {
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_times_out_refuses_the_tool_on_claude_code() {
+        purlis_core::unsteered!();
         case(Guard::Bash, TIMES_OUT, &strict(), false);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_dies_refuses_the_tool_on_claude_code() {
+        purlis_core::unsteered!();
         case(Guard::Bash, DIES, &strict(), false);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_times_out_runs_the_tool_on_claude_code_under_open() {
+        purlis_core::unsteered!();
         case(Guard::Bash, TIMES_OUT, &under("open"), true);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_hook_that_dies_runs_the_tool_on_claude_code_under_open() {
+        purlis_core::unsteered!();
         case(Guard::Bash, DIES, &under("open"), true);
     }
 
@@ -1635,24 +1639,28 @@ mod a_guard_that_fails {
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_bash_guard_that_dies_refuses_the_tool_on_claude_code_under_watch() {
+        purlis_core::unsteered!();
         case(Guard::Bash, DIES, &under("watch"), false);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_read_guard_that_dies_refuses_the_read_on_claude_code() {
+        purlis_core::unsteered!();
         case(Guard::Read, DIES, &strict(), false);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_read_guard_that_times_out_refuses_the_read_on_claude_code_under_watch() {
+        purlis_core::unsteered!();
         case(Guard::Read, TIMES_OUT, &under("watch"), false);
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
     fn a_read_guard_that_dies_lets_the_read_through_on_claude_code_under_open() {
+        purlis_core::unsteered!();
         case(Guard::Read, DIES, &under("open"), true);
     }
 }
