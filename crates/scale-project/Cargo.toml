@@ -26,6 +26,8 @@ ulid = "3"
 # Fenced, as every crate's tests are (`purlis-core/src/fence.rs`).
 purlis-core = { workspace = true, features = ["fenced"] }
 tempfile.workspace = true
+# The digest of a whole generated project, to hold its bytes across a change of time crate.
+sha2 = "0.11"
 
 [lints]
 workspace = true

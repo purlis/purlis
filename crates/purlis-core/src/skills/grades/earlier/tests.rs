@@ -218,3 +218,26 @@ fn an_entry_with_a_grade_or_a_folder_not_purlis_writes_is_left_out_4104() {
     assert_eq!(kept[0].name, "c");
     assert_eq!(kept[0].grades, ["g1"]);
 }
+
+#[test]
+fn an_earlier_name_is_kept_until_a_time_spelt_as_it_was_before_the_move_to_jiff() {
+    // chrono's `to_rfc3339`: a numeric offset, and a fraction of 3, 6 or 9 digits (#7089).
+    let project = project();
+    let root = project.path();
+    let local = Level::project().local(true);
+    moved(
+        root,
+        (&local, "deploy"),
+        (&local, "ship"),
+        &[],
+        at("2026-10-30T10:00:00.1234567Z"),
+    )
+    .unwrap();
+    assert_eq!(
+        of(root, &local, "ship")
+            .iter()
+            .map(|earlier| earlier.until.as_str())
+            .collect::<Vec<_>>(),
+        ["2026-10-30T10:00:00.123456700+00:00"]
+    );
+}

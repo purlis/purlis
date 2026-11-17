@@ -7219,6 +7219,7 @@ dependencies = [
  "clap",
  "purlis-core",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "ulid",
 ]

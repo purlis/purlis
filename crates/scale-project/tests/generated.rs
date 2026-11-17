@@ -166,3 +166,27 @@ fn every_text_of_the_project_is_masked_as_asking_the_scanner_whole_and_by_line_m
     }
     assert!(texts > 50, "{texts} texts read");
 }
+
+/// What seed 5497 wrote at 2026-11-06 12:00 when its times were chrono's (#7089): a change of
+/// time crate, or of anything else, that moves one byte of a record moves this digest.
+#[test]
+fn a_project_is_written_with_the_bytes_it_had_before_the_move_to_jiff() {
+    use sha2::{Digest, Sha256};
+    let (_dir, files) = generated(5497);
+    let mut digest = Sha256::new();
+    for (name, bytes) in &files {
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(bytes);
+        digest.update([0]);
+    }
+    let hex: String = digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(
+        hex,
+        "c03c8e381aa2ea4f135fb2c319b642726bb0913add2756920f6a00a0f91c9cc1"
+    );
+}
