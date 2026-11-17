@@ -261,8 +261,11 @@ impl Wrap {
         let Some(home) = &self.home else {
             return Vec::new();
         };
-        // MUTATION (DO NOT MERGE): the whole config folder writable.
-        vec![home.clone()]
+        HOME_DIRS
+            .iter()
+            .chain(HOME_FILES.iter())
+            .map(|name| home.join(name))
+            .collect()
     }
 }
 

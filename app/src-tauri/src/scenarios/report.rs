@@ -214,9 +214,8 @@ fn production_only_cells_are_skipped_and_reported_on_scaled_runs() {
     // Written as a leg's report, one record a line, each read back in ticket 5's shape: to a
     // file of this test's own, never the leg's report a run uploads.
     let folder = tempfile::tempdir().expect("a folder");
-    // MUTATION (DO NOT MERGE): the test writes the leg report a run uploads.
-    let _ = &folder;
-    let at = write(&records).expect("the report is written");
+    let at =
+        write_to(&folder.path().join("linux-fake.jsonl"), &records).expect("the report is written");
     assert_ne!(at, report_path());
     let written: Vec<LegRecord> = std::fs::read_to_string(&at)
         .expect("the report")

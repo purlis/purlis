@@ -2155,8 +2155,7 @@ impl Held {
                 .start_keeping_finished_screens()
                 .wait_until(crate::chatcard::screens_by_from_now());
         }
-        // MUTATION (DO NOT MERGE): letting go ends no chat.
-        let _never = || self.chats.end_all();
+        self.chats.end_all();
         self.hooks.stop();
         drop(
             self.watch
