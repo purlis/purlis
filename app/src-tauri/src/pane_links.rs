@@ -235,7 +235,7 @@ pub(crate) struct ChatsHere<'a> {
 /// How an ended or closed chat's card is drawn from its number and where its link goes (its
 /// dispatch record, or the app's record of a chat no dispatch started, #6304): none for one with
 /// no card.
-pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Goes) -> Option<ChatCard> + 'a>;
+pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Goes) -> Option<ChatCard> + Send + Sync + 'a>;
 
 impl ChatsHere<'_> {
     /// A pane in no project: no chat links.
@@ -711,10 +711,8 @@ pub async fn pane_link_resolve(
     // A chat's number reads the project's dispatch records: looked at as a file is.
     let look = move || {
         let (resolver, chats) = for_project(held.as_deref(), session);
-        candidates
-            .into_iter()
-            .map(|candidate| seen_in(&resolver, &pane, &candidate.into(), &chats))
-            .collect::<Vec<_>>()
+        let candidates: Vec<Candidate> = candidates.into_iter().map(Into::into).collect();
+        seen_on_line(&resolver, &pane, &candidates, &chats)
     };
     // Waited for off the window's thread; a look that did not end in time is no link.
     tauri::async_runtime::spawn_blocking(move || looked(LOOK_FOR, look))
@@ -722,6 +720,41 @@ pub async fn pane_link_resolve(
         .ok()
         .flatten()
         .unwrap_or_else(|| vec![None; count])
+}
+
+/// The most candidates of a runner chat's line looked at together.
+pub const MOST_AT_ONCE: usize = 8;
+
+/// **What each candidate on a line in `pane` is**, in order. On a runner chat's line each path
+/// is asked of the runner at once, [`MOST_AT_ONCE`] at a time, so each has the runner's own wait
+/// (`runnerfiles::LOOK_WITHIN`) inside the pane's, and one slow path leaves the others linked.
+pub(crate) fn seen_on_line(
+    resolver: &Resolver,
+    pane: &Pane,
+    candidates: &[Candidate],
+    chats: &ChatsHere<'_>,
+) -> Vec<Option<LinkSeen>> {
+    if pane.runs != Runs::OnRunner || candidates.len() < 2 {
+        return candidates
+            .iter()
+            .map(|candidate| seen_in(resolver, pane, candidate, chats))
+            .collect();
+    }
+    candidates
+        .chunks(MOST_AT_ONCE)
+        .flat_map(|together| {
+            std::thread::scope(|scope| {
+                let looking: Vec<_> = together
+                    .iter()
+                    .map(|candidate| scope.spawn(|| seen_in(resolver, pane, candidate, chats)))
+                    .collect();
+                looking
+                    .into_iter()
+                    .map(|one| one.join().ok().flatten())
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect()
 }
 
 /// **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,

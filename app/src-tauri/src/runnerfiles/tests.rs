@@ -19,6 +19,8 @@ pub(super) struct Fake {
     versions: Arc<Mutex<Vec<&'static str>>>,
     asked: Arc<Mutex<Vec<Asked>>>,
     pub(super) answer: Option<FileRead>,
+    /// How long the runner takes to answer each ask.
+    pub(super) slow: Duration,
 }
 
 pub(super) fn fake(bytes: &[u8]) -> Fake {
@@ -27,6 +29,7 @@ pub(super) fn fake(bytes: &[u8]) -> Fake {
         versions: Arc::new(Mutex::new(vec!["v1"])),
         asked: Arc::default(),
         answer: None,
+        slow: Duration::ZERO,
     }
 }
 
@@ -42,6 +45,7 @@ impl AsksRunner for Fake {
             .lock()
             .unwrap()
             .push((path.to_owned(), reach, at));
+        std::thread::sleep(self.slow);
         if let Some(answer) = &self.answer {
             return Ok(answer.clone());
         }
@@ -459,5 +463,30 @@ mod in_a_pane {
                 .is_some(),
             "its tab may read it on the runner now"
         );
+    }
+
+    #[test]
+    fn each_path_on_a_runner_chats_line_is_looked_at_within_the_panes_own_wait() {
+        let mut runner = fake(b"fn main() {}\n");
+        runner.slow = std::time::Duration::from_millis(1200);
+        let candidates: Vec<Candidate> = ["src/a.rs", "src/b.rs", "src/c.rs"]
+            .into_iter()
+            .map(file)
+            .collect();
+        let started = std::time::Instant::now();
+
+        let seen = crate::pane_links::seen_on_line(
+            &links(&runner),
+            &on_runner(),
+            &candidates,
+            &crate::pane_links::ChatsHere::none(),
+        );
+
+        assert!(
+            started.elapsed() < crate::pane_links::LOOK_FOR,
+            "{:?}: one slow path holds up the others",
+            started.elapsed()
+        );
+        assert!(seen.iter().all(Option::is_some), "{seen:?}");
     }
 }
