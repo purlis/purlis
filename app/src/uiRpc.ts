@@ -53,12 +53,7 @@ export const commands = {
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
 	paneLinkFile: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
-	 *  chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
-	 *  run of the app and within the hour. Read on the runner, as data, through its kind's adapter.
-	 */
-	paneLinkRunnerFile: (from: LinkFrom, runner: string, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_runner_file", { from, runner, path })),
+	paneLinkRunnerFile: __WINDOW_ONLY_RESULT,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
