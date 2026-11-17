@@ -70,7 +70,12 @@ impl Plane {
             std::fs::create_dir_all(&at).expect("a workspace");
             std::fs::write(at.join("workspace.md"), format!("# {ws}\n")).expect("its charter");
         }
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         Self {
             _tmp: tmp,
             base,

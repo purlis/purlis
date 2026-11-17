@@ -160,7 +160,14 @@ pub struct Asks {
     most_open: Duration,
     known: Option<Known>,
     askable: Option<Askable>,
+    /// Where the project's `[policy]` does not enforce `asks` (Q308): told each host it then
+    /// answers Allow without asking, so a logged one is recorded ([`Asks::answering`]).
+    answered: Option<Answered>,
 }
+
+/// Told each host and port the board answered Allow because the project's `[policy]` does not
+/// enforce `asks` (Q308): what writes its log line where the family logs.
+pub type Answered = Arc<dyn Fn(&str, u16) + Send + Sync + 'static>;
 
 /// Whether a Notice can be raised now ([`Asks::asking_while`]).
 pub type Askable = Arc<dyn Fn() -> bool + Send + Sync + 'static>;
@@ -194,6 +201,7 @@ impl Asks {
             most_open: MOST_HELD_OPEN,
             known: None,
             askable: None,
+            answered: None,
         }
     }
 
@@ -220,6 +228,17 @@ impl Asks {
     pub fn knowing(self, known: Known) -> Self {
         Self {
             known: Some(known),
+            ..self
+        }
+    }
+
+    /// **This board under a `[policy]` that does not enforce `asks`** (Q308, instruction 50):
+    /// a host nothing lists is answered Allow, for this chat, with nobody asked, and `answered`
+    /// is told. The person's Keep blocked still holds: it is their own deny (Q308b).
+    #[must_use]
+    pub fn answering(self, answered: Answered) -> Self {
+        Self {
+            answered: Some(answered),
             ..self
         }
     }
@@ -283,6 +302,12 @@ impl Asks {
         // later answer wins.
         if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
+        }
+        // The `asks` family off or logged (Q308): Allow, for this chat, and nobody is asked.
+        if let Some(answered) = &self.answered {
+            drop(state);
+            answered(&named, port);
+            return Answer::Allowed(By::Chat);
         }
         // Allowed for its next attempt (T1-34, R-291): on at once, never asked about, and used
         // up by this attempt, under the same hold, so two attempts never both take it. It is the

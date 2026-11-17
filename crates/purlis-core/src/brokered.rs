@@ -1283,9 +1283,14 @@ fn shown(root: &Path, path: &Path) -> String {
 
 /// The tables of a manifest a chat runs under, which no brokered write may change, besides
 /// `[sandbox]`, which the sandbox's own rule judges ([`crate::sandbox::changes_a_sandbox_key`]):
-/// its environment, and `[dispatch]`: the limits on what it may dispatch (#1439) and who may
-/// dispatch to whom (#1437). One table, named once.
-const RUNS_UNDER_BESIDES_SANDBOX: [&str; 2] = ["chat_env", crate::dispatchlimits::TABLE];
+/// its environment, `[dispatch]`: the limits on what it may dispatch (#1439) and who may
+/// dispatch to whom (#1437), and `[policy]`: which of purlis's refusals run (Q308a: a chat can
+/// never change the policy that governs it). One table, named once.
+const RUNS_UNDER_BESIDES_SANDBOX: [&str; 3] = [
+    "chat_env",
+    crate::dispatchlimits::TABLE,
+    crate::enforcement::TABLE,
+];
 
 /// Whether a brokered write may write `target` in the project at `root`, with `after` the whole
 /// text it would leave there when that is known; or the sentence saying why not.

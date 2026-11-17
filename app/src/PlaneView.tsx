@@ -577,6 +577,7 @@ import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
+import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -12063,6 +12064,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
           their one Accept. */}
       <TeamSandboxOffNotice plane={plane} />
+      {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
+          one Accept; a value it could not read is said beside it, enforced meanwhile. */}
+      <ProjectPolicyNotice plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
           Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
       <PersonaHostsNotice plane={plane} asked={personasAsked} />

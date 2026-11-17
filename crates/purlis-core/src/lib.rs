@@ -99,6 +99,7 @@ pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
 pub mod browsertimeline;
+pub mod enforcement;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;
