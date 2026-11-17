@@ -468,7 +468,9 @@ pub const EVERY_LOCAL: &str = "(allow network-outbound (remote unix-socket))
 /// **The local sockets the `ports` family off still holds** (the review of #7105): purlis's own,
 /// each by where or what it is, in any case. Every project's state folder (`.purlis`, `.charter`:
 /// its hook socket and what it keeps beside it, every plane's and every vault's), every hook
-/// socket and the session host's and its window's (`purlisd*.sock`), wherever they were made,
+/// socket, the window's slots socket (`slots.sock`) and the session host's and its window's
+/// (`purlisd*.sock`), the crash companion's (`purlis-crash-*.sock`) and the app's
+/// single-instance socket (`/tmp/dev.purlis.app*_si.sock`, Tauri's), wherever they were made,
 /// every chat's server sockets (`purlis-serve`) and the forwards to a pool's engine
 /// (`engine-links`). Another program's socket, a container engine's among them (ruling Q328:
 /// only under a `ports = "off"` the person pressed), is reached. The chat's own hook socket is
@@ -479,12 +481,22 @@ pub fn every_local_held() -> Vec<String> {
         .map(|name| folded(name.trim_start_matches('.')))
         .collect::<Vec<_>>()
         .join("|");
+    // Tauri's single-instance socket on macOS is `/tmp/<identifier>_si.sock`; a scenario
+    // build's identifier (`dev.purlis.app.e2e`) begins with the app's.
+    let app = crate::names::BUNDLE_ID
+        .spellings()
+        .map(folded)
+        .collect::<Vec<_>>()
+        .join("|");
     [
         format!("/\\.({state})/"),
         format!(
-            "/({}|{}[^/]*)\\.{}$",
+            "/({}|{}|{}[^/]*|{}[^/]*|({app})[^/]*{})\\.{}$",
             folded("hooks"),
+            folded(crate::hookwire::serve::SLOTS_SOCKET.trim_end_matches(".sock")),
             folded("purlisd"),
+            folded("purlis-crash-"),
+            folded("_si"),
             folded("sock")
         ),
         format!(

@@ -2692,7 +2692,8 @@ fn the_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off_and_purlis_o
 /// **Under a pressed `ports = "off"`, a chat reaches another program's socket and none of
 /// purlis's own** (the review of #7105): the floor's profile applied for real, where this machine
 /// can apply one. A container engine's socket is reached (ruling Q328); another plane's hook
-/// socket, the session host's and a chat's server socket are not; its own hook socket is.
+/// socket, the window's slots socket, the session host's, the crash companion's, the app's
+/// single-instance socket and a chat's server socket are not; its own hook socket is.
 #[cfg(target_os = "macos")]
 #[test]
 fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own() {
@@ -2730,6 +2731,10 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
         at.join("purlisd.sock"),
         at.join("purlis-serve/ab/3000.sock"),
         at.join("Hooks.sock"),
+        at.join("slots.sock"),
+        at.join("purlis-crash-0123abcd.sock"),
+        at.join("dev.purlis.app_si.sock"),
+        at.join("dev.purlis.app.e2e_si.sock"),
     ];
     let mut listening = Vec::new();
     for socket in held.iter().chain([&hook, &reached]) {

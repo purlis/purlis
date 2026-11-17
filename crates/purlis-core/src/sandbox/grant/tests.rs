@@ -1054,6 +1054,7 @@ fn ground_of(m: &Disk, floor: bool) -> Ground {
         harness_temp: &[],
         folded: false,
         floor,
+        floor_held: Vec::new(),
     }
 }
 
@@ -1122,6 +1123,44 @@ fn the_policy_answers_a_folder_of_the_project_and_never_one_a_later_program_load
         unasked_write(&m.path("home/.local/bin"), &ground).is_err(),
         "a folder on PATH"
     );
+}
+
+/// **A folder the floor holds is never answered by the policy, though you listed a folder
+/// above it** (the re-review of #7105): `~/.cargo` listed in Settings holds `~/.cargo/bin` on
+/// `PATH`, and `~/.local` a package root, so the folder, a folder inside it, and the listed
+/// folder that holds it each still raise the Notice.
+#[test]
+fn the_policy_never_answers_a_floor_held_folder_inside_a_folder_you_listed() {
+    let m = Disk::new();
+    let mut ground = ground_of(&m, true);
+    for listed in ["home/.cargo", "home/.local"] {
+        std::fs::create_dir_all(m.at.join(listed)).expect("made");
+        crate::sandbox::local::list_grantable(&ground.root, &m.at.join(listed)).expect("listed");
+    }
+    for held in ["home/.cargo/bin", "home/.local/pipx/venvs"] {
+        std::fs::create_dir_all(m.at.join(held)).expect("made");
+        ground.floor_held.push(m.at.join(held));
+    }
+    assert_eq!(
+        unasked_write(&m.path("home/.cargo/registry"), &ground),
+        Ok(m.at.join("home/.cargo/registry")),
+        "a listed folder beside a held one is answered"
+    );
+    for typed in [
+        "home/.cargo/bin",
+        "home/.cargo/bin/sub",
+        "home/.cargo",
+        "home/.local/pipx/venvs/black",
+        "home/.local",
+    ] {
+        assert!(
+            matches!(
+                unasked_write(&m.path(typed), &ground),
+                Err(Refused::Never(_))
+            ),
+            "{typed}"
+        );
+    }
 }
 
 /// What a Claude Code chat's Notice says names what its Allow opens, and only there.
