@@ -7810,8 +7810,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
   will bring back. A file that does not read, a line in it that does not, a form that cannot be
   made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
-  vault whose provider, or the provider of the vault a linked entry reads through, asks macOS;
-  an entry gone; a GitHub App's token) leave that task's screen not kept.
+  vault whose value is read through a program that may ask the person, as a 1Password vault's
+  is and a reference vault's `op read` or `vault kv get` is, or an entry linked into one; an
+  entry gone; a GitHub App's token) leave that task's screen not kept.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
   screen with what was handed before the crash unmasked, and nothing else is lost.
 - **Git:** gitignored (under `/.charter/`).

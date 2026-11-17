@@ -36,7 +36,8 @@
 //!   ([`masked_for`] answers `None`), so it is not kept. That is where no key could be made for
 //!   the process, where the names on disk do not read, and where an entry named there cannot be
 //!   read again without asking the
-//!   person ([`read_again`]): a vault whose provider asks macOS, an entry gone or changed, and a
+//!   person ([`read_again`]): a vault whose value is read through a program that may ask (1Password,
+//!   a reference to another store, an entry linked into either), an entry gone or changed, and a
 //!   value made once ([`Form::Unrepeatable`]): a one-time code, a GitHub App token.
 //! - **What purlis never handed it cannot mask**: a value a `purlis secret exec` read itself
 //!   where no app answered, and anything the chat found on its own.
@@ -462,9 +463,10 @@ pub fn on_open(root: &Path, now: std::time::SystemTime, live: Option<&[u32]>) {
 pub type ReadAgain<'a> = &'a dyn Fn(&Entry) -> Option<zeroize::Zeroizing<String>>;
 
 /// **Reads an entry of the project at `root` again, where that asks nobody**: through its vault's
-/// provider, the read every hand-out makes ([`super::cmd::get_value`]), where opening the vault
-/// reads no secret ([`asks_nobody`]). `None` for any other provider, which macOS may ask the
-/// person about, and for an entry gone, or one never read raw (a GitHub App's key).
+/// provider, the read every hand-out makes ([`super::cmd::get_value`]), where reading its value
+/// asks nobody ([`asks_nobody`]). `None` for any other provider, whose read macOS or the store's
+/// program may ask the person about, and for an entry gone, or one never read raw (a GitHub App's
+/// key).
 pub fn read_again(root: &Path) -> impl Fn(&Entry) -> Option<zeroize::Zeroizing<String>> + '_ {
     move |entry| {
         let ctx = super::Ctx::new(root, super::Env::from_process());
@@ -478,14 +480,15 @@ pub fn read_again(root: &Path) -> impl Fn(&Entry) -> Option<zeroize::Zeroizing<S
     }
 }
 
-/// **Whether `entry` is read without asking anybody** ([`super::reads_on_open`]): its vault's
-/// provider, and, where the entry is a link, the provider of the vault it reads through
-/// ([`super::links`]), which is the one that is read. `None` where either cannot be told.
+/// **Whether `entry`'s value is read without asking anybody**
+/// ([`super::reads_a_value_without_asking`]): by its vault's provider, and, where the entry is a
+/// link, by the provider of the vault it reads through ([`super::links`]), which is the one
+/// that is read. `None` where either cannot be told.
 fn asks_nobody(ctx: &super::Ctx, entry: &Entry) -> Option<bool> {
     let quiet = |vault: &str| {
         super::cmd::provider(ctx, vault)
             .ok()
-            .map(|vault| !super::reads_on_open(&vault.provider))
+            .map(|vault| super::reads_a_value_without_asking(&vault.provider))
     };
     if !quiet(&entry.vault)? {
         return Some(false);

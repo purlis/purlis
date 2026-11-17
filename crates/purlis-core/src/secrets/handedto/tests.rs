@@ -458,6 +458,50 @@ fn an_entry_linked_into_a_vault_that_may_ask_the_person_is_not_read_again() {
 }
 
 #[test]
+fn an_entry_of_a_reference_vault_is_not_read_again_as_reading_it_runs_its_store_s_program() {
+    let (_dir, root) = a_project();
+    let ctx = super::super::Ctx::new(&root, super::super::Env::of(&[]));
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({"vaults": {
+            "refs": {"provider": "reference", "config": {"file": "refs.json"}},
+        }})
+        .to_string(),
+    )
+    .expect("registered");
+
+    assert_eq!(asks_nobody(&ctx, &Entry::new("refs", "dsn")), Some(false));
+}
+
+#[test]
+fn an_entry_linked_into_a_reference_vault_is_not_read_again() {
+    let (_dir, root) = a_project();
+    let ctx = super::super::Ctx::new(&root, super::super::Env::of(&[]));
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({"vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}},
+            "refs": {"provider": "reference", "config": {"file": "refs.json"}},
+        }})
+        .to_string(),
+    )
+    .expect("registered");
+    std::fs::create_dir_all(&ctx.state).expect("made");
+    std::fs::write(
+        super::super::links::path(&ctx),
+        serde_json::json!({"links": {"team": {"linked": {"vault": "refs", "key": "dsn"}}}})
+            .to_string(),
+    )
+    .expect("linked");
+
+    assert_eq!(
+        asks_nobody(&ctx, &Entry::new("team", "linked")),
+        Some(false)
+    );
+    assert_eq!(asks_nobody(&ctx, &Entry::new("team", "own")), Some(true));
+}
+
+#[test]
 fn a_print_rolled_along_a_text_is_the_print_of_each_window_taken_alone() {
     let printed = Print::of_the_process().expect("a key for the process");
     let text = b"\x00\xffFAKE-ROLLING-0025 and on\x00";
