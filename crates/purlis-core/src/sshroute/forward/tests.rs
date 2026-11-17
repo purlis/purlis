@@ -22,12 +22,14 @@ const FORWARDING: &str = "PURLIS_TEST_SSH_FORWARDING";
 #[test]
 #[ignore = "run by an_ssh's script only"]
 fn stands_in_for_ssh() {
-    let Ok(forwarding) = std::env::var(FORWARDING) else {
+    let Some(forwarding) = crate::envvar::var(FORWARDING) else {
         return;
     };
     let local = forwarding
         .split_once(':')
         .map_or(forwarding.as_str(), |(local, _)| local);
+    // As the forward's `StreamLocalBindUnlink=yes` does.
+    let _ = std::fs::remove_file(local);
     let listener = UnixListener::bind(local).expect("the forward's socket");
     std::thread::spawn(move || for _ in listener.incoming() {});
     let mut line = String::new();
