@@ -252,8 +252,7 @@ fn whole_on_disk(root: &Path) -> Option<(Whole, Pairs)> {
 /// The file as it is on disk, with nothing moved into it.
 fn on_disk(root: &Path) -> Nevers {
     entries_on_disk(root).map_or(Nevers::Unread, |entries| {
-        // MUTATION(13): only sealed nevers refuse
-        Nevers::Read(entries.iter().filter(|e| e.seal.is_some()).map(Entry::pair).collect())
+        Nevers::Read(entries.iter().map(Entry::pair).collect())
     })
 }
 

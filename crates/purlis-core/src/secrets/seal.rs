@@ -285,8 +285,8 @@ pub fn can_seal() -> bool {
 /// #7113), since nothing could ever have been kept there.
 pub fn kept_exists(kind: &str, clone: &str) -> bool {
     let account = kept_account(kind, clone);
-    if no_keyring() && false {
-        return false; // MUTATION(9)
+    if no_keyring() {
+        return false;
     }
     #[cfg(test)]
     {

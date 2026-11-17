@@ -383,7 +383,8 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 pub fn vaults_off(ctx: &Ctx) -> bool {
     !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
         && crate::enforcement::in_force(&ctx.root)
-            .mode(crate::enforcement::Family::Vaults) // MUTATION(11)
+            .for_chat(ctx.policy.as_deref())
+            .mode(crate::enforcement::Family::Vaults)
             == crate::enforcement::Mode::Off
 }
 
