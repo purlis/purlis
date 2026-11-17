@@ -687,11 +687,16 @@ mod tests {
     /// What the window that crashed named on disk for task chat 7: one entry of vault `team`,
     /// which the project holds in a plain file as `value` (an obvious fake), or not at all.
     fn handed_before_the_crash(root: &std::path::Path, value: Option<&str>) {
+        use purlis_core::secrets::handedto::{Entry, Named};
         let named = purlis_core::secrets::handedto::dir(root);
         std::fs::create_dir_all(&named).expect("made");
+        // Named as the crashed window named it: with the seal of what it handed, the value the
+        // vault holds where there is one.
+        let handed = value.unwrap_or("FAKE-VAULT-VALUE-6682");
+        let line = Named::of(root, Entry::new("team", "github-token"), handed).expect("sealed");
         std::fs::write(
             named.join("7.names"),
-            "{\"vault\":\"team\",\"key\":\"github-token\"}\n",
+            format!("{}\n", serde_json::to_string(&line).expect("a line")),
         )
         .expect("named");
         std::fs::write(
