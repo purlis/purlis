@@ -6027,11 +6027,7 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
-            // MUTATION (DO NOT MERGE): every chat is handed strict, whatever its start resolved.
-            Some(
-                &purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Enforce)
-                    .spelled(),
-            ),
+            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the

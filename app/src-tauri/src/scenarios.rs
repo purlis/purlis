@@ -240,7 +240,7 @@ fn every_template_is_what_a_chat_starts_under() {
     assert_ne!(of(host::Template::Watch), of(host::Template::Strict));
     assert_ne!(of(host::Template::Hold), of(host::Template::Watch));
     assert_ne!(of(host::Template::Open), of(host::Template::Watch));
-    // MUTATION (DO NOT MERGE): the child writes no left.json.
+    homes.ran_no_scenario();
 }
 
 /// **A chat runs under the template its scenario names** (T1.1-06, Q308a): in the scenario host,
@@ -333,8 +333,9 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_host_mode()
 /// branch of `Chats::start_as_opted`, never the test build's that can leave one unsandboxed, at
 /// the floor and at Full. Its command runs under purlis's own wrap: held by no-new-privileges and a
 /// seccomp filter, as it says itself, below `<kit> _sandbox`, as `/proc` says from outside. A plain file of the
-/// project reads (the control), the vault no chat reads is refused, and so is a write to Claude
-/// Code's own settings in its config folder, which only `claude_wrap` refuses at the floor. On
+/// project reads (the control), the vault no chat reads is refused, and in its config folder a
+/// write where a turn writes goes through while a new file beside Claude Code's own settings is
+/// refused, which only `claude_wrap` refuses at the floor. On
 /// macOS Claude Code holds itself (ticket 10, #6900): reported `not_run`, never passed.
 ///
 /// purlis's Linux wrap is Landlock and a seccomp supervisor (`purlis _sandbox`), not a user
@@ -419,9 +420,18 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
         );
         let wrote = stdout_of(&scenario, chat, "writes-its-settings");
         assert!(
-            wrote.contains("config=/") && wrote.contains("refused"),
-            "{protection:?}: the chat wrote Claude Code's own settings, which `claude_wrap` \
-             keeps from it: {wrote}\n{said}"
+            wrote.contains("config=/") && wrote.contains("exists"),
+            "{protection:?}: the chat has no config folder to write in: {wrote}\n{said}"
+        );
+        assert!(
+            wrote.contains("control=wrote"),
+            "{protection:?}: the control: the chat could not write where a turn writes in its \
+             config folder: {wrote}\n{said}"
+        );
+        assert!(
+            wrote.contains("probe=refused"),
+            "{protection:?}: the chat wrote beside Claude Code's own settings, which \
+             `claude_wrap` keeps from it: {wrote}\n{said}"
         );
     }
 }
@@ -468,12 +478,17 @@ fn ancestry_of_harness(script: &Path) -> Vec<String> {
     out
 }
 
-/// A Claude Code chat's write of its own settings in its config folder, saying where and
-/// whether it was refused: only `claude_wrap` refuses it at the floor
-/// (`claude_wrap::Wrap::writable`, `HOME_DIRS`).
+/// **A Claude Code chat's writes in its own config folder**, saying where, that the folder is
+/// there, and whether each was refused: one where a turn writes (`projects`, the control, which
+/// must be written) and a new file beside its settings, which only `claude_wrap` refuses at the
+/// floor (`claude_wrap::Wrap::writable`, `HOME_DIRS`).
 #[cfg(unix)]
 const WRITES_ITS_SETTINGS: &str = "d=${CLAUDE_CONFIG_DIR:-$HOME/.claude}; echo config=$d; \
-     if printf probe >> \"$d/settings.json\" 2>/dev/null; then echo wrote; else echo refused; fi";
+     [ -d \"$d\" ] && echo exists; \
+     if printf probe > \"$d/projects/scenario-probe\" 2>/dev/null; then echo control=wrote; \
+     else echo control=refused; fi; \
+     if printf probe > \"$d/scenario-probe\" 2>/dev/null; then echo probe=wrote; \
+     else echo probe=refused; fi";
 
 /// The output chat `id`'s command printed for `step`, once it played.
 #[cfg(unix)]
