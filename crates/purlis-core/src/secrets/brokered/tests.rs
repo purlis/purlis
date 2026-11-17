@@ -96,6 +96,7 @@ fn held_to(
             certificate_checks: false,
             personas: Default::default(),
             own_terminal_only: false,
+            compile_cache: Default::default(),
         },
         &Plane::of(None),
         root,

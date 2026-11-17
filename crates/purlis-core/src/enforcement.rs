@@ -534,7 +534,17 @@ impl Settings {
     /// root; a branch folder's own file is never asked.
     pub fn read(root: &Path) -> Self {
         use crate::settings::{Which, layer_text};
-        let mut project = Self::from_text(committed_text(root).as_deref());
+        let mut project = match committed_text(root) {
+            Ok(text) => Self::from_text(text.as_deref()),
+            // A `HEAD` git could not read in time is not a file to fall back to (the
+            // re-review of #6992): strict, with the sentence for the Notice.
+            Err(why) => Self {
+                template: Template::Strict,
+                template_said: true,
+                overrides: BTreeMap::new(),
+                refused: vec![why],
+            },
+        };
         let local = Self::from_text(layer_text(root, Which::Local).text());
         for family in Family::ALL {
             // Only what the local file says: a family it is silent on is the project's.
@@ -567,27 +577,46 @@ const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// **The plane root's committed settings file as it stands at `HEAD`** (Q309 point 1): a
 /// change not committed yet is not the project's. Where the plane is no git repository, the
-/// file as it stands is all there is. `None` where there is no such file.
-pub fn committed_text(root: &Path) -> Option<String> {
+/// file as it stands is all there is. `Ok(None)` where there is no such file; an error, which
+/// reads as `strict`, where the plane is a repository whose `HEAD` git could not read or did not
+/// read in time: never the working tree's file then (the re-review of #6992).
+pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
     use crate::settings::{Which, layer_text};
-    let git = |args: &[&str]| {
-        crate::worktree::git::run(root, args, GIT_WAIT)
-            .ok()
-            .filter(crate::worktree::git::Run::ok)
-    };
-    if git(&["rev-parse", "--verify", "--quiet", "HEAD"]).is_none() {
-        return layer_text(root, Which::Shared).text().map(str::to_owned);
+    let unread =
+        || "git could not read the project's last commit, so its [policy] is enforced".to_owned();
+    match crate::worktree::git::run(
+        root,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        GIT_WAIT,
+    ) {
+        Ok(run) if run.ok() => {}
+        // git said the plane is no repository at all: its file is all there is.
+        Ok(run) if run.code == Some(128) && run.err.contains("not a git repository") => {
+            return Ok(layer_text(root, Which::Shared).text().map(str::to_owned));
+        }
+        // Timed out, failed, or no commit yet: never the working tree's file.
+        _ => return Err(unread()),
     }
     let file = Which::Shared.file_at(root);
-    git(&["show", &format!("HEAD:./{file}")]).map(|run| run.out)
+    match crate::worktree::git::run(root, &["show", &format!("HEAD:./{file}")], GIT_WAIT) {
+        Ok(run) if run.ok() => Ok(Some(run.out)),
+        // No such file at `HEAD`: the project says nothing.
+        Ok(run) if run.code == Some(128) => Ok(None),
+        _ => Err(unread()),
+    }
 }
 
-/// **The digest of what the press accepts** (the review of #6992, S2): of the committed text the
-/// window showed, so a press refuses a file that changed since.
+/// **The digest of what the press accepts** (the review of #6992, S2, and its re-review): of the
+/// modes the project resolves to here, from the committed file at `HEAD`, the local file and this
+/// machine's locks, so a press refuses anything that changed since the window showed it.
 pub fn digest_of(root: &Path) -> String {
+    digest(&committed(root))
+}
+
+/// The digest of `resolved`, as [`digest_of`] names it.
+fn digest(resolved: &Resolved) -> String {
     use sha2::Digest;
-    let text = committed_text(root).unwrap_or_default();
-    crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
+    crate::extension::hex(&sha2::Sha256::digest(resolved.spelled().as_bytes()))
 }
 
 /// How every family runs for one chat: what [`at_start`] resolved.
@@ -762,14 +791,17 @@ pub fn waiting(root: &Path) -> Vec<(Family, Mode, Mode)> {
 /// it is looser, sealed by the app. Never a chat's: no sandboxed chat writes the file it is kept
 /// in, and only the app can seal it. One press, on the committed file as it stands; never a
 /// re-seal of an acceptance something else wrote.
+///
+/// `HEAD` is read once: what is digested is what is accepted.
 pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
-    if digest_of(root) != shown {
+    let now = committed(root);
+    if digest(&now) != shown {
         return Err(std::io::Error::other(
             "the project's policy changed since it was shown, so nothing was accepted; look at \
              it again",
         ));
     }
-    crate::sandbox::local::accept_policy(root, committed(root).as_kept())
+    crate::sandbox::local::accept_policy(root, now.as_kept())
 }
 
 /// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
@@ -788,11 +820,14 @@ pub struct Standing {
 
 /// [`Standing`] for the project at `root`.
 pub fn standing(root: &Path) -> Standing {
+    // One read of `HEAD`, so what waits and the digest the press must name are of the same file.
+    let settings = Settings::read(root);
+    let now = Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root));
     Standing {
-        waiting: waiting(root),
-        refused: Settings::read(root).refused,
+        waiting: now.looser_than(&accepted(root)),
+        refused: settings.refused,
         unsealed: crate::sandbox::local::policy_unsealed(root),
-        digest: digest_of(root),
+        digest: digest(&now),
     }
 }
 
@@ -950,6 +985,61 @@ const MOST_CHARS: usize = 200;
 /// What a log line names as its chat where the process was not told which (Q308 review, S3).
 pub const UNKNOWN_CHAT: &str = "unknown";
 
+/// The most lines one chat's log keeps (the re-review of #6992, S3): past it, a line is dropped.
+pub const MOST_LINES: usize = 10_000;
+
+/// The rule id of a host ask answered under `asks` = off or log.
+pub const RULE_HOST_ASK: &str = "host-ask";
+/// The rule id of the Read guard on a vault file.
+pub const RULE_VAULT_READ: &str = "A-read";
+/// The rule id of a vault value masked in a chat.
+pub const RULE_MASK: &str = "mask";
+/// The rule id of the merge hold.
+pub const RULE_MERGE_HOLD: &str = "merge-hold";
+/// The rule id of the guard on a branch folder another chat holds.
+pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
+
+/// **Whether `rule` is one of purlis's rules of `family`** (the re-review of #6992, S3): an arm
+/// of the Bash guard, a rule of the commit and push scan, or one of the rules named above. What
+/// the app takes from a line a chat's process hands over; any other is refused.
+pub fn known_rule(family: Family, rule: &str) -> bool {
+    if let Some(arm) = crate::toolgate::Arm::of_id(rule) {
+        return arm.family() == Some(family)
+            || (arm == crate::toolgate::Arm::HookSkip && family == Family::GuardsCredential);
+    }
+    let named = match rule {
+        RULE_HOST_ASK => Some(Family::Asks),
+        RULE_VAULT_READ | RULE_MASK => Some(Family::Secrets),
+        RULE_MERGE_HOLD => Some(Family::GuardsMerge),
+        RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
+        _ => None,
+    };
+    if let Some(named) = named {
+        return named == family;
+    }
+    crate::secretshape::leak_rules()
+        .iter()
+        .any(|(id, _)| *id == rule)
+        && crate::diffscan::family_of(rule) == family
+}
+
+/// **Whether `host` is a `host:port`**: a name or an address, and a port.
+pub fn is_host_and_port(host: &str) -> bool {
+    let Some((name, port)) = host.rsplit_once(':') else {
+        return false;
+    };
+    let name = name
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(name);
+    !name.is_empty()
+        && name.len() <= 253
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
+        && port.parse::<u16>().is_ok_and(|port| port != 0)
+}
+
 /// Where a process that is not the app sends its log lines: the app, over the hook socket
 /// ([`crate::hookwire::Ask::PolicyLog`]), since a process inside the wrap cannot write the log.
 pub type Sink = Box<dyn Fn(Family, &str, Option<&str>) + Send + Sync>;
@@ -1011,16 +1101,33 @@ fn append(root: &Path, path: &Path, line: &Logged) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     crate::contain::no_link_on_the_way(root, path)?;
     let mut options = std::fs::OpenOptions::new();
-    options.append(true).create(true);
+    options.read(true).append(true).create(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
     let mut file = crate::contain::nofollow(&mut options).open(path)?;
+    if lines_in(&mut file)? >= MOST_LINES {
+        return Ok(());
+    }
     let mut text = serde_json::to_string(line).map_err(std::io::Error::other)?;
     text.push('\n');
     file.write_all(text.as_bytes())
+}
+
+/// How many lines `file` holds, read from its start.
+fn lines_in(file: &mut std::fs::File) -> std::io::Result<usize> {
+    use std::io::{BufRead, Seek};
+    file.seek(std::io::SeekFrom::Start(0))?;
+    let mut lines = 0;
+    let mut reader = std::io::BufReader::new(&*file);
+    let mut buf = Vec::new();
+    while reader.read_until(b'\n', &mut buf)? > 0 {
+        lines += 1;
+        buf.clear();
+    }
+    Ok(lines)
 }
 
 /// Chat `chat`'s enforcement log, oldest first: what the window's count and a test read. Lines

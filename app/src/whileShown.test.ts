@@ -7,7 +7,9 @@ import { forgetShown, windowShown as shown } from "./test-shown";
 import { everyWhileShown, useWhileShown } from "./whileShown";
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  // Only the kind of timer a beat is: jsdom keeps its own rendering loop on setInterval too, and
+  // a bare useFakeTimers() fakes it into vi.getTimerCount() (#6982, as #4707 found).
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
 });
 afterEach(() => {
   forgetShown();

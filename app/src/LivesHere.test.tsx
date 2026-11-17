@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
@@ -166,7 +166,7 @@ describe("a project that lives only on this machine (#1820)", () => {
       await within(dialog).findByText("https://github.com/octocat/notebook"),
     ).toBeInTheDocument();
     // The project has its remote now: the line and its Publish are gone.
-    await vi.waitFor(() => expect(screen.queryByRole("note", LINE_BEHIND)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("note", LINE_BEHIND)).not.toBeInTheDocument());
     await person.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Publish to GitHub/ })).not.toBeInTheDocument();

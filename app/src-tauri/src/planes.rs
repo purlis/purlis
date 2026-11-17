@@ -1286,6 +1286,12 @@ impl Held {
         let record = match record {
             Ok(record) if choice == Choice::StartFresh => {
                 finished_fresh = crate::finished::finished_in(&self.root, &record);
+                // Every chat it held ends for good here, and keeps its card (#6487).
+                crate::chatcard::keep_closed_records(
+                    &self.root,
+                    &record.chats,
+                    "dropped at a fresh start",
+                );
                 let fresh = record.chosen(Choice::StartFresh);
                 self.recorded.write_now(fresh.clone());
                 tracing::info!(

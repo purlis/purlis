@@ -55,7 +55,9 @@ use super::super::tree::NodeKey;
 use super::takeover::{button_bit, key_event, metrics, mouse_event, typed};
 use super::{Browser, Inner, refusal};
 use crate::cdp::{Tap, Tapped};
-use crate::drive::{Aim, Call, Driver, MouseKind, PageId, Painted, PersonInput, Refusal, lock};
+use crate::drive::{
+    Aim, Call, Driver, MouseKind, PageId, PageLoad, Painted, PersonInput, Refusal, lock,
+};
 
 /// The front end the engine ships, told that its connection is the stand-in's.
 pub const FRONT_END: &str =
@@ -621,6 +623,8 @@ impl Browser {
         }
         let on = Some(open.front_session.as_str());
         match input {
+            // DevTools' view draws no strip to step from (#6938).
+            PersonInput::Navigate { .. } => return Err(Refusal::Missed),
             PersonInput::Key {
                 down,
                 key,
@@ -1344,6 +1348,8 @@ fn front_end_event(
                 sink(Painted {
                     aim: open.aim(),
                     address: String::new(),
+                    title: String::new(),
+                    load: PageLoad::Loaded,
                     jpeg,
                 });
             }

@@ -123,6 +123,9 @@ fn over_classic(parts: Value) -> Theme {
 fn allow_hovered_as_the_primary_at_rest() -> Value {
     json!({
         "button.root.secondary.hover.fill": "accent.fill",
+        // Classic's accent fill is its accent wash, a ground a button stands on (#6937): Keep
+        // blocked keeps an edge there, so only the answers' looks are what this measures.
+        "button.root.secondary.hover.border-colour": "text.primary",
         "button.root.grants.hover.fill": "accent.fill",
         "button.root.primary.hover.fill": "control.base",
     })
@@ -131,10 +134,8 @@ fn allow_hovered_as_the_primary_at_rest() -> Value {
 #[test]
 fn parts_that_draw_allow_in_one_state_as_the_primary_in_another_fall_back() {
     let theme = over_classic(allow_hovered_as_the_primary_at_rest());
-    assert!(
-        parts::fallen_alike(theme.first()).is_empty(),
-        "in any one state the two are apart"
-    );
+    let alike = parts::fallen_alike(theme.first());
+    assert!(alike.is_empty(), "in any one state the two are apart: {alike:?}");
     let fallen = parts::fallen(theme.first());
     let across: Vec<_> = fallen
         .iter()

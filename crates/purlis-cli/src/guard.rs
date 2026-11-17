@@ -193,11 +193,14 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
 }
 
 /// **One quiet line for a refusal a family under `log` would have made** (Q308): by its arm's id,
-/// or its reason where it has no arm, and never its sentence, which may quote the command.
+/// or, where it has no arm, the id of the hold that made it, and never its sentence, which may
+/// quote the command.
 fn log_verdict(root: &Path, chat: Option<&str>, family: Family, verdict: &toolgate::Verdict) {
-    let rule: &str = match verdict.arm {
-        Some(arm) => arm.id(),
-        None => &verdict.reason,
+    use purlis_core::enforcement::{RULE_BRANCH_FOLDER, RULE_MERGE_HOLD};
+    let rule: &str = match (verdict.arm, family) {
+        (Some(arm), _) => arm.id(),
+        (None, Family::GuardsMerge) => RULE_MERGE_HOLD,
+        (None, _) => RULE_BRANCH_FOLDER,
     };
     let chat = chat.unwrap_or(purlis_core::enforcement::UNKNOWN_CHAT);
     purlis_core::enforcement::record(root, chat, family, rule, None);
@@ -249,7 +252,7 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 /// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
 /// is refused with a block's reason, which the event log records.
 fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::Verdict> {
-    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
+    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS, UNKNOWN_LINE};
     use purlis_core::mergehold::{self, AppSaid, Held};
     crate::session::chat_number()?;
     let held = mergehold::held(command)?;
@@ -272,6 +275,8 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
     };
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
+        // An app of another build could not read the hand-over: no refusal of its own (#6960).
+        Some(Answer::No { why }) if why == UNKNOWN_LINE => AppSaid::OtherBuild,
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
     };

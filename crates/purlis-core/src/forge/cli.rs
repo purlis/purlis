@@ -279,6 +279,17 @@ pub(crate) fn stored_token(kind: Kind, host: &str) -> Result<Reply, NoAnswer> {
     })
 }
 
+/// The first line `kind`'s CLI says of its version (`glab version 1.103.0 (…)`), for an error
+/// about what it answered; `None` where it cannot say. Run with no credential variable, and it
+/// sends nothing over the network, so it is not listed in the network log.
+pub(super) fn version(kind: Kind) -> Option<String> {
+    let reply = call_with(kind, &strings(&["--version"]), STATUS_TIMEOUT, |_| false).ok()?;
+    reply
+        .ok()
+        .then(|| reply.out.lines().next().unwrap_or("").trim().to_owned())
+        .filter(|line| !line.is_empty())
+}
+
 /// Run `kind`'s CLI with `args`, passing on only the credential variables `keep` accepts.
 fn call_with(
     kind: Kind,

@@ -78,9 +78,16 @@ function core() {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
     order: () => asked.map(({ cmd }) => cmd),
     devtoolsSend: (jpeg: string, aim = "devtools:1") =>
-      devtools?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null }),
+      devtools?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null, shown: null }),
     devtoolsClosed: (closed: string) =>
-      devtools?.onmessage({ aim: "", jpeg: "", reconnection: null, page: null, closed }),
+      devtools?.onmessage({
+        aim: "",
+        jpeg: "",
+        reconnection: null,
+        page: null,
+        closed,
+        shown: null,
+      }),
   };
 }
 

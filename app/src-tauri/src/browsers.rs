@@ -72,6 +72,9 @@ pub struct BrowserWatching {
 /// reconnected.
 ///
 /// Or, with `page` and no image, where the browser's page is (#2300): its origin alone.
+///
+/// Or, with `shown` and no image, what the browser's page is (#6938): its whole address, its
+/// title and where its load stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BrowserFrame {
     pub aim: String,
@@ -86,6 +89,62 @@ pub struct BrowserFrame {
     /// last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
     /// `ended`; `null` on every other frame.
     pub closed: Option<String>,
+    /// What the browser's page is (#6938): said on its own, with no image, where it changed
+    /// and before the first frame of each snapshot; `null` on every frame, and from a host
+    /// before 1.90.
+    pub shown: Option<ShownPage>,
+}
+
+/// **What a browser's page is** (#6938), as the core tells its view, from the engine's own
+/// record of the page and never read from its content: its whole address, `null` where there
+/// is none to show (no page, a page that is not on the web, or one whose address holds a value
+/// purlis keeps out); its title, `null` for none; and where its load stands. Drawn by purlis
+/// outside the page, so a page cannot fake it (#2024).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+pub struct ShownPage {
+    pub address: Option<String>,
+    pub title: Option<String>,
+    pub load: PageLoadSaid,
+}
+
+/// **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
+/// (`net::ERR_NAME_NOT_RESOLVED`, `null` where it gave none), or crashed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PageLoadSaid {
+    Loading,
+    Loaded,
+    Failed { why: Option<String> },
+    Crashed,
+}
+
+impl ShownPage {
+    /// What the view is told of `page`, already held to what a view may draw
+    /// ([`purlis_session_protocol::browsing::PageShown::held`]).
+    pub(crate) fn of(page: purlis_session_protocol::browsing::PageShown) -> ShownPage {
+        use purlis_session_protocol::browsing::PageLoad;
+        let some = |text: String| (!text.is_empty()).then_some(text);
+        ShownPage {
+            address: some(page.address),
+            title: some(page.title),
+            load: match page.load {
+                PageLoad::Loading => PageLoadSaid::Loading,
+                PageLoad::Loaded => PageLoadSaid::Loaded,
+                PageLoad::Failed { why } => PageLoadSaid::Failed { why: some(why) },
+                PageLoad::Crashed => PageLoadSaid::Crashed,
+            },
+        }
+    }
+}
+
+/// **A step through a page's history the person takes** (#6938), from the strip above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserStep {
+    Back,
+    Forward,
+    Reload,
+    Stop,
 }
 
 /// **Where a browser's page is** (#2300): the origin of the document it has loaded
@@ -149,6 +208,8 @@ pub enum BrowserInput {
         key_code: u32,
         modifiers: u8,
     },
+    /// Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed.
+    Navigate { aim: String, step: BrowserStep },
 }
 
 /// What became of one event of the person's (#2014): it reached the page; it was dropped, the
@@ -246,6 +307,15 @@ impl BrowserInput {
                 physical: physical.clone(),
                 key_code: *key_code,
                 modifiers: *modifiers,
+            },
+            BrowserInput::Navigate { aim, step } => Input::Navigate {
+                aim: aim_read(aim)?,
+                step: match step {
+                    BrowserStep::Back => wire::Step::Back,
+                    BrowserStep::Forward => wire::Step::Forward,
+                    BrowserStep::Reload => wire::Step::Reload,
+                    BrowserStep::Stop => wire::Step::Stop,
+                },
             },
         })
     }
@@ -1210,14 +1280,16 @@ mod hosted {
         }
 
         /// Attaches a view of `program` as `role`, its whole frames handed to `frames`, its
-        /// page's origin to `origins` (#2300), and `link_said` told where it stands while the
-        /// link to the runner it is drawn from is down and back (#2542).
+        /// page's origin to `origins` (#2300), what its page is to `pages` (#6938), and
+        /// `link_said` told where it stands while the link to the runner it is drawn from is
+        /// down and back (#2542).
         pub(crate) fn watch(
             &self,
             program: &str,
             role: BrowserViewRole,
             frames: FrameSink,
             origins: OriginSink,
+            pages: crate::hostedsessions::PageSink,
             link_said: LinkSaid,
         ) -> Result<BrowserWatching, String> {
             let link = self.link_for(program)?;
@@ -1258,7 +1330,7 @@ mod hosted {
                 lock(&kept).insert(of.clone(), origin.clone());
                 origins(origin);
             });
-            link.draw_frames(attached.view, frames, origins, held);
+            link.draw_frames(attached.view, frames, origins, Some(pages), held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
                 link.call(Command::List),
@@ -1332,7 +1404,18 @@ mod hosted {
             let Some(input) = input.wire() else {
                 return Ok(InputOutcome::Missed);
             };
-            let sent = self.link_for(program)?.call_refused_within(
+            let link = self.link_for(program)?;
+            // A host before 1.90 takes no step through a page's history (#6938).
+            if matches!(
+                input,
+                purlis_session_protocol::browsing::Input::Navigate { .. }
+            ) && link.version() < session::KNOWS_PAGES_SHOWN
+            {
+                return Ok(InputOutcome::Refused {
+                    why: crate::browsers::OLD_HOST_NO_STEPS.to_owned(),
+                });
+            }
+            let sent = link.call_refused_within(
                 Command::BrowserInput {
                     program: program.to_owned(),
                     input,
@@ -1888,6 +1971,11 @@ pub async fn go_browser(
     }
 }
 
+/// What the person's Back, Forward, Reload or Stop is refused with on a browser whose host is
+/// older than 1.90 (#6938).
+pub const OLD_HOST_NO_STEPS: &str = "This browser's host is older than this window and cannot go \
+                                     back, forward, reload or stop. Update purlis where it runs.";
+
 /// What sending a browser the window did not start in this project to an address is refused
 /// with (#2176).
 pub const NOT_THIS_PROJECTS: &str = "This browser was not opened in this project from this \
@@ -1915,6 +2003,7 @@ pub async fn watch_browser(
         let browsers = browsers(&app)?;
         let said = frames.clone();
         let paged = frames.clone();
+        let told = frames.clone();
         crate::off_the_window("opening a browser view", move || {
             browsers
                 .watch(
@@ -1928,6 +2017,7 @@ pub async fn watch_browser(
                             reconnection: None,
                             page: None,
                             closed: None,
+                            shown: None,
                         });
                     }),
                     // Where its page is (#2300).
@@ -1938,6 +2028,18 @@ pub async fn watch_browser(
                             reconnection: None,
                             page: Some(PageAt { origin }),
                             closed: None,
+                            shown: None,
+                        });
+                    }),
+                    // What its page is (#6938).
+                    Box::new(move |shown| {
+                        let _ = told.send(BrowserFrame {
+                            aim: String::new(),
+                            jpeg: String::new(),
+                            reconnection: None,
+                            page: None,
+                            closed: None,
+                            shown: Some(ShownPage::of(shown)),
                         });
                     }),
                     // Where it stands while its runner's link is down and back (#2542).
@@ -1948,6 +2050,7 @@ pub async fn watch_browser(
                             reconnection: Some(reconnection),
                             page: None,
                             closed: None,
+                            shown: None,
                         });
                     }),
                 )
@@ -2151,6 +2254,7 @@ pub async fn watch_inspector(
                         reconnection: None,
                         page: None,
                         closed: None,
+                        shown: None,
                     });
                 }),
                 // Why they closed, before the view's end (#2028).
@@ -2161,6 +2265,7 @@ pub async fn watch_inspector(
                         reconnection: None,
                         page: None,
                         closed: Some(why.to_owned()),
+                        shown: None,
                     });
                 }),
             )

@@ -1198,7 +1198,9 @@ describe("nothing a gallery test starts outlives it (#2698)", () => {
   });
 
   it("ends the wait for a busy painter when the pictures are forgotten", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Only the kind of wait a busy painter is given: jsdom keeps its own rendering loop on
+    // setInterval, and a bare fake counts it in vi.getTimerCount() (#6982, as #4707 found).
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     const { asked } = core({ ...GALLERY, cards: [DUSK] }, { painter: () => SPECIMEN_BUSY });
     render(<Group at={null} />);
     await cards();

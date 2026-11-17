@@ -105,7 +105,7 @@ pub struct Server {
 ///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
 ///   `resume_session`, `retry_chat_that_did_not_start`, `retry_project`, `reopen_finished_task`,
-///   `curate` (a
+///   `reopen_closed_chat` (Reopen on a closed chat's card, #6485), `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
@@ -345,6 +345,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "retry_chat_that_did_not_start",
     "retry_project",
     "reopen_finished_task",
+    "reopen_closed_chat",
     "curate",
     "relaunch",
     // Discuss in an artifact's bar (#5957, ADR 0122 §5): a chat about the page, typed unsent.
@@ -1268,6 +1269,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
+    // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
+    // only the window's list looks among them.
+    "closed_chats",
     // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",

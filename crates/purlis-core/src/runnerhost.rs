@@ -31,8 +31,12 @@
 //!
 //! **A host the manager starts never exits for want of a client**: `purlis serve` never did
 //! (`purlis_host::lifetime`). It is started as `purlis serve --as-a-service`, which differs from
-//! `purlis serve` in one thing: finding another host of its version already serving is a
-//! success, so the manager does not restart it into the same answer until its limit trips.
+//! `purlis serve` in two things: finding another host of its version already serving is a
+//! success, so the manager does not restart it into the same answer until its limit trips; and
+//! **an old version's host stops itself** once a newer version is installed beside it and it has
+//! had nothing to run and no link for a minute (#6704, `purlis_host::Superseded`). Either exits
+//! 0, which neither manager restarts, so the next prune finds the old version drained and takes
+//! its service back by name ([`remove_version`]).
 //!
 //! Nothing here reads what a manager prints but the exit status of its own query commands
 //! (`systemctl --user is-enabled`, `launchctl print`), which are their interfaces for scripts.
@@ -44,6 +48,11 @@ use crate::loginitem::{self, Os, Runs};
 
 /// The hidden flag a service manager starts the host with: `purlis serve --as-a-service`.
 pub const AS_A_SERVICE: &str = "--as-a-service";
+
+/// **How long a stop waits for the host** (#6700): systemd's `TimeoutStopSec=` and launchd's
+/// `ExitTimeOut`. The host ends its chats within `purlis_host::ENDS_WITHIN` of `SIGTERM`;
+/// this is for a machine slow to shut down.
+pub const STOPS_WITHIN_SECONDS: u64 = 30;
 
 /// Where `systemd-logind` notes each user whose manager lingers (`loginctl(1)`, `enable-linger`).
 pub const LINGER_DIR: &str = "/var/lib/systemd/linger";
@@ -102,10 +111,12 @@ impl Service {
 
 /// **The systemd user unit**: wanted by `default.target`, which a user manager reaches whether
 /// or not anyone has a desktop; restarted after a failure, and held stopped after
-/// [`loginitem::EXITS`] failures within [`loginitem::WITHIN_SECONDS`]. A stop or the machine's
-/// shutdown ends the host and every chat in its control group; the next host of this version
-/// settles each as ended by that (`purlis_host::HostRecord`). The config home install resolved
-/// is pinned in `Environment=`.
+/// [`loginitem::EXITS`] failures within [`loginitem::WITHIN_SECONDS`]. **A stop or the machine's
+/// shutdown reaches the host first** (`KillMode=mixed`, #6700): `SIGTERM` goes to it alone, it
+/// ends every chat as a quit, empties its host record and exits 0, and only then, or after
+/// [`STOPS_WITHIN_SECONDS`], is what is left of its control group killed. A host killed outright
+/// leaves its record, and the next host of this version settles each chat in it as a crash
+/// (`purlis_host::HostRecord`). The config home install resolved is pinned in `Environment=`.
 pub fn unit(service: &Service) -> String {
     let command: Vec<String> = std::iter::once(service.binary.to_string_lossy().into_owned())
         .chain(service.job().args)
@@ -137,6 +148,8 @@ pub fn unit(service: &Service) -> String {
          ExecStart={}\n\
          Restart=on-failure\n\
          RestartSec=5\n\
+         KillMode=mixed\n\
+         TimeoutStopSec={STOPS_WITHIN_SECONDS}\n\
          \n\
          [Install]\n\
          WantedBy=default.target\n",
@@ -149,8 +162,13 @@ pub fn unit(service: &Service) -> String {
 
 /// **The LaunchAgent**: loaded now, into the account's GUI domain or, signed in over SSH alone,
 /// its user domain; started again after an exit that was not a success. After a restart launchd
-/// loads it only at a sign-in at the Mac's screen. The config home install resolved is pinned
-/// in `EnvironmentVariables`. What the host says on standard error goes to `log`.
+/// loads it only at a sign-in at the Mac's screen. A bootout sends `SIGTERM` to the host, which
+/// ends every chat as a quit (#6700), and `SIGKILL` only after `ExitTimeOut`
+/// ([`STOPS_WITHIN_SECONDS`]). This is not `KillMode=mixed`: launchd signals the job's process
+/// group, and each chat runs in a session of its own, so neither signal reaches a chat. The host
+/// alone ends them; a chat a host killed at `ExitTimeOut` left running is ended by the next host,
+/// which settles it as ended by that crash. The config home install resolved is pinned in `EnvironmentVariables`. What the host says on standard error goes to
+/// `log`.
 pub fn plist(service: &Service, log: &Path) -> String {
     let mut keep_alive = plist::Dictionary::new();
     keep_alive.insert("SuccessfulExit".into(), false.into());
@@ -162,6 +180,7 @@ pub fn plist(service: &Service, log: &Path) -> String {
     );
     agent.insert("RunAtLoad".into(), true.into());
     agent.insert("KeepAlive".into(), keep_alive.into());
+    agent.insert("ExitTimeOut".into(), STOPS_WITHIN_SECONDS.into());
     if let Some(home) = &service.config_home {
         let mut environment = plist::Dictionary::new();
         environment.insert(
@@ -590,6 +609,31 @@ pub fn remove_version(here: &Here, version: &str) -> Result<(), String> {
         },
     )
     .map(drop)
+}
+
+/// **Whether this machine's manager starts a host of the installed version `version` at boot**,
+/// read from disk alone, by the service's name ([`Service::unit_name`], [`Service::label`]):
+/// under systemd, the link `systemctl --user enable` puts in `default.target.wants/` (the unit's
+/// `WantedBy=`), which `disable` takes away; under launchd, its agent's file. Never where no
+/// manager keeps hosts. What tells an older version's host kept by its machine that a newer one
+/// takes over from it (#6704): a newer version disabled or taken back takes over nothing.
+#[must_use]
+pub fn version_started_at_boot(here: &Here, version: &str) -> bool {
+    let service = Service {
+        binary: PathBuf::new(),
+        version: Some(version.to_owned()),
+        config_home: None,
+    };
+    match here.keeper {
+        // `exists` follows the link: one left naming a unit file that is gone starts nothing.
+        Keeper::SystemdUser => here
+            .user_units
+            .join("default.target.wants")
+            .join(service.unit_name())
+            .exists(),
+        Keeper::Launchd => here.plist_path(&service).exists(),
+        Keeper::Foreground(_) => false,
+    }
 }
 
 /// **What doctor finds of a runner's host** (read by [`look`], judged by [`rows`]).

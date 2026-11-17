@@ -7,12 +7,13 @@
 //!
 //! Each check is read from what can be told without reading ssh's words: the person's own SSH
 //! settings as `ssh -G` prints them, the system's resolver, a TCP connection, the key ssh wrote
-//! as it met the machine, and ssh's and the probe's exits ([`super::PROBE`]). Each failure is a
+//! as it met the machine, the greeting an SSH server sends first ([`greets_as_ssh`]), and ssh's
+//! and the probe's exits ([`super::PROBE`]). Each failure is a
 //! [`Finding`], whose words are Pool setup's ([`crate::poolsetup`]).
 
 use std::net::ToSocketAddrs as _;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::{EnginePin, HostKey, Pin, Route};
 
@@ -24,9 +25,21 @@ pub enum Finding {
     NoSuchName { host: String },
     /// Nothing answers on the port.
     NoAnswer { host: String, port: u16 },
-    /// ssh met no key (it couldn't be run, or the machine said nothing ssh could read): what it
-    /// said, to be shown.
+    /// Nothing answered as SSH (#6823 review): its port took the connection and no SSH server
+    /// greeted this machine there. What ssh said, to be shown.
+    NotSsh {
+        host: String,
+        port: u16,
+        said: String,
+    },
+    /// An SSH server greeted this machine there, and ssh saved no key from it: what it said, to
+    /// be shown.
     NotMet { host: String, said: String },
+    /// A jump host or command reaches the machine, and ssh saved no key through it (#6942
+    /// review). This machine can't ask past them, so it can't tell a jump host that is down from
+    /// a machine whose SSH is down, or from a key it couldn't save here: what ssh said, to be
+    /// shown.
+    NotMetThrough { host: String, said: String },
     /// The machine presents a key other than the one pinned or confirmed.
     KeyChanged {
         host: String,
@@ -268,8 +281,26 @@ pub fn reachable(route: &Route, resolved: &Resolved) -> Result<(), Finding> {
 }
 
 /// **The key the machine presents** (ADR 0123 §3), met by a first contact that signs in with
-/// nothing ([`super::contact_args`]) in a run folder of its own under `settings_in`.
-pub fn meet(ssh: &Path, route: &Route, settings_in: &Path) -> Result<HostKey, Finding> {
+/// nothing ([`super::contact_args`]) in a run folder of its own under `settings_in`. Where it
+/// saves none, `resolved` (what the person's SSH settings make of the route) says which finding
+/// that is ([`unmet`]).
+pub fn meet(
+    ssh: &Path,
+    route: &Route,
+    resolved: &Resolved,
+    settings_in: &Path,
+) -> Result<HostKey, Finding> {
+    // ssh's exit is the same either way, and its words are never read to decide: whether an SSH
+    // server was there is asked of the machine itself.
+    first_contact(ssh, route, settings_in)?.map_err(|said| unmet(route, resolved, said))
+}
+
+/// **A first contact's key**, or what ssh said where it saved none.
+fn first_contact(
+    ssh: &Path,
+    route: &Route,
+    settings_in: &Path,
+) -> Result<Result<HostKey, String>, Finding> {
     let folder =
         crate::dockerpool::settings::run_folder(settings_in).map_err(|why| Finding::Here(why.0))?;
     let scratch = folder
@@ -278,9 +309,90 @@ pub fn meet(ssh: &Path, route: &Route, settings_in: &Path) -> Result<HostKey, Fi
     let args = super::contact_args(route, &scratch).map_err(Finding::Here)?;
     let ran = super::run(ssh, &args).map_err(Finding::Here)?;
     let written = std::fs::read_to_string(&scratch).unwrap_or_default();
-    super::key_met(&written).ok_or_else(|| Finding::NotMet {
-        host: route.host().to_owned(),
-        said: ran.said,
+    Ok(super::key_met(&written).ok_or(ran.said))
+}
+
+/// **What a first contact that saved no key found**: [`Finding::NotMet`] only where an SSH
+/// server greets this machine on the route's port, so the key was there to save, and
+/// [`Finding::NotSsh`] where none does. Where a jump host or command reaches the machine, this
+/// machine can't ask past them, so it is [`Finding::NotMetThrough`], which names no cause.
+#[must_use]
+pub fn unmet(route: &Route, resolved: &Resolved, said: String) -> Finding {
+    let host = route.host().to_owned();
+    if resolved.proxied {
+        Finding::NotMetThrough { host, said }
+    } else if greets_as_ssh(resolved) {
+        Finding::NotMet { host, said }
+    } else {
+        Finding::NotSsh {
+            host,
+            port: resolved.port,
+            said,
+        }
+    }
+}
+
+/// The most of an answer read for an SSH server's greeting: RFC 4253 §4.2 lets a server send
+/// lines before it, and holds each line to 255 bytes.
+const GREETING_WITHIN_BYTES: usize = 8 * 1024;
+
+/// **Whether an SSH server greets this machine on the resolved port** (RFC 4253 §4.2: its first
+/// line beginning `SSH-` is its identification), read with nothing sent and nothing signed in,
+/// within [`ANSWER_WITHIN`] in all. False where a jump host or command reaches the machine, or
+/// nothing greets in time.
+#[must_use]
+pub fn greets_as_ssh(resolved: &Resolved) -> bool {
+    greets_as_ssh_within(resolved, ANSWER_WITHIN)
+}
+
+/// [`greets_as_ssh`], with `within` for the whole of it: the connections and every read share
+/// one deadline, so a server that trickles its answer a byte at a time holds Connect no longer
+/// (#6942 review).
+pub(crate) fn greets_as_ssh_within(resolved: &Resolved, within: Duration) -> bool {
+    use std::io::Read as _;
+    if resolved.proxied {
+        return false;
+    }
+    let deadline = Instant::now() + within;
+    let left = || {
+        deadline
+            .checked_duration_since(Instant::now())
+            .filter(|wait| !wait.is_zero())
+    };
+    let Ok(addresses) = (resolved.hostname.as_str(), resolved.port).to_socket_addrs() else {
+        return false;
+    };
+    addresses.into_iter().any(|at| {
+        let Some(wait) = left() else { return false };
+        let Ok(mut stream) = std::net::TcpStream::connect_timeout(&at, wait) else {
+            return false;
+        };
+        // The start of the line being read, up to the four bytes that tell.
+        let mut start = Vec::with_capacity(4);
+        let mut chunk = [0_u8; 256];
+        let mut read = 0;
+        while read < GREETING_WITHIN_BYTES {
+            let Some(wait) = left() else { return false };
+            if stream.set_read_timeout(Some(wait)).is_err() {
+                return false;
+            }
+            let got = match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => return false,
+                Ok(got) => got,
+            };
+            read += got;
+            for &byte in &chunk[..got] {
+                if byte == b'\n' {
+                    start.clear();
+                } else if start.len() < 4 {
+                    start.push(byte);
+                    if start == b"SSH-" {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     })
 }
 
@@ -345,8 +457,8 @@ pub fn probe(
     .map_err(Finding::Here)?;
     if signed_in.code != Some(0) {
         // Met again with nothing pinned: a key other than this one is said as such.
-        return Err(match meet(ssh, route, settings_in) {
-            Ok(now) if now != *key => Finding::KeyChanged {
+        return Err(match first_contact(ssh, route, settings_in) {
+            Ok(Ok(now)) if now != *key => Finding::KeyChanged {
                 host: host(),
                 pinned: key.clone(),
                 now,

@@ -443,6 +443,7 @@ fn chats_here() -> (Resolver, ChatsHere<'static>) {
         .map(|(number, id)| OpenChat {
             number,
             id: Some(format!("01K6{id}")),
+            earlier: Vec::new(),
         })
         .to_vec();
     (
