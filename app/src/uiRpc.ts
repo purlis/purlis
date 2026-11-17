@@ -1613,11 +1613,7 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **What the chat whose ULID is `id` is now** (#6685's review): what a closed chat's row in the
-	 *  Chats list's filter opens. On a blocking thread, as it reads the dispatch records.
-	 */
-	chatById: (plane: PlaneId, id: string) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id })),
+	chatById: __WINDOW_ONLY_RESULT,
 	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
