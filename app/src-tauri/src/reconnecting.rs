@@ -48,6 +48,63 @@ pub struct ChatsReconnecting {
     pub reconnection: Reconnection,
 }
 
+/// **Why the link to a runner is down, as its host last said** (#ISSUE): what ended it, or what
+/// the last try to link again found, and when it first went.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LinkDown {
+    /// The host's own words.
+    pub why: String,
+    /// When the link went down, in seconds since 1970: a try that fails again does not move it.
+    pub since: u32,
+}
+
+/// **A pool's runner whose link is down, and why** (#ISSUE): what the window says once its
+/// chats have said Reconnecting… for longer than a blip.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunnerLinkDown {
+    /// The pool whose runner it is.
+    pub pool: String,
+    /// The host's own words: what ended the link, or what the last try to link again found.
+    pub why: String,
+    /// When the link went down, in seconds since 1970.
+    pub since: u32,
+}
+
+/// The pools' runners whose links are down now, for `plane`'s chats (#ISSUE): read as a window
+/// is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
+/// to link again that failed for another reason says so there.
+#[tauri::command]
+#[specta::specta]
+pub fn runner_links_down(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<RunnerLinkDown>, String> {
+    Ok(planes.held(&plane)?.chats().sessions().runners_down())
+}
+
+/// **Try now** (#ISSUE): pool `pool`'s runner, whose link is down, is tried again at once rather
+/// than after the pause between tries. Answered before the try: what it finds is said as ever,
+/// on `chats-reconnecting`.
+#[tauri::command]
+#[specta::specta]
+pub fn runner_link_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+) -> Result<(), String> {
+    planes.held(&plane)?.chats().sessions().link_pool_now(&pool);
+    Ok(())
+}
+
+/// Now, in seconds since 1970: what [`LinkDown::since`] counts in.
+pub(crate) fn now_secs() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u32::try_from(since.as_secs()).unwrap_or(u32::MAX)
+        })
+}
+
 /// Told each time a plane's chats start or stop reconnecting.
 pub type Teller = std::sync::Arc<dyn Fn(ChatsReconnecting) + Send + Sync + 'static>;
 

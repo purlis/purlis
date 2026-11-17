@@ -1136,6 +1136,33 @@ impl SessionHost for RoutedSessions {
         all.into_iter().collect()
     }
 
+    fn runners_down(&self) -> Vec<crate::reconnecting::RunnerLinkDown> {
+        let mut down: Vec<_> = self
+            .named_pools()
+            .into_iter()
+            .filter_map(|(pool, host)| {
+                host.link_down()
+                    .map(|down| crate::reconnecting::RunnerLinkDown {
+                        pool,
+                        why: down.why,
+                        since: down.since,
+                    })
+            })
+            .collect();
+        // A pool's draining runner and its runner now are one pool to the person: said once.
+        down.sort_by(|a, b| a.pool.cmp(&b.pool).then(a.since.cmp(&b.since)));
+        down.dedup_by(|later, first| later.pool == first.pool);
+        down
+    }
+
+    fn link_pool_now(&self, pool: &str) {
+        for (named, host) in self.named_pools() {
+            if named == pool {
+                host.link_now();
+            }
+        }
+    }
+
     fn lost_with_its_host(&self, id: u32) -> bool {
         match self.host_of(id) {
             Some(host) => host.lost_with_its_host(id),

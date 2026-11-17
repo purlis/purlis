@@ -431,16 +431,27 @@ async fn while_no_link_is_up_every_command_is_refused_and_none_is_sent_on_later(
 }
 
 #[tokio::test]
-async fn the_window_is_told_once_that_the_link_is_down_and_then_that_it_is_back() {
+async fn the_window_is_told_that_the_link_is_down_again_only_when_why_changes_and_then_that_it_is_back()
+ {
     let mut window = a_window(never_renewed()).await;
     let (_program, _running, mut viewer, mut first) = window.watching().await;
     assert_eq!(snapshot(&mut first).await, b"ready> ");
 
     window.cable.reach(Reach::Nothing);
     window.cable.cut();
-    match window.pushed().await {
-        Pushed::LinkDown { why, .. } => assert!(!why.is_empty()),
+    let said = match window.pushed().await {
+        Pushed::LinkDown { why, .. } => why,
         other => panic!("the window was told {other:?} before the link was down"),
+    };
+    assert!(!said.is_empty());
+    // Host A tries again, and the window is told the link is still down for another reason
+    // once: what the try that failed said (#ISSUE).
+    match window.pushed().await {
+        Pushed::LinkDown { why, .. } => {
+            assert_ne!(why, said);
+            assert!(why.contains("nothing answers"), "told {why}");
+        }
+        other => panic!("the window was told {other:?}, not why the link stays down"),
     }
     // Host A tries again and again while nothing answers, and the window is told nothing more.
     timeout(PATIENCE, async {
@@ -456,6 +467,39 @@ async fn the_window_is_told_once_that_the_link_is_down_and_then_that_it_is_back(
     let mut again = window.next_view(&mut viewer).await;
     assert_eq!(again.view(), first.view());
     assert_eq!(snapshot(&mut again).await, b"ready> ");
+}
+
+/// Try now (#ISSUE): the window asks host A to link again at once (`link_now`), rather than once
+/// its pause between tries has passed.
+#[tokio::test]
+async fn a_window_that_asks_to_link_now_is_linked_without_waiting_out_the_pause() {
+    let mut window = a_window(never_renewed()).await;
+    let (_program, _running, _viewer, _first) = window.watching().await;
+
+    window.cable.reach(Reach::Nothing);
+    window.cable.cut();
+    // Five tries have failed: host A pauses four seconds before the next.
+    timeout(PATIENCE, async {
+        while window.cable.dials() < 6 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("host A keeps trying");
+    window.cable.reach(Reach::HostB);
+    let asked = tokio::time::Instant::now();
+
+    assert_eq!(
+        window.client.call(Command::LinkNow).await.unwrap(),
+        Answer::Done
+    );
+
+    timeout(Duration::from_secs(2), async {
+        while window.pushed().await != (Pushed::LinkBack {}) {}
+    })
+    .await
+    .expect("host A links again at once");
+    assert!(asked.elapsed() < Duration::from_secs(2));
 }
 
 #[tokio::test]

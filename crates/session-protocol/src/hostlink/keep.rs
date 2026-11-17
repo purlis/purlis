@@ -88,6 +88,8 @@ pub struct FarEndGone(pub String);
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
 pub struct Links {
     told: mpsc::Receiver<Linked>,
+    /// Wakes a pause between tries, so the next try is now ([`Links::try_now`]).
+    now: std::sync::Arc<tokio::sync::Notify>,
     /// How many links have been read up.
     ups: u64,
     /// How many of them the reader has moved to.
@@ -108,6 +110,13 @@ impl Links {
     /// was up before it, renewed ahead of its limit, ends now rather than at the deadline.
     pub fn moved(&self) {
         self.moved.send_replace(self.ups);
+    }
+
+    /// **Try now** (#ISSUE): a link that is down is tried again at once, rather than once the
+    /// pause between tries has passed. A try under way finishes first; one asked for while a
+    /// link is up skips the first pause after it next goes down.
+    pub fn try_now(&self) {
+        self.now.notify_one();
     }
 }
 
@@ -130,6 +139,8 @@ pub fn keep_linked<C: Connector>(
 ) -> Links {
     let (tell, told) = mpsc::channel(4);
     let (moved, moved_to) = watch::channel(0);
+    let now = std::sync::Arc::new(tokio::sync::Notify::new());
+    let try_now = std::sync::Arc::clone(&now);
     tokio::spawn(async move {
         let mut ups: u64 = 0;
         let dial = || async {
@@ -160,7 +171,10 @@ pub fn keep_linked<C: Connector>(
                     if tell.send(Linked::Down(why)).await.is_err() || gone {
                         return;
                     }
-                    tokio::time::sleep(pause).await;
+                    tokio::select! {
+                        () = tokio::time::sleep(pause) => {}
+                        () = try_now.notified() => {}
+                    }
                     pause = (pause * 2).min(MOST_PAUSE);
                     continue;
                 }
@@ -191,6 +205,7 @@ pub fn keep_linked<C: Connector>(
     });
     Links {
         told,
+        now,
         ups: 0,
         moved,
     }
