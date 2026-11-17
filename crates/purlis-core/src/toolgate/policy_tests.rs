@@ -25,7 +25,7 @@ fn refused_lines() -> [(Family, &'static str, Arm, Option<&'static str>); 6] {
             None,
         ),
         (
-            Family::GuardsGit,
+            Family::GuardsPlane,
             "git checkout feature",
             Arm::PlaneRootBranch,
             None,
@@ -145,30 +145,15 @@ fn an_arm_that_only_logs_leaves_a_later_enforced_arm_to_refuse() {
 }
 
 #[test]
-fn every_arm_has_a_family_and_the_shape_arms_hold_under_open_until_wired() {
+fn every_arm_but_the_persons_own_rules_has_a_family() {
     for arm in Arm::ALL {
-        assert!(arm.family().is_some(), "{}", arm.id());
+        assert_eq!(
+            arm.family().is_none(),
+            *arm == Arm::RuleSpelling,
+            "{}",
+            arm.id()
+        );
     }
-    // `guards.shape` is a key now and not yet switchable: `open` leaves the caps refusing.
-    let open = crate::enforcement::Resolved::of(
-        &crate::enforcement::Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
-        &crate::sandbox::policy::Locks::none(),
-    );
-    let huge = "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES + 1);
-    let dir = tempfile::tempdir().expect("a directory");
-    let state = dir.path().join(".charter");
-    let call = Call {
-        command: &huge,
-        cwd: "",
-        state_dir: &state,
-        caller: Caller {
-            agent_id: None,
-            harness: Some("claude-code"),
-            permission_mode: Some("default"),
-        },
-    };
-    let judged = judged(&call, None, &|family| open.mode(family));
-    assert_eq!(judged.refused.and_then(|v| v.arm), Some(Arm::Caps));
 }
 
 #[test]
@@ -258,5 +243,193 @@ fn a_hook_skip_is_refused_while_the_credential_scan_is_enforced_whatever_save_sa
                 "{policy:?} {cmd}"
             );
         }
+    }
+}
+
+/// `[policy]` as `text` resolves it, with no lock.
+fn resolved_of(text: &str) -> crate::enforcement::Resolved {
+    crate::enforcement::Resolved::of(
+        &crate::enforcement::Settings::from_text(Some(&format!("[policy]\n{text}"))),
+        &crate::sandbox::policy::Locks::none(),
+    )
+}
+
+/// What the gate makes of `cmd`, from a caller whose sub-agent id is `agent_id`, in a plane at
+/// a fresh folder that `plant` has filled, under `[policy]` `text`.
+fn judged_under(
+    text: &str,
+    cmd: &str,
+    agent_id: Option<&str>,
+    plant: &dyn Fn(&std::path::Path),
+) -> Judged {
+    let resolved = resolved_of(text);
+    let dir = tempfile::tempdir().expect("a directory");
+    plant(dir.path());
+    let root = dir.path().display().to_string();
+    let state = dir.path().join(".charter");
+    let forges = vec![Forge::default_of(Kind::GitHub)];
+    let plane = Plane {
+        root: &root,
+        forges: &forges,
+        session_dir: &root,
+        launched: Launched {
+            sandboxed: false,
+            chat_dir: Some(&root),
+            attendance: None,
+        },
+    };
+    let call = Call {
+        command: cmd,
+        cwd: &root,
+        state_dir: &state,
+        caller: Caller {
+            agent_id,
+            harness: Some("claude-code"),
+            permission_mode: Some("default"),
+        },
+    };
+    judged(&call, Some(&plane), &|family| resolved.mode(family))
+}
+
+fn nothing_planted(_: &std::path::Path) {}
+
+/// One line each shape arm refuses (Q308b: `guards.shape`), and the sub-agent it comes from.
+fn shape_lines() -> Vec<(String, Arm, Option<&'static str>)> {
+    let task = "purlis dispatch --name x <<'B'\nlook\nB";
+    vec![
+        (
+            "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES + 1),
+            Arm::Caps,
+            None,
+        ),
+        (task.to_owned(), Arm::SubAgentDispatch, Some("sub-1")),
+        (
+            "purlis dispatch report --outcome done \"$(cat notes.md)\"".to_owned(),
+            Arm::DispatchText,
+            None,
+        ),
+        (format!("{task}\ntouch /tmp/zz"), Arm::Rider, None),
+    ]
+}
+
+#[test]
+fn the_shape_arms_run_as_guards_shape_says_where_nothing_else_reads_the_command() {
+    // Every other family off, so the caps answer to `guards.shape` alone.
+    for (cmd, arm, agent) in shape_lines() {
+        for (mode, refused, logged) in [
+            ("enforce", Some(arm), vec![]),
+            ("log", None, vec![Some(arm)]),
+            ("off", None, vec![]),
+        ] {
+            let judged = judged_under(
+                &format!("template = \"open\"\nguards.shape = \"{mode}\"\n"),
+                &cmd,
+                agent,
+                &nothing_planted,
+            );
+            assert_eq!(judged.refused.and_then(|v| v.arm), refused, "{mode} {}", arm.id());
+            assert_eq!(
+                judged.logged.iter().map(|v| v.arm).collect::<Vec<_>>(),
+                logged,
+                "{mode} {}",
+                arm.id()
+            );
+        }
+    }
+    // And `strict` with only the shape off lifts every shape arm but the caps (below).
+    for (cmd, arm, agent) in shape_lines().into_iter().skip(1) {
+        let judged = judged_under(
+            "template = \"strict\"\nguards.shape = \"off\"\n",
+            &cmd,
+            agent,
+            &nothing_planted,
+        );
+        assert_eq!(judged.refused, None, "{}", arm.id());
+    }
+}
+
+#[test]
+fn a_command_too_big_to_read_is_refused_while_any_family_that_reads_it_is_enforced() {
+    // A command past the caps is one no arm can read, so it cannot be shown clear of an enforced
+    // one: the caps run at the strictest family the gate asks, whatever `guards.shape` says.
+    let huge = "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES + 1);
+    for text in [
+        "template = \"watch\"\nguards.shape = \"off\"\n",
+        "template = \"strict\"\nguards.shape = \"off\"\n",
+        "template = \"open\"\nsecrets = \"enforce\"\n",
+    ] {
+        let judged = judged_under(text, &huge, None, &nothing_planted);
+        assert_eq!(judged.refused.and_then(|v| v.arm), Some(Arm::Caps), "{text}");
+    }
+    // Where the strictest of them only logs, the caps log.
+    let judged = judged_under(
+        "template = \"open\"\nguards.save = \"log\"\n",
+        &huge,
+        None,
+        &nothing_planted,
+    );
+    assert_eq!(judged.refused, None);
+    assert_eq!(
+        judged.logged.iter().map(|v| v.arm).collect::<Vec<_>>(),
+        [Some(Arm::Caps)]
+    );
+}
+
+#[test]
+fn the_plane_roots_branch_and_reset_arms_run_as_guards_plane_says() {
+    // Q308b: the plane root's git is `guards.plane`'s, not `guards.git`'s.
+    assert_eq!(Arm::PlaneRootBranch.family(), Some(Family::GuardsPlane));
+    assert_eq!(Arm::PlaneRootReset.family(), Some(Family::GuardsPlane));
+    let cmd = "git checkout feature";
+    for (text, refused, logged) in [
+        ("template = \"strict\"\n", Some(Arm::PlaneRootBranch), vec![]),
+        (
+            "template = \"strict\"\nguards.git = \"off\"\n",
+            Some(Arm::PlaneRootBranch),
+            vec![],
+        ),
+        (
+            "template = \"strict\"\nguards.plane = \"log\"\n",
+            None,
+            vec![Some(Arm::PlaneRootBranch)],
+        ),
+        ("template = \"strict\"\nguards.plane = \"off\"\n", None, vec![]),
+        ("template = \"team\"\n", Some(Arm::PlaneRootBranch), vec![]),
+    ] {
+        let judged = judged_under(text, cmd, None, &nothing_planted);
+        assert_eq!(judged.refused.and_then(|v| v.arm), refused, "{text}");
+        assert_eq!(
+            judged.logged.iter().map(|v| v.arm).collect::<Vec<_>>(),
+            logged,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn the_persons_own_ask_and_deny_rules_hold_under_every_spelling_in_every_mode() {
+    // Q308b: the person's own denies are theirs, not a shipped block, so A7c holds under `open`.
+    assert_eq!(Arm::RuleSpelling.family(), None);
+    let plant = |dir: &std::path::Path| {
+        std::fs::create_dir_all(dir.join(".claude")).expect(".claude");
+        std::fs::write(
+            dir.join(".claude/settings.json"),
+            r#"{"permissions": {"deny": ["Bash(terraform apply *)"]}}"#,
+        )
+        .expect("settings");
+    };
+    for template in crate::enforcement::Template::ALL {
+        let judged = judged_under(
+            &format!("template = \"{}\"\nguards.shape = \"off\"\n", template.word()),
+            "/usr/local/bin/terraform apply",
+            None,
+            &plant,
+        );
+        assert_eq!(
+            judged.refused.and_then(|v| v.arm),
+            Some(Arm::RuleSpelling),
+            "{}",
+            template.word()
+        );
     }
 }

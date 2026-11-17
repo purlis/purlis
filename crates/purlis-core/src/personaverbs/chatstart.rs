@@ -190,16 +190,21 @@ pub fn carries(harness: Option<Harness>) -> bool {
 /// persona declares `disallowed-tools:` and purlis cannot deny a chat those tools there.
 ///
 /// **Fail closed** (D-1451-18). The one answer for a chat the person starts and for a
-/// dispatched one.
+/// dispatched one, as `[policy] tools` runs (Q308b): under `off` the chat starts, and under
+/// `log` it starts and one line says it would have been refused.
 pub fn unenforced(root: &Path, persona: &str, harness: Option<Harness>) -> Option<String> {
     if carries(harness) || denied_tools(root, persona).is_empty() {
         return None;
     }
-    Some(unenforced_said(
-        persona,
-        &super::def_rel(root, persona),
-        harness,
-    ))
+    crate::enforcement::judged(
+        root,
+        None,
+        crate::enforcement::Family::Tools,
+        crate::enforcement::mode(root, crate::enforcement::Family::Tools),
+        "persona.disallowed-tools",
+        None,
+        unenforced_said(persona, &super::def_rel(root, persona), harness),
+    )
 }
 
 /// [`unenforced`]'s sentence, for a caller that already knows the persona declares the key:

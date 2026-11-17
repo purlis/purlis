@@ -205,7 +205,14 @@ impl Plane {
 
     /// With a profile `name` the project offers and this machine approved, whose own
     /// command switches the harness's permission prompts off.
+    ///
+    /// The project enforces `mode` (Q308b), whose refusal of such a profile these tests are
+    /// about: under the default, `watch`, it is only logged.
     fn with_a_profile_that_asks_nobody(self, name: &str) -> Self {
+        let manifest = self.root.join(purlis_core::plane::MANIFEST);
+        let mut text = std::fs::read_to_string(&manifest).unwrap_or_default();
+        text.push_str("\n[policy]\nmode = \"enforce\"\n");
+        std::fs::write(&manifest, text).expect("the manifest");
         self.with_a_profile_whose_command_adds(name, "--dangerously-skip-permissions")
     }
 

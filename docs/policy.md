@@ -33,8 +33,12 @@ guards.release = "log"     # one family, apart from the template
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
 the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
-nothing covers starts with no grant) and `asks` (a host is answered Allow) switch; every other
-family is a key already and stays enforced until it is wired. One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
+nothing covers starts with no grant) and `asks` (a host is answered Allow) switch, and so do
+the nine families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
+`tools`, `trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted,
+not applied); every other family is a key already and stays enforced until it is wired. Which
+choke point switches each, and the family of every decision purlis makes about a chat, are in
+[`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
 forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
 sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.

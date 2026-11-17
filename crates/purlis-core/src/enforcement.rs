@@ -233,10 +233,11 @@ impl Family {
     ///   applied (the review of #6992); what the family may lift beyond that is the follow-up's;
     /// - `skills`: every skills refusal a chat meets is a hand-over to the person (a draft, a
     ///   proposal) or the org's `[skill_policy]` on an install only the window makes, so which
-    ///   of them the family switches needs a ruling;
-    /// - the families Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
-    ///   `tools`, `trust`, `runners`, `consents`, `limits`): keys with their template defaults
-    ///   now, wired with the inventory's full mapping next.
+    ///   of them the family switches needs a ruling.
+    ///
+    /// The nine families Q308b added switch at the choke points
+    /// `docs/policy-inventory-families.md` names; a row of theirs that no choke point asks yet
+    /// stays enforced, as before Q308.
     pub fn switchable(self) -> bool {
         matches!(
             self,
@@ -249,7 +250,7 @@ impl Family {
                 | Family::GuardsCredential
                 | Family::Secrets
                 | Family::CredentialFiles
-        )
+        ) || self.added_by_q308b()
     }
 }
 

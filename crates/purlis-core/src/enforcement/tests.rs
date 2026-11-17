@@ -875,4 +875,42 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
     assert_eq!(found.1, strict());
+
+fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults() {
+    // Q308b, item 7 of the follow-up: the nine families switch, each at its template's mode.
+    let nine = Family::ALL
+        .into_iter()
+        .filter(|family| family.added_by_q308b())
+        .collect::<Vec<_>>();
+    assert_eq!(nine.len(), 9);
+    for family in nine {
+        assert!(family.switchable(), "{}", family.key());
+        for (template, want) in [
+            ("open", Mode::Off),
+            ("watch", Mode::Log),
+            ("hold", Mode::Log),
+            ("team", Mode::Enforce),
+            ("strict", Mode::Enforce),
+        ] {
+            let settings = said(&format!("[policy]\ntemplate = \"{template}\"\n"));
+            assert_eq!(
+                under(&settings, &Locks::none(), family),
+                want,
+                "{template} {}",
+                family.key()
+            );
+        }
+        let off = said(&format!(
+            "[policy]\ntemplate = \"strict\"\n{} = \"off\"\n",
+            family.key()
+        ));
+        assert_eq!(under(&off, &Locks::none(), family), Mode::Off, "{}", family.key());
+        // An administrator's lock still wins.
+        assert_eq!(
+            under(&off, &Locks::locking_enforcement(family), family),
+            Mode::Enforce,
+            "{}",
+            family.key()
+        );
+    }
 }

@@ -285,17 +285,21 @@ arms! {
 
 impl Arm {
     /// **The family of purlis's refusals the arm is one of** (Q308, Q308a, Q308b,
-    /// [`crate::enforcement`]). Every arm has one; an `Option` so a later arm may stand outside
-    /// the policy, which then stays enforced.
+    /// [`crate::enforcement`]). `None` for an arm that stands outside the policy and stays
+    /// enforced: A7c, which stands behind the person's own rules.
     pub fn family(self) -> Option<Family> {
         Some(match self {
             // The shape of the call: the caps guard every arm's reading at once, and the
             // backstops on the consent rules' and the operator's rules' spelling.
-            Arm::Caps | Arm::ConsentSpelling | Arm::RuleSpelling => Family::GuardsShape,
+            Arm::Caps | Arm::ConsentSpelling => Family::GuardsShape,
+            // The person's own ask and deny rules, under every spelling: the person's own rules
+            // hold in every mode, `open` included (Q308b), so no family switches them.
+            Arm::RuleSpelling => return None,
             // The leak guard keeps a vault's value out of the transcript.
             Arm::Leak => Family::Secrets,
             Arm::SingleCredential => Family::GuardsCredential,
-            Arm::PlaneRootBranch | Arm::PlaneRootReset => Family::GuardsGit,
+            // The plane root's own git (Q308b): `guards.plane`.
+            Arm::PlaneRootBranch | Arm::PlaneRootReset => Family::GuardsPlane,
             // Consequences of the wrap: git the chat's sandbox would stop partway, or that a
             // sandboxed chat cannot finish. Kept whenever that wrap is applied, so the root is
             // never left half-updated (the review of #6992, S5).
@@ -459,7 +463,8 @@ pub struct Judged {
 /// [`Judged::logged`] while the arms after it are still asked, and one whose family is enforced
 /// refuses as it always has.
 ///
-/// The caps are `guards.shape`'s, as are the spelling backstops.
+/// The caps are `guards.shape`'s, run at the strictest family asked ([`Gate::mode`]), as is
+/// the consent rules' spelling backstop; A7c, behind the person's own rules, is always enforced.
 pub fn judged(
     call: &Call<'_>,
     plane: Option<&Plane<'_>>,
@@ -468,6 +473,7 @@ pub fn judged(
     let gate = Gate {
         modes,
         logged: std::cell::RefCell::new(Vec::new()),
+        sandboxed: plane.is_some_and(|plane| plane.launched.sandboxed),
     };
     // First of all, in front of every arm: a command too big to read in time is refused before
     // any of them parses it (#1355). Refusing is the safe direction for every arm at once.
@@ -495,6 +501,9 @@ pub fn judged(
 struct Gate<'a> {
     modes: &'a dyn Fn(Family) -> Mode,
     logged: std::cell::RefCell<Vec<Verdict>>,
+    /// Whether the chat runs in a wrap: only then are the arms that exist because of it
+    /// (A3c, A3d, A9, A9b) asked at all.
+    sandboxed: bool,
 }
 
 impl Gate<'_> {
@@ -509,6 +518,25 @@ impl Gate<'_> {
             .map_or(Mode::Enforce, |family| (self.modes)(family));
         if arm == Arm::HookSkip {
             return mode.max((self.modes)(Family::GuardsCredential));
+        }
+        // **The caps run at the strictest family the gate asks** (Q308b): a command too big or
+        // too deep to read is one no arm read whole, so it cannot be shown clear of an
+        // enforced arm, and `guards.shape` alone never lets it through. The merge hold and the
+        // branch-folder claim read the same command after the gate (`purlis guard`), so their
+        // families count too, and the wrap's own arms only where there is a wrap to read for.
+        // A7c, which has no family, is a backstop behind the harness's own
+        // glob of the person's rules, which still applies to a command the caps let through.
+        if arm == Arm::Caps {
+            return Arm::ALL
+                .iter()
+                .filter(|other| **other != Arm::Caps)
+                .filter(|other| self.sandboxed || other.family() != Some(Family::Sandbox))
+                .filter_map(|other| other.family().map(|_| self.mode(*other)))
+                .chain([
+                    (self.modes)(Family::GuardsMerge),
+                    (self.modes)(Family::GuardsGit),
+                ])
+                .fold(mode, Mode::max);
         }
         mode
     }

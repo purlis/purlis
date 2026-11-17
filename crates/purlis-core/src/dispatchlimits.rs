@@ -879,7 +879,62 @@ impl Decision {
     }
 }
 
+impl Refused {
+    /// **The limit a counted refusal reached**, which `[policy] limits` switches (Q308b): depth,
+    /// the counts per chat, lineage and persona, messages a minute and the session's tokens.
+    /// `None` for what is no count: a 0 that switches dispatch off (the project's own word) and
+    /// the loop rule (the `dispatch` family's).
+    pub fn counted(&self) -> Option<Limit> {
+        Some(match self {
+            Self::TooDeep { .. } => Limit::Depth,
+            Self::TooManyRunning { .. } => Limit::RunningPerChat,
+            Self::LineageFull { .. } => Limit::LivePerLineage,
+            Self::PersonaDispatches { .. } => Limit::MayDispatch,
+            Self::PersonaFull { .. } => Limit::MayRunAtOnce,
+            Self::TooManyMessages { .. } => Limit::MessagesPerMinute,
+            Self::SessionTokens { .. } => Limit::TokensPerSession,
+            Self::Off { .. } | Self::Loop(_) | Self::ChainUnread(_) => return None,
+        })
+    }
+}
+
 impl Limits {
+    /// **Whether `[policy] limits` may lift `limit` here** (Q308b): not where an administrator's
+    /// ceiling set it, or a refused policy file, since a lock wins over every mode (Q308a).
+    pub fn liftable(&self, limit: Limit) -> bool {
+        !matches!(self.set_by(limit), Source::Policy | Source::PolicyRefused)
+    }
+
+    /// **These limits as `[policy] limits = "off"` or `"log"` leaves them** (Q308b: a limit is
+    /// counted, not applied): every count an administrator's ceiling did not set is lifted, and
+    /// depth goes to [`DEEPEST`], the bound no level raises, so a chain of dispatches still ends.
+    /// A 0 that switches dispatch off, and the loop rule, are kept.
+    pub fn lifted(&self) -> Self {
+        let mut lifted = self.clone();
+        let unbounded = |limit: Limit, now: u32| {
+            if self.liftable(limit) { u32::MAX } else { now }
+        };
+        if self.off().is_none() {
+            lifted.running = unbounded(Limit::RunningPerChat, self.running);
+            lifted.lineage = unbounded(Limit::LivePerLineage, self.lineage);
+            lifted.messages_per_minute =
+                unbounded(Limit::MessagesPerMinute, self.messages_per_minute);
+            if self.liftable(Limit::Depth) {
+                lifted.depth = DEEPEST;
+            }
+            if self.liftable(Limit::MayDispatch) {
+                lifted.may_dispatch = None;
+            }
+            if self.liftable(Limit::MayRunAtOnce) {
+                lifted.may_run_at_once = None;
+            }
+            if self.liftable(Limit::TokensPerSession) {
+                lifted.tokens_per_session = None;
+            }
+        }
+        lifted
+    }
+
     /// The refusal a limit of 0 gives, where one is 0.
     fn switched_off(&self) -> Option<Refused> {
         self.off().map(|(limit, by)| Refused::Off {

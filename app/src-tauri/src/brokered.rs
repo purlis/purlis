@@ -43,7 +43,15 @@ pub fn write(held: &Held, ask: &WriteAsk) -> Answer {
     // a pool's link is held by that link alone. One that came over this machine's link is held
     // where the router records its chat on a pool (`pool_of`). That link's lines for a pool's
     // chat are refused before they reach here (`hooks::Relayed`), so this is a second guard.
-    let pool = crate::hooks::heard_from_a_pool().or_else(|| held.chats().pool_of(ask.chat));
+    // Held where `[policy] runners` holds it (Q308b).
+    let pool = crate::hooks::heard_from_a_pool()
+        .or_else(|| held.chats().pool_of(ask.chat))
+        .filter(|_| {
+            purlis_core::runnerwrite::held_for_the_person(
+                held.root(),
+                purlis_core::runnerwrite::RunnerAsk::Write,
+            )
+        });
     if let Some(pool) = pool {
         return crate::runnerwrites::hold(held, &pool, asker, ask.write.clone());
     }

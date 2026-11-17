@@ -120,7 +120,24 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
          asks once",
         whole(&p.name)
     );
-    if let Some(state) = crate::profiletrust::profile_approval_needed(root, p) {
+    // **Whether the approval is asked at all is `[policy] trust`'s** (Q308b): under `off` a
+    // command nobody approved runs, and under `log` it runs and one line says it would have
+    // been refused. A file purlis refused, above, is refused in every mode.
+    let waived = |rule: &str| {
+        crate::enforcement::judged(
+            root,
+            None,
+            crate::enforcement::Family::Trust,
+            crate::enforcement::mode(root, crate::enforcement::Family::Trust),
+            rule,
+            None,
+            (),
+        )
+        .is_none()
+    };
+    if let Some(state) = crate::profiletrust::profile_approval_needed(root, p)
+        && !waived("profile.approval")
+    {
         return Some((
             format!(
                 "profile '{name}' is {}, and nobody has approved it — nothing was started. \
@@ -130,7 +147,9 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
             fix,
         ));
     }
-    crate::profiletrust::declaration_approval_needed_in(root, p, declared).map(|(state, d)| {
+    crate::profiletrust::declaration_approval_needed_in(root, p, declared)
+        .filter(|_| !waived("declaration.approval"))
+        .map(|(state, d)| {
         (
             format!(
                 "harness '{}', declared in {}, is {} on this machine, and nobody has approved \
@@ -267,6 +286,36 @@ pub fn refusal_in(p: &Profile, root: &Path, declared: &Declarations) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_nobody_approved_is_refused_as_policy_trust_runs() {
+        // Q308b: the approval is `trust`'s. Enforced, nothing starts until the person
+        // approves it; logged, it starts and one line says it would have been refused.
+        for (policy, refused, lines) in [("", true, 0), ("trust = \"log\"\n", false, 1)] {
+            let root = tempfile::tempdir().expect("a plane");
+            std::fs::write(
+                crate::names::manifest(root.path()),
+                format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+            )
+            .expect("the manifest");
+            let mut p = built_in("claude", "claude");
+            p.source = Source::Local;
+            p.name = "mine".to_owned();
+            let said = not_asked(&p, root.path(), &Declarations::default());
+            assert_eq!(said.is_some(), refused, "{policy:?}");
+            if refused {
+                assert!(said.unwrap().0.contains("nobody has approved it"));
+            }
+            let logged =
+                crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+            assert_eq!(logged.len(), lines, "{policy:?}");
+            assert!(
+                logged
+                    .iter()
+                    .all(|line| line.family == "trust" && line.rule == "profile.approval")
+            );
+        }
+    }
 
     fn built_in(kind: &str, command: &str) -> Profile {
         let mut p = profiles::builtins()

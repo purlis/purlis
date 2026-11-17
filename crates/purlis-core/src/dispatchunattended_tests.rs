@@ -589,3 +589,55 @@ fn an_unsandboxed_or_ungranted_dispatch_is_covered_only_where_the_policy_does_no
         assert_eq!(as_the_policy_runs(never.clone(), mode), never.clone());
     }
 }
+
+/// A project at a fresh folder whose committed file holds `[policy]` `text`.
+fn a_project_whose_policy_is(text: &str) -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        crate::names::manifest(root.path()),
+        format!("[policy]\n{text}"),
+    )
+    .expect("the manifest");
+    root
+}
+
+#[test]
+fn a_profile_with_its_prompts_off_is_refused_a_dispatched_chat_as_policy_mode_runs() {
+    // Q308b: the refusal is `mode`'s. Enforced, it refuses as it always has; logged, the chat
+    // starts and one line says it would have been refused; off, nothing is said.
+    let yolo = words(&["claude", "--dangerously-skip-permissions"]);
+    let chat = "01J9ZQ3V5N8X4T2K7M6P0R1S2C";
+    for (text, refused, lines) in [
+        ("template = \"strict\"\n", true, 0),
+        ("template = \"strict\"\nmode = \"log\"\n", false, 1),
+        ("template = \"team\"\n", true, 0),
+    ] {
+        let root = a_project_whose_policy_is(text);
+        let said = bypass_refusal_in(root.path(), Some(chat), "yolo", &yolo, NamedBy::TheDispatch);
+        assert_eq!(said.is_some(), refused, "{text}");
+        let started = start_of_a_persona_chat_in(
+            root.path(),
+            Some(chat),
+            the_asking_chats_own(),
+            "devops",
+            Some(Inherited {
+                profile: "yolo",
+                command: &yolo,
+            }),
+        );
+        assert_eq!(started.is_err(), refused, "{text}");
+        let logged = crate::enforcement::read_log(root.path(), chat);
+        assert_eq!(logged.len(), lines * 2, "{text}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.family == "mode" && line.rule == "dispatch.prompts-off")
+        );
+    }
+    // A profile that asks is never refused, whatever the mode.
+    let root = a_project_whose_policy_is("template = \"strict\"\n");
+    assert_eq!(
+        bypass_refusal_in(root.path(), None, "work", &words(&["claude"]), NamedBy::TheDispatch),
+        None
+    );
+}

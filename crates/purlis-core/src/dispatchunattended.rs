@@ -367,6 +367,46 @@ pub fn bypass_refusal(profile: &str, command: &[String], by: NamedBy<'_>) -> Opt
     })
 }
 
+/// **[`bypass_refusal`], as `[policy] mode` runs for the project at `root`** (Q308b): under
+/// `off` no chat is refused for its profile switching the prompts off, and under `log` it starts
+/// and one line for chat `chat` says it would have been refused.
+pub fn bypass_refusal_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    profile: &str,
+    command: &[String],
+    by: NamedBy<'_>,
+) -> Option<String> {
+    let refused = bypass_refusal(profile, command, by)?;
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::HarnessMode,
+        crate::enforcement::mode(root, crate::enforcement::Family::HarnessMode),
+        "dispatch.prompts-off",
+        None,
+        refused,
+    )
+}
+
+/// [`start_of_a_persona_chat`], with its refusal of a profile that switches the prompts off
+/// asked as `[policy] mode` runs for the project at `root` ([`bypass_refusal_in`]).
+pub fn start_of_a_persona_chat_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    start: Start,
+    target: &str,
+    on: Option<Inherited<'_>>,
+) -> Result<Start, String> {
+    if let Some(Inherited { profile, command }) = on
+        && let Some(refused) =
+            bypass_refusal_in(root, chat, profile, command, NamedBy::TheAskingChat)
+    {
+        return Err(refused);
+    }
+    start_of_a_persona_chat(start, target, None)
+}
+
 /// The profile a persona chat starts on, by its name and its command as this machine declares
 /// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

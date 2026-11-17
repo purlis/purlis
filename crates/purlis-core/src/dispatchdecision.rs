@@ -577,6 +577,41 @@ pub fn asked_by_a_chat(
             decision = Decision::Refused(Refused::Limit(refused));
         }
     }
+    // **The `limits` family** (Q308b): under `off` or `log` a count this dispatch reached is
+    // counted, not applied, and the dispatch is decided again with the counts lifted
+    // ([`crate::dispatchlimits::Limits::lifted`]); an administrator's ceiling and the deepest a
+    // chain may go hold in every mode. A log line names the limit.
+    if let Decision::Refused(Refused::Limit(reached)) = &decision
+        && let Some(limit) = reached.counted()
+        && limits.liftable(limit)
+        && crate::enforcement::judged(
+            root,
+            asking.identity.id.as_deref(),
+            crate::enforcement::Family::Limits,
+            crate::enforcement::mode(root, crate::enforcement::Family::Limits),
+            &format!("dispatch.{}", limit.word()),
+            None,
+            (),
+        )
+        .is_none()
+    {
+        let lifted = limits.lifted();
+        decision = decide(&Request {
+            limits: &lifted,
+            ..request
+        });
+        if let (true, By::Chat, Some(to), Decision::Start | Decision::NeedsGrant { .. }) = (
+            lineage.chain_unread,
+            moment.by,
+            pair.to.as_deref(),
+            &decision,
+        ) && grants.refuses_any_to(to)
+        {
+            decision = Decision::Refused(Refused::Limit(
+                crate::dispatchlimits::Refused::ChainUnread(to.to_owned()),
+            ));
+        }
+    }
     let depth = lineage.depth.saturating_add(1).min(DEEPEST);
     Asked {
         decision,
@@ -2019,6 +2054,92 @@ mod tests {
             // And where neither says anything, it opens.
             assert_eq!(ask("", Some("beta"), counted).decision, Decision::Start);
         }
+    }
+
+    #[test]
+    fn a_dispatch_limit_is_counted_not_applied_where_policy_limits_logs_or_is_off() {
+        // Q308b: under `limits = "log"` a limit is counted, not applied; a line names it.
+        let one = chat(Some("steward"));
+        let two = Chat {
+            identity: Identity {
+                id: Some(OTHER_ID.to_owned()),
+                ..Default::default()
+            },
+            ..dispatched(1, 1, Mode::Task, Owed::Due, Some("steward"))
+        };
+        let open = [(1, &one), (2, &two)];
+        let ask = |manifest: &str| {
+            let root = a_project(manifest);
+            let asked = asked_by_a_chat(
+                root.path(),
+                2,
+                None,
+                &Moment {
+                    open: &open,
+                    working: &|_| true,
+                    default: None,
+                    grants: &InForce::default(),
+                    profile: None,
+                    by: By::Chat,
+                    mode: Mode::Task,
+                    counted: Counted::Tasks,
+                    works_in: None,
+                    session_tokens: &|| 0,
+                },
+            );
+            let rules = crate::enforcement::read_log(root.path(), OTHER_ID)
+                .into_iter()
+                .map(|line| (line.family, line.rule))
+                .collect::<Vec<_>>();
+            (asked.decision, rules)
+        };
+        let deep = "[dispatch]\ndepth = 1\n";
+        let (enforced, lines) = ask(&format!("{deep}[policy]\ntemplate = \"strict\"\n"));
+        assert!(matches!(
+            enforced,
+            Decision::Refused(Refused::Limit(dispatchlimits::Refused::TooDeep { .. }))
+        ));
+        assert!(lines.is_empty());
+        let (logged, lines) = ask(&format!(
+            "{deep}[policy]\ntemplate = \"strict\"\nlimits = \"log\"\n"
+        ));
+        assert_eq!(logged, Decision::Start);
+        assert_eq!(
+            lines,
+            [("limits".to_owned(), "dispatch.depth".to_owned())]
+        );
+        // The loop rule is `dispatch`'s, and a 0 is the project switching dispatch off: neither
+        // is a count, so `limits` lifts neither.
+        let (off, _) = ask("[dispatch]\nrunning-per-chat = 0\n[policy]\ntemplate = \"strict\"\nlimits = \"log\"\n");
+        assert!(matches!(
+            off,
+            Decision::Refused(Refused::Limit(dispatchlimits::Refused::Off { .. }))
+        ));
+    }
+
+    #[test]
+    fn lifted_limits_keep_an_administrators_ceiling_and_the_deepest_a_chain_goes() {
+        let project = Table {
+            project: Level::unset()
+                .with(Limit::Depth, 2)
+                .with(Limit::RunningPerChat, 1)
+                .with(Limit::LivePerLineage, 3),
+            ..Table::default()
+        };
+        let ceiling = Level::unset().with(Limit::LivePerLineage, 2);
+        let limits =
+            dispatchlimits::in_force(&project, None, None, None, &Table::default(), &ceiling);
+        assert_eq!(limits.set_by(Limit::LivePerLineage), &Source::Policy);
+        let lifted = limits.lifted();
+        assert_eq!(lifted.depth, dispatchlimits::DEEPEST);
+        assert_eq!(lifted.running, u32::MAX);
+        assert_eq!(lifted.lineage, 2, "the administrator's ceiling holds");
+        assert!(!limits.liftable(Limit::LivePerLineage));
+        assert!(dispatchlimits::Refused::Loop("x".into()).counted().is_none());
+        assert_eq!(
+            dispatchlimits::Refused::TooDeep { limit: 1, depth: 1 }.counted(),
+            Some(Limit::Depth)
+        );
     }
 
     #[test]
