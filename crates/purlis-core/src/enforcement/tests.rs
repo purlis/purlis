@@ -876,3 +876,156 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     assert!(found.0, "a project never pressed is broken too");
     assert_eq!(found.1, strict());
 }
+
+/// `git <args>` in `root`, with no configuration but the repository's.
+fn git_in(root: &Path, args: &[&str]) -> std::process::Output {
+    let mut git = std::process::Command::new("git");
+    git.arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    crate::forklock::output(&mut git).expect("git runs")
+}
+
+/// A plane whose file says `committed`, committed at `HEAD`.
+fn a_committed_plane(committed: &str) -> tempfile::TempDir {
+    let root = plane(committed, None);
+    for args in [
+        &["init", "-q"][..],
+        &["add", "charter.toml"],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "p",
+        ],
+    ] {
+        let ran = git_in(root.path(), args);
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    }
+    root
+}
+
+/// The object file of the committed settings file's blob, which git cannot read once it is gone.
+fn the_files_blob(root: &Path) -> PathBuf {
+    let ran = git_in(root, &["rev-parse", "HEAD:charter.toml"]);
+    assert!(ran.status.success(), "{ran:?}");
+    let sha = String::from_utf8(ran.stdout).expect("utf-8");
+    let sha = sha.trim();
+    root.join(".git/objects").join(&sha[..2]).join(&sha[2..])
+}
+
+#[test]
+fn a_blob_git_cannot_read_at_head_is_strict_and_only_a_missing_path_is_no_file() {
+    // #7073: `git show` exits 128 for a blob it cannot read as well as for a path that is not
+    // there. Only git's own "no such path" reads as a project that says nothing.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    assert_eq!(Settings::read(root.path()).template, Template::Open);
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    let settings = Settings::read(root.path());
+    assert_eq!(settings.template, Template::Strict);
+    assert!(settings.unread);
+
+    // A file on disk and never committed, and one in no commit at all: no file at `HEAD`.
+    let uncommitted = a_committed_plane("");
+    let ran = git_in(uncommitted.path(), &["rm", "-q", "--cached", "charter.toml"]);
+    assert!(ran.status.success(), "{ran:?}");
+    let ran = git_in(
+        uncommitted.path(),
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "untracked",
+        ],
+    );
+    assert!(ran.status.success(), "{ran:?}");
+    std::fs::write(
+        uncommitted.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("on disk");
+    let settings = Settings::read(uncommitted.path());
+    assert_eq!(settings.template, Template::Watch, "{settings:?}");
+    assert!(!settings.unread);
+    std::fs::remove_file(uncommitted.path().join("charter.toml")).expect("gone from disk");
+    let settings = Settings::read(uncommitted.path());
+    assert_eq!(settings.template, Template::Watch, "{settings:?}");
+    assert!(!settings.unread);
+}
+
+#[test]
+fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
+    // #7073: strict while git cannot read `HEAD`, and back to what was pressed once it can,
+    // with no press: a git that failed once is no tightening the project made.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    let blob = the_files_blob(root.path());
+    let kept = std::fs::read(&blob).expect("the blob");
+    std::fs::remove_file(&blob).expect("the blob gone");
+    assert_eq!(in_force(root.path()), strict());
+    std::fs::write(&blob, kept).expect("the blob back");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    assert!(waiting(root.path()).is_empty());
+}
+
+#[test]
+fn a_git_folder_git_cannot_read_is_strict_and_never_the_working_tree_file() {
+    // #7073: git calls a plane whose `.git/HEAD` is corrupted no repository, as it calls one
+    // with no `.git`. Only one with no `.git` at all reads its working tree's file.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    std::fs::write(root.path().join(".git/HEAD"), "not a ref\n").expect("a corrupted HEAD");
+    assert_eq!(Settings::read(root.path()).template, Template::Strict);
+    std::fs::remove_dir_all(root.path().join(".git")).expect("no repository");
+    assert_eq!(Settings::read(root.path()).template, Template::Open);
+}
+
+#[test]
+fn a_log_line_is_not_a_read_of_the_whole_log() {
+    // #7073: the cap counts the lines once and keeps the count, full or not.
+    let root = tempfile::tempdir().expect("a folder");
+    let path = log_file(root.path(), CHAT).expect("a log file");
+    std::fs::create_dir_all(path.parent().expect("its folder")).expect("its folder");
+    std::fs::write(&path, "{}\n".repeat(MOST_LINES - 2)).expect("a log near full");
+    let before = counted_whole();
+    for _ in 0..4 {
+        write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
+    }
+    assert_eq!(counted_whole() - before, 1, "counted once");
+    let kept = std::fs::read_to_string(&path).expect("the log");
+    assert_eq!(kept.lines().count(), MOST_LINES);
+    // A log taken away is counted again, from nothing.
+    std::fs::remove_file(&path).expect("the log gone");
+    write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
+    assert_eq!(read_log(root.path(), CHAT).len(), 1);
+}
+
+#[test]
+fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
+    // #7073: the app cannot delete an item another program owns, so the press says which item
+    // to delete and how; once it is gone, the next press makes a key and accepts.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let refused = press(root.path(), &digest_of(root.path()));
+    crate::secrets::seal::set_foreign_for_this_test(false);
+    let why = refused.expect_err("nothing accepted").to_string();
+    assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
+    assert!(why.contains("security delete-generic-password -s purlis-seal"), "{why}");
+    press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
+    assert!(!broken(root.path()));
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+}

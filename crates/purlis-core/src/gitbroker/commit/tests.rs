@@ -482,7 +482,7 @@ impl Tree {
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
-        git::isolated(&plain, || made(&self.root, 4, &ask, &here, &identity))
+        git::isolated(&plain, || made(&self.root, 4, None, &ask, &here, &identity))
     }
 
     fn asked(&self, stage: Stage) -> Result<Vec<Say>, String> {
@@ -1289,7 +1289,52 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
         common: t.here.common.clone(),
         clone: t.here.clone.clone(),
     };
-    git::isolated(&plain, || made(&held.1, 4, &ask, &here, &identity))
+    git::isolated(&plain, || made(&held.1, 4, None, &ask, &here, &identity))
         .map_err(|refused| refused.why)
         .expect("the held project's `open` lets the scan's finding through");
+}
+
+/// #7073: a finding the project's `[policy]` logs is recorded in the log of the chat that asked
+/// for the commit, never in the one every unnamed caller shares.
+#[test]
+fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
+    const ID: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
+    let t = tree();
+    let held = tempfile::tempdir().expect("the held project");
+    let held = std::fs::canonicalize(held.path())
+        .map(|root| (held, root))
+        .expect("resolves");
+    std::fs::write(
+        held.1
+            .join(crate::names::PLANE_MANIFEST.spelling_at(&held.1, Path::is_file)),
+        "[policy]\ntemplate = \"open\"\nguards.credential = \"log\"\n",
+    )
+    .unwrap();
+    crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
+        .expect("the person's press");
+    let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
+    std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
+
+    let ask = CommitAsk {
+        chat: 4,
+        message: "piece: one change\n\nWhy it was made.".to_owned(),
+        stage: staging(&["id"]),
+        folder: None,
+    };
+    let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
+    let plain = git::Isolated::default().pinned(&t.here.top, &t.here.git_dir);
+    let here = Here {
+        cwd: t.here.top.clone(),
+        top: t.here.top.clone(),
+        git_dir: t.here.git_dir.clone(),
+        common: t.here.common.clone(),
+        clone: t.here.clone.clone(),
+    };
+    git::isolated(&plain, || made(&held.1, 4, Some(ID), &ask, &here, &identity))
+        .map_err(|refused| refused.why)
+        .expect("a logged finding is let through");
+    let logged = crate::enforcement::read_log(&held.1, ID);
+    assert_eq!(logged.len(), 1, "{logged:?}");
+    assert_eq!(logged[0].family, "guards.credential");
+    assert!(crate::enforcement::read_log(&held.1, crate::enforcement::UNKNOWN_CHAT).is_empty());
 }
