@@ -105,7 +105,14 @@ it("brings a search hit's file tab forward with its own content, after a file's 
       <App />
     </StrictMode>,
   );
-  const first = await screen.findByTestId("light-editor", {}, { timeout: 5000 });
+  // The window first, then the editor (#6368): one wait over both, the whole window's start and
+  // the editor's chunk, took 2–4 s of its 5 s budget on a busy runner, and once all of it.
+  await waitFor(() =>
+    expect(within(stripNamed("Tabs")).getByRole("tab", { selected: true })).toHaveTextContent(
+      /login-form\.ts/,
+    ),
+  );
+  const first = await screen.findByTestId("light-editor");
   expect(first).toHaveTextContent(/export const form/);
 
   act(() =>
