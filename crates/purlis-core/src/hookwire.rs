@@ -4229,9 +4229,10 @@ impl Listener {
     }
 
     /// The same listener, serving at most `per_peer` connections from one process and
-    /// `at_most` from all at once. For the tests, whose every connection is one process's.
-    #[cfg(test)]
-    fn serving_at_most(mut self, per_peer: usize, at_most: usize) -> Self {
+    /// `at_most` from all at once. For the tests, whose every connection is one process's, and
+    /// for a test that plays an app whose every place is taken.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn serving_at_most(mut self, per_peer: usize, at_most: usize) -> Self {
         self.serves = (per_peer, at_most);
         self
     }
