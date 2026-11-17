@@ -309,3 +309,6 @@ pub fn let_go_of_all() {
     );
     drop(all);
 }
+
+#[cfg(test)]
+mod tests;
