@@ -85,11 +85,17 @@ pub(crate) enum Protection {
 
 impl Protection {
     /// The project manifest's `[sandbox]` for it.
+    ///
+    /// At Full the project lists its egress itself, as T1.1-04's wrap test does: no preset, so
+    /// no package-cache roots. With the default presets (toolchains) a wrapped Codex or opencode
+    /// chat's Seatbelt profile on macOS is about 510 KB under a runner's real home, and
+    /// `sandbox-exec` refuses it as too large, so no chat starts (#5919, confirmed by this
+    /// fixture). A cell about the presets names them itself.
     fn manifest(self) -> &'static str {
         match self {
             Self::Off => "[sandbox]\nmode = \"off\"\n",
             Self::Basic => "",
-            Self::Full => "[sandbox]\nmode = \"on\"\n",
+            Self::Full => "[sandbox]\nmode = \"on\"\negress = []\n",
         }
     }
 
