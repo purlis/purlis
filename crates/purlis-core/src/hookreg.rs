@@ -444,7 +444,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
                 ("pretooluse-edit", "continue"),
-                ("pretooluse-dispatch", "continue"),
+                // `guards.shape` switches since Q308b's nine did (#7104).
+                ("pretooluse-dispatch", "block"),
             ]
         );
         assert_eq!(
