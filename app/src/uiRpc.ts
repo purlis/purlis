@@ -1613,6 +1613,11 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What the chat whose ULID is `id` is now** (#6685's review): what a closed chat's row in the
+	 *  Chats list's filter opens. On a blocking thread, as it reads the dispatch records.
+	 */
+	chatById: (plane: PlaneId, id: string) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id })),
 	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
@@ -4746,10 +4751,11 @@ export type ChatCard = {
 	chat_reopen: ChatReopen | null,
 	/**
 	 *  **The number it was found by, where that is one it had before a restart** (#6685): the
-	 *  card is titled by the number it closed under, and says this one too. `None` where it was
-	 *  found by that number, and for a card drawn from its task.
+	 *  card is titled by the number it closed under, and says this one too
+	 *  ([`purlis_core::chatrecords::ChatRecord::found_by`]). `None` where it was found by that
+	 *  number, by its ULID, and for a card drawn from its task.
 	 */
-	was: number | null,
+	found_by: number | null,
 };
 
 /**
@@ -5318,10 +5324,15 @@ export type CloseHanded = {
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
  *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_number`).
+ *  card (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
+	/**
+	 *  Its ULID: what choosing its row opens it by (`chat_by_id`), as more than one record may
+	 *  answer to a number (#6740).
+	 */
+	id: string,
 	earlier: number[],
 	title: string,
 	place: string,

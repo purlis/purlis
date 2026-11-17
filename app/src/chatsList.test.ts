@@ -287,6 +287,7 @@ describe("a closed chat found by the filter (#6484)", () => {
   const CLOSED: ClosedChat[] = [
     {
       number: 731,
+      id: "01K6CHATS0000000000000000C",
       earlier: [702],
       title: "Tidy the changelog",
       place: "smart-ide",
@@ -294,6 +295,7 @@ describe("a closed chat found by the filter (#6484)", () => {
     },
     {
       number: 650,
+      id: "01K6CHATS0000000000000000D",
       earlier: [],
       title: "Sign commits",
       place: "docs",

@@ -34,7 +34,7 @@ const FINISHED: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
-  was: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -106,7 +106,7 @@ const ORDINARY: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
-  was: null,
+  found_by: null,
 };
 
 /** The palette's finished row, standing in: a press opens the card beside it. */
@@ -307,7 +307,7 @@ export const ChatWithNoConversation: Story = {
  * closed under, the card says the one it was found by too, so an old link's chat is known.
  */
 export const ChatFoundByAnEarlierNumber: Story = {
-  args: { card: { ...ORDINARY, number: 731, was: 702 } },
+  args: { card: { ...ORDINARY, number: 731, found_by: 702 } },
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", {

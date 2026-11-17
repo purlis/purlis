@@ -44,6 +44,7 @@ const OPEN: ListedChat = {
 
 const CLOSED: ClosedChat = {
   number: 731,
+  id: "01K6CHATS0000000000000000C",
   earlier: [702],
   title: "Tidy the changelog",
   place: "smart-ide",
@@ -60,10 +61,31 @@ const CARD: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
-  was: null,
+  found_by: null,
 };
 
-function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => unknown } = {}) {
+/**
+ * **A chat that closed under 702** (#6740's records): another chat's record also answers to 702,
+ * the number it had before a restart, as the counter dealt 702 again.
+ */
+const CLOSED_UNDER_702: ClosedChat = {
+  number: 702,
+  id: "01K6CHATS0000000000000000E",
+  earlier: [],
+  title: "Sort the inbox",
+  place: "smart-ide",
+  ended: "2026-11-11T11:00:00Z",
+};
+
+const CARD_702: ChatCard = {
+  ...CARD,
+  number: 702,
+  chat: CLOSED_UNDER_702.id,
+  title: "Sort the inbox",
+  ended: CLOSED_UNDER_702.ended,
+};
+
+function draw(answers: { closed?: () => unknown; byId?: (id: string) => unknown } = {}) {
   const asked: string[] = [];
   const answered = { closed: 0 };
   mockIPC(async (cmd, args) => {
@@ -76,14 +98,15 @@ function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => 
         answered.closed += 1;
       }
     }
-    if (cmd === "chat_by_number") {
-      const { number } = args as { number: number };
-      if (answers.byNumber !== undefined) return answers.byNumber(number);
-      if (number === 731) return { is: "ended", card: CARD };
-      // Found by the number it had before a restart, the card says so (#6685).
-      if (number === 702) return { is: "ended", card: { ...CARD, was: 702 } };
+    if (cmd === "chat_by_id") {
+      const { id } = args as { id: string };
+      if (answers.byId !== undefined) return answers.byId(id);
+      if (id === CARD.chat) return { is: "ended", card: CARD };
+      if (id === CARD_702.chat) return { is: "ended", card: CARD_702 };
       return { is: "no_chat" };
     }
+    // A number answers with the newest record that answers to it: never what a row opens.
+    if (cmd === "chat_by_number") return { is: "ended", card: { ...CARD, found_by: 702 } };
     return null;
   });
   const pressed: Offer[] = [];
@@ -149,6 +172,27 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     ).toBeInTheDocument();
   });
 
+  it("each row found by a number two records answer to opens its own chat's card (#6685)", async () => {
+    draw({ closed: () => [CLOSED, CLOSED_UNDER_702] });
+    await typeInTheFilter("702");
+    const tree = await theTree();
+    const restarted = await findRow(tree, /^#731 · Tidy the changelog \(was #702\)/);
+    const closedUnder = await findRow(tree, /^#702 · Sort the inbox/);
+    expect(closedUnder).not.toHaveTextContent("was");
+
+    await userEvent.click(closedUnder);
+    expect(
+      await screen.findByRole("dialog", { name: "#702 · Sort the inbox" }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await userEvent.click(restarted);
+    expect(
+      await screen.findByRole("dialog", { name: "#731 · Tidy the changelog (was #702)" }),
+    ).toBeInTheDocument();
+  });
+
   it("found by the number it closed under, says no other (#6685)", async () => {
     draw();
     await typeInTheFilter("731");
@@ -170,7 +214,7 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
 
   it("says so when its card could not be read as it is chosen", async () => {
     draw({
-      byNumber: () => {
+      byId: () => {
         throw new Error("the disk is gone");
       },
     });
@@ -182,7 +226,7 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
   });
 
   it("says so when it is no longer kept as it is chosen", async () => {
-    draw({ byNumber: () => ({ is: "no_chat" }) });
+    draw({ byId: () => ({ is: "no_chat" }) });
     await typeInTheFilter("changelog");
     await userEvent.click(await findRow(await theTree(), /^#731 · Tidy the changelog/));
     expect(await screen.findByText(/Chat #731 is no longer kept/)).toBeInTheDocument();

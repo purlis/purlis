@@ -285,10 +285,11 @@ export function matchesFinished(task: FinishedTask, filter: Filter): boolean {
 }
 
 /**
- * **A closed chat the filter found** (#6484), with `was`, the number typed where it is one the
- * chat had before a restart (#6685): its row and card say it beside the number it closed under.
+ * **A closed chat the filter found** (#6484), with `foundBy`, the number typed where it is one
+ * the chat had before a restart (#6685): its row and card say it beside the number it closed
+ * under. Only a label: the row opens its chat by its ULID (`id`), never by this number.
  */
-export type FoundClosed = ClosedChat & { was: number | null };
+export type FoundClosed = ClosedChat & { foundBy: number | null };
 
 /**
  * **The closed chats a filter finds** (#6484), newest close first, as `closed` came: by the
@@ -314,7 +315,7 @@ export function closedFound(
     )
     .map((chat) => ({
       ...chat,
-      was: number !== undefined && number !== chat.number ? number : null,
+      foundBy: number !== undefined && number !== chat.number ? number : null,
     }));
 }
 

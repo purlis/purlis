@@ -152,6 +152,13 @@ impl ChatRecord {
         self.reopened().err()
     }
 
+    /// **The number this chat was found by, where it is not the one it closed under**
+    /// (#6685): `asked`, where it is one it had before a restart, so what shows it can say
+    /// `(was #702)` beside `#731`. The one place this rule is written for the core and the app.
+    pub fn found_by(&self, asked: u32) -> Option<u32> {
+        (asked != self.number && self.earlier.contains(&asked)).then_some(asked)
+    }
+
     /// Whether this chat had `number`, as it closed or before a restart (#6486).
     pub fn answers_to(&self, number: u32) -> bool {
         self.number == number || self.earlier.contains(&number)

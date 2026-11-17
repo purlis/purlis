@@ -47,7 +47,7 @@ const CARD: ChatCard = {
   screen_kept: true,
   chat_reopen: null,
   task: TASK,
-  was: null,
+  found_by: null,
 };
 
 describe("a chat found by its number in the palette (#6214)", () => {
@@ -64,7 +64,7 @@ describe("a chat found by its number in the palette (#6214)", () => {
       number: 731,
       title: "Tidy the changelog",
       task: null,
-      was: 702,
+      found_by: 702,
     };
     const rows = numberRows({ number: 702, lookup: { is: "ended", card } });
     expect(rows.map((row) => row.title)).toEqual([

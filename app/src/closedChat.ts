@@ -58,7 +58,7 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
  * by a number it had before a restart (#6685).
  */
 export function cardTitle(card: ChatCard): string {
-  return numberedNameWas(card.number, card.title, card.was);
+  return numberedNameWas(card.number, card.title, card.found_by);
 }
 
 /**

@@ -137,19 +137,20 @@ function ClosedChatRow({
   const row = useRef<HTMLDivElement>(null);
   const [card, setCard] = useState<ChatCard | null>(null);
   // Found by a number it had before a restart, it says that one too (#6685).
-  const name = numberedNameWas(chat.number, chat.title, chat.was);
+  const name = numberedNameWas(chat.number, chat.title, chat.foundBy);
   const at = endedAt(chat.ended);
   const choose = () => {
     void commands
-      // By the number it was found by, so its card says that number too (#6685).
-      .chatByNumber(plane, chat.was ?? chat.number)
+      // By its own ULID, never the number typed, which another record may answer to (#6740).
+      .chatById(plane, chat.id)
       .then((said) => {
         if (said.status !== "ok") {
           onSay?.(notOpened(chat.number, whyOf(said.error)));
           return;
         }
         const lookup = said.data;
-        if (lookup.is === "ended") setCard(lookup.card);
+        // Found by a number it had before a restart, its card says that one too (#6685).
+        if (lookup.is === "ended") setCard({ ...lookup.card, found_by: chat.foundBy });
         // Open again since the filter read it: that chat, as a link to it shows it.
         else if (lookup.is === "restarted") onPress?.(showLinkedChatOffer(lookup.now));
         else if (lookup.is === "open") onPress?.(showLinkedChatOffer(lookup.number));
