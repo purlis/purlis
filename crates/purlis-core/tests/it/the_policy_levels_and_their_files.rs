@@ -177,6 +177,7 @@ const ANYONE: Chat<'static> = Chat {
 
 #[test]
 fn the_policy_is_read_from_the_plane_roots_head_never_a_branch_folder() {
+    purlis_core::unsteered!();
     let root = plane(&[
         ("policy.cedar", NO_INSTALLS),
         ("charter.toml", "[policy]\ntemplate = \"strict\"\n"),
@@ -214,6 +215,7 @@ fn the_policy_is_read_from_the_plane_roots_head_never_a_branch_folder() {
 // check of §9.2, which walks history.
 #[test]
 fn a_replace_ref_does_not_change_what_head_reads() {
+    purlis_core::unsteered!();
     let root = plane(&[("policy.cedar", NO_INSTALLS)]);
     let written = git_out(root.path(), &["rev-parse", "HEAD"]);
     // Another commit, with no rule, made off to the side and put in HEAD's place.
@@ -234,6 +236,7 @@ fn a_replace_ref_does_not_change_what_head_reads() {
 
 #[test]
 fn a_repo_config_key_does_not_change_what_head_reads() {
+    purlis_core::unsteered!();
     let parent = tempfile::tempdir().expect("a folder");
     let root = parent.path().join("plane");
     std::fs::create_dir(&root).expect("the plane");
@@ -266,6 +269,7 @@ fn a_repo_config_key_does_not_change_what_head_reads() {
 
 #[test]
 fn a_plane_with_no_head_runs_its_accepted_copy_or_the_shipped_default() {
+    purlis_core::unsteered!();
     let unborn = tempfile::tempdir().expect("a folder");
     git(unborn.path(), &["init", "-q"]);
     let no_repository = tempfile::tempdir().expect("a folder");
@@ -299,6 +303,7 @@ fn a_plane_with_no_head_runs_its_accepted_copy_or_the_shipped_default() {
 
 #[test]
 fn an_uncommitted_change_to_the_project_file_changes_no_decision() {
+    purlis_core::unsteered!();
     let root = plane(&[
         ("policy.cedar", NO_INSTALLS),
         ("charter.toml", "[policy]\ntemplate = \"strict\"\n"),
@@ -328,6 +333,7 @@ fn with_rules(rules: &str) -> tempfile::TempDir {
 
 #[test]
 fn an_at_level_above_the_files_place_is_refused_at_load() {
+    purlis_core::unsteered!();
     let root = with_rules(
         "\n@id(\"skills-org-claim\") @level(\"organisation\")\n\
          forbid (principal, action == Action::\"install\", resource);\n",
@@ -341,6 +347,7 @@ fn an_at_level_above_the_files_place_is_refused_at_load() {
 
 #[test]
 fn an_at_level_you_in_a_committed_file_is_refused_at_load() {
+    purlis_core::unsteered!();
     let root = with_rules(
         "@id(\"skills-mine\") @level(\"you\")\n\
          forbid (principal, action == Action::\"install\", resource);\n",
@@ -353,6 +360,7 @@ fn an_at_level_you_in_a_committed_file_is_refused_at_load() {
 
 #[test]
 fn the_lock_level_clash_and_cross_level_id_probe_policies_decide_as_the_oracle_does() {
+    purlis_core::unsteered!();
     // The oracle, until slice 09's equality cells: each probe's answer, written by hand.
     // A lock: deny-by-default with `skills` locked, so a workspace's permit on it is dropped.
     let lock = plane(&[
@@ -407,6 +415,7 @@ fn the_lock_level_clash_and_cross_level_id_probe_policies_decide_as_the_oracle_d
 
 #[test]
 fn both_charter_toml_and_purlis_toml_are_read_as_the_project_file() {
+    purlis_core::unsteered!();
     for file in ["charter.toml", "purlis.toml"] {
         let root = plane(&[(file, "[policy]\ntemplate = \"strict\"\n")]);
         let loaded = levels::load(&sources(root.path()));
@@ -416,6 +425,7 @@ fn both_charter_toml_and_purlis_toml_are_read_as_the_project_file() {
 
 #[test]
 fn a_workspace_rule_about_another_workspaces_chats_is_refused_at_load() {
+    purlis_core::unsteered!();
     for (scope, line) in [
         ("principal in Plane::\"acme\"", 2),
         ("principal in Workspace::\"nowhere\"", 2),
@@ -450,6 +460,7 @@ fn a_workspace_rule_about_another_workspaces_chats_is_refused_at_load() {
 
 #[test]
 fn a_project_lock_drops_a_lower_permit_with_a_notice() {
+    purlis_core::unsteered!();
     let root = plane(&[
         (
             "charter.toml",
@@ -475,6 +486,7 @@ fn a_project_lock_drops_a_lower_permit_with_a_notice() {
 
 #[test]
 fn a_rule_with_a_shipped_id_replaces_it_and_an_identical_one_restates() {
+    purlis_core::unsteered!();
     // Replaced: the merge hold, without its ask, refuses.
     let root = with_rules(
         "@id(\"guards-merge-hold\")\n\
@@ -507,6 +519,7 @@ fn a_rule_with_a_shipped_id_replaces_it_and_an_identical_one_restates() {
 
 #[test]
 fn a_project_rule_cannot_replace_an_organisation_rule_by_id() {
+    purlis_core::unsteered!();
     let root = with_rules(
         "@id(\"skills-org-none\")\n\
          permit (principal, action == Action::\"install\", resource);\n",
@@ -532,6 +545,7 @@ fn a_project_rule_cannot_replace_an_organisation_rule_by_id() {
 
 #[test]
 fn a_lower_permit_that_can_never_pass_a_higher_forbid_is_warned_about() {
+    purlis_core::unsteered!();
     let root = with_rules(
         "@id(\"skills-allow-install\")\n\
          permit (principal, action == Action::\"install\", resource);\n",
@@ -570,6 +584,7 @@ fn a_lower_permit_that_can_never_pass_a_higher_forbid_is_warned_about() {
 
 #[test]
 fn a_broken_project_file_falls_back_to_the_accepted_copy_else_strict_with_the_full_sandbox() {
+    purlis_core::unsteered!();
     let root = plane(&[
         ("charter.toml", "[policy]\n\"guards.merj\" = \"log\"\n"),
         ("policy.cedar", NO_INSTALLS),
@@ -597,6 +612,7 @@ fn a_broken_project_file_falls_back_to_the_accepted_copy_else_strict_with_the_fu
 
 #[test]
 fn a_broken_organisation_file_reads_as_strict_plus_every_lock() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
     let loaded = levels::load(&Sources {
         organisation: Some(organisation(
@@ -627,6 +643,7 @@ fn a_broken_organisation_file_reads_as_strict_plus_every_lock() {
 
 #[test]
 fn a_broken_file_runs_the_full_sandbox_even_with_an_accepted_copy() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "policy.cedar",
         "@id(\"skills-x\") forbid (principal, action, resource);",
@@ -644,6 +661,7 @@ fn a_broken_file_runs_the_full_sandbox_even_with_an_accepted_copy() {
 
 #[test]
 fn a_you_level_loosening_is_ignored_with_a_notice() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy]\ntemplate = \"team\"\n\n[policy.rules]\n\"policy-everything-else\" = \"enforce\"\n",
@@ -694,6 +712,7 @@ fn a_you_level_loosening_is_ignored_with_a_notice() {
 
 #[test]
 fn a_workspace_default_in_the_project_file_sets_that_workspaces_template() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy]\ntemplate = \"watch\"\n\n[policy.workspace.infra]\ntemplate = \"strict\"\n",
@@ -715,6 +734,7 @@ fn a_workspace_default_in_the_project_file_sets_that_workspaces_template() {
 
 #[test]
 fn a_workspace_and_a_persona_default_for_one_key_take_the_stricter() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy]\ntemplate = \"watch\"\n\n\
@@ -737,6 +757,7 @@ fn a_workspace_and_a_persona_default_for_one_key_take_the_stricter() {
 
 #[test]
 fn a_workspace_table_naming_no_workspace_fails_validation() {
+    purlis_core::unsteered!();
     for (table, words) in [
         ("[policy.workspace.nowhere]", "no workspace \"nowhere\""),
         ("[policy.persona.nobody]", "no persona \"nobody\""),
@@ -759,6 +780,7 @@ fn a_workspace_table_naming_no_workspace_fails_validation() {
 
 #[test]
 fn the_organisations_policy_toml_can_go_deny_by_default() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"team\"\n")]);
     let loaded = levels::load(&Sources {
         organisation: Some(organisation(
@@ -780,6 +802,7 @@ fn the_organisations_policy_toml_can_go_deny_by_default() {
 
 #[test]
 fn an_organisation_policy_toml_with_a_bad_value_reads_as_strict_plus_every_lock() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
     for bad in [
         "[policy]\n\"guards.merj\" = \"log\"\n",
@@ -817,6 +840,7 @@ fn an_organisation_policy_toml_with_a_bad_value_reads_as_strict_plus_every_lock(
 
 #[test]
 fn a_lock_on_one_action_and_a_per_family_keep_are_read() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy.locks]\nactions = [\"push\"]\n\
@@ -848,6 +872,7 @@ fn loose(root: &Path, oid: &str) -> std::path::PathBuf {
 
 #[test]
 fn a_committed_file_whose_object_is_gone_is_unread_never_absent() {
+    purlis_core::unsteered!();
     let root = plane(&[
         ("charter.toml", "[policy]\ntemplate = \"open\"\n"),
         ("policy.cedar", NO_INSTALLS),
@@ -868,6 +893,7 @@ fn a_committed_file_whose_object_is_gone_is_unread_never_absent() {
 
 #[test]
 fn a_committed_file_rewritten_in_place_under_its_name_is_unread() {
+    purlis_core::unsteered!();
     let root = plane(&[("policy.cedar", NO_INSTALLS)]);
     let blob = git_out(root.path(), &["rev-parse", "HEAD:policy.cedar"]);
     // Another blob's object, with no rule, written over the committed one's under its name.
@@ -891,6 +917,7 @@ fn a_committed_file_rewritten_in_place_under_its_name_is_unread() {
 
 #[test]
 fn a_dot_git_whose_head_does_not_read_is_unread_never_no_repository() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"strict\"\n")]);
     // A working file that says otherwise, and a HEAD that names nothing.
     write(
@@ -921,6 +948,7 @@ fn a_dot_git_whose_head_does_not_read_is_unread_never_no_repository() {
 
 #[test]
 fn a_project_rule_mode_cannot_loosen_what_the_organisation_set() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy.rules]\n\"policy-everything-else\" = \"enforce\"\n",
@@ -940,6 +968,7 @@ fn a_project_rule_mode_cannot_loosen_what_the_organisation_set() {
 
 #[test]
 fn a_project_rule_mode_cannot_loosen_a_shipped_rule_on_a_locked_family() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy.rules]\n\"guards-merge-hold\" = \"off\"\n",
@@ -967,6 +996,7 @@ fn a_project_rule_mode_cannot_loosen_a_shipped_rule_on_a_locked_family() {
 
 #[test]
 fn a_local_file_git_would_carry_keeps_its_tightenings_with_a_notice() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"team\"\n")]);
     git(root.path(), &["config", "core.excludesFile", "/dev/null"]);
     write(
@@ -985,6 +1015,7 @@ fn a_local_file_git_would_carry_keeps_its_tightenings_with_a_notice() {
 #[cfg(unix)]
 #[test]
 fn a_local_file_that_cannot_be_read_is_told_never_lost_silently() {
+    purlis_core::unsteered!();
     use std::os::unix::fs::PermissionsExt as _;
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"team\"\n")]);
     let local = root.path().join("charter.local.toml");
@@ -1005,6 +1036,7 @@ fn a_local_file_that_cannot_be_read_is_told_never_lost_silently() {
 
 #[test]
 fn a_locked_family_never_runs_below_enforce() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
     let loaded = levels::load(&Sources {
         organisation: Some(organisation(
@@ -1026,6 +1058,7 @@ fn a_locked_family_never_runs_below_enforce() {
 
 #[test]
 fn an_unknown_template_reads_strict_and_an_unknown_mode_enforce_and_the_file_still_reads() {
+    purlis_core::unsteered!();
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
     for (bad, words, line) in [
         ("[policy]\ntemplate = \"lenient\"\n", "reads as strict", 2),
@@ -1075,6 +1108,7 @@ fn an_unknown_template_reads_strict_and_an_unknown_mode_enforce_and_the_file_sti
 
 #[test]
 fn a_project_cannot_widen_an_organisations_set_that_lets_through() {
+    purlis_core::unsteered!();
     let root = plane(&[(
         "charter.toml",
         "[policy.sets]\nknown-hosts = [\"evil.example\"]\nproduction-hosts = [\"db.acme.com\"]\n",
@@ -1101,6 +1135,7 @@ fn a_project_cannot_widen_an_organisations_set_that_lets_through() {
 
 #[test]
 fn a_project_lock_on_one_action_drops_a_lower_permit_on_it() {
+    purlis_core::unsteered!();
     let root = plane(&[
         ("charter.toml", "[policy.locks]\nactions = [\"install\"]\n"),
         (

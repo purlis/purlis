@@ -177,6 +177,7 @@ fn two_rules_with_one_id_at_different_levels_are_refused_at_load() {
 
 #[test]
 fn two_files_at_one_level_with_one_id_are_refused_naming_both() {
+    purlis_core::unsteered!();
     // Two workspaces' files, each at the Workspace level: neither may overwrite the other.
     let web = "// purlis-policy 1\n\
                @id(\"guards-merge-workspace\") @level(\"workspace\")\n\
