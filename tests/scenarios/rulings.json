@@ -1,55 +1,158 @@
 {
-  "$comment": "The person's rulings of M74.1 (decisions.md, the entries marked [person], Q281 on), by id and date (T1.1-08): the only Q-ids that may move a row off its carried cover kind or binaries (`moved`), raise a cap above its seed (`approved`), or approve an expected_fail mark for the gate. A point of one (`Q321.8`) is that ruling's. Add a ruling here in the pull request that cites it, as decisions.md records it.",
+  "$comment": "The person's rulings of M74.1 (decisions.md, the entries marked [person], Q281 on), by exact id, each with its date and what it approves (T1.1-08): `rows` (a matrix row, an escape, or `network-probe` / `file-probe`) a ruling may move off its carried cover kind or binaries, or back to pending (`moved`); `caps` (`<kind>.<reason>`) it may raise above their seed (`approved`); `marks` (issue numbers) whose expected_fail it approves for the gate. A point of a ruling (`Q321.8`) is listed as its own id. The gate judges a change by its base's copy of this file, never the change's own: add a ruling, with what it approves, as decisions.md records it, in a pull request of its own, merged before the one that cites it.",
   "rulings": {
-    "Q281": "2026-11-14",
-    "Q282": "2026-11-14",
-    "Q283": "2026-11-14",
-    "Q284": "2026-11-15",
-    "Q285": "2026-11-15",
-    "Q286": "2026-11-15",
-    "Q287": "2026-11-15",
-    "Q288": "2026-11-15",
-    "Q289": "2026-11-15",
-    "Q290": "2026-11-15",
-    "Q291": "2026-11-15",
-    "Q292": "2026-11-15",
-    "Q293": "2026-11-15",
-    "Q294": "2026-11-15",
-    "Q295": "2026-11-15",
-    "Q296": "2026-11-15",
-    "Q297": "2026-11-15",
-    "Q298": "2026-11-15",
-    "Q299": "2026-11-15",
-    "Q300": "2026-11-15",
-    "Q301": "2026-11-16",
-    "Q302": "2026-11-16",
-    "Q303": "2026-11-16",
-    "Q304": "2026-11-16",
-    "Q305": "2026-11-16",
-    "Q306": "2026-11-16",
-    "Q307": "2026-11-16",
-    "Q308": "2026-11-16",
-    "Q308a": "2026-11-16",
-    "Q308b": "2026-11-16",
-    "Q309": "2026-11-16",
-    "Q310": "2026-11-16",
-    "Q311": "2026-11-16",
-    "Q312": "2026-11-16",
-    "Q313": "2026-11-16",
-    "Q314": "2026-11-16",
-    "Q315": "2026-11-16",
-    "Q316": "2026-11-16",
-    "Q317": "2026-11-16",
-    "Q318": "2026-11-16",
-    "Q319": "2026-11-16",
-    "Q320": "2026-11-16",
-    "Q321": "2026-11-16",
-    "Q322": "2026-11-16",
-    "Q323": "2026-11-16",
-    "Q324": "2026-11-16",
-    "Q325": "2026-11-17",
-    "Q326": "2026-11-17",
-    "Q327": "2026-11-17",
-    "Q328": "2026-11-17"
+    "Q281": {
+      "date": "2026-11-14"
+    },
+    "Q282": {
+      "date": "2026-11-14"
+    },
+    "Q283": {
+      "date": "2026-11-14"
+    },
+    "Q284": {
+      "date": "2026-11-15"
+    },
+    "Q285": {
+      "date": "2026-11-15"
+    },
+    "Q286": {
+      "date": "2026-11-15"
+    },
+    "Q287": {
+      "date": "2026-11-15"
+    },
+    "Q288": {
+      "date": "2026-11-15"
+    },
+    "Q289": {
+      "date": "2026-11-15"
+    },
+    "Q290": {
+      "date": "2026-11-15"
+    },
+    "Q291": {
+      "date": "2026-11-15"
+    },
+    "Q292": {
+      "date": "2026-11-15"
+    },
+    "Q293": {
+      "date": "2026-11-15"
+    },
+    "Q294": {
+      "date": "2026-11-15"
+    },
+    "Q295": {
+      "date": "2026-11-15"
+    },
+    "Q296": {
+      "date": "2026-11-15"
+    },
+    "Q297": {
+      "date": "2026-11-15"
+    },
+    "Q298": {
+      "date": "2026-11-15"
+    },
+    "Q299": {
+      "date": "2026-11-15"
+    },
+    "Q300": {
+      "date": "2026-11-15"
+    },
+    "Q301": {
+      "date": "2026-11-16"
+    },
+    "Q302": {
+      "date": "2026-11-16"
+    },
+    "Q303": {
+      "date": "2026-11-16"
+    },
+    "Q304": {
+      "date": "2026-11-16"
+    },
+    "Q305": {
+      "date": "2026-11-16"
+    },
+    "Q306": {
+      "date": "2026-11-16"
+    },
+    "Q307": {
+      "date": "2026-11-16"
+    },
+    "Q308": {
+      "date": "2026-11-16"
+    },
+    "Q308a": {
+      "date": "2026-11-16"
+    },
+    "Q308b": {
+      "date": "2026-11-16"
+    },
+    "Q309": {
+      "date": "2026-11-16"
+    },
+    "Q310": {
+      "date": "2026-11-16"
+    },
+    "Q311": {
+      "date": "2026-11-16"
+    },
+    "Q312": {
+      "date": "2026-11-16"
+    },
+    "Q313": {
+      "date": "2026-11-16"
+    },
+    "Q314": {
+      "date": "2026-11-16"
+    },
+    "Q315": {
+      "date": "2026-11-16"
+    },
+    "Q316": {
+      "date": "2026-11-16"
+    },
+    "Q317": {
+      "date": "2026-11-16"
+    },
+    "Q318": {
+      "date": "2026-11-16"
+    },
+    "Q319": {
+      "date": "2026-11-16"
+    },
+    "Q320": {
+      "date": "2026-11-16"
+    },
+    "Q321": {
+      "date": "2026-11-16",
+      "caps": [
+        "fixture.machine_wide_state"
+      ]
+    },
+    "Q322": {
+      "date": "2026-11-16"
+    },
+    "Q323": {
+      "date": "2026-11-16"
+    },
+    "Q324": {
+      "date": "2026-11-16"
+    },
+    "Q325": {
+      "date": "2026-11-17"
+    },
+    "Q326": {
+      "date": "2026-11-17"
+    },
+    "Q327": {
+      "date": "2026-11-17"
+    },
+    "Q328": {
+      "date": "2026-11-17"
+    }
   }
 }

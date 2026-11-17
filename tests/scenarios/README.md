@@ -11,8 +11,8 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
 | `rows.json` | The row table (ticket 43, from test-matrix §3.22): per matrix row × dialect × OS, whether its Log, Window and Chat state an expectation. Ticket 8's list takes it in; the validator's `RowTable` reads its shape. A dialect a row doesn't apply to has no entries. Draft until the person approves the matrix's §3.22. |
 | `escapes.json` | The escape table (ticket 43): every escape × protection (Full, Basic, off) with what purlis owes, its positive control, dialects, OSes, and the real-binary (ticket 53) and live (tickets 37, 44) columns, for ticket 8's gate and tickets 20–22. Generated on the plane with the matrix's `escape-table.md`; draft until the person approves it. |
 | `coverage.json` | The matrix coverage list (ticket 8): a cover for every row × dialect × OS of `rows.json`, every row §3.20 leaves to fixtures, each dialect's real-binary network and file probes, and every escape × protection of `escapes.json`, with the caps on each reason. Generated once by `tools/scenario-coverage.mjs` and owned here: a suite replaces a row's `pending: <ticket>` with its cover. |
-| `issues.json` | The issues the cells' `expected_fail` marks name, whether each is open, and when it was opened: the gate reads it on a pull request; the nightly `coverage-issues` entry refreshes it from GitHub first (`node tools/scenario-coverage.mjs issues`). |
-| `rulings.json` | The person's rulings of M74.1 (decisions.md's `[person]` entries), by id and date: the only Q-ids that move a row, raise a cap or approve a mark in `coverage.json`. A pull request that cites a new ruling adds it here. |
+| `issues.json` | The issues the cells' `expected_fail` marks name, whether each is open, and when it was opened: a local cache. `sandbox-scenarios-linux` and the nightly `coverage-issues` entry refresh it from GitHub before the gate reads it (`node tools/scenario-coverage.mjs issues`), so a change's own edit of it decides nothing in CI. |
+| `rulings.json` | The person's rulings of M74.1 (decisions.md's `[person]` entries), by exact id, each with its date and what it approves (`rows`, `caps`, `marks`): the only Q-ids that move an entry, raise a cap or approve a mark in `coverage.json`. The gate reads the base's copy, so a ruling is added in a pull request of its own, merged before the one that cites it. |
 | `schema/leg-report.schema.json` | One record per entry a leg ran (ticket 6 writes them, ticket 8 judges them). |
 | `src/` | The reader (`model`), the validator (`validate`), the verdict under marks (`judge`), the production-timing set (`plan`), and the coverage gate (`coverage`). |
 | `src/net/` | The suite's network on this machine (T1.1-02): a test CA new each run and the CA bundle its clients trust, local HTTP and HTTPS origins (plain, slow, redirect, their own 403) that record every request, and a direct-connection target off the loopback. |
@@ -58,12 +58,17 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   off `scenario` names the ruling in `moved`. A `live`, `fixture` or `e2e` cover carries a reason
   from its closed list (`coverage::LIVE_REASONS`, `FIXTURE_REASONS`, `E2E_REASONS`), and each reason
   has a cap: `seed` from ticket 43's column, `cap` above it only with an `approved` ruling. A
-  ruling is one of the person's in `rulings.json` (decisions.md's `[person]` entries of M74.1), or
-  a point of one (`Q321.8`); a well-formed Q-id that isn't there approves nothing.
+  ruling is one of the person's in `rulings.json` (decisions.md's `[person]` entries of M74.1), by
+  its exact id (a point, `Q321.8`, is listed as its own), and it approves only what it names: a
+  row, escape or probe in `rows`, a cap (`fixture.race`) in `caps`, an issue's mark in `marks`.
 - **Against the base.** Editing the list alone does not move what the matrix and the rulings fix:
-  `sandbox-scenarios-linux` holds the list to its base's (`against_base`). A cap whose seed and cap
-  rise above what the base allowed, a row whose `carried` moves, and a row whose `binary` drops a
-  leg (`both` to `fake`) each need a ruling the base's entry did not already name.
+  `sandbox-scenarios-linux` holds the list to its base's (`against_base`), and its rulings to the
+  **base's** `rulings.json`, never the change's own. A cap whose seed and cap rise above what the
+  base allowed, a row whose `carried` moves, whose `kind` moves off what it carries, or whose
+  `binary` drops a leg (`both` to `fake`), a real cover (a row's, a fixture row's, an escape's or
+  a probe's) going back to `pending`, a fixture row's test leaving an OS, and a new
+  `approved_marks` entry each need a ruling of the base's that names it and that the base's entry
+  did not already cite. A ruling is therefore added in a pull request of its own.
 - **Which leg counts.** A Claude Code scenario cover on macOS counts only from ticket 10's leg; a row
   with `binary: real` or `both` also needs ticket 53's; an escape the table marks `real_binary` runs
   there too. Fixture and e2e covers run on the OS their entry names. `judge_runs` reads the legs'
@@ -71,8 +76,9 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   that ran the scenario pass on an OS owes every scenario leg its covers require there, listed in
   its legs or not.
 - **The ratchet.** A change adds a mark on an existing cell (per cell × dialect × OS × leg ×
-  timings) only with a new issue: one no mark of the base names, opened after the base was
-  committed (`issues.json` records each issue's `opened`); a new cell may carry any open issue's. No mark
+  timings) only with a new issue: one no mark of the base names, opened after the change began
+  (its merge base's commit time, `SCENARIOS_SINCE`, which the job reads from GitHub; each issue's
+  `opened` comes from GitHub at check time); a new cell may carry any open issue's. No mark
   names a closed issue, and a pull request closes no issue a mark names. `sandbox-scenarios-linux`
   runs the ratchet against the change's base (`SCENARIOS_BASE`) and the issues it closes
   (`SCENARIOS_PR_CLOSES`).

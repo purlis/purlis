@@ -13,7 +13,8 @@
 //!   its reason's cap; and the list has exactly the matrix's rows, dialects and OSes, every row
 //!   the matrix leaves to fixtures ([`FIXTURE_ROWS`]) and every real-binary probe.
 //! - [`against_base`]: what the list may not change by itself against its base: a cap above the
-//!   base's seed, a row's carried kind or binaries, and a fixture row, each only with a ruling.
+//!   base's seed, a row's carried kind, kind or binaries, a real cover back to pending, a fixture
+//!   row's OS, and an approved mark, each only with a ruling the base's `rulings.json` names.
 //! - [`expectations`]: every cell a scenario cover names states what its row states.
 //! - [`ratchet`]: an `expected_fail` mark is added on an existing cell only with a new issue.
 //! - [`issues`]: no mark names a closed issue, or one the change closes.
@@ -260,6 +261,9 @@ pub struct FixtureCover {
     pub row: String,
     pub os: Os,
     pub reason: String,
+    /// The ruling that moved this row's test to another OS, or its cover back to pending.
+    #[serde(default)]
+    pub moved: Option<String>,
     pub cover: String,
 }
 
@@ -279,6 +283,9 @@ pub struct RealCover {
     pub dialect: Dialect,
     pub os: Os,
     pub protection: Protection,
+    /// The ruling that put this probe's cover back to pending (`network-probe`, `file-probe`).
+    #[serde(default)]
+    pub moved: Option<String>,
     pub cover: String,
 }
 
@@ -290,6 +297,9 @@ pub struct EscapeCover {
     pub id: String,
     pub covers: BTreeMap<Protection, String>,
     pub control: String,
+    /// The ruling that put one of its covers or its control back to pending.
+    #[serde(default)]
+    pub moved: Option<String>,
 }
 
 // ---- a cover -----------------------------------------------------------------------------------
@@ -516,33 +526,87 @@ pub struct Repo {
 }
 
 /// **The person's rulings of M74.1** (`rulings.json`): the Q-ids that may move a row, raise a
-/// cap or approve a mark.
+/// cap or approve a mark, each naming exactly what it approves. A change that cites a ruling is
+/// judged by its base's `rulings.json` ([`against_base`]), so a ruling is added in a pull request
+/// of its own, before the one that cites it.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rulings {
     #[serde(rename = "$comment", default)]
     pub comment: Option<String>,
-    /// Each ruling's id, and the day it was made.
-    pub rulings: BTreeMap<String, String>,
+    /// Each ruling by its exact id: `Q321`, or a point of one listed as its own, `Q321.8`.
+    pub rulings: BTreeMap<String, Ruling>,
 }
 
-impl Rulings {
-    pub fn of(ids: &[&str]) -> Self {
-        Rulings {
-            comment: None,
-            rulings: ids
-                .iter()
-                .map(|id| (id.to_string(), String::new()))
-                .collect(),
+/// **One ruling**: the day it was made, and what it approves. An id names a row of the matrix
+/// (`M-NET-01`), an escape (`E-NET-01`) or a real-binary probe (`network-probe`, `file-probe`);
+/// a cap is `<kind>.<reason>` (`fixture.race`); a mark is its issue's number.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ruling {
+    pub date: String,
+    #[serde(default)]
+    pub rows: Vec<String>,
+    #[serde(default)]
+    pub caps: Vec<String>,
+    #[serde(default)]
+    pub marks: Vec<u64>,
+}
+
+/// **What a ruling is cited for**.
+#[derive(Debug, Clone, Copy)]
+pub enum Target<'a> {
+    /// A row, escape or probe moved, by its id.
+    Row(&'a str),
+    /// A cap raised.
+    Cap(Kind, &'a str),
+    /// An `expected_fail` mark approved, by its issue.
+    Mark(u64),
+}
+
+impl std::fmt::Display for Target<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Target::Row(id) => write!(f, "`{id}` in its `rows`"),
+            Target::Cap(kind, reason) => write!(f, "`{}.{reason}` in its `caps`", kind.word()),
+            Target::Mark(issue) => write!(f, "{issue} in its `marks`"),
         }
     }
+}
 
-    /// Whether `text` names one of these rulings, or a point of one (`Q321.8`).
-    pub fn names(&self, text: &str) -> bool {
-        is_q_id(text)
-            && self
-                .rulings
-                .contains_key(text.split('.').next().unwrap_or(text))
+/// Said with every refusal of a ruling against the base.
+pub const RULINGS_ALONE: &str = "a ruling is added to rulings.json, naming what it approves, in a pull request of its own, merged before the one that cites it";
+
+impl Rulings {
+    /// Why `q` does not approve `target`, or `None` when it does: `q` must be one of these
+    /// rulings by its exact id, and name `target`.
+    pub fn refuses(&self, q: &str, target: Target<'_>) -> Option<String> {
+        if !is_q_id(q) {
+            return Some(format!("`{q}`, which is no Q-id"));
+        }
+        let Some(ruling) = self.rulings.get(q) else {
+            return Some(format!(
+                "`{q}` is no ruling in rulings.json (a point of one is listed as its own id)"
+            ));
+        };
+        let named = match target {
+            Target::Row(id) => ruling.rows.iter().any(|r| r == id),
+            Target::Cap(kind, reason) => ruling
+                .caps
+                .iter()
+                .any(|c| c.split_once('.') == Some((kind.word(), reason))),
+            Target::Mark(issue) => ruling.marks.contains(&issue),
+        };
+        (!named).then(|| format!("`{q}` does not name {target} in rulings.json"))
+    }
+
+    /// Every ruling whose id is not a Q-id (`Q300`, `Q308a`, `Q321.8`) or whose date is missing.
+    pub fn problems(&self) -> Vec<String> {
+        self.rulings
+            .iter()
+            .filter(|(id, r)| !is_q_id(id) || r.date.is_empty())
+            .map(|(id, _)| format!("rulings.json: `{id}` is not a Q-id with its date"))
+            .collect()
     }
 }
 
@@ -838,16 +902,15 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
         if !table.contains(&(r.row.as_str(), r.dialect, r.os)) {
             problems.push(format!("{at}: not in the matrix's row table"));
         }
-        if r.kind != r.carried && r.carried == Kind::Scenario {
+        if r.kind != r.carried {
+            let off = format!("moved off {} to {}", r.carried.word(), r.kind.word());
             match &r.moved {
-                None => problems.push(format!(
-                    "{at}: moved off scenario to {} without a Q-id",
-                    r.kind.word()
-                )),
-                Some(q) if !repo.rulings.names(q) => problems.push(format!(
-                    "{at}: moved off scenario by `{q}`, which is no Q-id of the person's rulings (rulings.json)"
-                )),
-                Some(_) => {}
+                None => problems.push(format!("{at}: {off} without a Q-id")),
+                Some(q) => {
+                    if let Some(why) = repo.rulings.refuses(q, Target::Row(&r.row)) {
+                        problems.push(format!("{at}: {off} by {why}"));
+                    }
+                }
             }
         }
         reason_problems(&at, r.kind, r.reason.as_deref(), &mut problems);
@@ -1034,17 +1097,19 @@ pub fn check(list: &Coverage, repo: &Repo) -> Vec<String> {
                     kind.word()
                 ));
             }
-            if cap.cap > cap.seed {
-                match &cap.approved {
-                    None => problems.push(format!(
-                        "{at}: raised from its seed {} to {} with no approving Q-id",
-                        cap.seed, cap.cap
-                    )),
-                    Some(q) if !repo.rulings.names(q) => problems.push(format!(
-                        "{at}: raised from its seed {} to {} by `{q}`, which is no Q-id of the person's rulings (rulings.json)",
-                        cap.seed, cap.cap
-                    )),
-                    Some(_) => {}
+            match &cap.approved {
+                None if cap.cap > cap.seed => problems.push(format!(
+                    "{at}: raised from its seed {} to {} with no approving Q-id",
+                    cap.seed, cap.cap
+                )),
+                None => {}
+                Some(q) => {
+                    if let Some(why) = repo.rulings.refuses(q, Target::Cap(*kind, reason)) {
+                        problems.push(format!(
+                            "{at}: seed {} and cap {}, approved by {why}",
+                            cap.seed, cap.cap
+                        ));
+                    }
                 }
             }
         }
@@ -1071,31 +1136,59 @@ fn drops_a_leg(base: Binary, head: Binary) -> bool {
     base != head && head != Binary::Both
 }
 
+fn pending(cover: &str) -> bool {
+    matches!(Cover::parse(cover), Ok(Cover::Pending { .. }))
+}
+
 /// **What the list may not change against its base by itself** (`base` is the base's
-/// `coverage.json`): a cap above the most the base allowed (its seed, or a cap a ruling raised
-/// it to); a row's `carried` kind; and a row's binaries, going from `both` to one. Each needs a
-/// ruling of the person's that the base's entry did not already name (`approved` for a cap,
-/// `moved` for a row). A row or cap new in this change is held to [`check`] alone.
+/// `coverage.json`, `rulings` the base's `rulings.json`, never the change's own):
+///
+/// - a cap above the most the base allowed (its seed, or a cap a ruling raised it to);
+/// - a row's `carried` kind, its `kind` moved off what it carries, or its binaries going from
+///   `both` to one;
+/// - a real cover (a row's, a fixture row's, an escape's or a probe's) going back to `pending`,
+///   and a fixture row's test leaving an OS it ran on;
+/// - an `approved_marks` entry the base did not have.
+///
+/// Each needs a ruling in the base's `rulings.json` that names it (`approved` for a cap, `moved`
+/// for an entry, `approved` for a mark) and that the base's entry did not already cite. A row or
+/// cap new in this change is held to [`check`] alone.
 pub fn against_base(base: &Coverage, head: &Coverage, rulings: &Rulings) -> Vec<String> {
     let mut problems = Vec::new();
-    let new_ruling = |head: Option<&String>, base: Option<&String>| {
-        head.is_some_and(|q| rulings.names(q)) && head != base
+    // Why `head` does not carry a ruling of the base's that names `target` and that `was` did
+    // not already cite; `None` when it does.
+    let unruled = |head: Option<&String>, was: Option<&String>, target: Target<'_>| match head {
+        None => Some("no Q-id".to_string()),
+        Some(q) if Some(q) == was => Some(format!("`{q}`, which its base already cited")),
+        Some(q) => rulings.refuses(q, target).map(|why| format!("{why} of the base")),
     };
+    let mut refuse = |at: String, what: String, why: String| {
+        problems.push(format!("{at}: {what}, with {why}; {RULINGS_ALONE}"));
+    };
+
     for (kind, caps) in &head.caps {
         for (reason, cap) in caps {
             let was = base.caps.get(kind).and_then(|c| c.get(reason));
             let allowed = was.map_or(0, |c| c.seed.max(c.cap));
             let top = cap.seed.max(cap.cap);
-            if top > allowed
-                && !new_ruling(cap.approved.as_ref(), was.and_then(|c| c.approved.as_ref()))
-            {
-                problems.push(format!(
-                    "the {} cap for `{reason}`: its seed and cap reach {top}, above the {allowed} its base allowed, with no new approving Q-id",
-                    kind.word()
-                ));
+            if top <= allowed {
+                continue;
+            }
+            let target = Target::Cap(*kind, reason);
+            if let Some(why) = unruled(
+                cap.approved.as_ref(),
+                was.and_then(|c| c.approved.as_ref()),
+                target,
+            ) {
+                refuse(
+                    format!("the {} cap for `{reason}`", kind.word()),
+                    format!("its seed and cap reach {top}, above the {allowed} its base allowed"),
+                    why,
+                );
             }
         }
     }
+
     let before: BTreeMap<(&str, Dialect, Os), &RowCover> = base
         .rows
         .iter()
@@ -1105,21 +1198,148 @@ pub fn against_base(base: &Coverage, head: &Coverage, rulings: &Rulings) -> Vec<
         let Some(b) = before.get(&(r.row.as_str(), r.dialect, r.os)) else {
             continue;
         };
-        let at = format!("{} {} {}", r.row, r.dialect.word(), os_word(r.os));
-        let ruled = new_ruling(r.moved.as_ref(), b.moved.as_ref());
-        if r.carried != b.carried && !ruled {
-            problems.push(format!(
-                "{at}: carried moves from {} to {} against its base with no new Q-id in `moved`; the matrix carries a row's kind, and only a ruling moves it",
+        let mut moves = Vec::new();
+        if r.carried != b.carried {
+            moves.push(format!(
+                "carried moves from {} to {}; the matrix carries a row's kind, and only a ruling moves it",
                 b.carried.word(),
                 r.carried.word()
             ));
         }
-        if drops_a_leg(b.binary, r.binary) && !ruled {
-            problems.push(format!(
-                "{at}: runs under {}, and its base under {}: a leg is dropped with no new Q-id in `moved`",
+        if r.kind != b.kind && r.kind != r.carried {
+            moves.push(format!(
+                "its kind moves from {} to {}, off the {} it carries",
+                b.kind.word(),
+                r.kind.word(),
+                r.carried.word()
+            ));
+        }
+        if drops_a_leg(b.binary, r.binary) {
+            moves.push(format!(
+                "runs under {}, and its base under {}: a leg is dropped",
                 binary_word(r.binary),
                 binary_word(b.binary)
             ));
+        }
+        if pending(&r.cover) && !pending(&b.cover) {
+            moves.push(format!("its cover `{}` goes back to `{}`", b.cover, r.cover));
+        }
+        if moves.is_empty() {
+            continue;
+        }
+        if let Some(why) = unruled(r.moved.as_ref(), b.moved.as_ref(), Target::Row(&r.row)) {
+            let at = format!("{} {} {}", r.row, r.dialect.word(), os_word(r.os));
+            for m in moves {
+                refuse(at.clone(), m, format!("{why} in `moved`"));
+            }
+        }
+    }
+
+    // A fixture row: its test leaves no OS it ran on, and no cover of it goes back to pending.
+    let fixture_rows: BTreeSet<&str> = base.fixtures.iter().map(|f| f.row.as_str()).collect();
+    for row in fixture_rows {
+        let was: Vec<&FixtureCover> = base.fixtures.iter().filter(|f| f.row == row).collect();
+        let now: Vec<&FixtureCover> = head.fixtures.iter().filter(|f| f.row == row).collect();
+        if now.is_empty() {
+            continue; // `check` refuses a fixture row the list no longer names.
+        }
+        let mut moves = Vec::new();
+        for b in &was {
+            match now.iter().find(|f| f.os == b.os) {
+                None => moves.push(format!(
+                    "its test leaves {}, where its base ran it",
+                    os_word(b.os)
+                )),
+                Some(f) if pending(&f.cover) && !pending(&b.cover) => moves.push(format!(
+                    "its cover on {} `{}` goes back to `{}`",
+                    os_word(b.os),
+                    b.cover,
+                    f.cover
+                )),
+                Some(_) => {}
+            }
+        }
+        if moves.is_empty() {
+            continue;
+        }
+        let head_q = now.iter().find_map(|f| f.moved.as_ref());
+        let base_q = was.iter().find_map(|f| f.moved.as_ref());
+        if let Some(why) = unruled(head_q, base_q, Target::Row(row)) {
+            for m in moves {
+                refuse(row.to_string(), m, format!("{why} in `moved`"));
+            }
+        }
+    }
+
+    // An escape's covers and control, and a probe's cover: none goes back to pending.
+    for e in &head.escapes {
+        let Some(b) = base.escapes.iter().find(|b| b.id == e.id) else {
+            continue;
+        };
+        let mut moves = Vec::new();
+        for (p, was) in &b.covers {
+            let now = e.covers.get(p).map_or("", String::as_str);
+            if !pending(was) && (now.is_empty() || pending(now)) {
+                moves.push(format!(
+                    "its cover at {} `{was}` goes back to pending",
+                    protection_word(*p)
+                ));
+            }
+        }
+        if pending(&e.control) && !pending(&b.control) {
+            moves.push(format!("its control `{}` goes back to pending", b.control));
+        }
+        if moves.is_empty() {
+            continue;
+        }
+        if let Some(why) = unruled(e.moved.as_ref(), b.moved.as_ref(), Target::Row(&e.id)) {
+            for m in moves {
+                refuse(e.id.clone(), m, format!("{why} in `moved`"));
+            }
+        }
+    }
+    for p in &head.real_binary {
+        let Some(b) = base.real_binary.iter().find(|b| {
+            (b.probe, b.dialect, b.os, b.protection) == (p.probe, p.dialect, p.os, p.protection)
+        }) else {
+            continue;
+        };
+        if !(pending(&p.cover) && !pending(&b.cover)) {
+            continue;
+        }
+        let id = match p.probe {
+            Probe::Network => "network-probe",
+            Probe::File => "file-probe",
+        };
+        if let Some(why) = unruled(p.moved.as_ref(), b.moved.as_ref(), Target::Row(id)) {
+            refuse(
+                format!(
+                    "the {id}, {} {} at {}",
+                    p.dialect.word(),
+                    os_word(p.os),
+                    protection_word(p.protection)
+                ),
+                format!("its cover `{}` goes back to `{}`", b.cover, p.cover),
+                format!("{why} in `moved`"),
+            );
+        }
+    }
+
+    // A mark approved for the gate: only by a ruling of the base's that names its issue.
+    for a in &head.approved_marks {
+        let known = base
+            .approved_marks
+            .iter()
+            .any(|b| (b.issue, &b.cell, &b.approved) == (a.issue, &a.cell, &a.approved));
+        if known {
+            continue;
+        }
+        if let Some(why) = rulings.refuses(&a.approved, Target::Mark(a.issue)) {
+            refuse(
+                a.cell.clone(),
+                format!("its mark for #{} is approved", a.issue),
+                format!("{why} of the base"),
+            );
         }
     }
     problems
@@ -1208,8 +1428,9 @@ fn marks(batches: &[(String, Batch)]) -> (BTreeSet<MarkKey>, BTreeSet<String>, B
 
 /// **The marks a change adds against `base`'s cells**, where it may not: on a cell `base` has,
 /// for an issue that is not new. A new issue is one no mark of `base` names, opened after the
-/// base was committed (`base_time`, `2026-11-15T05:08:34Z`, as `cache` writes `opened`); an
-/// issue the cache doesn't have is not known to be new. Per cell × dialect × OS × leg × timings.
+/// change began (`base_time`, its merge base's commit time, `2026-11-15T05:08:34Z`, as `cache`
+/// writes `opened`); an issue the cache doesn't have is not known to be new. Per cell × dialect ×
+/// OS × leg × timings.
 pub fn ratchet(
     base: &[(String, Batch)],
     head: &[(String, Batch)],
@@ -1316,10 +1537,13 @@ pub fn at_gate(list: &Coverage, head: &[(String, Batch)], rulings: &Rulings) -> 
         for cell in &batch.cells {
             let name = format!("{file}#{}", cell.id);
             for m in &cell.expected_fail {
-                let approved = list
-                    .approved_marks
-                    .iter()
-                    .any(|a| a.issue == m.issue && a.cell == name && rulings.names(&a.approved));
+                let approved = list.approved_marks.iter().any(|a| {
+                    a.issue == m.issue
+                        && a.cell == name
+                        && rulings
+                            .refuses(&a.approved, Target::Mark(a.issue))
+                            .is_none()
+                });
                 if !approved {
                     unapproved.insert(format!(
                         "{name}: an expected_fail for #{} the person did not approve by name",

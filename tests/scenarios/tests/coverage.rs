@@ -4,16 +4,19 @@
 //! **The matrix coverage gate** (T1.1-08, #6855): the repo's list over the real matrix, cells
 //! and escape table, and each of the gate's rules against small lists written here.
 //!
-//! A change's own marks are judged against its base (`SCENARIOS_BASE`, a commit, or else the
-//! merge base with `origin/phase-1-proven`): that test needs the base's history, so it is run
-//! by `sandbox-scenarios-linux` (`--run-ignored all`), which sets it. The issues a pull request
-//! closes come from `SCENARIOS_PR_CLOSES` (`7001,7002`), which the same job sets.
+//! A change's own marks and list are judged against its base (`SCENARIOS_BASE`, a commit, or else
+//! the merge base with `origin/phase-1-proven`), and its rulings are the base's `rulings.json`,
+//! never its own: those tests need the base's history, so they are run by
+//! `sandbox-scenarios-linux` (`--run-ignored all`), which sets it. A new issue is one opened after
+//! the change began (`SCENARIOS_SINCE`, the change's merge base's commit time, or else read from
+//! git), and that job refreshes `issues.json` from GitHub first. The issues a pull request closes
+//! come from `SCENARIOS_PR_CLOSES` (`7001,7002`), which the same job sets.
 
 use std::process::Command;
 
 use purlis_scenarios::coverage::{
-    Coverage, Issues, Ran, Repo, Required, Rulings, against_base, at_gate, check, expectations,
-    issues, judge_runs, ratchet, report, row_table,
+    Coverage, Issues, Kind, RULINGS_ALONE, Ran, Repo, Required, Rulings, Target, against_base,
+    at_gate, check, expectations, issues, judge_runs, ratchet, report, row_table,
 };
 use purlis_scenarios::model::{
     Batch, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict, TimingsMode,
@@ -67,9 +70,17 @@ fn repo(batches: Vec<(String, Batch)>, table: RowTable, escapes: Value) -> Repo 
     }
 }
 
-/// The rulings the small lists here cite.
+/// The rulings the small lists here cite, each naming what it approves: Q330 two caps, its point
+/// Q330.2 one, Q331 the row M-T-01, Q340 the marks of #7001 and #7002, and Q341 other things.
 fn rulings() -> Rulings {
-    Rulings::of(&["Q330", "Q331", "Q340"])
+    serde_json::from_value(json!({"rulings": {
+        "Q330": {"date": "2026-11-16", "caps": ["e2e.window", "fixture.race"]},
+        "Q330.2": {"date": "2026-11-16", "caps": ["e2e.window"]},
+        "Q331": {"date": "2026-11-16", "rows": ["M-T-01"]},
+        "Q340": {"date": "2026-11-16", "marks": [7001, 7002]},
+        "Q341": {"date": "2026-11-17", "rows": ["M-T-02"], "caps": ["fixture.time"], "marks": [7003]},
+    }}))
+    .expect("rulings")
 }
 
 fn list(value: Value) -> Coverage {
@@ -134,14 +145,34 @@ fn closing() -> Vec<u64> {
 }
 
 fn git(args: &[&str]) -> Option<String> {
+    try_git(args).ok()
+}
+
+/// `git <args>` in `tests/scenarios`: its output, or why it failed.
+fn try_git(args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
         .args(args)
         .current_dir(root())
         .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .map_err(|e| format!("git {}: {e}", args.join(" ")))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(format!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// `path` (in `tests/scenarios`) at `commit`: `None` only when the commit has no such path, and
+/// an error for anything else (a commit that isn't there, a shallow clone, a git that fails).
+fn show_at(commit: &str, path: &str) -> Result<Option<String>, String> {
+    if try_git(&["ls-tree", "--name-only", commit, "--", path])?.is_empty() {
+        return Ok(None);
+    }
+    try_git(&["show", &format!("{commit}:./{path}")]).map(Some)
 }
 
 /// The commit this change's marks are judged against.
@@ -151,6 +182,17 @@ fn base() -> String {
     }
     git(&["merge-base", "HEAD", "origin/phase-1-proven"])
         .expect("no base to judge the marks against: set SCENARIOS_BASE to a commit")
+}
+
+/// When this change began: `SCENARIOS_SINCE`, or else when its merge base with `base` was
+/// committed. A mark's issue is new when it was opened after it.
+fn since(base: &str) -> String {
+    if let Some(since) = std::env::var("SCENARIOS_SINCE").ok().filter(|s| !s.is_empty()) {
+        return since;
+    }
+    let fork = git(&["merge-base", "HEAD", base])
+        .unwrap_or_else(|| panic!("no merge base with {base}: set SCENARIOS_SINCE"));
+    committed_at(&fork)
 }
 
 /// When `commit` was committed, in UTC, as issues.json writes `opened`.
@@ -173,8 +215,17 @@ fn committed_at(commit: &str) -> String {
 
 /// The coverage list at `commit`, if it has one.
 fn coverage_at(commit: &str) -> Option<Coverage> {
-    let text = git(&["show", &format!("{commit}:./coverage.json")])?;
+    let text = show_at(commit, "coverage.json").unwrap_or_else(|e| panic!("{e}"))?;
     Some(list(serde_json::from_str(&text).expect("json")))
+}
+
+/// The person's rulings at `commit`: none if it has no `rulings.json`.
+fn rulings_at(commit: &str) -> Rulings {
+    match show_at(commit, "rulings.json").unwrap_or_else(|e| panic!("{e}")) {
+        Some(text) => serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("rulings.json at {commit}: {e}")),
+        None => Rulings::default(),
+    }
 }
 
 /// The cells files at `commit`.
@@ -329,19 +380,13 @@ fn every_cell_carries_each_expectation_kind_its_row_states() {
 fn the_marks_keep_their_ratchet_against_the_base() {
     let repo = Repo::read().expect("the repo's cells");
     let base = base();
-    let found = ratchet(
-        &cells_at(&base),
-        &repo.batches,
-        &repo.issues,
-        &committed_at(&base),
-    );
+    let found = ratchet(&cells_at(&base), &repo.batches, &repo.issues, &since(&base));
     assert!(found.is_empty(), "against {base}: {found:#?}");
 }
 
 #[test]
 #[ignore = "needs the change's base: sandbox-scenarios-linux runs it with SCENARIOS_BASE"]
 fn the_list_keeps_its_anchors_against_the_base() {
-    let repo = Repo::read().expect("the repo's rulings");
     let head = Coverage::read().expect("coverage.json");
     let base = base();
     // A base with no list is the change that brings it: the generator and `diff` are its anchor.
@@ -349,8 +394,23 @@ fn the_list_keeps_its_anchors_against_the_base() {
         println!("{base} has no coverage.json: nothing to anchor against");
         return;
     };
-    let found = against_base(&was, &head, &repo.rulings);
+    // The base's rulings, never this change's: a ruling is added in a pull request of its own.
+    let found = against_base(&was, &head, &rulings_at(&base));
     assert!(found.is_empty(), "against {base}: {found:#?}");
+}
+
+#[test]
+fn a_base_that_can_t_be_read_fails_the_anchored_test() {
+    // A path the base doesn't have is the only failure that reads as "nothing there".
+    let head = git(&["rev-parse", "HEAD"]).expect("this checkout's HEAD");
+    assert_eq!(show_at(&head, "no-such-file.json"), Ok(None));
+    assert!(matches!(show_at(&head, "rulings.json"), Ok(Some(_))));
+    // A commit that isn't there is an error, never "no list".
+    let missing = "0123456789abcdef0123456789abcdef01234567";
+    let found = show_at(missing, "coverage.json");
+    assert!(found.is_err(), "{found:?}");
+    let caught = std::panic::catch_unwind(|| coverage_at(missing));
+    assert!(caught.is_err(), "a base that can't be read reads as no list");
 }
 
 #[test]
@@ -499,18 +559,38 @@ fn an_unrecorded_cap_raise_fails_the_gate() {
     let found = check(&unknown, &repo);
     assert!(mentions(&found, &["Q999", "rulings.json"]), "{found:#?}");
     let point = list(
-        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "Q330.2"}}}, "rows": [e2e]}),
+        json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": "Q330.2"}}}, "rows": [e2e.clone()]}),
     );
     assert_eq!(check(&point, &repo), Vec::<String>::new());
+    // A point that isn't listed exactly, and a ruling that names other things, approve nothing.
+    for (q, why) in [("Q330.9", "no ruling"), ("Q331", "does not name")] {
+        let raised = list(
+            json!({"caps": {"e2e": {"window": {"seed": 1, "cap": 3, "approved": q}}}, "rows": [e2e.clone()]}),
+        );
+        let found = check(&raised, &repo);
+        assert!(mentions(&found, &["window", q, why]), "{q}: {found:#?}");
+    }
 }
 
 #[test]
 fn the_repo_s_rulings_are_the_person_s_m74_1_rulings() {
     let repo = Repo::read().expect("rulings.json");
-    assert!(repo.rulings.names("Q321"), "the matrix v5 ruling");
-    assert!(repo.rulings.names("Q321.8"), "a point of it");
-    assert!(!repo.rulings.names("Q999"), "no such ruling");
-    assert!(!repo.rulings.names("Q12"), "not a ruling of M74.1");
+    assert_eq!(repo.rulings.problems(), Vec::<String>::new());
+    let wide = Target::Cap(Kind::Fixture, "machine_wide_state");
+    assert_eq!(repo.rulings.refuses("Q321", wide), None, "matrix v5's cap");
+    assert!(
+        repo.rulings.refuses("Q321", Target::Cap(Kind::Fixture, "race")).is_some(),
+        "a cap it does not name"
+    );
+    assert!(repo.rulings.refuses("Q321.8", wide).is_some(), "a point not listed");
+    assert!(repo.rulings.refuses("Q999", wide).is_some(), "no such ruling");
+    assert!(
+        repo.rulings
+            .comment
+            .as_deref()
+            .is_some_and(|c| c.contains("pull request of its own")),
+        "rulings.json says a ruling is added on its own"
+    );
 }
 
 #[test]
@@ -534,9 +614,25 @@ fn moving_a_row_off_scenario_without_a_q_id_fails_the_gate() {
         "{found:#?}"
     );
 
+    // A ruling that names another row, or a point of the right one that isn't listed.
+    for (q, why) in [("Q341", "does not name `M-T-01`"), ("Q331.99", "no ruling")] {
+        moved["moved"] = json!(q);
+        let found = check(&list(json!({"caps": caps, "rows": [moved.clone()]})), &repo);
+        assert!(mentions(&found, &["M-T-01", q, why]), "{q}: {found:#?}");
+    }
+
     moved["moved"] = json!("Q331");
-    let found = check(&list(json!({"caps": caps, "rows": [moved]})), &repo);
+    let found = check(&list(json!({"caps": caps, "rows": [moved.clone()]})), &repo);
     assert_eq!(found, Vec::<String>::new());
+
+    // A kind off what the row carries needs its ruling whatever the row carries.
+    moved["carried"] = json!("live");
+    moved.as_object_mut().map(|o| o.remove("moved"));
+    let found = check(&list(json!({"caps": caps, "rows": [moved]})), &repo);
+    assert!(
+        mentions(&found, &["M-T-01", "off live to fixture", "Q-id"]),
+        "{found:#?}"
+    );
 }
 
 // ---- the list against its base ------------------------------------------------------------------
@@ -563,17 +659,17 @@ fn raising_a_seed_with_its_cap_against_the_base_needs_a_q_id() {
         ),
         "{found:#?}"
     );
-    // With the person's ruling it holds; with a ruling the base's cap already named, it doesn't.
-    assert_eq!(
-        against_base(&base, &capped(4, 4, Some("Q330")), &rulings()),
-        Vec::<String>::new()
-    );
+    // With a ruling the base's cap already named, it doesn't hold either. (Which rulings approve
+    // it is `each_way_round_a_ruling_against_the_base_is_refused`'s.)
     let reused = against_base(
         &capped(2, 3, Some("Q330")),
         &capped(4, 4, Some("Q330")),
         &rulings(),
     );
-    assert!(mentions(&reused, &["race", "Q-id"]), "{reused:#?}");
+    assert!(
+        mentions(&reused, &["race", "Q330", "already cited"]),
+        "{reused:#?}"
+    );
     // A cap the base already allowed, or one lowered, needs nothing.
     assert_eq!(
         against_base(
@@ -665,6 +761,209 @@ fn dropping_a_binary_leg_against_the_base_is_refused() {
     // Adding a leg is not dropping one.
     let fake = list(json!({"rows": [row_entry("scenario", "scenario", Some("fake"), None)]}));
     assert_eq!(against_base(&fake, &base, &rulings()), Vec::<String>::new());
+}
+
+/// The base's rulings, for the tests below: every ruling of [`rulings`] but Q341, which only the
+/// change's own `rulings.json` holds.
+fn base_rulings() -> Rulings {
+    let mut r = rulings();
+    r.rulings.remove("Q341");
+    r
+}
+
+#[test]
+fn each_way_round_a_ruling_against_the_base_is_refused() {
+    let refused = |found: &[String], words: &[&str]| {
+        assert!(mentions(found, words), "{words:?}: {found:#?}");
+        assert!(
+            found.iter().all(|p| p.contains(RULINGS_ALONE)),
+            "{found:#?}"
+        );
+    };
+    // A cap raised by a ruling that names a row, by a point not listed, by one only the change's
+    // rulings hold; and by the ruling of the base's that names the cap.
+    let base = capped(2, 2, None);
+    let raise = |q: &str| against_base(&base, &capped(4, 4, Some(q)), &base_rulings());
+    refused(&raise("Q331"), &["race", "Q331", "does not name `fixture.race`"]);
+    refused(&raise("Q330.9"), &["race", "Q330.9", "no ruling"]);
+    refused(&raise("Q341"), &["race", "Q341", "no ruling"]);
+    assert_eq!(raise("Q330"), Vec::<String>::new());
+
+    // A row's carried kind moved, a leg dropped, by a ruling that names another row, a point not
+    // listed, or one only the change holds.
+    let base = list(json!({"rows": [row_entry("scenario", "scenario", Some("both"), None)]}));
+    for q in ["Q330", "Q331.99", "Q341"] {
+        let carried = list(json!({"rows": [row_entry("fixture", "fixture", Some("both"), Some(q))]}));
+        refused(
+            &against_base(&base, &carried, &base_rulings()),
+            &["M-T-01 codex linux", "carried moves", q],
+        );
+        let dropped = list(json!({"rows": [row_entry("scenario", "scenario", Some("fake"), Some(q))]}));
+        refused(
+            &against_base(&base, &dropped, &base_rulings()),
+            &["M-T-01 codex linux", "a leg is dropped", q],
+        );
+    }
+    let ruled = list(json!({"rows": [row_entry("fixture", "fixture", Some("fake"), Some("Q331"))]}));
+    assert_eq!(
+        against_base(&base, &ruled, &base_rulings()),
+        Vec::<String>::new()
+    );
+
+    // A mark approved for the gate by a ruling that names another issue, or one only the change
+    // holds; and by the base's ruling that names it. A mark the base already approved stays.
+    let approving = |q: &str| {
+        list(json!({"approved_marks": [{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": q}]}))
+    };
+    let none = list(json!({}));
+    refused(
+        &against_base(&none, &approving("Q330"), &base_rulings()),
+        &["cells/T.json#M-T-01", "#7001", "does not name 7001"],
+    );
+    refused(
+        &against_base(&none, &approving("Q341"), &base_rulings()),
+        &["#7001", "Q341", "no ruling"],
+    );
+    assert_eq!(
+        against_base(&none, &approving("Q340"), &base_rulings()),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        against_base(&approving("Q341"), &approving("Q341"), &base_rulings()),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn moving_a_row_s_kind_off_what_it_carries_against_the_base_needs_moved() {
+    let base = list(json!({"rows": [row_entry("scenario", "scenario", None, None)]}));
+    // `carried` left alone, `kind` moved off it: refused without a ruling of the base's.
+    let off = |q: Option<&str>| list(json!({"rows": [row_entry("scenario", "fixture", None, q)]}));
+    let found = against_base(&base, &off(None), &base_rulings());
+    assert!(
+        mentions(
+            &found,
+            &["M-T-01 codex linux", "kind moves from scenario to fixture", "no Q-id"]
+        ),
+        "{found:#?}"
+    );
+    let found = against_base(&base, &off(Some("Q330")), &base_rulings());
+    assert!(mentions(&found, &["kind moves", "Q330"]), "{found:#?}");
+    assert_eq!(
+        against_base(&base, &off(Some("Q331")), &base_rulings()),
+        Vec::<String>::new()
+    );
+    // Back to the kind it carries needs nothing.
+    assert_eq!(
+        against_base(&off(Some("Q331")), &base, &base_rulings()),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_real_cover_going_back_to_pending_needs_a_ruling() {
+    let real = "scenario: cells/T.json#M-T-01";
+    let row = |cover: &str, q: Option<&str>| {
+        let mut e = row_entry("scenario", "scenario", None, q);
+        e["cover"] = json!(cover);
+        list(json!({"rows": [e]}))
+    };
+    let found = against_base(&row(real, None), &row("pending: 11", None), &base_rulings());
+    assert!(
+        mentions(&found, &["M-T-01 codex linux", "goes back to `pending: 11`"]),
+        "{found:#?}"
+    );
+    assert_eq!(
+        against_base(&row(real, None), &row("pending: 11", Some("Q331")), &base_rulings()),
+        Vec::<String>::new()
+    );
+    // A pending cover that stays pending, or becomes real, needs nothing.
+    assert_eq!(
+        against_base(&row("pending: 11", None), &row("pending: 12", None), &base_rulings()),
+        Vec::<String>::new()
+    );
+
+    let fixture = |cover: &str| {
+        list(json!({"fixtures": [{"row": "M-T-01", "os": "linux", "reason": "race", "cover": cover}]}))
+    };
+    let found = against_base(
+        &fixture("fixture: a.rs::a_test"),
+        &fixture("pending: 19"),
+        &base_rulings(),
+    );
+    assert!(
+        mentions(&found, &["M-T-01", "on linux", "goes back"]),
+        "{found:#?}"
+    );
+
+    let escape = |cover: &str, control: &str| {
+        list(json!({"escapes": [{"id": "E-T-01", "covers": {"full": cover}, "control": control}]}))
+    };
+    let found = against_base(
+        &escape(real, real),
+        &escape("pending: 20", "pending: 20"),
+        &base_rulings(),
+    );
+    assert!(
+        mentions(&found, &["E-T-01", "at full", "back to pending"]),
+        "{found:#?}"
+    );
+    assert!(
+        mentions(&found, &["E-T-01", "control", "back to pending"]),
+        "{found:#?}"
+    );
+
+    let probe = |cover: &str| {
+        list(json!({"real_binary": [{"probe": "network", "dialect": "codex", "os": "linux", "protection": "full", "cover": cover}]}))
+    };
+    let found = against_base(&probe(real), &probe("pending: 53"), &base_rulings());
+    assert!(
+        mentions(&found, &["network-probe", "codex linux at full", "goes back"]),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_fixture_row_s_test_leaving_an_os_needs_a_ruling() {
+    let fixture = |os: &str, q: Option<&str>| {
+        let mut f = json!({"row": "M-T-01", "os": os, "reason": "race", "cover": "fixture: a.rs::a_test"});
+        if let Some(q) = q {
+            f["moved"] = json!(q);
+        }
+        list(json!({"fixtures": [f]}))
+    };
+    let found = against_base(
+        &fixture("linux", None),
+        &fixture("macos", None),
+        &base_rulings(),
+    );
+    assert!(
+        mentions(&found, &["M-T-01", "leaves linux", "no Q-id"]),
+        "{found:#?}"
+    );
+    let found = against_base(
+        &fixture("linux", None),
+        &fixture("macos", Some("Q341")),
+        &base_rulings(),
+    );
+    assert!(mentions(&found, &["leaves linux", "Q341"]), "{found:#?}");
+    assert_eq!(
+        against_base(
+            &fixture("linux", None),
+            &fixture("macos", Some("Q331")),
+            &base_rulings()
+        ),
+        Vec::<String>::new()
+    );
+    // Running it on one more OS is not leaving one.
+    let both = list(json!({"fixtures": [
+        {"row": "M-T-01", "os": "linux", "reason": "race", "cover": "fixture: a.rs::a_test"},
+        {"row": "M-T-01", "os": "macos", "reason": "race", "cover": "fixture: a.rs::a_test"},
+    ]}));
+    assert_eq!(
+        against_base(&fixture("linux", None), &both, &base_rulings()),
+        Vec::<String>::new()
+    );
 }
 
 // ---- the list's other rules ----------------------------------------------------------------------
@@ -1044,6 +1343,12 @@ fn the_gate_fails_on_any_expected_fail_the_person_did_not_approve() {
     let unknown =
         covered(json!([{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q999"}]));
     let found = at_gate(&unknown, &head, &rulings());
+    assert!(mentions(&found, &["M-T-01", "7001"]), "{found:#?}");
+
+    // Nor does a ruling that names another issue's mark.
+    let other =
+        covered(json!([{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q341"}]));
+    let found = at_gate(&other, &head, &rulings());
     assert!(mentions(&found, &["M-T-01", "7001"]), "{found:#?}");
 
     let one = covered(json!([{"issue": 7001, "cell": "cells/T.json#M-T-01", "approved": "Q340"}]));

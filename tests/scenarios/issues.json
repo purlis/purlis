@@ -1,5 +1,5 @@
 {
-  "$comment": "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`. A mark added on an existing cell must name an issue opened after the change's base.",
+  "$comment": "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): a local cache: sandbox-scenarios-linux and the nightly refresh it from GitHub with `node tools/scenario-coverage.mjs issues` before the gate reads it, so a change's own edit of it decides nothing in CI. A mark added on an existing cell must name an issue opened after the change began (its merge base).",
   "fetched": "2026-11-17",
   "issues": {
     "6657": {

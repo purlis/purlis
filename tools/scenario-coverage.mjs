@@ -23,8 +23,8 @@
 //
 // - `node tools/scenario-coverage.mjs issues` refreshes `tests/scenarios/issues.json`, the
 //   cache of every issue a cell's `expected_fail` names and whether it is open, from GitHub
-//   (`gh`). A pull request's gate reads the cache; the nightly refreshes it first, so a mark on
-//   an issue closed since fails there.
+//   (`gh`). A pull request's `sandbox-scenarios-linux` and the nightly refresh it before the gate
+//   reads it, so `opened` and `state` are GitHub's at check time, never the change's own edit.
 //
 // The matrix lives in the plane (`work/who-judges/`), not in this repo, so its path is given.
 
@@ -279,7 +279,7 @@ function refreshIssues(repo) {
     issues[number] = { state: state === "OPEN" ? "open" : "closed", opened: new Date(createdAt).toISOString().replace(/\.\d{3}Z$/, "Z") };
   }
   const doc = {
-    $comment: "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): read by the gate on a pull request, refreshed from GitHub nightly by `node tools/scenario-coverage.mjs issues`. A mark added on an existing cell must name an issue opened after the change's base.",
+    $comment: "The issues the cells' expected_fail marks name, whether each is open, and when it was opened (T1.1-08): a local cache: sandbox-scenarios-linux and the nightly refresh it from GitHub with `node tools/scenario-coverage.mjs issues` before the gate reads it, so a change's own edit of it decides nothing in CI. A mark added on an existing cell must name an issue opened after the change began (its merge base).",
     fetched: new Date().toISOString().slice(0, 10),
     issues,
   };
