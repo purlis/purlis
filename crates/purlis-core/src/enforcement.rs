@@ -221,11 +221,14 @@ impl Family {
     /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
     /// ruling; those stay enforced, as before Q308, whatever `[policy]` says:
     ///
-    /// - `vaults` and `browser`, and the sandbox's level: each holds grants or remembered
-    ///   answers (sandbox grants, browser reach, the team's sandbox accept) whose fit with
-    ///   `[policy]` the follow-up settles. `dispatch` and `asks` switch their simple half now
-    ///   (instruction of 2026-11-16): a pair nothing covers starts with no grant, and a host ask
-    ///   is answered Allow; a lock and the person's nevers and Keep blocked hold in every mode;
+    /// - `browser`, and the sandbox's level: each holds grants or remembered answers (browser
+    ///   reach, the team's sandbox accept) whose fit with `[policy]` the follow-up settles.
+    ///   `dispatch` switches whole (ticket T1.1-73): a policy ask or deny goes ahead under `off`
+    ///   and `log`, and a lock and the person's nevers hold in every mode. `asks` switches its
+    ///   simple half: a host ask is answered Allow, and Keep blocked holds in every mode.
+    ///   `vaults` switches off or enforce only, at a vault's check against its persona and the
+    ///   in-chat refusal of a keyring read (item 4 of the follow-up); the declared-tool gate of
+    ///   a brokered run is the `tools` family's;
     /// - `network` and `ports`: the egress proxy's refusal is its live ask, and a port or socket
     ///   is a sandbox grant, both held with the above;
     /// - `processes`: the wrap's refusal of programs that would run outside it (`launchctl`,
@@ -241,6 +244,7 @@ impl Family {
         matches!(
             self,
             Family::Dispatch
+                | Family::Vaults
                 | Family::Asks
                 | Family::GuardsGit
                 | Family::GuardsMerge
@@ -643,6 +647,18 @@ impl Resolved {
                 .map(|family| (family, under(settings, locks, family)))
                 .collect(),
         )
+    }
+
+    /// **How a chat runs, with `chain` the strictest policy along the chain that dispatched it**
+    /// ([`crate::reopen::HandedFrom::policy`]): the stricter of the two, family by family, so a
+    /// dispatched chat is never looser than its asker (Q308a, Q308b). `None` for a chat nobody
+    /// dispatched, which runs as `self`.
+    #[must_use]
+    pub fn for_chat(self, chain: Option<&str>) -> Self {
+        match chain {
+            Some(chain) => self.stricter(&Self::parse(chain)),
+            None => self,
+        }
     }
 
     /// How `family` runs.

@@ -291,6 +291,12 @@ struct OnDisk {
     /// the only place a dispatch grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     dispatch_mine: Vec<DispatchPair>,
+    /// **The seals of this machine's dispatch answers** (ticket T1.1-73, #6968): one entry for
+    /// each grant of yours and each acceptance of the project's, sealed by the app alone
+    /// ([`crate::secrets::sealed_set`]). The six lists grant and accept only what this seals,
+    /// in the app ([`dispatch_sealed`]).
+    #[serde(default, skip_serializing_if = "crate::secrets::sealed_set::Set::is_empty")]
+    dispatch_sealed: crate::secrets::sealed_set::Set,
     /// The project's dispatch grants as this machine last showed them to the person (#1437),
     /// each as [`crate::dispatchgrant::Pair`] is displayed; absent before the first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -605,17 +611,38 @@ fn salvaged(text: &str) -> OnDisk {
 
 /// Reads this machine's file, changes it and writes it back, under purlis's named lock for them.
 fn change(root: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
+    change_sealing(root, &[], how)
+}
+
+/// [`change`], sealing `adds` too: each a dispatch answer the person gave just now
+/// ([`DispatchKind`] and its text), on their press in the window. **In the app every write keeps
+/// the dispatch seals in step with the lists** ([`reseal`]): an answer a write takes out of its
+/// list loses its seal, an answer a write moves from one list to another of the same level keeps
+/// it, and nothing else is sealed. Refused, with nothing written, where the app cannot seal.
+fn change_sealing(
+    root: &Path,
+    adds: &[(DispatchKind, String)],
+    how: impl FnOnce(&mut OnDisk),
+) -> io::Result<()> {
     let file = path(root);
     if file.as_os_str().is_empty() {
         return Err(io::Error::other(
             "this machine has no config home to keep it in",
         ));
     }
-    write_new(&file, how)
+    let anchor = anchor_key(root);
+    write_new(&file, |held| {
+        let before = dispatch_answers(held);
+        how(held);
+        if crate::secrets::sealed_set::decides() {
+            reseal(held, &anchor, &before, adds)?;
+        }
+        Ok(())
+    })
 }
 
 /// [`change`] on `file`, which this machine keeps: its folder made `0700`.
-fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
+fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk) -> io::Result<()>) -> io::Result<()> {
     let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
     #[cfg(unix)]
     {
@@ -635,7 +662,7 @@ fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
             Some(text) => serde_json::from_str(text).unwrap_or_else(|_| salvaged(text)),
             None => OnDisk::default(),
         };
-        how(&mut held);
+        how(&mut held)?;
         serde_json::to_string_pretty(&held)
             .map(|text| Some(format!("{text}\n")))
             .map_err(io::Error::other)
@@ -2105,16 +2132,254 @@ pub fn keep_browser_sites_seen(root: &Path, seen: Vec<String>) -> io::Result<()>
     change(root, |held| held.browser_sites_seen = seen)
 }
 
+// ---- the seals of the dispatch answers (ticket T1.1-73, #6968) -------------------------------
+
+/// The store the dispatch answers' sealed set is anchored as.
+const DISPATCH_STORE: &str = "dispatch-answers";
+
+/// **Which list a dispatch answer is kept in**, as its seal names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchKind {
+    /// A pair of yours (`dispatch_mine`), `asking -> target`.
+    Mine,
+    /// "Any persona" of yours (`dispatch_any`), `asking -> *`.
+    Any,
+    /// A grant of yours for one workspace (`dispatch_mine_in`).
+    MineIn,
+    /// A pair of the project's this machine accepted (`dispatch_seen`).
+    Seen,
+    /// "Any persona" of the project's this machine accepted (`dispatch_any_seen`).
+    AnySeen,
+    /// A grant of the project's for one workspace this machine accepted (`dispatch_seen_in`).
+    SeenIn,
+    /// A grant of yours set aside (`dispatch_dormant`), until Give back.
+    Dormant,
+    /// An acceptance set aside (`dispatch_accepted_aside`), until Give back.
+    Aside,
+}
+
+impl DispatchKind {
+    const ALL: [DispatchKind; 8] = [
+        DispatchKind::Mine,
+        DispatchKind::Any,
+        DispatchKind::MineIn,
+        DispatchKind::Seen,
+        DispatchKind::AnySeen,
+        DispatchKind::SeenIn,
+        DispatchKind::Dormant,
+        DispatchKind::Aside,
+    ];
+
+    /// The kind as its seal names it.
+    pub fn word(self) -> &'static str {
+        match self {
+            DispatchKind::Mine => "mine",
+            DispatchKind::Any => "any",
+            DispatchKind::MineIn => "mine-in",
+            DispatchKind::Seen => "seen",
+            DispatchKind::AnySeen => "any-seen",
+            DispatchKind::SeenIn => "seen-in",
+            DispatchKind::Dormant => "dormant",
+            DispatchKind::Aside => "aside",
+        }
+    }
+
+    /// Whether it is the person's own answer (a grant), or this machine's acceptance of the
+    /// project's: a seal moves only between kinds of the same side.
+    fn yours(self) -> bool {
+        matches!(
+            self,
+            DispatchKind::Mine | DispatchKind::Any | DispatchKind::MineIn | DispatchKind::Dormant
+        )
+    }
+}
+
+/// `asking -> target`, `asking -> *` or either `in <workspace>`: a dispatch answer's text.
+fn answer_text(asking: &str, target: &str, any: bool, workspace: Option<&str>) -> String {
+    let target = if any { crate::dispatchgrant::ANY } else { target };
+    match workspace {
+        Some(workspace) => format!("{asking} -> {target} in {workspace}"),
+        None => format!("{asking} -> {target}"),
+    }
+}
+
+/// The text of a grant limited to one workspace.
+fn limited_text(one: &DispatchIn) -> String {
+    answer_text(&one.asking, &one.target, one.any, Some(&one.workspace))
+}
+
+/// The pair an answer's text names, with no workspace: what a seal moving between kinds keeps.
+fn core_of(text: &str) -> &str {
+    text.split_once(" in ").map_or(text, |(core, _)| core)
+}
+
+/// **Every dispatch answer `held` lists**, each by kind and text.
+fn dispatch_answers(held: &OnDisk) -> Vec<(DispatchKind, String)> {
+    let mut out = Vec::new();
+    for pair in &held.dispatch_mine {
+        out.push((
+            DispatchKind::Mine,
+            answer_text(&pair.asking, &pair.target, false, None),
+        ));
+    }
+    for asking in &held.dispatch_any {
+        out.push((DispatchKind::Any, answer_text(asking, "", true, None)));
+    }
+    for one in &held.dispatch_mine_in {
+        out.push((DispatchKind::MineIn, limited_text(one)));
+    }
+    for said in held.dispatch_seen.iter().flatten() {
+        out.push((DispatchKind::Seen, said.clone()));
+    }
+    for asking in &held.dispatch_any_seen {
+        out.push((DispatchKind::AnySeen, answer_text(asking, "", true, None)));
+    }
+    for one in &held.dispatch_seen_in {
+        out.push((DispatchKind::SeenIn, limited_text(one)));
+    }
+    for one in &held.dispatch_dormant {
+        out.push((
+            DispatchKind::Dormant,
+            answer_text(&one.asking, &one.target, one.any, None),
+        ));
+    }
+    for one in &held.dispatch_accepted_aside {
+        out.push((DispatchKind::Aside, one.said.clone()));
+    }
+    out
+}
+
+/// **Keeps `held`'s dispatch seals in step with its lists**, after a write of the app's
+/// (ticket T1.1-73): `before` is what the lists held before the write, `adds` what the person
+/// answered just now. From what verified before the write ([`crate::secrets::sealed_set::Set::rewrite`]):
+///
+/// - an answer the write took out of its list loses its seal;
+/// - an answer the write put in a list is sealed only where the person answered it just now
+///   (`adds`), or where the write moved it from another list of the same side (a grant set
+///   aside, given back, or moved to one workspace) **and** its seal held there. So a pair a
+///   chat wrote into a list is never sealed by a later write of the app's.
+fn reseal(
+    held: &mut OnDisk,
+    anchor: &str,
+    before: &[(DispatchKind, String)],
+    adds: &[(DispatchKind, String)],
+) -> io::Result<()> {
+    use crate::secrets::sealed_set::Standing;
+    let after = dispatch_answers(held);
+    let verified = held.dispatch_sealed.verify(DISPATCH_STORE, anchor);
+    let sealed_before = |kind: DispatchKind, text: &str| verified.holds(kind.word(), text);
+    let moved = |kind: DispatchKind, text: &str| {
+        DispatchKind::ALL.into_iter().any(|from| {
+            from.yours() == kind.yours()
+                && before.iter().any(|(k, t)| *k == from && core_of(t) == core_of(text))
+                && verified
+                    .of_kind(from.word())
+                    .iter()
+                    .any(|t| core_of(t) == core_of(text))
+        })
+    };
+    let mut new: Vec<(&str, String)> = Vec::new();
+    for (kind, text) in &after {
+        let answered = adds.iter().any(|(k, t)| k == kind && t == text);
+        let added_here = !before.iter().any(|(k, t)| k == kind && t == text);
+        if answered || (added_here && !sealed_before(*kind, text) && moved(*kind, text)) {
+            new.push((kind.word(), text.clone()));
+        }
+    }
+    if verified.standing == Standing::Unverifiable {
+        // The key does not read here: nothing counts anyway, and a write of anything else goes
+        // ahead. Only the person's answer of just now is refused, since it would not hold.
+        return if new.is_empty() {
+            Ok(())
+        } else {
+            Err(io::Error::other(
+                "purlis could not read the key it seals your answers with, so the grant was \
+                 not kept. Open purlis again and allow it to use its key in the keychain, \
+                 then answer again.",
+            ))
+        };
+    }
+    let still = |kind: &str, text: &str| {
+        after
+            .iter()
+            .any(|(k, t)| k.word() == kind && t == text)
+    };
+    if new.is_empty()
+        && !matches!(verified.standing, Standing::Broken | Standing::Unanchored)
+        && verified.holding.iter().all(|(k, t)| still(k, t))
+        && verified.dropped.is_empty()
+    {
+        return Ok(());
+    }
+    let new: Vec<(&str, &str)> = new.iter().map(|(k, t)| (*k, t.as_str())).collect();
+    held.dispatch_sealed
+        .rewrite(DISPATCH_STORE, anchor, still, &new)
+}
+
+/// **What counts of the dispatch answers kept for the project at `root`**, or `None` where the
+/// seals do not decide here (a process that is not the app, a test build of another crate):
+/// there the lists are read as they are written, as before ticket T1.1-73.
+fn sealed_dispatch(root: &Path, held: &OnDisk) -> Option<crate::secrets::sealed_set::Verified> {
+    crate::secrets::sealed_set::decides()
+        .then(|| held.dispatch_sealed.verify(DISPATCH_STORE, &anchor_key(root)))
+}
+
+/// **The dispatch answers kept for the project at `root` that do not count**: each by its kind
+/// and text, written by something other than the app, edited, copied from another clone or put
+/// back after it was taken away (ticket T1.1-73). Settings shows them read-only; a pair is
+/// granted again only through the ordinary per-pair ask.
+pub fn dispatch_unsealed(root: &Path) -> Vec<(DispatchKind, String)> {
+    let held = read(root);
+    let Some(verified) = sealed_dispatch(root, &held) else {
+        return Vec::new();
+    };
+    dispatch_answers(&held)
+        .into_iter()
+        .filter(|(kind, text)| !verified.holds(kind.word(), text))
+        .collect()
+}
+
+/// Whether the seals of the dispatch answers for the project at `root` cannot be read here,
+/// where they decide: no grant of yours and no acceptance counts, and the window says why.
+pub fn dispatch_seals_unread(root: &Path) -> bool {
+    let held = read(root);
+    sealed_dispatch(root, &held).is_some_and(|verified| {
+        verified.standing == crate::secrets::sealed_set::Standing::Unverifiable
+            && !dispatch_answers(&held).is_empty()
+    })
+}
+
+/// `held`'s answers of `kind` that count here: each whose text `text_of` gives is sealed, where
+/// the seals decide.
+fn counting<T>(
+    root: &Path,
+    held: &OnDisk,
+    kind: DispatchKind,
+    items: Vec<T>,
+    text_of: impl Fn(&T) -> String,
+) -> Vec<T> {
+    match sealed_dispatch(root, held) {
+        None => items,
+        Some(verified) => items
+            .into_iter()
+            .filter(|item| verified.holds(kind.word(), &text_of(item)))
+            .collect(),
+    }
+}
+
 // ---- your dispatch grants, and the project's as you were told of them (#1437) ----------------
 
 /// The dispatch grants you made for every chat of the project at `root` on this machine, each
 /// as asking persona and target persona. [`crate::dispatchgrant::yours`] reads them as pairs.
 pub fn granted_dispatch(root: &Path) -> Vec<(String, String)> {
-    read(root)
-        .dispatch_mine
-        .into_iter()
-        .map(|pair| (pair.asking, pair.target))
-        .collect()
+    let held = read(root);
+    let mine = held.dispatch_mine.clone();
+    counting(root, &held, DispatchKind::Mine, mine, |pair| {
+        answer_text(&pair.asking, &pair.target, false, None)
+    })
+    .into_iter()
+    .map(|pair| (pair.asking, pair.target))
+    .collect()
 }
 
 /// Lets every chat of the project at `root` that runs as `asking` dispatch to `target`, on
@@ -2125,7 +2390,8 @@ pub fn grant_dispatch(root: &Path, asking: &str, target: &str) -> io::Result<()>
         asking: asking.to_owned(),
         target: target.to_owned(),
     };
-    change(root, |held| {
+    let text = answer_text(asking, target, false, None);
+    change_sealing(root, &[(DispatchKind::Mine, text)], |held| {
         if !held.dispatch_mine.contains(&pair) {
             held.dispatch_mine.push(pair);
         }
@@ -2162,13 +2428,19 @@ pub fn revoke_dispatch(root: &Path, asking: &str, target: &str) -> io::Result<bo
 /// The project's dispatch grants as this machine last told the person of them; `None` before
 /// the first.
 pub fn dispatch_seen(root: &Path) -> Option<Vec<String>> {
-    read(root).dispatch_seen
+    let held = read(root);
+    let seen = held.dispatch_seen.clone()?;
+    Some(counting(root, &held, DispatchKind::Seen, seen, Clone::clone))
 }
 
 /// Records that the person was told of `shown`, the project's dispatch grants as the Notice
 /// showed them.
 pub fn acknowledge_dispatch(root: &Path, shown: &[String]) -> io::Result<()> {
-    change(root, |held| {
+    let adds: Vec<(DispatchKind, String)> = shown
+        .iter()
+        .map(|said| (DispatchKind::Seen, said.clone()))
+        .collect();
+    change_sealing(root, &adds, |held| {
         held.dispatch_seen = Some(shown.to_vec());
         // A yes is the newer answer: what is allowed here is no longer declined here, and is
         // no longer one that was taken away.
@@ -2224,13 +2496,18 @@ pub fn drop_legacy_dispatch_nevers(root: &Path) -> io::Result<()> {
 /// The personas whose chats you let dispatch to any persona in the project at `root`, on this
 /// machine, as the file spells them. [`crate::dispatchgrant::any_yours`] keeps the names.
 pub fn granted_dispatch_any(root: &Path) -> Vec<String> {
-    read(root).dispatch_any
+    let held = read(root);
+    let any = held.dispatch_any.clone();
+    counting(root, &held, DispatchKind::Any, any, |asking| {
+        answer_text(asking, "", true, None)
+    })
 }
 
 /// Lets every chat of the project at `root` that runs as `asking` dispatch to any persona, on
 /// this machine: Settings, never a Notice's answer and never a chat.
 pub fn grant_dispatch_any(root: &Path, asking: &str) -> io::Result<()> {
-    change(root, |held| {
+    let text = answer_text(asking, "", true, None);
+    change_sealing(root, &[(DispatchKind::Any, text)], |held| {
         if !held.dispatch_any.iter().any(|one| one == asking) {
             held.dispatch_any.push(asking.to_owned());
         }
@@ -2250,12 +2527,17 @@ pub fn revoke_dispatch_any(root: &Path, asking: &str) -> io::Result<bool> {
 
 /// The personas whose "any persona" grant in the project's file you accepted on this machine.
 pub fn dispatch_any_seen(root: &Path) -> Vec<String> {
-    read(root).dispatch_any_seen
+    let held = read(root);
+    let seen = held.dispatch_any_seen.clone();
+    counting(root, &held, DispatchKind::AnySeen, seen, |asking| {
+        answer_text(asking, "", true, None)
+    })
 }
 
 /// Records that you accepted the project's "any persona" grant for `asking` on this machine.
 pub fn acknowledge_dispatch_any(root: &Path, asking: &str) -> io::Result<()> {
-    change(root, |held| {
+    let text = answer_text(asking, "", true, None);
+    change_sealing(root, &[(DispatchKind::AnySeen, text)], |held| {
         if !held.dispatch_any_seen.iter().any(|one| one == asking) {
             held.dispatch_any_seen.push(asking.to_owned());
         }
@@ -2695,7 +2977,13 @@ pub fn dispatch_bound(root: &Path) -> DispatchBound {
 /// `false`. Nothing is read first and written back whole, so a drop made meanwhile stays made.
 pub fn accept_dispatch(root: &Path, said: &str, holds: &dyn Fn() -> bool) -> io::Result<bool> {
     let mut kept = false;
-    change(root, |held| {
+    let adds = match sides(said) {
+        Some((asking, target)) if target == crate::dispatchgrant::ANY => {
+            vec![(DispatchKind::AnySeen, answer_text(asking, "", true, None))]
+        }
+        _ => vec![(DispatchKind::Seen, said.to_owned())],
+    };
+    change_sealing(root, &adds, |held| {
         if !holds() {
             return;
         }
@@ -2796,12 +3084,16 @@ pub fn forget_dispatch_gone(root: &Path, said: &[String]) -> io::Result<()> {
 /// Your dispatch grants that hold in one workspace only, in the project at `root`, as the
 /// file spells them. [`crate::dispatchwithin`] says which of them count.
 pub fn dispatch_mine_in(root: &Path) -> Vec<DispatchIn> {
-    read(root).dispatch_mine_in
+    let held = read(root);
+    let mine = held.dispatch_mine_in.clone();
+    counting(root, &held, DispatchKind::MineIn, mine, limited_text)
 }
 
 /// The project's grants limited to one workspace that you accepted on this machine.
 pub fn dispatch_seen_in(root: &Path) -> Vec<DispatchIn> {
-    read(root).dispatch_seen_in
+    let held = read(root);
+    let seen = held.dispatch_seen_in.clone();
+    counting(root, &held, DispatchKind::SeenIn, seen, limited_text)
 }
 
 /// What this machine knows of the workspaces limited grants name.
@@ -2829,7 +3121,11 @@ fn limited(held: &mut OnDisk, which: Limited) -> &mut Vec<DispatchIn> {
 /// what it had seen of its workspace is brought up to `grant.seen`, which is how the person
 /// confirms it again.
 pub fn keep_dispatch_in(root: &Path, which: Limited, grant: &DispatchIn) -> io::Result<()> {
-    change(root, |held| {
+    let kind = match which {
+        Limited::Mine => DispatchKind::MineIn,
+        Limited::Accepted => DispatchKind::SeenIn,
+    };
+    change_sealing(root, &[(kind, limited_text(grant))], |held| {
         let list = limited(held, which);
         list.retain(|one| !one.is(&grant.asking, &grant.target, grant.any, &grant.workspace));
         list.push(grant.clone());

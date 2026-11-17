@@ -267,7 +267,9 @@ mod tests {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }
+        policy: None,
     }
 
     #[test]

@@ -364,8 +364,16 @@ pub fn answer(
         // How each family of refusals runs for the asking chat (Q308): the app alone verifies
         // what the person accepted, so a hook asks it. No ticket, for the record's reason: the
         // answer is of the project this app holds the chat in, never one the line names.
-        Ask::Policy(_) => Answer::Policy {
-            spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+        // A dispatched chat is never looser than its chain (Q308a, Q308b), by the app's record.
+        Ask::Policy(asked) => Answer::Policy {
+            spelled: purlis_core::enforcement::in_force(held.root())
+                .for_chat(
+                    held.chats()
+                        .handed_from(asked.chat)
+                        .and_then(|from| from.policy)
+                        .as_deref(),
+                )
+                .spelled(),
         },
         // One log line a hook hands over (Q308): written under the app's own record of the open
         // chat whose token the line carries, by its id. Refused (the re-review of #6992, S3) for
@@ -373,7 +381,14 @@ pub fn answer(
         // that is no `host:port`; nothing is written for an unidentified caller.
         Ask::PolicyLog(line) => match policy_line(held, &line) {
             Ok(()) => Answer::Policy {
-                spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+                spelled: purlis_core::enforcement::in_force(held.root())
+                    .for_chat(
+                        held.chats()
+                            .handed_from(line.chat)
+                            .and_then(|from| from.policy)
+                            .as_deref(),
+                    )
+                    .spelled(),
             },
             Err(why) => no(why),
         },
@@ -3170,6 +3185,9 @@ fn dispatch_noting(
             by_person: wanted.by == By::Person,
             // A chat's own task, as it asked (#3905).
             long: wanted.long_task(),
+            // Never looser than the chat that asked (Q308a, Q308b): its policy, as the decision
+            // read it from this app's record of it.
+            policy: asked.policy,
         };
         // Its number is dealt here, so the slot is the chat it is about to be.
         let number = held.chats().sessions().deal();

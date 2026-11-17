@@ -149,6 +149,7 @@ pub fn asker(root: &Path, number: u32) -> Option<Asker> {
         confines: Some(composed.confines),
         harness: composed.harness,
         ends_seen: Some(ends_seen),
+        chat_id: None,
     })
 }
 

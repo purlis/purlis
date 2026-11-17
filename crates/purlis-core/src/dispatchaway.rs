@@ -202,10 +202,11 @@ impl Kept {
 }
 
 /// **The pair a refusal is kept for**, asking persona then target, or `None` for one that is
-/// not kept: only [`Refusal::Missing`] between two different personas, which a standing grant
-/// for that pair mends. A chat on no persona has no pair such a grant could name.
+/// not kept: only [`Refusal::Missing`] and [`Refusal::Unsandboxed`] (a policy ask with no sealed
+/// grant, from a chat with no sandbox; ticket T1.1-73) between two different personas, which a
+/// standing grant for that pair mends. A chat on no persona has no pair such a grant could name.
 pub fn pair_kept(refusal: &Refusal) -> Option<(&str, &str)> {
-    let Refusal::Missing(missing) = refusal else {
+    let (Refusal::Missing(missing) | Refusal::Unsandboxed(missing)) = refusal else {
         return None;
     };
     let asking = missing.asking.as_deref()?;

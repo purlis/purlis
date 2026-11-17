@@ -235,6 +235,44 @@ pub fn keep(kind: &str, clone: &str, text: &str) -> bool {
     }
 }
 
+/// **Whether this process can seal and verify**: it is the app and the key reads.
+pub fn can_seal() -> bool {
+    key().is_some()
+}
+
+/// **Whether a seal is kept for `kind` and `clone`**, whether or not this process can read the
+/// key: only that the keyring holds the item, never what it says. What a presence marker is
+/// where nothing else can be told (ticket T1.1-73: the key unreadable and nevers present).
+pub fn kept_exists(kind: &str, clone: &str) -> bool {
+    let account = kept_account(kind, clone);
+    #[cfg(test)]
+    {
+        TEST_KEPT.with(|kept| kept.borrow().contains_key(&account))
+    }
+    #[cfg(not(test))]
+    {
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return false;
+        }
+        !matches!(
+            ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()),
+            Err(::keyring::Error::NoEntry)
+        )
+    }
+}
+
+/// **A test's keyring loses what it kept** for this thread: every kept seal, or the one of
+/// `kind` and `clone`.
+#[cfg(test)]
+pub(crate) fn forget_kept_for_this_test(which: Option<(&str, &str)>) {
+    TEST_KEPT.with(|kept| match which {
+        Some((kind, clone)) => {
+            kept.borrow_mut().remove(&kept_account(kind, clone));
+        }
+        None => kept.borrow_mut().clear(),
+    });
+}
+
 /// **Whether the seal kept for `kind` and `clone` holds for `text`**: `None` where none was ever
 /// kept, or this process cannot verify (only the app can); `Some(false)` where one was kept and
 /// `text` is not what it sealed, or the keyring cannot be read.

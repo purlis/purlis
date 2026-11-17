@@ -246,7 +246,7 @@ fn commit(
     let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
     git::isolated(&plain, || -> Result<Vec<Say>, Refused> {
         super::runs_a_program(&here.clone)?;
-        made(root, asker.chat, &ask, &here, identity)
+        made(root, asker.chat, asker.id.as_deref(), &ask, &here, identity)
     })
 }
 
@@ -481,6 +481,7 @@ pub(crate) fn lock_of(git_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 fn made(
     root: &Path,
     chat: u32,
+    id: Option<&str>,
     ask: &CommitAsk,
     here: &Here,
     identity: &git::Isolated,
@@ -594,7 +595,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(root, top, &ask.message, &mut queue)?;
+            scanned(root, top, id, &ask.message, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -1336,10 +1337,13 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
 ///
 /// Where it refuses, `queue` is given the line of the needs-you item the app raises, as a
 /// chat's own `pre-commit` gives it (#1476). It runs as the `[policy]` of `root`, the project the
-/// app holds the chat in, never one found from the folder (the re-review of #6992, S1).
+/// app holds the chat in, never one found from the folder (the re-review of #6992, S1). A logged
+/// finding is let through with one line in the asking chat's log, by the id `chat` the app holds
+/// for it (item 8 of the Q308 follow-up); a chat with no id yet is logged as unknown.
 fn scanned(
     root: &Path,
     top: &Path,
+    chat: Option<&str>,
     message: &str,
     queue: &mut Option<String>,
 ) -> Result<(), String> {
@@ -1347,12 +1351,11 @@ fn scanned(
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
     let said = crate::diffscan::message_checked(top, message);
     scan.refused.extend(said.refused);
-    // As the project's `[policy]` runs each finding's family (Q308a). The app has the chat's
-    // number here, not its id, so a logged finding is let through without a line.
+    // As the project's `[policy]` runs each finding's family (Q308a), logged for the chat.
     crate::diffscan::under_policy(
         &mut scan.refused,
         root,
-        None,
+        chat,
         &crate::enforcement::in_force(root),
     );
     if scan.changes_the_allowlist {

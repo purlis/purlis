@@ -4260,6 +4260,7 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             above: Some(vec![Some("steward".to_owned())]),
             by_person: false,
             long: false,
+            policy: None,
         })
     );
     // In the asking chat's folder, on its profile, as its persona.
@@ -4582,6 +4583,7 @@ fn a_slot_held_for_a_chat_that_is_starting_counts_and_is_let_go_when_its_start_e
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..Default::default()
     };
@@ -7484,6 +7486,7 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
             above: Some(vec![Some("steward".to_owned())]),
             by_person: true,
             long: false,
+            policy: None,
         }
     );
     // No handoff brief: its first message is purlis's two lines saying the person asked,
@@ -12790,6 +12793,7 @@ fn a_task_still_starting_under_a_name_refuses_a_second_dispatch_of_that_name() {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..Default::default()
         },

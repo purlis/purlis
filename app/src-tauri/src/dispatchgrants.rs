@@ -2332,6 +2332,20 @@ pub struct DispatchKeptBlocked {
     pub target: String,
 }
 
+/// **A dispatch answer kept here that does not count** (ticket T1.1-73): written by something
+/// other than purlis's app, edited, copied from another clone or put back after it was taken
+/// away, so its seal does not hold. Shown read-only; the pair is granted again only through its
+/// ordinary ask.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct DispatchUnsealed {
+    /// Which list it is in: `mine`, `any`, `mine-in`, `seen`, `any-seen`, `seen-in`, `dormant`
+    /// or `aside`.
+    pub kind: String,
+    /// The answer as the list spells it: `asking -> target`, `asking -> *`, either `in
+    /// <workspace>`.
+    pub text: String,
+}
+
 /// A grant of yours set aside because a persona it named was no longer the project's
 /// (#1504): in force for no chat until the person gives it back or removes it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -2381,7 +2395,19 @@ pub struct DispatchStanding {
     /// that say anything the question would offer: the table shows it under the persona's
     /// name. **It grants nothing, and nothing here is in force by it.**
     pub wants: Vec<DispatchWants>,
+    /// The grants and acceptances kept here whose seal does not hold (ticket T1.1-73): none of
+    /// them counts, and the table lists them read-only.
+    pub unsealed: Vec<DispatchUnsealed>,
+    /// Where purlis's app cannot read the key it seals answers with, the sentence saying so and
+    /// what to do: no grant of yours and no acceptance counts until it reads.
+    pub seals_unread: Option<String>,
 }
+
+/// What the window says while the seal's key does not read (ticket T1.1-73).
+pub const SEALS_UNREAD: &str = "purlis could not read the key it seals your dispatch grants \
+     with, in your login keychain, so no grant you made and no project grant you accepted counts \
+     on this machine just now. Quit and open purlis again, and allow it to use its key when \
+     macOS asks.";
 
 /// Why what this machine accepted of the project's grants is not settled now (#1543).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -2525,6 +2551,15 @@ fn standing_of(root: &Path) -> DispatchStanding {
         back: state.back,
         workspaces,
         wants,
+        unsealed: purlis_core::sandbox::local::dispatch_unsealed(root)
+            .into_iter()
+            .map(|(kind, text)| DispatchUnsealed {
+                kind: kind.word().to_owned(),
+                text,
+            })
+            .collect(),
+        seals_unread: purlis_core::sandbox::local::dispatch_seals_unread(root)
+            .then(|| SEALS_UNREAD.to_owned()),
     }
 }
 

@@ -44,6 +44,7 @@ fn asker(root: &Path) -> Asker {
         confines: None,
         harness: None,
         ends_seen: None,
+        chat_id: None,
     }
 }
 

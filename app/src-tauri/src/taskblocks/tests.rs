@@ -1178,6 +1178,7 @@ fn started(chats: &crate::chats::Chats, dir: &std::path::Path, names: &[&str]) -
                     above: None,
                     by_person: false,
                     long: false,
+                    policy: None,
                 }),
                 ..plain.clone()
             };

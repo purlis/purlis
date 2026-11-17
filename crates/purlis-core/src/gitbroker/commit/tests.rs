@@ -482,7 +482,7 @@ impl Tree {
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
-        git::isolated(&plain, || made(&self.root, 4, &ask, &here, &identity))
+        git::isolated(&plain, || made(&self.root, 4, None, &ask, &here, &identity))
     }
 
     fn asked(&self, stage: Stage) -> Result<Vec<Say>, String> {

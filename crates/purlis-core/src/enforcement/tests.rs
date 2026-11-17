@@ -875,4 +875,42 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
     assert_eq!(found.1, strict());
+
+/// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
+/// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
+/// `strict`, `watch`, `hold` and `team` keep a vault to the personas it is tagged for.
+#[test]
+fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced() {
+    use crate::secrets::{Ctx, Env, brokered};
+    let _home = OwnConfigHome::new();
+    for (text, opened) in [
+        ("[policy]\ntemplate = \"strict\"\n", false),
+        ("[policy]\ntemplate = \"watch\"\n", false),
+        ("[policy]\ntemplate = \"hold\"\n", false),
+        ("[policy]\ntemplate = \"team\"\n", false),
+        ("[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n", true),
+        ("[policy]\ntemplate = \"open\"\n", true),
+    ] {
+        let root = plane(text, None);
+        std::fs::write(
+            root.path().join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "prod": {"provider": "plain-file", "config": {"file": "prod.json"}, "persona": "devops"},
+            }})
+            .to_string(),
+        )
+        .expect("the registry");
+        at_start(root.path());
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
+        assert_eq!(mode(root.path(), Family::Vaults) == Mode::Off, opened, "{text}");
+        let ctx = Ctx::new(root.path(), Env::of(&[]));
+        assert_eq!(
+            brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
+            opened,
+            "{text}"
+        );
+        // Its own persona, always; a vault the project does not register, never.
+        assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
+        assert!(brokered::authorise(&ctx, Some("devops"), "nope").is_err(), "{text}");
+    }
 }

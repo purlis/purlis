@@ -123,6 +123,7 @@ fn asker(root: &Path, persona: Option<&str>) -> Asker {
         confines: Some(compiled(root)),
         harness: Some(Harness::ClaudeCode),
         ends_seen: None,
+        chat_id: None,
     }
 }
 

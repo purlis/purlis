@@ -53,6 +53,7 @@ fn filled(root: &Path, key: &str) -> Result<String, String> {
         confines: None,
         harness: None,
         ends_seen: None,
+        chat_id: None,
     };
     fill_value(&asker, "team", key).map(|value| value.unwrap().expose().to_owned())
 }

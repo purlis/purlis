@@ -281,10 +281,14 @@ fn any_persona_leaves_the_rule_for_a_chat_nobody_is_at_as_it_was() {
         unattended(Some("steward"), "devops", &grants, &none, false, true),
         Answer::Covered
     );
-    // With no sandbox it still dispatches to no other persona.
+    // With no sandbox, only where the seal keeps the grant out of its reach (ticket T1.1-73).
     assert_eq!(
         unattended(Some("steward"), "devops", &grants, &none, false, false),
-        Answer::Refused(Refusal::Unsandboxed("devops".to_owned()))
+        if crate::dispatchunattended::sealed_here() {
+            Answer::Covered
+        } else {
+            Answer::Refused(Refusal::NotSealedHere("devops".to_owned()))
+        }
     );
     // And a persona without it is refused, never asked.
     assert!(matches!(
