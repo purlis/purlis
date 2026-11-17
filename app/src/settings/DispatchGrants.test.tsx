@@ -2112,10 +2112,11 @@ describe("grants whose seal does not hold (#6968)", () => {
     });
     render(<Table />);
     const list = await screen.findByRole("list", { name: "Not sealed" });
-    expect(within(list).getAllByRole("listitem").map((one) => one.textContent)).toEqual([
-      "steward to prod",
-      "qa to any persona",
-    ]);
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["steward to prod", "qa to any persona"]);
     expect(within(list).queryAllByRole("button")).toEqual([]);
     expect(
       screen.getByText(/^These grants and acceptances were not made in this window/),

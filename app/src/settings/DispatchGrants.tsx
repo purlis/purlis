@@ -1509,8 +1509,8 @@ export function DispatchGrantsList({
                 ))}
               </ul>
               <p className="granted-note">
-                These grants and acceptances were not made in this window, or were changed after,
-                so they allow nothing. To allow a pair, answer its ask when a chat dispatches.
+                These grants and acceptances were not made in this window, or were changed after, so
+                they allow nothing. To allow a pair, answer its ask when a chat dispatches.
               </p>
             </>
           )}
