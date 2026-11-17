@@ -1,0 +1,5 @@
+# charter.toml (excerpt) — solo developer: almost nothing blocked except the merge hold.
+[policy]
+template = "open"            # every family off ...
+"guards.merge" = "enforce"   # ... except: I still press before a merge lands
+secrets = "enforce"          # and vault values stay masked in chats
