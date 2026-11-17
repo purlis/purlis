@@ -21,6 +21,13 @@
 //!    (#6700): it says so in the journal of the boot that ended, ends both chats as a quit and
 //!    empties its host record. Nothing is run over SSH to start the host, and it serves again,
 //!    with nothing to settle as a crash. Doctor is green again.
+//! 5. a newer version is installed beside it, with its own service, and runs a chat. The old
+//!    version's host, with nothing to run and no link, stops itself (#6704): it says so in its
+//!    journal and exits 0, and systemd does not start it again. The next install removes it,
+//!    its unit by name, then its folders. Two more versions are installed, so the one with the
+//!    live chat may go too: it has a newer version beside it, but its chat keeps it serving, and
+//!    pruning keeps it. Its `serve --remove` takes back the last runner service, and linger with
+//!    it.
 //!
 //! The chats are shells (the chat's harness is not what this checks). A harness chat's run ended
 //! as a quit is `purlis-cli`'s `purlis_serve_hears_sigterm_as_a_quit`, which also checks that a
@@ -49,6 +56,11 @@ use purlis_session_protocol::session::{Client, Launch, ProgramKind, StartProgram
 const PATIENCE: Duration = Duration::from_secs(90);
 const PROJECT: &str = "01J9PRJCT00000000000000000";
 const VERSION: &str = "0.0.1-rr15.1";
+/// The versions installed beside it, newest last (#6704).
+const NEWER: [&str; 3] = ["0.0.1-rr15.2", "0.0.1-rr15.3", "0.0.1-rr15.4"];
+/// How long an old version's host may take to stop itself: its minute idle, its looks at it, and
+/// a slow machine.
+const STOPS_ITSELF_WITHIN: Duration = Duration::from_secs(180);
 const CHATS: usize = 2;
 /// The version's host record, wherever its machine store is (`purlisd`, or `charterd` before
 /// rename-local), printed and measured from outside.
@@ -88,13 +100,14 @@ fn fixture() -> Option<Fixture> {
     })
 }
 
-/// `bytes` signed with a key of the test's own and verified as the desktop verifies an asset.
-fn verified(bytes: &[u8], target: runnerinstall::Target) -> Verified {
+/// `bytes` signed with a key of the test's own as `version` and verified as the desktop verifies
+/// an asset.
+fn verified(bytes: &[u8], version: &str, target: runnerinstall::Target) -> Verified {
     let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
     let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
     let trusted = format!(
-        "timestamp:1790077121\tfile:{}\tversion:{VERSION}",
-        runnerinstall::asset_name(VERSION, target)
+        "timestamp:1790077121\tfile:{}\tversion:{version}",
+        runnerinstall::asset_name(version, target)
     );
     let signature = minisign::sign(
         None,
@@ -106,7 +119,7 @@ fn verified(bytes: &[u8], target: runnerinstall::Target) -> Verified {
     .unwrap();
     let public = b64(keys.pk.to_box().unwrap().into_string().as_bytes());
     let signature = b64(signature.into_string().as_bytes());
-    runnerinstall::verify(&public, bytes, &signature, VERSION, target).expect("verified")
+    runnerinstall::verify(&public, bytes, &signature, version, target).expect("verified")
 }
 
 /// What `command` printed on the runner, run there through the pinned route.
@@ -133,8 +146,13 @@ fn as_root(machine: &str, command: &str) -> (bool, String) {
 }
 
 /// Waits until `check` holds, up to the test's patience, saying `what` where it never does.
-fn until(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = Instant::now() + PATIENCE;
+fn until(what: &str, check: impl FnMut() -> bool) {
+    until_within(PATIENCE, what, check);
+}
+
+/// Waits until `check` holds, up to `patience`, saying `what` where it never does.
+fn until_within(patience: Duration, what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = Instant::now() + patience;
     while !check() {
         assert!(Instant::now() < deadline, "never: {what}");
         std::thread::sleep(Duration::from_secs(1));
@@ -270,7 +288,7 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
     let binary = runnerinstall::install(
         reach,
         &probed,
-        &verified(&fixture.binary, probed.target),
+        &verified(&fixture.binary, VERSION, probed.target),
         Delivery::Upload(&fixture.binary),
     )
     .expect("installed")
@@ -468,7 +486,149 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
     rt.shutdown_timeout(Duration::from_secs(5));
     assert_doctor_green(reach, &binary);
 
-    // Taken back: it stops and its unit goes.
+    // 5. A newer version beside it, kept by a service of its own, runs a chat (#6704).
+    let unit_of = |version: &str| {
+        purlis_core::runnerhost::Service {
+            binary: std::path::PathBuf::new(),
+            version: Some(version.to_owned()),
+            config_home: None,
+        }
+        .unit_name()
+    };
+    let install = |version: &str| {
+        let probed = runnerinstall::probe(reach).expect("the runner is probed");
+        runnerinstall::install(
+            reach,
+            &probed,
+            &verified(&fixture.binary, version, probed.target),
+            Delivery::Upload(&fixture.binary),
+        )
+        .expect("installed")
+    };
+    let [second, third, fourth] = NEWER;
+    let installed = install(second);
+    assert!(installed.pruned().is_empty(), "{installed:?}");
+    let newer = installed.binary().to_owned();
+    let ran = there(reach, &format!("{newer} serve --install"), None);
+    assert_eq!(ran.code, Some(0), "the newer one installed: {}", ran.said);
+    let newer_unit = unit_of(second);
+    until("the newer version's host answers", || {
+        as_root(
+            machine,
+            &format!("systemctl --user --machine=keeper@ is-active --quiet {newer_unit}"),
+        )
+        .0
+    });
+    let rt = runtime();
+    let on_newer = rt.block_on(async {
+        let (client, _folder, kept) = linked(reach, &newer, identity(), runner.clone()).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the newer host holds the project");
+        let started = chat(&client, "on the newer version").await;
+        assert_eq!(running(&client).await, std::slice::from_ref(&started));
+        kept.abort();
+        started
+    });
+    rt.shutdown_timeout(Duration::from_secs(5));
+
+    // The old version's host, with nothing to run and nobody linked, stops itself and exits 0,
+    // which systemd does not restart.
+    until_within(
+        STOPS_ITSELF_WITHIN,
+        "the old version's host stops itself",
+        || {
+            !as_root(
+                machine,
+                &format!("systemctl --user --machine=keeper@ is-active --quiet {unit}"),
+            )
+            .0
+        },
+    );
+    let (_, journal) = as_root(
+        machine,
+        &format!("journalctl -b --no-pager _SYSTEMD_USER_UNIT={unit}"),
+    );
+    assert!(
+        journal.contains(purlis_host::SUPERSEDED),
+        "it says why it stopped: {journal}"
+    );
+    // Longer than the unit's `RestartSec`: a clean exit is not restarted.
+    std::thread::sleep(Duration::from_secs(12));
+    let (_, state) = as_root(
+        machine,
+        &format!(
+            "systemctl --user --machine=keeper@ show --property=ActiveState,Result,NRestarts {unit}"
+        ),
+    );
+    for line in ["ActiveState=inactive", "Result=success", "NRestarts=0"] {
+        assert!(
+            state.lines().any(|said| said.trim() == line),
+            "{line}: {state}"
+        );
+    }
+    assert_eq!(chat_processes(machine), 1, "the newer version's chat runs");
+
+    // The next install removes it: its unit by name, then its folders.
+    let installed = install(third);
+    assert_eq!(installed.pruned(), [VERSION], "{installed:?}");
+    let (file_there, _) = as_root(
+        machine,
+        &format!("test -e /home/keeper/.config/systemd/user/{unit}"),
+    );
+    assert!(!file_there, "the old version's unit file is gone");
+    let (enabled, said) = as_root(
+        machine,
+        &format!("systemctl --user --machine=keeper@ is-enabled {unit}"),
+    );
+    assert!(!enabled, "the old version's unit is not enabled: {said}");
+    assert_eq!(
+        runnerinstall::probe(reach).unwrap().versions,
+        [second, third],
+        "the old version's folder is gone"
+    );
+
+    // One more, so the version running a chat may go too: it has newer ones beside it, but its
+    // chat keeps its host serving, past the time an idle one takes to stop, and prune keeps it.
+    let installed = install(fourth);
+    assert!(
+        installed.pruned().is_empty(),
+        "a version with a live chat stays: {installed:?}"
+    );
+    std::thread::sleep(purlis_host::SUPERSEDED_IDLE_FOR + Duration::from_secs(30));
+    let (active, said) = as_root(
+        machine,
+        &format!("systemctl --user --machine=keeper@ is-active {newer_unit}"),
+    );
+    assert!(
+        active,
+        "the host with a live chat serves on beside newer versions: {said}"
+    );
+    let installed = install(fourth);
+    assert!(
+        installed.pruned().is_empty(),
+        "still a live chat, still kept: {installed:?}"
+    );
+    assert_eq!(
+        runnerinstall::probe(reach).unwrap().versions,
+        [second, third, fourth]
+    );
+    let rt = runtime();
+    rt.block_on(async {
+        let (client, _folder, kept) = linked(reach, &newer, identity(), runner.clone()).await;
+        assert_eq!(
+            running(&client).await,
+            std::slice::from_ref(&on_newer),
+            "its chat still runs"
+        );
+        kept.abort();
+    });
+    rt.shutdown_timeout(Duration::from_secs(5));
+
+    // Taken back: it stops and its unit goes, the last runner service, and linger with it.
+    let binary = newer;
+    let unit = newer_unit;
     let removed = there(reach, &format!("{binary} serve --remove"), None);
     assert_eq!(removed.code, Some(0), "removed: {}", removed.said);
     let (still, _) = as_root(
