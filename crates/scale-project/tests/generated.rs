@@ -167,26 +167,37 @@ fn every_text_of_the_project_is_masked_as_asking_the_scanner_whole_and_by_line_m
     assert!(texts > 50, "{texts} texts read");
 }
 
-/// What seed 5497 wrote at 2026-11-06 12:00 when its times were chrono's (#7089): a change of
-/// time crate, or of anything else, that moves one byte of a record moves this digest.
+/// What seed 5497 wrote at 2026-11-06 12:00 when its times were chrono's (#7089), file by file:
+/// `generated.sha256`, one `<sha256>  <path>` line each, as `shasum -a 256` writes them. A change
+/// of time crate, or of anything else, that moves one byte of a record names that record here.
+/// Set `SCALE_PROJECT_BLESS=1` to write the file from this build instead, then read its diff.
 #[test]
 fn a_project_is_written_with_the_bytes_it_had_before_the_move_to_jiff() {
     use sha2::{Digest, Sha256};
     let (_dir, files) = generated(5497);
-    let mut digest = Sha256::new();
-    for (name, bytes) in &files {
-        digest.update(name.as_bytes());
-        digest.update([0]);
-        digest.update(bytes);
-        digest.update([0]);
-    }
-    let hex: String = digest
-        .finalize()
+    let written: String = files
         .iter()
-        .map(|byte| format!("{byte:02x}"))
+        .map(|(name, bytes)| {
+            let hex: String = Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("{hex}  {name}\n")
+        })
         .collect();
-    assert_eq!(
-        hex,
-        "c03c8e381aa2ea4f135fb2c319b642726bb0913add2756920f6a00a0f91c9cc1"
-    );
+    let kept = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/generated.sha256");
+    if std::env::var_os("SCALE_PROJECT_BLESS").is_some() {
+        std::fs::write(&kept, &written).expect("the digests are written");
+    }
+    let before = std::fs::read_to_string(&kept).expect("the digests chrono's build wrote");
+    let differs: Vec<&str> = written
+        .lines()
+        .filter(|line| !before.lines().any(|kept| kept == *line))
+        .chain(
+            before
+                .lines()
+                .filter(|line| !written.lines().any(|now| now == *line)),
+        )
+        .collect();
+    assert!(differs.is_empty(), "moved or missing: {differs:#?}");
 }
