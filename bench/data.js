@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794916630561,
+  "lastUpdate": 1794921901748,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50694,6 +50694,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8634185,
             "unit": "ms",
             "extra": "median of 5 runs: 100.949, 101.531, 101.863, 101.908, 102.721 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37569844b8f3ae83db7b6f0d47b0b8ba6e65e9c3",
+          "message": "A guard's refusal names its real cause (#6962) (#7004)\n\n* A guard's refusal names its real cause: out of time, a ref it cannot read, a push to the default branch, and a curl placeholder that is no credential (#6962)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JK9XGMRAXKT5GGQ5FT9PP9\nPurlis-Persona: steward\n\n* A field gh fills in is not literal, a contents call is found by repository, and a curl placeholder counts only when its value stays off the line (#6962)\n\nSecurity review round 2 of PR #7004:\n- S2: a -F field starting with @ or holding a {placeholder} is opaque, for a contents call's branch and a git/refs ref.\n- S3: a contents call is found by under_repository alone, so repositories/<id>/... and GHES URLs count.\n- S5: only --variable %NAME and --variable NAME@file qualify a {{NAME}} placeholder.\n- Nit: --variable counts only as a curl argument, before any # comment.\n- S1: a test pins that a release or tag through gh api runs attended and is refused unattended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7JSB8FKEG475KEP7QSC9F84\nPurlis-Persona: steward\n\n* #6962's tests that reach a policy run under the strict template, set explicitly (Q308)\n\nThe hook tests of a check out of time and a line over the cap pass PURLIS_POLICY spelled as\nstrict, and A4's seam asks toolgate::judged under Template::Strict rather than verdict. The\nother tests of #6962 call functions that read no policy (release_floor_reason, mergehold::held,\nsecretshape, the save's staged-file scan), so no template reaches them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: purlis-purlis-agent[bot] <355234864+purlis-purlis-agent[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-17T12:49:38Z",
+          "tree_id": "f5d3796474b049f5d37612c1ecb894b3f86270a9",
+          "url": "https://github.com/purlis/purlis/commit/37569844b8f3ae83db7b6f0d47b0b8ba6e65e9c3"
+        },
+        "date": 1794921892694,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6551610000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.633, 0.651, 0.655, 0.664, 0.670 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.50948,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.341, 16.509, 16.509, 16.654, 16.709 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.791537,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.627, 101.689, 101.792, 101.881, 103.315 ms"
           }
         ]
       }
