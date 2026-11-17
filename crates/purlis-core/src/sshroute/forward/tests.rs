@@ -107,8 +107,17 @@ fn a_holder_whose_ssh_ends_lets_go_so_another_process_opens_a_forward_that_answe
     };
     assert!(something_answers(first.socket()));
 
-    // Its ssh ends, and the window does not look at the pool again.
+    // Its ssh ends, and the window does not look at the pool again. A kill is only sent: the
+    // ssh is gone once nothing answers on its socket.
     kill(first.ssh());
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while something_answers(first.socket()) {
+        assert!(
+            std::time::Instant::now() < until,
+            "the killed ssh still answers"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
     // Another process of the person's (the session host's connector) asks for the pool.
     let second = open(&opening).expect("another process gets a forward");
