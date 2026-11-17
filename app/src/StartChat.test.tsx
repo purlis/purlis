@@ -8,6 +8,7 @@ import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
 import {
+  ON_A_POOL_LOCK,
   StartChat,
   pickerAnswerUnsent,
   refusedSaid,
@@ -2254,6 +2255,39 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
 
     expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
       pool: null,
+    });
+  });
+
+  it("offers no start without the sandbox on a pool, whose runner would refuse it", async () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options({
+          profiles: [
+            { ...ONE.profiles[0], sandbox: { state: "sandboxed", said: "", locked: null } },
+          ],
+        })}
+        runsOn={runsOn()}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    const box = () => screen.queryByRole("checkbox", { name: "Start without the sandbox" });
+
+    expect(box()).toBeNull();
+    expect(screen.getByRole("region", { name: "Sandbox" })).toHaveTextContent(ON_A_POOL_LOCK);
+
+    await choose(user, "This machine");
+    await waitFor(() => expect(box()).toBeInTheDocument());
+    await user.click(screen.getByRole("checkbox", { name: "Start without the sandbox" }));
+    await choose(user, "Pool gpu");
+    await waitFor(() => expect(box()).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
+      pool: "gpu",
     });
   });
 

@@ -1969,3 +1969,32 @@ fn on_a_runner_a_claude_code_chat_is_never_started_without_the_sandbox() {
     )
     .expect("it starts on a Mac");
 }
+
+/// A runner whose kernel has no Landlock at version 6 (a Docker pool's host on Linux 6.8, say)
+/// refuses a sandboxed Claude Code chat, and names only ways out that exist there: not a Claude
+/// Code profile, which runs in the same wrap on Linux (ADR 0067 as amended 2026-11-10), and not
+/// the new-chat picker's opt-out, which a runner refuses (ruled 2026-11-08).
+#[test]
+fn a_runner_without_landlock_6_names_no_way_out_it_refuses() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let runner = a_runner(home.path());
+    let plane = a_sandboxed_plane();
+    let bin = plane.harness();
+    plane.profile("claude", &bin, "");
+
+    let why = start::ready_for_a_runner_on(
+        &plane.start("work"),
+        plane.root(),
+        &purlis_core::harness_declaration::read(plane.root()),
+        &runner,
+        &|_| false,
+    )
+    .expect_err("refused: the kernel cannot apply the wrap");
+
+    assert!(why.contains("Landlock version 6"), "{why}");
+    assert!(!why.contains("Claude Code profile"), "{why}");
+    assert!(!why.contains("without the sandbox"), "{why}");
+    assert!(why.contains("Runs on"), "{why}");
+    assert!(!plane.root().join("ran").exists(), "nothing was run");
+}

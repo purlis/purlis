@@ -215,16 +215,8 @@ pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
     if let Some(rules) = pattern_rules(denial, what)? {
         return Ok(rules);
     }
-    let mut names: Vec<PathBuf> = Vec::new();
-    for held in held_names(&denial.path) {
-        for name in super::both_firmlink_names(held) {
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
     let mut rules = Vec::new();
-    for name in names {
+    for name in names_held(&denial.path) {
         let spelled = name.display().to_string();
         let filter = match (denial.any_case, denial.reach) {
             (false, Reach::AndBelow) => format!("(subpath {})", string(&spelled)?),
@@ -240,7 +232,42 @@ pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
         };
         rules.push(format!("(deny {what} {filter})"));
     }
+    // The SSH folder is denied whole, so a key made in it later by any name is held, and what in
+    // it holds no secret is read again: `config`, `known_hosts*` and a public key (the review of
+    // #7008). Read alone, never written, under each name the folder is held by.
+    if super::is_the_ssh_folder(denial) {
+        for name in names_held(&denial.path) {
+            let spelled = name.display().to_string();
+            for open in super::SSH_OPEN {
+                rules.push(format!(
+                    "(allow file-read* (literal {}))",
+                    string(&format!("{spelled}/{open}"))?
+                ));
+            }
+            rules.push(format!(
+                "(allow file-read* (regex {}))",
+                string(&format!(
+                    "^{}/[^/]+{}$",
+                    escaped(&spelled),
+                    escaped(super::SSH_PUBLIC)
+                ))?
+            ));
+        }
+    }
     Ok(rules)
+}
+
+/// Every name `path` is held by: as written and as its target, each across a firmlink.
+fn names_held(path: &Path) -> Vec<PathBuf> {
+    let mut names: Vec<PathBuf> = Vec::new();
+    for held in held_names(path) {
+        for name in super::both_firmlink_names(held) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 /// The rules that deny `denial` where its path holds a [`super::ANY_NAME`] part (SK-9): what is
