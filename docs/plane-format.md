@@ -1824,23 +1824,39 @@ nevers and "Keep blocked" hosts.
   `purlis_core::policy::levels::load`, which nothing in the app calls yet.
 - **Tier:** Plane — committed, in the file whose tier it is; the local settings file is its You
   level, below.
-- **Read at the plane root's `HEAD`, as history was written** (`enforcement::committed_text`):
-  no replace ref, graft or key of the repository's config changes what is read, a branch
-  folder's copy is never read, and **there is no working-file fallback**: a plane with no commit
-  (or no repository) has no committed policy, so the copy the person last accepted runs, or else
-  the shipped default, with a Notice.
-- **A file that does not read is broken, never skipped:** a value of the wrong kind, a word that
-  is none of its key's, a key no table has, or a table naming a workspace or persona the plane
-  does not have. The project then runs the copy the person last accepted, or else `strict`, and
-  the sandbox is `full` either way. Each problem is a Notice naming the file and line.
+- **Read at the plane root's `HEAD`, as history was written** (`enforcement::committed_files`):
+  `HEAD` is resolved once and both files are read from that one commit; no replace ref, graft or
+  key of the repository's config changes what is read, a branch folder's copy is never read,
+  and **there is no working-file fallback**: a plane with no commit (or no repository) has no
+  committed policy, so the copy the person last accepted runs, or else the shipped default, with
+  a Notice. The read is **verified**: the commit, its tree and each file are hashed and compared
+  with the names git gives them, so an object that is gone or was rewritten in place is unread
+  (the copy the person last accepted, or else `strict`, under the full sandbox), never another
+  text and never "no such file". A `.git` that git does not read as a repository is unread too,
+  never "no repository". `HEAD` itself is a ref a writer of `.git` can move: sealing it is slice
+  14's (a sandboxed chat cannot write `.git`).
+- **A file that does not read is broken, never skipped:** a value of the wrong kind, a key no
+  table has, or a table naming a workspace or persona the plane does not have. The project then
+  runs the copy the person last accepted, or else `strict`, and the sandbox is `full` either way.
+  Each problem is a Notice naming the file and line. **A word that is none of its key's breaks
+  nothing** (spec §5.1, Q308a): an unknown template reads as `strict` and an unknown mode as
+  `enforce`, with a Notice, and the level keeps the rest of what it says.
 - **The levels:** for a default the nearest level wins, the stricter where a chat's workspace and
-  persona both set one; a family a level locks stays at least what that level says, and a lower
-  level's Cedar permit on a locked family or action is dropped with a Notice. `[policy.locks]`
-  and `[policy.sets]` are the Organisation's and the Project's only. A `[policy.rules]` entry
-  reaches only rules at its own level or below.
+  persona both set one; **a family a level locks runs `enforce`** (a locked family never runs
+  below it), and a lower level's Cedar permit on a locked family or action is dropped with a
+  Notice. `[policy.locks]` and `[policy.sets]` are the Organisation's and the Project's only. A
+  `[policy.rules]` entry reaches only rules at its own level or below, and below the
+  Organisation only tightens: it never loosens a mode the Organisation set, nor a rule (a
+  shipped one included) on a family or action the Organisation locked. The project adds to an
+  Organisation's named set only where adding tightens (`protected-branches`,
+  `production-hosts`, `secret-stores`); anything else it adds is left out, with a Notice.
+  Where the policy can't be assembled, the project reads as `strict` and the Organisation's
+  rules still run with the shipped default, under the full sandbox.
 - **In the local settings file (the You level)** only `[policy]`'s defaults and
   `[policy.rules]` are read, and only where they tighten: a loosening is ignored with a Notice,
-  and each tightening is handed on to be sealed into the accepted floor (Q322; slice 14).
+  and each tightening is handed on to be sealed into the accepted floor (Q322; slice 14). A
+  local file git would carry is read all the same, with a Notice, since it can only tighten; one
+  that can't be read is said in a Notice, never passed over in silence.
 
 ### `policy.cedar` — the project's rules
 

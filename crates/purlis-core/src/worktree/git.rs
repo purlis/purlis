@@ -2545,6 +2545,26 @@ pub const AS_WRITTEN_READ_ENV: [(&str, &str); 2] =
 /// so the work tree is named as `dir` itself, which is why `dir` must be the top of its tree.
 /// `core.useReplaceRefs` is held off on every call already ([`NO_PROGRAMS`]).
 pub fn run_as_written(dir: &Path, args: &[&str], timeout: Duration) -> Result<Run, GitUnavailable> {
+    as_written(dir, args, None, timeout).map(as_text)
+}
+
+/// [`run_as_written`], with `input` written to git's standard input and the answer as BYTES: for
+/// `cat-file --batch`, whose answer holds objects that need not be text.
+pub fn run_as_written_with_input(
+    dir: &Path,
+    args: &[&str],
+    input: Vec<u8>,
+    timeout: Duration,
+) -> Result<RawRun, GitUnavailable> {
+    as_written(dir, args, Some(input), timeout)
+}
+
+fn as_written(
+    dir: &Path,
+    args: &[&str],
+    input: Option<Vec<u8>>,
+    timeout: Duration,
+) -> Result<RawRun, GitUnavailable> {
     let work_tree = format!("--work-tree={}", dir.display());
     let mut held_args: Vec<&str> = vec![&work_tree];
     held_args.extend_from_slice(args);
@@ -2554,14 +2574,22 @@ pub fn run_as_written(dir: &Path, args: &[&str], timeout: Duration) -> Result<Ru
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).into()))
             .collect(),
+        stdin: input.is_some(),
         ..Extra::default()
     };
     let extra = match held(dir, &held_args, extra)? {
         Ok(extra) => extra,
-        Err(answer) => return Ok(as_text(answer)),
+        Err(answer) => return Ok(answer),
     };
     counted(dir, &held_args, || {
-        Ok(wait(spawn_with(dir, &held_args, &extra)?, timeout)?)
+        let mut child = spawn_with(dir, &held_args, &extra)?;
+        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+            std::thread::spawn(move || {
+                // A git that stopped reading has answered or failed; its answer says which.
+                let _ = std::io::copy(&mut std::io::Cursor::new(input), &mut stdin);
+            });
+        }
+        Ok(wait_raw(child, timeout)?)
     })
 }
 

@@ -209,8 +209,11 @@ fn the_policy_is_read_from_the_plane_roots_head_never_a_branch_folder() {
     assert_eq!(loaded.template_for(ANYONE), Template::Strict);
 }
 
+// A graft changes only a commit's parents, never the tree `HEAD:<file>` reads, so no test of
+// the HEAD read can see one; the read still passes `GIT_GRAFT_FILE` (spec §5) for the author
+// check of §9.2, which walks history.
 #[test]
-fn a_replace_ref_or_graft_does_not_change_what_head_reads() {
+fn a_replace_ref_does_not_change_what_head_reads() {
     let root = plane(&[("policy.cedar", NO_INSTALLS)]);
     let written = git_out(root.path(), &["rev-parse", "HEAD"]);
     // Another commit, with no rule, made off to the side and put in HEAD's place.
@@ -219,7 +222,6 @@ fn a_replace_ref_or_graft_does_not_change_what_head_reads() {
     git(root.path(), &["reset", "-q", "--hard", &written]);
     git(root.path(), &["replace", &written, &stand_in]);
     git(root.path(), &["config", "core.useReplaceRefs", "true"]);
-    write(root.path(), ".git/info/grafts", &format!("{written}\n"));
     assert_eq!(
         git_out(root.path(), &["show", "HEAD:policy.cedar"]),
         VERSION.trim(),
@@ -431,6 +433,8 @@ fn a_workspace_rule_about_another_workspaces_chats_is_refused_at_load() {
             ("policy.cedar", line),
             "{scope}"
         );
+        // The rule it names is given its own level, never its file's place.
+        assert_eq!(said.rules[0].level, Level::Workspace, "{scope}");
         assert!(loaded.policy.rule("skills-ws-none").is_none(), "{scope}");
     }
     // Its own workspace's chats: loaded, and binding there only.
@@ -567,7 +571,7 @@ fn a_lower_permit_that_can_never_pass_a_higher_forbid_is_warned_about() {
 #[test]
 fn a_broken_project_file_falls_back_to_the_accepted_copy_else_strict_with_the_full_sandbox() {
     let root = plane(&[
-        ("charter.toml", "[policy]\ntemplate = 3\n"),
+        ("charter.toml", "[policy]\n\"guards.merj\" = \"log\"\n"),
         ("policy.cedar", NO_INSTALLS),
     ]);
     let alone = levels::load(&sources(root.path()));
@@ -778,10 +782,9 @@ fn the_organisations_policy_toml_can_go_deny_by_default() {
 fn an_organisation_policy_toml_with_a_bad_value_reads_as_strict_plus_every_lock() {
     let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
     for bad in [
-        "[policy]\ntemplate = \"lenient\"\n",
-        "[policy]\n\"guards.merge\" = \"sometimes\"\n",
+        "[policy]\n\"guards.merj\" = \"log\"\n",
         "[policy.locks]\nfamilies = [\"guards.merj\"]\n",
-        "[policy.rules]\n\"guards-merge-hold\" = 1\n",
+        "[policy.sets]\nproduction-hosts = \"api.acme.com\"\n",
     ] {
         let loaded = levels::load(&Sources {
             organisation: Some(organisation(None, Some(bad))),
@@ -836,4 +839,286 @@ fn a_lock_on_one_action_and_a_per_family_keep_are_read() {
     let loaded = levels::load(&sources(no_such_action.path()));
     let said = notice(&loaded, "\"shove\"");
     assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+}
+
+/// The path of the loose object git names `oid` by, in `root`'s repository.
+fn loose(root: &Path, oid: &str) -> std::path::PathBuf {
+    root.join(".git/objects").join(&oid[..2]).join(&oid[2..])
+}
+
+#[test]
+fn a_committed_file_whose_object_is_gone_is_unread_never_absent() {
+    let root = plane(&[
+        ("charter.toml", "[policy]\ntemplate = \"open\"\n"),
+        ("policy.cedar", NO_INSTALLS),
+    ]);
+    let blob = git_out(root.path(), &["rev-parse", "HEAD:charter.toml"]);
+    std::fs::remove_file(loose(root.path(), &blob)).expect("the loose blob goes");
+
+    let loaded = levels::load(&sources(root.path()));
+    // Not "the project says nothing": the file is there and does not read, so strict.
+    let said = notice(&loaded, "missing");
+    assert_eq!(
+        said.file, "charter.toml",
+        "the Notice names the file that did not read"
+    );
+    assert_eq!(loaded.template_for(ANYONE), Template::Strict);
+    assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full));
+}
+
+#[test]
+fn a_committed_file_rewritten_in_place_under_its_name_is_unread() {
+    let root = plane(&[("policy.cedar", NO_INSTALLS)]);
+    let blob = git_out(root.path(), &["rev-parse", "HEAD:policy.cedar"]);
+    // Another blob's object, with no rule, written over the committed one's under its name.
+    write(root.path(), "other.cedar", VERSION);
+    let other = git_out(root.path(), &["hash-object", "-w", "other.cedar"]);
+    let path = loose(root.path(), &blob);
+    std::fs::remove_file(&path).expect("the loose blob goes");
+    std::fs::copy(loose(root.path(), &other), &path).expect("the stand-in is put in its place");
+    assert_eq!(
+        git_out(root.path(), &["show", "HEAD:policy.cedar"]),
+        VERSION.trim(),
+        "git itself reads the stand-in"
+    );
+
+    let loaded = levels::load(&sources(root.path()));
+    let said = notice(&loaded, "does not hash");
+    assert_eq!(said.file, "policy.cedar");
+    assert_eq!(loaded.template_for(ANYONE), Template::Strict);
+    assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full));
+}
+
+#[test]
+fn a_dot_git_whose_head_does_not_read_is_unread_never_no_repository() {
+    let root = plane(&[("charter.toml", "[policy]\ntemplate = \"strict\"\n")]);
+    // A working file that says otherwise, and a HEAD that names nothing.
+    write(
+        root.path(),
+        "charter.toml",
+        "[policy]\ntemplate = \"open\"\n",
+    );
+    write(root.path(), ".git/HEAD", "garbage\n");
+
+    let loaded = levels::load(&sources(root.path()));
+    assert!(
+        !loaded
+            .notices
+            .iter()
+            .any(|n| n.what.contains("no git repository")),
+        "{:#?}",
+        loaded.notices
+    );
+    assert_eq!(notice(&loaded, "does not read").file, ".git");
+    assert_eq!(loaded.template_for(ANYONE), Template::Strict);
+    assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full));
+    // ADR 0125's reader takes the same answer: never the working file.
+    assert_eq!(
+        purlis_core::enforcement::Settings::read(root.path()).template,
+        Template::Strict
+    );
+}
+
+#[test]
+fn a_project_rule_mode_cannot_loosen_what_the_organisation_set() {
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"policy-everything-else\" = \"enforce\"\n",
+    )]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy.rules]\n\"policy-everything-else\" = \"off\"\n"),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(install(&loaded, "web/builder"), Decision::NoPermit);
+    let said = notice(&loaded, "would loosen the rule");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert_eq!(loaded.rule_modes["policy-everything-else"], Mode::Off);
+}
+
+#[test]
+fn a_project_rule_mode_cannot_loosen_a_shipped_rule_on_a_locked_family() {
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"guards-merge-hold\" = \"off\"\n",
+    )]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy.locks]\nfamilies = [\"guards.merge\"]\n"),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(
+        merge(&loaded),
+        Decision::Ask {
+            asks: vec!["guards-merge-hold".into()]
+        }
+    );
+    let said = notice(&loaded, "is locked by Platform team");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+
+    // Unlocked, the project may turn its shipped rule off (a loosening the press accepts).
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(merge(&loaded), allowed());
+}
+
+#[test]
+fn a_local_file_git_would_carry_keeps_its_tightenings_with_a_notice() {
+    let root = plane(&[("charter.toml", "[policy]\ntemplate = \"team\"\n")]);
+    git(root.path(), &["config", "core.excludesFile", "/dev/null"]);
+    write(
+        root.path(),
+        "charter.local.toml",
+        "[policy]\ntemplate = \"strict\"\n",
+    );
+
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.template_for(ANYONE), Template::Strict);
+    let said = notice(&loaded, "read all the same");
+    assert_eq!(said.file, "charter.local.toml");
+    assert_eq!(loaded.tightenings.len(), 1, "{:#?}", loaded.tightenings);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_local_file_that_cannot_be_read_is_told_never_lost_silently() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let root = plane(&[("charter.toml", "[policy]\ntemplate = \"team\"\n")]);
+    let local = root.path().join("charter.local.toml");
+    write(
+        root.path(),
+        "charter.local.toml",
+        "[policy]\ntemplate = \"strict\"\n",
+    );
+    std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+    if std::fs::read_to_string(&local).is_ok() {
+        return; // root reads anything: there is nothing to see here.
+    }
+
+    let loaded = levels::load(&sources(root.path()));
+    let said = notice(&loaded, "could not be read");
+    assert_eq!(said.file, "charter.local.toml");
+}
+
+#[test]
+fn a_locked_family_never_runs_below_enforce() {
+    let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some(
+                "[policy]\n\"guards.merge\" = \"off\"\n\n\
+                 [policy.locks]\nfamilies = [\"guards.merge\"]\n",
+            ),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(loaded.mode_for("guards.merge", ANYONE), Mode::Enforce);
+    let said = notice(&loaded, "never runs below enforce");
+    assert_eq!(
+        (said.file.as_str(), said.line),
+        ("/etc/purlis/policy.toml", 2)
+    );
+}
+
+#[test]
+fn an_unknown_template_reads_strict_and_an_unknown_mode_enforce_and_the_file_still_reads() {
+    let root = plane(&[("charter.toml", "[policy]\ntemplate = \"open\"\n")]);
+    for (bad, words, line) in [
+        ("[policy]\ntemplate = \"lenient\"\n", "reads as strict", 2),
+        (
+            "[policy]\n\"guards.git\" = \"sometimes\"\n",
+            "so it is enforced",
+            2,
+        ),
+        (
+            "[policy.rules]\n\"guards-merge-hold\" = 1\n",
+            "so it is enforced",
+            2,
+        ),
+    ] {
+        let loaded = levels::load(&Sources {
+            organisation: Some(organisation(Some(NO_INSTALLS), Some(bad))),
+            ..sources(root.path())
+        });
+        let said = notice(&loaded, words);
+        assert_eq!(
+            (said.file.as_str(), said.line),
+            ("/etc/purlis/policy.toml", line),
+            "{bad}"
+        );
+        // Not broken: no lock on everything, no full sandbox, and its rules still bind.
+        assert!(loaded.organisation_locks.families.is_empty(), "{bad}");
+        assert_eq!(loaded.sandbox_at_least, None, "{bad}");
+        assert_eq!(
+            install(&loaded, "web/builder"),
+            denied("skills-none"),
+            "{bad}"
+        );
+    }
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy]\n\"guards.git\" = \"sometimes\"\n"),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(
+        loaded.mode_for("guards.git", ANYONE),
+        Mode::Off,
+        "the project's open is nearer"
+    );
+}
+
+#[test]
+fn a_project_cannot_widen_an_organisations_set_that_lets_through() {
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.sets]\nknown-hosts = [\"evil.example\"]\nproduction-hosts = [\"db.acme.com\"]\n",
+    )]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some(
+                "[policy.sets]\nknown-hosts = [\"api.acme.com\"]\n\
+                 production-hosts = [\"api.acme.com\"]\n",
+            ),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(loaded.sets["known-hosts"], ["api.acme.com"]);
+    let said = notice(&loaded, "\"evil.example\" is left out");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    // A set whose rules forbid what is in it only tightens as it grows.
+    assert_eq!(
+        loaded.sets["production-hosts"],
+        ["api.acme.com", "db.acme.com"]
+    );
+}
+
+#[test]
+fn a_project_lock_on_one_action_drops_a_lower_permit_on_it() {
+    let root = plane(&[
+        ("charter.toml", "[policy.locks]\nactions = [\"install\"]\n"),
+        (
+            "policy.cedar",
+            "// purlis-policy 1\n\
+             @id(\"skills-web-install\") @level(\"workspace\")\n\
+             permit (principal in Workspace::\"web\", action == Action::\"install\", resource);\n\
+             @id(\"skills-web-load\") @level(\"workspace\")\n\
+             permit (principal in Workspace::\"web\", action == Action::\"load\", resource);\n",
+        ),
+    ]);
+    let loaded = levels::load(&sources(root.path()));
+    assert!(loaded.policy.rule("skills-web-install").is_none());
+    assert!(
+        loaded.policy.rule("skills-web-load").is_some(),
+        "another action is not locked"
+    );
+    let said = notice(&loaded, "\"install\" is locked");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert_eq!(said.rules[0].id, "skills-web-install");
 }

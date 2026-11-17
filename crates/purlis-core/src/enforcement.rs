@@ -545,7 +545,7 @@ impl Settings {
             }
             // A `HEAD` git could not read in time, or none yet, is not a file to fall back to
             // (the re-review of #6992): strict, with the sentence for the Notice.
-            Committed::NoHead { repository: true } | Committed::Unread(_) => Self {
+            Committed::NoHead { repository: true } | Committed::Unread { .. } => Self {
                 template: Template::Strict,
                 template_said: true,
                 overrides: BTreeMap::new(),
@@ -604,48 +604,266 @@ pub enum Committed {
         /// Whether the plane is a git repository at all.
         repository: bool,
     },
-    /// git could not read `HEAD`, or not in time: the sentence for the Notice.
-    Unread(String),
+    /// git could not read `HEAD`, or a file at it, or not in time, or what it read does not hash
+    /// to its name.
+    Unread {
+        /// The file that did not read, where it was one file and not the commit.
+        file: Option<&'static str>,
+        /// The sentence for the Notice.
+        why: String,
+    },
 }
 
 /// **The plane root's file, under the first of `names` it is committed by, as it stands at
-/// `HEAD`** (Q309 point 1; M75 spec §5): a change not committed yet is not the project's, and
-/// neither is a branch folder's copy. The read is of history as written
-/// ([`crate::worktree::git::run_as_written`]): no replace ref, graft or repository config key
-/// changes what it reads (review round 5, SEC5-SF1; Q320c R5-1). There is no working-file
-/// fallback (review round 5, FB5 R4-4): where there is no `HEAD`, it says so.
+/// `HEAD`**: [`committed_files`] for one file.
 pub fn committed_text(root: &Path, names: &[&'static str]) -> Committed {
+    committed_files(root, &[names])
+        .pop()
+        .expect("one answer for each file asked")
+}
+
+/// **Files of the plane root as they stand at one commit, `HEAD`'s** (Q309 point 1; M75 spec §5),
+/// one answer for each of `files`, each the first of its names that commit holds: a change not
+/// committed yet is not the project's, and neither is a branch folder's copy. `HEAD` is read once,
+/// so every file is of the same commit.
+///
+/// The read is of history as written ([`crate::worktree::git::run_as_written`]): no replace ref,
+/// graft or repository config key changes what it reads (review round 5, SEC5-SF1; Q320c R5-1).
+/// It is also **verified**: the commit, its tree and every file are hashed here and compared with
+/// the names git gives them, and each file is looked up in the tree as hashed, so an object
+/// rewritten in place under its old name, or one that is gone, is [`Committed::Unread`], never
+/// another text or [`Committed::Absent`]. There is no working-file fallback (review round 5, FB5
+/// R4-4): where there is no `HEAD`, it says so, and a `.git` git does not read as a repository
+/// is unread, never "no repository" (spec §5: the working file is never read as committed).
+pub fn committed_files(root: &Path, files: &[&[&'static str]]) -> Vec<Committed> {
     use crate::worktree::git::run_as_written;
-    let unread = || Committed::Unread("git could not read the project's last commit".to_owned());
-    match run_as_written(
+    let every = |answer: Committed| vec![answer; files.len()];
+    let head = match run_as_written(
         root,
         &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
         GIT_WAIT,
     ) {
-        Ok(run) if run.ok() => {}
+        Ok(run) if run.ok() => run.line().to_owned(),
         Ok(run) if run.code == Some(128) && run.err.contains("not a git repository") => {
-            return Committed::NoHead { repository: false };
+            // A `.git` that is there but does not read (a `HEAD` that names nothing, say) is a
+            // repository git could not read, never a plane with none.
+            if root.join(".git").symlink_metadata().is_ok() {
+                return every(Committed::Unread {
+                    file: None,
+                    why: "git does not read the plane's .git as a repository".to_owned(),
+                });
+            }
+            return every(Committed::NoHead { repository: false });
         }
         // `--verify --quiet` exits 1 with nothing said where there is no commit yet.
         Ok(run) if run.code == Some(1) && run.err.trim().is_empty() => {
-            return Committed::NoHead { repository: true };
+            return every(Committed::NoHead { repository: true });
         }
-        _ => return unread(),
+        _ => {
+            return every(Committed::Unread {
+                file: None,
+                why: "git could not read the project's last commit".to_owned(),
+            });
+        }
+    };
+    match at_commit(root, &head, files) {
+        Ok(answers) => answers,
+        Err(why) => every(Committed::Unread { file: None, why }),
     }
-    for file in names {
-        match run_as_written(root, &["show", &format!("HEAD:./{file}")], GIT_WAIT) {
-            Ok(run) if run.ok() => {
-                return Committed::Text {
-                    file,
-                    text: run.out,
-                };
+}
+
+/// The object formats git names objects in.
+#[derive(Debug, Clone, Copy)]
+enum ObjectFormat {
+    Sha1,
+    Sha256,
+}
+
+impl ObjectFormat {
+    /// The format an object name is in, by its length.
+    fn of(name: &str) -> Option<Self> {
+        if !name.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        match name.len() {
+            40 => Some(Self::Sha1),
+            64 => Some(Self::Sha256),
+            _ => None,
+        }
+    }
+
+    /// The length of a name in a tree, as bytes.
+    fn raw_len(self) -> usize {
+        match self {
+            Self::Sha1 => 20,
+            Self::Sha256 => 32,
+        }
+    }
+
+    /// The name git gives an object of `kind` holding `content`.
+    fn name(self, kind: &str, content: &[u8]) -> String {
+        use sha2::Digest as _;
+        let header = format!("{kind} {}\0", content.len());
+        let digest: Vec<u8> = match self {
+            Self::Sha1 => {
+                let mut hash = sha1::Sha1::new();
+                hash.update(header.as_bytes());
+                hash.update(content);
+                hash.finalize().to_vec()
             }
-            // No such file at `HEAD`: the next name.
-            Ok(run) if run.code == Some(128) => {}
-            _ => return unread(),
-        }
+            Self::Sha256 => {
+                let mut hash = sha2::Sha256::new();
+                hash.update(header.as_bytes());
+                hash.update(content);
+                hash.finalize().to_vec()
+            }
+        };
+        data_encoding::HEXLOWER.encode(&digest)
     }
-    Committed::Absent
+}
+
+/// One object of `cat-file --batch`'s answer.
+struct Object<'a> {
+    name: &'a str,
+    kind: &'a str,
+    content: &'a [u8],
+}
+
+impl Object<'_> {
+    /// Whether the object is a `kind` and its content hashes to its name.
+    fn holds(&self, format: ObjectFormat, kind: &str) -> bool {
+        self.kind == kind && format.name(kind, self.content) == self.name.to_ascii_lowercase()
+    }
+}
+
+/// The next object of a `cat-file --batch` answer: `Some(None)` where git said it is missing, and
+/// `None` where the answer is not one git gives.
+fn next_object<'a>(answer: &mut &'a [u8]) -> Option<Option<Object<'a>>> {
+    let end = answer.iter().position(|b| *b == b'\n')?;
+    let header = std::str::from_utf8(&answer[..end]).ok()?;
+    let rest = &answer[end + 1..];
+    if header.ends_with(" missing") {
+        *answer = rest;
+        return Some(None);
+    }
+    let mut words = header.split(' ');
+    let (name, kind, size) = (words.next()?, words.next()?, words.next()?);
+    if words.next().is_some() {
+        return None;
+    }
+    let size: usize = size.parse().ok()?;
+    let content = rest.get(..size)?;
+    if rest.get(size) != Some(&b'\n') {
+        return None;
+    }
+    *answer = &rest[size + 1..];
+    Some(Some(Object {
+        name,
+        kind,
+        content,
+    }))
+}
+
+/// A tree's entries by name: each one's mode and object name.
+type Entries<'a> = BTreeMap<&'a [u8], (&'a [u8], String)>;
+
+/// A tree's entries. `None` where it is no tree.
+fn tree_entries(mut tree: &[u8], format: ObjectFormat) -> Option<Entries<'_>> {
+    let mut entries = BTreeMap::new();
+    while !tree.is_empty() {
+        let space = tree.iter().position(|b| *b == b' ')?;
+        let mode = &tree[..space];
+        let rest = &tree[space + 1..];
+        let nul = rest.iter().position(|b| *b == 0)?;
+        let raw = rest.get(nul + 1..nul + 1 + format.raw_len())?;
+        entries.insert(&rest[..nul], (mode, data_encoding::HEXLOWER.encode(raw)));
+        tree = &rest[nul + 1 + format.raw_len()..];
+    }
+    Some(entries)
+}
+
+/// [`committed_files`] at the commit `head`, every object read in one `cat-file --batch` and
+/// verified here: the error is the sentence for a Notice where the commit or its tree does not
+/// read as written.
+fn at_commit(root: &Path, head: &str, files: &[&[&'static str]]) -> Result<Vec<Committed>, String> {
+    let bad = |what: &str| format!("git could not read the project's last commit: {what}");
+    let format = ObjectFormat::of(head).ok_or_else(|| bad("HEAD names no object"))?;
+    let names: Vec<&'static str> = files.iter().flat_map(|f| f.iter().copied()).collect();
+    let mut input = format!("{head}\n{head}^{{tree}}\n");
+    for name in &names {
+        input.push_str(&format!("{head}:{name}\n"));
+    }
+    let run = crate::worktree::git::run_as_written_with_input(
+        root,
+        &["cat-file", "--batch"],
+        input.into_bytes(),
+        GIT_WAIT,
+    )
+    .map_err(|_| bad("git did not run"))?;
+    if run.code != Some(0) {
+        return Err(bad("git could not read its objects"));
+    }
+    let mut answer = run.out.as_slice();
+    let mut next = || next_object(&mut answer).ok_or_else(|| bad("git's answer did not read"));
+    let commit = next()?.ok_or_else(|| bad("its commit is missing"))?;
+    if commit.name != head || !commit.holds(format, "commit") {
+        return Err(bad("its commit does not hash to its name"));
+    }
+    let tree = next()?.ok_or_else(|| bad("its tree is missing"))?;
+    let named = commit
+        .content
+        .strip_prefix(b"tree ")
+        .and_then(|rest| rest.split(|b| *b == b'\n').next());
+    if named != Some(tree.name.as_bytes()) || !tree.holds(format, "tree") {
+        return Err(bad(
+            "its tree does not hash to the name its commit gives it",
+        ));
+    }
+    let entries =
+        tree_entries(tree.content, format).ok_or_else(|| bad("its tree does not read"))?;
+    // Each name's answer: its text, none at that commit, or why it did not read.
+    let mut read: BTreeMap<&'static str, Result<Option<String>, String>> = BTreeMap::new();
+    for name in &names {
+        let object = next()?;
+        let unread = |what: &str| {
+            Err(format!(
+                "git could not read {name} at the last commit: {what}"
+            ))
+        };
+        let said = match (entries.get(name.as_bytes()), object) {
+            (None, None) => Ok(None),
+            (None, Some(_)) => unread("git read a file its tree does not hold"),
+            (Some(_), None) => unread("its tree names it, and the file is missing"),
+            (Some((mode, oid)), Some(object)) => {
+                if !matches!(*mode, b"100644" | b"100755") {
+                    unread("it is not a file")
+                } else if object.name != oid || !object.holds(format, "blob") {
+                    unread("it does not hash to the name its tree gives it")
+                } else {
+                    Ok(Some(String::from_utf8_lossy(object.content).into_owned()))
+                }
+            }
+        };
+        read.insert(name, said);
+    }
+    Ok(files
+        .iter()
+        .map(|names| {
+            for file in names.iter().copied() {
+                match read.remove(file) {
+                    Some(Ok(Some(text))) => return Committed::Text { file, text },
+                    Some(Err(why)) => {
+                        return Committed::Unread {
+                            file: Some(file),
+                            why,
+                        };
+                    }
+                    _ => {}
+                }
+            }
+            Committed::Absent
+        })
+        .collect())
 }
 
 /// **The digest of what the press accepts** (the review of #6992, S2, and its re-review): of the

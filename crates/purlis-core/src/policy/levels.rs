@@ -36,7 +36,7 @@ use std::path::Path;
 
 use cedar_policy::{ActionConstraint, Effect, EntityUid, PrincipalConstraint};
 
-use crate::enforcement::{Committed, Family, Mode, SandboxLevel, Template, committed_text};
+use crate::enforcement::{Committed, Family, Mode, SandboxLevel, Template, committed_files};
 
 use super::{FAMILIES, File, KEEPS, Level, Policy, Problem, Rule, TIMEDS, assemble, read_file};
 
@@ -204,6 +204,11 @@ struct Tables {
     locks: Locks,
     /// The line each lock key is on.
     lock_lines: BTreeMap<String, usize>,
+    /// The line each named set is on.
+    set_lines: BTreeMap<String, usize>,
+    /// What the person is told and that breaks nothing: an unknown template, read as `strict`,
+    /// or an unknown mode, read as `enforce` (§5.1, Q308a).
+    warnings: Vec<Problem>,
     workspaces: BTreeMap<String, Defaults>,
     personas: BTreeMap<String, Defaults>,
 }
@@ -288,8 +293,8 @@ impl Loaded {
     }
 
     /// **How `chat` runs `family`**: the nearest level's mode (the stricter of its workspace's
-    /// and its persona's), never looser than a lock's level holds it, and never looser than
-    /// your own file says (Q310.3–5).
+    /// and its persona's), `enforce` where a level locks it, and never looser than your own
+    /// file says (Q310.3–5, Q308a).
     pub fn mode_for(&self, family: &str, chat: Chat<'_>) -> Mode {
         let organisation = self.organisation.mode(family);
         let project = self.project.mode(family).or(organisation);
@@ -301,11 +306,12 @@ impl Loaded {
             .max();
         let shipped = template_mode(Template::default(), family);
         let mut mode = lower.or(project).unwrap_or(shipped);
-        if self.project_locks.families.contains(family) {
-            mode = mode.max(project.unwrap_or(shipped));
-        }
-        if self.organisation_locks.families.contains(family) {
-            mode = mode.max(organisation.unwrap_or(shipped));
+        // A lock freezes the family for every level below, and a locked family never runs
+        // below `enforce` (§4.4, Q308a): whatever the locking level says, it is enforced.
+        if self.project_locks.families.contains(family)
+            || self.organisation_locks.families.contains(family)
+        {
+            mode = Mode::Enforce;
         }
         match self.you.modes.get(family) {
             Some(mine) => mode.max(mine.value),
@@ -330,14 +336,15 @@ fn read_tables(
 ) -> (Tables, Vec<Problem>) {
     let mut tables = Tables::default();
     let mut problems = Vec::new();
-    let mut problem = |line: usize, what: String| {
-        problems.push(Problem {
-            file: file.to_owned(),
-            line,
-            rule: None,
-            what,
-        });
+    let mut warnings = Vec::new();
+    let said = |line: usize, what: String| Problem {
+        file: file.to_owned(),
+        line,
+        rule: None,
+        what,
     };
+    let mut problem = |line: usize, what: String| problems.push(said(line, what));
+    let mut warn = |line: usize, what: String| warnings.push(said(line, what));
     let doc = match toml_edit::Document::parse(text) {
         Ok(doc) => doc,
         Err(e) => {
@@ -363,7 +370,7 @@ fn read_tables(
         let line = at(key, item);
         match name {
             "rules" => {
-                read_rule_modes(item, &mut tables.rules, &at, &mut problem);
+                read_rule_modes(item, &mut tables.rules, &at, &mut problem, &mut warn);
             }
             "sets" | "locks" | "workspace" | "persona" if place == Level::You => problem(
                 line,
@@ -375,7 +382,7 @@ fn read_tables(
                     "[policy.{name}] is the project file's: it names the project's own {name}s"
                 ),
             ),
-            "sets" => read_sets(item, &mut tables.sets, line, &mut problem),
+            "sets" => read_sets(item, &mut tables, line, &at, &mut problem),
             "locks" => read_locks(item, &mut tables, &at, &mut problem),
             "workspace" | "persona" => {
                 let (known, into) = if name == "workspace" {
@@ -404,7 +411,15 @@ fn read_tables(
                         Some(keys) => {
                             for (k, v) in keys.iter() {
                                 let (key, _) = keys.get_key_value(k).expect("a key it iterates");
-                                read_default(k, v, at(key, v), &mut defaults, &at, &mut problem);
+                                read_default(
+                                    k,
+                                    v,
+                                    at(key, v),
+                                    &mut defaults,
+                                    &at,
+                                    &mut problem,
+                                    &mut warn,
+                                );
                             }
                         }
                         None => problem(line, format!("[policy.{name}.{named}] is not a table")),
@@ -415,13 +430,24 @@ fn read_tables(
             // `[policy.limits]` is slice 12's and `sandbox` slice 11's: not read here.
             "limits" if item.is_table_like() => {}
             "sandbox" => {}
-            _ => read_default(name, item, line, &mut tables.defaults, &at, &mut problem),
+            _ => read_default(
+                name,
+                item,
+                line,
+                &mut tables.defaults,
+                &at,
+                &mut problem,
+                &mut warn,
+            ),
         }
     }
+    tables.warnings = warnings;
     (tables, problems)
 }
 
-/// One `[policy]` default: `template`, a family's mode, or the `guards` table of them.
+/// One `[policy]` default: `template`, a family's mode, or the `guards` table of them. An
+/// unknown template reads as `strict` and an unknown mode as `enforce`, with a warning: the
+/// file is not broken by it, so its level keeps its other words and its rules (§5.1, Q308a).
 fn read_default(
     name: &str,
     item: &toml_edit::Item,
@@ -429,54 +455,64 @@ fn read_default(
     defaults: &mut Defaults,
     at: &dyn Fn(&toml_edit::Key, &toml_edit::Item) -> usize,
     problem: &mut dyn FnMut(usize, String),
+    warn: &mut dyn FnMut(usize, String),
 ) {
     if name == "guards"
         && let Some(guards) = item.as_table_like()
     {
         for (k, v) in guards.iter() {
             let (key, _) = guards.get_key_value(k).expect("a key it iterates");
-            read_default(&format!("guards.{k}"), v, at(key, v), defaults, at, problem);
+            read_default(
+                &format!("guards.{k}"),
+                v,
+                at(key, v),
+                defaults,
+                at,
+                problem,
+                warn,
+            );
         }
         return;
     }
     let word = item.as_str();
     if name == "template" {
-        match word.and_then(Template::parse) {
-            Some(value) => defaults.template = Some(Said { value, line }),
-            None => problem(
+        let value = word.and_then(Template::parse).unwrap_or_else(|| {
+            warn(
                 line,
                 format!(
-                    "template = {} is not one of open, watch, hold, team or strict",
+                    "template = {} is not one of open, watch, hold, team or strict, so it reads as strict",
                     item.to_string().trim()
                 ),
-            ),
-        }
+            );
+            Template::Strict
+        });
+        defaults.template = Some(Said { value, line });
         return;
     }
     if name == "sandbox" || !FAMILIES.contains(&name) {
         problem(line, format!("\"{name}\" is no key of [policy]"));
         return;
     }
-    match word.and_then(Mode::parse) {
-        Some(value) => {
-            defaults.modes.insert(name.to_owned(), Said { value, line });
-        }
-        None => problem(
+    let value = word.and_then(Mode::parse).unwrap_or_else(|| {
+        warn(
             line,
             format!(
-                "\"{name}\" = {} is not one of off, log or enforce",
+                "\"{name}\" = {} is not one of off, log or enforce, so it is enforced",
                 item.to_string().trim()
             ),
-        ),
-    }
+        );
+        Mode::Enforce
+    });
+    defaults.modes.insert(name.to_owned(), Said { value, line });
 }
 
-/// `[policy.rules]`: each rule's mode, by `@id`.
+/// `[policy.rules]`: each rule's mode, by `@id`; an unknown mode is enforced, with a warning.
 fn read_rule_modes(
     item: &toml_edit::Item,
     into: &mut BTreeMap<String, Said<Mode>>,
     at: &dyn Fn(&toml_edit::Key, &toml_edit::Item) -> usize,
     problem: &mut dyn FnMut(usize, String),
+    warn: &mut dyn FnMut(usize, String),
 ) {
     let Some(rules) = item.as_table_like() else {
         problem(1, "[policy.rules] is not a table".into());
@@ -485,18 +521,17 @@ fn read_rule_modes(
     for (id, v) in rules.iter() {
         let (key, _) = rules.get_key_value(id).expect("a key it iterates");
         let line = at(key, v);
-        match v.as_str().and_then(Mode::parse) {
-            Some(value) => {
-                into.insert(id.to_owned(), Said { value, line });
-            }
-            None => problem(
+        let value = v.as_str().and_then(Mode::parse).unwrap_or_else(|| {
+            warn(
                 line,
                 format!(
-                    "\"{id}\" = {} is not one of off, log or enforce",
+                    "\"{id}\" = {} is not one of off, log or enforce, so it is enforced",
                     v.to_string().trim()
                 ),
-            ),
-        }
+            );
+            Mode::Enforce
+        });
+        into.insert(id.to_owned(), Said { value, line });
     }
 }
 
@@ -508,11 +543,12 @@ fn strings(item: &toml_edit::Item) -> Option<Vec<String>> {
         .collect()
 }
 
-/// `[policy.sets]`: each named set's members.
+/// `[policy.sets]`: each named set's members, and its line.
 fn read_sets(
     item: &toml_edit::Item,
-    into: &mut BTreeMap<String, Vec<String>>,
+    tables: &mut Tables,
     line: usize,
+    at: &dyn Fn(&toml_edit::Key, &toml_edit::Item) -> usize,
     problem: &mut dyn FnMut(usize, String),
 ) {
     let Some(sets) = item.as_table_like() else {
@@ -520,9 +556,12 @@ fn read_sets(
         return;
     };
     for (name, v) in sets.iter() {
+        let (key, _) = sets.get_key_value(name).expect("a key it iterates");
+        let line = at(key, v);
         match strings(v) {
             Some(members) => {
-                into.insert(name.to_owned(), members);
+                tables.sets.insert(name.to_owned(), members);
+                tables.set_lines.insert(name.to_owned(), line);
             }
             None => problem(line, format!("the set \"{name}\" is not a list of strings")),
         }
@@ -693,34 +732,74 @@ fn owner_of_place(place: Level, organisation: &str) -> String {
     }
 }
 
-/// A problem as a Notice, `then` saying what follows from it.
-fn problem_notice(problem: Problem, place: Level, organisation: &str, then: &str) -> Notice {
+/// A problem as a Notice, `then` saying what follows from it. The rule it names is given its own
+/// level and owner where it was read (one of `read`), else its file's place's.
+fn problem_notice(
+    problem: Problem,
+    place: Level,
+    organisation: &str,
+    then: &str,
+    read: &[Rule],
+) -> Notice {
     let rules = problem
         .rule
         .iter()
-        .map(|id| Named {
-            id: id.clone(),
-            level: place,
-            owner: owner_of_place(place, organisation),
-            file: problem.file.clone(),
-            line: problem.line,
+        .map(|id| {
+            match read
+                .iter()
+                .find(|r| &r.id == id && r.file == problem.file && r.line == problem.line)
+            {
+                Some(rule) => named(rule, organisation),
+                None => Named {
+                    id: id.clone(),
+                    level: place,
+                    owner: owner_of_place(place, organisation),
+                    file: problem.file.clone(),
+                    line: problem.line,
+                },
+            }
         })
         .collect();
     Notice {
-        what: format!("{}. {then}", problem.what),
+        what: if then.is_empty() {
+            problem.what
+        } else {
+            format!("{}. {then}", problem.what)
+        },
         file: problem.file,
         line: problem.line,
         rules,
     }
 }
 
-/// One level's files, read: its tables and its rules, or its problems.
+/// One level's files, read: its tables and its rules, and what is wrong with them.
+struct Read {
+    tables: Tables,
+    rules: Vec<Rule>,
+    /// What breaks the level; none where it reads.
+    problems: Vec<Problem>,
+}
+
+impl Read {
+    /// The warnings and problems as Notices, the problems saying `then`.
+    fn notices(&mut self, place: Level, organisation: &str, then: &str) -> Vec<Notice> {
+        let warnings = std::mem::take(&mut self.tables.warnings)
+            .into_iter()
+            .map(|warning| problem_notice(warning, place, organisation, "", &self.rules));
+        let problems = std::mem::take(&mut self.problems)
+            .into_iter()
+            .map(|problem| problem_notice(problem, place, organisation, then, &self.rules));
+        warnings.chain(problems).collect()
+    }
+}
+
+/// One level's files, read.
 fn read_level(
     settings: Option<(&str, &str)>,
     rules: Option<(&str, &str)>,
     place: Level,
     sources: &Sources<'_>,
-) -> Result<(Tables, Vec<Rule>), Vec<Problem>> {
+) -> Read {
     let mut problems = Vec::new();
     let tables = match settings {
         Some((file, text)) => {
@@ -752,11 +831,11 @@ fn read_level(
         },
         None => Vec::new(),
     };
-    if problems.is_empty() {
-        Ok((tables, rules))
-    } else {
-        problems.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
-        Err(problems)
+    problems.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+    Read {
+        tables,
+        rules,
+        problems,
     }
 }
 
@@ -782,6 +861,52 @@ fn actions_of(rule: &Rule) -> BTreeSet<String> {
     }
 }
 
+/// The key of `locks` a rule is on, if any: one of its families, or one of its actions.
+fn locked_key(rule: &Rule, locks: &Locks) -> Option<(&'static str, String)> {
+    let family = super::families_of(&rule.policy)
+        .into_iter()
+        .find(|f| locks.families.contains(*f))
+        .map(|f| ("families", f.to_owned()));
+    family.or_else(|| {
+        actions_of(rule)
+            .into_iter()
+            .find(|a| locks.actions.contains(a))
+            .map(|a| ("actions", a))
+    })
+}
+
+/// Whether setting `rule` to `wanted` where it runs `theirs` loosens: a forbid loosens as its
+/// mode falls, a permit as it rises.
+fn loosens(rule: &Rule, wanted: Mode, theirs: Mode) -> bool {
+    if rule.policy.effect() == Effect::Permit {
+        wanted > theirs
+    } else {
+        wanted < theirs
+    }
+}
+
+/// The named sets whose rules forbid what is in them, so a member added tightens. Every other
+/// set (`known-hosts`, `allowed-skills`, any a level names itself) may be one a rule lets
+/// through, so the project never adds to an Organisation's (§4.4: a lower level only tightens).
+const SETS_WIDENING_TIGHTENS: [&str; 3] =
+    ["protected-branches", "production-hosts", "secret-stores"];
+
+/// **The rules, assembled into a policy**, or, where the policy set refuses them, the policy of
+/// `fallback`: the shipped default with the Organisation's rules, so the Organisation's forbids
+/// still bind (review of #7132, S4). The problem is returned to be told.
+fn assemble_or_fallback(rules: Vec<Rule>, fallback: Vec<Rule>) -> (Policy, Option<Problem>) {
+    match assemble(rules) {
+        Ok(policy) => (policy, None),
+        Err(problem) => {
+            let policy = assemble(fallback).unwrap_or_else(|_| {
+                assemble(read_file(&File::shipped_default()).unwrap_or_default())
+                    .expect("the shipped default assembles")
+            });
+            (policy, Some(problem))
+        }
+    }
+}
+
 /// **Loads every level's files** (spec §4, §5).
 pub fn load(sources: &Sources<'_>) -> Loaded {
     let mut notices = Vec::new();
@@ -802,31 +927,28 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         );
         let settings = org.settings.map(|text| (org_files.0.as_str(), text));
         let rules = org.rules.map(|text| (org_files.1.as_str(), text));
-        match read_level(settings, rules, Level::Organisation, sources) {
-            Ok((tables, rules)) => {
-                org_tables = tables;
-                org_rules = rules;
-            }
-            Err(problems) => {
-                broken = true;
-                for problem in problems {
-                    notices.push(problem_notice(
-                        problem,
-                        Level::Organisation,
-                        org_owner,
-                        "The Organisation's file is broken, so it reads as strict with every lock, under the full sandbox",
-                    ));
-                }
-                org_tables = Tables::strict();
-                org_tables.locks = Locks::every();
-            }
+        let mut read = read_level(settings, rules, Level::Organisation, sources);
+        let is_broken = !read.problems.is_empty();
+        notices.extend(read.notices(
+            Level::Organisation,
+            org_owner,
+            "The Organisation's file is broken, so it reads as strict with every lock, under the full sandbox",
+        ));
+        if is_broken {
+            broken = true;
+            org_tables = Tables::strict();
+            org_tables.locks = Locks::every();
+        } else {
+            org_tables = read.tables;
+            org_rules = read.rules;
         }
     }
 
-    // ── the Project, at the plane root's HEAD ────────────────────────────────────────────
+    // ── the Project, at the plane root's HEAD, both files of one commit ──────────────────
     let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
-    let committed_settings = committed_text(sources.root, &names);
-    let committed_rules = committed_text(sources.root, &[RULES_FILE]);
+    let mut committed = committed_files(sources.root, &[&names, &[RULES_FILE]]);
+    let committed_rules = committed.pop().expect("an answer for the rules");
+    let committed_settings = committed.pop().expect("an answer for the project file");
     let accepted = sources.accepted.as_ref();
     let accepted_names = (
         format!("{} (the copy you last accepted)", names[0]),
@@ -838,23 +960,21 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         };
         let settings = accepted.settings.map(|t| (accepted_names.0.as_str(), t));
         let rules = accepted.rules.map(|t| (accepted_names.1.as_str(), t));
-        match read_level(settings, rules, Level::Project, sources) {
-            Ok(read) => read,
-            Err(problems) => {
-                for problem in problems {
-                    notices.push(problem_notice(
-                        problem,
-                        Level::Project,
-                        org_owner,
-                        "The copy you last accepted does not read either, so the project reads as strict",
-                    ));
-                }
-                (Tables::strict(), Vec::new())
-            }
+        let mut read = read_level(settings, rules, Level::Project, sources);
+        let is_broken = !read.problems.is_empty();
+        notices.extend(read.notices(
+            Level::Project,
+            org_owner,
+            "The copy you last accepted does not read either, so the project reads as strict",
+        ));
+        if is_broken {
+            (Tables::strict(), Vec::new())
+        } else {
+            (read.tables, read.rules)
         }
     };
     let (project_tables, project_rules) = match (&committed_settings, &committed_rules) {
-        (Committed::Unread(why), _) | (_, Committed::Unread(why)) => {
+        (Committed::Unread { file, why }, _) | (_, Committed::Unread { file, why }) => {
             broken = true;
             let then = if accepted.is_some() {
                 "the copy you last accepted runs in its place, under the full sandbox"
@@ -862,7 +982,8 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
                 "the project reads as strict, under the full sandbox"
             };
             notices.push(Notice {
-                file: RULES_FILE.into(),
+                // The file that did not read, or the repository where the commit did not.
+                file: file.unwrap_or(".git").to_owned(),
                 line: 1,
                 what: format!("{why}: {then}"),
                 rules: Vec::new(),
@@ -900,28 +1021,28 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             };
             let settings = text(settings);
             let rules = text(rules);
-            match read_level(
+            let mut read = read_level(
                 settings.as_ref().map(|(f, t)| (*f, t.as_str())),
                 rules.as_ref().map(|(f, t)| (*f, t.as_str())),
                 Level::Project,
                 sources,
-            ) {
-                Ok(read) => read,
-                Err(problems) => {
-                    broken = true;
-                    let then = if accepted.is_some() {
-                        "The file is broken: the copy you last accepted runs in its place, under the full sandbox"
-                    } else {
-                        "The file is broken: the project reads as strict, under the full sandbox"
-                    };
-                    for problem in problems {
-                        notices.push(problem_notice(problem, Level::Project, org_owner, then));
-                    }
-                    read_accepted(&mut notices)
-                }
+            );
+            let is_broken = !read.problems.is_empty();
+            let then = if accepted.is_some() {
+                "The file is broken: the copy you last accepted runs in its place, under the full sandbox"
+            } else {
+                "The file is broken: the project reads as strict, under the full sandbox"
+            };
+            notices.extend(read.notices(Level::Project, org_owner, then));
+            if is_broken {
+                broken = true;
+                read_accepted(&mut notices)
+            } else {
+                (read.tables, read.rules)
             }
         }
     };
+    let mut project_tables = project_tables;
 
     // The project file's name, as committed, for the Notices about what it says.
     let project_file: &str = match &committed_settings {
@@ -930,7 +1051,11 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
     };
 
     // ── the rules, layered ───────────────────────────────────────────────────────────────
+    let shipped = File::shipped_default().name;
     let mut rules: Vec<Rule> = read_file(&File::shipped_default()).unwrap_or_default();
+    // What runs where the policy can't be assembled: the shipped default and the
+    // Organisation's rules, as the Organisation's own modes leave them (S4).
+    let mut fallback = Vec::new();
     for rule in org_rules.into_iter().chain(project_rules) {
         match rules.iter_mut().find(|held| held.id == rule.id) {
             None => rules.push(rule),
@@ -964,9 +1089,17 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             }),
         }
     }
+    fallback.extend(
+        rules
+            .iter()
+            .filter(|rule| rule.file == shipped || rule.level == Level::Organisation)
+            .cloned(),
+    );
 
     // ── locks: a lower permit on a locked key is dropped (Q310.5) ────────────────────────
-    let shipped = File::shipped_default().name;
+    // The shipped default's one permit, `policy-everything-else`, is on every key, so it is
+    // left alone: dropping it would deny everything under any one lock. Its modes obey the
+    // locks below.
     for (level, tables, file) in [
         (Level::Organisation, &org_tables, org_files.0.as_str()),
         (Level::Project, &project_tables, project_file),
@@ -977,15 +1110,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             {
                 return true;
             }
-            let family = super::families_of(&rule.policy)
-                .into_iter()
-                .find(|f| locks.families.contains(*f))
-                .map(|f| ("families", f.to_owned()));
-            let action = actions_of(rule)
-                .into_iter()
-                .find(|a| locks.actions.contains(a))
-                .map(|a| ("actions", a));
-            let Some((key, what)) = family.or(action) else {
+            let Some((key, what)) = locked_key(rule, locks) else {
                 return true;
             };
             notices.push(Notice {
@@ -1003,8 +1128,30 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         });
     }
 
-    // ── rule modes: each reaches its own level's rules and below (§5.1) ──────────────────
+    // ── a locked family runs enforced (§4.4, Q308a) ──────────────────────────────────────
+    for (tables, file) in [
+        (&org_tables, org_files.0.as_str()),
+        (&project_tables, project_file),
+    ] {
+        for (family, said) in &tables.defaults.modes {
+            if tables.locks.families.contains(family) && said.value < Mode::Enforce {
+                notices.push(Notice {
+                    file: file.to_owned(),
+                    line: said.line,
+                    what: format!(
+                        "\"{family}\" = \"{}\" is locked, and a locked family never runs below enforce, so it is enforced",
+                        said.value.word()
+                    ),
+                    rules: Vec::new(),
+                });
+            }
+        }
+    }
+
+    // ── rule modes: each reaches its own level's rules and below, and only tightens what a
+    //    higher level set or locked (§4.4, §5.1) ─────────────────────────────────────────
     let mut rule_modes: BTreeMap<String, Mode> = BTreeMap::new();
+    let mut fallback_modes: BTreeMap<String, Mode> = BTreeMap::new();
     for (level, tables, file) in [
         (Level::Organisation, &org_tables, org_files.0.as_str()),
         (Level::Project, &project_tables, project_file),
@@ -1038,6 +1185,39 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
                             rules: vec![named(rule, org_owner)],
                         });
                     }
+                    // Below the Organisation, a mode only tightens what the Organisation set,
+                    // and never loosens a rule on a key it locked.
+                    if level > Level::Organisation {
+                        let theirs = rule_modes.get(id).copied();
+                        let held = theirs.unwrap_or(Mode::Enforce);
+                        let lock = locked_key(rule, &org_tables.locks);
+                        if loosens(rule, mode, held) && (theirs.is_some() || lock.is_some()) {
+                            let why = match (theirs, lock) {
+                                (Some(theirs), _) => format!(
+                                    "{} sets it to \"{}\", and a lower level only tightens",
+                                    owner_of_place(Level::Organisation, org_owner),
+                                    theirs.word()
+                                ),
+                                (None, Some((_, what))) => format!(
+                                    "\"{what}\" is locked by {}",
+                                    owner_of_place(Level::Organisation, org_owner)
+                                ),
+                                (None, None) => unreachable!("one of the two holds"),
+                            };
+                            notices.push(Notice {
+                                file: file.to_owned(),
+                                line: said.line,
+                                what: format!(
+                                    "[policy.rules] \"{id}\" = \"{}\" would loosen the rule: {why}, so it is ignored",
+                                    said.value.word()
+                                ),
+                                rules: vec![named(rule, org_owner)],
+                            });
+                            continue;
+                        }
+                    } else {
+                        fallback_modes.insert(id.clone(), mode);
+                    }
                     rule_modes.insert(id.clone(), mode);
                 }
             }
@@ -1050,17 +1230,57 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
     let local_name = crate::settings::Which::Local.file_at(sources.root);
     let local = crate::settings::layer_text(sources.root, crate::settings::Which::Local);
     let mut you_tables = Tables::default();
-    if let Some(text) = local.text() {
-        let (tables, problems) = read_tables(text, local_name, Level::You, sources);
+    let local_text = match &local {
+        crate::settings::LayerText::Text(text) => Some(text.as_str()),
+        // A file git would carry is still read: it can only tighten, and dropping it would
+        // lose its tightenings without a word (S3).
+        crate::settings::LayerText::LeftOut { why, text } => {
+            notices.push(Notice {
+                file: local_name.to_owned(),
+                line: 1,
+                what: format!("{why}. It is read all the same, since your own file only tightens"),
+                rules: Vec::new(),
+            });
+            Some(text.as_str())
+        }
+        crate::settings::LayerText::Nothing => {
+            if let Err(e) = sources
+                .root
+                .join(local_name)
+                .symlink_metadata()
+                .and_then(|_| std::fs::read_to_string(sources.root.join(local_name)))
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                notices.push(Notice {
+                    file: local_name.to_owned(),
+                    line: 1,
+                    what: format!(
+                        "your own file could not be read ({e}), so none of its tightenings is in force but those already sealed"
+                    ),
+                    rules: Vec::new(),
+                });
+            }
+            None
+        }
+    };
+    if let Some(text) = local_text {
+        let (mut tables, problems) = read_tables(text, local_name, Level::You, sources);
+        for warning in std::mem::take(&mut tables.warnings) {
+            notices.push(problem_notice(warning, Level::You, org_owner, "", &[]));
+        }
+        let is_broken = !problems.is_empty();
         for problem in problems {
             notices.push(problem_notice(
                 problem,
                 Level::You,
                 org_owner,
-                "It is not read",
+                "It is not read, so none of its tightenings is in force but those already sealed",
+                &[],
             ));
         }
-        you_tables = tables;
+        if !is_broken {
+            you_tables = tables;
+        }
     }
     let mut ignored = |line: usize, spelled: String, theirs: &str| {
         notices.push(Notice {
@@ -1140,13 +1360,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         } else {
             mine.value
         };
-        // A forbid loosens as its mode falls; a permit as it rises.
-        let loosens = if permit {
-            wanted > theirs
-        } else {
-            wanted < theirs
-        };
-        if loosens {
+        if loosens(rule, wanted, theirs) {
             ignored(
                 mine.line,
                 format!("\"{id}\" = \"{}\"", mine.value.word()),
@@ -1164,6 +1378,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
 
     // ── what is off is not in the policy ─────────────────────────────────────────────────
     rules.retain(|rule| rule_modes.get(&rule.id) != Some(&Mode::Off));
+    fallback.retain(|rule| fallback_modes.get(&rule.id) != Some(&Mode::Off));
 
     // ── a lower permit that can never pass a higher forbid (Q318.7) ──────────────────────
     for permit in rules
@@ -1196,31 +1411,55 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         }
     }
 
+    // ── the named sets: the project adds to an Organisation's set only where adding
+    //    tightens (§4.4) ──────────────────────────────────────────────────────────────────
     let mut sets = org_tables.sets.clone();
     for (name, members) in &project_tables.sets {
-        let held = sets.entry(name.clone()).or_default();
-        for member in members {
-            if !held.contains(member) {
-                held.push(member.clone());
-            }
+        let Some(held) = sets.get_mut(name) else {
+            sets.insert(name.clone(), members.clone());
+            continue;
+        };
+        let added: Vec<&String> = members.iter().filter(|m| !held.contains(m)).collect();
+        if added.is_empty() {
+            continue;
+        }
+        if SETS_WIDENING_TIGHTENS.contains(&name.as_str()) {
+            held.extend(added.into_iter().cloned());
+        } else {
+            notices.push(Notice {
+                file: project_file.to_owned(),
+                line: project_tables.set_lines.get(name).copied().unwrap_or(1),
+                what: format!(
+                    "the set \"{name}\" is {}'s, and adding to it could let more through, so {} is left out of it",
+                    owner_of_place(Level::Organisation, org_owner),
+                    added
+                        .iter()
+                        .map(|m| format!("\"{m}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                rules: Vec::new(),
+            });
         }
     }
 
-    // A rule the policy set refuses fails the whole load as broken, never drops alone.
-    let policy = match assemble(rules) {
-        Ok(policy) => policy,
-        Err(problem) => {
-            let shipped = read_file(&File::shipped_default()).unwrap_or_default();
-            notices.push(problem_notice(
-                problem,
-                Level::Project,
-                org_owner,
-                "The policy could not be assembled: the shipped default runs in its place, under the full sandbox",
-            ));
-            broken = true;
-            assemble(shipped).expect("the shipped default assembles")
-        }
-    };
+    // ── the policy: where the set refuses it, strict, keeping the Organisation's rules ──
+    let (policy, refused) = assemble_or_fallback(rules.clone(), fallback);
+    if let Some(problem) = refused {
+        broken = true;
+        notices.push(problem_notice(
+            problem,
+            Level::Project,
+            org_owner,
+            "The policy could not be assembled: the project reads as strict, and only the Organisation's rules and the shipped default run, under the full sandbox",
+            &rules,
+        ));
+        project_tables = Tables {
+            locks: project_tables.locks,
+            ..Tables::strict()
+        };
+        rule_modes = fallback_modes;
+    }
 
     Loaded {
         policy,
@@ -1236,5 +1475,50 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         workspaces: project_tables.workspaces,
         personas: project_tables.personas,
         you,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_policy_the_set_refuses_falls_back_keeping_the_organisations_forbids() {
+        let org = "// purlis-policy 1\n\
+                   @id(\"skills-org-none\")\n\
+                   forbid (principal, action == Action::\"install\", resource);\n";
+        let project = "// purlis-policy 1\n\
+                       @id(\"guards-merge-a\")\n\
+                       forbid (principal, action == Action::\"merge\", resource);\n";
+        let shipped = read_file(&File::shipped_default()).expect("the shipped default");
+        let org = read_file(&File::at(
+            "/etc/purlis/policy.cedar",
+            org,
+            Level::Organisation,
+        ))
+        .expect("the Organisation's rules");
+        let project = read_file(&File::at("policy.cedar", project, Level::Project))
+            .expect("the project's rules");
+        // One @id twice: the set refuses the whole.
+        let mut rules: Vec<Rule> = shipped.clone();
+        rules.extend(org.clone());
+        rules.extend(project.clone());
+        rules.extend(project);
+        let fallback: Vec<Rule> = shipped.into_iter().chain(org).collect();
+
+        let (policy, refused) = assemble_or_fallback(rules, fallback);
+        assert_eq!(
+            refused.and_then(|p| p.rule).as_deref(),
+            Some("guards-merge-a")
+        );
+        assert!(
+            policy.rule("skills-org-none").is_some(),
+            "the Organisation's forbid binds"
+        );
+        assert!(
+            policy.rule("guards-merge-hold").is_some(),
+            "the shipped default runs"
+        );
+        assert!(policy.rule("guards-merge-a").is_none());
     }
 }
