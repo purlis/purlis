@@ -1380,7 +1380,7 @@ fn played_by_the_app(test: &str) -> Option<PathBuf> {
     std::fs::copy(std::env::current_exe().unwrap(), &app).unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let out = purlis_core::forklock::output(
-        Command::new(&app)
+        support::command(&app)
             .args(["--exact", test, "--test-threads=1", "--nocapture"])
             .env(PLAYS_THE_APP, tmp.path()),
     )
