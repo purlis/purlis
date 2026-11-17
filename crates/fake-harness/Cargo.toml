@@ -13,8 +13,18 @@ publish = false
 
 [dependencies]
 clap.workspace = true
-# `--acp` speaks ACP's JSON-RPC lines (`acp.rs`).
+# `--acp` speaks ACP's JSON-RPC lines (`acp.rs`); `--script` reads its turn script and writes
+# each hook's payload and its transcript (`script.rs`).
+serde.workspace = true
 serde_json.workspace = true
+# `--script --dialect codex` reads the hooks it was armed with off its `-c hooks.<Event>=` words,
+# which are TOML, as Codex reads them.
+toml = "1.1"
+# `--script --dialect claude` holds its native tools to the `permissions.deny` rules of the
+# `--settings` it was started with, which are globs, as Claude Code holds them; and matches a
+# hook's matcher that is a pattern, as Claude Code and Codex do.
+glob = "0.3"
+regex = "1"
 # `--leave-terminal` probes charter's own `noterminal::leave`, and opens a terminal after it as
 # the host does, through the same crate.
 purlis-core.workspace = true
@@ -22,6 +32,13 @@ portable-pty.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# `scripted.rs` writes the stand-in `purlis` its hooks run.
+stand-in.workspace = true
+# `under_the_wrap.rs` starts the fake as purlis starts a harness, with T1.1-03's recorder as its
+# hook binary, and compares what it did with T1.1-03's recordings.
+purlis-core = { workspace = true, features = ["test-support", "fenced"] }
+purlis-recordings = { path = "../../tests/recordings" }
+purlis-session-protocol.workspace = true
 
 [lints]
 workspace = true

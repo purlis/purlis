@@ -1,0 +1,13 @@
+diff --git a/crates/purlis-core/src/sandbox/egress.rs b/crates/purlis-core/src/sandbox/egress.rs
+index d7c48733c..3956892c1 100644
+--- a/crates/purlis-core/src/sandbox/egress.rs
++++ b/crates/purlis-core/src/sandbox/egress.rs
+@@ -1635,7 +1635,7 @@ pub(super) fn socks_request(
+             let name = &mut name[..usize::from(len)];
+             client.fill(name, deadline)?;
+             match std::str::from_utf8(name) {
+-                Ok(name) if sent_as_a_name(name) => name.to_owned(),
++                Ok(name) if !name.is_empty() && name.bytes().all(|b| b.is_ascii_graphic()) => name.to_owned(),
+                 _ => return Some(Err(reply::ADDRESS_NOT_SUPPORTED)),
+             }
+         }

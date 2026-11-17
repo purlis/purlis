@@ -927,6 +927,9 @@ pub struct Chats {
     never_started: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
     /// What the app ships that a chat is armed with: its own `charter` and its own plugin.
     shipped: crate::Shipped,
+    /// The one value its chats' confinements wait by where the window starts them (T1.1-01):
+    /// the project's, as its hooks hold it ([`Self::timed_by`]).
+    timings: purlis_core::sandbox::timings::Timings,
     open: Mutex<HashMap<u32, Running>>,
     /// The open chats whose program has ended, their tabs still open (#4202).
     ended: Mutex<std::collections::HashSet<u32>>,
@@ -1869,6 +1872,7 @@ impl Chats {
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
+            timings: purlis_core::sandbox::timings::Timings::production(),
             open: Mutex::new(HashMap::new()),
             ended: Mutex::new(std::collections::HashSet::new()),
             front: Mutex::new(None),
@@ -2603,6 +2607,18 @@ impl Chats {
     /// different program's idea of these events.
     pub fn arming_with(&mut self, shipped: crate::Shipped) {
         self.shipped = shipped;
+    }
+
+    /// **Its chats' confinements wait by `timings`** (T1.1-01): the project's one value, the
+    /// same its hooks' throttle and the window's end of a hold read. Set before any chat starts.
+    pub fn timed_by(&mut self, timings: purlis_core::sandbox::timings::Timings) {
+        self.timings = timings;
+    }
+
+    /// The one value its chats' confinements wait by (T1.1-01).
+    #[cfg(test)]
+    pub fn timings(&self) -> purlis_core::sandbox::timings::Timings {
+        self.timings
     }
 
     /// Keeps each open chat's skill stamp in `skills_now`, which the app's sweep of the levels'
@@ -5729,11 +5745,15 @@ impl Chats {
             )),
             reached: Some(reached),
             asks,
+            timings: self.timings,
         };
         // On a runner, the runner confines it, and its proxy is heard as the one it names.
         let (hearing, composed_hearing) = if on_the_runner {
             (
-                purlis_core::sandbox::plan::Hearing::default(),
+                purlis_core::sandbox::plan::Hearing {
+                    timings: self.timings,
+                    ..purlis_core::sandbox::plan::Hearing::default()
+                },
                 Some(hearing),
             )
         } else {

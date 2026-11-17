@@ -102,7 +102,7 @@ pub fn program(dir: &Path, name: &str, contents: &str) -> PathBuf {
 
 /// What a stand-in Claude Code answers `--version` with: a version the start reads as Claude
 /// Code's, and one that takes purlis's proxy ports (`CLAUDE_CODE_TAKES_PROXY_PORTS`).
-pub const CLAUDE_CODE_VERSION: &str = "2.1.300 (Claude Code)";
+pub const CLAUDE_CODE_VERSION: &str = "2.1.325 (Claude Code)";
 
 /// [`program`], for a stand-in Claude Code: `contents` runs after a first line that answers
 /// `--version` as Claude Code does and ends there, before anything else the script does.

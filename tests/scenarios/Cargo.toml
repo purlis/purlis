@@ -1,0 +1,38 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-scenarios"
+description = "The sandbox scenario cells' format: its JSON Schemas, the reader and the validator the suite and the live checker share (T1.1-05)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The event kinds a cell may name are read from purlis-core's own lists (`kinds.rs`).
+purlis-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The suite's local origins (`net`, T1.1-02): a test CA made new for each run, its HTTPS
+# origins, and the bundle of the system's roots plus it. rustls as purlis-core takes it (ring,
+# no aws-lc); rcgen is the standard certificate generator over the same ring.
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-native-certs = "0.8"
+pem = "4"
+
+[dev-dependencies]
+# The resolver seam (`purlis_core::sandbox::names`) and the proxies built with it, for the
+# seam's own tests. Turned on here, in a dev-dependency, so no shipped build has it.
+purlis-core = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true
+# The cells, pins and leg-report files are checked by their JSON Schemas with the standard
+# validator. No network or file retrieval: every schema is read from `schema/` here.
+# `arbitrary-precision` because purlis-core turns serde_json's on for the whole build.
+jsonschema = { version = "0.61.2", default-features = false, features = ["arbitrary-precision"] }
+
+[lints]
+workspace = true

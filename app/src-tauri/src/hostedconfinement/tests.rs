@@ -79,6 +79,7 @@ struct Heard_ {
 
 fn hearing(heard: &Arc<Heard_>) -> Hearing {
     Hearing {
+        timings: purlis_core::sandbox::timings::Timings::production(),
         refusals: Refusals::telling({
             let heard = Arc::clone(heard);
             Arc::new(move |host: &str, port: u16| {

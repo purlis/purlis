@@ -1,0 +1,6 @@
+http://_dmarc.example.com/
+GET http://_dmarc.example.com/ HTTP/1.1
+Host: _dmarc.example.com
+proxy-connection: close
+Connection: close
+

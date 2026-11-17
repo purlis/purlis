@@ -1491,13 +1491,38 @@ fn a_chat_in_the_queue_for_the_app_s_reasons_alone_is_no_ask() {
 fn a_hold_ends_a_minute_after_it_began_and_one_past_that_is_looked_at_again_soon() {
     // #1709: the hold is the proxy's minute from when the block was first heard. A block heard
     // before its connection was held is still held past that: the window looks again shortly.
-    let hold = purlis_core::sandbox::asks::HOLD.as_secs();
-    assert_eq!(hold_ends(Some(1_000), 1_010), 1_000 + hold);
+    let timings = purlis_core::sandbox::timings::Timings::production();
+    let hold = timings.hold().as_secs();
+    assert_eq!(hold_ends(Some(1_000), 1_010, &timings), 1_000 + hold);
     assert_eq!(
-        hold_ends(Some(1_000), 1_000 + hold),
+        hold_ends(Some(1_000), 1_000 + hold, &timings),
         1_000 + hold + LOOK_AGAIN
     );
-    assert_eq!(hold_ends(None, 2_000), 2_000 + hold);
+    assert_eq!(hold_ends(None, 2_000, &timings), 2_000 + hold);
+}
+
+/// **The window's end of a hold is the board's own hold** (T1.1-01): read from the one
+/// `Timings` value the board holds by, so a board scaled ×0.5 and the window agree on when its
+/// ask ends, and neither reads production's minute.
+#[test]
+fn the_windows_hold_end_follows_the_boards_timings() {
+    use purlis_core::sandbox::timings::Timings;
+    let timings = Timings::scaled(0.5);
+    let board = purlis_core::sandbox::asks::Asks::new(std::sync::Arc::new(|_| {}), &timings);
+    let held = board.holds_for().as_secs();
+    assert_eq!(held, 30, "the board holds for the scaled hold");
+    assert_eq!(hold_ends(Some(1_000), 1_010, &timings), 1_000 + held);
+    assert_eq!(
+        hold_ends(Some(1_000), 1_000 + held, &timings),
+        1_000 + held + LOOK_AGAIN,
+        "past the board's hold, looked at again soon"
+    );
+    assert_eq!(hold_ends(None, 2_000, &timings), 2_000 + held);
+    assert_ne!(
+        hold_ends(None, 2_000, &timings),
+        hold_ends(None, 2_000, &Timings::production()),
+        "not production's minute"
+    );
 }
 
 // A workspace a chat asked the person to remove (qw356).

@@ -234,7 +234,7 @@ export const A_FINDER_LAUNCHS_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
  * other scenario exercises.
  */
 /** What a stand-in Claude Code answers `--version` with, as `stand_in::CLAUDE_CODE_VERSION`. */
-export const CLAUDE_CODE_VERSION = "2.1.300 (Claude Code)";
+export const CLAUDE_CODE_VERSION = "2.1.325 (Claude Code)";
 
 /** The line that answers `--version` as Claude Code, wherever among the words it is asked. */
 const ANSWERS_AS_CLAUDE_CODE = `for word in "$@"; do [ "$word" = --version ] && { echo '${CLAUDE_CODE_VERSION}'; exit 0; }; done`;

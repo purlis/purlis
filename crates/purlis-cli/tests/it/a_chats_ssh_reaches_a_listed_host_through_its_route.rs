@@ -32,7 +32,11 @@ const SSH: &str = "/usr/bin/ssh";
 /// A proxy whose SOCKS port carries `127.0.0.1:<port>` alone: the one way its local-address
 /// check lets this machine be reached.
 fn a_proxy_listing(port: u16) -> Proxy {
-    Proxy::serving(Serving::of(Reach::open(vec![format!("127.0.0.1:{port}")]))).expect("a proxy")
+    Proxy::serving(Serving::of(
+        Reach::open(vec![format!("127.0.0.1:{port}")]),
+        &purlis_core::sandbox::timings::Timings::production(),
+    ))
+    .expect("a proxy")
 }
 
 /// The route's `ssh` to `127.0.0.1:<port>`, asking nothing of anyone and trusting no host key

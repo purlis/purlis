@@ -1,0 +1,7 @@
+http://user@evil.test@example.com/
+GET http://example.com/ HTTP/1.1
+Host: example.com
+Authorization: Basic dXNlckBldmlsLnRlc3Q6
+proxy-connection: close
+Connection: close
+
