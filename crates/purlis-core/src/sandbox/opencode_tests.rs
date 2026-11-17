@@ -174,11 +174,13 @@ fn on_a_linux_kernel_without_landlock_6_an_opencode_chat_is_refused_with_the_ver
         refused.to_string(),
         "this project runs every chat sandboxed, and this machine cannot apply the sandbox: \
          purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), and this kernel does \
-         not have it. Nothing was started. Update to Linux 6.12 or later, start this chat on a \
-         Claude Code profile, or start it without the sandbox from the new-chat picker."
+         not have it. Nothing was started. Update to Linux 6.12 or later, or start this chat \
+         without the sandbox from the new-chat picker."
     );
     // Where policy forbids starting a chat without the sandbox, no way on names it.
-    assert!(!backend::landlock_way_on(false).contains("picker"));
+    assert!(!backend::landlock_way_on(backend::WayOn::Here { opt_out: false }).contains("picker"));
+    // No harness is a way on: every sandboxed chat on Linux runs in the same wrap.
+    assert!(!refused.to_string().contains("profile"));
     // Neither bubblewrap nor socat is asked for: the wrap needs no program.
     assert!(
         for_start(
