@@ -1,7 +1,7 @@
 # Amended 2026-11-17: a GitHub App's wait ends on a code that isn't its own
 
-Proposed by the steward on 2026-11-17, from a person's report, for the person's ruling in the pull
-request that carries it. It changes the Agent identity flow (the amendment of 2026-10-29) and the
+Proposed by the steward on 2026-11-17, from a person's report, and accepted by the person as
+written on 2026-11-18. It changes the Agent identity flow (the amendment of 2026-10-29) and the
 loopback listener of §3 only for that flow. The browser sign-ins of §3 are as they were.
 
 ## What happened
