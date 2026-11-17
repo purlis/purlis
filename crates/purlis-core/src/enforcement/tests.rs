@@ -972,11 +972,14 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
     press(root.path(), &digest_of(root.path())).expect("pressed");
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
-    let blob = the_files_blob(root.path());
-    let kept = std::fs::read(&blob).expect("the blob");
-    std::fs::remove_file(&blob).expect("the blob gone");
+    // `HEAD` names a branch with no commit for a moment, as a git cut short might leave it.
+    let branch = git_in(root.path(), &["symbolic-ref", "HEAD"]);
+    let branch = String::from_utf8(branch.stdout).expect("utf-8");
+    let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
+    assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()), strict());
-    std::fs::write(&blob, kept).expect("the blob back");
+    let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
+    assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     assert!(waiting(root.path()).is_empty());
 }
