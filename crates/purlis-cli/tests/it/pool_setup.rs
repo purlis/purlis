@@ -262,7 +262,7 @@ fn the_doctor_and_setup_refused_in_a_chat_name_a_terminal_outside_purlis_and_the
         .into_owned();
     for (args, command) in [
         (&["doctor", "docker"][..], "pool doctor docker"),
-        (&["setup"][..], "pool setup"),
+        (&["setup", "--json"][..], "pool setup --json"),
     ] {
         let said = refused_in_a_chat(args);
         assert!(said.contains("a terminal outside purlis"), "{said}");

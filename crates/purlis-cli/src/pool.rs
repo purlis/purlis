@@ -182,40 +182,35 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
     };
     match command {
         // A chat doesn't reach this machine's Docker or a runner, so it asks nothing of them.
-        PoolCommand::Setup { name, .. } if in_a_chat => {
-            let mut words = vec!["pool", "setup"];
-            words.extend(name.as_deref());
-            Err(format!(
-                "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. {}",
-                outside_purlis(&words)
-            ))
-        }
-        PoolCommand::Doctor { name } if in_a_chat => Err(format!(
+        PoolCommand::Setup { .. } if in_a_chat => Err(format!(
+            "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. {}",
+            outside_purlis()
+        )),
+        PoolCommand::Doctor { .. } if in_a_chat => Err(format!(
             "purlis pool doctor reaches the pool's machine, which a chat doesn't reach. {}",
-            outside_purlis(&["pool", "doctor", name])
+            outside_purlis()
         )),
         // A chat never chooses which of the person's accounts a pool's runner holds.
-        PoolCommand::AddProfile { .. } if in_a_chat => Err(
-            "Recording a profile on a pool is the person's choice, which a chat doesn't make. \
-             Run it in your own terminal, or use Pool setup in the window."
-                .to_owned(),
-        ),
-        PoolCommand::RemoveProfile { .. } if in_a_chat => Err(
+        PoolCommand::AddProfile { .. } if in_a_chat => Err(format!(
+            "Recording a profile on a pool is the person's choice, which a chat doesn't make. {} \
+             Or use Pool setup in the window.",
+            outside_purlis()
+        )),
+        PoolCommand::RemoveProfile { .. } if in_a_chat => Err(format!(
             "Taking a profile off a pool deletes its sign-in there, which is the person's choice \
-             and not a chat's. Run it in your own terminal, or use Pool setup in the window."
-                .to_owned(),
-        ),
-        PoolCommand::LeftBehind { .. } if in_a_chat => Err(
+             and not a chat's. {} Or use Pool setup in the window.",
+            outside_purlis()
+        )),
+        PoolCommand::LeftBehind { .. } if in_a_chat => Err(format!(
             "The runners left on another engine are read from this machine's pools, and removed \
-             with its Docker, which a chat doesn't reach. Run purlis pool left-behind in your own \
-             terminal."
-                .to_owned(),
-        ),
-        PoolCommand::Add { .. } if in_a_chat => Err(
-            "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
-             own terminal, or use Pool setup in the window."
-                .to_owned(),
-        ),
+             with its Docker, which a chat doesn't reach. {}",
+            outside_purlis()
+        )),
+        PoolCommand::Add { .. } if in_a_chat => Err(format!(
+            "Adding a pool uses this machine's Docker, which a chat doesn't reach. {} Or use Pool \
+             setup in the window.",
+            outside_purlis()
+        )),
         PoolCommand::Add {
             name,
             image,
@@ -369,12 +364,11 @@ pub(crate) fn project_here() -> Option<std::path::PathBuf> {
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
 }
 
-/// Whether `command` writes this machine's pools.
 /// **Where a pool command refused in a chat is run instead, whole, to copy** (finding of
 /// 2026-11-17): purlis's own shell tabs are chats too, so "your own terminal" sent the person to
 /// one that refused again; and a plain terminal may have no `purlis` on its `PATH`, so the command
-/// names this very binary by its path.
-fn outside_purlis(words: &[&str]) -> String {
+/// is this very binary, by its path, with the words it was given, each quoted for a shell.
+fn outside_purlis() -> String {
     let binary = std::env::current_exe()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "purlis".to_owned());
@@ -383,14 +377,15 @@ fn outside_purlis(words: &[&str]) -> String {
     } else {
         ""
     };
-    let command = std::iter::once(binary.as_str())
-        .chain(words.iter().copied())
-        .map(purlis_core::shellseg::shell_quote)
+    let command = std::iter::once(binary)
+        .chain(std::env::args().skip(1))
+        .map(|word| purlis_core::shellseg::shell_quote(&word))
         .collect::<Vec<_>>()
         .join(" ");
     format!("Run it in a terminal outside purlis{terminals}: {command}")
 }
 
+/// Whether `command` writes this machine's pools.
 fn writes_a_pool(command: &PoolCommand) -> bool {
     match command {
         PoolCommand::Add { .. }
