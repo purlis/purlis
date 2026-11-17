@@ -6,4 +6,7 @@
   works out which chat is asking from the processes themselves. A process in a chat could
   previously unset or change its environment so that its git ran without being judged, point it
   at a socket of its own that answered "allowed", or claim to be another chat. Now, if no app
-  answers for a chat, the ask is refused rather than run in the chat (#6995).
+  answers for a chat, the ask is refused rather than run in the chat (#6995). The same holds when the
+  app is busy, slow or older than the question, when a chat copies `purlis` elsewhere, locks a
+  folder of its own, or starts itself in a process namespace of its own: it is refused, never
+  run in the chat.

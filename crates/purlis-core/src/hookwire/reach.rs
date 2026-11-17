@@ -12,20 +12,30 @@
 //! - **Where this process stands** ([`Under`]), read from the kernel: its ancestors, each with
 //!   the program the kernel mapped for it.
 //!   - [`Under::App`]: the whole chain is read, and the app runs above this process. The app is
-//!     the topmost ancestor running the app's program (`purlis-app`, or `purlis` for `purlis
-//!     serve`, installed beside this `purlis`: [`trusted_program`]), with the ancestors that run
-//!     it directly below it (the window and its session host). **The listener must be one of
-//!     those very processes, and the socket is one they hold**: neither the environment nor
-//!     the working directory chooses it. A listener a chat starts, even a real `purlis serve`
-//!     in a plane of its own making, runs below the chat's harness, which is not the app's
-//!     program, so it is never one of them.
+//!     the topmost ancestor running the app's program (`purlis-app`, or a `purlis` that holds a
+//!     plane's hook socket, as `purlis serve` does: [`program_of`]), with the ancestors that run
+//!     purlis directly below it (the window and its session host). What a program is to an ask
+//!     is read from that program alone, never from where this process's own program is, so a
+//!     copy of `purlis` in a chat's folder neither vouches for a program beside it nor makes the
+//!     real app untrusted. **The listener must be one of those very processes, and the socket
+//!     is one it holds** ([`purlis_same_user::admit_host`]): neither the environment nor the
+//!     working directory chooses it. A listener a chat starts, even a real `purlis serve` in a
+//!     plane of its own making or a copy of the app's program, runs below the chat's harness,
+//!     which is not the app's program, so it is never one of them. **Under the app, only the
+//!     app's positive answer that this process is in none of its chats ([`IN_NO_CHAT`]) lets a
+//!     command run here**: an app that is slow, older than the question, full, or holds no hook
+//!     socket leaves it refused.
 //!   - [`Under::NoApp`]: the whole chain is read, and no app runs above. This is no chat's:
 //!     the person's own terminal, where the command runs here.
-//!   - [`Under::Boxed`]: an ancestor, or its program, cannot be read. That is a sandbox's
-//!     boundary (Seatbelt shows a process none it did not start; Landlock refuses the program
-//!     of one outside it), and a sandboxed process is always a chat's. **The socket must be in
-//!     a folder this process may not write** ([`may_not_write`]): nothing the sandbox runs can
-//!     have bound it, and the sandbox's own rule names the one socket it may reach. The
+//!   - [`Under::Boxed`]: an ancestor, or its program, cannot be read, or this process runs in a
+//!     pid namespace of its own, whose first process reads as the top of the chain. That is a
+//!     sandbox's boundary (Seatbelt shows a process none it did not start; Landlock refuses the
+//!     program of one outside it; `unshare -p` hides every process above), and a sandboxed
+//!     process is always a chat's. **The socket must be in a folder a sandbox's rule keeps this
+//!     process from writing** ([`may_not_write`]): one this user owns and may write by its
+//!     permissions, which no flag or access list closes, and which is refused all the same.
+//!     Nothing the sandbox runs can have bound it, and nothing it runs can lift that rule, as it
+//!     can a folder's mode or flags. The
 //!     socket named in `$PURLIS_HOOK_SOCKET`, then the plane's above the working directory, are
 //!     where it knocks; a socket planted anywhere this process may write is refused.
 //! - **Which chat is asking is the app's to say** ([`WhoAmI`]): it answers from the asker's
@@ -134,36 +144,93 @@ pub fn under() -> Under {
     let me = std::process::id();
     let chain = Parents::chain(me);
     // The chain ends below pid 1 only where a parent could not be read; a parent outside this
-    // process's pid namespace reads as 0.
+    // process's pid namespace reads as 0, so the first process of a namespace of its own reads
+    // as the top too, and only the system's own namespace has its top at the system's start.
     let top = chain.last().copied().unwrap_or(me);
-    if !matches!(Parents::of(top), Some(0 | 1)) {
+    if !matches!(Parents::of(top), Some(0 | 1)) || !in_the_system_s_pid_namespace() {
         return Under::Boxed;
     }
     let programs = purlis_same_user::executables_of(&chain, crate::forklock::output);
-    if programs.iter().any(Option::is_none) {
+    let Some(programs) = programs.into_iter().collect::<Option<Vec<PathBuf>>>() else {
         return Under::Boxed;
-    }
-    let ours: Vec<bool> = programs
+    };
+    let mut ran: Vec<Ran> = programs.iter().map(|program| program_of(program)).collect();
+    // A `purlis` above the topmost app is the app only where it holds a plane's hook socket, as
+    // `purlis serve` does; any other is a command the person ran, never an app.
+    let above = ran
         .iter()
-        .map(|program| program.as_deref().is_some_and(trusted_program))
+        .rposition(|it| *it == Ran::App)
+        .map_or(0, |at| at + 1);
+    let purlises: Vec<usize> = (above..ran.len())
+        .filter(|at| ran[*at] == Ran::Purlis)
         .collect();
-    under_of(&chain, &ours)
+    if !purlises.is_empty() {
+        let pids: Vec<u32> = purlises.iter().map(|at| chain[*at]).collect();
+        let held = purlis_same_user::sockets_held_by(&pids, crate::forklock::output);
+        for (at, sockets) in purlises.into_iter().zip(held) {
+            if sockets
+                .iter()
+                .any(|path| path.file_name().is_some_and(|name| name == HOOK_SOCKET))
+            {
+                ran[at] = Ran::Serves;
+            }
+        }
+    }
+    under_of(&chain, &ran)
 }
 
-/// [`under`]'s decision, given this process's chain, parent first, and whether each runs the
-/// app's program: the topmost that does, and the run of them directly below it.
-pub fn under_of(chain: &[u32], ours: &[bool]) -> Under {
-    let Some(topmost) = ours.iter().rposition(|it| *it) else {
+/// What an ancestor's program is to an ask (#6995), read from the program alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ran {
+    /// The app's own program, `purlis-app`.
+    App,
+    /// `purlis`, holding a plane's hook socket: `purlis serve`, the app without a window.
+    Serves,
+    /// `purlis`, holding none: a command, or the app's session host directly below it.
+    Purlis,
+    /// Anything else.
+    Other,
+}
+
+/// [`under`]'s decision, given this process's chain, parent first, and what each runs: the
+/// topmost that is the app ([`Ran::App`] or [`Ran::Serves`]), and the run of purlis's programs
+/// directly below it.
+pub fn under_of(chain: &[u32], ran: &[Ran]) -> Under {
+    let Some(topmost) = ran
+        .iter()
+        .rposition(|it| matches!(it, Ran::App | Ran::Serves))
+    else {
         return Under::NoApp;
     };
     let mut app = vec![chain[topmost]];
     for at in (0..topmost).rev() {
-        if !ours[at] {
+        if ran[at] == Ran::Other {
             break;
         }
         app.push(chain[at]);
     }
     Under::App(app)
+}
+
+/// Whether this process runs in the system's own pid namespace, where its chain can reach the
+/// system's first process. Elsewhere than Linux there is only the one.
+fn in_the_system_s_pid_namespace() -> bool {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        std::fs::read_link("/proc/self/ns/pid")
+            .ok()
+            .is_some_and(|link| the_system_s_pid_namespace(&link))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        true
+    }
+}
+
+/// Whether `link`, what `/proc/self/ns/pid` reads, names the system's own pid namespace: the
+/// kernel gives it the one fixed number, `PROC_PID_INIT_INO`, and every other a fresh one.
+pub fn the_system_s_pid_namespace(link: &Path) -> bool {
+    link == Path::new("pid:[4026531836]")
 }
 
 /// The socket the app binds for the plane above `cwd`, found by the plane's marker
@@ -246,63 +313,102 @@ pub fn reach_from(
             (sockets, Admit::Unwritable)
         }
     };
-    // A sandboxed process is a chat's, whatever its environment says.
-    let a_chat_s = claimed.is_some() || admitted == Admit::Unwritable;
-    let mut answered = None;
-    let mut last_why = None;
+    let mut said = Said::default();
     for socket in knock {
         match asked_at(&socket, &admitted, within) {
             Ok(Asked::Named(reached)) => return Ok(reached),
             Ok(Asked::InNoChat) => {
-                if answered.is_none() {
-                    answered = Some((socket, None));
-                }
+                said.in_no_chat.get_or_insert(socket);
             }
-            // An app older than the question that answered it with something else, and kept
-            // the connection: the claim is put to it there.
+            // An app older than the question, or one that did not answer it in time: with the
+            // connection, where it answered something else and kept it.
             Ok(Asked::Older(kept)) => {
-                if answered.as_ref().is_none_or(|(_, kept)| kept.is_none()) {
-                    answered = Some((socket, kept));
+                if said.older.as_ref().is_none_or(|(_, kept)| kept.is_none()) {
+                    said.older = Some((socket, kept));
                 }
             }
-            Err(Unreached::AppGone(why)) => last_why = Some(why),
+            Err(Unreached::AppGone(why)) => said.unheard = Some(why),
             Err(other) => return Err(other),
         }
     }
-    match (answered, claimed) {
-        // The app says this process runs in none of its chats, or is older than the question:
-        // the environment's chat, where it names one, is put to it, and the app judges it as it
-        // judges every line, by the chat's token and this process's ancestry.
-        (Some((socket, kept)), Some(chat)) => {
-            let stream = match kept {
-                Some(stream) => Ok(stream),
-                None => connect_app(&socket, &admitted),
-            };
-            match stream {
-                Ok(stream) => Ok(Reached {
-                    chat,
-                    token: ChatToken::read(env),
-                    stream,
-                    socket,
-                }),
-                Err(why) if why.kind() == io::ErrorKind::PermissionDenied => {
-                    Err(Unreached::NotTheApp(why.to_string()))
-                }
-                Err(why) => Err(Unreached::AppGone(format!(
-                    "the app at {} went away ({why})",
-                    socket.display()
-                ))),
-            }
+    let Some(chat) = claimed else {
+        return Err(unclaimed(&admitted, said));
+    };
+    // The app says this process runs in none of its chats, or is older than the question: the
+    // environment's chat is put to it, and the app judges it as it judges every line, by the
+    // chat's token and this process's ancestry.
+    let Some((socket, kept)) = said
+        .older
+        .or_else(|| said.in_no_chat.map(|socket| (socket, None)))
+    else {
+        return Err(Unreached::AppGone(said.unheard.unwrap_or_else(|| {
+            "the app that started this chat holds no hook socket".to_owned()
+        })));
+    };
+    let stream = match kept {
+        Some(stream) => Ok(stream),
+        None => connect_app(&socket, &admitted),
+    };
+    match stream {
+        Ok(stream) => Ok(Reached {
+            chat,
+            token: ChatToken::read(env),
+            stream,
+            socket,
+        }),
+        Err(why) if why.kind() == io::ErrorKind::PermissionDenied => {
+            Err(Unreached::NotTheApp(why.to_string()))
         }
-        (Some(_), None) if !a_chat_s => Err(Unreached::NotAChat),
-        (Some((socket, _)), None) => Err(Unreached::AppGone(format!(
-            "the app at {} names no chat this process runs in",
+        Err(why) => Err(Unreached::AppGone(format!(
+            "the app at {} went away ({why})",
             socket.display()
         ))),
-        (None, _) if !a_chat_s => Err(Unreached::NotAChat),
-        (None, _) => Err(Unreached::AppGone(last_why.unwrap_or_else(|| {
-            "the app that started this chat holds no hook socket".to_owned()
-        }))),
+    }
+}
+
+/// What the sockets asked said, where none named the chat.
+#[derive(Default)]
+struct Said {
+    /// The first whose app said this process runs in none of its chats.
+    in_no_chat: Option<PathBuf>,
+    /// One whose app is older than the question, or did not answer it in time.
+    older: Option<(PathBuf, Option<UnixStream>)>,
+    /// Why the last that did not answer did not.
+    unheard: Option<String>,
+}
+
+/// Why no app can be asked for a process whose environment names no chat, given what the
+/// sockets asked said.
+///
+/// **Only the app's own answer that this process runs in none of its chats lets the command run
+/// here** (#6995): under the app ([`Admit::Ancestors`]) every socket asked must have said so. An
+/// app that is slow, full, older than the question, or holds no hook socket says nothing about
+/// this process, which runs under it all the same, so it is refused. A sandboxed process
+/// ([`Admit::Unwritable`]) is a chat's whatever anything says.
+fn unclaimed(admitted: &Admit, said: Said) -> Unreached {
+    let socket = said
+        .in_no_chat
+        .as_deref()
+        .or(said.older.as_ref().map(|(it, _)| it.as_path()));
+    match (
+        admitted,
+        said.in_no_chat.is_some(),
+        said.older.is_some(),
+        said.unheard,
+    ) {
+        (Admit::Ancestors(_), true, false, None) => Unreached::NotAChat,
+        (_, _, _, Some(why)) => Unreached::AppGone(why),
+        (_, _, true, None) => Unreached::AppGone(format!(
+            "the app at {} did not say which chat this process runs in",
+            socket.map_or_else(String::new, |it| it.display().to_string())
+        )),
+        (_, true, false, None) => Unreached::AppGone(format!(
+            "the app at {} names no chat this process runs in",
+            socket.map_or_else(String::new, |it| it.display().to_string())
+        )),
+        (_, false, false, None) => {
+            Unreached::AppGone("the app this process runs under holds no hook socket".to_owned())
+        }
     }
 }
 
@@ -346,6 +452,14 @@ fn asked_at(socket: &Path, admitted: &Admit, within: Duration) -> Result<Asked, 
             socket: socket.to_path_buf(),
         })),
         Ok(None) => Ok(Asked::InNoChat),
+        // The app turned the question away (it serves as many connections as it may): it said
+        // nothing about this process, and is not asked again.
+        Err(why) if why.kind() == io::ErrorKind::ConnectionRefused => {
+            Err(Unreached::AppGone(format!(
+                "the app at {} turned the question away ({why})",
+                socket.display()
+            )))
+        }
         // An app older than the question ends the connection with the sentence it says to a
         // line it cannot read, or ends it unanswered; one that does not answer in time is
         // taken for one too, and a claim is put to it on a connection of its own. One that
@@ -392,6 +506,8 @@ fn whoami(stream: &UnixStream, within: Duration) -> io::Result<Option<YouAre>> {
         Ok(Answer::No { why }) if why == super::UNKNOWN_LINE => {
             Err(io::Error::other("the app is older than the question"))
         }
+        // Any other refusal: the app read no question, and ends the connection.
+        Ok(Answer::No { why }) => Err(io::Error::new(io::ErrorKind::ConnectionRefused, why)),
         // Anything else: an app that answered without reading the question, and listens on.
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -421,9 +537,14 @@ pub enum NotTheApp {
     NotThisUser(purlis_same_user::NotThisUser),
     #[error("the process listening at {path} (pid {pid}) is not the app this process runs under")]
     NotOurApp { pid: u32, path: String },
+    #[error("the process listening at {path} is not the app this process runs under: {why}")]
+    NotOurHost {
+        why: purlis_same_user::NotOurHost,
+        path: String,
+    },
     #[error(
-        "the socket at {path} is in a folder this process may write, so it may be one this chat \
-         bound itself"
+        "the socket at {path} is not in a folder a sandbox keeps this process from writing, so \
+         it may be one this chat bound itself"
     )]
     Writable { path: String },
 }
@@ -432,16 +553,26 @@ pub enum NotTheApp {
 /// `admitted` says: this user's (the kernel's peer credentials: `SO_PEERCRED` on Linux,
 /// `LOCAL_PEERCRED` and `LOCAL_PEERPID` on macOS), and then
 ///
-/// - [`Admit::Ancestors`]: **one of the app's own processes above this one**, by pid. They are
-///   this process's live ancestors, so no other process can hold their numbers now.
-/// - [`Admit::Unwritable`]: at a socket in a folder this process may not write.
+/// - [`Admit::Ancestors`]: **one of the app's own processes above this one, holding the socket
+///   itself** ([`purlis_same_user::admit_host`]). The peer pid alone is a number a listener
+///   that has gone leaves behind, which a later process may be given; the process with it must
+///   hold the listening socket now (or, inside Linux's sandbox, be the one the pidfd names).
+/// - [`Admit::Unwritable`]: at a socket in a folder a sandbox keeps this process from writing
+///   ([`may_not_write`]).
 fn admit(socket: &UnixStream, path: &Path, admitted: &Admit) -> Result<(), NotTheApp> {
     let (uid, pid) = purlis_same_user::peer_process_of(socket)
         .map_err(|why| NotTheApp::NotThisUser(purlis_same_user::NotThisUser::Unidentified(why)))?;
     purlis_same_user::admit_peer(Ok(uid), purlis_same_user::Uid::effective())
         .map_err(NotTheApp::NotThisUser)?;
     match admitted {
-        Admit::Ancestors(app) if app.contains(&pid) => Ok(()),
+        Admit::Ancestors(app) if app.contains(&pid) => {
+            purlis_same_user::admit_host(socket, path, crate::forklock::output).map_err(|why| {
+                NotTheApp::NotOurHost {
+                    why,
+                    path: path.display().to_string(),
+                }
+            })
+        }
         Admit::Ancestors(_) => Err(NotTheApp::NotOurApp {
             pid,
             path: path.display().to_string(),
@@ -453,9 +584,26 @@ fn admit(socket: &UnixStream, path: &Path, admitted: &Admit) -> Result<(), NotTh
     }
 }
 
-/// Whether this process is refused making a file in `folder`: tried, with a name no one else
-/// uses, and removed at once where it was made.
+/// **Whether a sandbox's rule keeps this process from writing in `folder`**, which nothing the
+/// sandbox runs can lift, so nothing it runs bound a socket there.
+///
+/// A folder this process merely cannot write now proves nothing: a chat can `chmod 555` a folder
+/// of its own, set a flag on it (`chflags uchg`), or put an access list on it, after binding a
+/// socket there. So `folder` must be this user's, its mode must let its owner make a file in it,
+/// no flag (macOS) or access list (Linux) may close it, and making a file there, tried with a
+/// name no one else uses and removed at once where it was made, must still be refused by the
+/// error a sandbox gives: Seatbelt's `EPERM` on macOS, Landlock's `EACCES` on Linux. A
+/// read-only mount is not one: a chat can make one of its own folders in a namespace of its own.
 pub fn may_not_write(folder: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(meta) = std::fs::metadata(folder) else {
+        return false;
+    };
+    let ours = meta.is_dir() && meta.uid() == purlis_same_user::Uid::effective().as_raw();
+    if !ours || !its_mode_lets_its_owner_write(meta.mode()) || closed_by_more_than_its_mode(folder)
+    {
+        return false;
+    }
     let mut bytes = [0u8; 8];
     if getrandom::fill(&mut bytes).is_err() {
         return false;
@@ -471,39 +619,103 @@ pub fn may_not_write(folder: &Path) -> bool {
             let _ = std::fs::remove_file(&probe);
             false
         }
-        Err(why) => matches!(
-            why.kind(),
-            io::ErrorKind::PermissionDenied | io::ErrorKind::ReadOnlyFilesystem
-        ),
+        Err(why) => why.raw_os_error().is_some_and(a_sandbox_s_refusal),
     }
 }
 
-/// Whether `exe` is the app's program or this `purlis`, beside this process's own program: what
-/// the app above a chat runs. The code signature is not compared: a development build is signed
-/// ad hoc, with no team to compare, and the program the kernel mapped is the stronger fact.
-///
-/// A test build (`test-support`, which only `cargo test` turns on) also takes a program in the
-/// build's own target folder, where a test plays the app.
-pub fn trusted_program(exe: &Path) -> bool {
-    let Ok(me) = std::env::current_exe().and_then(std::fs::canonicalize) else {
-        return false;
-    };
-    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_owned());
-    let Some(beside) = me.parent() else {
-        return false;
-    };
-    if exe == me {
-        return true;
+/// Whether a folder's `mode` lets its owner make a file in it: write and search.
+pub fn its_mode_lets_its_owner_write(mode: u32) -> bool {
+    mode & 0o300 == 0o300
+}
+
+/// Whether the error number `errno` is the refusal a sandbox gives for making a file: Seatbelt's
+/// `EPERM` on macOS (an access list's is `EACCES`), Landlock's `EACCES` or a filter's `EPERM` on
+/// Linux.
+pub fn a_sandbox_s_refusal(errno: i32) -> bool {
+    if cfg!(target_os = "macos") {
+        errno == libc::EPERM
+    } else {
+        errno == libc::EACCES || errno == libc::EPERM
     }
-    let names = [crate::names::APP_BINARY.write, crate::names::BINARY.write]
-        .into_iter()
-        .chain(crate::names::BINARY.reads.iter().copied());
-    for name in names {
-        if std::fs::canonicalize(beside.join(name)).is_ok_and(|ours| ours == exe) {
-            return true;
+}
+
+/// Whether something besides its mode closes `folder` to writing that its owner may set: a
+/// flag that makes it unchangeable or append-only (macOS), or an access list (Linux).
+fn closed_by_more_than_its_mode(folder: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::macos::fs::MetadataExt;
+        // `UF_IMMUTABLE`, `UF_APPEND`, `SF_IMMUTABLE`, `SF_APPEND`.
+        const CLOSING: u32 = 0x0000_0002 | 0x0000_0004 | 0x0002_0000 | 0x0004_0000;
+        std::fs::metadata(folder).map_or(true, |meta| meta.st_flags() & CLOSING != 0)
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let mut names = vec![0u8; 4096];
+        match rustix::fs::listxattr(folder, &mut names) {
+            Ok(len) => names[..len]
+                .split(|byte| *byte == 0)
+                .any(|name| name.starts_with(b"system.posix_acl")),
+            Err(_) => true,
         }
     }
-    cfg!(feature = "test-support") && exe.starts_with(beside)
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+    {
+        let _ = folder;
+        true
+    }
+}
+
+/// What a program named `name` is to an ask, in a shipped build ([`program_of`]): nothing but its
+/// name decides.
+pub fn program_named(name: &str) -> Ran {
+    let named = |of: crate::names::Name| {
+        std::iter::once(of.write)
+            .chain(of.reads.iter().copied())
+            .any(|it| it == name)
+    };
+    if named(crate::names::APP_BINARY) {
+        Ran::App
+    } else if named(crate::names::BINARY) {
+        Ran::Purlis
+    } else {
+        Ran::Other
+    }
+}
+
+/// **What `exe`, an ancestor's program, is to an ask** (#6995), read from that program alone:
+/// the app's program by its name (`purlis-app`, or the name it had), `purlis` by its, or neither.
+/// Never relative to where this process's own program is, so a copy of `purlis` in a folder a
+/// chat writes neither vouches for a program beside it nor makes the real app a stranger. A
+/// chat's own copy of the app's program runs below the chat's harness, never above the app, and
+/// the app is the topmost ([`under_of`]). The code signature is not compared: a development
+/// build is signed ad hoc, with no team to compare.
+///
+/// **A test build** (`test-support`, which only `cargo test` turns on) believes only programs
+/// of its own build folder, so an app above the test run never stands in for the one a test
+/// plays, and takes any program there for the app's, where a test binary plays it. A test of
+/// this very trust sets `REACH_TRUSTS_ONLY_THE_APP` (read only in a test build), and plays the
+/// app from a copy of itself named as the app's program is.
+pub fn program_of(exe: &Path) -> Ran {
+    let ran = program_named(exe.file_name().and_then(|name| name.to_str()).unwrap_or(""));
+    if !cfg!(feature = "test-support") {
+        return ran;
+    }
+    let build = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .ok()
+        .and_then(|me| me.parent().map(Path::to_path_buf));
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_owned());
+    match build {
+        Some(build) if exe.starts_with(&build) => {
+            if ran == Ran::Other && std::env::var_os("REACH_TRUSTS_ONLY_THE_APP").is_none() {
+                Ran::App
+            } else {
+                ran
+            }
+        }
+        _ => Ran::Other,
+    }
 }
 
 #[cfg(test)]
