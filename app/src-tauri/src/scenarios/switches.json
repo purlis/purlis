@@ -615,7 +615,7 @@
       "reason": "A test build's `Default` for what the app ships: a stand-in `purlis` and an empty plugin in a temp folder, which code that does not name it can run through the trait.",
       "forced": {
         "how": "The scenario host hands the window `Kit::for_the_window`, the `purlis` built apart and the repo's plugin; the kit test asserts its binary is not `Shipped::default()`'s.",
-        "test": "the_scenario_kit_is_what_the_app_ships"
+        "test": "the_scenario_kit_is_what_the_app_shipped_once"
       },
       "covers": {
         "linux": [
@@ -1571,20 +1571,6 @@
       "covers": {
         "linux": [
           "host-process",
-          "linux-release-profile"
-        ],
-        "macos": [
-          "macos-live-check"
-        ]
-      }
-    },
-    {
-      "file": "crates/purlis-core/src/loginitem.rs",
-      "at": "if cfg!(debug_assertions) {",
-      "kind": "switch",
-      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug build names its login items as a development build's, apart from an installed release's. No scenario registers a login item.",
-      "covers": {
-        "linux": [
           "linux-release-profile"
         ],
         "macos": [

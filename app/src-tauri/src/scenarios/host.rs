@@ -210,7 +210,7 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
 /// project says. In a fenced build it seals in memory (`seal::in_memory_for_this_process`), so
 /// the person's press can be kept.
 fn as_the_app() {
-    purlis_core::secrets::keyhold::this_process_is_the_app();
+    // MUTATION (DO NOT MERGE): the scenario's process is not the app.
     purlis_core::secrets::seal::in_memory_for_this_process();
 }
 
