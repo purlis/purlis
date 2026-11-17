@@ -47,8 +47,8 @@
 //! **Where purlis can grant it.** A Claude Code chat on macOS at the full sandbox, whose sandbox
 //! grants a socket by path (`network.allowUnixSockets`) and which reads the file before each
 //! command. Elsewhere the chat gets no wrapper, a declared gap: Claude Code's sandbox on Linux
-//! reaches no unix socket, a wrapped harness's profile does not name the socket yet, and the
-//! floor has no package caches.
+//! reaches no unix socket, a wrapped harness's profile does not name the socket yet (#7062), and
+//! the floor has no package caches.
 
 use std::path::{Path, PathBuf};
 
