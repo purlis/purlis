@@ -206,6 +206,8 @@ macro_rules! app_commands {
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
                 reconnecting::chats_reconnecting,
+                reconnecting::runner_links_down,
+                reconnecting::runner_link_now,
                 freshkept::fresh_runners_kept,
                 freshkept::fetch_fresh_runner_again,
                 freshkept::discard_fresh_runner,

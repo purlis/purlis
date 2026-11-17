@@ -50,6 +50,7 @@
 //! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
 //! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59), and `start_sign_in`, `sign_in_next`, `sign_in_input`, `end_sign_in`, the runner's own sign-in run over the link (1.79) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
+//! | `link_now`, the window's Try now of its host's link to a runner (1.91) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
 //! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.44) | yes | | | | | relayed |
@@ -365,6 +366,9 @@ pub enum Power {
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.
     NameWindow,
+    /// `link_now` (1.91, #7134): the window asks its own host to link to the runner it relays
+    /// the window's link to again now. The window's alone.
+    LinkNow,
     /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.
     RelayTo,
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
