@@ -141,6 +141,7 @@ fn a_file_in_the_runner_chats_workspace_links_and_opens_at_its_line_without_aski
         ReadFrom::Runner {
             runner: "docker-1".into(),
             home: Some(in_app()),
+            identity: Some("1:2".into()),
         }
     );
     assert_eq!((at.line, at.column), (Some(42), Some(7)));
@@ -191,6 +192,7 @@ fn a_file_outside_the_runner_chats_workspace_asks_first_naming_the_runner() {
         ReadFrom::Runner {
             runner: "docker-1".into(),
             home: Some(in_app()),
+            identity: Some("1:2".into()),
         },
         "the ask names the chat's workspace on the runner"
     );
@@ -199,7 +201,13 @@ fn a_file_outside_the_runner_chats_workspace_asks_first_naming_the_runner() {
             .is_none()
     );
 
+    runner.asked.lock().unwrap().clear();
     let opened = links.open(&file("/etc/hosts"), &on_runner(), &asks, Some(&token));
+    assert_eq!(
+        *runner.asked.lock().unwrap(),
+        ["/etc/hosts"],
+        "the answer is one look at the runner: the one that finds the file again"
+    );
     assert!(
         matches!(opened, Opening::Open(Target::File(_))),
         "{opened:?}"
@@ -334,24 +342,61 @@ fn a_runner_chat_with_no_way_to_read_its_runner_links_no_file() {
 }
 
 #[test]
-fn a_file_gone_by_the_time_its_ask_is_answered_is_not_kept_as_opened() {
+fn a_file_the_runner_names_no_identity_for_is_not_kept_as_opened() {
+    let runner = Fake {
+        files: vec![(
+            "/etc/hosts",
+            FileRead::Plain {
+                path: "/etc/hosts".into(),
+                from_workspace: None,
+                home: None,
+                size: 13,
+                version: "13:1700000000".into(),
+                piece: None,
+            },
+        )],
+        ..Fake::default()
+    };
+    let links = links(&runner);
+    let asks = Asks::default();
+    let Opening::Ask {
+        token: Some(token), ..
+    } = links.open(&file("/etc/hosts"), &on_runner(), &asks, None)
+    else {
+        panic!("expected an ask");
+    };
+
+    links.open(&file("/etc/hosts"), &on_runner(), &asks, Some(&token));
+
+    assert!(
+        asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
+            .is_none()
+    );
+}
+
+#[test]
+fn an_answer_given_for_a_file_since_swapped_for_another_opens_nothing() {
     let runner = fake();
     let asks = Asks::default();
-    let Resolved::Link(target) = links(&runner).resolve(&file("/etc/hosts"), &on_runner()) else {
-        panic!("expected a link");
+    let Opening::Ask {
+        token: Some(token), ..
+    } = links(&runner).open(&file("/etc/hosts"), &on_runner(), &asks, None)
+    else {
+        panic!("expected an ask");
     };
-    let gone = Fake {
-        files: Vec::new(),
-        ..runner
+    // The same file in every way but which one it is.
+    let mut another = plain("/etc/hosts", None);
+    if let FileRead::Plain { version, .. } = &mut another {
+        *version = "1:3:13:0.0".into();
+    }
+    let swapped = Fake {
+        files: vec![("/etc/hosts", another)],
+        ..Fake::default()
     };
 
-    super::super::LinkKind::accepted(
-        &RunnerFile::new(Box::new(gone)),
-        &target,
-        &on_runner(),
-        &asks,
-    );
+    let opened = links(&swapped).open(&file("/etc/hosts"), &on_runner(), &asks, Some(&token));
 
+    assert!(!matches!(opened, Opening::Open(_)), "{opened:?}");
     assert!(
         asks.opened_on_runner(&on_runner(), "docker-1", "/etc/hosts")
             .is_none()

@@ -91,13 +91,14 @@ impl LinkKind for RunnerFile {
         if named.starts_with('~') {
             return Resolved::Quiet;
         }
-        let (path, from_workspace, home) = match self.files.look(&named) {
+        let (path, from_workspace, home, version) = match self.files.look(&named) {
             Some(FileRead::Plain {
                 path,
                 from_workspace,
                 home,
+                version,
                 ..
-            }) => (path, from_workspace, home),
+            }) => (path, from_workspace, home, version),
             Some(FileRead::Binary { .. }) => return Resolved::NotALink(RUNNER_BINARY.into()),
             Some(FileRead::TooLarge { .. }) => {
                 return Resolved::NotALink(runner_too_large());
@@ -121,6 +122,7 @@ impl LinkKind for RunnerFile {
                     is: home.workspace.map_or(HomeIs::Project, HomeIs::Workspace),
                     folder: PathBuf::from(home.folder),
                 }),
+                identity: super::onrunner::identity_of(&version).map(str::to_owned),
             },
             in_home: from_workspace.is_some(),
             shown,
@@ -151,26 +153,21 @@ impl LinkKind for RunnerFile {
     }
 
     /// A file outside the workspace opened on an answered ask is kept as opened for the pane on
-    /// that runner, as the file it is now, so its tab may read it there and nothing put in its
-    /// place since.
+    /// that runner, as the file the look that found it again saw, so its tab may read it there
+    /// and nothing put in its place since.
     fn accepted(&self, target: &Target, pane: &Pane, asks: &Asks) {
         let Target::File(file) = target else {
             return;
         };
-        let ReadFrom::Runner { runner, .. } = &file.read_from else {
-            return;
-        };
-        let Some(path) = Path::new(&file.path).to_str() else {
-            return;
-        };
-        if let Some(FileRead::Plain {
-            path: found,
-            version,
+        let ReadFrom::Runner {
+            runner,
+            identity: Some(identity),
             ..
-        }) = self.files.look(path)
-            && found == path
-            && let Some(identity) = super::onrunner::identity_of(&version)
-        {
+        } = &file.read_from
+        else {
+            return;
+        };
+        if let Some(path) = Path::new(&file.path).to_str() {
             asks.keep_opened_on_runner(pane, runner, path, identity);
         }
     }

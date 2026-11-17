@@ -85,8 +85,13 @@ pub enum ReadFrom {
     /// Not in the project: read only once an ask for it was answered.
     Outside,
     /// On the runner the chat runs on, read from there (#6387): by its path there. `home` is
-    /// what the chat counts as its own there, as the runner said it, for an ask to name.
-    Runner { runner: String, home: Option<Home> },
+    /// what the chat counts as its own there, as the runner said it, for an ask to name, and
+    /// `identity` which file it was when the runner found it (`onrunner::identity_of`).
+    Runner {
+        runner: String,
+        home: Option<Home>,
+        identity: Option<String>,
+    },
 }
 
 /// **What a chat counts as its own**: its workspace, or the project for a chat at the project's

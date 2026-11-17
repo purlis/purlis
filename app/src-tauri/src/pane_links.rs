@@ -482,7 +482,7 @@ fn file_at(file: &FileAt) -> LinkFileAt {
 fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
     match target {
         Target::File(file) => match &file.read_from {
-            ReadFrom::Runner { runner, home } => LinkAsk::FileOnRunner {
+            ReadFrom::Runner { runner, home, .. } => LinkAsk::FileOnRunner {
                 runner: runner.clone(),
                 home: home.clone().map(LinkHome::from),
             },
