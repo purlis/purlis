@@ -33,7 +33,7 @@ pub fn task_folder(f: &Fixture, task: &str, ended: bool) -> Cut {
         name: name.to_owned(),
         persona: None,
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     dispatchrecord::open_as(
         &f.plane,
         id.clone(),

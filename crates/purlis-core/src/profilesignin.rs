@@ -192,12 +192,48 @@ mod tests;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Handed {
     pairs: Vec<(String, String)>,
+    /// The vault entry each of `pairs` was read from, in step with it: what a kept screen's mask
+    /// names, and what a launch after a crash reads again to mask it (#6309).
+    entries: Vec<crate::secrets::handedto::Entry>,
 }
 
 impl Handed {
-    /// Each variable and its value, as a caller that read them hands them on.
-    pub fn of(pairs: Vec<(String, String)>) -> Self {
-        Self { pairs }
+    /// Each variable, the vault entry it was read from and its value, as a caller that read
+    /// them hands them on.
+    pub fn of(read: Vec<(String, crate::secrets::handedto::Entry, String)>) -> Self {
+        let mut handed = Self::default();
+        for (variable, entry, value) in read {
+            handed.pairs.push((variable, value));
+            handed.entries.push(entry);
+        }
+        handed
+    }
+
+    /// **Each value as a kept screen knows it to mask** (#6309), under the vault entry it was
+    /// read from; `None` where it could not be known
+    /// ([`crate::secrets::handedto::Known::of`]).
+    pub fn known(&self) -> Option<Vec<crate::secrets::handedto::Known>> {
+        let mut known = Vec::new();
+        for ((_, value), entry) in self.pairs.iter().zip(&self.entries) {
+            known.extend(crate::secrets::handedto::Known::of(&entry.key, value)?);
+        }
+        Some(known)
+    }
+
+    /// The vault entry each value was read from, each sealed with its value for the project at
+    /// `root` ([`crate::secrets::handedto::Named::of`]), never a value: an error where no seal
+    /// can be made.
+    pub fn named(
+        &self,
+        root: &std::path::Path,
+    ) -> std::io::Result<Vec<crate::secrets::handedto::Named>> {
+        self.pairs
+            .iter()
+            .zip(&self.entries)
+            .map(|((_, value), entry)| {
+                crate::secrets::handedto::Named::of(root, entry.clone(), value)
+            })
+            .collect()
     }
 
     /// The variables it sets, never a value.
@@ -238,6 +274,7 @@ pub fn read(
 ) -> Result<Handed, String> {
     use crate::secrets::{brokered, cmd};
     let mut pairs = Vec::with_capacity(credentials.len());
+    let mut entries = Vec::with_capacity(credentials.len());
     let mut resolved = Vec::with_capacity(credentials.len());
     for (variable, reference) in credentials {
         brokered::authorise(ctx, persona, &reference.vault).map_err(|why| {
@@ -335,6 +372,10 @@ pub fn read(
             }
         };
         pairs.push((variable.clone(), value));
+        entries.push(crate::secrets::handedto::Entry::new(
+            &reference.vault,
+            &reference.key,
+        ));
         resolved.push(format!("{}/{}", reference.vault, reference.key));
     }
     // The values are what the record is scrubbed of; it names the entries.
@@ -348,7 +389,7 @@ pub fn read(
             ("vaults", serde_json::json!(resolved)),
         ],
     );
-    Ok(Handed { pairs })
+    Ok(Handed { pairs, entries })
 }
 
 /// **The Secret ask a start was refused on** (#5137): the ask for its profile's credential,

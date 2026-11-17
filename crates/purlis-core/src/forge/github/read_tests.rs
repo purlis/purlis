@@ -169,7 +169,7 @@ fn an_issue_is_read_with_its_type_reason_assignees_relations_boards_and_iteratio
 
 /// Sprint 3 or 9 as `links()` answers it.
 fn sprint(n: u32) -> Iteration {
-    let day = |m, d| chrono::NaiveDate::from_ymd_opt(2026, m, d);
+    let day = |m, d| crate::wallclock::day(2026, m, d);
     match n {
         3 => Iteration {
             forge_ref: Some(ForgeRef("it3".into())),

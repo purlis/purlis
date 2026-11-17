@@ -559,7 +559,7 @@ pub fn place(folder: &Path, declared: &Declared, out: &Path) -> Result<Placed, S
 
 /// **When the data now in place was last good**: the newest write time of the declared data
 /// files there, or none when none is.
-pub fn last_good(folder: &Path, declared: &Declared) -> Option<chrono::DateTime<chrono::Utc>> {
+pub fn last_good(folder: &Path, declared: &Declared) -> Option<jiff::Timestamp> {
     declared
         .data
         .iter()
@@ -567,16 +567,16 @@ pub fn last_good(folder: &Path, declared: &Declared) -> Option<chrono::DateTime<
         .filter(std::fs::Metadata::is_file)
         .filter_map(|meta| meta.modified().ok())
         .max()
-        .map(chrono::DateTime::<chrono::Utc>::from)
+        .map(crate::wallclock::instant)
 }
 
 /// The sentence the bar shows for a run that failed: what happened, and that the data before it
 /// stands, with its date.
-pub fn failed_said(why: &str, last_good: Option<chrono::DateTime<chrono::Utc>>) -> String {
+pub fn failed_said(why: &str, last_good: Option<jiff::Timestamp>) -> String {
     match last_good {
         Some(at) => format!(
             "Regenerate failed: {why}. The data shown is unchanged; last good: {}",
-            at.format("%Y-%m-%d %H:%M UTC")
+            at.strftime("%Y-%m-%d %H:%M UTC")
         ),
         None => format!("Regenerate failed: {why}. Nothing was generated on this machine yet"),
     }

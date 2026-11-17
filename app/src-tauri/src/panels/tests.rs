@@ -867,7 +867,7 @@ fn a_panel_drawn_with_no_charter_beside_the_app_still_draws() {
 // ---- the Sessions panel (SI-8d) ------------------------------------------------------
 
 /// A record of `place`'s, written through the one writer, at 2026-09-28 `h`:00:00.
-fn a_record(root: &Path, place: Place, title: &str, h: u32, conversation: Option<&str>) -> String {
+fn a_record(root: &Path, place: Place, title: &str, h: i8, conversation: Option<&str>) -> String {
     sessionrecord::record(
         root,
         &sessionrecord::New {
@@ -876,8 +876,8 @@ fn a_record(root: &Path, place: Place, title: &str, h: u32, conversation: Option
                    ## How to resume\n\nr\n",
             facts: &sessionrecord::Facts {
                 place,
-                at: chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
-                    .and_then(|d| d.and_hms_opt(h, 0, 0))
+                at: purlis_core::wallclock::day(2026, 9, 28)
+                    .map(|d| d.at(h, 0, 0, 0))
                     .expect("a time"),
                 chat: Some(sessionrecord::ChatFacts {
                     number: 3,
@@ -1058,8 +1058,8 @@ fn a_session_record_names_its_chat_s_number_only_where_that_chat_is_open_here() 
                    ## How to resume\n\nr\n",
             facts: &sessionrecord::Facts {
                 place: Place::Workspace("alpha".to_owned()),
-                at: chrono::NaiveDate::from_ymd_opt(2026, 11, 13)
-                    .and_then(|d| d.and_hms_opt(10, 0, 0))
+                at: purlis_core::wallclock::day(2026, 11, 13)
+                    .map(|d| d.at(10, 0, 0, 0))
                     .expect("a time"),
                 chat: Some(sessionrecord::ChatFacts {
                     number: 3,

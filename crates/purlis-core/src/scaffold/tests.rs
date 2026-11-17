@@ -2030,7 +2030,7 @@ fn adopting_into_a_plane_whose_workspaces_folder_leads_out_of_it_refuses_rather_
     std::fs::create_dir_all(&source).unwrap();
     git(&source, &["init", "-q", "-b", "main"]);
 
-    let refused = adopt_as_workspace(&root, &source, chrono::Utc::now())
+    let refused = adopt_as_workspace(&root, &source, jiff::Timestamp::now())
         .expect_err("no workspace can be made through a link out of the plane");
     assert!(refused.contains("cannot adopt"), "{refused}");
 }
@@ -2050,7 +2050,7 @@ fn a_first_clone_that_fails_leaves_no_repos_folder_and_says_only_what_is_true() 
         &not_a_repo,
         "widget",
         "widget",
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap_err();
 

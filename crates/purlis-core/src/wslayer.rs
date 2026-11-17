@@ -1360,7 +1360,7 @@ pub fn needs_reinit(dir: &Path) -> bool {
 pub fn scaffold(
     plane: &crate::workspaces::Plane,
     name: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     author: &str,
 ) -> Vec<Row> {
     scaffold_as(
@@ -1378,7 +1378,7 @@ pub fn scaffold(
 fn scaffold_as(
     plane: &crate::workspaces::Plane,
     name: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     author: &str,
     sandboxed: bool,
 ) -> Vec<Row> {

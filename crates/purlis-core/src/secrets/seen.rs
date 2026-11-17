@@ -38,7 +38,7 @@ use sha2::Sha256;
 /// The shortest value remembered, in bytes.
 pub const SHORTEST: usize = 4;
 
-type Digest = [u8; 32];
+pub(super) type Digest = [u8; 32];
 
 /// What the process remembers: the digests of the values it read, by their length in bytes.
 struct Seen {
@@ -60,7 +60,7 @@ fn seen() -> MutexGuard<'static, Seen> {
 }
 
 /// The process's keyed digest, made once; `None` where no random key could be made.
-fn keyed() -> Option<&'static Hmac<Sha256>> {
+pub(super) fn keyed() -> Option<&'static Hmac<Sha256>> {
     static KEYED: OnceLock<Option<Hmac<Sha256>>> = OnceLock::new();
     KEYED
         .get_or_init(|| {
@@ -71,7 +71,7 @@ fn keyed() -> Option<&'static Hmac<Sha256>> {
         .as_ref()
 }
 
-fn digest(keyed: &Hmac<Sha256>, bytes: &[u8]) -> Digest {
+pub(super) fn digest(keyed: &Hmac<Sha256>, bytes: &[u8]) -> Digest {
     let mut mac = keyed.clone();
     mac.update(bytes);
     let mut out = [0u8; 32];

@@ -1381,9 +1381,9 @@ fn layout() -> Option<serde_json::Value> {
 
 /// Whether `hours` cover this minute, on this machine's clock.
 fn covers_now(hours: QuietHours) -> bool {
-    use chrono::Timelike;
-    let now = chrono::Local::now();
-    let minute = u16::try_from(now.hour() * 60 + now.minute()).unwrap_or_default();
+    let now = jiff::Zoned::now();
+    let minute =
+        u16::try_from(i32::from(now.hour()) * 60 + i32::from(now.minute())).unwrap_or_default();
     hours.covers(minute)
 }
 

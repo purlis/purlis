@@ -1870,7 +1870,7 @@ mod create_mapping_tests {
             Some(Milestone {
                 forge_ref: Some(ForgeRef("MI_kwDOAcme1".into())),
                 title: "v1".into(),
-                due: chrono::NaiveDate::from_ymd_opt(2026, 10, 31),
+                due: crate::wallclock::day(2026, 10, 31),
             })
         );
     }

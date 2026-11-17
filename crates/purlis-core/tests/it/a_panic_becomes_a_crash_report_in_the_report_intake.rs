@@ -243,8 +243,8 @@ fn a_sent_report_is_kept_ninety_days_and_then_dropped() {
     use purlis_core::report::{Sent, SentTo};
     let home = tempfile::tempdir().unwrap();
     let sent = |days_ago: i64, title: &str| Sent {
-        at: (chrono::Utc::now() - chrono::Duration::days(days_ago))
-            .format("%Y-%m-%dT%H:%M:%SZ")
+        at: (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * days_ago))
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
             .to_string(),
         title: title.into(),
         to: SentTo::Intake,

@@ -219,52 +219,66 @@ pub fn grouped<'a>(hooks: impl Iterator<Item = &'a Handler>) -> Vec<Event<'a>> {
 }
 
 /// The plugin's `hooks/hooks.json`, generated from [`crate::hookreg::HANDLERS`] — the list
-/// `charter hook --list --json` prints — and nothing else. **The plugin owns every charter
-/// hook of a Claude Code chat**: the app's `--settings` arms none, so each word is wired
-/// exactly once (`harness.rs` holds the test).
+/// `charter hook --list --json` prints — **but its guards**. The plugin owns every other charter
+/// hook of a Claude Code chat, and the app's `--settings` arms the guards
+/// ([`crate::hookreg::Handler::guards_a_call`]) and the permission hook, so each word is wired
+/// exactly once (`harness.rs` holds the test). The guards ride on the settings because what a
+/// guard that dies does is the project's policy (#7067), and this file is one for every project.
 ///
 /// The file in the bundle is this, byte for byte — the app crate's test fails on any drift and
 /// its ignored twin rewrites it.
 pub fn hooks_json() -> String {
-    hooks_json_running(
+    hooks_json_of(
+        crate::hookreg::HANDLERS
+            .iter()
+            .filter(|h| !h.guards_a_call()),
         plugin_command,
         "Generated from purlis_core::hookreg (purlis hook --list --json). Do not edit: \
          `cargo test -p purlis-app -- --ignored` rewrites it.",
     )
 }
 
-/// [`hooks_json`], with each hook running `command(word)` — how `charter plugin install`
-/// writes the copy a chat outside the app loads, whose hooks name the binary by its path
-/// because nothing outside the app sets [`BINARY_ENV`].
+/// Every hook of [`crate::hookreg::HANDLERS`], the guards with them, each running
+/// `command(word)` — how `charter plugin install` writes the copy a chat outside the app loads,
+/// whose hooks name the binary by its path because nothing outside the app sets [`BINARY_ENV`].
+/// No app resolves such a chat's policy at its start, so its guards keep Claude Code's default
+/// on a failure, as they always have.
 pub fn hooks_json_running(command: impl Fn(&str) -> String, description: &str) -> String {
-    let events: serde_json::Map<String, serde_json::Value> =
-        grouped(crate::hookreg::HANDLERS.iter())
-            .into_iter()
-            .map(|(event, groups)| {
-                let groups: Vec<serde_json::Value> = groups
-                    .into_iter()
-                    .map(|(matcher, hooks)| {
-                        let hooks: Vec<serde_json::Value> = hooks
-                            .iter()
-                            .map(|hook| {
-                                serde_json::json!({
-                                    "type": "command",
-                                    "command": command(hook.name),
-                                    "timeout": hook.timeout,
-                                })
+    hooks_json_of(crate::hookreg::HANDLERS.iter(), command, description)
+}
+
+fn hooks_json_of<'a>(
+    handlers: impl Iterator<Item = &'a Handler>,
+    command: impl Fn(&str) -> String,
+    description: &str,
+) -> String {
+    let events: serde_json::Map<String, serde_json::Value> = grouped(handlers)
+        .into_iter()
+        .map(|(event, groups)| {
+            let groups: Vec<serde_json::Value> = groups
+                .into_iter()
+                .map(|(matcher, hooks)| {
+                    let hooks: Vec<serde_json::Value> = hooks
+                        .iter()
+                        .map(|hook| {
+                            serde_json::json!({
+                                "type": "command",
+                                "command": command(hook.name),
+                                "timeout": hook.timeout,
                             })
-                            .collect();
-                        let mut group = serde_json::Map::new();
-                        if let Some(matcher) = matcher {
-                            group.insert("matcher".to_owned(), matcher.into());
-                        }
-                        group.insert("hooks".to_owned(), hooks.into());
-                        serde_json::Value::Object(group)
-                    })
-                    .collect();
-                (event.to_owned(), groups.into())
-            })
-            .collect();
+                        })
+                        .collect();
+                    let mut group = serde_json::Map::new();
+                    if let Some(matcher) = matcher {
+                        group.insert("matcher".to_owned(), matcher.into());
+                    }
+                    group.insert("hooks".to_owned(), hooks.into());
+                    serde_json::Value::Object(group)
+                })
+                .collect();
+            (event.to_owned(), groups.into())
+        })
+        .collect();
     let doc = serde_json::json!({
         "description": description,
         "hooks": events,
@@ -300,6 +314,7 @@ mod tests {
         }
         let mut expected: Vec<String> = crate::hookreg::HANDLERS
             .iter()
+            .filter(|h| !h.guards_a_call())
             .map(|h| plugin_command(h.name))
             .collect();
         wired.sort();
@@ -348,16 +363,24 @@ mod tests {
     }
 
     #[test]
-    fn the_hooks_file_groups_the_guard_under_its_matcher() {
-        let doc: serde_json::Value = serde_json::from_str(&hooks_json()).expect("JSON");
-        let guard = &doc["hooks"]["PreToolUse"][0];
-        assert_eq!(guard["matcher"], "Bash");
+    fn the_bundled_hooks_file_carries_no_guard_and_the_installed_copy_carries_all_four() {
+        let bundled: serde_json::Value = serde_json::from_str(&hooks_json()).expect("JSON");
+        assert!(bundled["hooks"].get("PreToolUse").is_none());
+        assert!(bundled["hooks"]["Stop"][0].get("matcher").is_none());
+        let installed: serde_json::Value = serde_json::from_str(&hooks_json_running(
+            |word| command_at(std::path::Path::new("/bin/purlis"), word),
+            "",
+        ))
+        .expect("JSON");
+        let guards = installed["hooks"]["PreToolUse"].as_array().expect("guards");
+        assert_eq!(guards.len(), 4);
+        assert_eq!(guards[0]["matcher"], "Bash");
         assert_eq!(
-            guard["hooks"][0]["command"],
-            "\"${CHARTER_HOOK_BINARY}\" hook pretooluse"
+            guards[0]["hooks"][0]["command"],
+            "'/bin/purlis' hook pretooluse"
         );
-        assert_eq!(guard["hooks"][0]["timeout"], 10);
-        assert!(doc["hooks"]["Stop"][0].get("matcher").is_none());
+        assert_eq!(guards[0]["hooks"][0]["timeout"], 10);
+        assert!(guards[0]["hooks"][0].get("onFailure").is_none());
     }
 
     #[test]

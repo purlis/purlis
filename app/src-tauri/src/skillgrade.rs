@@ -1372,7 +1372,7 @@ pub(crate) fn begin(
         commit: copy.commit.clone(),
         harness: None,
         profile: Some(profile.clone()),
-        ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+        ts: purlis_core::dispatch::stamp(jiff::Timestamp::now()),
         runs: request.runs,
         spent: Spent::default(),
         // A grade a crash ends is still the one the plan named.
@@ -1502,7 +1502,7 @@ pub(crate) fn begin(
                     harness,
                     plugins_off,
                     model: reported,
-                    ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+                    ts: purlis_core::dispatch::stamp(jiff::Timestamp::now()),
                     spent,
                     report,
                     ..under_way.clone()

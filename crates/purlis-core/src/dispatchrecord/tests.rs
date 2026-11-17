@@ -9,10 +9,8 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 fn steward() -> ChatRef {
@@ -2487,9 +2485,9 @@ fn names_dated_after_now_never_push_the_real_records_out_of_a_bounded_read() {
         real.push(open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap());
         std::thread::sleep(std::time::Duration::from_millis(3));
     }
-    let later = chrono::Utc::now() + chrono::Duration::days(365 * 50);
+    let later = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24 * 365 * 50);
     for n in 0..3 {
-        let ms = u64::try_from(later.timestamp_millis()).unwrap() + n;
+        let ms = u64::try_from(later.as_millisecond()).unwrap() + n;
         let id = ulid::Ulid::from_parts(ms, 0).to_string();
         let record = Record {
             id: id.clone(),
@@ -2502,13 +2500,13 @@ fn names_dated_after_now_never_push_the_real_records_out_of_a_bounded_read() {
         .unwrap();
     }
 
-    let (read, unread) = newest(&root, 2, chrono::Utc::now());
+    let (read, unread) = newest(&root, 2, jiff::Timestamp::now());
 
     let ids: Vec<&str> = read.iter().map(|record| record.id.as_str()).collect();
     assert_eq!(ids, [real[1].id.as_str(), real[0].id.as_str()]);
     assert_eq!(unread, 3);
     // Read where there is room after the real ones.
-    assert_eq!(newest(&root, 10, chrono::Utc::now()).0.len(), 5);
+    assert_eq!(newest(&root, 10, jiff::Timestamp::now()).0.len(), 5);
 }
 
 #[test]

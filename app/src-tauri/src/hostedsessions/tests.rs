@@ -411,6 +411,7 @@ fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
     let handed = Opening {
         handed: purlis_core::profilesignin::Handed::of(vec![(
             "AWS_REGION".to_owned(),
+            purlis_core::secrets::handedto::Entry::new("team", "aws-region"),
             "a-region-for-this-test".to_owned(),
         )]),
         ..a_shell("true")

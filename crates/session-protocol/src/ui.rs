@@ -1270,8 +1270,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "chat_by_number",
     "chat_screen",
     // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
-    // only the window's list looks among them.
+    // only the window's list looks among them. Its row opens its chat by its ULID (#6685's
+    // review), the window's as `chat_by_number` is.
     "closed_chats",
+    "chat_by_id",
     // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",

@@ -45,7 +45,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -77,7 +77,7 @@ pub struct Hook<'a> {
     pub env: &'a dyn Fn(&str) -> Option<String>,
     /// The process's directory — the ladders' cwd rung.
     pub cwd: &'a Path,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     /// This machine's name ([`crate::dispatch::host`]): a label, and the name its logs are filed
     /// under only until a device id is minted ([`Hook::log_name`]).
     pub host: &'a str,

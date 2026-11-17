@@ -778,11 +778,11 @@ mod tests {
         .expect("a clone");
     }
 
-    fn session(root: &Path, workspace: &str, minute: u32, title: &str) {
+    fn session(root: &Path, workspace: &str, minute: i8, title: &str) {
         let facts = crate::sessionrecord::Facts {
             place: crate::active::Place::Workspace(workspace.to_owned()),
-            at: chrono::NaiveDate::from_ymd_opt(2026, 10, 4)
-                .and_then(|day| day.and_hms_opt(9, minute, 0))
+            at: crate::wallclock::day(2026, 10, 4)
+                .map(|day| day.at(9, minute, 0, 0))
                 .expect("a time"),
             chat: None,
             persona: None,
@@ -1389,7 +1389,7 @@ mod tests {
                 session(
                     root,
                     NAMES[i],
-                    minute as u32,
+                    minute as i8,
                     &format!("{} record {minute}", NAMES[i]),
                 );
                 vec![store]

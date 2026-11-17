@@ -210,7 +210,7 @@ pub fn keep_current(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<Result<Ready, Refused>> {
     if !engines.in_use() {
         return None;
@@ -224,7 +224,7 @@ fn update(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<Ready, Refused> {
     let (manifest, bundle) = Engines::published(manifests)?;
     engines.update(&manifest, &bundle, settings, archives, now)
@@ -308,7 +308,7 @@ fn check_here() {
         &EngineSettings::default(),
         &manifest_reads(),
         &archive_reads(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     if let Some(checked) = checked {
         report(&checked);
@@ -419,7 +419,7 @@ impl Browsers for EngineBrowsers {
             engines_clock(
                 cfg!(debug_assertions),
                 crate::envvar::var(ENGINES_CLOCK_VAR).as_deref(),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             ),
         )
         .map_err(|refused| download_failed_said(&refused))?;
@@ -528,7 +528,7 @@ fn prepared(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<Ready, Refused> {
     let first = engines.prepare(settings, archives, now);
     let behind = match &first {
@@ -551,22 +551,18 @@ pub const ENGINES_CLOCK_VAR: &str = "PURLIS_TEST_ENGINE_NOW";
 
 /// When the manifest this build ships was issued: the time a test's host names in
 /// [`ENGINES_CLOCK_VAR`], so a refreshed pin needs no test changed.
-pub fn when_the_pin_was_issued() -> chrono::DateTime<chrono::Utc> {
+pub fn when_the_pin_was_issued() -> jiff::Timestamp {
     Manifest::shipped().issued
 }
 
 /// The time an engine's age is judged by: `real`, unless this is a debug build and `asked` is a
 /// time. Handed its facts rather than reading `cfg!` itself, so the rule is testable in both
 /// directions from one build.
-fn engines_clock(
-    debug_build: bool,
-    asked: Option<&str>,
-    real: chrono::DateTime<chrono::Utc>,
-) -> chrono::DateTime<chrono::Utc> {
+fn engines_clock(debug_build: bool, asked: Option<&str>, real: jiff::Timestamp) -> jiff::Timestamp {
     asked
         .filter(|_| debug_build)
-        .and_then(|asked| chrono::DateTime::parse_from_rfc3339(asked).ok())
-        .map_or(real, |asked| asked.to_utc())
+        .and_then(|asked| str::parse::<jiff::Timestamp>(asked).ok())
+        .unwrap_or(real)
 }
 
 /// A fresh id for a browser a window starts (#2207): the window names it, so it knows which

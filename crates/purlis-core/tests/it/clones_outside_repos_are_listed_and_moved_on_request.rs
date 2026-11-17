@@ -249,7 +249,7 @@ fn clones_at_the_root_of_a_workspace_at_the_current_layout_raise_no_layout_notic
     let code = purlis_core::wscmd::reinit::reinit(
         &root,
         purlis_core::wscmd::reinit::Scope::One("alpha"),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "the workspace is brought to the current layout");

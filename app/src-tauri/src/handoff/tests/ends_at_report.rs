@@ -330,7 +330,7 @@ fn a_task_that_ends_after_its_asking_chat_closed_forgets_what_the_two_said() {
         &record.id,
         purlis_core::dispatchtalk::Kind::Note,
         "Still up.",
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("kept");
 

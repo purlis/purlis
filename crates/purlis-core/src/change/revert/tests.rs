@@ -26,8 +26,12 @@ fn git(dir: &Path, args: &[&str]) -> String {
     done.out.trim().to_string()
 }
 
-fn at(second: u32) -> chrono::DateTime<chrono::Utc> {
-    chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 2, 9, 0, second).unwrap()
+fn at(second: i8) -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(9, 0, second, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 struct World {

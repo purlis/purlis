@@ -136,7 +136,7 @@ pub(crate) fn recorded_as(
         brief: task.brief.clone(),
         report_owed: mode == dispatchrecord::Mode::Task,
     };
-    match didnotstart::record(root, task.id.clone(), opening, why, chrono::Utc::now()) {
+    match didnotstart::record(root, task.id.clone(), opening, why, jiff::Timestamp::now()) {
         Ok(record) => {
             held.rows_changed();
             Some(record)
@@ -510,7 +510,7 @@ pub(crate) fn end(held: &Held, id: &str) -> Result<(), String> {
             record,
             &task.why,
             conversation.as_deref(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .map_err(|kept| kept.to_string())
         .and_then(|ended| {

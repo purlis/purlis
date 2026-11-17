@@ -197,7 +197,7 @@ impl Row {
     /// as the grade began: a clock set back since never makes it unsound, so no stamp is too late
     /// here (#3273).
     fn sound(&self) -> bool {
-        let now = chrono::DateTime::<chrono::Utc>::MAX_UTC;
+        let now = jiff::Timestamp::MAX;
         match self {
             Row::Skill(graded) => graded.sound(now),
             Row::Router(graded) => graded.sound(now),

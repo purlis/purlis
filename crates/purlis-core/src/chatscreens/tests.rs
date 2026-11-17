@@ -120,7 +120,7 @@ fn a_project_s_open_keeps_the_screens_its_records_name_and_takes_the_rest() {
         brief: "brief".to_owned(),
         report_owed: true,
     };
-    dispatchrecord::open(&root, opening, chrono::Utc::now()).unwrap();
+    dispatchrecord::open(&root, opening, jiff::Timestamp::now()).unwrap();
     keep(&root, CHAT, "named").unwrap();
     keep(&root, OTHER, "named by nothing").unwrap();
     crate::retention::on_open(&root, std::time::SystemTime::now());

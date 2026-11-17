@@ -72,11 +72,10 @@ mod tests {
     use crate::work::State;
     use crate::workspaces::Plane;
 
-    fn stamp(second: u32) -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 2)
+    fn stamp(second: i8) -> jiff::civil::DateTime {
+        crate::wallclock::day(2026, 10, 2)
             .unwrap()
-            .and_hms_opt(8, 0, second)
-            .unwrap()
+            .at(8, 0, second, 0)
     }
 
     fn stem(path: &std::path::Path) -> String {

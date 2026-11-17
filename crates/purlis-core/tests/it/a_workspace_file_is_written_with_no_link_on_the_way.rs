@@ -24,9 +24,12 @@ use purlis_core::workspaces::{Plane, Workspace};
 const DEVICE: &str = "01K6H0Z8Y3V1N3G4QK0A9T5B7C";
 const THEIRS: &str = "theirs, never to be written\n";
 
-fn when() -> chrono::DateTime<chrono::Utc> {
-    use chrono::TimeZone;
-    chrono::Utc.with_ymd_and_hms(2026, 10, 2, 8, 0, 0).unwrap()
+fn when() -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(8, 0, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 /// A project with workspaces `alpha` and `beta` and a persona, `beta` and the persona holding
@@ -246,7 +249,7 @@ fn the_project_roots_sessions_linked_to_a_workspaces_or_a_personas_takes_no_reco
         let before = outside(&p);
         let facts = sessionrecord::Facts {
             place: Place::PlaneRoot,
-            at: when().naive_utc(),
+            at: when().to_zoned(jiff::tz::TimeZone::UTC).datetime(),
             chat: None,
             persona: None,
             pieces: Vec::new(),

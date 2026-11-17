@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::land::Verdict;
 use super::record::Record;
@@ -57,7 +57,7 @@ pub struct Observed {
 /// Every member of one change, read at one moment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Observation {
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
     pub members: Vec<Observed>,
 }
 
@@ -84,7 +84,7 @@ impl Observation {
 }
 
 /// Ask the forge about every member of `record`, one member's failure costing only itself.
-pub fn observe(plane: &Path, ws: &str, record: &Record, now: DateTime<Utc>) -> Observation {
+pub fn observe(plane: &Path, ws: &str, record: &Record, now: Timestamp) -> Observation {
     let log = landing::landings(plane, ws, &record.change);
     let pending = pending::pendings(plane, ws, &record.change);
     let mut members: Vec<Observed> = record

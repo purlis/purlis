@@ -19,13 +19,15 @@ publish = false
 purlis-core.workspace = true
 clap.workspace = true
 serde_json.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+jiff.workspace = true
 ulid = "3"
 
 [dev-dependencies]
 # Fenced, as every crate's tests are (`purlis-core/src/fence.rs`).
 purlis-core = { workspace = true, features = ["fenced"] }
 tempfile.workspace = true
+# The digest of a whole generated project, to hold its bytes across a change of time crate.
+sha2 = "0.11"
 
 [lints]
 workspace = true

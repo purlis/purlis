@@ -658,7 +658,7 @@ fn workspace_reinit(root: &Path) -> Fixed {
     use crate::wscmd::reinit::{Scope, reinit};
     let mut said: Vec<String> = Vec::new();
     let mut sink = |line: crate::repocmd::Say| said.push(line.to_string());
-    let code = reinit(root, Scope::All, chrono::Utc::now(), &mut sink);
+    let code = reinit(root, Scope::All, jiff::Timestamp::now(), &mut sink);
     // It writes workspace by workspace, so a failure part way is a fix that half-ran, said in
     // `said`, and never a refusal: the workspaces before it were brought up.
     Fixed::Ran {

@@ -354,7 +354,7 @@ pub(super) fn write(
     timestamped: bool,
     kind: &str,
     index: bool,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> io::Result<PathBuf> {
     let store = spot
         .held(Make::All)?
@@ -382,10 +382,10 @@ pub(crate) fn write_in(
     timestamped: bool,
     kind: &str,
     index: bool,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> io::Result<String> {
     let prefix = if timestamped {
-        stamp.format("%Y%m%d-%H%M%S-").to_string()
+        stamp.strftime("%Y%m%d-%H%M%S-").to_string()
     } else {
         String::new()
     };
@@ -728,7 +728,7 @@ pub(super) fn move_one(
     to: &Path,
     timestamped: bool,
     header: &str,
-    now: chrono::NaiveDateTime,
+    now: jiff::civil::DateTime,
     restore_as: Option<&str>,
 ) -> io::Result<PathBuf> {
     let name = md_name(ident);

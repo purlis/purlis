@@ -113,21 +113,19 @@ fn stop_with_crons(board: &mut Board, tasks: Option<&[(&str, &str)]>, crons: &[(
 
 /// Now on the machine's clock, in seconds since 1970.
 fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+    jiff::Timestamp::now().as_second()
 }
 
 /// A five-field cron schedule that fires once a day, `minutes` from now on the local clock.
 fn daily_in(minutes: i64) -> String {
-    use chrono::Timelike;
-    let at = chrono::Local::now() + chrono::Duration::minutes(minutes);
+    let at = jiff::Zoned::now() + jiff::SignedDuration::from_mins(minutes);
     format!("{} {} * * *", at.minute(), at.hour())
 }
 
 /// A one-shot wake-up's schedule, as Claude Code writes one: the minute `minutes` from now on
 /// the local clock, on its day of its month.
 fn once_in(minutes: i64) -> String {
-    use chrono::{Datelike, Timelike};
-    let at = chrono::Local::now() + chrono::Duration::minutes(minutes);
+    let at = jiff::Zoned::now() + jiff::SignedDuration::from_mins(minutes);
     format!(
         "{} {} {} {} *",
         at.minute(),

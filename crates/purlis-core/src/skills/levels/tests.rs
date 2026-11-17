@@ -137,7 +137,7 @@ fn a_workspace_the_app_makes_on_a_chats_request_is_never_vouched_for() {
             force: false,
             repos: &[],
             hosts: None,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             ids: &crate::active::Ids::default(),
         },
         &mut |_| {},

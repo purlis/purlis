@@ -231,8 +231,12 @@ impl World {
 }
 
 /// When every test's landing happens.
-fn when() -> chrono::DateTime<chrono::Utc> {
-    chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 2, 9, 0, 0).unwrap()
+fn when() -> jiff::Timestamp {
+    jiff::civil::date(2026, 10, 2)
+        .at(9, 0, 0, 0)
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 /// The recorded transport over `exchanges`.
@@ -817,7 +821,7 @@ fn a_request_merged_with_no_pending_landing_of_charters_is_never_recorded() {
             MOVED,
             Via::Queue,
             Stage::Asked,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();
@@ -868,7 +872,7 @@ fn a_blocker_charter_queued_and_found_merged_is_recorded_and_lets_its_dependent_
             HEAD,
             Via::Queue,
             Stage::Asked,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
     )
     .unwrap();

@@ -316,10 +316,7 @@ fn a_plane_with_no_reopen_record_is_swept() {
 
 /// A month-old trace of `session` holding one `event`, written the way charter writes one.
 fn traced(root: &Path, session: &str, event: &str) -> PathBuf {
-    let stamp = chrono::NaiveDate::from_ymd_opt(2026, 8, 1)
-        .unwrap()
-        .and_hms_opt(9, 0, 0)
-        .unwrap();
+    let stamp = crate::wallclock::day(2026, 8, 1).unwrap().at(9, 0, 0, 0);
     crate::trace::record_values(
         root,
         session,
@@ -425,7 +422,7 @@ fn a_dispatch_record(root: &Path, asker: Named, worker: Named, age: Duration) ->
             brief: "a brief".into(),
             report_owed: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     let path = crate::dispatchrecord::dir(root).join(format!("{}.json", record.id));
@@ -621,7 +618,7 @@ fn a_dispatch_record_is_collected_thirty_days_after_it_ended_however_lately_it_w
     // its brief and its report another month.
     let (_d, root) = plane();
     let now = SystemTime::now();
-    let ended_at = |age: Duration| chrono::DateTime::<chrono::Utc>::from(now - age);
+    let ended_at = |age: Duration| crate::wallclock::instant(now - age);
     let ended = |age: Duration| {
         let path = a_dispatch_record(&root, (1, None), (2, None), Duration::ZERO);
         let id = path.file_stem().unwrap().to_str().unwrap().to_owned();
@@ -645,7 +642,7 @@ fn a_dispatch_record_is_collected_thirty_days_after_it_ended_however_lately_it_w
     let mut record: crate::dispatchrecord::Record =
         serde_json::from_str(&std::fs::read_to_string(&ahead).unwrap()).unwrap();
     record.ended = Some(crate::dispatch::stamp(
-        chrono::Utc::now() + chrono::Duration::days(400),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24 * 400),
     ));
     std::fs::write(&ahead, serde_json::to_string_pretty(&record).unwrap()).unwrap();
     let file = std::fs::File::options().write(true).open(&ahead).unwrap();
@@ -713,7 +710,7 @@ fn a_record_that_still_owes_its_report_is_kept_thirty_days_from_when_it_became_o
             brief: "a brief".into(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     let thirty_five_days = Duration::from_secs(35 * 24 * 60 * 60);
@@ -728,7 +725,7 @@ fn a_record_that_still_owes_its_report_is_kept_thirty_days_from_when_it_became_o
             }),
             usage: None,
         },
-        chrono::DateTime::<chrono::Utc>::from(now - thirty_five_days),
+        crate::wallclock::instant(now - thirty_five_days),
     )
     .unwrap();
     let path = crate::dispatchrecord::dir(&root).join(format!("{}.json", record.id));

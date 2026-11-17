@@ -273,9 +273,7 @@ fn the_studio_carries_the_projects_personas_each_with_its_role_and_where_it_was_
             brief: String::new(),
             report_owed: true,
         };
-        let now = chrono::DateTime::parse_from_rfc3339(&format!("2026-11-13T09:00:{second:02}Z"))
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = str::parse::<jiff::Timestamp>(&format!("2026-11-13T09:00:{second:02}Z")).unwrap();
         open(&root, opening, now).unwrap();
     };
     dispatch("beta");
@@ -873,9 +871,9 @@ fn make_room_counts_a_skills_runs_of_the_last_30_days_and_none_older() {
          {\"skill\": \"triage\", \"ts\": \"2026-11-05T09:00:00+00:00\"}\n",
     )
     .unwrap();
-    let now = chrono::DateTime::parse_from_rfc3339("2026-11-06T00:00:00+00:00")
+    let now = str::parse::<jiff::Timestamp>("2026-11-06T00:00:00+00:00")
         .unwrap()
-        .timestamp();
+        .as_second();
 
     assert_eq!(
         uses(tmp.path(), u64::try_from(now).unwrap()),
