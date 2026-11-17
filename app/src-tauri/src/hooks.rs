@@ -1962,6 +1962,16 @@ fn offered_to(
         }
         (_, Kind::ProjectState) => brokered(Class::Integrity),
         (_, Kind::ProtectedFile) => brokered(Class::LaterCode),
+        // The person's own credentials (ADR 0067 §5 class 6, Q321): their own way out.
+        (Operation::Read, _)
+            if target
+                .zip(purlis_core::sandbox::Machine::this().home)
+                .is_some_and(|(path, home)| {
+                    purlis_core::sandbox::is_credential(Path::new(path), &home)
+                }) =>
+        {
+            brokered(Class::Credentials)
+        }
         (Operation::Read, _) => brokered(Class::Vaults),
         (
             Operation::Write | Operation::File,

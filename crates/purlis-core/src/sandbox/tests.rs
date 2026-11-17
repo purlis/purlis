@@ -219,7 +219,7 @@ fn paths(denied: &Denied, class: Class, access: Access) -> Vec<std::path::PathBu
 }
 
 #[test]
-fn the_five_classes_are_the_adrs_five() {
+fn the_six_classes_are_the_adrs_six() {
     assert_eq!(
         Class::ALL.map(Class::word),
         [
@@ -227,7 +227,8 @@ fn the_five_classes_are_the_adrs_five() {
             "integrity",
             "human-powers",
             "runner-internals",
-            "later-code"
+            "later-code",
+            "credentials"
         ]
     );
 }

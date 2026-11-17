@@ -1002,15 +1002,21 @@ pub enum Class {
     /// told where one appears another way ([`arrived`]); and the project's manifests where they
     /// could change a chat's sandbox ([`manifests_held`]).
     LaterCode,
+    /// The person's own credentials, outside any vault (ADR 0067 §5 class 6, amended
+    /// 2026-11-16, ruling Q321): an SSH private key in `~/.ssh` and each forge and cloud
+    /// credential file [`CREDENTIAL_FILES`] names, never read, so a chat signs and logs in
+    /// only through what purlis hands it.
+    Credentials,
 }
 
 impl Class {
-    pub const ALL: [Class; 5] = [
+    pub const ALL: [Class; 6] = [
         Class::Vaults,
         Class::Integrity,
         Class::HumanPowers,
         Class::RunnerInternals,
         Class::LaterCode,
+        Class::Credentials,
     ];
 
     /// The word a refusal and the audit name the class by.
@@ -1021,8 +1027,89 @@ impl Class {
             Self::HumanPowers => "human-powers",
             Self::RunnerInternals => "runner-internals",
             Self::LaterCode => "later-code",
+            Self::Credentials => "credentials",
         }
     }
+}
+
+/// **The forge and cloud credential files no sandboxed chat reads**, each under the home and
+/// with what is below it (ADR 0067 §5 class 6, ruling Q321): git's stored passwords and
+/// `.netrc`, AWS's, gcloud's credentials database and legacy files, Azure's folder, Docker's
+/// registry logins, and gh's and glab's tokens. A chat at the full sandbox or the floor gets a
+/// forge token only through purlis's vault.
+pub const CREDENTIAL_FILES: &[&str] = &[
+    ".git-credentials",
+    ".netrc",
+    ".aws/credentials",
+    ".config/gcloud/credentials.db",
+    ".config/gcloud/legacy_credentials",
+    ".azure",
+    ".docker/config.json",
+    ".config/gh/hosts.yml",
+    ".config/glab-cli/config.yml",
+];
+
+/// **The names an SSH private key has by default** (`ssh-keygen`'s, and `ssh`'s own identity
+/// files), denied whether or not they are there, so a key made while a chat runs is held.
+pub const SSH_KEY_NAMES: &[&str] = &[
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ecdsa_sk",
+    "id_ed25519",
+    "id_ed25519_sk",
+    "id_xmss",
+    "identity",
+];
+
+/// **What `~/.ssh` holds that is no secret**, read by `ssh` and `git` to work through an agent.
+const SSH_OPEN: &[&str] = &["config", "config.d", "allowed_signers", "environment", "rc"];
+
+/// **The SSH private keys in `ssh`**, the folder `~/.ssh` (ruling Q321): every name of
+/// [`SSH_KEY_NAMES`], there or not, and every other entry directly in it as the chat starts,
+/// but what holds no secret: a public key, `known_hosts*`, `authorized_keys*` and [`SSH_OPEN`].
+/// A key named otherwise and added after the start is a stated residual.
+fn ssh_private_keys(ssh: &Path) -> Vec<PathBuf> {
+    let mut keys: Vec<PathBuf> = SSH_KEY_NAMES.iter().map(|name| ssh.join(name)).collect();
+    let Ok(entries) = std::fs::read_dir(ssh) else {
+        return keys;
+    };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_owned();
+            (!ssh_open(&name)).then(|| entry.path())
+        })
+        .filter(|path| !keys.contains(path))
+        .collect();
+    found.sort();
+    keys.extend(found);
+    keys
+}
+
+/// Whether `name`, directly in `~/.ssh`, holds no secret: a public key, `known_hosts*`,
+/// `authorized_keys*` or one of [`SSH_OPEN`].
+fn ssh_open(name: &str) -> bool {
+    name.ends_with(".pub")
+        || name.starts_with("known_hosts")
+        || name.starts_with("authorized_keys")
+        || SSH_OPEN.contains(&name)
+}
+
+/// **Whether `path` is one of the person's own credentials under `home`** ([`Class::Credentials`]):
+/// what a refused read names, so its Notice says the way that works for a credential rather
+/// than for a vault.
+pub fn is_credential(path: &Path, home: &Path) -> bool {
+    let ssh = home.join(".ssh");
+    if path.parent() == Some(ssh.as_path()) {
+        return path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| !ssh_open(name));
+    }
+    CREDENTIAL_FILES
+        .iter()
+        .any(|file| path.starts_with(home.join(file)))
 }
 
 /// How much of a [`Planted`] name a chat is denied writing.
@@ -2157,6 +2244,9 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
 fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     let ctx = crate::secrets::Ctx::new(root, machine.env.clone());
     let mut paths = Vec::new();
+    // The person's own credentials are held under every spelling on macOS's case-folding disk
+    // (`~/.Docker/config.json` is the same file).
+    let folds = machine.os == Os::MacOs;
     let mut deny = |class, path: PathBuf, access| {
         paths.push(Denial {
             class,
@@ -2164,7 +2254,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             access,
             named: None,
             reach: Reach::AndBelow,
-            any_case: false,
+            any_case: folds && class == Class::Credentials,
         })
     };
 
@@ -2315,6 +2405,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+        // 6. The person's own credentials (ruling Q321): an SSH private key, and each forge and
+        // cloud credential file, neither read nor written.
+        for key in ssh_private_keys(&home.join(".ssh")) {
+            deny(Class::Credentials, key, Access::ReadWrite);
+        }
+        for file in CREDENTIAL_FILES {
+            deny(Class::Credentials, home.join(file), Access::ReadWrite);
+        }
         // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
         // for a later one. A declared tool's run has a home of its own.
         if machine.is_a_runner() {
@@ -7844,7 +7942,7 @@ pub struct Lifted {
 
 impl Lifted {
     /// What is lifted: every class (ADR 0067 §5). An unsandboxed chat holds none of them.
-    pub const CLASSES: [Class; 5] = Class::ALL;
+    pub const CLASSES: [Class; 6] = Class::ALL;
 
     /// What the chat's tab says as it starts, so the opt-out is visible for its whole life.
     pub fn notice(&self) -> String {
@@ -8468,6 +8566,8 @@ mod claude_tests;
 mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
+#[cfg(test)]
+mod credentials_tests;
 #[cfg(test)]
 mod enforced_tests;
 #[cfg(test)]
