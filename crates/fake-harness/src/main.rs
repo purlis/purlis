@@ -20,6 +20,7 @@ mod acp;
 mod mcp;
 mod model;
 mod net;
+mod script;
 mod synthetic;
 
 use std::io::{self, BufRead, Write};
@@ -197,6 +198,11 @@ struct Args {
 }
 
 fn main() -> ExitCode {
+    // `--script` reads the rest of its words as the dialect's own program does (`script.rs`).
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if script::wanted(&argv) {
+        return script::main(&argv);
+    }
     let args = Args::parse();
     match run(&args) {
         Ok(()) => ExitCode::from(args.exit_code),

@@ -217,18 +217,36 @@ fn arrived_as_a_signal(exception: &MinidumpException, os: minidump::system_info:
         && record.exception_flags == EXC_SOFT_SIGNAL
 }
 
+/// The prefix of the libSystem libraries' file names (`libsystem_kernel`, `libsystem_pthread`,
+/// `libsystem_platform`, `libsystem_c`): the system's own C library, never the handler's code.
+const LIBSYSTEM: &str = "libsystem_";
+
 /// **How many of a signalled thread's frames are the crash handler's**, each frame as the file
-/// name of the module it is in, the innermost first: every frame up to and including the first
-/// in [`TRAMPOLINE`], `_sigtramp`, the frame the kernel called the handler from. The frame
-/// after it is the one the signal interrupted. With no symbols on the device, the trampoline's
-/// module is the marker: the handler waits in `libsystem_kernel` and `libsystem_pthread` and runs
-/// in the app's own binary, never in `libsystem_platform`. With no trampoline, none: the stack
+/// name of the module it is in, the innermost first: every frame up to and including
+/// [`TRAMPOLINE`]'s `_sigtramp`, the frame the kernel called the handler from. The frame after it
+/// is the one the signal interrupted. With no symbols on the device, the trampoline is found by
+/// its module, but `libsystem_platform` holds more than the trampoline: `memset`, `memmove` and
+/// the unfair locks are there too, and the handler's thread can be stopped in one of them on its
+/// way to the condition variable it waits on, its innermost frame in the trampoline's module
+/// (#6736). So the trampoline is the first frame in that module **past a frame outside
+/// libSystem** ([`LIBSYSTEM`]): the handler (`signal_handler`, `simulate_exception`) is the app's
+/// own code, so its frames always stand between where its thread was stopped (in libSystem, or
+/// in the handler itself) and the trampoline that called it. Not the minidump's main module:
+/// minidump-writer takes the first image with no version for it, which in the app is not
+/// always the app (#6822's repeat runs). With no trampoline past the handler, none: the stack
 /// is kept whole rather than guessed at.
 fn past_the_trampoline(modules: impl IntoIterator<Item = Option<String>>) -> usize {
-    modules
-        .into_iter()
-        .position(|module| module.as_deref() == Some(TRAMPOLINE))
-        .map_or(0, |trampoline| trampoline + 1)
+    let mut in_the_handler = false;
+    for (at, module) in modules.into_iter().enumerate() {
+        let Some(module) = module else {
+            continue;
+        };
+        if in_the_handler && module == TRAMPOLINE {
+            return at + 1;
+        }
+        in_the_handler |= !module.starts_with(LIBSYSTEM);
+    }
+    0
 }
 
 /// A module's file name, without the folders it is in: they may name the person's.
@@ -341,6 +359,9 @@ fn in_folder(crashes: &Path, extension: &str) -> Vec<(PathBuf, Option<u64>)> {
 mod tests {
     use super::past_the_trampoline;
 
+    /// The app's own binary.
+    const APP: &str = "purlis-app";
+
     fn modules(names: &[&str]) -> Vec<Option<String>> {
         names
             .iter()
@@ -353,24 +374,64 @@ mod tests {
         // As Sentry event 165c0c11ac34479ca12763e401ace1aa had it, innermost first (#5691).
         let stack = modules(&[
             "libsystem_kernel.dylib",   // __psynch_cvwait
-            "purlis-app",               // parking_lot's condvar, in the handler
-            "purlis-app",               // HandlerInner::send_message
-            "purlis-app",               // simulate_exception
-            "purlis-app",               // signal_handler
+            APP,                        // parking_lot's condvar, in the handler
+            APP,                        // HandlerInner::send_message
+            APP,                        // simulate_exception
+            APP,                        // signal_handler
             "",                         // a frame in no module
             "libsystem_platform.dylib", // _sigtramp
             "libsystem_pthread.dylib",  // pthread_kill
             "libsystem_c.dylib",        // abort
-            "purlis-app",               // std::process::abort
-            "purlis-app",               // nativecrash::crash_if_asked: the crash
+            APP,                        // std::process::abort
+            APP,                        // nativecrash::crash_if_asked: the crash
         ]);
 
         assert_eq!(past_the_trampoline(stack), 7);
     }
 
     #[test]
+    fn a_handler_stopped_inside_libsystem_platform_is_cut_at_the_trampoline_past_it() {
+        // As main's run 43725561053 had it (#6736): the handler's thread was suspended in a
+        // libsystem_platform routine (a memset or an unfair lock on its way to the condition
+        // variable), so its innermost frame is in the trampoline's module too.
+        let mut names = vec!["libsystem_platform.dylib"]; // where the handler was stopped
+        names.extend([APP; 14]); // the handler: parking_lot, send_message, signal_handler
+        names.extend([
+            "libsystem_platform.dylib", // _sigtramp
+            "libsystem_pthread.dylib",  // pthread_kill
+            "libsystem_c.dylib",        // abort
+        ]);
+        names.extend([APP; 11]); // std::process::abort, the e2e-crash thread
+        names.extend(["libsystem_pthread.dylib", "libsystem_pthread.dylib", APP]);
+        let stack = modules(&names);
+
+        assert_eq!(past_the_trampoline(stack), 16);
+    }
+
+    #[test]
+    fn a_handler_stopped_in_an_unfair_lock_below_pthread_is_cut_at_the_trampoline() {
+        let stack = modules(&[
+            "libsystem_kernel.dylib",   // __ulock_wait
+            "libsystem_platform.dylib", // _os_unfair_lock_lock_slow
+            "libsystem_pthread.dylib",
+            APP,
+            "libsystem_platform.dylib", // _sigtramp
+            "libsystem_pthread.dylib",  // pthread_kill
+        ]);
+
+        assert_eq!(past_the_trampoline(stack), 5);
+    }
+
+    #[test]
     fn a_stack_with_no_signal_trampoline_is_kept_whole() {
-        let stack = modules(&["purlis-app", "AppKit", "libdyld.dylib"]);
+        let stack = modules(&[APP, "AppKit", "libdyld.dylib"]);
+
+        assert_eq!(past_the_trampoline(stack), 0);
+    }
+
+    #[test]
+    fn a_stack_whose_trampoline_has_no_handler_frame_before_it_is_kept_whole() {
+        let stack = modules(&["libsystem_platform.dylib", "libsystem_c.dylib", APP]);
 
         assert_eq!(past_the_trampoline(stack), 0);
     }
@@ -379,11 +440,11 @@ mod tests {
     fn only_the_first_trampoline_is_the_handlers() {
         // A signal raised in a signal handler: the crash is the inner one's.
         let stack = modules(&[
-            "purlis-app",
+            APP,
             "libsystem_platform.dylib",
-            "purlis-app",
+            APP,
             "libsystem_platform.dylib",
-            "purlis-app",
+            APP,
         ]);
 
         assert_eq!(past_the_trampoline(stack), 2);

@@ -2249,10 +2249,17 @@ name = "fake-harness"
 version = "0.5.2"
 dependencies = [
  "clap",
+ "glob",
  "portable-pty",
  "purlis-core",
+ "purlis-recordings",
+ "purlis-session-protocol",
+ "regex",
+ "serde",
  "serde_json",
+ "stand-in",
  "tempfile",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
@@ -6781,6 +6788,7 @@ dependencies = [
 name = "purlis-crash-handler"
 version = "0.5.2"
 dependencies = [
+ "crash-context",
  "crash-handler",
  "minidump",
  "minidumper",

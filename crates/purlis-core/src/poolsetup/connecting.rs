@@ -682,10 +682,12 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        // Its port answered (`reachable` passed), and ssh left no key: the first contact's
+        // refused sign-in is what it always ends with, so it isn't SSH that's missing.
         Finding::NotMet { host, said } => (
             format!(
-                "purlis couldn't reach SSH on {host}{}. Check that SSH is running there, then \
-                 check again.",
+                "purlis reached SSH on {host} but couldn't record the host key it shows{}. Run \
+                 the command under See what this does to watch SSH sign in, or use Get help.",
                 shown(said)
             ),
             check_again(),

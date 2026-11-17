@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DRAWING_GAP_MS, STOPPED_MS, watchTheFrames, whenDrawing } from "./whenDrawing";
+import {
+  DRAWING_GAP_MS,
+  STOPPED_MS,
+  watchTheFrames,
+  watchTheFramesOutsideScenarioTests,
+  whenDrawing,
+} from "./whenDrawing";
 
 /**
  * **Work asked for while the window is not drawn runs once it is drawn again, after the paint**
@@ -55,6 +61,24 @@ describe("work asked for of a window", () => {
     const run = vi.fn();
     whenDrawing(run);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs at once in a hidden window of the scenario-test build, which watches no frames", () => {
+    stop();
+    stop = watchTheFramesOutsideScenarioTests(true);
+    hidden = true;
+    const run = vi.fn();
+    whenDrawing(run);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits in a hidden window of any other build", () => {
+    stop();
+    stop = watchTheFramesOutsideScenarioTests(false);
+    hidden = true;
+    const run = vi.fn();
+    whenDrawing(run);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("runs at once in a window drawn as it should be", () => {
