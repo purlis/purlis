@@ -191,6 +191,97 @@ fn the_scenario_host_runs_chats_in_the_session_host() {
     );
 }
 
+/// **Every template is what a chat starts under** (T1.1-06, Q308a): in a project whose manifest
+/// names it, as the scenario host writes it, `strict`, `watch`, `hold`, `team` and `open` each
+/// resolve at a chat's start ([`purlis_core::enforcement::at_start`]) to exactly that template,
+/// in a process that is purlis's app as `main.rs` makes it; `strict` is every family enforced,
+/// never the product's default `watch`, and `open`, looser than the `watch` a person accepts
+/// first, only once the person pressed. Needs no wrap, so it runs everywhere.
+#[cfg(unix)]
+#[test]
+fn every_template_is_what_a_chat_starts_under() {
+    use purlis_core::enforcement::{Mode, Resolved, at_start};
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let mut seen = Vec::new();
+    for (n, template) in host::Template::ALL.into_iter().enumerate() {
+        let root = homes.projects.join(format!("template-{n}"));
+        std::fs::create_dir_all(&root).expect("the project");
+        let root = root.canonicalize().expect("the project");
+        std::fs::write(
+            root.join(purlis_core::plane::MANIFEST),
+            host::policy_of(template),
+        )
+        .expect("its manifest");
+        let mut pressed = false;
+        host::runs_under(template, &root, |shown| {
+            pressed = true;
+            purlis_core::enforcement::press(&root, &shown).expect("the person's press is kept");
+        });
+        assert_eq!(
+            pressed,
+            template == host::Template::Open,
+            "{}: the person is asked to press only for a template looser than `watch`",
+            template.word()
+        );
+        let resolved = at_start(&root);
+        assert_eq!(resolved, host::resolved_under(template, &root));
+        seen.push((template, resolved));
+        std::fs::remove_dir_all(&root).expect("the project goes");
+    }
+    let of = |wanted: host::Template| {
+        seen.iter()
+            .find(|(template, _)| *template == wanted)
+            .map(|(_, resolved)| resolved.clone())
+            .expect("resolved")
+    };
+    assert_eq!(of(host::Template::Strict), Resolved::all(Mode::Enforce));
+    assert_ne!(of(host::Template::Watch), of(host::Template::Strict));
+    assert_ne!(of(host::Template::Hold), of(host::Template::Watch));
+    assert_ne!(of(host::Template::Open), of(host::Template::Watch));
+    homes.ran_no_scenario();
+}
+
+/// **A chat runs under the template its scenario names** (T1.1-06, Q308a): in the scenario host,
+/// a chat under `strict`, `watch`, `hold`, `team` or `open` is handed that template's resolution
+/// by its start (`PURLIS_POLICY`, what its hooks enforce by), and under `strict` every family is
+/// enforced.
+#[cfg(unix)]
+#[test]
+fn a_chat_runs_under_the_template_its_scenario_names() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    for template in host::Template::ALL {
+        let Some(scenario) =
+            Scenario::under(&homes, Protection::Full, None, Dialect::Codex, template)
+        else {
+            return;
+        };
+        let chat = scenario.starts(&serde_json::json!({
+            "turns": [{"prompt": "go", "calls": [{"step": "policy", "tool": "bash",
+                "run": format!("echo policy=${}", purlis_core::enforcement::ENV)}]}]
+        }));
+        scenario.until_played(chat, &["policy"]);
+        let expected = host::resolved_under(template, &scenario.root).spelled();
+        let said = stdout_of(&scenario, chat, "policy");
+        assert_eq!(
+            said.trim(),
+            format!("policy={expected}"),
+            "{}: the chat's start handed it another policy\n{}",
+            template.word(),
+            scenario.said()
+        );
+        if template == host::Template::Strict {
+            assert!(
+                !said.contains("=off") && !said.contains("=log"),
+                "strict: a family is not enforced: {said}"
+            );
+        }
+    }
+}
+
 /// **One `Timings` value reaches the board, the throttle and the hold's end, in host mode**
 /// (T1.1-06; T1.1-01's in-process test is `planes::tests::…_in_process`): the scaled value the
 /// scenario was given is what the host's board holds an ask for, what the window's hooks throttle
@@ -240,8 +331,11 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_host_mode()
 
 /// **A Linux Claude Code chat in the scenario host is sandboxed** (T1.1-06): the production
 /// branch of `Chats::start_as_opted`, never the test build's that can leave one unsandboxed, at
-/// the floor and at Full. Its proxy is the host's, and the vault no chat reads is refused to it,
-/// which only a wrap does. Elsewhere Claude Code holds itself (ticket 10), so nothing is asserted.
+/// the floor and at Full. Its command runs under purlis's own wrap, as it says itself: held by
+/// no-new-privileges, in a user namespace of its own, below `<kit> _sandbox`. A plain file of the
+/// project reads (the control), the vault no chat reads is refused, and so is a write to Claude
+/// Code's own settings in its config folder, which only `claude_wrap` refuses at the floor. On
+/// macOS Claude Code holds itself (ticket 10, #6900): reported `not_run`, never passed.
 #[cfg(unix)]
 #[test]
 fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
@@ -249,6 +343,17 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
         return;
     };
     if !cfg!(target_os = "linux") {
+        report::write(&[a_fixture_record(
+            "a_linux_claude_chat_in_the_scenario_host_is_sandboxed",
+            Some(purlis_scenarios::model::Dialect::Claude),
+            None,
+            purlis_scenarios::model::ReportVerdict::NotRun,
+            "purlis's wrap holds a Claude Code chat on Linux alone (`claude_wrap::wrap`); on \
+             macOS it runs Claude Code's own sandbox, which the fake does not play (ticket 10, \
+             #6900)",
+        )])
+        .expect("the leg's report");
+        homes.ran_no_scenario();
         return;
     }
     for protection in [Protection::Basic, Protection::Full] {
@@ -262,24 +367,102 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
             "{\"covering\": \"VAULT-HELD\"}\n",
         )
         .expect("a vault");
+        std::fs::write(scenario.root.join("plain.txt"), "PLAIN-READS\n").expect("a plain file");
         let reads = format!("cat {}", vaults.join("covering.json").display());
         let chat = scenario.starts(&serde_json::json!({
             "turns": [{"prompt": "go", "calls": [
                 {"step": "where", "tool": "bash", "run": WHERE_AM_I},
-                {"step": "reads-the-vault", "tool": "bash", "run": reads}
+                {"step": "reads-plain", "tool": "bash",
+                 "run": format!("cat {}", scenario.root.join("plain.txt").display())},
+                {"step": "reads-the-vault", "tool": "bash", "run": reads},
+                {"step": "writes-its-settings", "tool": "bash", "run": WRITES_ITS_SETTINGS}
             ]}]
         }));
-        scenario.until_played(chat, &["reads-the-vault"]);
+        scenario.until_played(chat, &["writes-its-settings"]);
+        let said = scenario.said();
         assert!(
             !scenario.confines.started().is_empty(),
             "{protection:?}: the chat runs confined, its proxy started by the host"
         );
+        let wrapped = format!("{} _sandbox", scenario.kit.binary.display());
+        let place = stdout_of(&scenario, chat, "where");
+        assert!(
+            place.lines().any(|l| l.trim() == "NoNewPrivs:\t1"
+                || l.split_whitespace().collect::<Vec<_>>() == ["NoNewPrivs:", "1"]),
+            "{protection:?}: the chat's command is not held by no-new-privileges:\n{place}\n{said}"
+        );
+        let ns = |key: &str| {
+            place
+                .split_whitespace()
+                .find_map(|word| word.strip_prefix(key))
+                .unwrap_or_default()
+                .to_owned()
+        };
+        assert!(
+            !ns("ns=").is_empty() && ns("ns=") != ns("init="),
+            "{protection:?}: the chat's command shares the first process's user namespace:\n\
+             {place}\n{said}"
+        );
+        assert!(
+            place
+                .lines()
+                .any(|l| l.starts_with("up") && l.contains(&wrapped)),
+            "{protection:?}: no ancestor of the chat's command is `{wrapped}`:\n{place}\n{said}"
+        );
+        assert!(
+            stdout_of(&scenario, chat, "reads-plain").contains("PLAIN-READS"),
+            "{protection:?}: the control: a plain file of the project does not read\n{said}"
+        );
         let read = scenario.result_of(chat, "reads-the-vault").expect("played");
         assert!(
             !read.to_string().contains("VAULT-HELD"),
-            "{protection:?}: the Claude Code chat read the vault, so it ran unsandboxed: {read}\n{}",
-            scenario.said()
+            "{protection:?}: the Claude Code chat read the vault, so it ran unsandboxed: {read}\n{said}"
         );
+        let wrote = stdout_of(&scenario, chat, "writes-its-settings");
+        assert!(
+            wrote.contains("config=/") && wrote.contains("refused"),
+            "{protection:?}: the chat wrote Claude Code's own settings, which `claude_wrap` \
+             keeps from it: {wrote}\n{said}"
+        );
+    }
+}
+
+/// A Claude Code chat's write of its own settings in its config folder, saying where and
+/// whether it was refused: only `claude_wrap` refuses it at the floor
+/// (`claude_wrap::Wrap::writable`, `HOME_DIRS`).
+#[cfg(unix)]
+const WRITES_ITS_SETTINGS: &str = "d=${CLAUDE_CONFIG_DIR:-$HOME/.claude}; echo config=$d; \
+     if printf probe >> \"$d/settings.json\" 2>/dev/null; then echo wrote; else echo refused; fi";
+
+/// The output chat `id`'s command printed for `step`, once it played.
+#[cfg(unix)]
+fn stdout_of(scenario: &Scenario, id: u32, step: &str) -> String {
+    scenario
+        .result_of(id, step)
+        .and_then(|result| result["stdout"].as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// A record of the fixture's for this leg's report.
+#[cfg(unix)]
+fn a_fixture_record(
+    test: &str,
+    dialect: Option<purlis_scenarios::model::Dialect>,
+    protection: Option<purlis_scenarios::model::Protection>,
+    verdict: purlis_scenarios::model::ReportVerdict,
+    reason: &str,
+) -> purlis_scenarios::model::LegRecord {
+    purlis_scenarios::model::LegRecord {
+        kind: purlis_scenarios::model::EntryKind::Fixture,
+        row: "T1.1-06".to_owned(),
+        test: Some(test.to_owned()),
+        dialect,
+        protection,
+        os: report::this_os(),
+        leg: purlis_scenarios::model::ReportLeg::Fixture,
+        timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
+        verdict,
+        reason: Some(reason.to_owned()),
     }
 }
 
@@ -344,25 +527,14 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         // it. purlis's wrap holds a Claude Code chat on Linux alone (`claude_wrap::wrap`), so
         // the dialect is reported not run here, never passed.
         if dialect == Dialect::Claude && cfg!(target_os = "macos") {
-            report::write(&[purlis_scenarios::model::LegRecord {
-                kind: purlis_scenarios::model::EntryKind::Fixture,
-                row: "T1.1-06".to_owned(),
-                test: Some(
-                    "a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold"
-                        .to_owned(),
-                ),
-                dialect: Some(purlis_scenarios::model::Dialect::Claude),
-                protection: Some(purlis_scenarios::model::Protection::Full),
-                os: report::this_os(),
-                leg: purlis_scenarios::model::ReportLeg::Fixture,
-                timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
-                verdict: purlis_scenarios::model::ReportVerdict::NotRun,
-                reason: Some(
-                    "Claude Code on macOS runs its own sandbox, which the fake does not play \
-                     (ticket 10)"
-                        .to_owned(),
-                ),
-            }])
+            report::write(&[a_fixture_record(
+                "a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold",
+                Some(purlis_scenarios::model::Dialect::Claude),
+                Some(purlis_scenarios::model::Protection::Full),
+                purlis_scenarios::model::ReportVerdict::NotRun,
+                "Claude Code on macOS runs its own sandbox, which the fake does not play \
+                 (ticket 10, #6900)",
+            )])
             .expect("the leg's report");
             continue;
         }
@@ -372,7 +544,6 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         };
         let held = format!("held-{}.example.test", dialect.word());
         let asked_before = scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED);
-        let began = std::time::Instant::now();
         let chat = scenario.starts(&serde_json::json!({
             "turns": [{"prompt": "go", "calls": [{
                 "step": "held", "tool": "bash",
@@ -380,8 +551,9 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             }]}]
         }));
         // The window is asked while the call is held: the chat is held on the host in the
-        // window's own registry of asks, what the person's Notice draws from.
-        until(
+        // window's own registry of asks, what the person's Notice draws from. The hold is
+        // measured from when it is seen, never from before the chat started up.
+        let began = until_seen(
             &scenario,
             "the window is asked while the call is held",
             || held_on(&scenario, chat, &held).is_some(),
@@ -399,8 +571,9 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             ),
         );
         assert!(
-            took >= scenario.timings.hold(),
-            "{dialect:?}: the call ended after {took:?}, before the hold of {:?} ended",
+            took + SEEN_WITHIN >= scenario.timings.hold(),
+            "{dialect:?}: the call ended {took:?} after it was seen held, before the hold of \
+             {:?} ended",
             scenario.timings.hold()
         );
         let result = scenario.result_of(chat, "held").expect("played");
@@ -494,13 +667,12 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     let carried = lookups();
 
     let other = scenario.starts(&script("reaches-other"));
-    let began = std::time::Instant::now();
-    until(&scenario, "the other chat is held on the host", || {
+    let began = until_seen(&scenario, "the other chat is held on the host", || {
         held_on(&scenario, other, host).is_some()
     });
     scenario.until_played(other, &["reaches-other"]);
     assert!(
-        began.elapsed() >= scenario.timings.hold(),
+        began.elapsed() + SEEN_WITHIN >= scenario.timings.hold(),
         "the other chat's call ended before the hold did: {:?}\n{}",
         scenario.result_of(other, "reaches-other"),
         scenario.said()
@@ -582,9 +754,11 @@ fn a_crashed_window_reattaches_to_the_surviving_host_and_chat() {
 }
 
 /// **A quit ends every chat and a relaunch restarts the live ones** (T1.1-06, `restart: quit`,
-/// §3.17, M-BH-11): the window tells the host to quit, which ends every chat and stops; a new
-/// host and window start on the same homes and relaunch the chat that was live, once, in a
-/// process of its own.
+/// §3.17, M-BH-11): two chats run and the person closes the second; the window tells the host to
+/// quit, the host answers once every chat has ended, and every chat process has ended before the
+/// old host is dropped (`Scenario::quits_and_relaunches`); a new host and window start on the
+/// same homes and relaunch the chat that was live, chat 1, once, in a process of its own, and
+/// never the one the person closed.
 #[cfg(unix)]
 #[test]
 fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
@@ -596,6 +770,17 @@ fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
     };
     let chat = scenario.starts(&two_turns("before-the-quit", "never-played-here"));
     scenario.until_played(chat, &["before-the-quit"]);
+    let closed = scenario.starts(&two_turns("closed-before-the-quit", "never-played-there"));
+    scenario.until_played(closed, &["closed-before-the-quit"]);
+    scenario.closes(closed);
+    until(&scenario, "the closed chat is no longer open", || {
+        scenario.open_chats().iter().all(|(id, _)| *id != closed)
+    });
+    assert_eq!(
+        scenario.open_names(),
+        ["chat 1"],
+        "only chat 1 is live before the quit"
+    );
     let before = scenario.pids();
     assert!(!before.is_empty(), "the chat runs");
 
@@ -613,9 +798,9 @@ fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
             .any(|pid| !before.contains(pid) && purlis_core::process::alive(*pid))
     });
     assert_eq!(
-        scenario.open_chats().len(),
-        1,
-        "the one live chat came back, once\n{}",
+        scenario.open_names(),
+        ["chat 1"],
+        "the one live chat came back, once, and the closed one did not\n{}",
         scenario.said()
     );
     // What the relaunched chat plays is not this scenario's: a relaunch composes its start from
@@ -669,13 +854,18 @@ fn the_host_kill_is_observed() {
 
 /// **The maximal chat holds every grant kind** (T1.1-06): one chat holds a grant of every
 /// `grant::What` variant (host, write, socket, service, port, listen), as the person allowed
-/// them for it, and runs confined with an ssh route beside its proxy; a `purlis secret exec`
-/// tunnel to a host it may reach is dialled through the scenario's seam. A variant added to
-/// `grant::What` fails to compile in `host::kind_of`, and once it is named there, fails here
-/// until the maximal chat holds one. The chat's open browser is not held yet (see the PR).
+/// them for it, and each is asserted on the chat itself: its sandbox as the window composed it
+/// names every one, its confinement in the host lists the granted host, and its own proxy
+/// carries that host at once, never held. It runs confined with an ssh route beside its proxy,
+/// and a tunnel on the chat's own reach to the granted host is dialled through the scenario's
+/// seam. A variant added to `grant::What` fails to compile in `host::kind_of`, and once it is
+/// named there, fails here until the maximal chat holds one. The chat's open browser is
+/// reported `not_run` (#7100); `purlis secret exec` run by the chat itself waits on the vault
+/// broker fixture (#7101).
 #[cfg(unix)]
 #[test]
 fn the_maximal_chat_holds_every_grant_kind() {
+    use purlis_core::sandbox::grant::What;
     let Some(homes) = Homes::of_this_scenario() else {
         return;
     };
@@ -694,40 +884,117 @@ fn the_maximal_chat_holds_every_grant_kind() {
     for what in &every {
         grants.add(what);
     }
+    let granted_host = "granted.example.test";
     let chat = scenario.starts_holding(
         &serde_json::json!({
-            "turns": [{"prompt": "go", "calls": [{"step": "maximal", "tool": "bash", "run": "echo held"}]}]
+            "turns": [{"prompt": "go", "calls": [
+                {"step": "maximal", "tool": "bash", "run": "echo held"},
+                {"step": "reaches-granted", "tool": "bash", "run": reaches(granted_host)}
+            ]}]
         }),
         grants,
     );
-    scenario.until_played(chat, &["maximal"]);
+    let began = std::time::Instant::now();
+    scenario.until_played(chat, &["reaches-granted"]);
+    let said = scenario.said();
+
+    // On the chat itself: its sandbox, as the window composed it at its start.
+    let applied = scenario
+        .applied_of(chat)
+        .unwrap_or_else(|| panic!("the maximal chat runs with no sandbox\n{said}"));
+    let composed = format!("{applied:?}");
+    for what in &every {
+        let named = match what {
+            What::Host(host) => host.to_string(),
+            What::Write(path) | What::Socket(path) => path.display().to_string(),
+            What::Service(name) => name.clone(),
+            What::Port(port) | What::Listen(port) => port.to_string(),
+        };
+        assert!(
+            composed.contains(&named),
+            "the maximal chat's sandbox does not hold its {what:?} grant ({named})\n{said}"
+        );
+    }
+    // Its confinement in the host, and its own proxy, which carries the granted host at once.
     let started = scenario.confines.started();
+    let ours = started
+        .last()
+        .unwrap_or_else(|| panic!("the maximal chat runs unconfined\n{said}"));
     assert!(
-        started.iter().any(|one| one.ssh.is_some()),
+        ours.plan.listed.iter().any(|one| one.host == granted_host),
+        "the chat's confinement does not list its granted host: {:?}",
+        ours.plan
+    );
+    assert!(
+        ours.ssh.is_some(),
         "an ssh route beside its proxy: {started:?}"
     );
+    assert!(
+        scenario
+            .names
+            .lookups()
+            .iter()
+            .any(|one| one.name == granted_host),
+        "the chat's proxy did not carry its granted host: {:?}\n{said}",
+        scenario.names.lookups()
+    );
+    assert!(
+        began.elapsed() < scenario.timings.hold(),
+        "the chat's call to its granted host was held: {:?}",
+        began.elapsed()
+    );
+    assert!(
+        held_on(&scenario, chat, granted_host).is_none(),
+        "the chat was asked about a host it holds"
+    );
 
+    // A tunnel on the chat's own reach, to the host it was granted, through the seam.
     let origin = purlis_scenarios::net::Origin::http().expect("an origin");
-    let name = "maximal-tunnel.test";
-    scenario.names.origin(name, 5432, origin.addr());
+    scenario.names.origin(granted_host, 5432, origin.addr());
     let _held = scenario.names.carry_tunnels();
     let tunnel = purlis_core::sandbox::tunnel::Tunnel::open(
-        &purlis_core::sandbox::tunnel::pointed(&format!("{name}:5432")).expect("a target"),
+        &purlis_core::sandbox::tunnel::pointed(&format!("{granted_host}:5432")).expect("a target"),
         &purlis_core::sandbox::reach::Decision::Allowed(purlis_core::sandbox::reach::By::Chat),
-        purlis_core::sandbox::reach::Reach::open(vec![format!("{name}:5432")]),
+        applied.confines().reach.clone(),
         None,
     )
-    .expect("the tunnel opens");
+    .expect("the tunnel opens on the chat's reach");
     let _ = std::net::TcpStream::connect(("127.0.0.1", tunnel.port())).map(|mut stream| {
         use std::io::{Read as _, Write as _};
         let _ = write!(
             stream,
-            "GET / HTTP/1.1\r\nHost: {name}\r\nConnection: close\r\n\r\n"
+            "GET / HTTP/1.1\r\nHost: {granted_host}\r\nConnection: close\r\n\r\n"
         );
         let _ = stream.read_to_end(&mut Vec::new());
     });
-    assert_eq!(scenario.names.origin_hits(), vec![(name.to_owned(), 5432)]);
+    assert_eq!(
+        scenario.names.origin_hits(),
+        vec![(granted_host.to_owned(), 5432)]
+    );
+
+    report::write(&[a_fixture_record(
+        "the_maximal_chat_holds_every_grant_kind",
+        Some(purlis_scenarios::model::Dialect::Codex),
+        Some(purlis_scenarios::model::Protection::Full),
+        purlis_scenarios::model::ReportVerdict::NotRun,
+        "the maximal chat's open browser: the scenario host has no browser driver yet (#7100)",
+    )])
+    .expect("the leg's report");
 }
+
+/// [`until`], answering the moment `done` was first seen: what it waited on had happened by
+/// then, so a duration measured from it counts nothing before it, a chat's start-up least of
+/// all, and is never longer than what it measures.
+#[cfg(unix)]
+fn until_seen(scenario: &Scenario, what: &str, done: impl Fn() -> bool) -> std::time::Instant {
+    until(scenario, what, &done);
+    std::time::Instant::now()
+}
+
+/// How much of a hold can pass between its start and the window seeing it: its poll and the
+/// link's latency. A held call ends no sooner than the hold less this, from when it was seen.
+#[cfg(unix)]
+const SEEN_WITHIN: Duration = Duration::from_secs(1);
 
 /// Until `done`, within [`PLAYS_WITHIN`]: a chat's harness starts and plays first.
 #[cfg(unix)]

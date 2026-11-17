@@ -66,7 +66,14 @@ pub fn built_with() -> String {
 
 /// **Says [`built_with`] and answers the exit code** where this process was started with
 /// [`BUILT_WITH_ARG`] as its one argument; `None` otherwise, and nothing is said.
+///
+/// **Never in a release build a person runs**: only a debug build, or one with the fence or the
+/// test seams, answers it, so the binaries purlis ships have no such command. A release build
+/// that does not answer has neither, which is all the scenario host's check asks.
 pub fn say_built_with_if_asked() -> Option<i32> {
+    if !(cfg!(debug_assertions) || FENCED || TEST_SUPPORT) {
+        return None;
+    }
     let mut args = std::env::args_os().skip(1);
     if args.next().as_deref() != Some(std::ffi::OsStr::new(BUILT_WITH_ARG)) || args.next().is_some()
     {

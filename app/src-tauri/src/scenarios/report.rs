@@ -18,7 +18,7 @@ use purlis_scenarios::model::{
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::timings::CoreTimings;
 
-use super::host::Template;
+use super::host::{DEFAULT_TEMPLATE, Template};
 
 /// The reason a record gives for a cell a run skipped for its timings.
 pub(crate) const SKIPPED_FOR_TIMING: &str = "skipped-for-timing";
@@ -106,13 +106,17 @@ fn append(at: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
 
 /// **Appends `records` to this leg's report**, one JSON object a line.
 pub(crate) fn write(records: &[LegRecord]) -> std::io::Result<PathBuf> {
-    let at = report_path();
+    write_to(&report_path(), records)
+}
+
+/// [`write`], to the report at `at`.
+fn write_to(at: &std::path::Path, records: &[LegRecord]) -> std::io::Result<PathBuf> {
     let lines = records
         .iter()
         .map(serde_json::to_string)
         .collect::<Result<Vec<_>, _>>()?;
-    append(&at, &lines)?;
-    Ok(at)
+    append(at, &lines)?;
+    Ok(at.to_path_buf())
 }
 
 /// **A scenario's run time** (T1.1-06), appended to `target/sandbox-scenarios/<os>-timings.jsonl`:
@@ -128,9 +132,9 @@ pub(crate) fn time_of(record: &serde_json::Value) -> std::io::Result<()> {
 pub(crate) fn template_of(cell: &Cell) -> Template {
     match cell.template.as_deref() {
         Some(word) => {
-            Template::of(word).unwrap_or_else(|| panic!("{}: {word:?} is no template", cell.id))
+            Template::parse(word).unwrap_or_else(|| panic!("{}: {word:?} is no template", cell.id))
         }
-        None => Template::Strict,
+        None => DEFAULT_TEMPLATE,
     }
 }
 
@@ -207,8 +211,12 @@ fn production_only_cells_are_skipped_and_reported_on_scaled_runs() {
         "a production run skips neither"
     );
 
-    // Written as the leg's report, one record a line, each read back in ticket 5's shape.
-    let at = write(&records).expect("the report is written");
+    // Written as a leg's report, one record a line, each read back in ticket 5's shape: to a
+    // file of this test's own, never the leg's report a run uploads.
+    let folder = tempfile::tempdir().expect("a folder");
+    let at =
+        write_to(&folder.path().join("linux-fake.jsonl"), &records).expect("the report is written");
+    assert_ne!(at, report_path());
     let written: Vec<LegRecord> = std::fs::read_to_string(&at)
         .expect("the report")
         .lines()
@@ -224,8 +232,10 @@ fn production_only_cells_are_skipped_and_reported_on_scaled_runs() {
 }
 
 /// **Every cell runs under `strict` unless it names a template** (T1.1-06, Q308): every cell in
-/// `tests/scenarios/cells` that names none starts under `strict`, today's purlis, a cell that
-/// names one starts under it, and `strict` writes no `[policy]` key until Q308 lands here.
+/// `tests/scenarios/cells` that names none starts under `strict`, never the product's default
+/// `watch`, a cell that names one starts under it, and each template's `[policy]` is written in
+/// the project's manifest, `strict`'s too, and reads back as that template. That a chat's start
+/// resolves it is `every_template_is_what_a_chat_starts_under`.
 #[test]
 fn every_cell_runs_under_strict_unless_it_names_a_template() {
     for batch in every_batch() {
@@ -233,29 +243,40 @@ fn every_cell_runs_under_strict_unless_it_names_a_template() {
             let expected = cell
                 .template
                 .as_deref()
-                .and_then(Template::of)
+                .and_then(Template::parse)
                 .unwrap_or(Template::Strict);
             assert_eq!(template_of(cell), expected, "{}", cell.id);
-            if cell.template.is_none() {
-                assert_eq!(template_of(cell), Template::Strict, "{}", cell.id);
-            }
         }
     }
     let step = serde_json::json!({"calls": [{"tool": "bash", "input": {"command": "true"}}]});
     let batch = a_batch(serde_json::json!([
         {"id": "M-NONE", "steps": [step]},
         {"id": "M-WATCH", "template": "watch", "steps": [step]},
+        {"id": "M-HOLD", "template": "hold", "steps": [step]},
+        {"id": "M-OPEN", "template": "open", "steps": [step]},
     ]));
     assert_eq!(template_of(&batch.cells[0]), Template::Strict);
     assert_eq!(template_of(&batch.cells[1]), Template::Watch);
+    assert_eq!(template_of(&batch.cells[2]), Template::Hold);
+    assert_eq!(template_of(&batch.cells[3]), Template::Open);
     assert_eq!(
-        Template::default(),
+        DEFAULT_TEMPLATE,
         Template::Strict,
         "a scenario's own default"
     );
-    assert_eq!(
-        Template::Strict.manifest(),
-        Ok(""),
-        "today's purlis: no `[policy]` key"
+    assert_ne!(
+        DEFAULT_TEMPLATE,
+        Template::default(),
+        "the product's default is not a scenario's"
     );
+    for template in Template::ALL {
+        let written =
+            purlis_core::enforcement::Settings::from_text(Some(&super::host::policy_of(template)));
+        assert_eq!(written.template, template, "{}", template.word());
+        assert!(
+            written.template_said,
+            "{}: the template is said",
+            template.word()
+        );
+    }
 }

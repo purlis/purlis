@@ -18,7 +18,9 @@
 //! - **Its own homes**: each scenario runs in a child of this test binary whose data and config
 //!   homes and `PATH` are its own ([`Homes::of_this_scenario`]): the app
 //!   reads its homes from the environment, which a test cannot set in its own process.
-//! - **Under `strict`** ([`Template`]), unless a cell names another template (Q308).
+//! - **Under `strict`** ([`DEFAULT_TEMPLATE`]), unless a cell names another template (Q308):
+//!   its `[policy]` written in the project's manifest, pressed for where the window would ask,
+//!   and what a chat's start resolves checked against it ([`runs_under`]).
 //!
 //! A scenario that cannot apply its wrap panics on CI (`GITHUB_ACTIONS` or `CI` set), and
 //! elsewhere returns with the reason printed: the OS wrap does not nest inside a sandboxed task.
@@ -130,48 +132,82 @@ impl Dialect {
     }
 }
 
-/// **A `[policy]` template** (Q308): what every chat of a scenario runs under. `strict` is
-/// today's purlis, and every cell runs under it unless it names another.
-///
-/// Until Q308 (PR #6992) lands on main and is merged here, `strict` is today's behaviour with no
-/// `[policy]` key written, and the others are refused: the parameter is threaded through so that
-/// merge has only [`Template::manifest`] to change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum Template {
-    Open,
-    Watch,
-    Team,
-    #[default]
-    Strict,
+/// **A `[policy]` template** (Q308): what every chat of a scenario runs under, core's own
+/// ([`purlis_core::enforcement::Template`]). A scenario runs under [`DEFAULT_TEMPLATE`],
+/// `strict`, unless a cell names another; the product's own default, `watch`, is never assumed.
+pub(crate) use purlis_core::enforcement::Template;
+
+/// The template every scenario runs under unless a cell names another: `strict`, every family
+/// enforced, purlis as it was before Q308.
+pub(crate) const DEFAULT_TEMPLATE: Template = Template::Strict;
+
+/// **The project manifest's `[policy]` for `template`**: always written, `strict` too, since a
+/// project that names none runs under the product's default, `watch`.
+pub(crate) fn policy_of(template: Template) -> String {
+    format!(
+        "[{}]\n{} = \"{}\"\n",
+        purlis_core::enforcement::TABLE,
+        purlis_core::enforcement::TEMPLATE_KEY,
+        template.word()
+    )
 }
 
-impl Template {
-    pub(crate) fn word(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Watch => "watch",
-            Self::Team => "team",
-            Self::Strict => "strict",
-        }
-    }
+/// **What a chat starting in a project under `template` runs under**: each family as the
+/// template sets it, under this machine's locks. `strict` is every family enforced.
+pub(crate) fn resolved_under(
+    template: Template,
+    root: &Path,
+) -> purlis_core::enforcement::Resolved {
+    purlis_core::enforcement::Resolved::of(
+        &purlis_core::enforcement::Settings {
+            template,
+            template_said: true,
+            ..Default::default()
+        },
+        &purlis_core::sandbox::policy::Locks::of(root),
+    )
+}
 
-    /// The template a cell names, by its word.
-    pub(crate) fn of(word: &str) -> Option<Self> {
-        [Self::Open, Self::Watch, Self::Team, Self::Strict]
-            .into_iter()
-            .find(|one| one.word() == word)
+/// **The project at `root` runs under `template` at every chat's start** (Q308a): the person
+/// presses, through `press`, where the window would offer it (the template is looser than what
+/// they accepted, as `open` is than the shipped `watch`), and then what a start resolves
+/// ([`purlis_core::enforcement::at_start`]) is the template's; under `strict`, every family
+/// enforced. Panics where it is not: a scenario never runs under a template it did not ask for.
+pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(String)) {
+    let standing = purlis_core::enforcement::standing(root);
+    assert!(
+        standing.refused.is_empty(),
+        "the project's [policy] did not read: {:?}",
+        standing.refused
+    );
+    if !standing.waiting.is_empty() {
+        press(standing.digest);
     }
+    let at_start = purlis_core::enforcement::at_start(root);
+    assert_eq!(
+        at_start,
+        resolved_under(template, root),
+        "a chat in the project starts under {} as the scenario asked: {}",
+        template.word(),
+        at_start.spelled()
+    );
+    if template == Template::Strict {
+        assert_eq!(
+            at_start,
+            purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Enforce),
+            "under strict every family is enforced"
+        );
+    }
+}
 
-    /// The project manifest's lines for it: none for `strict`, today's purlis.
-    pub(crate) fn manifest(self) -> Result<&'static str, String> {
-        match self {
-            Self::Strict => Ok(""),
-            other => Err(format!(
-                "the `{}` template is Q308's `[policy]`, which this branch does not have yet",
-                other.word()
-            )),
-        }
-    }
+/// **This process is purlis's app, as `main.rs` makes every `purlis-app` process** (the window's
+/// and the session host's): only the app resolves a project's `[policy]` and keeps what the
+/// person accepted (`enforcement::in_force`); any other process runs `strict` whatever the
+/// project says. In a fenced build it seals in memory (`seal::in_memory_for_this_process`), so
+/// the person's press can be kept.
+fn as_the_app() {
+    purlis_core::secrets::keyhold::this_process_is_the_app();
+    purlis_core::secrets::seal::in_memory_for_this_process();
 }
 
 /// **A scenario's own folders**: its data and config homes, the fake harness's state, and the
@@ -179,6 +215,8 @@ impl Template {
 #[derive(Debug, Clone)]
 pub(crate) struct Homes {
     pub home: PathBuf,
+    /// Its own `$HOME`: nothing of the runner's or the person's own home is read.
+    pub user: PathBuf,
     pub data: PathBuf,
     pub config: PathBuf,
     pub state: PathBuf,
@@ -191,6 +229,7 @@ pub(crate) struct Homes {
 impl Homes {
     fn at(home: PathBuf) -> Homes {
         Homes {
+            user: home.join("user"),
             data: home.join("data"),
             config: home.join("config"),
             state: home.join("fake-state"),
@@ -205,9 +244,11 @@ impl Homes {
     /// here, it makes them in a folder of its own, re-runs the calling test in a child with them
     /// as its environment, waits for it to pass, checks nothing is left (no process of the
     /// scenario's, no folder but the home itself), removes the home and answers `None`: the
-    /// child ran the scenario. In that child it answers the homes.
+    /// child ran the scenario. In that child it answers the homes, and the child is purlis's app
+    /// as `main.rs` makes it ([`as_the_app`]).
     pub(crate) fn of_this_scenario() -> Option<Homes> {
         if let Some(home) = std::env::var_os(HOME_VAR) {
+            as_the_app();
             return Some(Homes::at(PathBuf::from(home)));
         }
         let me = std::thread::current();
@@ -223,6 +264,7 @@ impl Homes {
             .expect("the scenario's home");
         let homes = Homes::at(made.path().canonicalize().expect("its home"));
         for folder in [
+            &homes.user,
             &homes.data,
             &homes.config,
             &homes.state,
@@ -240,6 +282,7 @@ impl Homes {
         let fake = crate::behaviour::fake_harness();
         let mut env: Vec<(&str, OsString)> = vec![
             (HOME_VAR, homes.home.clone().into()),
+            ("HOME", homes.user.clone().into()),
             (purlis_core::datahome::HOME_VAR, homes.data.clone().into()),
             (purlis_core::machine::HOME_VAR, homes.config.clone().into()),
             // Never the turn script, its transcript or its state: what the app runs of a harness
@@ -254,17 +297,28 @@ impl Homes {
                 env.push((kept, value));
             }
         }
+        // Its own `$HOME`, and the toolchain where the run's home kept it: a build the child
+        // starts (`testrun::built`) still finds Cargo and rustup.
+        let own_home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        for (name, under_home) in [("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")] {
+            let value = std::env::var_os(name).unwrap_or_else(|| own_home.join(under_home).into());
+            env.push((name, value));
+        }
         let env: Vec<(&str, &std::ffi::OsStr)> = env
             .iter()
             .map(|(name, value)| (*name, value.as_os_str()))
             .collect();
         let said = purlis_core::testrun::rerun_steered(&[&test], &env);
-        if said.contains("skipped: ") {
-            for line in said.lines().filter(|l| l.starts_with("skipped: ")) {
-                let _ = writeln!(std::io::stderr(), "{line}");
-            }
+        let skipped = said.contains("skipped: ");
+        for line in said
+            .lines()
+            .filter(|l| l.starts_with("skipped: ") || l.starts_with("expected fail "))
+        {
+            let _ = writeln!(std::io::stderr(), "{line}");
         }
-        homes.nothing_left();
+        homes.nothing_left(skipped);
         made.close().expect("the scenario's home is removed");
         None
     }
@@ -274,14 +328,57 @@ impl Homes {
         self.home.join("left.json")
     }
 
+    /// Adds `more` to what this child's scenarios left, beside what one before it left: one
+    /// child may run several.
+    fn record_left(&self, more: Left) {
+        let mut kept: Left = std::fs::read_to_string(self.left())
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        kept.pids.extend(more.pids);
+        kept.folders.extend(more.folders);
+        kept.groups_left.extend(more.groups_left);
+        kept.quits.extend(more.quits);
+        // Best effort, from a teardown that may run as a test fails: a `left.json` not written
+        // fails the parent's check.
+        if let Ok(text) = serde_json::to_string(&kept) {
+            let _ = std::fs::write(self.left(), text);
+        }
+    }
+
+    /// **This child ran no scenario, on purpose** (a dialect a leg reports `not_run`, or a test
+    /// with no chat): an empty `left.json`, so its parent tells it from a child that died before
+    /// its teardown.
+    pub(crate) fn ran_no_scenario(&self) {
+        self.record_left(Left::default());
+    }
+
     /// **Nothing the scenario started outlived it** (T1.1-06): every process it recorded has
-    /// ended and every folder of its own outside its home is gone. Run by the parent, after the
-    /// child that ran the scenario ended.
-    fn nothing_left(&self) {
-        let Ok(text) = std::fs::read_to_string(self.left()) else {
-            return;
+    /// ended, every folder of its own outside its home is gone, every quit it asked of the host
+    /// was answered, and no chat's process group outlived its host's quit. Run by the parent,
+    /// after the child that ran the scenario ended. A child that said it could not run
+    /// (`skipped`) may leave no `left.json`; any other must have written one.
+    fn nothing_left(&self, skipped: bool) {
+        let text = match std::fs::read_to_string(self.left()) {
+            Ok(text) => text,
+            Err(_) if skipped => return,
+            Err(why) => panic!(
+                "the scenario's child wrote no {} ({why}): its teardown never ran, so nothing \
+                 says what it left",
+                self.left().display()
+            ),
         };
         let left: Left = serde_json::from_str(&text).expect("left.json reads");
+        assert!(
+            left.quits.is_empty(),
+            "the host did not answer the window's quit: {:?}",
+            left.quits
+        );
+        assert!(
+            left.groups_left.is_empty(),
+            "a chat's process group outlived its host's quit: {:?}",
+            left.groups_left
+        );
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         for pid in &left.pids {
             while purlis_core::process::alive(*pid) && std::time::Instant::now() < deadline {
@@ -314,8 +411,17 @@ const TRANSCRIPT: &str = "transcript.jsonl";
 /// What a scenario started, written by its teardown for its parent's check.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Left {
+    /// Every process of a chat it saw run, a chat that ended earlier included, and every one a
+    /// test said it started.
     pub pids: Vec<u32>,
     pub folders: Vec<PathBuf>,
+    /// The process groups of its chats still running once the host's quit answered (Linux; on
+    /// macOS they are #7103's expected fail).
+    #[serde(default)]
+    pub groups_left: Vec<u32>,
+    /// Each quit of the host that was not answered, and why.
+    #[serde(default)]
+    pub quits: Vec<String>,
 }
 
 /// **The kit the scenario host arms each chat with: what the app ships** (T1.1-06), hand-built
@@ -420,6 +526,8 @@ pub(crate) struct Started {
     pub tmp: Option<PathBuf>,
     /// Its ssh route's folder, where it has one.
     pub ssh: Option<String>,
+    /// The plan the host was handed for it: what its proxy carries and gives.
+    pub plan: purlis_session_protocol::session::ConfinePlan,
 }
 
 /// **The scenario host's `Confine`** (T1.1-06): the production `ConfinesHere` (a unit struct, so
@@ -483,6 +591,7 @@ impl purlis_host::Confine for ConfinesInTheScenario {
             holds_asks_for: hosted.holds_asks_for(),
             tmp: hosted.confined().tmp.map(PathBuf::from),
             ssh: hosted.confined().ssh,
+            plan: confining.confine.plan.clone(),
         });
         Ok(crate::hostedconfinement::held_here(hosted))
     }
@@ -553,6 +662,11 @@ pub(crate) struct Scenario {
     profiled: std::sync::Once,
     /// Processes a test says the scenario started besides its chats.
     also: Mutex<Vec<u32>>,
+    /// Every chat process it saw run, and its process group, an ended chat's included: what
+    /// its teardown checks for leftovers.
+    seen: Mutex<Vec<(u32, Option<u32>)>>,
+    /// Each chat's sandbox as the window composed it at its start, by its number.
+    applied: Mutex<Vec<(u32, Option<purlis_core::sandbox::Applied>)>>,
     /// When it was made, for its run time (T1.1-06: ticket 54 sets its budgets from these).
     began: std::time::Instant,
     /// Ended last: the runtime the host and the link run on.
@@ -560,18 +674,21 @@ pub(crate) struct Scenario {
 }
 
 impl Scenario {
-    /// **The scenario host for `protection`, `persona` and `dialect`**, under `strict`, in this
-    /// scenario's own homes; `None` where it cannot run here (never on CI).
+    /// **The scenario host for `protection`, `persona` and `dialect`**, under `strict`
+    /// ([`DEFAULT_TEMPLATE`]), in this scenario's own homes; `None` where it cannot run here
+    /// (never on CI).
     pub(crate) fn new(
         homes: &Homes,
         protection: Protection,
         persona: Option<&str>,
         dialect: Dialect,
     ) -> Option<Scenario> {
-        Scenario::under(homes, protection, persona, dialect, Template::Strict)
+        Scenario::under(homes, protection, persona, dialect, DEFAULT_TEMPLATE)
     }
 
-    /// [`Scenario::new`], under `template`.
+    /// [`Scenario::new`], under `template`: its `[policy]` in the project's manifest, the
+    /// person's press where the window would ask for one, and every chat's start checked to
+    /// resolve it ([`runs_under`]).
     pub(crate) fn under(
         homes: &Homes,
         protection: Protection,
@@ -584,10 +701,6 @@ impl Scenario {
         }
         let kit = match Kit::shipped(&homes.data) {
             Ok(kit) => kit,
-            Err(why) => return cannot_run(&why),
-        };
-        let policy = match template.manifest() {
-            Ok(policy) => policy,
             Err(why) => return cannot_run(&why),
         };
         crate::sandboxing::scenarios_wrap_with(&kit.binary);
@@ -615,7 +728,7 @@ impl Scenario {
         purlis_core::eventlog::ArgsKey::open(&log).expect("the args key");
         std::fs::write(
             root.join(purlis_core::plane::MANIFEST),
-            format!("{}{policy}", protection.manifest()),
+            format!("{}{}", protection.manifest(), policy_of(template)),
         )
         .expect("the project's manifest");
         if let Some(persona) = persona {
@@ -634,6 +747,14 @@ impl Scenario {
         let window = a_window(&runtime, &hosting, homes, &kit, timings);
         let plane = window.planes().open(&root);
         reopened(&window, &plane, &root);
+        runs_under(template, &root, |shown| {
+            tauri::async_runtime::block_on(crate::policypress::accept_project_policy(
+                tauri::Manager::state(&window.app),
+                plane.clone(),
+                shown,
+            ))
+            .expect("the person accepts the project's [policy] in the window");
+        });
         Some(Scenario {
             protection,
             persona: persona.map(str::to_owned),
@@ -654,6 +775,8 @@ impl Scenario {
             launched: Mutex::default(),
             profiled: std::sync::Once::new(),
             also: Mutex::default(),
+            seen: Mutex::default(),
+            applied: Mutex::default(),
             began,
             runtime: Some(runtime),
         })
@@ -685,12 +808,35 @@ impl Scenario {
     /// **`restart: quit`, a person's quit and relaunch** (T1.1-06; `sessionhost.rs`): the window
     /// lets go of its projects and tells the host to quit, which ends every chat and stops; then a
     /// new host and a new window start on the same homes, and the window relaunches the live chats.
+    ///
+    /// The host must answer the quit, and every chat process it ran must have ended by then,
+    /// before the old host is dropped: dropping it ends its programs too, which would hide a
+    /// quit that ended nothing.
     pub(crate) fn quits_and_relaunches(&mut self) {
+        self.note_running();
+        let running = self.pids();
         let window = self.window.take().expect("a window");
         // As the app's quit does: the record keeps every chat that was live, for the relaunch.
         window.planes().let_go_of_all_to_update();
-        window.quits();
+        if let Err(why) = window.quits() {
+            panic!("the host did not answer the window's quit: {why}");
+        }
         drop(window);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while running.iter().any(|pid| purlis_core::process::alive(*pid))
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let still: Vec<u32> = running
+            .iter()
+            .copied()
+            .filter(|pid| purlis_core::process::alive(*pid))
+            .collect();
+        assert!(
+            still.is_empty(),
+            "the host answered its quit with chat processes {still:?} still running"
+        );
         self.hosting.take();
         let runtime = self.runtime.as_ref().expect("the runtime");
         let hosting = a_host(runtime, &self.log, &self.homes, &self.kit, &self.confines);
@@ -911,6 +1057,10 @@ impl Scenario {
             .start_ready(&chat, &ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        self.applied
+            .lock()
+            .expect("applied")
+            .push((id, ready.sandbox.clone()));
         if let Ok(pane) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::behaviour::Pane::of(held.chats().sessions(), id)
         })) {
@@ -931,7 +1081,51 @@ impl Scenario {
             }
             self.types(id, prompt);
         }
+        self.note_running();
         id
+    }
+
+    /// Chat `id`'s sandbox, as the window composed it at its start.
+    pub(crate) fn applied_of(&self, id: u32) -> Option<purlis_core::sandbox::Applied> {
+        self.applied
+            .lock()
+            .expect("applied")
+            .iter()
+            .find(|(chat, _)| *chat == id)
+            .and_then(|(_, applied)| applied.clone())
+    }
+
+    /// **Notes every chat process running now**, and its process group, so the teardown checks
+    /// it even once its chat has ended.
+    pub(crate) fn note_running(&self) {
+        let running = self.pids();
+        let mut seen = self.seen.lock().expect("seen");
+        for pid in running {
+            if !seen.iter().any(|(one, _)| *one == pid) {
+                seen.push((pid, process_group_of(pid)));
+            }
+        }
+    }
+
+    /// **The person closes chat `id`** in the window: it ends, and is no longer live.
+    pub(crate) fn closes(&self, id: u32) {
+        self.note_running();
+        self.held().chats().close(id).expect("the chat closes");
+    }
+
+    /// The name of every chat the window has open now.
+    pub(crate) fn open_names(&self) -> Vec<String> {
+        let Some(window) = &self.window else {
+            return Vec::new();
+        };
+        let Ok(held) = window.planes().held(&self.plane) else {
+            return Vec::new();
+        };
+        held.chats()
+            .open_now()
+            .into_iter()
+            .map(|open| open.name)
+            .collect()
     }
 
     /// **What a red run's reader needs**: how each chat was launched, the chats open now, the
@@ -1033,6 +1227,7 @@ impl Scenario {
             );
             std::thread::sleep(Duration::from_millis(100));
         }
+        self.note_running();
     }
 
     /// The scenario started `pid` too, which its teardown must end.
@@ -1071,13 +1266,17 @@ impl Scenario {
 
 impl Drop for Scenario {
     /// **Teardown**: the window lets go of every project and tells the host to quit, which ends
-    /// every chat it runs; the runtime goes; then the project's folder. What it started is
-    /// written for the parent, which checks none of it outlived the scenario.
+    /// every chat it runs; the runtime goes; then the project's folder. What it started (every
+    /// chat process it saw, an ended chat's too), a quit the host did not answer, and each chat's
+    /// process group still running after the quit are written for the parent, which fails on
+    /// any of them. On macOS a group the quit left is #7103: an expected fail, said and ended.
     fn drop(&mut self) {
-        let left = Left {
-            pids: self
-                .pids()
-                .into_iter()
+        self.note_running();
+        let seen = self.seen.lock().expect("seen").clone();
+        let mut left = Left {
+            pids: seen
+                .iter()
+                .map(|(pid, _)| *pid)
                 .chain(self.also.lock().expect("also").iter().copied())
                 .collect(),
             folders: std::iter::once(self.root.clone())
@@ -1088,31 +1287,53 @@ impl Drop for Scenario {
                         .filter_map(|one| one.tmp),
                 )
                 .collect(),
+            ..Left::default()
         };
-        // Beside what scenarios before it in the same test left: one child may run several.
-        let mut kept: Left = std::fs::read_to_string(self.homes.left())
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default();
-        kept.pids.extend(left.pids.iter().copied());
-        kept.folders.extend(left.folders);
-        if let Ok(text) = serde_json::to_string(&kept) {
-            let _ = std::fs::write(self.homes.left(), text);
+        let own = process_group_of(std::process::id());
+        let mut groups: Vec<u32> = Vec::new();
+        for group in seen
+            .iter()
+            .filter_map(|(_, group)| *group)
+            .chain(process_groups(&left.pids))
+        {
+            if group > 1 && Some(group) != own && !groups.contains(&group) {
+                groups.push(group);
+            }
         }
-        let groups = process_groups(&left.pids);
         if let Some(window) = self.window.take() {
             window.planes().let_go_of_all();
-            window.quits();
+            if let Err(why) = window.quits() {
+                left.quits.push(why);
+            }
         }
-        // Every process of each chat's group ends with the scenario, a process its chat left in
-        // the background included. Where the host's quit left one, it is said: a person's quit
-        // would have left it too.
-        for group in groups {
-            if group_alive(group) {
+        let still: Vec<u32> = groups.into_iter().filter(|g| group_alive(*g)).collect();
+        if !still.is_empty() {
+            if cfg!(target_os = "macos") {
                 let _ = writeln!(
                     std::io::stderr(),
-                    "the host's quit left chat process group {group} running; the teardown ends it"
+                    "expected fail #7103: the host's quit left chat process groups {still:?} \
+                     running on macOS; the teardown ends them"
                 );
+                let _ = super::report::write(&[purlis_scenarios::model::LegRecord {
+                    kind: purlis_scenarios::model::EntryKind::Fixture,
+                    row: "T1.1-06".to_owned(),
+                    test: std::thread::current().name().map(str::to_owned),
+                    dialect: None,
+                    protection: None,
+                    os: super::report::this_os(),
+                    leg: purlis_scenarios::model::ReportLeg::Fixture,
+                    timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
+                    verdict: purlis_scenarios::model::ReportVerdict::ExpectedFail,
+                    reason: Some(
+                        "#7103: a chat's background process outlives the host's quit on macOS"
+                            .to_owned(),
+                    ),
+                }]);
+            } else {
+                left.groups_left.extend(still.iter().copied());
+            }
+            // Ended either way, so nothing of the scenario outlives the run.
+            for group in &still {
                 let _ =
                     purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
                         "-KILL",
@@ -1121,6 +1342,7 @@ impl Drop for Scenario {
                     ]));
             }
         }
+        self.homes.record_left(left);
         self.hosting.take();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_timeout(Duration::from_secs(5));
@@ -1159,11 +1381,14 @@ impl Window {
         }
     }
 
-    /// Tells the host to quit, which ends every chat it runs and stops it.
-    fn quits(&self) {
-        if let Ok(link) = self.connection.wait(Duration::ZERO) {
-            let _ = link.quit_within(Duration::from_secs(7));
-        }
+    /// **Tells the host to quit**, which ends every chat it runs and stops it, and answers
+    /// whether the host answered within the window's own wait for it.
+    fn quits(&self) -> Result<(), String> {
+        let link = self
+            .connection
+            .wait(Duration::ZERO)
+            .map_err(|why| format!("the window has no link to the host: {why}"))?;
+        link.quit_within(Duration::from_secs(7))
     }
 }
 

@@ -198,6 +198,24 @@
     },
     {
       "file": "app/src-tauri/src/chats.rs",
+      "at": "impl Default for Chats {",
+      "kind": "switch",
+      "reason": "A test build's `Default` for the window's chats, which code that does not name it can run through the trait: every caller is a test's fixture.",
+      "forced": {
+        "how": "The scenario host's window is the app's own `Planes` (`Planes::telling`), whose chats are made as the app makes them, never through `Default`.",
+        "test": "the_scenario_host_runs_chats_in_the_session_host"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/chats.rs",
       "at": "let decided = match &self.deciding {",
       "kind": "switch",
       "reason": "A test build decides a chat-on-no-profile's sandbox by a test's `deciding` or `claude_left_unsandboxed_here`, which can leave a Linux Claude Code chat unsandboxed; production decides it by the project and your level alone.",
@@ -475,10 +493,42 @@
       }
     },
     {
+      "file": "app/src-tauri/src/host.rs",
+      "at": "impl Default for Opening {",
+      "kind": "switch",
+      "reason": "A test build's `Default` for a start's opening, which code that does not name it can run through the trait: every caller is a test's fixture (`..Opening::default()`).",
+      "forced": {
+        "how": "Every scenario chat starts through `Chats::start_ready` with the `Ready` the window composed (`Scenario::starts_holding`), never an `Opening` a test filled.",
+        "test": "the_scenario_host_runs_chats_in_the_session_host"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "app/src-tauri/src/hostsaving.rs",
       "at": "if purlis_core::fence::FENCED {",
       "kind": "switch",
       "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "commands",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so only a debug build (without `e2e`) writes the TypeScript bindings of the window's commands as it starts. The scenario host builds no window that starts, and calls the commands themselves.",
       "covers": {
         "linux": [
           "linux-release-profile"
@@ -560,6 +610,38 @@
     },
     {
       "file": "app/src-tauri/src/lib.rs",
+      "at": "impl Default for Shipped {",
+      "kind": "switch",
+      "reason": "A test build's `Default` for what the app ships: a stand-in `purlis` and an empty plugin in a temp folder, which code that does not name it can run through the trait.",
+      "forced": {
+        "how": "The scenario host hands the window `Kit::for_the_window`, the `purlis` built apart and the repo's plugin; the kit test asserts its binary is not `Shipped::default()`'s.",
+        "test": "the_scenario_kit_is_what_the_app_ships"
+      },
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
+      "at": "let bundle = install::refreshes_on_its_own(false, cfg!(debug_assertions))",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug app never refreshes the plugin it installs from its bundle by itself. The scenario host installs nothing: its plugin is the repo's, named in its kit.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/lib.rs",
       "at": "let gate = off_the_main_thread::gate::of(what);",
       "kind": "switch",
       "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
@@ -580,6 +662,49 @@
       "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
       "covers": {
         "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/loginitems.rs",
+      "at": "if cfg!(debug_assertions)",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug build reads a stand-in login item's name from the environment, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/main.rs",
+      "at": "#![cfg_attr(not(debug_assertions), windows_subsystem = \"windows\")]",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a release build on Windows has no console. Neither OS a scenario runs on is Windows.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/main.rs",
+      "at": "purlis_core::panicend::fatal();",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a release app ends its process on any thread's panic (`panicend`), and a debug one does not. The scenario host is no app process (it does not run `main`); the host process is (`host-process`).",
+      "covers": {
+        "linux": [
+          "host-process",
           "linux-release-profile"
         ],
         "macos": [
@@ -841,6 +966,119 @@
       }
     },
     {
+      "file": "crates/purlis-cli/src/extensions.rs",
+      "at": "{",
+      "count": 2,
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` takes an extension's deadline from the environment (`CHARTER_TEST_EXTENSION_DEADLINE_MS`), for its tests on a loaded machine. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/guard.rs",
+      "at": "if let Some(ms) = std::env::var(BUDGET_ON_PURPOSE_ENV)",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` takes the guard's budget from the environment, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/guard.rs",
+      "at": "if std::env::var_os(STALLS_ON_PURPOSE_ENV).is_some() {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis`'s guard stalls before it judges when the environment says so, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/main.rs",
+      "at": "if std::env::var_os(CORE_INFORMS_ON_PURPOSE_ENV).is_some() {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` logs on purpose and exits when the environment says so, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/main.rs",
+      "at": "if std::env::var_os(CORE_WARNS_ON_PURPOSE_ENV).is_some() {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` warns on purpose and exits when the environment says so, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/main.rs",
+      "at": "if std::env::var_os(PANIC_ON_PURPOSE_ENV).is_some() {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` panics on purpose when the environment says so, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/main.rs",
+      "at": "if std::env::var_os(SAYS_ITS_GITS_GROUP_ENV).is_some() {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug `purlis` says its gits' process group and exits when the environment says so, for its own tests. No scenario sets it.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-cli/src/main.rs",
+      "at": "purlis_core::panicend::fatal();",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a release `purlis` ends its process on any thread's panic (`panicend`), and the debug kit does not. A panic in a hook would end the hook in either; only the release one ends at once.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/appstate.rs",
       "at": "if crate::fence::FENCED {",
       "kind": "switch",
@@ -878,6 +1116,20 @@
       "covers": {
         "linux": [
           "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/browsers.rs",
+      "at": "cfg!(debug_assertions),",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug build may read the browser engines' clock from the environment (`ENGINES_CLOCK_VAR`), for its own tests. No scenario sets it, and no scenario opens a browser yet (#7100).",
+      "covers": {
+        "linux": [
           "linux-release-profile"
         ],
         "macos": [
@@ -974,6 +1226,12 @@
           "macos-live-check"
         ]
       }
+    },
+    {
+      "file": "crates/purlis-core/src/fence.rs",
+      "at": "if !(cfg!(debug_assertions) || FENCED || TEST_SUPPORT) {",
+      "kind": "seam",
+      "reason": "The hidden `_built-with` (T1.1-06): only a debug build, or one with the fence or the test seams, answers it, so no release build a person runs has the command. The scenario kit's check reads it from the debug kit CI builds apart."
     },
     {
       "file": "crates/purlis-core/src/fence.rs",
@@ -1313,6 +1571,20 @@
       "covers": {
         "linux": [
           "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/loginitem.rs",
+      "at": "if cfg!(debug_assertions) {",
+      "kind": "switch",
+      "reason": "A debug-build switch: the scenario host, and the kit CI builds apart from it, are debug builds, and what a person runs is a release build, so a debug build names its login items as a development build's, apart from an installed release's. No scenario registers a login item.",
+      "covers": {
+        "linux": [
           "linux-release-profile"
         ],
         "macos": [
@@ -1828,7 +2100,7 @@
     {
       "file": "crates/purlis-core/src/secrets/keyhold.rs",
       "at": "if crate::fence::FENCED {",
-      "count": 2,
+      "count": 3,
       "kind": "switch",
       "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
       "covers": {
@@ -1919,6 +2191,20 @@
     },
     {
       "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "&& !crate::fence::FENCED",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
       "at": "if !super::keyhold::is_the_app() || crate::fence::FENCED {",
       "kind": "switch",
       "reason": "The fence (charter-app#129) on the dispatch-grant seal key (Q306): a fenced build never reads the login keychain for it, as no test touches the person's keychain; a release build reads it, in the app alone.",
@@ -1931,6 +2217,31 @@
           "macos-live-check"
         ]
       }
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "if let Some(held) = IN_MEMORY.get() {",
+      "count": 3,
+      "kind": "seam",
+      "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. Set by every scenario's child (`host::as_the_app`), so a scenario seals as a release app does, with a key of its own."
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "pub fn in_memory_for_this_process() {",
+      "kind": "seam",
+      "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. "
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "static IN_MEMORY: std::sync::OnceLock<InMemory> = std::sync::OnceLock::new();",
+      "kind": "seam",
+      "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. "
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "struct InMemory {",
+      "kind": "seam",
+      "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. "
     },
     {
       "file": "crates/purlis-core/src/secrets/setup.rs",

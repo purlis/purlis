@@ -13,7 +13,9 @@
 //! **What counts.** In purlis-app's sources, every `cfg(test)`, `cfg!(test)`, `test-support` and
 //! `fenced` mention, and every use of `fence::FENCED`. In the crates it depends on, only the
 //! features (`test-support`, `fenced`) and `fence::FENCED`: their own `cfg(test)` is off in the
-//! scenario host's build, which links them as dependencies. Test files (`tests.rs`, `*_tests.rs`,
+//! scenario host's build, which links them as dependencies. And in every crate, every
+//! `debug_assertions` mention: the scenario host is a debug build and what a person runs is a
+//! release build, so each is a switch too. Test files (`tests.rs`, `*_tests.rs`,
 //! anything under a `tests` folder) and test modules' declarations are not a path a scenario
 //! runs.
 //!
@@ -21,7 +23,8 @@
 //! build has changes no production path by itself: production cannot call it, and the code that
 //! does is itself counted here. So a gated definition is inert unless it is one side of a pair
 //! (`cfg(not(test))`, `cfg(not(any(test, …)))`, `cfg(not(feature = …))`), which swaps what runs
-//! and is a switch.
+//! and is a switch. **A trait's impl is not a definition alone** (`impl Trait for Type`, `Drop`
+//! among them): code that never names it runs it, through the trait, so a gated one is a switch.
 //!
 //! An entry is keyed by its file and the code line it gates (the line after the attribute, or the
 //! line itself for an expression), so it survives lines moving. A switch the lint finds that the
@@ -147,7 +150,8 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
 fn mentions(line: &str, own: bool) -> bool {
     let features = line.contains("feature = \"test-support\"")
         || line.contains("feature = \"fenced\"")
-        || line.contains("fence::FENCED");
+        || line.contains("fence::FENCED")
+        || line.contains("debug_assertions");
     features
         || (own
             && (line.contains("cfg(test)")
@@ -158,11 +162,15 @@ fn mentions(line: &str, own: bool) -> bool {
                 || line.contains("cfg(all(test")))
 }
 
-/// Whether the code line `at` begins a definition.
+/// Whether the code line `at` begins a definition alone: never a trait's impl, which code that
+/// does not name it runs.
 fn a_definition(at: &str) -> bool {
     let mut rest = at;
     for prefix in ["pub(crate) ", "pub(super) ", "pub ", "async ", "const fn "] {
         rest = rest.strip_prefix(prefix).unwrap_or(rest);
+    }
+    if (rest.starts_with("impl ") || rest.starts_with("impl<")) && rest.contains(" for ") {
+        return false;
     }
     [
         "fn ",
@@ -297,8 +305,44 @@ fn list() -> List {
     serde_json::from_str(&text).expect("switches.json reads")
 }
 
+/// **Every test defined in the sources under `repo`**, by name: each `#[test]` function in the
+/// roots a scenario runs through and their own suites.
+fn tests_in(repo: &Path) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for root in ROOTS {
+        let mut files = Vec::new();
+        sources(&repo.join(root), &mut files);
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().map(str::trim).collect();
+            for (i, line) in lines.iter().enumerate() {
+                let Some(name) = line
+                    .strip_prefix("fn ")
+                    .and_then(|rest| rest.split_once('('))
+                    .map(|(name, _)| name)
+                else {
+                    continue;
+                };
+                let a_test = lines[..i]
+                    .iter()
+                    .rev()
+                    .take_while(|above| above.starts_with("#[") || above.starts_with("///"))
+                    .any(|above| *above == "#[test]");
+                if a_test {
+                    out.insert(name.to_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// What is wrong with `entry`'s reason, forcing and covers, if anything.
-fn checked(entry: &Entry, covers: &BTreeMap<String, String>) -> Vec<String> {
+fn checked(
+    entry: &Entry,
+    covers: &BTreeMap<String, String>,
+    tests: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
     let mut wrong = Vec::new();
     let name = format!("{} `{}`", entry.file, entry.at);
     if entry.reason.trim().len() < 12 {
@@ -315,6 +359,11 @@ fn checked(entry: &Entry, covers: &BTreeMap<String, String>) -> Vec<String> {
                 if forced.how.trim().is_empty() || forced.test.trim().is_empty() {
                     wrong.push(format!(
                         "{name}: forced, but says neither how nor by which test"
+                    ));
+                } else if !tests.contains(forced.test.trim()) {
+                    wrong.push(format!(
+                        "{name}: forced by `{}`, which is no test here",
+                        forced.test
                     ));
                 }
             } else {
@@ -347,13 +396,14 @@ fn every_test_only_switch_on_a_scenario_path_is_forced_or_listed() {
             .or_default() += 1;
     }
     let mut wrong = Vec::new();
+    let tests = tests_in(&repo());
     let mut listed: BTreeMap<(String, String), &Entry> = BTreeMap::new();
     for entry in &list.switches {
         let key = (entry.file.clone(), entry.at.clone());
         if listed.insert(key.clone(), entry).is_some() {
             wrong.push(format!("{} `{}` is listed twice", key.0, key.1));
         }
-        wrong.extend(checked(entry, &list.covers));
+        wrong.extend(checked(entry, &list.covers, &tests));
     }
     let mut unlisted = Vec::new();
     for ((file, at), count) in &counted {
@@ -404,8 +454,8 @@ fn every_test_only_switch_on_a_scenario_path_is_forced_or_listed() {
 }
 
 /// The lint finds what it is meant to: a switch in a body, a pair's other side, an expression,
-/// and a dependency's feature, and it leaves a definition, a test module and a dependency's own
-/// `cfg(test)` alone.
+/// a dependency's feature, a `debug_assertions` gate and a gated trait impl (`Drop`), and it
+/// leaves a definition, an inherent impl, a test module and a dependency's own `cfg(test)` alone.
 #[test]
 fn the_switch_scan_tells_a_switch_from_a_definition() {
     let repo = tempfile::tempdir().expect("a repo");
@@ -422,7 +472,9 @@ fn the_switch_scan_tells_a_switch_from_a_definition() {
     std::fs::write(
         core.join("two.rs"),
         "#[cfg(test)]\nfn only_its_own_tests() {}\nfn body() {\n    #[cfg(any(test, feature = \
-         \"test-support\"))]\n    let y = 1;\n    if crate::fence::FENCED {}\n}\n",
+         \"test-support\"))]\n    let y = 1;\n    if crate::fence::FENCED {}\n    \
+         #[cfg(debug_assertions)]\n    let z = 3;\n}\n#[cfg(feature = \"test-support\")]\nimpl \
+         Drop for Held {}\n#[cfg(feature = \"test-support\")]\nimpl Held {}\n",
     )
     .expect("a file");
     let found = scan(repo.path());
@@ -442,10 +494,34 @@ fn the_switch_scan_tells_a_switch_from_a_definition() {
                 "crates/purlis-core/src/two.rs",
                 "if crate::fence::FENCED {}"
             ),
+            ("crates/purlis-core/src/two.rs", "let z = 3;"),
+            ("crates/purlis-core/src/two.rs", "impl Drop for Held {}"),
         ]
+    );
+    assert!(
+        found.iter().any(|f| f.inert && f.at == "impl Held {}"),
+        "an inherent impl is a definition alone: {found:?}"
     );
     assert!(
         found.iter().any(|f| f.inert && f.at == "fn helper() {}"),
         "{found:?}"
     );
+}
+
+/// **A forced entry names a test that is there**: the lint finds a `#[test]` by its name, and
+/// not a function that is no test, nor a name nowhere defined.
+#[test]
+fn a_forced_entry_must_name_a_test_that_exists() {
+    let repo = tempfile::tempdir().expect("a repo");
+    let app = repo.path().join(THIS_CRATE);
+    std::fs::create_dir_all(&app).expect("the app");
+    std::fs::write(
+        app.join("one.rs"),
+        "/// Shows it.\n#[test]\nfn shows_it_forced() {}\nfn not_a_test() {}\n",
+    )
+    .expect("a file");
+    let tests = tests_in(repo.path());
+    assert!(tests.contains("shows_it_forced"));
+    assert!(!tests.contains("not_a_test"));
+    assert!(!tests.contains("nowhere_at_all"));
 }
