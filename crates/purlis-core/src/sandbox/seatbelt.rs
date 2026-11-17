@@ -443,7 +443,100 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     {
         own.after.push(super::localport::seatbelt_rule(*port));
     }
+    // The `ports` family off (the Q308 follow-up, item 5): every local socket and every port of
+    // this Mac's loopback, after the floor's and the full profile's holds of them, so it wins;
+    // then purlis's own ports as the chat was compiled, held still.
+    if let Some(own_ports) = &widened.every_local {
+        own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
+        own.after.extend(every_local_held());
+        for port in own_ports {
+            own.after.push(format!(
+                "(deny network-outbound (remote ip \"localhost:{port}\"))"
+            ));
+        }
+    }
     Ok(())
+}
+
+/// What the `ports` family off lets a chat connect to ([`super::Widened::every_local`]): every
+/// local socket and every port of this Mac's loopback, which [`FLOOR_HELD`] and the full
+/// profile otherwise hold, but purlis's own ([`every_local_held`]).
+pub const EVERY_LOCAL: &str = "(allow network-outbound (remote unix-socket))
+(allow network-outbound (remote ip \"localhost:*\"))
+";
+
+/// **The local sockets the `ports` family off still holds** (the review of #7105): purlis's own,
+/// each by where or what it is, in any case. Every project's state folder (`.purlis`, `.charter`:
+/// its hook socket and what it keeps beside it, every plane's and every vault's), every hook
+/// socket and the session host's and its window's (`purlisd*.sock`), wherever they were made,
+/// every chat's server sockets (`purlis-serve`) and the forwards to a pool's engine
+/// (`engine-links`). Another program's socket, a container engine's among them (ruling Q328:
+/// only under a `ports = "off"` the person pressed), is reached. The chat's own hook socket is
+/// given back after them ([`hook_socket_again`]).
+pub fn every_local_held() -> Vec<String> {
+    let state = crate::names::STATE_DIR
+        .spellings()
+        .map(|name| folded(name.trim_start_matches('.')))
+        .collect::<Vec<_>>()
+        .join("|");
+    [
+        format!("/\\.({state})/"),
+        format!(
+            "/({}|{}[^/]*)\\.{}$",
+            folded("hooks"),
+            folded("purlisd"),
+            folded("sock")
+        ),
+        format!(
+            "/({}|{})/",
+            folded(super::door::FOLDER),
+            folded(crate::sshroute::DIR)
+        ),
+    ]
+    .into_iter()
+    .map(|regex| format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))"))
+    .collect()
+}
+
+/// `word` as a regex that matches it in any case: macOS's volumes fold names, so the kernel may
+/// name a socket by any case it was reached by.
+fn folded(word: &str) -> String {
+    word.chars()
+        .map(|one| {
+            let (lower, upper) = (one.to_ascii_lowercase(), one.to_ascii_uppercase());
+            if lower == upper {
+                regex_escaped(one)
+            } else {
+                format!("[{lower}{upper}]")
+            }
+        })
+        .collect()
+}
+
+/// `one` escaped for a regex.
+fn regex_escaped(one: char) -> String {
+    if "\\.^$*+?()[]{}|".contains(one) {
+        format!("\\{one}")
+    } else {
+        one.to_string()
+    }
+}
+
+/// **The chat's own hook socket, given back after what `own` holds** ([`every_local_held`] holds
+/// every hook socket, so a chat whose project turns `ports` off still reaches its own). Nothing
+/// where `own` lifts no local socket.
+fn hook_socket_again(own: &Own, hook_socket: Option<&Path>) -> Result<Vec<String>, &'static str> {
+    let lifted = own
+        .after
+        .iter()
+        .any(|rule| EVERY_LOCAL.lines().next() == Some(rule.as_str()));
+    match hook_socket {
+        Some(socket) if lifted => Ok(vec![format!(
+            "(allow network-outbound (remote unix-socket (path-literal {})))",
+            quote(socket)?
+        )]),
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// Lets a wrapped chat serve on each of `ports` (#2019): on its own socket for each in `folder`,
@@ -658,6 +751,9 @@ pub fn profile(
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
+    for rule in hook_socket_again(own, hook_socket)? {
+        line(rule);
+    }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
@@ -772,6 +868,9 @@ pub fn floor_profile(
     }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
+    }
+    for rule in hook_socket_again(own, hook_socket)? {
+        line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {

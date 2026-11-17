@@ -1083,6 +1083,47 @@ fn a_held_folder_is_lifted_only_by_its_whole_name_below_the_home_at_the_floor() 
     ));
 }
 
+/// **What a project's `[policy]` may allow with nobody asked** (the review of #7105, blocker 1):
+/// a folder of the project, and never a held folder of later code nor a folder the floor holds
+/// for being on `PATH`, though a person may lift the first and allow the second from a Notice.
+#[test]
+fn the_policy_answers_a_folder_of_the_project_and_never_one_a_later_program_loads_from() {
+    let m = Disk::new();
+    let mut ground = ground_of(&m, true);
+    // At the floor, `Ground::of` lists what the floor holds on `PATH` as a folder a person may
+    // allow from its Notice.
+    ground.allowed.push(m.at.join("home/.local/bin"));
+    assert_eq!(
+        unasked_write(&m.path("plane/workspaces/alpha/repo"), &ground),
+        Ok(m.at.join("plane/workspaces/alpha/repo"))
+    );
+    for typed in [
+        "home/.local/share/fish/vendor_conf.d",
+        "home/.local/share/nvim/site/plugin",
+        "home/.local/share/bash-completion/completions",
+        "home/.config/gh",
+        "home/.kube/kuberc",
+    ] {
+        std::fs::create_dir_all(m.at.join(typed)).expect("made");
+        assert!(
+            lift(&m.path(typed), &ground).is_ok(),
+            "{typed} is a held folder"
+        );
+        assert!(
+            matches!(
+                unasked_write(&m.path(typed), &ground),
+                Err(Refused::Never(_))
+            ),
+            "{typed}"
+        );
+    }
+    assert!(write(&m.path("home/.local/bin"), &ground.place()).is_ok());
+    assert!(
+        unasked_write(&m.path("home/.local/bin"), &ground).is_err(),
+        "a folder on PATH"
+    );
+}
+
 /// What a Claude Code chat's Notice says names what its Allow opens, and only there.
 #[test]
 fn a_lift_by_name_says_the_name_it_opens() {

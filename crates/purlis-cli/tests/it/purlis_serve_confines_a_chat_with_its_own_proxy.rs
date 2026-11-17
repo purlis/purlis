@@ -134,6 +134,7 @@ fn purlis_serve_starts_a_chats_confinement_with_its_own_proxy() {
                     given: Vec::new(),
                 },
                 asks: false,
+                lifted: Vec::new(),
             })))
             .await;
 

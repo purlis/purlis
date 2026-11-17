@@ -666,6 +666,35 @@ pub fn write(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     Ok(resolved)
 }
 
+/// **`typed` as a folder a project's `[policy]` may let a chat write with nobody asked** (the
+/// Q308 follow-up, item 3, and the review of #7105), or why not: [`write`]'s judgement, with the
+/// allowlist cut to the project and the folders you listed in Settings. Never a held folder
+/// ([`liftable`]), and never a folder the floor holds ([`super::floor_held`]: `PATH` and the
+/// packages it leads to): a later program loads code from each outside any sandbox, so only
+/// the person allows one, from its Notice, whatever the project's `[policy]` says.
+pub fn unasked_write(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
+    let later_code = || Refused::Never(brokered_route(Class::LaterCode).to_owned());
+    let place = ground.place();
+    if liftable(Path::new(typed.trim()), &place).is_some() {
+        return Err(later_code());
+    }
+    let listed: Vec<PathBuf> = super::local::grantable_folders(&ground.root)
+        .into_iter()
+        .filter(|listed| still_itself(listed))
+        .collect();
+    let resolved = write(
+        typed,
+        &Place {
+            allowed: &listed,
+            ..place
+        },
+    )?;
+    if liftable(&resolved, &place).is_some() {
+        return Err(later_code());
+    }
+    Ok(resolved)
+}
+
 /// **`typed` as a folder you list in Settings as one chats may be granted** (D-1342-10): every
 /// refusal [`write`] makes but the allowlist itself, which this adds to. Resolved, as a grant
 /// is.

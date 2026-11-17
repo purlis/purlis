@@ -2878,6 +2878,7 @@ struct HeardOfIt {
 
 fn hearing(heard: &Arc<HeardOfIt>, asks: bool) -> Hearing {
     Hearing {
+        network: None,
         refusals: egress::Refusals::telling({
             let heard = Arc::clone(heard);
             Arc::new(move |host: &str, port: u16| {

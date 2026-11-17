@@ -5521,6 +5521,7 @@ impl SessionHost for HostedSessions {
         let (link, project) = self.link_with_the_code()?;
         let id = purlis_core::reopen::mint();
         let asks = hearing.asks.is_some();
+        let lifted = Hears::lifted(&hearing);
         // Heard before it is asked for, so nothing its proxy does is missed.
         link.hear(&id, Hears::of(hearing));
         let answered = link.call_heard_in_a_start(Command::Confine(Box::new(session::Confine {
@@ -5528,6 +5529,7 @@ impl SessionHost for HostedSessions {
             project,
             plan: wire(plan),
             asks,
+            lifted,
         })));
         let confined = match answered {
             Ok(Answer::Confined(confined)) => confined,

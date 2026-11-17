@@ -5768,6 +5768,17 @@ impl Chats {
             )),
             reached: Some(reached),
             asks,
+            // Never for a grade's chat, which reaches only what it was given (ADR 0105 §3).
+            network: (!chat.graded)
+                .then(|| {
+                    lifted_by_the_policy(
+                        &self.project,
+                        identity.id.clone(),
+                        purlis_core::enforcement::Family::Network,
+                        NETWORK_LIFTED_RULE,
+                    )
+                })
+                .flatten(),
         };
         // On a runner, the runner confines it, and its proxy is heard as the one it names.
         let (hearing, composed_hearing) = if on_the_runner {
@@ -9954,8 +9965,30 @@ fn answered_by_the_policy(
     root: &std::path::Path,
     chat: Option<String>,
 ) -> Option<purlis_core::sandbox::asks::Answered> {
-    use purlis_core::enforcement::{self, Family, Mode};
-    let mode = enforcement::mode(root, Family::Asks);
+    lifted_by_the_policy(
+        root,
+        chat,
+        purlis_core::enforcement::Family::Asks,
+        purlis_core::enforcement::RULE_HOST_ASK,
+    )
+}
+
+/// The rule a host a chat's proxy carried only because `network` is not enforced is logged by.
+pub(crate) const NETWORK_LIFTED_RULE: &str = purlis_core::enforcement::RULE_NETWORK_UNLISTED;
+
+/// **What a chat's proxy, or its board, tells of a host it let through only because the
+/// project's `[policy]` does not enforce `family`** for chat `chat`, whose start resolved it:
+/// nothing where the family is enforced (it refuses or asks as before), a line of its log,
+/// by `rule` and the host, where it logs. The same wherever the proxy runs: a confinement in the
+/// session host tells the window, which tells this (1.91).
+fn lifted_by_the_policy(
+    root: &std::path::Path,
+    chat: Option<String>,
+    family: purlis_core::enforcement::Family,
+    rule: &'static str,
+) -> Option<purlis_core::sandbox::asks::Answered> {
+    use purlis_core::enforcement::{self, Mode};
+    let mode = enforcement::mode(root, family);
     if mode == Mode::Enforce {
         return None;
     }
@@ -9965,9 +9998,9 @@ fn answered_by_the_policy(
             enforcement::record(
                 &root,
                 chat,
-                Family::Asks,
-                enforcement::RULE_HOST_ASK,
-                Some(&format!("{host}:{port}")),
+                family,
+                rule,
+                Some(&purlis_core::sandbox::egress::host_and_port(host, port)),
             );
         }
     }))
