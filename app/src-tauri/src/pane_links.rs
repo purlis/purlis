@@ -29,7 +29,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
@@ -722,12 +722,45 @@ pub async fn pane_link_resolve(
         .unwrap_or_else(|| vec![None; count])
 }
 
-/// The most candidates of a runner chat's line looked at together.
-pub const MOST_AT_ONCE: usize = 8;
+/// The most paths asked of runners at once, across every pane's lines: one more answers at once
+/// that it did not look.
+pub const MOST_RUNNER_LOOKS: usize = 8;
 
-/// **What each candidate on a line in `pane` is**, in order. On a runner chat's line each path
-/// is asked of the runner at once, [`MOST_AT_ONCE`] at a time, so each has the runner's own wait
-/// (`runnerfiles::LOOK_WITHIN`) inside the pane's, and one slow path leaves the others linked.
+/// The runner looks under way now, across every pane.
+static RUNNER_LOOKING: AtomicUsize = AtomicUsize::new(0);
+
+/// How long before the pane's wait ends a runner look may still start: one started later could
+/// outlast that wait, and with it the whole line.
+const LAST_RUNNER_LOOK: Duration = LOOK_FOR
+    .saturating_sub(crate::runnerfiles::LOOK_WITHIN)
+    .saturating_sub(Duration::from_millis(300));
+
+/// Places taken among [`MOST_RUNNER_LOOKS`], given back when dropped.
+pub(crate) struct RunnerLooks(usize);
+
+impl RunnerLooks {
+    /// Up to `wanted` places, as many as are free now.
+    pub(crate) fn take(wanted: usize) -> Self {
+        let mut took = 0;
+        let _ = RUNNER_LOOKING.try_update(Ordering::SeqCst, Ordering::SeqCst, |now| {
+            took = wanted.min(MOST_RUNNER_LOOKS.saturating_sub(now));
+            Some(now + took)
+        });
+        Self(took)
+    }
+}
+
+impl Drop for RunnerLooks {
+    fn drop(&mut self) {
+        RUNNER_LOOKING.fetch_sub(self.0, Ordering::SeqCst);
+    }
+}
+
+/// **What each candidate on a line in `pane` is**, in order. On a runner chat's line the paths
+/// are asked of the runner by a pool of the places free among [`MOST_RUNNER_LOOKS`], each with
+/// its own wait (`runnerfiles::LOOK_WITHIN`). None starts past [`LAST_RUNNER_LOOK`], so the
+/// line is answered inside the pane's wait: the paths found stay linked, and those not looked
+/// at are no link.
 pub(crate) fn seen_on_line(
     resolver: &Resolver,
     pane: &Pane,
@@ -740,21 +773,33 @@ pub(crate) fn seen_on_line(
             .map(|candidate| seen_in(resolver, pane, candidate, chats))
             .collect();
     }
-    candidates
-        .chunks(MOST_AT_ONCE)
-        .flat_map(|together| {
-            std::thread::scope(|scope| {
-                let looking: Vec<_> = together
-                    .iter()
-                    .map(|candidate| scope.spawn(|| seen_in(resolver, pane, candidate, chats)))
-                    .collect();
-                looking
-                    .into_iter()
-                    .map(|one| one.join().ok().flatten())
-                    .collect::<Vec<_>>()
+    let started = Instant::now();
+    let places = RunnerLooks::take(candidates.len());
+    let next = AtomicUsize::new(0);
+    let mut seen = vec![None; candidates.len()];
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..places.0)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut found = Vec::new();
+                    while started.elapsed() < LAST_RUNNER_LOOK {
+                        let at = next.fetch_add(1, Ordering::SeqCst);
+                        let Some(candidate) = candidates.get(at) else {
+                            break;
+                        };
+                        found.push((at, seen_in(resolver, pane, candidate, chats)));
+                    }
+                    found
+                })
             })
-        })
-        .collect()
+            .collect();
+        for worker in workers {
+            for (at, one) in worker.join().unwrap_or_default() {
+                seen[at] = one;
+            }
+        }
+    });
+    seen
 }
 
 /// **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,

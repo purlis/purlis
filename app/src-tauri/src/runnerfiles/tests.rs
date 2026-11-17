@@ -465,8 +465,15 @@ mod in_a_pane {
         );
     }
 
+    /// The places among `MOST_RUNNER_LOOKS` are the app's, shared by every line: one test of a
+    /// line's looks at a time.
+    static ONE_LINE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn each_path_on_a_runner_chats_line_is_looked_at_within_the_panes_own_wait() {
+        let _alone = ONE_LINE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut runner = fake(b"fn main() {}\n");
         runner.slow = std::time::Duration::from_millis(1200);
         let candidates: Vec<Candidate> = ["src/a.rs", "src/b.rs", "src/c.rs"]
@@ -488,5 +495,58 @@ mod in_a_pane {
             started.elapsed()
         );
         assert!(seen.iter().all(Option::is_some), "{seen:?}");
+    }
+
+    #[test]
+    fn a_runner_chats_line_of_more_slow_paths_than_are_looked_at_together_keeps_those_found() {
+        let _alone = ONE_LINE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut runner = fake(b"fn main() {}\n");
+        runner.slow = std::time::Duration::from_millis(1200);
+        let candidates: Vec<Candidate> = (0..9).map(|n| file(&format!("src/{n}.rs"))).collect();
+        let started = std::time::Instant::now();
+
+        let seen = crate::pane_links::seen_on_line(
+            &links(&runner),
+            &on_runner(),
+            &candidates,
+            &crate::pane_links::ChatsHere::none(),
+        );
+
+        assert!(
+            started.elapsed() < crate::pane_links::LOOK_FOR,
+            "{:?}: past the pane's wait, the whole line is unlinked",
+            started.elapsed()
+        );
+        assert_eq!(seen.len(), 9);
+        assert_eq!(
+            seen.iter().filter(|one| one.is_some()).count(),
+            crate::pane_links::MOST_RUNNER_LOOKS,
+            "{seen:?}"
+        );
+    }
+
+    #[test]
+    fn a_runner_chats_line_asked_while_every_runner_look_is_taken_answers_at_once_unlinked() {
+        let _alone = ONE_LINE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut runner = fake(b"fn main() {}\n");
+        runner.slow = std::time::Duration::from_millis(1200);
+        let taken = crate::pane_links::RunnerLooks::take(crate::pane_links::MOST_RUNNER_LOOKS);
+        let started = std::time::Instant::now();
+
+        let seen = crate::pane_links::seen_on_line(
+            &links(&runner),
+            &on_runner(),
+            &[file("src/a.rs"), file("src/b.rs")],
+            &crate::pane_links::ChatsHere::none(),
+        );
+
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert_eq!(seen, vec![None, None]);
+        assert!(runner.asked.lock().unwrap().is_empty());
+        drop(taken);
     }
 }
