@@ -59,39 +59,22 @@ pub struct PolicyOverride {
     pub runs: String,
 }
 
-/// The project's `[policy]` as the window says it, beside what [`enforcement::standing`] says.
-/// Only reads: the core alone resolves the policy, and nothing here keeps anything.
-fn said_of(root: &std::path::Path) -> (String, bool, Vec<PolicyOverride>, Vec<String>) {
-    let settings = enforcement::Settings::read(root);
-    let locks = purlis_core::sandbox::policy::Locks::of(root);
-    let runs = enforcement::Resolved::of(&settings, &locks).stricter(&enforcement::accepted(root));
+/// The project's `[policy]` as the window says it: one [`enforcement::standing`], so the template,
+/// the families set apart, what waits and the digest Accept names are all of one read of the
+/// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
+fn state_of(root: &std::path::Path) -> PolicyState {
+    let standing = enforcement::standing(root);
     let overrides = enforcement::Family::ALL
         .into_iter()
         .filter_map(|family| {
-            let said = settings.overrides.get(&family)?;
+            let said = standing.said.overrides.get(&family)?;
             Some(PolicyOverride {
                 family: family.key().to_owned(),
                 said: said.word().to_owned(),
-                runs: runs.mode(family).word().to_owned(),
+                runs: standing.runs.mode(family).word().to_owned(),
             })
         })
         .collect();
-    let locked = enforcement::Family::ALL
-        .into_iter()
-        .filter(|family| locks.enforcement_floor(*family).is_some())
-        .map(|family| family.key().to_owned())
-        .collect();
-    (
-        settings.template.word().to_owned(),
-        !settings.template_said,
-        overrides,
-        locked,
-    )
-}
-
-fn state_of(root: &std::path::Path) -> PolicyState {
-    let standing = enforcement::standing(root);
-    let (template, template_default, overrides, locked) = said_of(root);
     PolicyState {
         waiting: standing
             .waiting
@@ -105,10 +88,14 @@ fn state_of(root: &std::path::Path) -> PolicyState {
         refused: standing.refused,
         unsealed: standing.unsealed,
         digest: standing.digest,
-        template,
-        template_default,
+        template: standing.said.template.word().to_owned(),
+        template_default: !standing.said.template_said,
         overrides,
-        locked,
+        locked: standing
+            .locked
+            .into_iter()
+            .map(|family| family.key().to_owned())
+            .collect(),
     }
 }
 
@@ -122,7 +109,7 @@ pub struct PolicyLogLine {
     /// The family's key.
     pub family: String,
     /// The number of the chat it was in, while that chat is open here; `null` for one that has
-    /// closed or that purlis could not name.
+    /// closed, or that purlis could not name: the window says it is unknown.
     pub session: Option<u32>,
     /// The host it was about, where the rule is about one.
     pub host: Option<String>,
@@ -139,25 +126,83 @@ pub struct PolicyLog {
     pub count: u32,
     /// The newest of them.
     pub lines: Vec<PolicyLogLine>,
+    /// How many lines the log holds that are not as purlis writes them, left out of the count
+    /// and the lines: what a process other than the app wrote there.
+    pub dropped: u32,
 }
 
-/// Every chat's enforcement log at `root`, newest first. A file that is no chat's log, or a
-/// line that does not read, is left out ([`enforcement::read_log`]).
-fn logged_at(root: &std::path::Path) -> Vec<enforcement::Logged> {
+/// Every chat's enforcement log at `root`, newest first, and how many lines were dropped.
+fn logged_at(root: &std::path::Path) -> (Vec<enforcement::Logged>, usize) {
     let Ok(files) = std::fs::read_dir(enforcement::log_dir(root)) else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
-    let mut lines: Vec<enforcement::Logged> = files
-        .filter_map(Result::ok)
-        .filter_map(|file| {
-            let name = file.file_name().into_string().ok()?;
-            name.strip_suffix(".jsonl").map(str::to_owned)
-        })
-        .flat_map(|chat| enforcement::read_log(root, &chat))
-        .collect();
-    // RFC 3339 at one precision, UTC: the text sorts as the time does.
+    let mut lines = Vec::new();
+    let mut dropped = 0;
+    for chat in files.filter_map(Result::ok).filter_map(|file| {
+        let name = file.file_name().into_string().ok()?;
+        name.strip_suffix(".jsonl").map(str::to_owned)
+    }) {
+        let Some(path) = enforcement::log_file(root, &chat) else {
+            continue;
+        };
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        // A chat's log is appended to, so its own lines are newest last: reversed, they keep
+        // their order through the sort below wherever two share a second.
+        for line in text.lines().rev() {
+            match serde_json::from_str::<enforcement::Logged>(line) {
+                Ok(logged) if as_purlis_writes(&logged, &chat) => lines.push(logged),
+                _ => dropped += 1,
+            }
+        }
+    }
+    // RFC 3339 at one precision, UTC (checked above): the text sorts as the time does. Stable,
+    // so lines of one second keep the order above.
     lines.sort_by(|one, next| next.at.cmp(&one.at));
-    lines
+    (lines, dropped)
+}
+
+/// **Whether `line`, read from chat `chat`'s log, is one the app could have written**: the same
+/// checks as a line a chat's process hands over (`handoff.rs`'s `policy_line`), so a process
+/// that writes the file itself puts nothing on the page but a known rule, a family, a
+/// `host:port` and a time.
+fn as_purlis_writes(line: &enforcement::Logged, chat: &str) -> bool {
+    let Some(family) = enforcement::Family::of_key(&line.family) else {
+        return false;
+    };
+    let short = |text: &str| text.chars().count() <= enforcement::MOST_CHARS;
+    line.chat == chat
+        && short(&line.rule)
+        && enforcement::known_rule(family, &line.rule)
+        && line
+            .host
+            .as_deref()
+            .is_none_or(|host| short(host) && enforcement::is_host_and_port(host))
+        && chrono::NaiveDateTime::parse_from_str(&line.at, "%Y-%m-%dT%H:%M:%SZ").is_ok()
+}
+
+/// The log as the window is handed it: the count of every line, the newest [`MOST_LINES`], each
+/// with its chat's number where `session_of` names one open here.
+fn log_of(
+    (logged, dropped): (Vec<enforcement::Logged>, usize),
+    session_of: impl Fn(&str) -> Option<u32>,
+) -> PolicyLog {
+    let count = u32::try_from(logged.len()).unwrap_or(u32::MAX);
+    let lines = logged
+        .into_iter()
+        .take(MOST_LINES)
+        .map(|line| PolicyLogLine {
+            session: session_of(&line.chat),
+            at: line.at,
+            rule: line.rule,
+            family: line.family,
+            host: line.host,
+        })
+        .collect();
+    PolicyLog {
+        count,
+        lines,
+        dropped: u32::try_from(dropped).unwrap_or(u32::MAX),
+    }
 }
 
 /// **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
@@ -172,19 +217,7 @@ pub async fn policy_log(
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let logged = crate::off_the_window(READING_POLICY, move || Ok(logged_at(&root))).await?;
-    let count = u32::try_from(logged.len()).unwrap_or(u32::MAX);
-    let lines = logged
-        .into_iter()
-        .take(MOST_LINES)
-        .map(|line| PolicyLogLine {
-            session: held.chats().session_of_id(&line.chat),
-            at: line.at,
-            rule: line.rule,
-            family: line.family,
-            host: line.host,
-        })
-        .collect();
-    Ok(PolicyLog { count, lines })
+    Ok(log_of(logged, |chat| held.chats().session_of_id(chat)))
 }
 
 /// What the commands here name their work, off the window's thread.
@@ -269,39 +302,151 @@ mod tests {
         assert!(state.overrides.is_empty());
     }
 
+    const ONE: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
+    const TWO: &str = "01JABCDEFGHJKMNPQRSTVWXYZ1";
+
+    /// A log line as the app writes it, of `family`'s `rule`, in chat `chat`.
+    fn line(at: &str, family: &str, rule: &str, chat: &str, host: Option<&str>) -> String {
+        let host = host.map_or(String::new(), |host| format!(",\"host\":\"{host}\""));
+        format!(
+            "{{\"at\":\"{at}\",\"rule\":\"{rule}\",\"family\":\"{family}\",\"chat\":\"{chat}\"{host}}}\n"
+        )
+    }
+
+    /// A plane whose enforcement log holds `logs`, each a chat's id and its file's text.
+    fn logged(logs: &[(&str, String)]) -> tempfile::TempDir {
+        let dir = plane("");
+        let folder = enforcement::log_dir(dir.path());
+        std::fs::create_dir_all(&folder).expect("the log folder");
+        for (chat, text) in logs {
+            std::fs::write(folder.join(format!("{chat}.jsonl")), text).expect("a chat's log");
+        }
+        dir
+    }
+
+    fn times(lines: &[enforcement::Logged]) -> Vec<(&str, Option<&str>)> {
+        lines
+            .iter()
+            .map(|line| (line.at.as_str(), line.host.as_deref()))
+            .collect()
+    }
+
     #[test]
     fn the_log_is_every_chats_lines_newest_first() {
-        let dir = plane("");
-        let logs = enforcement::log_dir(dir.path());
-        std::fs::create_dir_all(&logs).expect("the log folder");
-        let line = |at: &str, rule: &str, chat: &str| {
-            format!(
-                "{{\"at\":\"{at}\",\"rule\":\"{rule}\",\"family\":\"guards.merge\",\"chat\":\"{chat}\"}}\n"
-            )
-        };
-        let one = "01JABCDEFGHJKMNPQRSTVWXYZ0";
-        let two = "01JABCDEFGHJKMNPQRSTVWXYZ1";
+        let merge = enforcement::RULE_MERGE_HOLD;
+        let dir = logged(&[
+            (
+                ONE,
+                line("2026-11-17T09:00:00Z", "guards.merge", merge, ONE, None)
+                    + &line("2026-11-17T11:00:00Z", "guards.merge", merge, ONE, None),
+            ),
+            (
+                TWO,
+                line("2026-11-17T10:00:00Z", "guards.merge", merge, TWO, None),
+            ),
+        ]);
         std::fs::write(
-            logs.join(format!("{one}.jsonl")),
-            line("2026-11-17T09:00:00Z", "A1", one) + &line("2026-11-17T11:00:00Z", "A3", one),
+            enforcement::log_dir(dir.path()).join("notes.txt"),
+            "not a log",
         )
-        .expect("one chat's log");
-        std::fs::write(
-            logs.join(format!("{two}.jsonl")),
-            line("2026-11-17T10:00:00Z", "A2", two) + "not a line\n",
-        )
-        .expect("another chat's log");
-        std::fs::write(logs.join("notes.txt"), "not a log").expect("another file");
-        let rules: Vec<String> = logged_at(dir.path())
-            .into_iter()
-            .map(|line| line.rule)
+        .expect("another file");
+        let (lines, dropped) = logged_at(dir.path());
+        assert_eq!(
+            times(&lines),
+            [
+                ("2026-11-17T11:00:00Z", None),
+                ("2026-11-17T10:00:00Z", None),
+                ("2026-11-17T09:00:00Z", None),
+            ]
+        );
+        assert_eq!(dropped, 0);
+    }
+
+    #[test]
+    fn of_one_second_the_line_written_last_is_first() {
+        let ask = enforcement::RULE_HOST_ASK;
+        let at = "2026-11-17T09:00:00Z";
+        let dir = logged(&[(
+            ONE,
+            line(at, "asks", ask, ONE, Some("a.example:443"))
+                + &line(at, "asks", ask, ONE, Some("b.example:443"))
+                + &line(at, "asks", ask, ONE, Some("c.example:443")),
+        )]);
+        let (lines, _) = logged_at(dir.path());
+        assert_eq!(
+            times(&lines),
+            [
+                (at, Some("c.example:443")),
+                (at, Some("b.example:443")),
+                (at, Some("a.example:443")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_line_the_app_would_not_write_is_left_out_and_counted() {
+        // A chat's process cannot write the log, but a line written there by any other means
+        // puts nothing on the page that a handed-over line could not (the review of #7093).
+        let at = "2026-11-17T09:00:00Z";
+        let ask = enforcement::RULE_HOST_ASK;
+        let long = "a".repeat(enforcement::MOST_CHARS + 1);
+        let bad = [
+            "not a line\n".to_owned(),
+            line(at, "guards.git", "rm -rf /home/someone", ONE, None),
+            line(at, "guards.save", enforcement::RULE_MERGE_HOLD, ONE, None),
+            line(at, "nothing", ask, ONE, None),
+            line(at, "asks", ask, ONE, Some("https://x/a?b")),
+            line(at, "asks", ask, ONE, Some("example.com")),
+            line(at, "asks", ask, ONE, Some(&format!("{long}:443"))),
+            line(at, "asks", ask, TWO, None),
+            line("yesterday, about noon", "asks", ask, ONE, None),
+            line("2026-11-17T09:00:00+04:00", "asks", ask, ONE, None),
+        ];
+        let kept = line(at, "asks", ask, ONE, Some("example.com:443"));
+        let dir = logged(&[(ONE, bad.concat() + &kept)]);
+        let (lines, dropped) = logged_at(dir.path());
+        assert_eq!(times(&lines), [(at, Some("example.com:443"))]);
+        assert_eq!(dropped, bad.len());
+    }
+
+    #[test]
+    fn the_count_says_every_line_and_the_window_is_handed_the_newest_500() {
+        let lines: Vec<enforcement::Logged> = (0..=MOST_LINES)
+            .map(|n| enforcement::Logged {
+                at: format!("2026-11-17T09:{:02}:{:02}Z", n / 60, n % 60),
+                rule: enforcement::RULE_HOST_ASK.to_owned(),
+                family: "asks".to_owned(),
+                chat: ONE.to_owned(),
+                host: None,
+            })
+            .rev()
             .collect();
-        assert_eq!(rules, ["A3", "A2", "A1"]);
+        let log = log_of((lines, 3), |_| None);
+        assert_eq!(log.count, 501);
+        assert_eq!(log.lines.len(), 500);
+        assert_eq!(log.lines[0].at, "2026-11-17T09:08:20Z");
+        assert_eq!(log.dropped, 3);
+    }
+
+    #[test]
+    fn a_line_names_its_chat_by_number_only_while_it_is_open() {
+        let of = |chat: &str| enforcement::Logged {
+            at: "2026-11-17T09:00:00Z".to_owned(),
+            rule: enforcement::RULE_HOST_ASK.to_owned(),
+            family: "asks".to_owned(),
+            chat: chat.to_owned(),
+            host: None,
+        };
+        let log = log_of((vec![of(ONE), of(TWO)], 0), |chat| {
+            (chat == ONE).then_some(12)
+        });
+        let sessions: Vec<Option<u32>> = log.lines.iter().map(|line| line.session).collect();
+        assert_eq!(sessions, [Some(12), None]);
     }
 
     #[test]
     fn a_project_with_no_log_has_logged_nothing() {
         let dir = plane("");
-        assert!(logged_at(dir.path()).is_empty());
+        assert_eq!(logged_at(dir.path()), (Vec::new(), 0));
     }
 }

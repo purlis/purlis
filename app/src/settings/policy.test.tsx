@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PolicyLog, PolicyState } from "../bindings";
 import { forgetPolicies } from "../projectPolicy";
+import { TWO_LINES, WATCH } from "../projectPolicy.fixture";
 import { forgetGroups, settingsPlace, useShownGroup } from "./links";
 import { POLICY_LOG, PolicyLogList, PolicyStanding, WouldHaveBlocked, policyGroup } from "./policy";
 
@@ -22,22 +23,16 @@ afterEach(() => {
 const PLANE = "/home/dev/plane";
 const IDS = { id: "x", labelledBy: "x-label", describedBy: "x-help" };
 
-export const WATCH: PolicyState = {
-  waiting: [],
-  refused: [],
-  unsealed: false,
-  digest: "d1",
-  template: "watch",
-  template_default: true,
-  overrides: [],
-  locked: [],
-};
-
-function core(state: PolicyState, log: PolicyLog = { count: 0, lines: [] }) {
+function core(
+  state: PolicyState,
+  log: PolicyLog = { count: 0, lines: [], dropped: 0 },
+  accept: () => unknown = () => state,
+) {
   const asked: { cmd: string; args: unknown }[] = [];
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
-    if (cmd === "project_policy_state" || cmd === "accept_project_policy") return state;
+    if (cmd === "project_policy_state") return state;
+    if (cmd === "accept_project_policy") return accept();
     if (cmd === "policy_log") return log;
     return null;
   });
@@ -68,7 +63,7 @@ describe("the project's policy in Settings", () => {
     expect(list.textContent).toContain("network off, enforced for now");
     expect(list.textContent).toContain("guards.release log");
     expect(
-      screen.getByText(/Locked enforced by this machine's administrator: dispatch/),
+      screen.getByText(/This machine's administrator keeps these enforced: dispatch/),
     ).toBeTruthy();
   });
 
@@ -85,6 +80,32 @@ describe("the project's policy in Settings", () => {
     );
   });
 
+  it("reads the policy again after a press the core refused, so the next names what is shown", async () => {
+    const sent = core(
+      { ...WATCH, waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }] },
+      undefined,
+      () => {
+        throw "the project's policy changed since it was shown, so nothing was accepted; look at it again";
+      },
+    );
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    await userEvent.click(await screen.findByRole("button", { name: "Accept" }));
+    expect(await screen.findByText(/changed since it was shown/)).toBeTruthy();
+    await waitFor(() => expect(sent("project_policy_state")).toHaveLength(2));
+  });
+
+  it("where the acceptance does not hold, says every family is enforced and offers Accept", async () => {
+    const sent = core({ ...WATCH, unsealed: true });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    expect(await screen.findByText(/does not hold, so every family is enforced/)).toBeTruthy();
+    expect(screen.queryByText("watch, the default")).toBeNull();
+    expect(screen.getByText("watch")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() =>
+      expect(sent("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]),
+    );
+  });
+
   it("offers no Accept where the page is not the window", async () => {
     core({
       ...WATCH,
@@ -96,10 +117,7 @@ describe("the project's policy in Settings", () => {
   });
 
   it("counts what would have been blocked, and opens the enforcement log", async () => {
-    core(WATCH, {
-      count: 3,
-      lines: [],
-    });
+    core(WATCH, { count: 3, lines: [], dropped: 0 });
     render(<WouldHaveBlocked plane={PLANE} ids={IDS} />);
     expect(await screen.findByText("Would have blocked: 3")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Open the enforcement log" }));
@@ -115,25 +133,40 @@ describe("the project's policy in Settings", () => {
   });
 
   it("lists the log newest first, by rule, family and chat, never a command", async () => {
-    core(WATCH, {
-      count: 2,
-      lines: [
-        { at: "2026-11-17T11:00:00Z", rule: "A3", family: "guards.git", session: 12, host: null },
-        {
-          at: "2026-11-17T10:00:00Z",
-          rule: "egress",
-          family: "network",
-          session: null,
-          host: "example.com",
-        },
-      ],
-    });
+    core(WATCH, TWO_LINES);
     render(<PolicyLogList plane={PLANE} ids={IDS} />);
     const items = await screen.findAllByRole("listitem");
     expect(items.map((one) => one.textContent)).toEqual([
-      "A3 guards.git would have refused it in #12 2026-11-17T11:00:00Z",
-      "egress network would have refused it in a chat that has closed, about example.com 2026-11-17T10:00:00Z",
+      "A3 guards.git would have blocked it in #12 2026-11-17T11:00:00Z",
+      "host-ask asks would have blocked it in a chat purlis does not know, about example.com:443 2026-11-17T10:00:00Z",
     ]);
+    expect(screen.queryByText(/are shown/)).toBeNull();
+  });
+
+  it("says how many of the log are shown where it holds more than the window is handed", async () => {
+    core(WATCH, { ...TWO_LINES, count: 501 });
+    render(<PolicyLogList plane={PLANE} ids={IDS} />);
+    expect(await screen.findByText("The newest 2 of 501 are shown.")).toBeTruthy();
+  });
+
+  it("says how many lines it left out that purlis did not write", async () => {
+    core(WATCH, { ...TWO_LINES, dropped: 3 });
+    render(<PolicyLogList plane={PLANE} ids={IDS} />);
+    expect(
+      await screen.findByText(
+        "3 lines of the log are not as purlis writes them, so they are left out.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("reads the count again when the window is focused", async () => {
+    const sent = core(WATCH);
+    render(<WouldHaveBlocked plane={PLANE} ids={IDS} />);
+    await screen.findByText("Would have blocked: 0");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(sent("policy_log")).toHaveLength(2));
   });
 
   it("is a group of Settings › Project with the log's page under it", () => {

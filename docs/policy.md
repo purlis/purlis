@@ -45,9 +45,14 @@ family is a key already and stays enforced until it is wired. Your own denies ho
   run it now (stricter where a lock, a family not wired yet or a loosening that waits for your
   Accept holds it), the families an administrator locks, and Accept for a loosening. Its
   **Would have blocked** count is every chat's enforcement log, and opens it: the newest lines,
-  by rule, family and chat.
+  by rule, family, chat and the `host:port` a rule was about. A line that is not as purlis
+  writes it (an unknown rule, a host that is no `host:port`, another chat's) is left out and
+  counted apart.
+- **Where this machine's acceptance does not hold**, every family is enforced: the pane head says
+  `strict`, Settings says why and offers the Accept that seals it again, and nothing says
+  `watch` is the default.
 - **The move to `watch`** is announced once on each machine, in the first project that names no
-  template.
+  template, and never while the acceptance does not hold.
 
 The window only says the policy; the app resolves it, as below.
 

@@ -3,9 +3,9 @@
 
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PolicyState } from "./bindings";
 import { PolicyMark } from "./PolicyMark";
 import { forgetPolicies, holdPolicy, policySentence } from "./projectPolicy";
+import { WATCH } from "./projectPolicy.fixture";
 
 /** The project's policy on a chat's pane head (Q308a, instruction 45). */
 
@@ -15,16 +15,6 @@ afterEach(() => {
 });
 
 const PLANE = "/home/dev/plane";
-const WATCH: PolicyState = {
-  waiting: [],
-  refused: [],
-  unsealed: false,
-  digest: "d1",
-  template: "watch",
-  template_default: true,
-  overrides: [],
-  locked: [],
-};
 
 describe("the policy's mark on a pane head", () => {
   it("draws nothing until the project's policy has been read", () => {
@@ -49,6 +39,21 @@ describe("the policy's mark on a pane head", () => {
       name: "Policy: team; set apart: guards.release log, network off, enforced for now.",
     });
     expect(mark.textContent).toBe("team +2");
+  });
+
+  it("says strict, never the default, where the acceptance does not hold", () => {
+    render(<PolicyMark plane={PLANE} />);
+    act(() =>
+      holdPolicy(PLANE, {
+        ...WATCH,
+        unsealed: true,
+        overrides: [{ family: "guards.merge", said: "log", runs: "enforce" }],
+      }),
+    );
+    const mark = screen.getByRole("img", {
+      name: "Policy: every family is enforced until you accept the project's policy again in its view.",
+    });
+    expect(mark.textContent).toBe("strict");
   });
 
   it("says another project's policy for that project alone", () => {

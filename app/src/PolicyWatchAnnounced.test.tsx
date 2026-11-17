@@ -5,10 +5,10 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PolicyState } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { POLICY_WATCH_ANNOUNCED, PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { forgetPolicies, holdPolicy } from "./projectPolicy";
+import { WATCH } from "./projectPolicy.fixture";
 
 /** The upgrade to `watch`, announced once on this machine (Q308a, instruction 45). */
 
@@ -20,16 +20,6 @@ afterEach(() => {
 });
 
 const PLANE = "/home/dev/plane";
-const WATCH: PolicyState = {
-  waiting: [],
-  refused: [],
-  unsealed: false,
-  digest: "d1",
-  template: "watch",
-  template_default: true,
-  overrides: [],
-  locked: [],
-};
 
 function core(seen: boolean) {
   const asked: { cmd: string; args: unknown }[] = [];
@@ -73,8 +63,16 @@ describe("blocks are off by default, said once", () => {
     const sent = core(false);
     render(<PolicyWatchAnnounced plane={PLANE} />);
     act(() => holdPolicy(PLANE, { ...WATCH, template: "strict", template_default: false }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitFor(() => expect(screen.queryByText(/Blocks are now off by default/)).toBeNull());
     expect(sent("seen_on_this_machine")).toEqual([]);
-    expect(screen.queryByText(/Blocks are now off by default/)).toBeNull();
+  });
+
+  it("says nothing, and keeps its once, where the acceptance does not hold", async () => {
+    const sent = core(false);
+    render(<PolicyWatchAnnounced plane={PLANE} />);
+    act(() => holdPolicy(PLANE, { ...WATCH, unsealed: true }));
+    await waitFor(() => expect(screen.queryByText(/Blocks are now off by default/)).toBeNull());
+    expect(sent("seen_on_this_machine")).toEqual([]);
+    expect(sent("see_on_this_machine")).toEqual([]);
   });
 });

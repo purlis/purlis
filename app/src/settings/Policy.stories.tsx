@@ -10,8 +10,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { PolicyLog, PolicyState } from "../bindings";
+import type { PolicyState } from "../bindings";
 import { forgetPolicies } from "../projectPolicy";
+import { TWO_LINES, WATCH } from "../projectPolicy.fixture";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { PolicyLogList, PolicyStanding, WouldHaveBlocked } from "./policy";
 
@@ -19,10 +20,8 @@ const PLANE = "/home/op/project";
 const IDS = { id: "policy", labelledBy: "policy-label", describedBy: "policy-help" };
 
 const STATE: PolicyState = {
+  ...WATCH,
   waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
-  refused: [],
-  unsealed: false,
-  digest: "d1",
   template: "hold",
   template_default: false,
   overrides: [
@@ -30,20 +29,6 @@ const STATE: PolicyState = {
     { family: "network", said: "off", runs: "enforce" },
   ],
   locked: ["dispatch"],
-};
-
-const LOG: PolicyLog = {
-  count: 2,
-  lines: [
-    { at: "2026-11-17T11:00:00Z", rule: "A3", family: "guards.git", session: 12, host: null },
-    {
-      at: "2026-11-17T10:00:00Z",
-      rule: "egress",
-      family: "network",
-      session: null,
-      host: "example.com",
-    },
-  ],
 };
 
 function Page() {
@@ -62,7 +47,7 @@ const meta = {
   beforeEach: () => {
     mockIPC((cmd) => {
       if (cmd === "project_policy_state") return STATE;
-      if (cmd === "policy_log") return LOG;
+      if (cmd === "policy_log") return TWO_LINES;
       return null;
     });
     return () => {

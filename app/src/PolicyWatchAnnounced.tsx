@@ -15,7 +15,7 @@ export const POLICY_WATCH_ANNOUNCED = "policy-watch-announced";
 /** What it says: blocks are off by default now, and how to turn one back on. */
 export const POLICY_WATCH_SAID =
   "Blocks are now off by default. A project that names no policy runs the watch template: " +
-  "most of purlis's refusals are logged, not enforced, and secrets, vaults and the credential " +
+  "most of what purlis would block is logged and let through, and secrets, vaults and the credential " +
   "scan stay enforced. To turn a family back on, set it under [policy] in the project's " +
   'settings file, such as guards.merge = "enforce", or template = "strict" for every family, ' +
   "and commit it.";
@@ -23,7 +23,8 @@ export const POLICY_WATCH_SAID =
 /**
  * **The upgrade to `watch` is announced once** (ruling Q308a, "Upgrade"; instruction 45): the
  * first project whose policy the window reads and that names no template, so runs the shipped
- * default, says that blocks are now off by default and how to turn one back on in `[policy]`.
+ * default, says that blocks are now off by default and how to turn one back on in `[policy]`;
+ * never while this machine's acceptance does not hold, when every family is enforced.
  * Dismiss and Open policy settings both keep it as seen **on this machine**, in the person's
  * layout file (`seen_on_this_machine`, as the chip's Notice is), never in a project, which would
  * carry it to every clone. The file is asked again before it is drawn, so a second window open at
@@ -32,7 +33,9 @@ export const POLICY_WATCH_SAID =
 export function PolicyWatchAnnounced({ plane }: { plane: PlaneId }) {
   const policy = useHeldPolicy(plane);
   const { seen, see } = useSeenOnThisMachine(POLICY_WATCH_ANNOUNCED);
-  const owed = policy?.template_default === true && !seen;
+  // Where this machine's acceptance does not hold, every family is enforced: blocks are not
+  // off, so nothing is said and the once is not spent.
+  const owed = policy?.template_default === true && !policy.unsealed && !seen;
   const unseen = useUnseen(owed);
   if (!owed || unseen !== true) return null;
   return (

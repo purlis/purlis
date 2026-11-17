@@ -428,7 +428,7 @@ describe("every project setting there is, at the Project level", () => {
       ],
     ],
     ["Policy", ["Template and families", "Would have blocked"]],
-    ["Enforcement log", ["Refusals let through"]],
+    ["Enforcement log", ["Blocks let through"]],
     ["Dispatch", ["Limits", "Dispatch grants", "Policy locks"]],
     ["Runs on", ["Chats run on"]],
     ["Forges", ["Forge 1: kind", "Forge 1: owner", "Forge 1: host", "Forge 1: repos never listed"]],

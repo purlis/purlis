@@ -10,17 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import type { PolicyState } from "./bindings";
 import { PolicyMarkOf } from "./PolicyMark";
-
-const WATCH: PolicyState = {
-  waiting: [],
-  refused: [],
-  unsealed: false,
-  digest: "d1",
-  template: "watch",
-  template_default: true,
-  overrides: [],
-  locked: [],
-};
+import { WATCH } from "./projectPolicy.fixture";
 
 function Head({ state }: { state: PolicyState }) {
   return (

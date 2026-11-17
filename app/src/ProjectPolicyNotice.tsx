@@ -18,6 +18,10 @@ export const mayAcceptPolicy = (): boolean => inTheWindow(commands, "acceptProje
 export const POLICY_ACCEPT_MEANS =
   "Accept, and your chats here run that way from now on. Until you do, they keep what you accepted before.";
 
+/** What the window says where this machine's acceptance does not hold: every family enforced. */
+export const POLICY_UNSEALED_SAID =
+  "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again.";
+
 /** Whether an answer is a policy state to draw: one of any other shape says nothing. */
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
   Array.isArray(data?.waiting);
@@ -112,8 +116,7 @@ export function ProjectPolicyNotice({
 
   const body = (
     <p>
-      {state.unsealed &&
-        "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again. "}
+      {state.unsealed && `${POLICY_UNSEALED_SAID} `}
       {state.waiting.length > 0 &&
         `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}

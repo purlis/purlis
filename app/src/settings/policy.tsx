@@ -6,10 +6,16 @@ import { commands, type PlaneId, type PolicyLog, type PolicyState } from "../bin
 import { chatNumberSaid } from "../chatNumber";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { holdPolicy, modeSaid, templateSaid } from "../projectPolicy";
-import { mayAcceptPolicy, POLICY_ACCEPT_MEANS, waitingSaid } from "../ProjectPolicyNotice";
+import {
+  mayAcceptPolicy,
+  POLICY_ACCEPT_MEANS,
+  POLICY_UNSEALED_SAID,
+  waitingSaid,
+} from "../ProjectPolicyNotice";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { inertly } from "../sandboxBlocks";
 import { Button, ButtonRow } from "../ui/button/Button";
+import { useWindowFocused } from "../windowFocused";
 import type { RowIds } from "./components";
 import type { SettingsGroup } from "./groups";
 import { linkToGroup, settingsPlace } from "./links";
@@ -24,10 +30,12 @@ export const POLICY_LOG = "project.policy.log";
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
   Array.isArray(data?.overrides) && Array.isArray(data?.waiting);
 
-/** The project's policy as the core reads it now, read again when the project's settings change. */
+/** The project's policy as the core reads it now, read again when the project's settings change
+ *  and after a press the core refused, so a second press names what is shown. */
 function usePolicyState(plane: PlaneId) {
   const [state, setState] = useState<PolicyState>();
   const [said, setSaid] = useState<string>();
+  const [again, setAgain] = useState(0);
   const onDisk = usePlaneChanged([plane], SETTINGS);
   useEffect(() => {
     let live = true;
@@ -45,8 +53,9 @@ function usePolicyState(plane: PlaneId) {
     return () => {
       live = false;
     };
-  }, [plane, onDisk]);
-  return { state, setState, said, setSaid };
+  }, [plane, onDisk, again]);
+  const readAgain = () => setAgain((n) => n + 1);
+  return { state, setState, said, setSaid, readAgain };
 }
 
 /**
@@ -64,7 +73,7 @@ export function PolicyStanding({
   ids: RowIds;
   canAccept?: boolean;
 }) {
-  const { state, setState, said, setSaid } = usePolicyState(plane);
+  const { state, setState, said, setSaid, readAgain } = usePolicyState(plane);
   const [busy, setBusy] = useState(false);
   const accept = () => {
     if (state === undefined || busy) return;
@@ -73,8 +82,11 @@ export function PolicyStanding({
     void commands
       .acceptProjectPolicy(plane, state.digest)
       .then((done) => {
-        if (done.status !== "ok") setSaid(done.error);
-        else if (drawable(done.data)) {
+        if (done.status !== "ok") {
+          // Refused, as where the file changed since it was shown: read what stands now.
+          setSaid(done.error);
+          readAgain();
+        } else if (drawable(done.data)) {
           setState(done.data);
           holdPolicy(plane, done.data);
           sandboxCommandReturned();
@@ -110,7 +122,7 @@ export function PolicyStanding({
             </ul>
           )}
           {state.locked.length > 0 && (
-            <p>Locked enforced by this machine's administrator: {state.locked.join(", ")}.</p>
+            <p>This machine's administrator keeps these enforced: {state.locked.join(", ")}.</p>
           )}
           {state.refused.length > 0 && (
             <p>
@@ -118,10 +130,12 @@ export function PolicyStanding({
               family is enforced.
             </p>
           )}
-          {state.waiting.length > 0 && (
+          {(state.waiting.length > 0 || state.unsealed) && (
             <>
               <p>
-                The project loosened its policy: {waitingSaid(state)}. {POLICY_ACCEPT_MEANS}
+                {state.unsealed && `${POLICY_UNSEALED_SAID} `}
+                {state.waiting.length > 0 &&
+                  `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
                 {!canAccept && " Accept it from purlis's own window on this machine."}
               </p>
               {canAccept && (
@@ -141,11 +155,14 @@ export function PolicyStanding({
   );
 }
 
-/** The project's enforcement log, read again when the project's settings change. */
+/** The project's enforcement log, read again when the project's settings change, when the
+ *  window is focused and when its project comes back to the front: a chat may log at any time. */
 function usePolicyLog(plane: PlaneId) {
   const [log, setLog] = useState<PolicyLog>();
   const [said, setSaid] = useState<string>();
   const onDisk = usePlaneChanged([plane], SETTINGS);
+  // Counts each focus of the window, and each return of its project to the front.
+  const focused = useWindowFocused();
   useEffect(() => {
     let live = true;
     void commands
@@ -162,7 +179,7 @@ function usePolicyLog(plane: PlaneId) {
     return () => {
       live = false;
     };
-  }, [plane, onDisk]);
+  }, [plane, onDisk, focused]);
   return { log, said };
 }
 
@@ -196,14 +213,20 @@ export function WouldHaveBlocked({ plane, ids }: { plane: PlaneId; ids: RowIds }
   );
 }
 
+/** How many lines of the log were left out for not being as purlis writes them. */
+const droppedSaid = (dropped: number): string =>
+  dropped === 1
+    ? "One line of the log is not as purlis writes it, so it is left out."
+    : `${dropped} lines of the log are not as purlis writes them, so they are left out.`;
+
 /** One line of the log as the window says it: the family, the rule, the chat and the host. */
 function lineSaid(line: PolicyLog["lines"][number]): string {
-  const chat = line.session === null ? "a chat that has closed" : chatNumberSaid(line.session);
+  const chat = line.session === null ? "a chat purlis does not know" : chatNumberSaid(line.session);
   const host = line.host === null ? "" : `, about ${line.host}`;
-  return `${line.family} would have refused it in ${chat}${host}`;
+  return `${line.family} would have blocked it in ${chat}${host}`;
 }
 
-/** **The enforcement log** (Q308a): each refusal a family set to `log` let through, newest first. */
+/** **The enforcement log** (Q308a): each block a family set to `log` let through, newest first. */
 export function PolicyLogList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
   const { log, said } = usePolicyLog(plane);
   return (
@@ -227,6 +250,7 @@ export function PolicyLogList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
               The newest {log.lines.length} of {log.count} are shown.
             </p>
           )}
+          {log.dropped > 0 && <p>{droppedSaid(log.dropped)}</p>}
         </>
       )}
       {said !== undefined && <p>{said}</p>}
@@ -242,7 +266,7 @@ export function policyGroup(plane: PlaneId, file = "the project's settings file"
   return {
     id: POLICY,
     label: "Policy",
-    help: "Which of purlis's refusals run in this project: off, logged or enforced, by a template and the families set apart from it. A loosening reaches your chats once you accept it.",
+    help: "Which of purlis's blocks run in this project: off, logged or enforced, by a template and the families set apart from it. A loosening reaches your chats once you accept it.",
     also: ["enforcement", "template", "would have blocked", "watch", "strict"],
     kept: `Kept in ${file}, under [policy], which your team sees.`,
     settings: [
@@ -260,7 +284,7 @@ export function policyGroup(plane: PlaneId, file = "the project's settings file"
         id: `${POLICY}.blocked`,
         label: "Would have blocked",
         writes: "nothing",
-        help: "What a family set to log let through, in every chat here: each would have been refused under enforce.",
+        help: "What a family set to log let through, in every chat here: each would have been blocked under enforce.",
         useControl: () => ({
           control: (ids) => <WouldHaveBlocked plane={plane} ids={ids} />,
         }),
@@ -274,14 +298,14 @@ export function policyLogGroup(plane: PlaneId): SettingsGroup {
   return {
     id: POLICY_LOG,
     label: "Enforcement log",
-    help: "Each refusal a family set to log let through, newest first: the rule, the family and the chat, never the command, a path or a value.",
+    help: "Each block a family set to log let through, newest first: the rule, the family, the chat and the host:port it was about, never the command, a path or a value.",
     sub: true,
     settings: [
       {
         id: `${POLICY_LOG}.lines`,
-        label: "Refusals let through",
+        label: "Blocks let through",
         writes: "nothing",
-        help: "Set a family to enforce in the project's settings file to refuse these.",
+        help: "Set a family to enforce in the project's settings file to block these.",
         useControl: () => ({
           control: (ids) => <PolicyLogList plane={plane} ids={ids} />,
         }),

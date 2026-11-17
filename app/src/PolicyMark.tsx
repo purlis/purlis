@@ -3,7 +3,7 @@
 
 import { Scale } from "lucide-react";
 import type { PlaneId, PolicyState } from "./bindings";
-import { policySentence, useHeldPolicy } from "./projectPolicy";
+import { markWord, policySentence, useHeldPolicy } from "./projectPolicy";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -22,18 +22,15 @@ export function PolicyMark({ plane }: { plane: PlaneId }) {
 /** {@link PolicyMark}, for a policy in hand: what its stories draw. */
 export function PolicyMarkOf({ state }: { state: PolicyState }) {
   const said = policySentence(state);
-  const set = state.overrides.length;
+  const word = markWord(state);
+  // Where every family is enforced, nothing is set apart from it.
+  const set = state.unsealed ? 0 : state.overrides.length;
   return (
     <Tooltip tip={said}>
-      <span
-        className="pane-policy ui-text-meta"
-        data-policy={state.template}
-        role="img"
-        aria-label={said}
-      >
+      <span className="pane-policy ui-text-meta" data-policy={word} role="img" aria-label={said}>
         <Scale className="tab-mark" aria-hidden="true" />
         <span aria-hidden="true">
-          {state.template}
+          {word}
           {set > 0 && ` +${set}`}
         </span>
       </span>

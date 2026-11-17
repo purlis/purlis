@@ -35,10 +35,23 @@ export function useHeldPolicy(plane: PlaneId): PolicyState | undefined {
   return useSyncExternalStore(subscribe, () => held.get(plane));
 }
 
-/** The template's word, with "the default" where the file names none: "watch, the default". */
-export function templateSaid(state: Pick<PolicyState, "template" | "template_default">): string {
-  return state.template_default ? `${state.template}, the default` : state.template;
+/**
+ * The template's word, with "the default" where the file names none: "watch, the default". Where
+ * this machine's acceptance does not hold, every family is enforced whatever the template, so
+ * the default is never said then.
+ */
+export function templateSaid(
+  state: Pick<PolicyState, "template" | "template_default" | "unsealed">,
+): string {
+  return state.template_default && !state.unsealed
+    ? `${state.template}, the default`
+    : state.template;
 }
+
+/** The pane head's word for how the project's chats run: its template, or `strict` where this
+ *  machine's acceptance does not hold and every family is enforced. */
+export const markWord = (state: PolicyState): string =>
+  state.unsealed ? "strict" : state.template;
 
 /** One override, as the window says it: "guards.merge enforce", and how it runs where that
  *  differs: "network off, enforced for now". */
@@ -60,6 +73,8 @@ const runsSaid = (mode: string): string =>
  * guards.release log."
  */
 export function policySentence(state: PolicyState): string {
+  if (state.unsealed)
+    return "Policy: every family is enforced until you accept the project's policy again in its view.";
   const set =
     state.overrides.length === 0
       ? ""

@@ -14174,6 +14174,11 @@ export type PolicyLog = {
 	count: number,
 	/**  The newest of them. */
 	lines: PolicyLogLine[],
+	/**
+	 *  How many lines the log holds that are not as purlis writes them, left out of the count
+	 *  and the lines: what a process other than the app wrote there.
+	 */
+	dropped: number,
 };
 
 /**  One line of the project's enforcement log: a refusal a family set to `log` let through. */
@@ -14186,7 +14191,7 @@ export type PolicyLogLine = {
 	family: string,
 	/**
 	 *  The number of the chat it was in, while that chat is open here; `null` for one that has
-	 *  closed or that purlis could not name.
+	 *  closed, or that purlis could not name: the window says it is unknown.
 	 */
 	session: number | null,
 	/**  The host it was about, where the rule is about one. */

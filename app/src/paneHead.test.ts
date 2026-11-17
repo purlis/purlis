@@ -68,13 +68,13 @@ describe("the pane head's one state button (#4760)", () => {
 describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 rule 4, #5206)", () => {
   it("drops nothing in a wide pane, or one not measured", () => {
     expect([...droppedAt(900)]).toEqual([]);
-    expect([...droppedAt(560)]).toEqual([]);
+    expect([...droppedAt(570)]).toEqual([]);
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
   it("drops the project's policy, the chat's number, the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
     // The policy first (Q308a): every chat of the project says the same, and Settings says it whole.
-    expect([...droppedAt(559)]).toEqual(["policy"]);
+    expect([...droppedAt(569)]).toEqual(["policy"]);
     // Then the number (#6212): its tab's hover says it too.
     expect([...droppedAt(499)]).toEqual(["policy", "number"]);
     expect([...droppedAt(469)]).toEqual(["policy", "number", "markWord"]);
@@ -487,7 +487,7 @@ describe("the project's policy on a pane head (Q308a, instruction 45)", () => {
   });
 
   it("goes first on a narrow pane", () => {
-    expect(paneLinesOf("chat", 559, { policy: true }).head).not.toContain("policy");
-    expect(paneLinesOf("chat", 559, { policy: true }).head).toContain("number");
+    expect(paneLinesOf("chat", 569, { policy: true }).head).not.toContain("policy");
+    expect(paneLinesOf("chat", 569, { policy: true }).head).toContain("number");
   });
 });
