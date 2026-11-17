@@ -34,6 +34,7 @@ const FINISHED: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
+  was: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -105,6 +106,7 @@ const ORDINARY: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
+  was: null,
 };
 
 /** The palette's finished row, standing in: a press opens the card beside it. */
@@ -297,5 +299,25 @@ export const ChatWithNoConversation: Story = {
     await expect(within(card).getByRole("button", { name: "Reopen" })).toHaveAccessibleDescription(
       /named no conversation to resume\. Start a new chat/,
     );
+  },
+};
+
+/**
+ * **A closed chat found by a number it had before a restart** (#6685): titled by the number it
+ * closed under, the card says the one it was found by too, so an old link's chat is known.
+ */
+export const ChatFoundByAnEarlierNumber: Story = {
+  args: { card: { ...ORDINARY, number: 731, was: 702 } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", {
+        name: /Show closed chat #731 · Tidy the changelog \(was #702\)/,
+      }),
+    );
+    const card = await screen.findByRole("dialog", {
+      name: "#731 · Tidy the changelog (was #702)",
+    });
+    // The popover is in the tree before it has finished opening.
+    await waitFor(() => expect(card).toBeVisible());
   },
 };

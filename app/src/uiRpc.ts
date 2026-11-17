@@ -4744,6 +4744,12 @@ export type ChatCard = {
 	 *  row's (`task.reopens`).
 	 */
 	chat_reopen: ChatReopen | null,
+	/**
+	 *  **The number it was found by, where that is one it had before a restart** (#6685): the
+	 *  card is titled by the number it closed under, and says this one too. `None` where it was
+	 *  found by that number, and for a card drawn from its task.
+	 */
+	was: number | null,
 };
 
 /**

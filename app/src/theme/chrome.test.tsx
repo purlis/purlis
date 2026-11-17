@@ -386,6 +386,7 @@ const CLOSED_CHAT_CARD: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
+  was: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,

@@ -23,7 +23,7 @@ import {
 } from "./bindings";
 import { qualifierOf, shownOf, whyNoReopen } from "./finished";
 import { capitalised, endedAt } from "./chatEnded";
-import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
+import { chatNumberIn, chatNumberSaid, numberedNameWas } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 
@@ -53,9 +53,12 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
   };
 }
 
-/** The card's title: `#641 · Signed commits #5607`. */
+/**
+ * The card's title: `#641 · Signed commits #5607`, and `(was #702)` after it where it was found
+ * by a number it had before a restart (#6685).
+ */
 export function cardTitle(card: ChatCard): string {
-  return numberedName(card.number, card.title);
+  return numberedNameWas(card.number, card.title, card.was);
 }
 
 /**

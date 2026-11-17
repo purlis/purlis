@@ -61,6 +61,10 @@ pub(crate) struct ChatCard {
     /// not where it cannot. `None` for a card drawn from its task, whose Reopen is its finished
     /// row's (`task.reopens`).
     pub chat_reopen: Option<ChatReopen>,
+    /// **The number it was found by, where that is one it had before a restart** (#6685): the
+    /// card is titled by the number it closed under, and says this one too. `None` where it was
+    /// found by that number, and for a card drawn from its task.
+    pub was: Option<u32>,
 }
 
 /// **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
@@ -99,7 +103,7 @@ pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
         Found::Restarted { now } => ChatLookup::Restarted { now },
         Found::NoChat => ChatLookup::NoChat,
         Found::Closed(chat) => ChatLookup::Ended {
-            card: Box::new(card_of_chat(held, &chat)),
+            card: Box::new(card_of_chat(held.root(), number, &chat)),
         },
         Found::Ended(record) => match card_of(held, number, &record, &open) {
             Some(card) => ChatLookup::Ended {
@@ -159,6 +163,7 @@ pub(crate) fn card_of(
             record.asker.chat.name.clone()
         },
         chat_reopen: None,
+        was: None,
     })
 }
 
@@ -166,12 +171,18 @@ pub(crate) fn card_of(
 /// closed: its title, when it closed, who started it and where it ran. No task, so no report;
 /// *Reopen* starts it again on its conversation where one was kept (#6485); and its screen was
 /// never kept (the person's ruling keeps a task's only), so *Read it* is disabled with "Its
-/// screen was not kept."
-pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRecord) -> ChatCard {
+/// screen was not kept." Found by `asked`, a number it had before a restart, it says that one
+/// too (#6685).
+pub(crate) fn card_of_chat(
+    root: &std::path::Path,
+    asked: u32,
+    chat: &purlis_core::chatrecords::ChatRecord,
+) -> ChatCard {
     ChatCard {
         number: chat.number,
+        was: (asked != chat.number).then_some(asked),
         // A task's screen is kept by its ULID; an ordinary chat's never is.
-        screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat.id),
+        screen_kept: purlis_core::chatscreens::is_kept(root, &chat.id),
         chat: chat.id.clone(),
         title: chat.title.clone(),
         ended: Some(chat.ended.clone()),
@@ -642,6 +653,23 @@ mod closed_record_tests {
     #[test]
     fn an_id_that_is_no_ulid_leaves_no_record() {
         assert!(closed_record(702, "702", &chat(), None, None, now()).is_none());
+    }
+
+    #[test]
+    fn a_closed_chat_s_card_found_by_a_number_it_had_before_a_restart_says_that_number() {
+        // #6685: titled by the number it closed under, the card also says the one it was
+        // found by, so a person following an old link knows it for the chat they asked for.
+        let dir = tempfile::tempdir().expect("a folder");
+        let record = purlis_core::chatrecords::ChatRecord {
+            earlier: vec![702],
+            ..closed_record(731, ID, &chat(), None, None, now()).unwrap()
+        };
+
+        let by_earlier = card_of_chat(dir.path(), 702, &record);
+        let by_last = card_of_chat(dir.path(), 731, &record);
+
+        assert_eq!((by_earlier.number, by_earlier.was), (731, Some(702)));
+        assert_eq!((by_last.number, by_last.was), (731, None));
     }
 }
 

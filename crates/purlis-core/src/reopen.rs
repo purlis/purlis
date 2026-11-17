@@ -737,7 +737,9 @@ pub struct Record {
     ///
     /// So the counter is carried rather than derived from the chats. It never goes backwards
     /// while the record is readable: the conversion both ways holds it at or above every
-    /// number the record names, so a hand-edited file cannot re-deal one it still lists.
+    /// number the record names, so a hand-edited file cannot re-deal one it still lists. A
+    /// launch also holds it at or above every number the closed chats' records answer to
+    /// ([`crate::chatrecords::highest_number`], #6740), so one this record lost is not re-dealt.
     pub dealt: u32,
     /// Whether this record was written by a quit that restarts charter to install an update
     /// (charter-app#251), rather than by the operator quitting.

@@ -750,6 +750,7 @@ const CLOSED_CARD: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
+  was: null,
 };
 
 /** The open chats beside it: none of them about the changelog. */

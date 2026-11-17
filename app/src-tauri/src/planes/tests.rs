@@ -2226,6 +2226,42 @@ fn a_chat_dropped_at_start_fresh_keeps_its_closed_record() {
 }
 
 #[test]
+fn a_launch_never_deals_again_a_number_a_closed_chat_answers_to() {
+    // #6740: the record of open chats has lost count (here it names none), while the closed
+    // chats' records still answer to 731, and to 702, the number it had before a restart.
+    let dir = tempfile::tempdir().expect("a directory");
+    let (planes, root, _held) = launched_with_one_chat(dir.path());
+    let closed = purlis_core::chatrecords::ChatRecord {
+        number: 731,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T11:00:00Z".to_owned(),
+        started_by: purlis_core::chatrecords::StartedBy::Person,
+        place: "project root".to_owned(),
+        earlier: vec![702],
+        chat: None,
+    };
+    let older = purlis_core::chatrecords::ChatRecord {
+        number: 9,
+        id: "01K6CHATS0000000000000000D".to_owned(),
+        earlier: vec![760],
+        ..closed.clone()
+    };
+    purlis_core::chatrecords::keep_all(&root, &[closed, older]).expect("the closes are kept");
+
+    planes.relaunch(Choice::StartFresh, &[]);
+
+    assert_eq!(
+        reopen::read_or_refusal(&root)
+            .expect("the record reads")
+            .dealt,
+        760,
+        "a number a closed chat answers to could be dealt again"
+    );
+}
+
+#[test]
 fn the_choice_is_made_once_and_a_reloaded_window_asking_again_changes_nothing() {
     // A webview reload runs the window's launch path a second time. The chats are already
     // back, so a second question — or a second put-back — would be a second copy of each.
