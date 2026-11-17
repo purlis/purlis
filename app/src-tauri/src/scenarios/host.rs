@@ -52,6 +52,10 @@ pub(crate) const HOST_APP_VAR: &str = "PURLIS_HOST_APP";
 /// The variable a scenario's child is started with: its home.
 const HOME_VAR: &str = "PURLIS_SCENARIO_HOME";
 
+/// The variable a scenario's child is started with: the run's own `$HOME`, outside the temp
+/// folder, where a scenario makes a folder no chat may write ([`Scenario::a_folder_outside`]).
+const OUTER_HOME_VAR: &str = "PURLIS_SCENARIO_OUTER_HOME";
+
 /// **Whether this run is CI's**, where a scenario that cannot run fails rather than returns.
 pub(crate) fn on_ci() -> bool {
     std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| !v.is_empty())
@@ -302,6 +306,7 @@ impl Homes {
         let own_home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_default();
+        env.push((OUTER_HOME_VAR, own_home.clone().into()));
         for (name, under_home) in [("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")] {
             let value = std::env::var_os(name).unwrap_or_else(|| own_home.join(under_home).into());
             env.push((name, value));
@@ -615,8 +620,12 @@ pub(crate) fn kind_of(what: &purlis_core::sandbox::grant::What) -> usize {
     }
 }
 
-/// **The maximal chat's grants**: one of every `grant::What` kind, in the project at `root`.
-pub(crate) fn one_of_every_kind(root: &Path) -> Vec<purlis_core::sandbox::grant::What> {
+/// **The maximal chat's grants**: one of every `grant::What` kind, in the project at `root`,
+/// its socket in `sockets`, a folder no chat may write.
+pub(crate) fn one_of_every_kind(
+    root: &Path,
+    sockets: &Path,
+) -> Vec<purlis_core::sandbox::grant::What> {
     use purlis_core::sandbox::grant::What;
     let granted = root.join("granted");
     std::fs::create_dir_all(&granted).expect("a folder to grant");
@@ -625,7 +634,7 @@ pub(crate) fn one_of_every_kind(root: &Path) -> Vec<purlis_core::sandbox::grant:
             purlis_core::sandbox::hosts::Host::parse("granted.example.test").expect("a host"),
         ),
         What::Write(granted.clone()),
-        What::Socket(granted.join("service.sock")),
+        What::Socket(sockets.join("service.sock")),
         What::Service("com.example.granted".to_owned()),
         What::Port(15432),
         What::Listen(18787),
@@ -665,6 +674,8 @@ pub(crate) struct Scenario {
     /// Every chat process it saw run, and its process group, an ended chat's included: what
     /// its teardown checks for leftovers.
     seen: Mutex<Vec<(u32, Option<u32>)>>,
+    /// Folders it made outside its home ([`Self::a_folder_outside`]), which its teardown removes.
+    outside: Mutex<Vec<PathBuf>>,
     /// Each chat's sandbox as the window composed it at its start, by its number.
     applied: Mutex<Vec<(u32, Option<purlis_core::sandbox::Applied>)>>,
     /// When it was made, for its run time (T1.1-06: ticket 54 sets its budgets from these).
@@ -776,6 +787,7 @@ impl Scenario {
             profiled: std::sync::Once::new(),
             also: Mutex::default(),
             seen: Mutex::default(),
+            outside: Mutex::default(),
             applied: Mutex::default(),
             began,
             runtime: Some(runtime),
@@ -1085,6 +1097,30 @@ impl Scenario {
         id
     }
 
+    /// **A folder of the person's own that no chat may write**: in the run's own home, outside
+    /// the temp folder and the project, only this user's (`0700`). The teardown removes it, and
+    /// the parent checks it is gone.
+    pub(crate) fn a_folder_outside(&self, name: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt as _;
+        let home = std::env::var_os(OUTER_HOME_VAR)
+            .filter(|home| !home.is_empty())
+            .map(PathBuf::from)
+            .expect("the run's own home");
+        let own = self
+            .homes
+            .home
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let folder = home.join(format!(".purlis-{own}-{name}"));
+        std::fs::create_dir_all(&folder).expect("a folder outside");
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700))
+            .expect("only this user's");
+        let folder = folder.canonicalize().expect("the folder outside");
+        self.outside.lock().expect("outside").push(folder.clone());
+        folder
+    }
+
     /// Chat `id`'s sandbox, as the window composed it at its start.
     pub(crate) fn applied_of(&self, id: u32) -> Option<purlis_core::sandbox::Applied> {
         self.applied
@@ -1286,6 +1322,7 @@ impl Drop for Scenario {
                         .into_iter()
                         .filter_map(|one| one.tmp),
                 )
+                .chain(self.outside.lock().expect("outside").iter().cloned())
                 .collect(),
             ..Left::default()
         };
@@ -1348,6 +1385,9 @@ impl Drop for Scenario {
             runtime.shutdown_timeout(Duration::from_secs(5));
         }
         let _ = std::fs::remove_dir_all(&self.root);
+        for folder in self.outside.lock().expect("outside").iter() {
+            let _ = std::fs::remove_dir_all(folder);
+        }
         // Its run time, set up to teardown, with what it ran as and whether it passed.
         let _ = super::report::time_of(&serde_json::json!({
             "test": std::thread::current().name().unwrap_or_default(),

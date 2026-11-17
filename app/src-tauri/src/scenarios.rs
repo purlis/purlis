@@ -331,11 +331,15 @@ fn one_timings_value_reaches_the_board_the_throttle_and_hold_ends_in_host_mode()
 
 /// **A Linux Claude Code chat in the scenario host is sandboxed** (T1.1-06): the production
 /// branch of `Chats::start_as_opted`, never the test build's that can leave one unsandboxed, at
-/// the floor and at Full. Its command runs under purlis's own wrap, as it says itself: held by
-/// no-new-privileges, in a user namespace of its own, below `<kit> _sandbox`. A plain file of the
+/// the floor and at Full. Its command runs under purlis's own wrap: held by no-new-privileges and a
+/// seccomp filter, as it says itself, below `<kit> _sandbox`, as `/proc` says from outside. A plain file of the
 /// project reads (the control), the vault no chat reads is refused, and so is a write to Claude
 /// Code's own settings in its config folder, which only `claude_wrap` refuses at the floor. On
 /// macOS Claude Code holds itself (ticket 10, #6900): reported `not_run`, never passed.
+///
+/// purlis's Linux wrap is Landlock and a seccomp supervisor (`purlis _sandbox`), not a user
+/// namespace: the chat runs in the first user namespace by design, so it is seccomp's filter
+/// mode (`Seccomp: 2`) that is asserted, not a namespace of its own.
 #[cfg(unix)]
 #[test]
 fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
@@ -391,23 +395,18 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
                 || l.split_whitespace().collect::<Vec<_>>() == ["NoNewPrivs:", "1"]),
             "{protection:?}: the chat's command is not held by no-new-privileges:\n{place}\n{said}"
         );
-        let ns = |key: &str| {
-            place
-                .split_whitespace()
-                .find_map(|word| word.strip_prefix(key))
-                .unwrap_or_default()
-                .to_owned()
-        };
-        assert!(
-            !ns("ns=").is_empty() && ns("ns=") != ns("init="),
-            "{protection:?}: the chat's command shares the first process's user namespace:\n\
-             {place}\n{said}"
-        );
         assert!(
             place
                 .lines()
-                .any(|l| l.starts_with("up") && l.contains(&wrapped)),
-            "{protection:?}: no ancestor of the chat's command is `{wrapped}`:\n{place}\n{said}"
+                .any(|l| l.split_whitespace().collect::<Vec<_>>() == ["Seccomp:", "2"]),
+            "{protection:?}: the chat's command is not held by a seccomp filter:\n{place}\n{said}"
+        );
+        // The wrap's own process is outside what the chat can read of itself, so its ancestry
+        // is read from here, as the system has it.
+        let ancestry = ancestry_of_harness(&scenario.homes.scripts.join("chat-1.json"));
+        assert!(
+            ancestry.iter().any(|line| line.starts_with(&wrapped)),
+            "{protection:?}: no ancestor of the chat's harness is `{wrapped}`: {ancestry:#?}\n{said}"
         );
         assert!(
             stdout_of(&scenario, chat, "reads-plain").contains("PLAIN-READS"),
@@ -425,6 +424,48 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
              keeps from it: {wrote}\n{said}"
         );
     }
+}
+
+/// **The command lines of the chat harness playing `script` and its ancestors**, read from
+/// `/proc` as the system has them (Linux): each one's, from the harness up to the first process.
+#[cfg(unix)]
+fn ancestry_of_harness(script: &Path) -> Vec<String> {
+    let cmdline = |pid: u32| {
+        std::fs::read(format!("/proc/{pid}/cmdline"))
+            .map(|raw| {
+                String::from_utf8_lossy(&raw)
+                    .replace('\0', " ")
+                    .trim()
+                    .to_owned()
+            })
+            .unwrap_or_default()
+    };
+    let parent = |pid: u32| {
+        std::fs::read_to_string(format!("/proc/{pid}/status"))
+            .ok()?
+            .lines()
+            .find_map(|line| line.strip_prefix("PPid:"))?
+            .trim()
+            .parse::<u32>()
+            .ok()
+    };
+    let script = script.display().to_string();
+    let harness = std::fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+        .find(|pid| {
+            let line = cmdline(*pid);
+            line.contains("fake-harness") && line.contains(&script)
+        });
+    let mut out = Vec::new();
+    let mut at = harness;
+    while let Some(pid) = at.filter(|pid| *pid > 1) {
+        out.push(cmdline(pid));
+        at = parent(pid);
+    }
+    out
 }
 
 /// A Claude Code chat's write of its own settings in its config folder, saying where and
@@ -551,15 +592,15 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             }]}]
         }));
         // The window is asked while the call is held: the chat is held on the host in the
-        // window's own registry of asks, what the person's Notice draws from. The hold is
-        // measured from when it is seen, never from before the chat started up.
-        let began = until_seen(
+        // window's own registry of asks, what the person's Notice draws from.
+        until(
             &scenario,
             "the window is asked while the call is held",
             || held_on(&scenario, chat, &held).is_some(),
         );
         scenario.until_played(chat, &["held"]);
-        let took = began.elapsed();
+        // The call's own time, as curl measured it: nothing of the chat's start-up.
+        let took = took_of(&scenario, chat, "held");
         // Today's behaviour (B0, #6672, #6673): `ask.raised` can reach the event log well after
         // the call it held was refused (on Codex, as the chat's run ends), so it is not waited
         // for here; how late it was, where it came, is said.
@@ -571,9 +612,8 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             ),
         );
         assert!(
-            took + SEEN_WITHIN >= scenario.timings.hold(),
-            "{dialect:?}: the call ended {took:?} after it was seen held, before the hold of \
-             {:?} ended",
+            took >= scenario.timings.hold(),
+            "{dialect:?}: the call ended after {took:?}, before the hold of {:?} ended",
             scenario.timings.hold()
         );
         let result = scenario.result_of(chat, "held").expect("played");
@@ -590,10 +630,25 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
     }
 }
 
-/// The command a chat runs to reach `host` on HTTPS, saying the status it was answered.
+/// The command a chat runs to reach `host` on HTTPS, saying the status it was answered and how
+/// long the call took, as curl measures it.
 #[cfg(unix)]
 fn reaches(host: &str) -> String {
-    format!("curl -sS -o /dev/null -w 'status %{{http_code}}' --max-time 300 https://{host}/")
+    format!(
+        "curl -sS -o /dev/null -w 'status %{{http_code}} took %{{time_total}}' --max-time 300 \
+         https://{host}/"
+    )
+}
+
+/// How long chat `id`'s call of `step` ([`reaches`]) took, as curl measured it: from the
+/// command's start, so never a chat's start-up.
+#[cfg(unix)]
+fn took_of(scenario: &Scenario, id: u32, step: &str) -> Duration {
+    let said = stdout_of(scenario, id, step);
+    said.split_once("took ")
+        .and_then(|(_, seconds)| seconds.trim().parse::<f64>().ok())
+        .map(Duration::from_secs_f64)
+        .unwrap_or_else(|| panic!("chat {id}'s {step} said no time: {said:?}"))
 }
 
 /// The block chat `session` is held on now for `target`, as its Notice shows it.
@@ -667,12 +722,12 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     let carried = lookups();
 
     let other = scenario.starts(&script("reaches-other"));
-    let began = until_seen(&scenario, "the other chat is held on the host", || {
+    until(&scenario, "the other chat is held on the host", || {
         held_on(&scenario, other, host).is_some()
     });
     scenario.until_played(other, &["reaches-other"]);
     assert!(
-        began.elapsed() + SEEN_WITHIN >= scenario.timings.hold(),
+        took_of(&scenario, other, "reaches-other") >= scenario.timings.hold(),
         "the other chat's call ended before the hold did: {:?}\n{}",
         scenario.result_of(other, "reaches-other"),
         scenario.said()
@@ -873,7 +928,10 @@ fn the_maximal_chat_holds_every_grant_kind() {
     else {
         return;
     };
-    let every = host::one_of_every_kind(&scenario.root);
+    // A socket a grant can name: in a folder of the person's own that no chat may write, never
+    // the project or the temp folder (`services::SocketGround`).
+    let sockets = scenario.a_folder_outside("sockets");
+    let every = host::one_of_every_kind(&scenario.root, &sockets);
     let kinds: std::collections::BTreeSet<usize> = every.iter().map(host::kind_of).collect();
     assert_eq!(
         kinds,
@@ -981,20 +1039,6 @@ fn the_maximal_chat_holds_every_grant_kind() {
     )])
     .expect("the leg's report");
 }
-
-/// [`until`], answering the moment `done` was first seen: what it waited on had happened by
-/// then, so a duration measured from it counts nothing before it, a chat's start-up least of
-/// all, and is never longer than what it measures.
-#[cfg(unix)]
-fn until_seen(scenario: &Scenario, what: &str, done: impl Fn() -> bool) -> std::time::Instant {
-    until(scenario, what, &done);
-    std::time::Instant::now()
-}
-
-/// How much of a hold can pass between its start and the window seeing it: its poll and the
-/// link's latency. A held call ends no sooner than the hold less this, from when it was seen.
-#[cfg(unix)]
-const SEEN_WITHIN: Duration = Duration::from_secs(1);
 
 /// Until `done`, within [`PLAYS_WITHIN`]: a chat's harness starts and plays first.
 #[cfg(unix)]
