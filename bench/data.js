@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794952506071,
+  "lastUpdate": 1794956599084,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50904,6 +50904,48 @@ window.BENCHMARK_DATA = {
             "value": 99.7348615,
             "unit": "ms",
             "extra": "median of 5 runs: 99.665, 99.707, 99.735, 100.640, 100.745 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1e56a64124f48b6cd925707376c5f0da6fde2430",
+          "message": "Seal key recovery, git's exit-128 cases told apart, no transient failure sealed, and the policy log (#7073) (#7126)\n\n* Seal key recovery, git read errors and the policy log (#7073)\n\nApplies #7061's changes first (it was open when this started), then the\nshould-fixes from its security review:\n\n- A seal key item another program made: the press reads the keychain\n  again and, where the item is still foreign, says which item to delete;\n  the next press makes a new key, with no restart.\n- A key whose write was cut short is restored from the app's own spare.\n- git show's exit 128 reads as no file only for git's no-such-path\n  words; anything else is strict. The working tree's file is read only\n  where the plane has no .git at all.\n- A HEAD git could not read is strict for that read and never kept as\n  accepted.\n- The brokered scan logs a finding in the asking chat's own log.\n- The log cap keeps a count instead of reading the file per line.\n- Tests reach read_or_make through a KeyItems seam, and the socket's\n  PolicyLog wiring through answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M7EXR753DV7FSZFCVDSV1S\nPurlis-Persona: steward\n\n* The HEAD test fails HEAD on its own: a branch with no commit, not a missing blob\n\nSo the test of not sealing an unread HEAD turns red by itself when that\nfix is undone, independently of the blob fix (#7073).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M7EXR753DV7FSZFCVDSV1S\nPurlis-Persona: steward\n\n* rustfmt over the #7073 changes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M7EXR753DV7FSZFCVDSV1S\nPurlis-Persona: steward\n\n* The seal key's Accept message is held as said beside its Accept (#7073)\n\nThe press's answer is shown on the project policy Notice, beside the\nAccept it names, so a Go to would point at itself: windowControls.test.ts\nholds it in UNLINKED as BESIDE.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NFGT5982EH96R2V7A3CCNW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T20:27:03Z",
+          "tree_id": "47d057566072317a6ba296285449909563b12757",
+          "url": "https://github.com/purlis/purlis/commit/1e56a64124f48b6cd925707376c5f0da6fde2430"
+        },
+        "date": 1794956593029,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7160759999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.679, 0.710, 0.716, 0.717, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.590764999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.418, 16.443, 16.591, 16.657, 16.782 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7671995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.669, 102.426, 102.767, 103.370, 103.519 ms"
           }
         ]
       }
