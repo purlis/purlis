@@ -460,6 +460,36 @@ fn a_task_that_cannot_be_resumed_has_ended_by_itself_and_its_asker_is_told_once(
 }
 
 #[test]
+fn a_task_that_cannot_be_resumed_keeps_its_closed_record() {
+    // #6487. It ends for good at the launch and never closes through `close_as`, so the record
+    // a close keeps is kept here.
+    let (plane, host, planes, _id, held, steward, task) = a_steward_and_a_working_task();
+    let task_id = held
+        .chats()
+        .chat_at(task)
+        .and_then(|at| at.id)
+        .expect("the task's id");
+    let mut at_quit = quits(&held);
+    for chat in &mut at_quit.chats {
+        if chat.number == Some(task) {
+            chat.resume = None;
+        }
+    }
+
+    let (_relaunched, _planes, _again, held, _opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    let kept = purlis_core::chatrecords::every(held.root());
+    assert_eq!(
+        kept.iter()
+            .map(|one| (one.number, one.id.as_str()))
+            .collect::<Vec<_>>(),
+        [(task, task_id.as_str())],
+        "only the task that ended, not {steward}, which goes on"
+    );
+}
+
+#[test]
 fn an_orphaned_task_s_report_is_not_lost_and_is_delivered_when_its_asker_is_reopened() {
     if super::ran_on_a_sandbox_only_stand_in() {
         return;

@@ -3504,6 +3504,11 @@ export const commands = {
 	 */
 	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
 	/**
+	 *  **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
+	 *  on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
+	 */
+	closedChats: (plane: PlaneId) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane })),
+	/**
 	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
 	 *  draws read-only. Null where nothing was kept.
 	 */
@@ -3533,6 +3538,12 @@ export const commands = {
 	 *  window draws it. The task's row goes; its dispatch record stays.
 	 */
 	reopenFinishedTask: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_finished_task", { plane, id, columns, rows })),
+	/**
+	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
+	 *  again on its conversation, as the same chat under a new number
+	 *  ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
+	 */
+	reopenClosedChat: (plane: PlaneId, number: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, number, columns, rows })),
 	/**
 	 *  **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
 	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
@@ -8012,11 +8023,11 @@ export type ChatCard = {
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
 	/**
-	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
-	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
-	 *  nothing in words of its own.
+	 *  **Whether *Reopen* starts a card drawn from its chat's record again** (#6485), and why
+	 *  not where it cannot. `None` for a card drawn from its task, whose Reopen is its finished
+	 *  row's (`task.reopens`).
 	 */
-	dispatched: boolean,
+	chat_reopen: ChatReopen | null,
 };
 
 /**
@@ -8250,6 +8261,18 @@ export type ChatPromptRouting = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**
+ *  **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
+ *  started, a handoff, or a task that ended owing no report.
+ */
+export type ChatReopen = 
+/**  It starts again on its conversation (`reopen_closed_chat`). */
+"reopens" | 
+/**  It closed before purlis kept what a reopen needs. */
+"not_kept" | 
+/**  Its harness named no conversation to resume. */
+"no_conversation";
 
 /**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
@@ -8568,6 +8591,20 @@ export type CloneToVouch = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+ *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+ *  card (`chat_by_number`).
+ */
+export type ClosedChat = {
+	number: number,
+	earlier: number[],
+	title: string,
+	place: string,
+	/**  When it closed, UTC, RFC 3339. */
+	ended: string,
 };
 
 /**

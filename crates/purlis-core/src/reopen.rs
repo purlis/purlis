@@ -131,6 +131,14 @@ pub struct Chat {
     /// was not: a bump drops every operator's open chats, and this field's absence reads as
     /// the behaviour every record without it was written under.
     pub number: Option<u32>,
+    /// **The numbers this chat answered to before a restart dealt it [`Self::number`]**, oldest
+    /// first (#6486): a restart keeps the chat's ULID and deals a new number, and a `chat 702`
+    /// link printed before it still names this chat. Carried into its closed record
+    /// ([`crate::chatrecords::ChatRecord::earlier`]) as it closes. Held to
+    /// [`MOST_EARLIER`]; empty for a chat never restarted, which is what
+    /// every record written before this field says — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub earlier: Vec<u32>,
     /// The name the operator gave this chat, where they gave one (charter-app#254) — what its
     /// tab says instead of the default `<persona> <N>`.
     ///
@@ -355,6 +363,41 @@ pub struct Chat {
     /// run ends, or it is closed for good. `None` for a chat that kept none, and every record
     /// written before this field, for [`Self::pinned`]'s reason.
     pub kept_tmp: Option<String>,
+}
+
+/// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
+pub const MOST_EARLIER: usize = 64;
+
+/// **The numbers `earlier` keeps**: none zero, none twice, at most [`MOST_EARLIER`], the newest.
+pub fn held_earlier(earlier: &[u32]) -> Vec<u32> {
+    let mut kept: Vec<u32> = Vec::new();
+    for number in earlier.iter().rev() {
+        if *number != 0 && !kept.contains(number) && kept.len() < MOST_EARLIER {
+            kept.push(*number);
+        }
+    }
+    kept.reverse();
+    kept
+}
+
+impl Chat {
+    /// **This chat as a restart starts it again** (#6486): the same chat under its ULID, in a new
+    /// run, its process gone, a new number to be dealt, and the number it has now kept with
+    /// those it had before ([`Self::earlier`]).
+    pub fn renumbered(self) -> Chat {
+        let mut earlier = self.earlier;
+        earlier.extend(self.number);
+        Chat {
+            identity: Identity {
+                run: None,
+                ..self.identity
+            },
+            pid: None,
+            number: None,
+            earlier: held_earlier(&earlier),
+            ..self
+        }
+    }
 }
 
 impl Chat {
@@ -1062,6 +1105,16 @@ fn no_link_on_the_way(plane_root: &Path, file: &Path) -> std::io::Result<()> {
 /// file charter keeps under the state directory and reads back — and meets the same two
 /// hazards. A FIFO there blocks `charter save`, which an operator runs all day.
 pub(crate) fn refuse_unusable(file: &Path, found: &std::fs::Metadata) -> std::io::Result<()> {
+    refuse_unusable_over(file, found, MAX_BYTES)
+}
+
+/// [`refuse_unusable`] for a record of the app's own that may be as large as `most` bytes: the
+/// closed chats' records (`chatrecords`), which keep a chat for each Reopen.
+pub(crate) fn refuse_unusable_over(
+    file: &Path,
+    found: &std::fs::Metadata,
+    most: u64,
+) -> std::io::Result<()> {
     // A record that is not a plain file: a FIFO would block the read for ever, a device
     // never ends. Directories above it are fine, the record itself is not.
     if !found.file_type().is_file() {
@@ -1074,11 +1127,11 @@ pub(crate) fn refuse_unusable(file: &Path, found: &std::fs::Metadata) -> std::io
         ));
     }
     // Read whole at launch, so a planted giant is a hang with nothing to click on.
-    if found.len() > MAX_BYTES {
+    if found.len() > most {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
-                "{} is {} bytes, and purlis's record is never larger than {MAX_BYTES}",
+                "{} is {} bytes, and purlis's record is never larger than {most}",
                 file.display(),
                 found.len()
             ),
@@ -1718,6 +1771,10 @@ struct ChatOnDisk {
     /// counts from one.
     #[serde(default)]
     number: u32,
+    /// [`Chat::earlier`], or absent for a chat never restarted, so a project that never
+    /// restarted a chat writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    earlier: Vec<u32>,
     /// The name the operator gave the chat, or absent — see [`Chat::label`]. Absent in every
     /// record written before a chat could have one, and whenever none was given, so a plane
     /// that never renamed a chat writes the record it always wrote. Held to [`label`] on the
@@ -2054,77 +2111,7 @@ impl From<&Record> for OnDisk {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|since| since.as_secs())
                 .unwrap_or_default(),
-            chats: record
-                .chats
-                .iter()
-                .map(|chat| ChatOnDisk {
-                    program: chat.program.clone(),
-                    args: chat.args.clone(),
-                    cwd: chat
-                        .cwd
-                        .as_ref()
-                        .map(|cwd| cwd.display().to_string())
-                        .unwrap_or_default(),
-                    name: chat.name.clone(),
-                    resume: chat
-                        .resume
-                        .as_ref()
-                        .map(SessionId::to_string)
-                        .unwrap_or_default(),
-                    active: chat.active,
-                    profile: chat.profile.clone().unwrap_or_default(),
-                    persona: chat.persona.clone().unwrap_or_default(),
-                    footer: if chat.show_footer {
-                        crate::start::FOOTER_SHOW.to_owned()
-                    } else {
-                        String::new()
-                    },
-                    pinned: chat.pinned,
-                    number: chat.number.unwrap_or_default(),
-                    label: chat.label.clone().unwrap_or_default(),
-                    from: chat.from.as_ref().map(FromOnDisk::from),
-                    reopened: chat
-                        .reopened
-                        .map(|reopened| reopened.word().to_owned())
-                        .unwrap_or_default(),
-                    held: chat.held.as_ref().map(|held| {
-                        serde_json::Value::String(held.persona.clone().unwrap_or_default())
-                    }),
-                    tab_opened: chat.tab_opened,
-                    unseen: chat.unseen,
-                    graded: chat.graded,
-                    held_from_clusters: chat.held_from_clusters,
-                    unattended: chat.unattended,
-                    shows: chat.shows.unwrap_or_default(),
-                    beside: chat.beside.unwrap_or_default(),
-                    renamed_from: chat.renamed_from.clone().unwrap_or_default(),
-                    runs_on: chat
-                        .runs_on
-                        .as_ref()
-                        .map(crate::machine::StartChoice::word)
-                        .unwrap_or_default(),
-                    sandbox: if chat.unsandboxed {
-                        SANDBOX_OFF.to_owned()
-                    } else if chat.no_sandbox {
-                        SANDBOX_NONE.to_owned()
-                    } else {
-                        String::new()
-                    },
-                    id: chat.identity.id.clone().unwrap_or_default(),
-                    device: chat.identity.device.clone().unwrap_or_default(),
-                    run: chat.identity.run.clone().unwrap_or_default(),
-                    resumed_from: chat.identity.resumed_from.clone().unwrap_or_default(),
-                    pid: chat.pid.unwrap_or_default(),
-                    model: chat.model.clone().unwrap_or_default(),
-                    plane_skills: chat.plane_skills,
-                    routing: chat.routing.clone(),
-                    studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
-                    own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
-                    own_pieces: chat.own_pieces.clone(),
-                    mid_turn: chat.mid_turn,
-                    kept_tmp: chat.kept_tmp.clone(),
-                })
-                .collect(),
+            chats: record.chats.iter().map(ChatOnDisk::from).collect(),
             dealt: highest_dealt(record),
             views: record.views.iter().map(ViewOnDisk::from).collect(),
             relaunch_after_update: record.relaunch_after_update,
@@ -2153,6 +2140,94 @@ fn highest_dealt(record: &Record) -> u32 {
         .iter()
         .filter_map(|chat| chat.number)
         .fold(record.dealt, u32::max)
+}
+
+impl From<&Chat> for ChatOnDisk {
+    fn from(chat: &Chat) -> Self {
+        ChatOnDisk {
+            program: chat.program.clone(),
+            args: chat.args.clone(),
+            cwd: chat
+                .cwd
+                .as_ref()
+                .map(|cwd| cwd.display().to_string())
+                .unwrap_or_default(),
+            name: chat.name.clone(),
+            resume: chat
+                .resume
+                .as_ref()
+                .map(SessionId::to_string)
+                .unwrap_or_default(),
+            active: chat.active,
+            profile: chat.profile.clone().unwrap_or_default(),
+            persona: chat.persona.clone().unwrap_or_default(),
+            footer: if chat.show_footer {
+                crate::start::FOOTER_SHOW.to_owned()
+            } else {
+                String::new()
+            },
+            pinned: chat.pinned,
+            number: chat.number.unwrap_or_default(),
+            earlier: held_earlier(&chat.earlier),
+            label: chat.label.clone().unwrap_or_default(),
+            from: chat.from.as_ref().map(FromOnDisk::from),
+            reopened: chat
+                .reopened
+                .map(|reopened| reopened.word().to_owned())
+                .unwrap_or_default(),
+            held: chat
+                .held
+                .as_ref()
+                .map(|held| serde_json::Value::String(held.persona.clone().unwrap_or_default())),
+            tab_opened: chat.tab_opened,
+            unseen: chat.unseen,
+            graded: chat.graded,
+            held_from_clusters: chat.held_from_clusters,
+            unattended: chat.unattended,
+            shows: chat.shows.unwrap_or_default(),
+            beside: chat.beside.unwrap_or_default(),
+            renamed_from: chat.renamed_from.clone().unwrap_or_default(),
+            runs_on: chat
+                .runs_on
+                .as_ref()
+                .map(crate::machine::StartChoice::word)
+                .unwrap_or_default(),
+            sandbox: if chat.unsandboxed {
+                SANDBOX_OFF.to_owned()
+            } else if chat.no_sandbox {
+                SANDBOX_NONE.to_owned()
+            } else {
+                String::new()
+            },
+            id: chat.identity.id.clone().unwrap_or_default(),
+            device: chat.identity.device.clone().unwrap_or_default(),
+            run: chat.identity.run.clone().unwrap_or_default(),
+            resumed_from: chat.identity.resumed_from.clone().unwrap_or_default(),
+            pid: chat.pid.unwrap_or_default(),
+            model: chat.model.clone().unwrap_or_default(),
+            plane_skills: chat.plane_skills,
+            routing: chat.routing.clone(),
+            studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
+            own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
+            own_pieces: chat.own_pieces.clone(),
+            mid_turn: chat.mid_turn,
+            kept_tmp: chat.kept_tmp.clone(),
+        }
+    }
+}
+
+/// **A chat as the record of open chats spells it** (#6485): what a closed chat's record keeps
+/// for its Reopen (`chatrecords`), so a chat is written one way wherever purlis keeps one.
+pub fn chat_to_json(chat: &Chat) -> serde_json::Value {
+    serde_json::to_value(ChatOnDisk::from(chat)).unwrap_or(serde_json::Value::Null)
+}
+
+/// [`chat_to_json`] read back, held to every shape the record's read holds a chat to: `None`
+/// where it does not read as one.
+pub fn chat_from_json(value: serde_json::Value) -> Option<Chat> {
+    serde_json::from_value::<ChatOnDisk>(value)
+        .ok()
+        .map(Chat::from)
 }
 
 impl From<ChatOnDisk> for Chat {
@@ -2186,6 +2261,7 @@ impl From<ChatOnDisk> for Chat {
             // that `contain::segment_ok` would pass for any integer, and a record that names
             // a number no chat here holds costs at most a gap in the counting.
             number: (chat.number > 0).then_some(chat.number),
+            earlier: held_earlier(&chat.earlier),
             label: label(&chat.label).ok().flatten(),
             tab_opened,
             unseen: chat.unseen,
