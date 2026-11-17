@@ -1239,6 +1239,10 @@ pub enum PolicyAccepted {
 /// ([`crate::secrets::seal::keep`]): an older sealed record put back (its counter is behind) or
 /// one removed reads as [`PolicyAccepted::Broken`] wherever the keyring remembers one was kept.
 pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
+    // A seal key another program made seals nothing (the re-review of #6992, S4).
+    if crate::secrets::seal::key_is_foreign() {
+        return PolicyAccepted::Broken;
+    }
     let held = read(root);
     let clone = anchor_key(root);
     let sealed = match (&held.policy_accepted, &held.policy_seal) {
@@ -1253,9 +1257,10 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         |text| crate::secrets::seal::kept_holds(POLICY_KIND, &clone, text),
     );
     match (sealed, kept, held.policy_accepted) {
-        // Sealed, and the keyring keeps this very one (or never kept any: the first, from
-        // before the keyring's copy).
-        (Some(_), Some(true) | None, Some(accepted)) => PolicyAccepted::Held(accepted),
+        // Sealed, and the keyring keeps this very one. A sealed record with no anchor is one
+        // the keyring never saw kept, or whose anchor was taken away: broken (the re-review of
+        // #6992), since the app keeps the anchor before it writes any record.
+        (Some(_), Some(true), Some(accepted)) => PolicyAccepted::Held(accepted),
         // Nothing here, and the keyring never kept one either.
         (None, None, None) => PolicyAccepted::Never,
         _ => PolicyAccepted::Broken,

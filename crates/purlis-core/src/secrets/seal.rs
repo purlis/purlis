@@ -46,40 +46,112 @@ pub(crate) fn set_for_this_test(key: Option<Vec<u8>>) {
     TEST_KEY.with(|held| *held.borrow_mut() = key);
 }
 
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for a key item another program made.
+    static TEST_FOREIGN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's key item was made by another program** (or is the app's again).
+#[cfg(test)]
+pub(crate) fn set_foreign_for_this_test(foreign: bool) {
+    TEST_FOREIGN.with(|held| held.set(foreign));
+}
+
+/// What the app found where it keeps the seal's key.
+#[cfg(not(test))]
+enum Found {
+    /// The app's own item, and its key.
+    Held(zeroize::Zeroizing<Vec<u8>>),
+    /// An item this app does not own: another program made it, so its key may be known.
+    Foreign,
+    /// None could be read or made.
+    Unread,
+}
+
+#[cfg(not(test))]
+static FOUND: std::sync::OnceLock<Found> = std::sync::OnceLock::new();
+
 /// The seal's key, made the first time the app asks; none in any other process, in a fenced
-/// build, or where the keyring cannot be read.
+/// build, where the keyring cannot be read, or where the item was made by another program
+/// ([`key_is_foreign`]).
 fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     #[cfg(test)]
     {
+        if TEST_FOREIGN.with(std::cell::Cell::get) {
+            return None;
+        }
         TEST_KEY.with(|held| held.borrow().clone().map(zeroize::Zeroizing::new))
     }
     #[cfg(not(test))]
     {
-        static KEY: std::sync::OnceLock<Option<zeroize::Zeroizing<Vec<u8>>>> =
-            std::sync::OnceLock::new();
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return None;
         }
-        KEY.get_or_init(read_or_make).clone()
+        match FOUND.get_or_init(read_or_make) {
+            Found::Held(key) => Some(key.clone()),
+            Found::Foreign | Found::Unread => None,
+        }
     }
 }
 
-/// The key the keyring holds, or a new one made and kept there; none where neither works.
+/// **Whether the seal's key item was made by another program than the app** (the re-review of
+/// #6992, S4): a seal made with it proves nothing, so every sealed answer reads as broken and is
+/// denied until the person presses again. Only the app can tell.
+pub fn key_is_foreign() -> bool {
+    #[cfg(test)]
+    {
+        TEST_FOREIGN.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        super::keyhold::is_the_app()
+            && !crate::fence::FENCED
+            && matches!(FOUND.get_or_init(read_or_make), Found::Foreign)
+    }
+}
+
+/// The key the keyring holds, or a new one made and kept there.
+///
+/// **An item that is there is used only once the app proves it owns it**: it is made again in
+/// place with the same key ([`super::keyhold::owned_here`]), which the Keychain lets only the
+/// item's owner do. An item another program owns is [`Found::Foreign`]. What this does not
+/// catch: an item made with an access rule that lets every program in (`security
+/// add-generic-password -A`), which any program may also delete; a check of the item's access
+/// rule needs Security calls only `unsafe` reaches, which is a ruling of its own.
 #[cfg(not(test))]
-fn read_or_make() -> Option<zeroize::Zeroizing<Vec<u8>>> {
-    let entry = ::keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+fn read_or_make() -> Found {
+    let Ok(entry) = ::keyring::Entry::new(SERVICE, ACCOUNT) else {
+        return Found::Unread;
+    };
     match entry.get_password() {
-        Ok(hex) => decode(&hex).filter(|key| key.len() == KEY_BYTES),
+        Ok(hex) => {
+            let Some(key) = decode(&hex).filter(|key| key.len() == KEY_BYTES) else {
+                return Found::Foreign;
+            };
+            match super::keyhold::owned_here(SERVICE, ACCOUNT, &hex) {
+                Ok(true) => Found::Held(key),
+                Ok(false) => Found::Foreign,
+                Err(why) => {
+                    tracing::warn!("purlis: the seal's key could not be checked ({why})");
+                    Found::Unread
+                }
+            }
+        }
         Err(::keyring::Error::NoEntry) => {
             let mut fresh = zeroize::Zeroizing::new(vec![0u8; KEY_BYTES]);
-            getrandom::fill(&mut fresh).ok()?;
+            if getrandom::fill(&mut fresh).is_err() {
+                return Found::Unread;
+            }
             let hex = zeroize::Zeroizing::new(crate::extension::hex(&fresh));
-            super::keyhold::make_own(SERVICE, ACCOUNT, &hex).ok()?;
-            Some(fresh)
+            match super::keyhold::make_own(SERVICE, ACCOUNT, &hex) {
+                Ok(_) => Found::Held(fresh),
+                Err(_) => Found::Unread,
+            }
         }
         Err(why) => {
             tracing::warn!("purlis: the seal's key could not be read ({why})");
-            None
+            Found::Unread
         }
     }
 }
@@ -131,6 +203,12 @@ thread_local! {
     /// A test's keyring of kept seals: account to seal.
     static TEST_KEPT: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// **A test's keyring forgets every kept seal** of this thread: an anchor taken away.
+#[cfg(test)]
+pub(crate) fn forget_kept_for_this_test() {
+    TEST_KEPT.with(|kept| kept.borrow_mut().clear());
 }
 
 /// The keyring account a kept seal of `kind` for the clone keyed `clone` is under.
