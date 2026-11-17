@@ -937,6 +937,69 @@ fn a_docker_pool_with_no_runner_that_starts_chats_is_not_offered_and_one_not_kep
     );
 }
 
+/// **A pool whose host doctor found short of Landlock 6 isn't offered, and the picker says why**
+/// (#7084): no chat starts there, so none is tried, and the person reads the host's kernel and
+/// the release it needs before Start.
+#[test]
+fn a_pool_whose_host_kernel_is_short_is_not_offered_and_says_why() {
+    let config = tempfile::tempdir().unwrap();
+    let remote = crate::runners::tests::remote_on("old-kernel-box");
+    let route = remote.route.spelled();
+    runners::record_pool(
+        config.path(),
+        &crate::runners::tests::pool("builds", runners::Set::default()).on(Some(remote)),
+    )
+    .unwrap();
+    doctoring::note(
+        &route,
+        &Err(crate::sshroute::connect::Finding::KernelShort {
+            host: "old-kernel-box".into(),
+            release: Some("6.8.0-45-generic".into()),
+            ubuntu_24_04: true,
+        }),
+    );
+    assert_eq!(
+        in_the_picker(config.path(), None, &["builds".to_owned()]),
+        vec![(
+            "builds".to_owned(),
+            InThePicker::NotOffered(
+                "A chat can't start there: old-kernel-box runs Linux 6.8.0-45-generic, and \
+                 purlis's sandbox needs Linux 6.12 or later. Pool setup says how to update it."
+                    .into()
+            )
+        )]
+    );
+    // A release new enough that lacks Landlock isn't told it needs 6.12.
+    doctoring::note(
+        &route,
+        &Err(crate::sshroute::connect::Finding::KernelShort {
+            host: "old-kernel-box".into(),
+            release: Some("6.14.0-29-generic".into()),
+            ubuntu_24_04: true,
+        }),
+    );
+    assert_eq!(
+        in_the_picker(config.path(), None, &["builds".to_owned()]),
+        vec![(
+            "builds".to_owned(),
+            InThePicker::NotOffered(
+                "A chat can't start there: old-kernel-box's kernel doesn't have what purlis's \
+                 sandbox needs (Linux 6.12 or later). Pool setup says how to update it."
+                    .into()
+            )
+        )]
+    );
+    // Once doctor finds the host as it should be, the pool stands as its runner does.
+    doctoring::note(&route, &Ok(doctoring::Passed::every()));
+    assert_eq!(
+        in_the_picker(config.path(), None, &["builds".to_owned()]),
+        vec![(
+            "builds".to_owned(),
+            InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.into())
+        )]
+    );
+}
+
 /// A setup that ended on Try it, on pool `name`, as Pool setup leaves it.
 fn a_setup_finished_on(config: &Path, name: &str) {
     a_pool_kept(config, name);

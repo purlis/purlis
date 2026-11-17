@@ -10,6 +10,7 @@
 //! the name, the port, the sign-in, the key, the socket, the account, TLS and the engine's id),
 //! then asks the engine what the local kind asks of its own ([`engine`]): that it confines
 //! runners, that its platform has a runner image, that the image is there or can be downloaded,
+//! that its kernel has the Landlock purlis's sandbox needs ([`crate::dockerpool::kernel`]),
 //! and that its disk has room. Then the Docker context the route was read from, where it was
 //! read from one, and last the link's round trip ([`round_trip`]), which Try it shows too.
 //!
@@ -40,6 +41,7 @@ const ROUND_TRIPS: usize = 3;
 const CONFINES: &str = "unconfined";
 const PLATFORM: &str = "unsupported-architecture";
 const DOWNLOADS: &str = "image-unreachable";
+const KERNEL: &str = "kernel-short";
 const ROOM: &str = "disk-full";
 
 /// **Which of doctor's checks of the engine passed** (#6272): each by the cause it would fail
@@ -56,7 +58,7 @@ impl Passed {
     #[must_use]
     pub fn every() -> Passed {
         Passed {
-            checked: vec![CONFINES, PLATFORM, DOWNLOADS, ROOM],
+            checked: vec![CONFINES, PLATFORM, DOWNLOADS, KERNEL, ROOM],
             disk_unmeasured: false,
         }
     }
@@ -136,9 +138,9 @@ pub fn after_reaching(
 }
 
 /// **Connect's checks of the engine `through` reaches, on machine `host`, before any pool is
-/// kept** (#6272): that it confines runners, and that purlis's runner image is built for its
-/// platform. `docker info` alone: no image is looked for or downloaded, since the pool's image
-/// is picked after Connect.
+/// kept** (#6272): that it confines runners, that purlis's runner image is built for its
+/// platform, and that its kernel isn't before Linux 6.12 (#7084). `docker info` alone: no image
+/// is looked for or downloaded, since the pool's image is picked after Connect.
 pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
     let platform = machine(through, host)?;
     if !runs_the_runner_image(&platform) {
@@ -149,10 +151,31 @@ pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
             own_image: false,
         });
     }
+    let mut checked = vec![CONFINES, PLATFORM];
+    checked.extend(kernel(through, host, None)?);
     Ok(Passed {
-        checked: vec![CONFINES, PLATFORM],
+        checked,
         disk_unmeasured: false,
     })
+}
+
+/// **That the kernel of the engine `through` reaches, on `host`, has the Landlock purlis's
+/// sandbox needs** (#7084), by `image`'s own answer where one is named: the check's cause where
+/// it was read, nothing where it couldn't be, which holds nothing up.
+fn kernel(
+    through: &Docker,
+    host: &str,
+    image: Option<&Image>,
+) -> Result<Option<&'static str>, Finding> {
+    match through.host_kernel(image) {
+        crate::dockerpool::kernel::HostKernel::Enough => Ok(Some(KERNEL)),
+        crate::dockerpool::kernel::HostKernel::Unread => Ok(None),
+        crate::dockerpool::kernel::HostKernel::Short(short) => Err(Finding::KernelShort {
+            host: host.to_owned(),
+            release: short.release,
+            ubuntu_24_04: short.ubuntu_24_04,
+        }),
+    }
 }
 
 /// That the engine `through` reaches, on `host`, confines runners: its platform, where it does.
@@ -177,7 +200,8 @@ fn machine(through: &Docker, host: &str) -> Result<String, Finding> {
 /// **What the engine `through` reaches, on machine `host`, is asked for pool image `image`**: that
 /// it gives containers its default seccomp profile (the local kind's daemon check), that its
 /// platform has a runner image, that the image is there or downloads, that the image there is
-/// built for that platform, and that its disk has room for a runner. The first that fails, or
+/// built for that platform, that its kernel has the Landlock purlis's sandbox needs, read by the
+/// image's own `purlis` (#7084), and that its disk has room for a runner. The first that fails, or
 /// which passed, with whether the disk could be measured.
 ///
 /// The image is downloaded where the machine lacks it, as making the pool's runner would: that is
@@ -229,6 +253,7 @@ pub fn engine(through: &Docker, host: &str, image: &Image) -> Result<Passed, Fin
         checked: vec![CONFINES, PLATFORM, DOWNLOADS],
         disk_unmeasured: false,
     };
+    passed.checked.extend(kernel(through, host, Some(image))?);
     match through.room_for(image) {
         crate::dockerpool::Room::Short(free) => Err(Finding::DiskFull {
             host: host.to_owned(),
@@ -290,6 +315,39 @@ pub fn lay_over(connect: &mut super::connecting::Connecting) {
             connect.disk_unmeasured = passed.disk_unmeasured;
         }
         _ => {}
+    }
+}
+
+/// **What the chat picker says of pool `pool` where doctor last found its host's kernel short**
+/// (#7084), read from what this process keeps ([`note`]): no chat starts there, so it isn't
+/// offered. `None` for any other pool, or where doctor found nothing of it.
+#[must_use]
+pub fn kernel_short_of(pool: &crate::runners::Pool) -> Option<String> {
+    let route = route_of(pool)?;
+    let kept = found()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&route)
+        .cloned();
+    match kept {
+        Some(Err(Finding::KernelShort { host, release, .. })) => Some(
+            match release.filter(|release| {
+                // A release new enough that still lacks Landlock isn't told to update.
+                crate::dockerpool::kernel::release_of(release)
+                    .is_some_and(|at| at < crate::dockerpool::kernel::FLOOR)
+            }) {
+                Some(release) => format!(
+                    "A chat can't start there: {host} runs Linux {}, and purlis's sandbox needs \
+                 Linux 6.12 or later. Pool setup says how to update it.",
+                    crate::shown::short(&release)
+                ),
+                None => format!(
+                    "A chat can't start there: {host}'s kernel doesn't have what purlis's sandbox \
+                 needs (Linux 6.12 or later). Pool setup says how to update it."
+                ),
+            },
+        ),
+        _ => None,
     }
 }
 

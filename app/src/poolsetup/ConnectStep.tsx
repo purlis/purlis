@@ -65,12 +65,15 @@ type Check = { title: (host: string) => string; causes: readonly string[] };
 
 /**
  * **What doctor asks of the engine once it is reached** (#6272, ADR 0123 §7), the same over
- * either route and in the core's order: that it confines runners, that its platform has a runner
- * image, that the image downloads there, and that its disk has room.
+ * either route: that it confines runners, that its platform has a runner image, that its kernel
+ * has the Landlock purlis's sandbox needs (#7084), that the image downloads there, and that its
+ * disk has room. The kernel's line follows the platform's, as Connect asks it; doctor reads it
+ * once the image is there, so a line after it is never said to pass that didn't.
  */
 const ENGINE_CHECKS: readonly Check[] = [
   { title: () => "Docker confines runners there", causes: ["unconfined"] },
   { title: () => "Its platform has a runner image", causes: ["unsupported-architecture"] },
+  { title: () => "It runs Linux 6.12 or later", causes: ["kernel-short"] },
   { title: () => "It can download the runner image", causes: ["image-unreachable"] },
   { title: () => "It has room for a runner", causes: ["disk-full"] },
 ];
@@ -137,6 +140,7 @@ const TITLES: Record<string, string> = {
   "unsupported-architecture": "There's no runner image for that machine",
   "image-unreachable": "The machine couldn't download the runner image",
   "disk-full": "Docker's disk there is full",
+  "kernel-short": "Its kernel can't run purlis's sandbox",
   here: "That didn't work",
 };
 

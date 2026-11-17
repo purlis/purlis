@@ -2223,9 +2223,22 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
     );
 
     expect(why()).not.toContain("No pool is set up");
-    expect(why()).toContain("Pool setup isn't finished for pool gpu");
+    expect(why()).toContain("This machine. Pool gpu: x");
     await user.click(screen.getByRole("button", { name: "Finish Pool setup…" }));
     expect(onPoolSetup).toHaveBeenCalledWith("gpu");
+  });
+
+  it("says why the only pool kept can't take a chat, its host's kernel included (#7084)", () => {
+    const kernel =
+      "A chat can't start there: build-box runs Linux 6.8.0-45-generic, and purlis's sandbox " +
+      "needs Linux 6.12 or later. Pool setup says how to update it.";
+    showRunsOn(
+      { ...runsOn({ pool: null, level: "this_machine", pools: [] }), notOffered: { gpu: kernel } },
+      { onPoolSetup: vi.fn() },
+    );
+
+    expect(why()).toContain(`This machine. Pool gpu: ${kernel}`);
+    expect(why()).not.toContain("isn't finished");
   });
 
   it("opens on the pool it was asked to, for this start only (#4483)", async () => {

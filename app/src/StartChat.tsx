@@ -1365,14 +1365,13 @@ function RunsOnRow({
   if (runsOn.at_root) return <p className="start-chat-help">{runsOnReason(runsOn)}</p>;
   // Nothing to choose between: no pool a chat can start on, and no level names one that is gone.
   if (runsOn.pools.length === 0 && runsOn.pool === null) {
-    const hidden = Object.keys(runsOn.notOffered ?? {});
+    // Said with its own why, which may be its host's kernel, not its setup (#7084).
+    const hidden = Object.entries(runsOn.notOffered ?? {});
     return hidden.length > 0 ? (
       <>
-        <p className="start-chat-help">
-          {`This machine. Pool setup isn't finished for pool ${hidden[0]}, so a chat can't start there yet.`}
-        </p>
+        <p className="start-chat-help">{`This machine. Pool ${hidden[0][0]}: ${hidden[0][1]}`}</p>
         {onPoolSetup && (
-          <Button className="start-chat-runs-on" onPress={() => onPoolSetup(hidden[0])}>
+          <Button className="start-chat-runs-on" onPress={() => onPoolSetup(hidden[0][0])}>
             Finish Pool setup…
           </Button>
         )}

@@ -334,6 +334,7 @@ describe("ConnectStep", () => {
       "todo",
       "todo",
       "todo",
+      "todo",
     ]);
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
   });
@@ -352,20 +353,27 @@ describe("ConnectStep", () => {
 
   it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {
     const reached = ["ok", "ok", "ok", "ok", "ok", "ok", "ok"];
-    expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo"]);
+    expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo", "todo"]);
     const onConnect = {
-      checked: ["unconfined", "unsupported-architecture"],
+      checked: ["unconfined", "unsupported-architecture", "kernel-short"],
       diskUnmeasured: false,
     };
     expect(verdictsOf(null, true, "ssh", onConnect)).toEqual([
       ...reached,
       "ok",
       "ok",
+      "ok",
       "todo",
       "todo",
     ]);
     const every = {
-      checked: ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"],
+      checked: [
+        "unconfined",
+        "unsupported-architecture",
+        "kernel-short",
+        "image-unreachable",
+        "disk-full",
+      ],
       diskUnmeasured: false,
     };
     expect(verdictsOf(null, true, "ssh", every).every((one) => one === "ok")).toBe(true);
@@ -397,7 +405,18 @@ describe("ConnectStep", () => {
     draw(done(["unconfined", "unsupported-architecture", "image-unreachable"], true));
     expect(screen.getByText("purlis couldn't measure its disk")).toBeTruthy();
     cleanup();
-    draw(done(["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"], false));
+    draw(
+      done(
+        [
+          "unconfined",
+          "unsupported-architecture",
+          "kernel-short",
+          "image-unreachable",
+          "disk-full",
+        ],
+        false,
+      ),
+    );
     expect(screen.getByText("Every check passed")).toBeTruthy();
   });
 
@@ -445,11 +464,25 @@ describe("ConnectStep", () => {
       "todo",
       "todo",
       "todo",
+      "todo",
     ]);
   });
 
+  it("names the host's kernel after its platform, unchecked where its release wasn't read (#7084)", () => {
+    expect(verdictsOf("kernel-short", false).indexOf("missing")).toBe(9);
+    expect(verdictsOf("kernel-short", false, "tls").indexOf("missing")).toBe(8);
+    const unread = { checked: ["unconfined", "unsupported-architecture"], diskUnmeasured: false };
+    expect(verdictsOf(null, true, "ssh", unread)[9]).toBe("todo");
+  });
+
   it("asks the engine last, in the core's order, over SSH and over TLS alike", () => {
-    const order = ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"];
+    const order = [
+      "unconfined",
+      "unsupported-architecture",
+      "kernel-short",
+      "image-unreachable",
+      "disk-full",
+    ];
     order.forEach((cause, at) => {
       expect(verdictsOf(cause, false).indexOf("missing")).toBe(7 + at);
       expect(verdictsOf(cause, false, "tls").indexOf("missing")).toBe(6 + at);
@@ -638,6 +671,7 @@ describe("ConnectStep", () => {
       "ok",
       "ok",
       "missing",
+      "todo",
       "todo",
       "todo",
       "todo",

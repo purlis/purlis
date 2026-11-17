@@ -631,6 +631,7 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::Architecture { .. } => "unsupported-architecture",
         Finding::DiskFull { .. } => "disk-full",
         Finding::ImageUnreachable { .. } => "image-unreachable",
+        Finding::KernelShort { .. } => "kernel-short",
         Finding::ContextMoved { .. } => CONTEXT_MOVED,
         Finding::Here(_) => "here",
     }
@@ -940,6 +941,14 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        Finding::KernelShort {
+            host,
+            release,
+            ubuntu_24_04,
+        } => (
+            kernel_short_said(host, release.as_deref(), *ubuntu_24_04),
+            check_again(),
+        ),
         Finding::ImageUnreachable { host, registry } => (
             format!(
                 "{host} couldn't download the runner image. Check that {host} can reach \
@@ -966,6 +975,49 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         Finding::Here(why) => (why.clone(), check_again()),
     }
 }
+
+/// **What a host short of the Landlock purlis's sandbox needs is told** (#7084): its release
+/// where one was read, why no chat starts there, and the way to Linux 6.12 or later: one package
+/// on Ubuntu 24.04, Landlock turned on where the release is new enough and the kernel still lacks
+/// it, else the floor.
+fn kernel_short_said(host: &str, release: Option<&str>, ubuntu_24_04: bool) -> String {
+    let needs = "purlis's sandbox needs Landlock version 6 (Linux 6.12 or later)";
+    let release = release.map(crate::shown::short);
+    let recent = release
+        .as_deref()
+        .and_then(crate::dockerpool::kernel::release_of)
+        .is_some_and(|at| at >= crate::dockerpool::kernel::FLOOR);
+    let found = match &release {
+        Some(release) if recent => format!(
+            "{host} runs Linux {release}, and its kernel doesn't have Landlock version 6, which \
+             purlis's sandbox needs"
+        ),
+        Some(release) => format!("{host} runs Linux {release}, and {needs}"),
+        None => format!(
+            "{host}'s kernel doesn't have Landlock version 6 (Linux 6.12 or later), which \
+             purlis's sandbox needs"
+        ),
+    };
+    let way = if recent {
+        format!(
+            "Turn Landlock on in {host}'s kernel (add landlock to its lsm= boot setting), restart \
+             it, then check again."
+        )
+    } else if ubuntu_24_04 {
+        format!(
+            "On {host}, run sudo apt install --install-recommends {UBUNTU_24_04_KERNEL} for a \
+             newer kernel, then restart {host} and check again."
+        )
+    } else {
+        format!("Update {host} to Linux 6.12 or later, restart it, then check again.")
+    };
+    format!(
+        "{found}, so no chat on this pool will start. A container runs on its host's kernel. {way}"
+    )
+}
+
+/// Ubuntu 24.04's newer kernel (its hardware enablement stack), Linux 6.12 or later.
+pub const UBUNTU_24_04_KERNEL: &str = "linux-generic-hwe-24.04";
 
 fn user_or_you(user: &str) -> String {
     if user.is_empty() {
@@ -1086,6 +1138,7 @@ pub fn for_the_admin(cause: &str) -> bool {
             | "unconfined"
             | "disk-full"
             | "image-unreachable"
+            | "kernel-short"
     )
 }
 
@@ -1154,7 +1207,14 @@ pub fn without_local_paths(text: &str, machine: &Machine) -> String {
 /// to the agent, removing images or downloading one.
 #[must_use]
 pub fn sorted(see: &super::See) -> (Vec<&str>, Vec<&str>) {
-    const CHANGING: [&str; 4] = ["sudo usermod ", "sudo systemctl ", " prune", " pull "];
+    const CHANGING: [&str; 6] = [
+        "sudo usermod ",
+        "sudo systemctl ",
+        "sudo apt ",
+        "sudo reboot",
+        " prune",
+        " pull ",
+    ];
     see.text.lines().partition(|line| {
         let line = line.trim();
         !(line == "ssh-add" || CHANGING.iter().any(|one| line.contains(one)))
@@ -1451,6 +1511,44 @@ fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
                          before it downloads. It only reads."
                     ),
                     format!("{to} {}", q(&asked)),
+                )
+            }
+        }
+        Finding::KernelShort {
+            host, ubuntu_24_04, ..
+        } => {
+            let read =
+                format!("{docker} info --format '{{{{.KernelVersion}}}} {{{{.OperatingSystem}}}}'");
+            if !*ubuntu_24_04 {
+                see(
+                    format!(
+                        "This prints the kernel {host} runs and its system, as purlis reads them. \
+                         It only reads."
+                    ),
+                    read,
+                )
+            } else if tls {
+                see(
+                    format!(
+                        "The first prints the kernel {host} runs, as purlis reads it, and only \
+                         reads. Run on {host}, the second installs Ubuntu's newer kernel and the \
+                         third restarts {host} into it: everything running there stops."
+                    ),
+                    format!(
+                        "{read}\nsudo apt install --install-recommends {UBUNTU_24_04_KERNEL}\nsudo reboot"
+                    ),
+                )
+            } else {
+                see(
+                    format!(
+                        "The first prints the kernel {host} runs, as purlis reads it, and only \
+                         reads. The second installs Ubuntu's newer kernel on {host} and the third \
+                         restarts {host} into it: everything running there stops."
+                    ),
+                    format!(
+                        "{read}\n{to_t} sudo apt install --install-recommends \
+                         {UBUNTU_24_04_KERNEL}\n{to_t} sudo reboot"
+                    ),
                 )
             }
         }

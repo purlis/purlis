@@ -2657,6 +2657,7 @@ pub struct Docker {
 pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
 mod asked;
+pub mod kernel;
 pub use asked::Confinement;
 pub mod contract;
 pub mod settings;
