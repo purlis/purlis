@@ -110,7 +110,7 @@ impl Handler {
         let enforced = self.judges().iter().any(|family| {
             family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
         });
-        Some(if enforced { "continue" } else { "block" })
+        Some(if enforced { "block" } else { "continue" })
     }
 }
 
