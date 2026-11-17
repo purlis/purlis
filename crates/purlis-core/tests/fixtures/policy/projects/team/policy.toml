@@ -1,0 +1,10 @@
+# charter.toml (excerpt) — five-person team.
+[policy]
+template = "team"            # every family enforce, sandbox full
+
+[policy.rules]
+"skills-unlisted" = "log"    # we're still curating the list; count, don't block
+
+[policy.sets]                # named sets the rules read (was [risk])
+protected-branches = ["acme/web#main", "acme/infra#main"]
+production-hosts   = ["api.acme.com"]

@@ -1,0 +1,6 @@
+[["web/builder","push","Branch::\"acme/web#main\"",{"force":false}],
+ ["infra/deployer","push","Branch::\"acme/infra#main\"",{"force":false}],
+ ["web/builder","connect","Host::\"api.acme.com\"",{}],
+ ["web/builder","read","Path::\"api/.env\"",{}],
+ ["web/builder","use","Secret::\"builder/npm-token\"",{}],
+ ["web/builder","install","Skill::\"random-skill\"",{}]]
