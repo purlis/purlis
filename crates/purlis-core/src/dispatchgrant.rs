@@ -413,6 +413,16 @@ pub enum Covers {
     Unread,
 }
 
+/// **`covers` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50):
+/// under `off` or `log` a pair nothing covers is covered, with no grant and no ask; every other
+/// answer stands, so a lock and the person's nevers hold in every mode.
+pub fn as_the_policy_runs(covers: Covers, mode: crate::enforcement::Mode) -> Covers {
+    match covers {
+        Covers::NeedsGrant if mode != crate::enforcement::Mode::Enforce => Covers::Covered,
+        other => other,
+    }
+}
+
 /// **[`covers`], for a chat with `chain` above it**: the personas of the chats above the
 /// asking chat in its lineage, nearest first, which is what the loop rule reads.
 ///

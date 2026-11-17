@@ -92,7 +92,17 @@ struct Given {
     esc_step: Option<String>,
     /// Whether the hooks and the MCP server run T1.1-03's recorder (`true`) or purlis itself.
     recorded: bool,
+    /// Claude Code's `--permission-mode`, as the recording was made in.
+    permission_mode: &'static str,
+    /// Whether each of Claude Code's own asks is allowed once, as T1.1-03's driver allows it in
+    /// its `asks` pass: Enter, once purlis's permission hook answered and Claude Code told its
+    /// Notification hook a person is wanted.
+    allows_asks: bool,
 }
+
+/// The permission mode of a run no recording is compared with: Claude Code's own prompts
+/// bypassed, its deny rules kept, as its covering recording was made.
+const BYPASS: &str = "bypassPermissions";
 
 fn play(given: &Given) -> Played {
     let dialect = var("FAKE_WRAP_DIALECT");
@@ -219,10 +229,9 @@ fn play(given: &Given) -> Played {
     assert_eq!(applied.level(), purlis_core::sandbox::Level::Full);
     applied.wrap_with(purlis.clone());
     if dialect == "claude" {
-        // As the recording was made: Claude Code's own prompts bypassed, its deny rules kept.
         ready.args.extend([
             "--permission-mode".to_owned(),
-            "bypassPermissions".to_owned(),
+            given.permission_mode.to_owned(),
         ]);
     }
     let host = Host {
@@ -288,9 +297,20 @@ fn play(given: &Given) -> Played {
     // Each turn after the first is typed once the one before it is played, as a person types
     // it (T1.1-03's driver types its covering script's second turn so).
     let mut typed = 1usize;
+    let mut allowed = 0usize;
     let started = Instant::now();
     loop {
         let screen = session.screen().lines.join("\n");
+        if given.allows_asks
+            && screen.contains("Do you want to")
+            && settled(&recorder_out, "permissionrequest")
+            && allowed < heard(&recorder_out, "notification")
+        {
+            std::thread::sleep(Duration::from_millis(500));
+            session.write(b"\r").expect("Allow once is chosen");
+            allowed += 1;
+            continue;
+        }
         let done = read_jsonl(&transcript);
         if started.elapsed() >= AT_MOST {
             let heard: Vec<String> = recorder::read(&recorder_out)
@@ -409,6 +429,30 @@ fn play(given: &Given) -> Played {
     played
 }
 
+/// How many calls of `word` the recorder heard.
+fn heard(out: &Path, word: &str) -> usize {
+    recorder::read(out).map_or(0, |lines| {
+        lines
+            .iter()
+            .filter(|l| l.phase == "call" && l.argv.get(1).is_some_and(|w| w == word))
+            .count()
+    })
+}
+
+/// Whether every call of `word` the recorder heard has its reply, and there was one.
+fn settled(out: &Path, word: &str) -> bool {
+    recorder::read(out).is_ok_and(|lines| {
+        let calls: Vec<_> = lines
+            .iter()
+            .filter(|l| l.phase == "call" && l.argv.get(1).is_some_and(|w| w == word))
+            .collect();
+        !calls.is_empty()
+            && calls
+                .iter()
+                .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
+    })
+}
+
 /// Each step a script names, in order, sub-agents' own among them.
 fn steps_of(script: &Value) -> Vec<String> {
     fn walk(calls: &Value, out: &mut Vec<String>) {
@@ -488,21 +532,42 @@ fn evidence(played: &Played, script: &Path) {
     );
 }
 
-/// The checked-in recording and turn script of the dialect at its pinned version.
-fn recorded(dialect: &str) -> (PathBuf, Recording) {
+/// The checked-in recording and turn script of the dialect at its pinned version: the
+/// covering one (`pass` empty), or the pass `pass` names (`asks-recording.json`).
+fn recorded(dialect: &str, pass: &str) -> (PathBuf, Recording) {
     let version = recording::pinned_version(dialect).expect("a pinned version");
     let folder = recording::folder(dialect, &version);
-    let text = fs::read_to_string(folder.join("recording.json")).expect("the recording");
+    let prefix = if pass.is_empty() {
+        String::new()
+    } else {
+        format!("{pass}-")
+    };
+    let text = fs::read_to_string(folder.join(format!("{prefix}recording.json")))
+        .unwrap_or_else(|e| panic!("{dialect} {version} has no {prefix}recording.json: {e}"));
     let rec: Recording = serde_json::from_str(&text)
         .unwrap_or_else(|e| panic!("{dialect} {version}'s recording does not parse: {e}"));
-    (folder.join("turns.json"), rec)
+    (folder.join(format!("{prefix}turns.json")), rec)
+}
+
+/// The permission mode `checked` was recorded in: a recording that says none was Claude
+/// Code's covering one, made with its own prompts bypassed.
+fn mode_of(checked: &Recording) -> &'static str {
+    match checked
+        .conditions
+        .get("permission_mode")
+        .map(String::as_str)
+    {
+        Some("default") => "default",
+        Some(BYPASS) | None => BYPASS,
+        Some(other) => panic!("a recording made in permission mode {other}, which no run plays"),
+    }
 }
 
 #[test]
 #[ignore = "binds a hook socket and confines: CI's fake-harness wrap job runs it on Linux"]
 fn the_fake_harness_reproduces_each_recorded_harness_session() {
     let dialect = var("FAKE_WRAP_DIALECT");
-    let (turns, checked) = recorded(&dialect);
+    let (turns, checked) = recorded(&dialect, "");
     let esc_step = checked
         .forced
         .contains_key("esc")
@@ -519,8 +584,33 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
         forced: checked.forced.clone(),
         esc_step,
         recorded: true,
+        permission_mode: mode_of(&checked),
+        allows_asks: false,
     });
+    reproduces(&dialect, &checked, &played, "");
+}
 
+#[test]
+#[ignore = "binds a hook socket and confines: CI's fake-harness wrap job runs it on Linux"]
+fn the_fake_claude_code_reproduces_its_recorded_permission_ask() {
+    let dialect = var("FAKE_WRAP_DIALECT");
+    assert_eq!(dialect, "claude", "the asks pass is Claude Code's alone");
+    let (turns, checked) = recorded(&dialect, "asks");
+    assert_eq!(mode_of(&checked), "default", "{:?}", checked.conditions);
+    let played = play(&Given {
+        script: turns,
+        forced: checked.forced.clone(),
+        esc_step: None,
+        recorded: true,
+        permission_mode: mode_of(&checked),
+        allows_asks: true,
+    });
+    reproduces(&dialect, &checked, &played, "asks-");
+}
+
+/// The fake's run against the recording it plays: its hook calls and what the model was shown,
+/// masked as T1.1-03 masks a recording, the same.
+fn reproduces(dialect: &str, checked: &Recording, played: &Played, prefix: &str) {
     // The fake's recording: its hook calls as the recorder wrote them, grouped by the parallel
     // responses of the checked-in recording, and what its transcript says the model was shown.
     let by_step: BTreeMap<String, String> = played
@@ -560,7 +650,7 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
         ..checked.clone()
     };
     let fresh = recording::masked(&fake);
-    let mut want = serde_json::to_value(&checked).expect("JSON");
+    let mut want = serde_json::to_value(checked).expect("JSON");
     let mut fresh = fresh;
     for recording in [&mut want, &mut fresh] {
         without_rig_variables(recording);
@@ -574,7 +664,7 @@ fn the_fake_harness_reproduces_each_recorded_harness_session() {
     }
     if let Ok(out) = std::env::var("FAKE_WRAP_OUT") {
         let _ = fs::write(
-            PathBuf::from(out).join(format!("{dialect}-fake-recording.json")),
+            PathBuf::from(out).join(format!("{dialect}-{prefix}fake-recording.json")),
             serde_json::to_string_pretty(&fresh).unwrap_or_default(),
         );
     }
@@ -607,7 +697,13 @@ fn a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_scr
         forced: BTreeMap::new(),
         esc_step: None,
         recorded: true,
+        permission_mode: BYPASS,
+        allows_asks: false,
     });
+    assert!(
+        played.outside.join("existing.txt").is_file(),
+        "the folder outside and its file are there, so a refusal cannot be a missing path"
+    );
     // ESCAPE if either happened (Q301): never pinned, filed as a p0.
     assert!(
         !played.outside.join("by-fake.txt").exists(),
@@ -647,17 +743,11 @@ fn a_native_write_outside_the_allowed_folders_is_refused_by_the_wrap_not_the_scr
             !text.contains("denied by your permission settings"),
             "a deny rule, not the wrap, held {step}: {text}"
         );
+        // What the OS said, whatever the dialect shows the model: the wrap's refusal, and not
+        // a missing folder or file (the outside folder and its file are there, above).
         assert!(
-            [
-                "EACCES",
-                "EPERM",
-                "EROFS",
-                "PermissionDenied",
-                "Failed to write"
-            ]
-            .iter()
-            .any(|w| text.contains(w)),
-            "{step} was not refused by the OS: {text}"
+            ["EACCES", "EPERM", "EROFS"].contains(&result["os_error"].as_str().unwrap_or_default()),
+            "{step} was not refused by the OS: {result}"
         );
     }
 }
@@ -669,8 +759,8 @@ fn an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap() {
     let script = base.path().join("mcp-call.json");
     fs::write(
         &script,
-        json!({"version": version(), "turns": [{"prompt": "use purlis's browser", "calls": [
-            {"step": "mcp", "tool": "mcp", "input": {"name": "mcp__purlis__browser_navigate", "arguments": {"url": "http://127.0.0.1:9/"}}},
+        json!({"version": version(), "turns": [{"prompt": "list purlis's queries", "calls": [
+            {"step": "mcp", "tool": "mcp", "input": {"name": "mcp__purlis__queries", "arguments": {}}},
         ]}]})
         .to_string(),
     )
@@ -682,26 +772,21 @@ fn an_mcp_call_reaches_purlis_mcp_tool_under_the_wrap() {
         // purlis itself, as a person's chat has it: the recorder's own variable is not among
         // those a harness hands its MCP server.
         recorded: false,
+        permission_mode: BYPASS,
+        allows_asks: false,
     });
     let result = played
         .transcript
         .iter()
         .find(|l| l["step"] == "mcp")
         .unwrap_or_else(|| panic!("no result for the MCP call: {:#?}", played.transcript));
-    let text = result["text"].as_str().unwrap_or_default();
-    // An answer from purlis's own server, whatever it says of the browser: not the fake's.
-    for fake_said in [
-        "no MCP server named",
-        "cannot start the MCP server",
-        "did not answer",
-        "unsupported call",
-    ] {
-        assert!(
-            !text.contains(fake_said),
-            "the call never reached purlis's server: {text}"
-        );
-    }
-    assert!(!text.is_empty(), "purlis's server answered nothing");
+    // purlis's own tool, answered: the catalogue it lists, and not an error of any kind.
+    assert_ne!(result["is_error"], true, "{result}");
+    let answered: Value = serde_json::from_str(result["text"].as_str().unwrap_or_default())
+        .unwrap_or_else(|e| {
+            panic!("purlis's queries tool did not answer its catalogue ({e}): {result}")
+        });
+    assert_eq!(answered, purlis_core::catalogue::listing(), "{result}");
 }
 
 /// What every recording was made under that points a harness at its stand-in model

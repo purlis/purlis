@@ -141,15 +141,23 @@
         ],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1}
+          {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1},
+          {"kind": "hook.posttoolusefailure-blocked", "args": "this_call", "count": 1}
         ],
-        "forbid": [{"kind": "stop.block", "at": "next_prompt"}]
+        "forbid": [
+          {"kind": "stop.block", "at": "next_prompt"},
+          {"kind": "hook.pretooluse", "args": null}
+        ]
       }],
       "expected_fail": [
         {"issue": 6672, "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"},
         {"issue": 6673, "step": 1, "assertion": "forbid[0]", "observed": 1,
-         "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"}
+         "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"},
+        {"issue": 6676, "step": 1, "assertion": "require[2]", "observed": 0,
+         "note": "chat 682 (§8): the get call's post line was spooled (seq 179098) and lost its args digest"},
+        {"issue": 6676, "step": 1, "assertion": "forbid[1]", "observed": 1,
+         "note": "chat 682 (§8): the echo's pre line was spooled (seq 179100) and lost its args digest"}
       ]
     }
   ]

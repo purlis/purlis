@@ -315,7 +315,7 @@ describe("a branch's files in the explorer", () => {
 
     await act(() => emit("files-unwatched", { folders: [at(""), at("src")], refused: [] }));
 
-    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    await waitFor(() => expect(said()).toHaveLength(1));
     expect(said()[0]).toHaveTextContent(
       "Changes on disk are not shown yet: purlis watches this branch again once it can read it.",
     );
@@ -340,7 +340,7 @@ describe("a branch's files in the explorer", () => {
 
     await act(() => emit("files-unwatched", { folders: [src], refused: [src] }));
 
-    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    await waitFor(() => expect(said()).toHaveLength(1));
     expect(said()[0]).toHaveTextContent(
       "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again.",
     );
@@ -374,7 +374,7 @@ describe("a branch's files in the explorer", () => {
     const both = [at(""), at("src")];
     await act(() => emit("files-unwatched", { folders: both, refused: both }));
 
-    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    await waitFor(() => expect(said()).toHaveLength(1));
     expect(said()[0]).toHaveTextContent(
       "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again.",
     );
@@ -425,7 +425,7 @@ describe("a branch's files in the explorer", () => {
     });
     draw();
     // Found by its id: a selector cannot spell a line break as plainly.
-    const folder = await vi.waitFor(() => {
+    const folder = await waitFor(() => {
       const found = [...tree().querySelectorAll<HTMLElement>("[data-row]")].find(
         (one) => one.dataset.row === "file:svc/one:a\nb",
       );
@@ -528,7 +528,7 @@ describe("a branch's files are drawn with the project's icon theme (FM-3)", () =
       },
     );
     draw();
-    await vi.waitFor(async () => expect(iconOf(await named("^README.md"))).toBe("seti-md"));
+    await waitFor(async () => expect(iconOf(await named("^README.md"))).toBe("seti-md"));
     expect(iconOf(await named("^src"))).toBe("seti-folder");
     expect(iconOf(await named("^notes.zzz"))).toBe("seti-file");
   });
@@ -710,7 +710,7 @@ describe("Show in Explorer in a workspace (#3308)", () => {
     });
     revealing(undefined);
 
-    await vi.waitFor(() => expect(row("file:svc/:.claude/skills/lint-rs")).toHaveFocus());
+    await waitFor(() => expect(row("file:svc/:.claude/skills/lint-rs")).toHaveFocus());
     expect(asked).toEqual(expect.arrayContaining([":", ":.claude", ":.claude/skills"]));
   });
 

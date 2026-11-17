@@ -17,6 +17,15 @@ pub enum Key {
     End,
 }
 
+/// What a person answers a harness's own ask with: Enter or `1` allows it once, Esc or `3`
+/// refuses it, and the end of input or Ctrl-C ends the session with it unanswered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answer {
+    Yes,
+    No,
+    End,
+}
+
 pub struct Keyboard {
     bytes: Receiver<Option<u8>>,
     line: Vec<u8>,
@@ -118,6 +127,55 @@ impl Keyboard {
                     self.line.pop();
                 }
                 other => self.line.push(other),
+            }
+        }
+    }
+
+    /// The answer to an ask on screen, waiting at most until `until` (`None`: for ever). Any
+    /// other key is read and dropped, as a menu drops it.
+    pub fn answer(&mut self, until: Option<Instant>) -> Option<Answer> {
+        if self.ended {
+            return Some(Answer::End);
+        }
+        loop {
+            let byte = match until {
+                None => self.bytes.recv().ok().flatten(),
+                Some(until) => match self
+                    .bytes
+                    .recv_timeout(until.saturating_duration_since(Instant::now()))
+                {
+                    Ok(b) => b,
+                    Err(RecvTimeoutError::Timeout) => return None,
+                    Err(RecvTimeoutError::Disconnected) => None,
+                },
+            };
+            let Some(byte) = byte else {
+                self.ended = true;
+                return Some(Answer::End);
+            };
+            match byte {
+                b'\r' | b'\n' | b'1' => return Some(Answer::Yes),
+                b'3' => return Some(Answer::No),
+                0x03 | 0x04 => {
+                    self.ended = true;
+                    return Some(Answer::End);
+                }
+                0x1b => match self.bytes.recv_timeout(ESC_PAIR) {
+                    // An escape sequence (an arrow key): read and dropped.
+                    Ok(Some(b'[' | b'O')) => {
+                        while let Ok(Some(b)) = self.bytes.recv_timeout(ESC_PAIR) {
+                            if b.is_ascii_alphabetic() || b == b'~' {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        self.ended = true;
+                        return Some(Answer::No);
+                    }
+                    _ => return Some(Answer::No),
+                },
+                _ => {}
             }
         }
     }

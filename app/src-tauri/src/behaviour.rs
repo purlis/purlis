@@ -2931,6 +2931,7 @@ fn hearing(heard: &Arc<HeardOfIt>, asks: bool) -> Hearing {
             })
         }),
         asks: asks.then(|| Asking {
+            answered: None,
             tell: {
                 let heard = Arc::clone(heard);
                 Arc::new(move |told| {

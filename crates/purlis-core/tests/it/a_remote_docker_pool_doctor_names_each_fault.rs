@@ -88,7 +88,13 @@ impl Fixture {
 
     /// The machine met, its socket found and its engine read: Trust this machine.
     fn trusted(&self, pool: &str) -> Remote {
-        let key = connect::meet(&self.ssh, &self.route, &self.settings_in()).expect("met");
+        let key = connect::meet(
+            &self.ssh,
+            &self.route,
+            &connect::resolve(&self.ssh, &self.route).expect("resolved"),
+            &self.settings_in(),
+        )
+        .expect("met");
         let found = connect::probe(
             &self.ssh,
             &self.route,

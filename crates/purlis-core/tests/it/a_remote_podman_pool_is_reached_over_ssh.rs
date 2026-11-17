@@ -63,7 +63,13 @@ fn fixture() -> Option<Fixture> {
 
 /// The machine met, its socket found and its engine read through a forward: Trust this machine.
 fn trusted(fixture: &Fixture, pool: &str) -> Remote {
-    let key = connect::meet(&fixture.ssh, &fixture.route, &fixture.settings_in()).expect("met");
+    let key = connect::meet(
+        &fixture.ssh,
+        &fixture.route,
+        &connect::resolve(&fixture.ssh, &fixture.route).expect("resolved"),
+        &fixture.settings_in(),
+    )
+    .expect("met");
     let found = connect::probe(
         &fixture.ssh,
         &fixture.route,

@@ -985,7 +985,7 @@ fn b0_judges_chat_682s_record_as_the_record_says() {
         ("M-PRB-04", &[6657]),
         ("M-PRB-04b", &[6657]),
         ("M-PRB-05", &[6675]),
-        ("M-PRB-06", &[6672, 6673]),
+        ("M-PRB-06", &[6672, 6673, 6676]),
     ];
     let recorded = record["cells"].as_object().expect("the record's cells");
     assert_eq!(

@@ -1335,12 +1335,12 @@ describe("a browser view's bar (#2014)", () => {
   }
   const BROWSER: ViewRef = { from: null, view: "browser", key: "B1" };
 
-  it("says a click or a key takes the browser over while the agent drives, and offers no Done", async () => {
+  it("says a click or a key takes over a browser the person opened, and offers no Done", async () => {
     browserHost(false);
     draw(BROWSER, { title: "Browser" });
 
     expect(await screen.findByRole("status")).toHaveTextContent(
-      "Click or type in the page to take it over.",
+      "Click or type in the page to use it.",
     );
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(selectNamed("Page size")).toBeInTheDocument();

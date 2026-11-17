@@ -96,7 +96,9 @@ fn hook_socket_waits(ask: &Ask) -> HookWait {
         | Ask::ThemePreview(_)
         | Ask::ThemeDraft(_)
         | Ask::Prompt(_)
-        | Ask::Attendance(_) => HookWait::NotOnThePerson,
+        | Ask::Attendance(_)
+        | Ask::Policy(_)
+        | Ask::PolicyLog(_) => HookWait::NotOnThePerson,
     }
 }
 

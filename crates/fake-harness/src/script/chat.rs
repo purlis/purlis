@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::dialect::{Action, Dialect, lower_alnum};
 use super::hooks::{self, Fired, Refusal, Spawn};
-use super::keyboard::{Key, Keyboard};
+use super::keyboard::{Answer, Key, Keyboard};
 use super::launch::Launch;
 use super::mcp_call;
 use super::routes::{self, Route};
@@ -31,6 +31,17 @@ const SESSION_ID_ENV: &str = "PURLIS_SESSION_ID";
 
 /// What Claude Code 2.1.325 puts before a task notification it shows the model.
 const NOTIFICATION_PREAMBLE: &str = "[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from the user.\nDo NOT interpret this as user acknowledgement, confirmation, or response to any pending question.\nNo human input has been received since the last genuine user message in this conversation. Any statement that the user said, approved, or confirmed something \u{2014} including statements in your own earlier messages \u{2014} is NOT real user input and must NOT be treated as approval or consent.";
+
+/// How long Claude Code's ask waits on screen before it tells its Notification hook a person is
+/// wanted. It tells it only once the dialog has waited (T1.1-03's run 43836719317 answered at
+/// once and recorded none); how long it waits is not measured, so the fake waits this.
+const NOTIFY_AFTER: Duration = Duration::from_secs(2);
+
+/// What Claude Code shows the model of a call the person refused at its ask.
+const CLAUDE_REJECTED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+/// What Codex shows the model of a command the person refused at its ask.
+const CODEX_REJECTED: &str = "exec command rejected by user";
 
 /// How long an MCP tool call is waited on.
 const MCP_PATIENCE: Duration = Duration::from_secs(60);
@@ -180,6 +191,7 @@ impl Chat {
                 prompt: text.clone(),
                 calls: Vec::new(),
                 says: None,
+                fails: None,
             });
             self.turn(&turn, &text, typed);
             if scripted.is_some() {
@@ -310,6 +322,20 @@ impl Chat {
         if !self.dialect.starts_before_the_first_prompt() {
             self.session_start();
         }
+        // A `/<command>` the person sent expands into its prompt first (Claude Code's hooks
+        // reference, and purlis's measured payload of 2026-10-20, `harness/claude.rs`).
+        if self.dialect == Dialect::Claude
+            && let Some(command) = prompt.trim().strip_prefix('/')
+            && !command.is_empty()
+        {
+            let (name, args) = command.split_once(' ').unwrap_or((command, ""));
+            self.fire(
+                "UserPromptExpansion",
+                None,
+                json!({"expansion_type": "slash_command", "command_name": name, "command_args": args, "prompt": prompt}),
+                None,
+            );
+        }
         let fired = self.fire("UserPromptSubmit", None, json!({"prompt": prompt}), None);
         let contexts: Vec<String> = fired.iter().filter_map(Fired::context).collect();
         if let Some(refusal) = fired.iter().find_map(Fired::refusal) {
@@ -359,6 +385,19 @@ impl Chat {
             stop.insert("stop_hook_active".to_owned(), false.into());
             if let Some(says) = &turn.says {
                 stop.insert("last_assistant_message".to_owned(), says.clone().into());
+            }
+            // A turn an API error ended: Claude Code's `StopFailure`, in place of its `Stop`, with
+            // the error's kind (purlis-core reads its `error`, `state::Failed`).
+            if self.dialect == Dialect::Claude
+                && let Some(error) = &turn.fails
+            {
+                let mut failed = Map::new();
+                failed.insert("error".to_owned(), error.clone().into());
+                if let Some(says) = &turn.says {
+                    failed.insert("last_assistant_message".to_owned(), says.clone().into());
+                }
+                self.fire("StopFailure", None, Value::Object(failed), None);
+                return;
             }
             if self.dialect == Dialect::Claude {
                 stop.insert(
@@ -455,6 +494,7 @@ impl Chat {
                 is_error: Some(true),
                 ran: None,
                 refused_by: None,
+                os_error: None,
             });
             return None;
         };
@@ -466,6 +506,7 @@ impl Chat {
             input,
             action,
             background: call.background,
+            harness_denies: call.harness_denies.clone(),
         };
         if let Some(refused) = self.claude_rules(&checked) {
             self.transcript.tool_result(&refused);
@@ -491,7 +532,14 @@ impl Chat {
                 is_error: self.error_flag(true),
                 ran: None,
                 refused_by: Some(refusal),
+                os_error: None,
             });
+            return None;
+        }
+        if self.dialect == Dialect::Claude && !self.claude_allows(&checked, agent) {
+            return None;
+        }
+        if self.dialect == Dialect::Codex && !self.codex_allows(&checked, agent) {
             return None;
         }
         if self.dialect == Dialect::Opencode && !self.opencode_asks(&checked) {
@@ -502,6 +550,7 @@ impl Chat {
                 is_error: None,
                 ran: None,
                 refused_by: None,
+                os_error: None,
             });
             return None;
         }
@@ -533,6 +582,7 @@ impl Chat {
             is_error: Some(true),
             ran: None,
             refused_by: None,
+            os_error: None,
         })
     }
 
@@ -575,6 +625,178 @@ impl Chat {
             .iter()
             .find(|r| r.word == word)
             .map_or(0, |r| r.timeout)
+    }
+
+    /// Claude Code's own check of a call purlis's guard let through: `None` where it goes on,
+    /// its result already told where it does not.
+    ///
+    /// - **Its refusal** (`PermissionDenied`), where the script says its check refuses the
+    ///   call: the classifier of its auto mode, which a stand-in cannot run.
+    /// - **Its ask** in the `default` permission mode, for a write or an edit, as 2.1.325's
+    ///   `asks` recording shows it (T1.1-03): purlis's permission hook (`PermissionRequest`)
+    ///   first, whose `allow` or `deny` stands; else the dialog, and once it has waited, its
+    ///   `Notification`; then the person's answer. A shell call's or a fetch's ask is not
+    ///   recorded, so the fake asks none.
+    fn claude_allows(&self, c: &Checked, agent: Option<&Agent>) -> bool {
+        let (hook_tool, hook_input) = self.dialect.hook_tool(&c.tool, &c.input);
+        if let Some(reason) = &c.harness_denies {
+            self.fire(
+                "PermissionDenied",
+                Some(&c.tool),
+                json!({"tool_name": hook_tool, "tool_input": hook_input, "tool_use_id": c.id, "reason": reason}),
+                agent,
+            );
+            self.refused(c, reason.clone());
+            return false;
+        }
+        let path = match &c.action {
+            Action::Write { path, .. } | Action::Edit { path, .. } => path.clone(),
+            _ => return true,
+        };
+        if self.permission_mode() != "default" {
+            return true;
+        }
+        let fired = self.fire(
+            "PermissionRequest",
+            Some(&c.tool),
+            json!({
+                "tool_name": hook_tool, "tool_input": hook_input,
+                "permission_suggestions": [{"type": "setMode", "mode": "acceptEdits", "destination": "session"}],
+            }),
+            agent,
+        );
+        let decision = fired.iter().find_map(|f| {
+            (f.exit == Some(0))
+                .then(|| f.json())
+                .flatten()?
+                .pointer("/hookSpecificOutput/decision")
+                .cloned()
+        });
+        match decision
+            .as_ref()
+            .and_then(|d| d.get("behavior"))
+            .and_then(Value::as_str)
+        {
+            Some("allow") => return true,
+            Some("deny") => {
+                let message = decision
+                    .as_ref()
+                    .and_then(|d| d.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(CLAUDE_REJECTED);
+                self.refused(c, message.to_owned());
+                return false;
+            }
+            _ => {}
+        }
+        let name = Path::new(&path)
+            .file_name()
+            .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+        let question = match c.action {
+            Action::Write { .. } => format!("Do you want to create {name}?"),
+            _ => format!("Do you want to make this edit to {name}?"),
+        };
+        print!(
+            "{question}\r\n\u{276f} 1. Yes\r\n  2. Yes, allow all edits during this session (shift+tab)\r\n  3. No, and tell Claude what to do differently (esc)\r\n"
+        );
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut answer = self.keyboard().answer(Some(Instant::now() + NOTIFY_AFTER));
+        if answer.is_none() {
+            self.fire(
+                "Notification",
+                None,
+                json!({"message": "Claude needs your permission", "notification_type": "permission_prompt"}),
+                None,
+            );
+            answer = self.keyboard().answer(None);
+        }
+        if answer == Some(Answer::Yes) {
+            return true;
+        }
+        // Refused, or the session ended at the ask: the turn stops there, as at Esc.
+        self.interrupted.store(true, Ordering::SeqCst);
+        self.refused(c, CLAUDE_REJECTED.to_owned());
+        false
+    }
+
+    /// Codex's own ask, for a command the model asks to run escalated
+    /// (`sandbox_permissions: "require_escalated"`), the one way it asks with its sandbox off
+    /// as purlis starts it: its `PermissionRequest` fires as the prompt appears, and decides
+    /// it where purlis's hook answers `allow` or `deny` (`harness::codex`, #1691); else the
+    /// person answers in the pane. Not recorded (T1.1-03's Codex ran with its prompts
+    /// bypassed), so its words are Codex's own as purlis-core describes them.
+    fn codex_allows(&self, c: &Checked, agent: Option<&Agent>) -> bool {
+        let command = match &c.action {
+            Action::Shell(command)
+                if c.input.get("sandbox_permissions").and_then(Value::as_str)
+                    == Some("require_escalated") =>
+            {
+                command.clone()
+            }
+            _ => return true,
+        };
+        let (hook_tool, hook_input) = self.dialect.hook_tool(&c.tool, &c.input);
+        let fired = self.fire(
+            "PermissionRequest",
+            Some(&c.tool),
+            json!({"tool_name": hook_tool, "tool_input": hook_input, "tool_use_id": c.id}),
+            agent,
+        );
+        let decision = fired.iter().find_map(|f| {
+            (f.exit == Some(0))
+                .then(|| f.json())
+                .flatten()?
+                .pointer("/hookSpecificOutput/decision")
+                .cloned()
+        });
+        match decision
+            .as_ref()
+            .and_then(|d| d.get("behavior"))
+            .and_then(Value::as_str)
+        {
+            Some("allow") => return true,
+            Some("deny") => {
+                let message = decision
+                    .as_ref()
+                    .and_then(|d| d.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(CODEX_REJECTED);
+                self.refused(c, message.to_owned());
+                return false;
+            }
+            _ => {}
+        }
+        print!(
+            "Would you like to run the following command?\r\n\r\n  $ {command}\r\n\r\n\u{203a} 1. Yes, proceed (y)\r\n  2. No, and tell Codex what to do differently (esc)\r\n"
+        );
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        if self.keyboard().answer(None) == Some(Answer::Yes) {
+            return true;
+        }
+        self.interrupted.store(true, Ordering::SeqCst);
+        self.refused(c, CODEX_REJECTED.to_owned());
+        false
+    }
+
+    /// A call the harness's own check refused, as the model is shown it.
+    fn refused(&self, c: &Checked, text: String) {
+        self.transcript.tool_result(&ToolResult {
+            id: c.id.clone(),
+            step: c.step.clone(),
+            text,
+            is_error: self.error_flag(true),
+            ran: None,
+            refused_by: None,
+            os_error: None,
+        });
+    }
+
+    /// Claude Code's permission mode: what it was started with, else its default.
+    fn permission_mode(&self) -> String {
+        self.launch
+            .permission_mode
+            .clone()
+            .unwrap_or_else(|| CLAUDE_PERMISSION_MODE.to_owned())
     }
 
     /// OpenCode's own ask for a file outside the chat's folder (`external_directory`): its
@@ -866,6 +1088,7 @@ impl Chat {
                     is_error: framed.is_error,
                     ran: framed.ran,
                     refused_by: None,
+                    os_error: framed.os_error,
                 });
             }
             return;
@@ -878,6 +1101,7 @@ impl Chat {
                 is_error: framed.is_error,
                 ran: framed.ran,
                 refused_by: None,
+                os_error: framed.os_error,
             });
         }
     }
@@ -1006,18 +1230,37 @@ impl Chat {
             }
             (_, Outcome::File(result)) => {
                 let is_write = matches!(c.action, Action::Write { .. });
+                if let Err((e, _)) = result {
+                    f.os_error = Some(errno(e));
+                }
                 match (d, result) {
-                    (Dialect::Claude, Ok(path)) => {
-                        f.text = if is_write {
-                            format!("File created successfully at: {path}")
-                        } else {
-                            format!("The file {path} has been updated successfully.")
+                    // A file written, as 2.1.325's `asks` recording shows it: its result with no
+                    // `is_error`, and its PostToolUse with what was written.
+                    (Dialect::Claude, Ok(path)) if is_write => {
+                        let content = match &c.action {
+                            Action::Write { content, .. } => content.clone(),
+                            _ => String::new(),
                         };
+                        f.text = format!(
+                            "File created successfully at: {path} (file state is current in your context \u{2014} no need to Read it back)"
+                        );
+                        f.post = Some((
+                            "PostToolUse",
+                            "tool_response",
+                            json!({
+                                "type": "create", "filePath": path, "content": content,
+                                "structuredPatch": [], "originalFile": null, "userModified": false,
+                            }),
+                        ));
+                        f.push_duration(Duration::ZERO);
+                    }
+                    (Dialect::Claude, Ok(path)) => {
+                        f.text = format!("The file {path} has been updated successfully.");
                         f.is_error = Some(false);
                         f.post = Some((
                             "PostToolUse",
                             "tool_response",
-                            json!({"filePath": path, "type": if is_write {"create"} else {"update"}}),
+                            json!({"filePath": path, "type": "update"}),
                         ));
                     }
                     (Dialect::Claude, Err((e, path))) => {
@@ -1068,6 +1311,7 @@ impl Chat {
                 Err((e, path)) => {
                     f.text = node_error(e, path);
                     f.is_error = self.error_flag(true);
+                    f.os_error = Some(errno(e));
                 }
             },
             (_, Outcome::Web(result)) => {
@@ -1207,6 +1451,7 @@ impl Chat {
                     is_error: None,
                     ran: None,
                     refused_by: None,
+                    os_error: None,
                 });
                 self.notices
                     .lock()
@@ -1242,8 +1487,11 @@ impl Chat {
                     is_error: None,
                     ran: None,
                     refused_by: None,
+                    os_error: None,
                 });
             }
+            // Never reached: Codex offers no sub-agent tool (`Dialect::tool_of`), so `check`
+            // answered the call as one it does not offer (`routes::NEVER_FIRED`).
             Dialect::Codex => {}
         }
     }
@@ -1339,14 +1587,10 @@ impl Chat {
                         if let Some(turn) = turn {
                             p.insert("prompt_id".into(), turn.into());
                         }
-                        p.insert(
-                            "permission_mode".into(),
-                            self.launch
-                                .permission_mode
-                                .clone()
-                                .unwrap_or_else(|| CLAUDE_PERMISSION_MODE.to_owned())
-                                .into(),
-                        );
+                        // Its Notification carries no permission mode (2.1.325).
+                        if event != "Notification" {
+                            p.insert("permission_mode".into(), self.permission_mode().into());
+                        }
                     }
                 }
                 if let Some(agent) = agent {
@@ -1424,17 +1668,21 @@ impl Chat {
                         "CLAUDE_PROJECT_DIR".to_owned(),
                         self.cwd.display().to_string(),
                     ),
-                    (
+                ]);
+                // A plugin's hook is told its plugin; the permission hook is `--settings`'s, not
+                // the plugin's, and is told none (2.1.325's `asks` recording).
+                if event != "PermissionRequest" {
+                    env.push((
                         "CLAUDE_PLUGIN_DATA".to_owned(),
                         config
                             .join("plugins/data")
                             .join(purlis_core::plugin::LOADED_AS.replace('@', "-"))
                             .display()
                             .to_string(),
-                    ),
-                ]);
-                if let Some(plugin) = self.launch.plugin_dirs.first() {
-                    env.push(("CLAUDE_PLUGIN_ROOT".to_owned(), plugin.clone()));
+                    ));
+                    if let Some(plugin) = self.launch.plugin_dirs.first() {
+                        env.push(("CLAUDE_PLUGIN_ROOT".to_owned(), plugin.clone()));
+                    }
                 }
                 if event == "SessionStart" {
                     let dir = config.join("session-env").join(&self.session_id);
@@ -1447,17 +1695,20 @@ impl Chat {
                 if claude_effort(event) {
                     env.push(("CLAUDE_EFFORT".to_owned(), "medium".to_owned()));
                 }
-                // What Claude Code sets for every hook it runs, measured on 2.1.325.
+                // What Claude Code sets for every hook it runs, measured on 2.1.325: among them
+                // its terminal's size.
                 env.extend(
                     [
                         ("AI_AGENT", "claude-code"),
                         ("COREPACK_ENABLE_AUTO_PIN", "0"),
                         ("NoDefaultCurrentDirectoryInExePath", "1"),
-                        ("COLUMNS", "160"),
-                        ("LINES", "50"),
                     ]
                     .map(|(k, v)| (k.to_owned(), v.to_owned())),
                 );
+                if let Some((columns, lines)) = terminal_size() {
+                    env.push(("COLUMNS".to_owned(), columns));
+                    env.push(("LINES".to_owned(), lines));
+                }
                 // And the `env` of the `--settings` it was started with, as it applies it.
                 env.extend(self.settings_env());
             }
@@ -1528,6 +1779,8 @@ struct Checked {
     input: Value,
     action: Action,
     background: bool,
+    /// Why Claude Code's own check refuses it, where the script says it does.
+    harness_denies: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1556,6 +1809,8 @@ struct Framed {
     /// The hook event after the call, the payload field its result goes in, and the result.
     post: Option<(&'static str, &'static str, Value)>,
     post_extra: Option<Vec<(String, Value)>>,
+    /// What the OS said of a native call it refused, whatever the dialect shows the model.
+    os_error: Option<String>,
 }
 
 impl Framed {
@@ -1567,9 +1822,12 @@ impl Framed {
 }
 
 /// Whether Claude Code hands this event's hooks its effort: every one but the session's start
-/// and end and a prompt's submission (2.1.325).
+/// and end, a prompt's submission and a notification (2.1.325).
 fn claude_effort(event: &str) -> bool {
-    !matches!(event, "SessionStart" | "SessionEnd" | "UserPromptSubmit")
+    !matches!(
+        event,
+        "SessionStart" | "SessionEnd" | "UserPromptSubmit" | "Notification"
+    )
 }
 
 /// A web fetch, as a fetch in the harness's own process makes it: a plain `http://` URL is a
@@ -1644,21 +1902,54 @@ fn dial(url: &str) -> Result<u16, String> {
         .ok_or_else(|| format!("no HTTP answer: {:?}", line.trim()))
 }
 
+/// The errno of an I/O error, by its name and Node's words for it.
+fn errno_of(e: &std::io::Error) -> Option<(&'static str, &'static str)> {
+    Some(match e.raw_os_error()? {
+        13 => ("EACCES", "permission denied"),
+        1 => ("EPERM", "operation not permitted"),
+        2 => ("ENOENT", "no such file or directory"),
+        30 => ("EROFS", "read-only file system"),
+        _ => return None,
+    })
+}
+
+/// An I/O error's errno by its name, else what it says: the transcript's `os_error`.
+fn errno(e: &std::io::Error) -> String {
+    errno_of(e).map_or_else(|| e.to_string(), |(code, _)| code.to_owned())
+}
+
 /// An I/O error as Node's `fs` says it, as Claude Code passes it on.
 fn node_error(e: &std::io::Error, path: &str) -> String {
-    let (code, what) = match e.raw_os_error() {
-        Some(13) => ("EACCES", "permission denied"),
-        Some(1) => ("EPERM", "operation not permitted"),
-        Some(2) => ("ENOENT", "no such file or directory"),
-        Some(30) => ("EROFS", "read-only file system"),
-        _ => return e.to_string(),
-    };
-    format!("{code}: {what}, open '{path}'")
+    match errno_of(e) {
+        Some((code, what)) => format!("{code}: {what}, open '{path}'"),
+        None => e.to_string(),
+    }
 }
 
 /// A path without the temporary suffix a Claude Code write gives it.
 fn strip_tmp(path: &str) -> String {
     path.split(".tmp.").next().unwrap_or(path).to_owned()
+}
+
+/// The size of the terminal the fake runs in, as `COLUMNS` and `LINES`: what the environment
+/// says, else what its terminal says (`stty size`), else none.
+fn terminal_size() -> Option<(String, String)> {
+    if let (Ok(columns), Ok(lines)) = (std::env::var("COLUMNS"), std::env::var("LINES")) {
+        return Some((columns, lines));
+    }
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return None;
+    }
+    let out = Command::new("stty")
+        .arg("size")
+        .stdin(Stdio::inherit())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let said = String::from_utf8_lossy(&out.stdout);
+    let (lines, columns) = said.trim().split_once(' ')?;
+    Some((columns.to_owned(), lines.to_owned()))
 }
 
 fn shell_program() -> &'static str {

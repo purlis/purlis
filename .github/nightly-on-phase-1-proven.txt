@@ -19,3 +19,5 @@ harness-rerecord-pinned       ubuntu-24.04   90
 harness-rerecord-latest       ubuntu-24.04   90
 harness-escapes-pinned        ubuntu-24.04   90       kind: escape
 harness-escapes-latest        ubuntu-24.04   90       kind: escape
+# Ticket 23: the sandbox's laws as property tests, at 100 000 cases from a fresh seed (T1.1-23).
+property-tests                ubuntu-24.04   90       kind: escape

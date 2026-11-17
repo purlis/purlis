@@ -53,7 +53,12 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         let socket = base.join("app").join("hooks.sock");
         let listener = Listener::bind(&base, &socket).unwrap_or_else(|e| panic!("a socket: {e}"));
         let token = listener
@@ -160,7 +165,12 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`).
+        std::fs::write(
+            root.join("charter.toml"),
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+        )
+        .expect("the marker");
         Self {
             _tmp: tmp,
             _reading: None,
