@@ -80,6 +80,7 @@ impl Handler {
         match self.name {
             "pretooluse" => &[
                 Family::GuardsShape,
+                Family::GuardsPlane,
                 Family::Secrets,
                 Family::GuardsCredential,
                 Family::GuardsGit,

@@ -16007,7 +16007,8 @@ fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
             1,
             Ask::PolicyLog(PolicyLogAsk {
                 chat: asking,
-                family: "guards.git".to_owned(),
+                // A3 is `guards.plane`'s since Q308b (#7104).
+                family: "guards.plane".to_owned(),
                 rule: rule.to_owned(),
                 host: None,
             }),
