@@ -250,7 +250,7 @@ beforeEach(() => {
         if (removeCame !== undefined) return removeCame;
         pools = pools.filter((one) => one.name !== a.name);
         clusters = clusters.filter((one) => one.name !== a.name);
-        return null;
+        return { state: "removed", left: null };
       }
       if (cmd === "forget_docker_pool") {
         forgotten.push(a.name);
@@ -1514,7 +1514,7 @@ describe("A cluster pool (#3292)", () => {
     const forget = await within(group).findByRole("button", { name: "Forget it here" });
     expect(
       within(group).getByText(
-        /lab didn.t answer on port 22\..*Nothing was removed\. Forget it here forgets pool build-box on this machine without contacting lab: its runner.s container and home volume stay on lab, and lab still lists this machine as the runner.s peer\./,
+        /lab didn.t answer on port 22\..*Nothing was removed\. Forget it here forgets pool build-box on this machine without contacting lab\. Its runner.s container and home volume stay on lab\. lab still lists this machine as the runner.s peer\./,
       ),
     ).toBeInTheDocument();
     expect(forgotten).toEqual([]);

@@ -4564,7 +4564,7 @@ export const commands = {
 	 *  answer says what stays and the commands that remove it there. Refused for a pool on this
 	 *  machine's Docker, which is removed, never only forgotten.
 	 */
-	forgetDockerPool: (name: string) => typedError<string, string>(__TAURI_INVOKE("forget_docker_pool", { name })),
+	forgetDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("forget_docker_pool", { name })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.

@@ -594,9 +594,9 @@ pub async fn remove_docker_pool(
                     purlis_core::pools::forget_where_untrusted(&config, &name, elsewhere, &found)
                 {
                     let left = forgot.map_err(|why| refused_said(&why.to_string()))?;
-                    let left = gone_from_here(&app, &held, &config, &name, left);
+                    let_go_of(&config, &name);
                     return Ok(PoolRemoval::Removed {
-                        left: (!left.is_empty()).then_some(left),
+                        left: gone_from_here(&app, &held, &config, &name, &left),
                     });
                 }
                 let machine = Machine::here(&config)?;
@@ -631,14 +631,14 @@ pub async fn forget_docker_pool(
     app: tauri::AppHandle,
     planes: tauri::State<'_, crate::planes::Planes>,
     name: String,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
         let held = planes.every_held();
         crate::off_the_window("forgetting a pool", move || {
             let config = config_root()?;
             let left = forgotten_here(&config, &name)?;
-            Ok(gone_from_here(&app, &held, &config, &name, left))
+            Ok(gone_from_here(&app, &held, &config, &name, &left))
         })
         .await
     }
@@ -649,35 +649,43 @@ pub async fn forget_docker_pool(
     }
 }
 
-/// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, the
-/// projects that ran their chats on it unmarked (#2846), and nothing of it waiting on chats (#2865).
-/// What stays on its machine, said safely.
+/// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, and
+/// [`let_go_of`]. What stays on its machine, as the core says it.
 #[cfg(unix)]
 fn forgotten_here(config: &std::path::Path, name: &str) -> Result<String, String> {
     let left = purlis_core::pools::forget_untrusted(config, name)
         .map_err(|why| refused_said(&why.to_string()))?;
-    crate::notheld::recheck(config);
-    crate::poolfollow::forget_waiting(config, name);
+    let_go_of(config, name);
     Ok(left)
 }
 
+/// **Pool `name`, forgotten here without contacting its machine, is let go of under `config`**:
+/// the projects that ran their chats on it unmarked (#2846), and nothing of it waiting on chats
+/// (#2865). Both ways of forgetting it come here, the pin-changed Remove's and Forget it here.
+#[cfg(unix)]
+fn let_go_of(config: &std::path::Path, name: &str) {
+    crate::notheld::recheck(config);
+    crate::poolfollow::forget_waiting(config, name);
+}
+
 /// **The window lets go of pool `name`, forgotten here**: the login opt-ins given on it in every
-/// project held (#2050), and its links, with the chats on them. `left`, said safely.
+/// project held (#2050), and its links, with the chats on them. What stays, `left`, said safely;
+/// `None` where nothing does.
 #[cfg(unix)]
 fn gone_from_here(
     app: &tauri::AppHandle,
     held: &[std::sync::Arc<crate::planes::Held>],
     config: &std::path::Path,
     name: &str,
-    left: String,
-) -> String {
+    left: &str,
+) -> Option<String> {
     for project in held {
         project.browsers().forget_pool_logins(name);
     }
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
         links_end_once_gone(&host.connection(), config, name);
     }
-    crate::devices::shown_safely(&left)
+    (!left.is_empty()).then(|| crate::devices::shown_safely(left))
 }
 
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window
@@ -698,7 +706,7 @@ fn unreachable_said(
     finding: &purlis_core::sshroute::connect::Finding,
 ) -> Option<PoolRemoval> {
     purlis_core::poolsetup::connecting::unreachable(finding).then(|| PoolRemoval::Unreachable {
-        why: purlis_core::poolsetup::connect_said(finding),
+        why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
         host: host.to_owned(),
     })
 }

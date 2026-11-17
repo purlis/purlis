@@ -82,7 +82,7 @@ export type Held = {
   limits: Readonly<Record<string, PoolLimitsPage | { trouble: string }>>;
   /** The pool just added, whose profiles the dialog offers to sign in there, until Done. */
   added: string | undefined;
-  /** The pool being removed, while it is. */
+  /** The pool being removed, or forgotten here ({@link forgetPool}), while it is. */
   removing: string | undefined;
   /** The pool whose runner is being made again, while it is (#4149). */
   remaking: string | undefined;
@@ -93,8 +93,11 @@ export type Held = {
   /** The pools whose Remove found their machine doesn't answer, by name: why, in Pool setup's
    *  words, and the machine, for the row's Forget it here to offer, until the pool is forgotten,
    *  removed or the Notice dismissed. */
-  unreachable: Readonly<Record<string, { why: string; host: string }>>;
+  unreachable: Readonly<Record<string, Unreachable>>;
 };
+
+/** A pool's machine that doesn't answer, as its Remove found: `host`, and why in Pool setup's words. */
+export type Unreachable = Omit<Extract<PoolRemoval, { state: "unreachable" }>, "state">;
 
 /** A pool's kind: a runner on this machine's Docker, or one in a team's cluster (#3292). */
 export type PoolKind = "docker" | "cluster";
@@ -656,14 +659,12 @@ export async function askVersion(name: string) {
 export type RemoveCame =
   { removed: true; left?: string } | { removed: false; why: string; host?: string };
 
-/** What the core answered a Remove with, as {@link RemoveCame} says it: an answer of no known
- *  shape is removed with nothing left, as an older core's empty answer was. */
-function removeCameOf(said: Said<PoolRemoval | null>): RemoveCame {
+/** What the core answered a Remove with, as {@link RemoveCame} says it. */
+function removeCameOf(said: Said<PoolRemoval>): RemoveCame {
   if (said.status === "error") return { removed: false, why: said.error };
   const data = said.data;
-  if (typeof data !== "object" || data === null) return { removed: true };
   if (data.state === "unreachable") return { removed: false, why: data.why, host: data.host };
-  return typeof data.left === "string" ? { removed: true, left: data.left } : { removed: true };
+  return data.left === null ? { removed: true } : { removed: true, left: data.left };
 }
 
 /** `name`'s entries gone from what is held of each pool, by name. */
@@ -725,7 +726,7 @@ export async function forgetPool(name: string): Promise<void> {
     set((was) => ({ ...was, removing: undefined, said: said.error }));
     return;
   }
-  gone(name, said.data === "" ? undefined : said.data);
+  gone(name, said.data ?? undefined);
   await rereadPools();
 }
 

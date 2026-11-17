@@ -24,6 +24,7 @@ import {
   usePools,
   type HeldRunners,
   type NamedBy,
+  type Unreachable,
 } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button, ButtonRow } from "../ui/button/Button";
@@ -533,7 +534,7 @@ function PoolEntry({
   profiles: ReactNode;
   plane: string | undefined;
   /** Why its machine didn't answer its last Remove, and which machine that is. */
-  unreachable: { why: string; host: string } | undefined;
+  unreachable: Unreachable | undefined;
   /** Forgets it on this machine without contacting its machine. */
   onForget: () => void;
   onDismissUnreachable: () => void;
@@ -722,7 +723,7 @@ export function UnreachableNotice({
 
 /** What {@link UnreachableNotice} says of pool `name` on `host`, which didn't answer for `why`. */
 export const unreachableSaid = (name: string, host: string, why: string) =>
-  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}: its runner's container and home volume stay on ${host}, and ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
+  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Its runner's container and home volume stay on ${host}. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
