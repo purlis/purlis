@@ -26,6 +26,20 @@ export const waitingSaid = (state: PolicyState): string =>
   state.waiting.map((one) => `${one.family} from ${one.accepted} to ${one.committed}`).join(", ");
 
 /**
+ * What runs without a sandbox leaves out (Q308a): "Without a sandbox, network, ports and
+ * processes are not in force. ", or nothing where the project keeps one.
+ */
+export const notInForceSaid = (state: PolicyState): string => {
+  const families = state.not_in_force ?? [];
+  if (families.length === 0) return "";
+  const listed =
+    families.length === 1
+      ? families[0]
+      : `${families.slice(0, -1).join(", ")} and ${families[families.length - 1]}`;
+  return `Without a sandbox, ${listed} are not in force. `;
+};
+
+/**
  * **A loosening of the project's `[policy]` waits for your press** (rulings Q308a, Q308b; ADR
  * 0125): a committed change that makes a family looser reaches your chats only once you press
  * **Accept** here (`accept_project_policy`, the window's alone), which the app seals on this
@@ -107,7 +121,7 @@ export function ProjectPolicyNotice({
       {state.unsealed &&
         "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again. "}
       {state.waiting.length > 0 &&
-        `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
+        `The project loosened its policy: ${waitingSaid(state)}. ${notInForceSaid(state)}${POLICY_ACCEPT_MEANS}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}
       {said !== undefined && ` ${said}`}
     </p>

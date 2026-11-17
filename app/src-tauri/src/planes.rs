@@ -3985,6 +3985,13 @@ impl Planes {
                             block.line.sandbox_blocked,
                         );
                     }
+                    // A folder or socket ask the project's `[policy]` answers itself (the Q308
+                    // follow-up, item 3): allowed for this chat, kept in the record, and no
+                    // Notice; the chat takes it at its restart once its turn ends.
+                    if crate::sandboxing::answered_by_the_policy(&strong, &told, network.as_ref()) {
+                        record();
+                        return;
+                    }
                     // The echo of a held connection's block written already, from the
                     // post-tool detector or the proxy's own raise landing late (Q240): dropped,
                     // never an ask beside its block, and never a second block (T1-10).

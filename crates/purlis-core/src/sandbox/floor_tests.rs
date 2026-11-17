@@ -2568,3 +2568,200 @@ fn the_floors_refusal_of_programs_holds_under_every_policy() {
         }
     }
 }
+
+/// **The floor's and the full sandbox's socket and localhost holds follow `ports`, off or enforce
+/// alone** (the Q308 follow-up, item 5; ruling Q328; the review of #7105): kept under `watch`,
+/// `hold` and `team` and wherever `ports` logs (the kernel tells nothing of a connection it let
+/// through), and lifted only where the person pressed a project's `ports = "off"`, after the
+/// holds so it wins. purlis's own ports and sockets are held again after the lift, and the
+/// chat's own hook socket given back after those. Claude Code's `allowAllUnixSockets` and
+/// `allowLocalBinding` stay `false` under every policy: either would open purlis's own sockets
+/// or listeners too, which nothing after them can hold back.
+#[test]
+fn the_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off_and_purlis_own_stay_held() {
+    let _home = super::local::OwnConfigHome::new();
+    // One of purlis's own listeners in this process, as a proxy's is.
+    let _listener = super::localport::bind_loopback().expect("an own port");
+    let own_ports = super::localport::own_now();
+    assert!(!own_ports.is_empty());
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    let unix = super::seatbelt::EVERY_LOCAL
+        .lines()
+        .next()
+        .expect("its unix rule");
+    let localhost = super::seatbelt::EVERY_LOCAL
+        .lines()
+        .nth(1)
+        .expect("its localhost rule");
+    // In order, wherever the lift is written: the holds, the lift, purlis's own held again, and
+    // the chat's own hook socket given back.
+    let in_order = |profile: &str, hook: &Path, what: &str| {
+        let at = |rule: &str| {
+            profile
+                .rfind(rule)
+                .unwrap_or_else(|| panic!("{rule} missing in {what}"))
+        };
+        if profile.contains(super::seatbelt::FLOOR_HELD) {
+            assert!(at(unix) > at(super::seatbelt::FLOOR_HELD), "{what}");
+        }
+        for rule in super::seatbelt::every_local_held() {
+            assert!(at(&rule) > at(unix), "{rule} before the lift in {what}");
+            assert!(
+                at(&format!(
+                    "(allow network-outbound (remote unix-socket (path-literal {})))",
+                    super::seatbelt::quote(hook).expect("quoted")
+                )) > at(&rule),
+                "the hook socket given back before {rule} in {what}"
+            );
+        }
+        for port in &own_ports {
+            assert!(
+                at(&format!(
+                    "(deny network-outbound (remote ip \"localhost:{port}\"))"
+                )) > at(localhost),
+                "own port {port} before the lift in {what}"
+            );
+        }
+    };
+    for (policy, press, lifted) in [
+        ("", true, false),
+        ("[policy]\ntemplate = \"team\"\n", true, false),
+        ("[policy]\nports = \"log\"\n", true, false),
+        ("[policy]\nports = \"off\"\n", false, false),
+        ("[policy]\nports = \"off\"\n", true, true),
+    ] {
+        for full in [false, true] {
+            let (_dir, root) = project();
+            let sandbox = if full {
+                "[sandbox]\nmode = \"on\"\n"
+            } else {
+                ""
+            };
+            std::fs::write(
+                root.join("charter.toml"),
+                format!("schema = 1\n{sandbox}{policy}"),
+            )
+            .expect("charter.toml");
+            crate::enforcement::at_start(&root);
+            if press {
+                crate::enforcement::press(&root, &crate::enforcement::digest_of(&root))
+                    .expect("pressed");
+            }
+            let hook = root.join(".purlis/app/hooks.sock");
+            let what = format!("{policy:?} pressed {press}, full {full}");
+            for harness in [Harness::Codex, Harness::Opencode] {
+                let profile = if full {
+                    let applied = match decided(harness, &root, &machine) {
+                        Some(Decided::Sandboxed(applied)) => applied,
+                        other => panic!("not sandboxed: {other:?}"),
+                    };
+                    match applied.form() {
+                        Form::Codex(wrap) => {
+                            codex::profile(wrap, &root, Path::new("/tmp"), &[4040], Some(&hook))
+                        }
+                        Form::Opencode(wrap) => {
+                            opencode::profile(wrap, &root, Path::new("/tmp"), &[4040], Some(&hook))
+                        }
+                        other => panic!("not a wrap: {other:?}"),
+                    }
+                    .expect("a profile")
+                } else {
+                    let profile = wrapped_floor(harness, &root, &machine, &[4040], Some(&hook));
+                    // The floor's holds are always written.
+                    assert!(profile.contains(super::seatbelt::FLOOR_HELD), "{what}");
+                    assert!(profile.contains("(deny job-creation)"), "{what}");
+                    profile
+                };
+                assert_eq!(profile.contains(unix), lifted, "{what} {harness:?}");
+                if lifted {
+                    in_order(&profile, &hook, &format!("{what} {harness:?}"));
+                }
+            }
+            if !full {
+                let settings =
+                    settings_of(&floor_of(decided(Harness::ClaudeCode, &root, &machine)));
+                let network = &settings.sandbox["network"];
+                assert_eq!(network["allowAllUnixSockets"], false, "{what}");
+                assert_eq!(network["allowLocalBinding"], false, "{what}");
+            }
+        }
+    }
+}
+
+/// **Under a pressed `ports = "off"`, a chat reaches another program's socket and none of
+/// purlis's own** (the review of #7105): the floor's profile applied for real, where this machine
+/// can apply one. A container engine's socket is reached (ruling Q328); another plane's hook
+/// socket, the window's slots socket, the session host's, the crash companion's, the app's
+/// single-instance socket and a chat's server socket are not; its own hook socket is.
+#[cfg(target_os = "macos")]
+#[test]
+fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let _home = super::local::OwnConfigHome::new();
+    let (_dir, root) = project();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n[policy]\nports = \"off\"\n",
+    )
+    .expect("charter.toml");
+    crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
+    let sockets = tempfile::tempdir().expect("a folder for sockets");
+    let at = real(sockets.path());
+    for folder in [".purlis/app", "o/.Charter/app", "purlis-serve/ab"] {
+        std::fs::create_dir_all(at.join(folder)).expect("a folder");
+    }
+    let hook = at.join(".purlis/app/hooks.sock");
+    let reached = at.join("docker.sock");
+    let held = [
+        at.join("o/.Charter/app/hooks.sock"),
+        at.join("purlisd.sock"),
+        at.join("purlis-serve/ab/3000.sock"),
+        at.join("Hooks.sock"),
+        at.join("slots.sock"),
+        at.join("purlis-crash-0123abcd.sock"),
+        at.join("dev.purlis.app_si.sock"),
+        at.join("dev.purlis.app.e2e_si.sock"),
+    ];
+    let mut listening = Vec::new();
+    for socket in held.iter().chain([&hook, &reached]) {
+        listening.push(std::os::unix::net::UnixListener::bind(socket).expect("a socket"));
+    }
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    let profile = wrapped_floor(Harness::Codex, &root, &machine, &[], Some(&hook));
+    assert!(profile.contains(super::seatbelt::EVERY_LOCAL.lines().next().expect("a rule")));
+    let run = |script: &str| -> String {
+        let out = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/bin/sh", "-c", script])
+                .current_dir(&root),
+        )
+        .expect("it runs");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let connect = |socket: &Path| {
+        format!(
+            "/bin/zsh -c 'zmodload zsh/net/socket && zsocket {}' >/dev/null 2>&1 && echo yes || echo no",
+            socket.display()
+        )
+    };
+    assert_eq!(run(&connect(&hook)), "yes", "its own hook socket");
+    assert_eq!(run(&connect(&reached)), "yes", "another program's socket");
+    for socket in &held {
+        assert_eq!(run(&connect(socket)), "no", "{}", socket.display());
+    }
+}
