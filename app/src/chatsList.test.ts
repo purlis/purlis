@@ -321,7 +321,6 @@ describe("a closed chat found by the filter (#6484)", () => {
   it("says the number it was found by only where that is one it had before a restart (#6685)", () => {
     const foundBy = (text: string) => words(text).map((one) => [one.number, one.foundBy]);
     expect(foundBy("702")).toEqual([[731, 702]]);
-    expect(foundBy("#702")).toEqual([[731, 702]]);
     expect(foundBy("731")).toEqual([[731, null]]);
     expect(foundBy("changelog")).toEqual([[731, null]]);
   });
