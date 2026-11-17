@@ -409,6 +409,10 @@ pub struct Settings {
     /// What the table holds that purlis could not read, one sentence each, for the window's
     /// Notice. Each was taken in the strict direction.
     pub refused: Vec<String>,
+    /// **Whether git could not read the committed file** ([`committed_text`]): the project is
+    /// read as `strict` meanwhile, and that is never kept as what the person accepted, since it
+    /// is no tightening the project made (#7073).
+    pub unread: bool,
 }
 
 impl Settings {
@@ -543,6 +547,7 @@ impl Settings {
                 template_said: true,
                 overrides: BTreeMap::new(),
                 refused: vec![why],
+                unread: true,
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
@@ -590,8 +595,14 @@ pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
         GIT_WAIT,
     ) {
         Ok(run) if run.ok() => {}
-        // git said the plane is no repository at all: its file is all there is.
-        Ok(run) if run.code == Some(128) && run.err.contains("not a git repository") => {
+        // git said the plane is no repository at all, and it has no `.git` git could have
+        // failed to read (#7073): its file is all there is. A `.git` that is there and does not
+        // read, a corrupted `HEAD` say, is strict.
+        Ok(run)
+            if run.code == Some(128)
+                && run.err.contains("not a git repository")
+                && root.join(".git").symlink_metadata().is_err() =>
+        {
             return Ok(layer_text(root, Which::Shared).text().map(str::to_owned));
         }
         // Timed out, failed, or no commit yet: never the working tree's file.
@@ -600,10 +611,18 @@ pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
     let file = Which::Shared.file_at(root);
     match crate::worktree::git::run(root, &["show", &format!("HEAD:./{file}")], GIT_WAIT) {
         Ok(run) if run.ok() => Ok(Some(run.out)),
-        // No such file at `HEAD`: the project says nothing.
-        Ok(run) if run.code == Some(128) => Ok(None),
+        // No such file at `HEAD`, as git says it: the project says nothing. git exits 128 for a
+        // blob it could not read too, which is strict (#7073).
+        Ok(run) if run.code == Some(128) && no_such_path(&run.err) => Ok(None),
         _ => Err(unread()),
     }
+}
+
+/// **Whether git's `show <rev>:<path>` said there is no such path at `rev`**: the path is in no
+/// commit (`does not exist in`), or only in the working tree (`exists on disk, but not in`).
+/// git runs with `LC_ALL=C`, so its words are these.
+fn no_such_path(err: &str) -> bool {
+    err.contains("does not exist in") || err.contains("exists on disk, but not in")
 }
 
 /// **The digest of what the press accepts** (the review of #6992, S2, and its re-review): of the
@@ -771,8 +790,13 @@ pub fn at_start(root: &Path) -> Resolved {
 /// acceptance that cannot be kept changes nothing this answers.
 fn resolved_in_the_app(root: &Path) -> Resolved {
     let accepted = accepted(root);
-    let resolved = committed(root).stricter(&accepted);
+    let settings = Settings::read(root);
+    let resolved =
+        Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root)).stricter(&accepted);
+    // A `HEAD` git could not read is strict for now and never kept (#7073): a git that timed out
+    // once is no tightening the project made, and would need a press to undo.
     if resolved != accepted
+        && !settings.unread
         && let Err(why) = crate::sandbox::local::accept_policy(root, resolved.as_kept())
     {
         tracing::warn!("purlis: the accepted policy was not kept ({why})");
@@ -1110,17 +1134,85 @@ fn append(root: &Path, path: &Path, line: &Logged) -> std::io::Result<()> {
         options.mode(0o600);
     }
     let mut file = crate::contain::nofollow(&mut options).open(path)?;
-    if lines_in(&mut file)? >= MOST_LINES {
+    // One writer at a time, so the count kept is the file's.
+    let mut counts = COUNTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let now = Counted::of(&file.metadata()?, 0);
+    let lines = match counts.get(path) {
+        Some(kept) if kept.same_file(&now) => kept.lines,
+        _ => lines_in(&mut file)?,
+    };
+    if lines >= MOST_LINES {
+        counts.insert(path.to_path_buf(), Counted { lines, ..now });
         return Ok(());
     }
     let mut text = serde_json::to_string(line).map_err(std::io::Error::other)?;
     text.push('\n');
-    file.write_all(text.as_bytes())
+    file.write_all(text.as_bytes())?;
+    counts.insert(
+        path.to_path_buf(),
+        Counted::of(&file.metadata()?, lines + 1),
+    );
+    Ok(())
+}
+
+/// **How many lines each log held after the app's last write to it** (#7073), so a line is not
+/// a read of the whole file: counted again only where the file is not as the app left it
+/// (another file in its place, or a length the app did not write).
+static COUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, Counted>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// One log as the app last left it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Counted {
+    /// Which file it is: its device and inode where the platform has them.
+    file: (u64, u64),
+    /// Its length in bytes.
+    len: u64,
+    /// The lines it holds.
+    lines: usize,
+}
+
+impl Counted {
+    fn of(meta: &std::fs::Metadata, lines: usize) -> Self {
+        #[cfg(unix)]
+        let file = {
+            use std::os::unix::fs::MetadataExt;
+            (meta.dev(), meta.ino())
+        };
+        #[cfg(not(unix))]
+        let file = (0, 0);
+        Self {
+            file,
+            len: meta.len(),
+            lines,
+        }
+    }
+
+    /// Whether `now` is this very file at the length the app left it.
+    fn same_file(&self, now: &Self) -> bool {
+        self.file == now.file && self.len == now.len
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread read a log whole to count its lines.
+    static COUNTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many times this thread read a log whole** to count its lines.
+#[cfg(test)]
+fn counted_whole() -> usize {
+    COUNTED.with(std::cell::Cell::get)
 }
 
 /// How many lines `file` holds, read from its start.
 fn lines_in(file: &mut std::fs::File) -> std::io::Result<usize> {
     use std::io::{BufRead, Seek};
+    #[cfg(test)]
+    COUNTED.with(|counted| counted.set(counted.get() + 1));
     file.seek(std::io::SeekFrom::Start(0))?;
     let mut lines = 0;
     let mut reader = std::io::BufReader::new(&*file);

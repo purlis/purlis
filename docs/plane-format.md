@@ -4793,8 +4793,14 @@ write into this folder cannot make its own text arrive as the person's.
   can put a key of its choosing there. **A key item already there is used only once the app has
   shown it owns it**: it makes the item again in place with the same key, which the Keychain lets
   only the item's owner do. An item another program owns makes every sealed answer read as
-  broken until the person presses again. An item made to let every program in (`-A`) is not
-  caught yet (#7007).
+  broken, and the app cannot delete it: the window's Accept then says to delete every keychain
+  item named `purlis-seal` (in Keychain Access, or `security delete-generic-password -s
+  purlis-seal` once for each), and the next Accept reads the keychain again and makes a new key,
+  with no restart (#7073). An item made to let every program in (`-A`) is not caught yet
+  (#7007). **A write of the key cut short** between its delete and its add leaves the key at
+  rest in its spare item (`purlis-seal/spare`, account `answers`): with no key item and the
+  app's own spare, the app makes the spare the key again, so every seal still holds; a spare
+  another program made is treated as that program's key.
 - **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
   cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
