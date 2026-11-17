@@ -68,6 +68,19 @@ pub(crate) struct ChatCard {
     pub found_by: Option<u32>,
 }
 
+impl ChatCard {
+    /// **What the card is called**: `#731 · Tidy the changelog`, with `(was #702)` after it
+    /// where it was found by a number it had before a restart (#6685), as the window's
+    /// `cardTitle` says it.
+    pub(crate) fn shown(&self) -> String {
+        let named = format!("#{} · {}", self.number, self.title);
+        match self.found_by {
+            Some(was) => format!("{named} (was #{was})"),
+            None => named,
+        }
+    }
+}
+
 /// **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
 /// started, a handoff, or a task that ended owing no report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]

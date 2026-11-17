@@ -276,7 +276,7 @@ impl ChatsHere<'_> {
             Goes::Ended(_) | Goes::Closed(_) => {
                 let card = (self.card)(at.number, &at.goes)?;
                 (
-                    format!("#{} · {}", at.number, card.title),
+                    card.shown(),
                     ChatSeen::Ended {
                         card: Box::new(card),
                     },
