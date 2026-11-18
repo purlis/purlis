@@ -2066,7 +2066,7 @@ impl HostLink {
     ) -> Result<Answer, session::Refusal> {
         use purlis_core::poollimits::LimitId::AnswerWait;
         // The window's wait for a program to start, over the link and the relay if any (#7182).
-        let _step = purlis_session_protocol::steps::begin("start_program_call");
+        let step = purlis_session_protocol::steps::begin("start_program_call");
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
@@ -2126,12 +2126,12 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
         };
-        said.map_err(|why| {
+        step.ended(said.map_err(|why| {
             why.refusal().cloned().unwrap_or_else(|| session::Refusal {
                 code: String::new(),
                 why: why.to_string(),
             })
-        })
+        }))
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.

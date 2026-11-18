@@ -144,13 +144,11 @@ impl CommandConnector {
     /// One connection: checked, prepared and run.
     async fn connected(self) -> std::io::Result<Connected> {
         let checked = self.before_each.clone();
-        let mut check = purlis_session_protocol::steps::begin("link_check");
+        let check = purlis_session_protocol::steps::begin("link_check");
         let checked = tokio::task::spawn_blocking(move || checked())
             .await
             .map_err(std::io::Error::other)?;
-        if checked.is_err() {
-            check.refused();
-        }
+        let checked = check.ended(checked);
         checked.map_err(|why| match why {
             NotChecked::Refused(why) => std::io::Error::other(why),
             NotChecked::KeyChanged(why) => {
@@ -160,7 +158,6 @@ impl CommandConnector {
                 std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
             }
         })?;
-        drop(check);
         let prepare_step = purlis_session_protocol::steps::begin("link_prepare");
         let prepared = match self.prepare.clone() {
             Some(prepare) => Some(
@@ -171,8 +168,8 @@ impl CommandConnector {
             ),
             None => None,
         };
-        drop(prepare_step);
-        let _spawn = purlis_session_protocol::steps::begin("link_exec_spawn");
+        prepare_step.done();
+        let spawn = purlis_session_protocol::steps::begin("link_exec_spawn");
         let mut command = tokio::process::Command::new(&self.program);
         let held = prepared.map(|prepared| {
             command.envs(prepared.env);
@@ -191,6 +188,7 @@ impl CommandConnector {
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             return Err(std::io::Error::other("the connector's stdio was not piped"));
         };
+        spawn.done();
         Ok(Connected {
             _child: child,
             _held: held,

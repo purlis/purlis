@@ -370,7 +370,7 @@ pub(crate) async fn connect_kept<S: AsyncRead + AsyncWrite + Unpin + Send + 'sta
     answering: &Pinned,
     liveness: Liveness,
 ) -> Result<(Link, channel::Ends), LinkRefused> {
-    let _step = crate::steps::begin("link_handshake");
+    let step = crate::steps::begin("link_handshake");
     let (stream, ends) = within_the_handshake(async {
         let (version, offered, io) = version::offer_opening_with(io, &speaks(), MAGIC)
             .await
@@ -389,6 +389,7 @@ pub(crate) async fn connect_kept<S: AsyncRead + AsyncWrite + Unpin + Send + 'sta
     })
     .await?;
     let link = link::connect_proven(stream, session::speaks()).await?;
+    step.done();
     Ok((link, ends))
 }
 

@@ -2303,7 +2303,7 @@ impl Hosting {
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
         let _starting = self.starting(&start)?;
-        let _step = purlis_session_protocol::steps::begin("harness_spawn");
+        let step = purlis_session_protocol::steps::begin("harness_spawn");
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -2688,6 +2688,7 @@ impl Hosting {
         });
         // How it runs sandboxed, as recorded above: what a window that started it by its names
         // judges it by (1.29, #2692).
+        step.done();
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),

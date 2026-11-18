@@ -599,7 +599,7 @@ pub fn engine_holds(
     route: &Route,
     pin: &Pin,
 ) -> Result<(), Finding> {
-    let _step = purlis_session_protocol::steps::begin("engine_pin_check");
+    let step = purlis_session_protocol::steps::begin("engine_pin_check");
     let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
         host: route.host().to_owned(),
         said: why.0,
@@ -616,8 +616,10 @@ pub fn engine_holds(
         },
     };
     if now == pin.engine {
+        step.done();
         return Ok(());
     }
+    // A pin that changed is a finding the check made: the check itself is refused.
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),
         pinned: pin.engine.shown(),
