@@ -1309,8 +1309,17 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         // the keyring never saw kept, or whose anchor was taken away: broken (the re-review of
         // #6992), since the app keeps the anchor before it writes any record.
         (Some(_), Some(true), Some(accepted)) => PolicyAccepted::Held(accepted),
-        // Nothing here, and the keyring never kept one either.
-        (None, None, None) => PolicyAccepted::Never,
+        // Nothing here, and the keyring never kept one either. Where the key does not read,
+        // nothing verifies and the keyring's marker alone says whether one was kept (#7153): a
+        // record taken away then is broken, never the shipped default, so no accepted deny is
+        // dropped.
+        (None, None, None)
+            if crate::secrets::seal::can_seal()
+                || no_keyring_at(root)
+                || !crate::secrets::seal::kept_exists(POLICY_KIND, &clone) =>
+        {
+            PolicyAccepted::Never
+        }
         _ => PolicyAccepted::Broken,
     }
 }
@@ -1321,6 +1330,40 @@ pub fn policy_accepted(root: &Path) -> Option<std::collections::BTreeMap<String,
         PolicyAccepted::Held(accepted) => Some(accepted),
         PolicyAccepted::Never | PolicyAccepted::Broken => None,
     }
+}
+
+/// **Whether the app found no keyring as it started and the plane at `root` says none was ever
+/// used here** (#7153): no sealed record on this machine, this file's or the nevers'
+/// ([`crate::dispatchnever::sealed_here`]). Only then is nothing kept, a declared gap the
+/// window says. Where a sealed record is there, a keyring was used, so no keyring now is one
+/// whose start-up failed (keyring 4 does not try again in the same process): what it may hold
+/// is unknown, never none.
+///
+/// What this does not catch: every sealed record taken away along with the keyring's start-up
+/// failing, which reads as a machine that never had a keyring.
+pub fn no_keyring_at(root: &Path) -> bool {
+    crate::secrets::seal::no_keyring()
+        && !sealed_here(root)
+        && !crate::dispatchnever::sealed_here(root)
+}
+
+/// Whether this machine's file for the project at `root` carries a seal the app made: an
+/// acceptance of `[policy]`, or a set of dispatch answers sealed at least once. A file that is
+/// there and does not read may carry one.
+fn sealed_here(root: &Path) -> bool {
+    let file = path(root);
+    if file.as_os_str().is_empty() {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return file.exists();
+    };
+    serde_json::from_str::<OnDisk>(&text).map_or(true, |held| {
+        held.policy_seal.is_some()
+            || held.policy_counter > 0
+            || held.dispatch_sealed.generation > 0
+            || !held.dispatch_sealed.is_empty()
+    })
 }
 
 /// **Whether an acceptance was kept for `root` that does not hold now** (Q308b): edited, removed,

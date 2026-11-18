@@ -610,6 +610,20 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
 }
 
 #[test]
+fn an_acceptance_removed_while_the_seal_key_does_not_read_is_broken_never_none() {
+    // #7153: with no key nothing verifies, but the keyring's marker still says one was kept, so
+    // a record taken away is broken, never the shipped default, and no accepted deny is dropped.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    std::fs::remove_file(machine_file(root.path())).expect("the record gone");
+    crate::secrets::seal::set_for_this_test(None);
+    let record = crate::sandbox::local::policy_accepted_record(root.path());
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(record, crate::sandbox::local::PolicyAccepted::Broken);
+}
+
+#[test]
 fn an_older_sealed_acceptance_put_back_reads_as_strict() {
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
@@ -1062,8 +1076,13 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()), Resolved::strict());
+    assert!(in_force(root.path()).denies().is_all());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
+    // Every dispatch across personas was denied while it could not read, and that deny is no
+    // more kept than the modes are (#7153): nothing is denied, and no deny waits to be lifted.
+    assert!(in_force(root.path()).denies().is_empty());
+    assert!(standing(root.path()).lifted.is_empty());
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     assert!(waiting(root.path()).is_empty());
 }
