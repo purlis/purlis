@@ -167,6 +167,8 @@ export function ClusterFields({
   );
 }
 
+const VOUCH_WRONG = "Give a whole number of minutes, or leave it empty.";
+
 const CHECK_LEAD =
   "Doctor looks at what the cluster has before anything changes. It only reads, with your own sign-in.";
 
@@ -553,6 +555,7 @@ export function ClusterPoolStep({
   };
   const [chosen, choose] = useState<string | undefined>(pools[0]);
   const [claiming, setClaiming] = useState<Claiming>({ state: "idle" });
+  const [vouch, setVouch] = useState("");
   const [checkingKey, setCheckingKey] = useState(false);
   const context = contexts.chosen ?? contexts.recommended ?? undefined;
   const next = step.next;
@@ -600,7 +603,7 @@ export function ClusterPoolStep({
     // Checking a paste keeps its box where it is, with the person's focus in it.
     if (claiming.state === "keyed") setCheckingKey(true);
     else setClaiming({ state: "busy", said: "Reading the cluster operator key the pool names." });
-    const key = await checkClusterPoolKey("", context, pool, pasted);
+    const key = await checkClusterPoolKey(contexts.kubeconfig ?? "", context, pool, pasted);
     setCheckingKey(false);
     if ("trouble" in key) {
       setClaiming({ state: "refused", why: key.trouble });
@@ -616,6 +619,8 @@ export function ClusterPoolStep({
     if (key.matches === false) setPasteWhy(keyNotConfirmed(key, pool));
   };
 
+  const vouchMinutes = /^\d+$/.test(vouch.trim()) ? Number(vouch.trim()) : null;
+
   const claim = async (keyed: Extract<Claiming, { state: "keyed" }>) => {
     if (context === undefined) return;
     if (keyed.key === null) {
@@ -626,11 +631,12 @@ export function ClusterPoolStep({
     setClaiming({ state: "busy", said: "Claiming your runner. This can take a few minutes." });
     const refused = await addClusterPool({
       name: keyed.pool,
-      kubeconfig: null,
+      // The one file the cluster was chosen from (#7192), never the default behind its back.
+      kubeconfig: contexts.kubeconfig,
       context,
       pool: keyed.pool,
       pasted: keyed.madeHere ? null : pasted,
-      vouch_wait: null,
+      vouch_wait: vouchMinutes,
     });
     if (refused !== undefined) {
       setClaiming({ state: "refused", why: refused.words });
@@ -722,6 +728,19 @@ export function ClusterPoolStep({
                 ? "By its digest. This build of purlis names none."
                 : "By its digest. Recommended: purlis's image of this version, shown in the box."
             }
+          />
+        </Options>
+      )}
+      {!making && step.state !== "done" && claiming.state !== "busy" && (
+        <Options>
+          <TextField
+            label="Longest wait for a cluster runner to be vouched for"
+            value={vouch}
+            onChange={setVouch}
+            inputMode="numeric"
+            placeholder="5"
+            error={vouchMinutes === null && vouch.trim() !== "" ? VOUCH_WRONG : undefined}
+            help="In minutes, as this pool's own limit. If the cluster's operator hasn't vouched for your runner by then, purlis says why it stopped waiting. Recommended: 5."
           />
         </Options>
       )}

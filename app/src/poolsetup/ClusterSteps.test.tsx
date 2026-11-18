@@ -244,6 +244,64 @@ describe("The Pool step on a cluster (#4494)", () => {
     });
     expect(sent).toContainEqual({ cmd: "pool_setup_pool", args: { name: "team" } });
   });
+
+  it("adds the pool through the one kubeconfig file chosen on Where, never the default behind its back (#7192)", async () => {
+    const sent = cluster(true);
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={{ ...CONTEXTS(["team"]), kubeconfig: "/work/team.yaml" }}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    await screen.findByText("Check the cluster operator key");
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "add_cluster_pool",
+        args: {
+          adding: expect.objectContaining({ kubeconfig: "/work/team.yaml", context: "kind-team" }),
+        },
+      }),
+    );
+    expect(sent).toContainEqual({
+      cmd: "cluster_pool_key",
+      args: expect.objectContaining({ kubeconfig: "/work/team.yaml" }),
+    });
+  });
+});
+
+describe("The vouch wait is a pool option (#7191)", () => {
+  it("sends the minutes typed as the pool's own wait, and says the default where none is typed", async () => {
+    const sent = cluster(true);
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={CONTEXTS(["team"])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    const wait = screen.getByRole("textbox", {
+      name: "Longest wait for a cluster runner to be vouched for",
+    });
+    expect(wait).toHaveAttribute("placeholder", "5");
+    await userEvent.type(wait, "10");
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    await screen.findByText("Check the cluster operator key");
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "add_cluster_pool",
+        args: { adding: expect.objectContaining({ vouch_wait: 10 }) },
+      }),
+    );
+  });
 });
 
 const JOINING = (pools: string[]) => ({ ...CONTEXTS(pools), joining: true });
