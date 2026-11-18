@@ -200,6 +200,18 @@ fn a_file_the_runner_keeps_is_not_shown_even_when_it_was_opened_on_an_ask() {
 }
 
 #[test]
+fn a_file_the_runner_could_not_tell_of_is_not_shown_and_the_tab_says_so() {
+    let mut runner = fake(b"");
+    runner.answer = Some(FileRead::Unsure {
+        path: "/w/second.md".into(),
+    });
+
+    let said = reads(&runner).read("/w/second.md", None).unwrap_err();
+
+    assert_eq!(said, format!("{}.", purlis_core::panelinks::RUNNER_UNSURE));
+}
+
+#[test]
 fn pieces_that_run_past_the_files_size_are_refused() {
     let mut runner = fake(b"");
     runner.answer = Some(FileRead::Plain {

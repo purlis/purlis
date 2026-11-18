@@ -842,3 +842,154 @@ fn a_workspace_file_named_in_another_case_on_a_disk_that_folds_it_is_the_workspa
 
     assert_eq!(plain(&r.look(&shouted)).1, Some("repos/web/src/main.rs"));
 }
+
+/// What a chat whose project is `project` is told of `path` on a runner with `machine`.
+fn look_from(
+    project: &Path,
+    cwd: &Path,
+    machine: &crate::sandbox::Machine,
+    path: &str,
+) -> FileRead {
+    read_for_window(&Asked {
+        project,
+        cwd: Some(cwd),
+        path,
+        reach: FileReach::Anywhere,
+        at: None,
+        machine,
+        guarded: &[],
+    })
+}
+
+#[test]
+fn a_project_that_is_the_runners_whole_home_still_has_purlis_own_folders_kept() {
+    let r = runner();
+    let in_data = r.home.join(".local/share/purlis/app/events.jsonl");
+    let in_config = r.home.join(".config/purlis/machine.json");
+    let own = r.home.join("notes.md");
+    for file in [&in_data, &in_config, &own] {
+        write(file, b"{}\n");
+    }
+
+    for path in [&in_data, &in_config] {
+        let shown = r.shown(path);
+        assert!(
+            kept(&look_from(&r.home, &r.home, &r.machine, &shown)),
+            "{shown}"
+        );
+    }
+    let found = look_from(&r.home, &r.home, &r.machine, &r.shown(&own));
+    assert!(
+        matches!(found, FileRead::Plain { .. }),
+        "the project's own file is read: {found:?}"
+    );
+}
+
+#[test]
+fn a_project_that_is_the_root_still_has_purlis_own_folders_kept() {
+    let r = runner();
+    let in_data = r.home.join(".local/share/purlis/app/events.jsonl");
+    write(&in_data, b"{}\n");
+
+    let found = look_from(
+        Path::new("/"),
+        Path::new("/"),
+        &r.machine,
+        &r.shown(&in_data),
+    );
+
+    assert!(kept(&found), "{found:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_above_the_data_home_has_purlis_own_folders_kept_by_a_hard_link_too() {
+    let r = runner();
+    let in_data = r.home.join(".local/share/purlis/app/events.jsonl");
+    write(&in_data, b"{}\n");
+    std::fs::hard_link(&in_data, r.home.join("second.md")).expect("a second name");
+
+    let found = look_from(
+        &r.home,
+        &r.home,
+        &r.machine,
+        &r.shown(&r.home.join("second.md")),
+    );
+
+    assert!(kept(&found), "{found:?}");
+}
+
+#[test]
+fn what_the_host_keeps_for_itself_is_kept_on_the_runner_too() {
+    let r = runner();
+    let runtime = r.home.join("run");
+    let machine = crate::sandbox::Machine {
+        env: crate::secrets::Env::of(&[("XDG_RUNTIME_DIR", runtime.to_str().expect("text"))]),
+        home: Some(r.home.clone()),
+        os: crate::sandbox::Os::Linux,
+    };
+    let files = [
+        r.home.join(".local/share/dev.purlis.app/logs/app.log"),
+        runtime.join("purlis/host.sock"),
+    ];
+    for file in &files {
+        write(file, b"x\n");
+    }
+
+    for file in &files {
+        let shown = r.shown(file);
+        let found = look_from(&r.project, &r.cwd, &machine, &shown);
+        assert!(kept(&found), "{shown}: {found:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_swapped_for_another_after_the_path_was_judged_is_not_opened() {
+    let r = runner();
+    let path = r.shown(&r.cwd.join("src/main.rs"));
+    let swap = |_: &Path| {
+        let folder = r.cwd.join("src");
+        std::fs::rename(&folder, r.cwd.join("src.old")).expect("moved aside");
+        write(&folder.join("main.rs"), b"fn other() {}\n");
+    };
+
+    let found = super::read_checked(
+        &r.asked(&path, FileReach::Workspace, Some(0)),
+        &super::Probe {
+            between: &swap,
+            ..super::Probe::default()
+        },
+    );
+
+    assert_eq!(found, FileRead::NotThere);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_with_more_other_names_to_look_through_than_the_walk_allows_is_unsure_not_kept() {
+    let r = runner();
+    write(&r.home.join(".local/share/purlis/app/a.json"), b"{}\n");
+    write(&r.home.join(".local/share/purlis/app/b.json"), b"{}\n");
+    std::fs::hard_link(&r.outside, r.cwd.join("hosts")).expect("a second name");
+
+    let found = super::read_checked(
+        &r.asked("hosts", FileReach::Workspace, None),
+        &super::Probe {
+            most: 1,
+            ..super::Probe::default()
+        },
+    );
+
+    assert!(matches!(found, FileRead::Unsure { .. }), "{found:?}");
+}
+
+#[test]
+fn a_vault_registry_that_does_not_read_is_unsure_not_kept() {
+    let r = runner();
+    write(&r.project.join("vaults.json"), b"{ not json");
+
+    let found = r.look("src/main.rs");
+
+    assert!(matches!(found, FileRead::Unsure { .. }), "{found:?}");
+}

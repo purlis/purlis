@@ -58,8 +58,8 @@
 //! and listed by `reach_of` until it is used (T1-34, R-291, ids 213 to 215), and told used up
 //! or put out, so the window audits its end (Q278), 1.92's Try now of a relaying host's
 //! link (#7134, id 216), 1.93's file a chat on a runner printed, looked at and read for
-//! the window (#6387, ids 217 and 218), and 1.94's file a runner keeps from its window (#7064,
-//! id 219).
+//! the window (#6387, ids 217 and 218), and 1.94's file a runner keeps from its window and
+//! one it could not tell of (#7064, ids 219 and 220).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

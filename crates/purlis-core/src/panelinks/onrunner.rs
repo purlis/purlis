@@ -67,6 +67,27 @@ const SYSTEMS_OWN: [&str; 3] = ["/proc", "/sys", "/dev"];
 
 /// **What `asked` names, as this host finds it**, and its bytes from `asked.at`, if any.
 pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
+    read_checked(asked, &Probe::default())
+}
+
+/// What a test puts into a read: a step between what is judged and what is opened, and the
+/// budget of the look for a file's other names.
+struct Probe<'a> {
+    /// Called with the resolved path once it is judged, before anything is opened.
+    between: &'a dyn Fn(&Path),
+    most: usize,
+}
+
+impl Default for Probe<'_> {
+    fn default() -> Self {
+        Self {
+            between: &|_| {},
+            most: crate::files::kept::WALKED,
+        }
+    }
+}
+
+fn read_checked(asked: &Asked<'_>, probe: &Probe<'_>) -> FileRead {
     let text = asked.path;
     if text.is_empty() || text.starts_with('~') || text.chars().any(char::is_control) {
         return FileRead::NotThere;
@@ -99,10 +120,14 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if SYSTEMS_OWN.iter().any(|own| resolved.starts_with(own)) {
         return FileRead::NotPlain { path };
     }
-    let kept = kept::Kept::of(asked.project, asked.machine);
-    if kept.holds(&resolved) {
-        return FileRead::Kept { path };
+    let kept = kept::Kept::of(asked.project, asked.machine, probe.most);
+    match kept.holds(&resolved) {
+        kept::Held::No => {}
+        kept::Held::Kept => return FileRead::Kept { path },
+        kept::Held::Unsure => return FileRead::Unsure { path },
     }
+    // The folders as the walk found them, to hold what is opened to them.
+    let walked: Vec<_> = resolved.ancestors().skip(1).map(kept::id_of_path).collect();
     let home = home_of(asked);
     let from_workspace = home
         .as_ref()
@@ -113,7 +138,8 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if !std::fs::symlink_metadata(&resolved).is_ok_and(|meta| meta.is_file()) {
         return FileRead::NotPlain { path };
     }
-    let Ok(file) = open_plain(&resolved) else {
+    (probe.between)(&resolved);
+    let Ok(file) = open_plain(&resolved, &walked) else {
         return FileRead::NotThere;
     };
     let Ok(meta) = file.metadata() else {
@@ -122,8 +148,10 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if !meta.is_file() {
         return FileRead::NotPlain { path };
     }
-    if kept.holds_the_file(&meta) {
-        return FileRead::Kept { path };
+    match kept.holds_the_file(&meta) {
+        kept::Held::No => {}
+        kept::Held::Kept => return FileRead::Kept { path },
+        kept::Held::Unsure => return FileRead::Unsure { path },
     }
     let size = meta.len();
     if size > MOST_FILE_READ {
@@ -218,9 +246,15 @@ fn slashed(path: &Path) -> Option<String> {
 
 /// **`path` (resolved, so holding no link) opened one folder at a time with no link
 /// followed**, without waiting on a pipe and never becoming its terminal: a part swapped for a
-/// link since the path was resolved is refused.
+/// link since the path was resolved is refused. Each folder opened is held to the folder the
+/// walk found there (`walked`, the identities of the folders above the file, nearest first),
+/// so a folder swapped for another between the walk and the open is refused as well.
 #[cfg(unix)]
-fn open_plain(path: &Path) -> std::io::Result<std::fs::File> {
+fn open_plain(
+    path: &Path,
+    walked: &[Option<crate::files::kept::Id>],
+) -> std::io::Result<std::fs::File> {
+    use crate::files::kept::id_of;
     use rustix::fs::{CWD, Mode, OFlags, openat};
 
     let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
@@ -235,9 +269,18 @@ fn open_plain(path: &Path) -> std::io::Result<std::fs::File> {
         return Err(std::io::ErrorKind::InvalidInput.into());
     };
     let folder_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let mut at = openat(CWD, "/", folder_flags, Mode::empty())?;
+    // `walked` runs from the folder holding the file up to the root: the root, then each
+    // folder down, is its reverse.
+    let mut expected = walked.iter().rev();
+    let mut at = std::fs::File::from(openat(CWD, "/", folder_flags, Mode::empty())?);
     for folder in folders {
-        at = openat(&at, *folder, folder_flags, Mode::empty())?;
+        if at.metadata().ok().as_ref().and_then(id_of) != expected.next().copied().flatten() {
+            return Err(std::io::ErrorKind::NotFound.into());
+        }
+        at = std::fs::File::from(openat(&at, *folder, folder_flags, Mode::empty())?);
+    }
+    if at.metadata().ok().as_ref().and_then(id_of) != expected.next().copied().flatten() {
+        return Err(std::io::ErrorKind::NotFound.into());
     }
     let file_flags =
         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC;
@@ -250,7 +293,10 @@ fn open_plain(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 #[cfg(not(unix))]
-fn open_plain(path: &Path) -> std::io::Result<std::fs::File> {
+fn open_plain(
+    path: &Path,
+    _walked: &[Option<crate::files::kept::Id>],
+) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 

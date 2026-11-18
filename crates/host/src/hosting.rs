@@ -4629,10 +4629,12 @@ fn a_note_that_fits(note: Option<&session::ProgramNote>) -> Result<(), Refusal> 
 }
 
 /// **`read` as a window of `version` hears it** (#7064): one before 1.94 knows no
-/// [`session::FileRead::Kept`], so a file kept from it is not there, and stays no link.
+/// [`session::FileRead::Kept`], and no [`session::FileRead::Unsure`], so a file kept from it, or one the host could not tell of, is not there and stays no link.
 pub(crate) fn said_to(read: session::FileRead, version: Version) -> session::FileRead {
     match read {
-        session::FileRead::Kept { .. } if version < session::KNOWS_KEPT_FILES => {
+        session::FileRead::Kept { .. } | session::FileRead::Unsure { .. }
+            if version < session::KNOWS_KEPT_FILES =>
+        {
             session::FileRead::NotThere
         }
         read => read,

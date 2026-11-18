@@ -891,6 +891,17 @@ fn a_window_before_1_94_hears_a_kept_file_as_not_there() {
         crate::hosting::said_to(kept(), session::KNOWS_KEPT_FILES),
         kept()
     );
+    let unsure = || session::FileRead::Unsure {
+        path: "/home/purlis/projects/p/second.md".into(),
+    };
+    assert_eq!(
+        crate::hosting::said_to(unsure(), older),
+        session::FileRead::NotThere
+    );
+    assert_eq!(
+        crate::hosting::said_to(unsure(), session::KNOWS_KEPT_FILES),
+        unsure()
+    );
     assert_eq!(
         crate::hosting::said_to(session::FileRead::NotThere, older),
         session::FileRead::NotThere

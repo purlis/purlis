@@ -4328,3 +4328,13 @@ fn a_window_that_comes_back_to_a_runners_chat_hears_what_it_started_without_ther
         );
     }
 }
+
+#[test]
+fn a_runner_before_1_94_is_not_asked_for_a_file_and_one_from_1_94_is() {
+    use purlis_session_protocol::version::Version;
+    let at = |minor| Version { major: 1, minor };
+
+    assert!(!runner_keeps_files_from_its_window(at(93)));
+    assert!(runner_keeps_files_from_its_window(at(94)));
+    assert!(runner_keeps_files_from_its_window(session::VERSION));
+}

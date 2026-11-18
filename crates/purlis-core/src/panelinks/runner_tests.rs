@@ -96,6 +96,12 @@ fn fake() -> Fake {
                     path: "/home/purlis/.codex/auth.json".into(),
                 },
             ),
+            (
+                "/w/second.md",
+                FileRead::Unsure {
+                    path: "/w/second.md".into(),
+                },
+            ),
         ],
         ..Fake::default()
     }
@@ -261,6 +267,19 @@ fn a_binary_or_too_large_file_is_no_link_and_says_why() {
             Hover::NotALink(said) => assert!(said.contains(why), "{text}: {said}"),
             other => panic!("{text}: expected no link, got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn a_file_the_runner_could_not_tell_of_says_so_and_not_that_it_is_kept() {
+    let runner = fake();
+
+    match links(&runner).hover(&file("/w/second.md"), &on_runner()) {
+        Hover::NotALink(said) => {
+            assert_eq!(said, super::RUNNER_UNSURE);
+            assert_ne!(said, super::RUNNER_KEPT);
+        }
+        other => panic!("expected no link, got {other:?}"),
     }
 }
 

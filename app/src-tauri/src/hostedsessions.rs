@@ -91,6 +91,16 @@ fn switched_on(value: Option<&str>) -> bool {
     value != Some("0")
 }
 
+/// **Whether a runner of session protocol `version` is asked for a file** (#6387, #7064): only
+/// one that keeps its own folders and sign-ins from the window ([`session::KNOWS_KEPT_FILES`]),
+/// so a runner before it, which would read them, is never asked and its chat's paths stay no
+/// link.
+pub(crate) fn runner_keeps_files_from_its_window(
+    version: purlis_session_protocol::version::Version,
+) -> bool {
+    version >= session::KNOWS_KEPT_FILES
+}
+
 /// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):
 /// every project's chats run in the host `connection` reaches, over a link of each root's own;
 /// their hooks are heard through the host, which owns each project's hook channel, so nothing
@@ -5478,7 +5488,7 @@ impl SessionHost for HostedSessions {
             return None;
         }
         let link = self.own_link(Duration::ZERO).ok()?;
-        if link.version() < session::KNOWS_READ_FILE {
+        if !runner_keeps_files_from_its_window(link.version()) {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();

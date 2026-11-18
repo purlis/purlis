@@ -157,6 +157,9 @@ impl ReadsOnRunner {
                 FileRead::Kept { .. } => {
                     return Err(format!("{}.", purlis_core::panelinks::RUNNER_KEPT));
                 }
+                FileRead::Unsure { .. } => {
+                    return Err(format!("{}.", purlis_core::panelinks::RUNNER_UNSURE));
+                }
                 FileRead::NotThere | FileRead::NotPlain { .. } => {
                     return Err(self.said("no longer has this file"));
                 }

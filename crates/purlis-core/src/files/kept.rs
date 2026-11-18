@@ -35,21 +35,38 @@ use std::path::{Component, Path, PathBuf};
 
 use super::{Branch, Refused};
 
-/// The most entries of the kept folders [`a_name_in`] looks at for a file with
+/// The most entries of the kept folders [`names_in`] looks at for a file with
 /// several names. Past it the file is refused: purlis could not tell, so it does not open.
-const WALKED: usize = 20_000;
+pub(crate) const WALKED: usize = 20_000;
+
+/// What a look through folders for the other names of a file found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Names {
+    /// A name of the file is in them.
+    Found,
+    /// None is.
+    None,
+    /// More entries than [`WALKED`]: purlis could not tell.
+    Untold,
+}
 
 /// **Whether a file whose identity is `id` has a name in one of `folders`**, looked through
 /// down to their last entry, never through a link, but where `skipped` says a folder is not
 /// looked in. A file purlis could not tell of within [`WALKED`] entries is counted as having
-/// one. The host's guard asks it, and so does a runner for its window
-/// (`panelinks::onrunner`, #7077).
-pub(crate) fn a_name_in(
+/// one. The host's guard asks it.
+pub(crate) fn a_name_in(folders: Vec<PathBuf>, id: Id, skipped: &dyn Fn(&Path) -> bool) -> bool {
+    names_in(folders, id, skipped, WALKED) != Names::None
+}
+
+/// [`a_name_in`], saying whether it could not tell, within `most` entries. A runner asks it
+/// for its window (`panelinks::onrunner`, #7077), so its hover can say it could not tell.
+pub(crate) fn names_in(
     mut folders: Vec<PathBuf>,
     id: Id,
     skipped: &dyn Fn(&Path) -> bool,
-) -> bool {
-    let mut left = WALKED;
+    most: usize,
+) -> Names {
+    let mut left = most;
     while let Some(folder) = folders.pop() {
         if skipped(&folder) {
             continue;
@@ -60,7 +77,7 @@ pub(crate) fn a_name_in(
         };
         for entry in listed.flatten() {
             if left == 0 {
-                return true;
+                return Names::Untold;
             }
             left -= 1;
             let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
@@ -69,11 +86,11 @@ pub(crate) fn a_name_in(
             if meta.is_dir() {
                 folders.push(entry.path());
             } else if id_of(&meta) == Some(id) {
-                return true;
+                return Names::Found;
             }
         }
     }
-    false
+    Names::None
 }
 
 /// What a read of one place leaves out: what purlis keeps to itself, in every place, and at
