@@ -285,9 +285,15 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // which the segment walk keeps as a word: read the line again with its patterns blanked, and
     // the arm's commands are segments of their own (#7131). Only the segments that are new are
     // added: a copy of each would be read again at every depth of an `eval` chain.
-    for toks in commands_of(&in_command_position(&runs).0) {
-        if !segments.contains(&toks) {
-            segments.push(toks);
+    let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
+    let (lines, unparsed_case) = in_command_position(&shell_lines);
+    // Only a line something was blanked out of reads differently, so no other is read twice.
+    if lines != shell_lines {
+        let mut read: std::collections::HashSet<Vec<String>> = segments.iter().cloned().collect();
+        for toks in commands_of(&lines) {
+            if read.insert(toks.clone()) {
+                segments.push(toks);
+            }
         }
     }
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
@@ -316,7 +322,6 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // shell runs the line as a command: a heredoc body's substitution is data in its place.
     // A glob or a brace counts only where a command starts: not in a `case` pattern, an
     // arithmetic expansion or an array's words, nor in a body an interpreter runs.
-    let (lines, unparsed_case) = in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
     // A `case` the reader does not fully parse could hide any command in what it took for a
     // pattern, so it is unreadable outright (#7131, round 6).
     if unparsed_case {
