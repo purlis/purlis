@@ -568,8 +568,9 @@ fn segment_reason(
 
 /// The CLIs a program the shell fills in is read as (#7124): each one the floor reads a
 /// command of. `$(echo gh) pr merge 12` is refused because it would be as `gh`; `$EDITOR
-/// notes.md` is read as each and refused as none.
-const FILLED_IN_PROGRAM_READ_AS: [&str; 4] = ["gh", "glab", "git", crate::cliname::ALIAS];
+/// notes.md` is read as each and refused as none. As `bash`, a shell filled in (`$SHELL -c
+/// '…'`, `$(which sh) -c '…'`) has its script read (#7131).
+const FILLED_IN_PROGRAM_READ_AS: [&str; 5] = ["gh", "glab", "git", crate::cliname::ALIAS, "bash"];
 
 /// How a refusal of a command word the shell fills in ends (#7124).
 const WRITE_IT_OUT: &str = "Write the command's program, noun and verb out literally.";
@@ -872,8 +873,8 @@ const GIT_PATH_OPTIONS: [&str; 9] = [
 /// **Whether a substitution's body only prints a path** (#7131), so a program word built from it
 /// is a path and not a command: one simple command, with no operator, redirection or
 /// substitution in it, that is `git rev-parse` with options that print a checkout's path,
-/// `dirname`, `pwd`, `brew --prefix`, `which` or `command -v` of one name, or `realpath` or
-/// `readlink -f` of one path. Each operand is one literal word with no blank, glob or brace in
+/// `dirname`, `realpath` or `readlink -f` of one path, `pwd`, `brew --prefix`, or `which` or
+/// `command -v` of one name. Each operand is one literal word with no blank, glob or brace in
 /// it, or the script's own path ([`SCRIPT_PATHS`]): `dirname 'gh pr merge 12/x'` prints a
 /// command. Anything else could print any command, and is held.
 fn prints_only_a_path(body: &str) -> bool {
@@ -894,7 +895,9 @@ fn prints_only_a_path(body: &str) -> bool {
         ["git", "rev-parse", ref options @ ..] => {
             !options.is_empty() && options.iter().all(|o| GIT_PATH_OPTIONS.contains(o))
         }
-        ["dirname", ref paths @ ..] => !paths.is_empty() && paths.iter().all(|p| path(p)),
+        // One operand: `dirname` prints a line per operand, and the shell splits them into
+        // words, so `dirname a/gh b/pr c/merge` prints `a b c`.
+        ["dirname", p] => path(p) && !p.starts_with('-'),
         ["pwd"] | ["pwd", "-L" | "-P"] | ["brew", "--prefix"] => true,
         ["brew", "--prefix", formula] => literal(formula) && !formula.starts_with('-'),
         ["which", name] | ["command", "-v", name] => literal(name),
@@ -914,7 +917,11 @@ fn in_command_position(line: &str) -> String {
         return line;
     };
     let toks = shellseg::split_punctuation(toks);
-    let mut chars: Vec<char> = line.chars().collect();
+    let source: Vec<char> = line.chars().collect();
+    let mut chars = source.clone();
+    // What a blanked span keeps: a `case` word's substitution bodies, each a command ended by
+    // `;`, which still run.
+    let mut kept: Vec<(usize, char)> = Vec::new();
     let mut blank = |from: isize, to: isize| {
         let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
             return;
@@ -1018,23 +1025,35 @@ fn in_command_position(line: &str) -> String {
             cases.pop();
             at_command = false;
         } else if at_command && bare("case") {
-            // `case WORD in`, and only that, opens the patterns.
-            let word = toks
-                .get(i + 1)
-                .filter(|w| !(w.bare && w.text.chars().all(|c| "();<>|&\n".contains(c))));
-            let mut k = i + 2;
+            // `case WORD in`, and only that, opens the patterns. The word may be several tokens:
+            // a substitution (`$(uname -s)`, `` `uname` ``) and what it is joined to.
+            let word_end = shell_word_end(&toks, i + 1);
+            let mut k = word_end.unwrap_or(i + 1);
             while toks.get(k).is_some_and(|t| t.bare && t.text == "\n") {
                 k += 1;
             }
-            match (word, toks.get(k)) {
-                (Some(_), Some(word_in)) if word_in.bare && word_in.text == "in" => {
+            match (word_end, toks.get(k)) {
+                (Some(end), Some(word_in)) if word_in.bare && word_in.text == "in" => {
                     blank(tok.start, word_in.end);
+                    if let (Ok(from), Ok(to)) = (
+                        usize::try_from(toks[i + 1].start),
+                        usize::try_from(toks[end - 1].end),
+                    ) {
+                        kept.extend(substitution_commands(&source, from, to.min(source.len())));
+                    }
                     cases.push(Case::Patterns);
                     i = k + 1;
                     continue;
                 }
                 _ => at_command = false,
             }
+        } else if at_command && bare("function") {
+            // `function NAME`: the name is no command, and the body's `{` or `(` comes next.
+            if let Some(name) = toks.get(i + 1) {
+                blank(tok.start, name.end);
+            }
+            i += 2;
+            continue;
         } else if at_command && tok.bare && COMMAND_FOLLOWS.contains(&tok.text.as_str()) {
             // A reserved word a command follows leaves the next word where a command starts.
         } else if at_command && is_assignment(&tok.text) {
@@ -1044,7 +1063,86 @@ fn in_command_position(line: &str) -> String {
         }
         i += 1;
     }
+    for (at, c) in kept {
+        if let Some(slot) = chars.get_mut(at) {
+            *slot = c;
+        }
+    }
     chars.into_iter().collect()
+}
+
+/// One past the last token of the shell word that starts at `at`, or `None` where an operator
+/// stands there or a substitution in it does not close: the tokens joined to it with no blank
+/// between, and each command substitution's (`$(…)`, `` `…` ``) whole, blanks and all.
+fn shell_word_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
+    let operator = |t: &shellseg::Tok| t.bare && t.text.chars().all(|c| "();<>|&\n".contains(c));
+    let mut depth = 0usize;
+    let mut backtick = false;
+    let mut j = at;
+    while let Some(t) = toks.get(j) {
+        let opens = t.bare
+            && t.text == "("
+            && j.checked_sub(1)
+                .and_then(|k| toks.get(k))
+                .is_some_and(|prev| j > at && prev.end == t.start && prev.text.ends_with('$'));
+        if depth == 0 && !backtick && operator(t) && !opens {
+            break;
+        }
+        if t.bare && t.text == "(" && (opens || depth > 0) {
+            depth += 1;
+        } else if t.bare && t.text == ")" && depth > 0 {
+            depth -= 1;
+        }
+        if t.text.matches('`').count() % 2 == 1 {
+            backtick = !backtick;
+        }
+        j += 1;
+        let joined = toks.get(j).is_some_and(|next| next.start == t.end);
+        if depth == 0 && !backtick && !joined {
+            break;
+        }
+    }
+    (j > at && depth == 0 && !backtick).then_some(j)
+}
+
+/// The characters of `source[from..to]` that are command substitutions' bodies, each with the
+/// close of its substitution as `;`: what a `case` word runs, kept as commands where the word
+/// is blanked. A substitution that does not close runs to `to`.
+fn substitution_commands(source: &[char], from: usize, to: usize) -> Vec<(usize, char)> {
+    let mut kept = Vec::new();
+    let mut p = from;
+    while p < to {
+        let (body, close) = if source[p] == '$' && source.get(p + 1) == Some(&'(') {
+            let mut depth = 0usize;
+            let mut q = p + 1;
+            while q < to {
+                match source[q] {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                q += 1;
+            }
+            (p + 2, q)
+        } else if source[p] == '`' {
+            let close = source[p + 1..to].iter().position(|c| *c == '`');
+            (p + 1, close.map_or(to, |at| p + 1 + at))
+        } else {
+            p += 1;
+            continue;
+        };
+        kept.extend((body..close).map(|at| (at, source[at])));
+        if close < to {
+            kept.push((close, ';'));
+        }
+        p = close + 1;
+    }
+    kept
 }
 
 /// The operators after which a command starts.
@@ -1055,8 +1153,8 @@ const REDIRECTIONS: [&str; 9] = ["<", ">", ">>", "<<", "<<<", "<&", ">&", "<>", 
 
 /// The reserved words after which a command starts, where they stand as reserved words: at a
 /// command's start themselves.
-const COMMAND_FOLLOWS: [&str; 10] = [
-    "!", "{", "then", "do", "else", "elif", "if", "while", "until", "time",
+const COMMAND_FOLLOWS: [&str; 11] = [
+    "!", "{", "then", "do", "else", "elif", "if", "while", "until", "time", "coproc",
 ];
 
 /// Whether a word is an assignment, `NAME=value`.
@@ -1206,7 +1304,8 @@ pub(crate) fn fed_lines(toks: &[String]) -> Vec<String> {
 }
 
 /// The bodies of the outermost command and process substitutions in a line: `$(…)`, `` `…` ``,
-/// `<(…)` and `>(…)`. Quoting is not read, so a substitution in single quotes is read too, which
+/// `<(…)` and `>(…)`. A `$((` is an arithmetic expansion only where it closes as `))`; one that
+/// does not is a command substitution of a subshell, as bash reads it (#7131). Quoting is not read, so a substitution in single quotes is read too, which
 /// only ever refuses more; the caller asks only of a line where the shell runs one. Unbalanced, a
 /// body runs to the end of the line. A nested one is found when its body is read in turn.
 /// Without `with_process_substitutions`, only command substitutions are read.
@@ -1218,7 +1317,9 @@ fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<Stri
         let opens = (chars[i] == '$'
             || (with_process_substitutions && matches!(chars[i], '<' | '>')))
             && chars.get(i + 1) == Some(&'(')
-            && !(chars[i] == '$' && chars.get(i + 2) == Some(&'('));
+            && !(chars[i] == '$'
+                && chars.get(i + 2) == Some(&'(')
+                && arithmetic_end(&chars, i + 1).is_some());
         if opens {
             let mut depth = 1;
             let mut j = i + 2;

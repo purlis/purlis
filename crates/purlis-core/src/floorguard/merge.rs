@@ -952,12 +952,21 @@ fn gql_close(toks: &[Gql<'_>], at: usize, open: u8, close: u8) -> Option<usize> 
 /// **The operations a GraphQL document's mutations call** (#7131): the fields each `mutation`'s
 /// top selection set selects, read past an alias (`m: mergePullRequest`), its arguments,
 /// directives and sub-selections. A field name deeper in (`baseRefName`) is no operation.
-/// `None` where the document's structure is not read whole: a selection set that does not
-/// close, or a fragment a mutation spreads, whose fields could be any operation.
+/// `None` where the document's structure is not read whole: a definition that opens with no
+/// operation's keyword, `fragment` or `{`, a selection set that does not close, or a fragment a
+/// mutation spreads, whose fields could be any operation.
 fn mutation_operations<'a>(toks: &[Gql<'a>]) -> Option<Vec<&'a str>> {
     let mut ops = Vec::new();
     let mut i = 0;
     while i < toks.len() {
+        // A definition opens with an operation's keyword, a fragment's or a selection set; any
+        // other (a description string, a type system definition) is not read (#7131).
+        if !matches!(
+            toks[i],
+            Gql::Name("query" | "mutation" | "subscription" | "fragment") | Gql::Punct(b'{')
+        ) {
+            return None;
+        }
         let mutation = toks[i] == Gql::Name("mutation");
         // A definition runs to its selection set, past a variable list's default objects.
         let mut parens = 0usize;
