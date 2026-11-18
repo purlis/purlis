@@ -5,12 +5,21 @@ and T9 (observability) wait on these numbers.
 
 ## What was added
 
-One `tracing` span and one `info` line per step, from `purlis_session_protocol::steps` (and a
-six-line twin in `purlis-browser-engine`, which does not link the protocol). The line reads
-`purlis: step <name> done after <n> ms` (`refused after` when the step ended in an error), with `(pool: <alias>)` where the step knows its pool. It goes
-to the diagnostic log (`charter.<date>.log`) and nowhere else: ADR 0075 holds, nothing leaves the
-machine, and a line never carries a host, user, path or `docker` argument (a `docker` run is
-named by its verb only). The spans are meant to stay.
+One `tracing` span and one line per step, from `purlis_session_protocol::steps` (the browser
+engine's steps use the same guard). The line reads `purlis: step <name> done after <n> ms`, with
+`(pool: <alias>)` where the step knows its pool and `(parent: <step>)` where it is inside another.
+**A step that is dropped without `done()` reads `refused after`**: every `?` and early return is
+a refusal, and only a step closed as it was for says `done`. A miss that is the answer (an
+inspect that finds no container on a normal start) is a `docker` run that was made, so `done`.
+
+The line goes to the diagnostic log (`charter.<date>.log`) and nowhere else: ADR 0075 holds,
+nothing leaves the machine. **It names the pool by its alias**: the person's own name for their
+own pool, in their own local log, and that is a ruling, not an oversight (a host name, a user, a
+path or a `docker` argument is never in a line; a `docker` run is named by its verb only, past
+any `-H`, `--context` or `--host` before it). The spans are meant to stay.
+
+The top-level steps are `info`. Each `docker` run is a line at `debug` (`RUST_LOG=purlis::step=debug`),
+the calls inside the steps.
 
 | step | where | what it covers |
 |---|---|---|
@@ -27,8 +36,12 @@ named by its verb only). The spans are meant to stay.
 | `harness_spawn` | `host/hosting.rs::start` | the host's own start of the program (on the runner for a pool) |
 | `browser_engine_prepare`, `browser_engine_download`, `browser_engine_start` | `browser-engine` | engine choice and install check; the download only when none is installed; the engine's process start until it answers |
 
-Nested steps overlap (`container_check` contains `docker_*`; `first_link` contains `link_*`), so
-do not add a column.
+**Nested steps overlap, so a sum counts them twice.** A step inside another carries a `parent`
+field (`runner_start` is under `container_check`, `browser_engine_download` under
+`browser_engine_prepare`), and the test's table has an `inside` column. `container_check`
+contains its `docker_*` calls (shown as `(a call)`), `first_link` contains `link_*` and the
+handshake, and `profile_ready` contains a `first_link`. To total a start, add only the rows with
+nothing in `inside` that are not wrappers of others, or take one wrapper alone; never every row.
 
 ## How it is measured
 
