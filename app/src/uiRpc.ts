@@ -2037,6 +2037,20 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupCheckAgain: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Try now** (#7191), on the status bar of a pool that can't be reached: every failing forward
+	 *  is tried again at once, not after its wait (the forward's own retry, as Check again does
+	 *  first), and the pool is read again. It runs no doctor: that is Check pool's.
+	 */
+	poolSetupTryNow: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_try_now", { plane })),
+	/**
+	 *  **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
+	 *  Pool in one press. The machine Connect read is trusted at `fingerprint`, which the person saw;
+	 *  every check of the pool's image is asked of its engine, so a full disk or a missing image is a
+	 *  finding before the machine is called connected; `owned` is who can sign in there; and the pool
+	 *  is made. A refused add keeps the pool, Refused, with its reason.
+	 */
+	poolSetupTrustAndCreate: (plane: PlaneId, fingerprint: string, owned: boolean, adding: PoolAdding) => typedError<PoolSetupTrustedAndCreated, string>(__TAURI_INVOKE("pool_setup_trust_and_create", { plane, fingerprint, owned, adding })),
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
@@ -11471,6 +11485,16 @@ export type PoolSetupCheck = {
 	waiting_on: string | null,
 };
 
+/**
+ *  One check of the machine's engine, timed (#7191): by its cause, in milliseconds where it is
+ *  done, with what it waits on and why where it has taken past thirty seconds.
+ */
+export type PoolSetupCheckTook = {
+	cause: string,
+	took_ms: number | null,
+	waiting_on: string | null,
+};
+
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
 export type PoolSetupContexts = {
 	names: string[],
@@ -11579,6 +11603,8 @@ export type PoolSetupMachine = {
 	checked?: string[] | null,
 	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
 	disk_unmeasured?: boolean | null,
+	/**  **How long each of those checks took**, by cause, and what a slow one waits on (#7191). */
+	took?: PoolSetupCheckTook[] | null,
 };
 
 /**  A limit a profile is over. */
@@ -11612,6 +11638,16 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A pool's state, as the status bar reads it** (#7191): `unreachable`, `refused`,
+ *  `host-key-changed`, `runner-gone` or `pool-forgotten`, with the reason of a refusal.
+ */
+export type PoolSetupPoolState = {
+	pool: string,
+	state: string,
+	reason: string | null,
 };
 
 /**
@@ -11661,6 +11697,12 @@ export type PoolSetupShown = {
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
 	contexts: PoolSetupContexts,
+	/**
+	 *  **The pool's state, where there is one to say** (#7191): the status bar's. A failed add
+	 *  keeps the pool, `refused`, with its reason. Remote trains A's `RemoteState` replaces what
+	 *  reads this once it is on `main`.
+	 */
+	pool_state?: PoolSetupPoolState | null,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -11735,6 +11777,19 @@ export type PoolSetupTried = {
 	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
+};
+
+/**
+ *  What **Trust and create the pool** did (#7191): what is shown now, and what stopped it where
+ *  the pool wasn't made.
+ */
+export type PoolSetupTrustedAndCreated = {
+	/**  Pool setup as it stands, with a finding of Connect's laid over Connect. */
+	shown: PoolSetupShown,
+	/**  What a team's image breaks, where it makes nothing. */
+	breaks: string[],
+	/**  Why the add was refused, where it was: the pool is kept, Refused, with this reason. */
+	refused: string | null,
 };
 
 /**

@@ -22,12 +22,16 @@ export type PoolState = (typeof POOL_STATES)[number];
 
 export type PoolStatus = {
   state: PoolState;
+  /** The pool it is of: a refused add has no made pool, so the state names it. */
+  pool?: string;
   /** Why, in the core's words: a refusal's reason. */
   reason?: string;
 };
 
 /** What the tab is shown, as far as the state goes: the core's field, once it has one. */
-export type WithPoolState = { pool_state?: { state: string; reason?: string | null } | null };
+export type WithPoolState = {
+  pool_state?: { state: string; pool?: string | null; reason?: string | null } | null;
+};
 
 /** **The pool's state**, or none where the core says none or one this build doesn't know. */
 export function poolStateOf(shown: WithPoolState): PoolStatus | undefined {
@@ -35,5 +39,9 @@ export function poolStateOf(shown: WithPoolState): PoolStatus | undefined {
   if (!said) return undefined;
   const state = POOL_STATES.find((one) => one === said.state);
   if (state === undefined) return undefined;
-  return said.reason ? { state, reason: said.reason } : { state };
+  return {
+    state,
+    ...(said.pool ? { pool: said.pool } : {}),
+    ...(said.reason ? { reason: said.reason } : {}),
+  };
 }

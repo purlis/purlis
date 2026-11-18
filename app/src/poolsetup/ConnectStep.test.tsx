@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "../bindings";
 import { ConnectStep, overOf, routeOf, tcpRouteOf, verdictsOf } from "./ConnectStep";
+import { NOTHING_CHOSEN } from "./PoolStep";
 
 const FINGERPRINT = "SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA";
 const CA =
@@ -297,6 +298,169 @@ describe("ConnectStep", () => {
         args: { plane: "p", fingerprint: FINGERPRINT },
       }),
     );
+  });
+
+  it("merges Connect and Pool: naming the pool joins the trust, and one press runs every check to a linked runner", async () => {
+    const IMAGE = "ghcr.io/purlis/runner@sha256:" + "a".repeat(64);
+    const made = shown(step({ state: "done" }));
+    const calls = core({
+      runner_image_of_this_version: () => ({ state: "ours", image: IMAGE }),
+      pool_setup_trust_and_create: () => ({ shown: made, breaks: [], refused: null }),
+    });
+    const trusting = step({
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool.",
+        command: null,
+        url: null,
+      },
+      machine: {
+        route: "ssh://sam@build-box",
+        identity: null,
+        host: "build-box",
+        key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+        known: null,
+        trusted: null,
+        now: null,
+        engine: null,
+        over: "ssh",
+        tls: null,
+        ca: null,
+        trusted_ca: null,
+        ca_now: null,
+        context: null,
+      },
+    });
+    const typed = vi.fn();
+    const adding = {
+      making: false,
+      set: vi.fn(),
+      typed: "lab",
+      type: typed,
+      chosen: NOTHING_CHOSEN,
+      choose: vi.fn(),
+    };
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep step={trusting} shown={shown(trusting)} plane="p" adding={adding} {...props} />,
+    );
+    expect(screen.getByRole("textbox", { name: "Name the pool" })).toHaveValue("lab");
+    await userEvent.click(screen.getByRole("radio", { name: /Only me/ }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "runner_image_of_this_version")).toBe(true),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Trust and create the pool" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_trust_and_create",
+        args: {
+          plane: "p",
+          fingerprint: FINGERPRINT,
+          owned: true,
+          adding: expect.objectContaining({ name: "lab", image: IMAGE }),
+        },
+      }),
+    );
+    await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made));
+    expect(props.changed).toHaveBeenCalled();
+  });
+
+  it("says why a refused add was refused, and keeps going from the pool the core kept", async () => {
+    const IMAGE = "ghcr.io/purlis/runner@sha256:" + "b".repeat(64);
+    const kept = shown(step({ state: "attention" }));
+    core({
+      runner_image_of_this_version: () => ({ state: "ours", image: IMAGE }),
+      pool_setup_trust_and_create: () => ({
+        shown: kept,
+        breaks: [],
+        refused: "Docker on build-box refused to start the runner.",
+      }),
+    });
+    const trusting = step({
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool.",
+        command: null,
+        url: null,
+      },
+      machine: {
+        route: "ssh://sam@build-box",
+        identity: null,
+        host: "build-box",
+        key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+        known: null,
+        trusted: null,
+        now: null,
+        engine: null,
+        over: "ssh",
+        tls: null,
+        ca: null,
+        trusted_ca: null,
+        ca_now: null,
+        context: null,
+      },
+    });
+    const adding = {
+      making: false,
+      set: vi.fn(),
+      typed: undefined,
+      type: vi.fn(),
+      chosen: NOTHING_CHOSEN,
+      choose: vi.fn(),
+    };
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep step={trusting} shown={shown(trusting)} plane="p" adding={adding} {...props} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Trust and create the pool" }));
+    expect(await screen.findByText(/refused to start the runner/)).toBeInTheDocument();
+    expect(props.onShown).toHaveBeenCalledWith(kept);
+    expect(props.changed).not.toHaveBeenCalled();
+  });
+
+  it("draws each check line's time, and what a slow one waited on", () => {
+    core();
+    draw(
+      step({
+        state: "done",
+        machine: {
+          route: "ssh://sam@build-box",
+          identity: null,
+          host: "build-box",
+          key: null,
+          known: null,
+          trusted: null,
+          now: null,
+          engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
+          context: null,
+          checked: [
+            "unconfined",
+            "unsupported-architecture",
+            "image-unreachable",
+            "kernel-short",
+            "disk-full",
+          ],
+          took: [
+            { cause: "unconfined", took_ms: 120, waiting_on: null },
+            {
+              cause: "image-unreachable",
+              took_ms: 41000,
+              waiting_on: "Waiting on build-box to download the runner image from its registry.",
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByText("0.1 s")).toBeInTheDocument();
+    expect(screen.getByText("41 s")).toBeInTheDocument();
+    expect(screen.getByText(/to download the runner image from its registry/)).toBeInTheDocument();
   });
 
   it("checks a made pool's machine again now when Check again is pressed, and shows what it read", async () => {

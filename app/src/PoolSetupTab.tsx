@@ -447,28 +447,33 @@ function PoolSetupGuide({
   /** The read on its way, so a slow Docker is waited for and never asked twice at once. */
   const reading = useRef(0);
 
-  const reread = useCallback(() => {
-    const mine = ++reads.current;
-    reading.current = mine;
-    void commands.poolSetup(plane).then((answer) => {
-      if (reading.current === mine) reading.current = 0;
-      if (mine !== reads.current) return;
-      // A refusal of a pool that stands now is over.
-      if (answer.status === "ok" && answer.data.pool !== null) {
-        const step = answer.data.steps.find((one) => one.id === "pool");
-        if (step?.state !== "attention")
-          setMade((was) => (was.refused ? { making: was.making } : was));
-      }
-      // What went wrong starting Docker is over once Docker needs nothing.
-      if (answer.status === "ok" && answer.data.steps[0]?.state !== "attention")
-        setTrouble(undefined);
-      setRead(
-        answer.status === "ok"
-          ? { state: "read", shown: answer.data }
-          : { state: "trouble", trouble: answer.error },
-      );
-    });
-  }, [plane]);
+  /** A read through `run`: the plain read, or one that first tries a forward again or runs doctor. */
+  const rereadThrough = useCallback(
+    (run: typeof commands.poolSetup) => {
+      const mine = ++reads.current;
+      reading.current = mine;
+      void run(plane).then((answer) => {
+        if (reading.current === mine) reading.current = 0;
+        if (mine !== reads.current) return;
+        // A refusal of a pool that stands now is over.
+        if (answer.status === "ok" && answer.data.pool !== null) {
+          const step = answer.data.steps.find((one) => one.id === "pool");
+          if (step?.state !== "attention")
+            setMade((was) => (was.refused ? { making: was.making } : was));
+        }
+        // What went wrong starting Docker is over once Docker needs nothing.
+        if (answer.status === "ok" && answer.data.steps[0]?.state !== "attention")
+          setTrouble(undefined);
+        setRead(
+          answer.status === "ok"
+            ? { state: "read", shown: answer.data }
+            : { state: "trouble", trouble: answer.error },
+        );
+      });
+    },
+    [plane],
+  );
+  const reread = useCallback(() => rereadThrough(commands.poolSetup), [rereadThrough]);
 
   useEffect(() => {
     reread();
@@ -547,17 +552,20 @@ function PoolSetupGuide({
   };
   // **One status bar for the pool's state** (#7191), through the one adapter that reads it.
   const status = poolStateOf(setup as WithPoolState);
+  // A refused add made no pool, so the state names the pool it keeps.
+  const shownPool = status?.pool ?? madePool;
   const machine =
-    setup.steps.find((one) => one.id === "connect")?.machine?.host ?? madePool ?? "this machine";
+    setup.steps.find((one) => one.id === "connect")?.machine?.host ?? shownPool ?? "this machine";
   return (
     <>
-      {status && madePool && (
+      {status && shownPool && (
         <PoolStatusBar
-          pool={madePool}
+          pool={shownPool}
           machine={machine}
           status={status}
-          onTryNow={reread}
-          onCheckPool={reread}
+          // The forward's own retry, and doctor's own checks: not a read of what is kept (#7191).
+          onTryNow={() => rereadThrough(commands.poolSetupTryNow)}
+          onCheckPool={() => rereadThrough(commands.poolSetupCheckAgain)}
           onCheckKey={() => setShowing("connect")}
           onRemake={() => setShowing("pool")}
           onForget={() => onOpenPools?.()}
@@ -682,6 +690,7 @@ function PoolSetupGuide({
                 step={step}
                 shown={setup}
                 plane={plane}
+                adding={{ ...made, set: setMade, typed, type: setTyped, chosen, choose }}
                 onShown={(now) => setRead({ state: "read", shown: now })}
                 changed={() => {
                   setShowing(undefined);

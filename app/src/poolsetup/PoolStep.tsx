@@ -224,7 +224,7 @@ function NewPoolOptions({
 }
 
 /** What `chosen` asks for, or `undefined` while a box holds what no pool could have. */
-function asked(name: string, image: string, chosen: Chosen): PoolAdding | undefined {
+export function asked(name: string, image: string, chosen: Chosen): PoolAdding | undefined {
   const [memory, processes, tmp] = [
     count(chosen.memory),
     count(chosen.processes),

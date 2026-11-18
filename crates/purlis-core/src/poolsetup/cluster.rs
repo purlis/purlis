@@ -95,6 +95,9 @@ pub struct ClusterFacts {
     pub chosen: Option<String>,
     /// What doctor found on the chosen context, where it was asked.
     pub doctor: Option<doctor::Report>,
+    /// **How long doctor's reads took together** (#7191): the cluster's doctor answers as one
+    /// report, so its first line, the cluster it asked, carries this.
+    pub doctor_took: Option<std::time::Duration>,
     /// What the chosen context's cluster holds of the install, where it was read.
     pub installed: Option<Result<Installed, String>>,
     /// The cluster's Pools, by name, where its operator runs and they could be listed (#4494).
@@ -633,11 +636,13 @@ pub fn read(kubectl: Result<&Kubectl, String>, chosen: Option<&str>, deep: bool)
         facts.pools = pools_of(&on);
     }
     if !facts.operator_runs() {
+        let watch = super::timing::Stopwatch::start("cluster", &context);
         facts.doctor = Some(doctor(&Asked {
             kubectl: &on,
             context: &context,
             server: server_of(&on),
         }));
+        facts.doctor_took = Some(watch.done().took);
     }
     facts
 }
@@ -894,19 +899,31 @@ pub fn checks_of(facts: &Facts) -> Vec<super::Check> {
             verdict: Verdict::Ok,
             title: "purlis's cluster operator runs".to_owned(),
             more: Some(crate::shown::short(image)),
+            took_ms: None,
+            waiting_on: None,
         }];
     }
     let Some(report) = &cluster.doctor else {
         return Vec::new();
     };
+    let context = cluster.chosen.as_deref().unwrap_or("the cluster");
+    let took = cluster.doctor_took.map(super::timing::ms);
+    let waited = cluster
+        .doctor_took
+        .filter(|took| *took > super::timing::SLOW)
+        .map(|_| super::timing::waiting_on("cluster", context));
     report
         .holds
         .iter()
-        .map(|line| Check {
+        .enumerate()
+        .map(|(at, line)| Check {
             about: CheckOf::Cluster,
             verdict: Verdict::Ok,
             title: line.clone(),
             more: None,
+            // The first line is what asked the cluster: it carries what all of doctor's reads took.
+            took_ms: if at == 0 { took } else { None },
+            waiting_on: if at == 0 { waited.clone() } else { None },
         })
         .chain(report.findings.iter().map(|finding| Check {
             about: CheckOf::Cluster,
@@ -921,6 +938,8 @@ pub fn checks_of(facts: &Facts) -> Vec<super::Check> {
             } else {
                 format!("Next: {}.", finding.next)
             }),
+            took_ms: None,
+            waiting_on: None,
         }))
         .collect()
 }

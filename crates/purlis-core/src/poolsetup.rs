@@ -38,12 +38,14 @@ pub mod admin;
 pub mod asked;
 pub mod cluster;
 pub mod connecting;
+pub mod declined;
 pub mod doctoring;
 pub mod help;
 pub mod install;
 pub mod pinchange;
 pub mod plugin;
 pub mod signins;
+pub mod timing;
 pub mod trying;
 
 /// The file a person's choices are kept in, in this machine's folder.
@@ -272,6 +274,12 @@ pub struct Check {
     pub verdict: Verdict,
     pub title: String,
     pub more: Option<String>,
+    /// **How long the check took**, in whole milliseconds, where it was measured (#7191).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub took_ms: Option<u32>,
+    /// **What a check that took past thirty seconds waited on, and why** (#7191).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_on: Option<String>,
 }
 
 /// What a line of Try it checks.
@@ -348,6 +356,10 @@ pub struct Setup {
     pub others: Vec<String>,
     /// The kubeconfig's contexts, the one recommended and the one chosen, for Where's Options.
     pub contexts: Contexts,
+    /// **The pool's state, where Pool setup keeps one** (#7191): a failed add keeps the pool,
+    /// refused, with its reason. `None` where there is nothing to say.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pool_state: Option<declined::PoolStatus>,
 }
 
 /// **The contexts a cluster can be reached by** (#4492): names only, never what they sign in with.
@@ -527,6 +539,9 @@ pub struct Choices {
     /// **The machine Connect read, and the pin the person trusted there** (#6266), for a pool on
     /// another machine before it is made.
     pub connect: Option<Chosen>,
+    /// **The pool whose add was refused, and why** (#7191): kept, as Refused, until an add of it
+    /// works or the person starts over.
+    pub declined: Option<declined::Declined>,
 }
 
 /// **What Connect keeps** (#6266, `connect` in `pool-setup.json`): the machine, as the person
@@ -1289,6 +1304,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             pools: facts.cluster.pools.clone().unwrap_or_default(),
             kubeconfig: facts.cluster.kubeconfig.clone(),
         },
+        pool_state: declined::status_of(choices.declined.as_ref()),
     }
 }
 
@@ -1302,6 +1318,8 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
         verdict,
         title,
         more: more.map(str::to_owned),
+        took_ms: None,
+        waiting_on: None,
     };
     let mut checks = vec![if tried {
         check(
@@ -2047,6 +2065,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         tried: held.tried,
         admin: held.admin,
         made: held.made,
+        declined: held.declined,
         connect: match held.connect {
             None => None,
             Some(connect) => Some(chosen_from(connect).ok_or_else(unreadable)?),
@@ -2191,6 +2210,8 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     made: Option<MadeKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    declined: Option<declined::Declined>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     connect: Option<HeldConnect>,
 }
 
@@ -2209,6 +2230,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         tried: choices.tried,
         admin: choices.admin,
         made: choices.made,
+        declined: choices.declined,
         connect: choices.connect.map(|chosen| HeldConnect {
             route: chosen.route,
             tls: chosen.tls.as_ref().map(runners::tls_to_row),
@@ -2662,7 +2684,12 @@ pub fn create_cluster_pool(
             "nothing was made: choose your team's cluster on Where first".to_owned(),
         ));
     };
-    cluster::create_pool(&kubectl.clone().with_context(context), name, image)
+    // A refused add keeps the pool, as Refused, with its reason (#7191).
+    declined::kept_after(
+        config,
+        name,
+        cluster::create_pool(&kubectl.clone().with_context(context), name, image),
+    )
 }
 
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none. Refused
@@ -2852,6 +2879,7 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         && choices.name.is_none()
         && choices.pool.is_none()
         && choices.made.is_none()
+        && choices.declined.is_none()
     {
         return Ok(());
     }
@@ -2867,6 +2895,8 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
             pool: None,
             // A key made in this setup confirms nothing in the next one.
             made: None,
+            // A refusal belongs to the setup it was made in.
+            declined: None,
             ..choices
         },
     )

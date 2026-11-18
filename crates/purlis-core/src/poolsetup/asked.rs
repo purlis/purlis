@@ -459,6 +459,20 @@ pub fn create(
     asked: &Asked,
     desktop: &Pinned,
 ) -> Result<Created, Refused> {
+    let made = make(config, docker, asked, desktop);
+    // A refused add keeps the pool, as Refused, with its reason (#7191).
+    match asked.pool() {
+        Ok(pool) => super::declined::kept_after(config, pool.name(), made),
+        Err(_) => made,
+    }
+}
+
+fn make(
+    config: &Path,
+    docker: &Docker,
+    asked: &Asked,
+    desktop: &Pinned,
+) -> Result<Created, Refused> {
     let remote = remote_of(config, docker, asked)?;
     let context = match &remote {
         Some(crate::runners::RemoteEngine::Ssh(remote)) => {

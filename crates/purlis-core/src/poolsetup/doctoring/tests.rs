@@ -974,6 +974,7 @@ fn connect_checks_the_engine_with_docker_info_alone() {
         Ok(Passed {
             checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
             disk_unmeasured: false,
+            timed: Vec::new(),
         })
     );
     stand.set("info", r#"{"OSType":"linux","Architecture":"riscv64"}"#);
@@ -1065,6 +1066,18 @@ fn an_image_that_cant_say_its_landlock_is_judged_by_the_hosts_release() {
 /// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image
 /// is picked, the host's release is all there is to read, and nothing is run there.
 #[test]
+fn every_check_connect_ran_carries_its_time() {
+    let stand = Stand::new();
+    let passed = on_connect(&stand.docker(), "build-box").expect("passes");
+    let timed: Vec<&str> = passed.timed.iter().map(|one| one.cause).collect();
+    assert_eq!(
+        timed,
+        ["unconfined", "unsupported-architecture", "kernel-short"]
+    );
+    assert!(passed.timed.iter().all(|one| one.ms() >= 1));
+}
+
+#[test]
 fn connect_finds_a_short_kernel_from_docker_info_alone() {
     let stand = Stand::new();
     assert_eq!(
@@ -1072,6 +1085,7 @@ fn connect_finds_a_short_kernel_from_docker_info_alone() {
         Ok(Passed {
             checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
             disk_unmeasured: false,
+            timed: Vec::new(),
         })
     );
     stand.set(

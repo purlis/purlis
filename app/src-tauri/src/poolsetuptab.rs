@@ -133,6 +133,18 @@ pub struct PoolSetupMachine {
     /// That doctor couldn't measure Docker's disk there, which holds nothing up (#6272).
     #[specta(optional)]
     pub disk_unmeasured: Option<bool>,
+    /// **How long each of those checks took**, by cause, and what a slow one waits on (#7191).
+    #[specta(optional)]
+    pub took: Option<Vec<PoolSetupCheckTook>>,
+}
+
+/// One check of the machine's engine, timed (#7191): by its cause, in milliseconds where it is
+/// done, with what it waits on and why where it has taken past thirty seconds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupCheckTook {
+    pub cause: String,
+    pub took_ms: Option<u32>,
+    pub waiting_on: Option<String>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -204,6 +216,20 @@ pub struct PoolSetupShown {
     /// The name a new pool is recommended, which no pool here has (#6256).
     pub recommended: String,
     pub contexts: PoolSetupContexts,
+    /// **The pool's state, where there is one to say** (#7191): the status bar's. A failed add
+    /// keeps the pool, `refused`, with its reason. Remote trains A's `RemoteState` replaces what
+    /// reads this once it is on `main`.
+    #[specta(optional)]
+    pub pool_state: Option<PoolSetupPoolState>,
+}
+
+/// **A pool's state, as the status bar reads it** (#7191): `unreachable`, `refused`,
+/// `host-key-changed`, `runner-gone` or `pool-forgotten`, with the reason of a refusal.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPoolState {
+    pub pool: String,
+    pub state: String,
+    pub reason: Option<String>,
 }
 
 /// What the Pool step's button did: nothing made, and why, where a team's image breaks the
@@ -253,6 +279,14 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
         recommended,
         others: setup.others.clone(),
         kind: word(&setup.kind),
+        pool_state: setup
+            .pool_state
+            .as_ref()
+            .map(|status| PoolSetupPoolState {
+                pool: status.pool.clone(),
+                state: status.state.word().to_owned(),
+                reason: status.state.reason().map(str::to_owned),
+            }),
         contexts: PoolSetupContexts {
             names: setup.contexts.names.clone(),
             recommended: setup.contexts.recommended.clone(),
@@ -327,6 +361,17 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                             .collect(),
                     ),
                     disk_unmeasured: Some(machine.disk_unmeasured),
+                    took: Some(
+                        machine
+                            .took
+                            .iter()
+                            .map(|one| PoolSetupCheckTook {
+                                cause: one.cause.to_owned(),
+                                took_ms: one.took_ms,
+                                waiting_on: one.waiting_on.clone(),
+                            })
+                            .collect(),
+                    ),
                 }),
                 prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
                     route: prefill.route.clone(),
@@ -346,8 +391,8 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         verdict: word(&check.verdict),
                         title: check.title.clone(),
                         more: check.more.clone(),
-                        took_ms: None,
-                        waiting_on: None,
+                        took_ms: check.took_ms,
+                        waiting_on: check.waiting_on.clone(),
                     })
                     .collect(),
                 took_ms: None,
@@ -396,6 +441,19 @@ pub async fn pool_setup(
         let _ = root;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// **Try now** (#7191), on the status bar of a pool that can't be reached: every failing forward
+/// is tried again at once, not after its wait (the forward's own retry, as Check again does
+/// first), and the pool is read again. It runs no doctor: that is Check pool's.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_try_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<PoolSetupShown, String> {
+    purlis_core::sshroute::pool::look_again();
+    pool_setup(planes, plane).await
 }
 
 /// **Check again** (#6266, #6272): [`pool_setup`], with every pool on another machine whose
@@ -1153,6 +1211,90 @@ pub async fn pool_setup_trust(
     #[cfg(not(unix))]
     {
         let _ = (root, fingerprint);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// What **Trust and create the pool** did (#7191): what is shown now, and what stopped it where
+/// the pool wasn't made.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupTrustedAndCreated {
+    /// Pool setup as it stands, with a finding of Connect's laid over Connect.
+    pub shown: PoolSetupShown,
+    /// What a team's image breaks, where it makes nothing.
+    pub breaks: Vec<String>,
+    /// Why the add was refused, where it was: the pool is kept, Refused, with this reason.
+    pub refused: Option<String>,
+}
+
+/// **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
+/// Pool in one press. The machine Connect read is trusted at `fingerprint`, which the person saw;
+/// every check of the pool's image is asked of its engine, so a full disk or a missing image is a
+/// finding before the machine is called connected; `owned` is who can sign in there; and the pool
+/// is made. A refused add keeps the pool, Refused, with its reason.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_trust_and_create(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    fingerprint: String,
+    owned: bool,
+    adding: PoolAdding,
+) -> Result<PoolSetupTrustedAndCreated, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        let asked = adding.asked();
+        let done = crate::off_the_window("checking the machine and making the pool", move || {
+            use purlis_core::poolsetup::{self, Pressed, asked::Created};
+            let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
+            let chosen = poolsetup::read_choices(&machine.config)
+                .map_err(|why| why.to_string())?
+                .connect
+                .ok_or_else(|| "Pick the machine first.".to_owned())?;
+            let tls = purlis_core::tlsroute::is_tcp(&chosen.route);
+            let desktop = machine.desktop_made()?.pinned();
+            let answered = poolsetup::connecting::trust_and_create(
+                &machine.config,
+                &machine.docker,
+                &chosen,
+                &fingerprint,
+                owned,
+                &asked,
+                &desktop,
+            );
+            let (pressed, breaks, refused) = match answered {
+                Ok(Ok(Created::Added)) => (None, Vec::new(), None),
+                Ok(Ok(Created::Breaks(problems))) => (None, problems, None),
+                Ok(Err(finding)) => (Some(Pressed::Found(finding)), Vec::new(), None),
+                Err(why) => (
+                    None,
+                    Vec::new(),
+                    Some(crate::dockerpools::refused_said(&why.to_string())),
+                ),
+            };
+            let made = pressed.is_none() && breaks.is_empty() && refused.is_none();
+            Ok((
+                PoolSetupTrustedAndCreated {
+                    shown: read_shown(&machine.config, &root, pressed)?,
+                    breaks,
+                    refused,
+                },
+                made && tls,
+            ))
+        })
+        .await;
+        // Every window asks again which chats run on an older sandbox, as a pool over TLS added
+        // by the Pool step's button says so (#6472).
+        if let Ok((_, true)) = &done {
+            let _ = tauri::Emitter::emit(&app, TLS_POOL_ADDED, ());
+        }
+        done.map(|(created, _)| created)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, root, fingerprint, owned, adding);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -2200,16 +2342,14 @@ fn link_measured(
         .into_iter()
         .find(|one| one.name() == pool)?;
     // The link's round trip is a real one: how long it took is said beside it (#7191).
-    let started = std::time::Instant::now();
     let check = purlis_core::poolsetup::doctoring::link_of(docker?, &kept)?;
-    let took = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
     Some(PoolSetupCheck {
         about: word(&check.about),
         verdict: word(&check.verdict),
         title: check.title,
         more: check.more,
-        took_ms: Some(took),
-        waiting_on: None,
+        took_ms: check.took_ms,
+        waiting_on: check.waiting_on,
     })
 }
 

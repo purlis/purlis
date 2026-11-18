@@ -126,6 +126,32 @@ afterEach(() => {
 });
 
 describe("PoolSetupTab", () => {
+  it("a refused add keeps the pool: the bar names it and says why, and Check pool runs doctor", async () => {
+    const refused = {
+      ...CHOSEN,
+      pool_state: { pool: "lab", state: "refused", reason: "the disk on lab is full" },
+    };
+    const calls = core(() => refused, { pool_setup_check_again: () => refused });
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByText("Refused: pool lab")).toBeInTheDocument();
+    expect(screen.getByText(/the disk on lab is full/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check pool" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_check_again")).toBe(true),
+    );
+  });
+
+  it("Try now tries the forward again, not only a read", async () => {
+    const down = {
+      ...MADE,
+      pool_state: { pool: "dev-box", state: "unreachable", reason: null },
+    };
+    const calls = core(() => down, { pool_setup_try_now: () => down });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Try now" }));
+    await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_try_now")).toBe(true));
+  });
+
   it("shows each step's state as the core read it", async () => {
     core(() => READY);
     render(<PoolSetupTab plane="p" />);

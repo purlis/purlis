@@ -680,6 +680,8 @@ macro_rules! app_commands {
                 dockerpools::docker_pools,
                 poolsetuptab::pool_setup,
                 poolsetuptab::pool_setup_check_again,
+                poolsetuptab::pool_setup_try_now,
+                poolsetuptab::pool_setup_trust_and_create,
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_choose_remote_docker,
                 poolsetuptab::pool_setup_machine,
