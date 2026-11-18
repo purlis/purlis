@@ -608,9 +608,20 @@ use crate::view::{Limits, Views};
 /// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
 /// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
 /// is not asked, and its chat's paths stay no link.
+///
+/// 1.94 has a host say which file it keeps from its window ([`FileRead::Kept`], #7064): its
+/// own purlis folders, a harness's sign-in and what no chat on it reads are never read, whatever
+/// the reach. A window before 1.94 is answered [`FileRead::NotThere`] for one.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 93,
+    minor: 94,
+};
+
+/// The version that first hears [`FileRead::Kept`] (#7064): a window before it hears
+/// [`FileRead::NotThere`] for such a file.
+pub const KNOWS_KEPT_FILES: Version = Version {
+    major: 1,
+    minor: 94,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -2608,6 +2619,10 @@ pub enum FileRead {
     TooLarge { path: String, size: u64 },
     /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
     Outside { path: String },
+    /// A file the host keeps from its window (1.94, #7064), whatever the reach and whatever
+    /// the person answered: in one of purlis's own folders there, a harness's sign-in, or one
+    /// no chat there reads. Not read.
+    Kept { path: String },
 }
 
 /// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,

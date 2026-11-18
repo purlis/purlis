@@ -14,6 +14,9 @@
 //!   the path is resolved on this side, the side that owns the file, and only the resolved path
 //!   is held to the chat's workspace, so `..` and a link that leads out are outside, and one
 //!   that stays in is followed.
+//! - **Some folders are never looked in** (#7076), as the host's own hover never looks in them
+//!   ([`Asked::guarded`]: removable, network and automounted volumes): a path into one, or a
+//!   link that leads into one, is not there, unless it is in the chat's project or folder.
 //! - **The workspace** is the chat's workspace folder in its project, or the project for a chat
 //!   at its root, as the desktop counts a chat's home (`super::home_of`).
 //! - **Outside it is not read** unless the person answered an ask for it
@@ -23,10 +26,16 @@
 //!   opened, it is opened one folder at a time with no link followed (so a folder swapped for
 //!   a link after the path was resolved is refused, not followed), without waiting on a pipe,
 //!   and looked at again once open.
+//! - **What the runner keeps is never read** ([`kept`], #7064): purlis's own folders there,
+//!   every harness's sign-in files, and what no chat there reads, whatever the reach. Judged
+//!   on the resolved path, and again on the file opened, before a byte of it is read: it is
+//!   answered [`FileRead::Kept`].
 //! - **At most [`MOST_FILE_READ`] bytes of text**: a larger file, or one with a NUL byte or
-//!   that is not UTF-8, is answered by its size alone.
+//!   that is not UTF-8, is answered by its size alone. Only what is asked is read (#7078): a
+//!   look reads the file's first [`MOST_FILE_LOOKED`] bytes to tell text, and a piece its own
+//!   bytes alone, judged as text but for a character cut at its edges.
 
-use std::io::Read as _;
+use std::io::{Read as _, Seek as _};
 use std::path::{Component, Path, PathBuf};
 
 use purlis_session_protocol::session::{
@@ -41,7 +50,17 @@ pub struct Asked<'a> {
     pub path: &'a str,
     pub reach: FileReach,
     pub at: Option<u64>,
+    /// The runner, as purlis knows its home and its environment: where its own folders and
+    /// each harness's sign-in are ([`kept`]).
+    pub machine: &'a crate::sandbox::Machine,
+    /// The folders a hover never looks in there, as the host's own hover never does
+    /// (`file::guarded_folders`, #7076): removable, network and automounted volumes.
+    pub guarded: &'a [PathBuf],
 }
+
+/// **The most bytes a look reads** (#7078): what tells text from a binary at its start, as git
+/// judges a file by its first 8000 bytes.
+pub const MOST_FILE_LOOKED: u64 = 8 * 1024;
 
 /// The folders of the system's own files, which are never read, whatever they say they are.
 const SYSTEMS_OWN: [&str; 3] = ["/proc", "/sys", "/dev"];
@@ -61,7 +80,17 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
             None => return FileRead::NotThere,
         }
     };
-    let Ok(resolved) = std::fs::canonicalize(&joined) else {
+    // Walked as the host walks a path for its hover (#7076): every link followed on this side,
+    // and never into a folder a hover never looks in, but the chat's project and folder.
+    let allowed: Vec<PathBuf> = std::iter::once(asked.project)
+        .chain(asked.cwd)
+        .filter_map(|folder| std::fs::canonicalize(folder).ok())
+        .collect();
+    // Then named as the disk names it, so a name in another case on a disk that folds case is
+    // the file it opens, placed where that file is.
+    let Some(resolved) = super::file::walked(&joined, asked.guarded, &allowed)
+        .and_then(|walked| std::fs::canonicalize(walked).ok())
+    else {
         return FileRead::NotThere;
     };
     let Some(path) = resolved.to_str().map(str::to_owned) else {
@@ -69,6 +98,10 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     };
     if SYSTEMS_OWN.iter().any(|own| resolved.starts_with(own)) {
         return FileRead::NotPlain { path };
+    }
+    let kept = kept::Kept::of(asked.project, asked.machine);
+    if kept.holds(&resolved) {
+        return FileRead::Kept { path };
     }
     let home = home_of(asked);
     let from_workspace = home
@@ -89,34 +122,32 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if !meta.is_file() {
         return FileRead::NotPlain { path };
     }
+    if kept.holds_the_file(&meta) {
+        return FileRead::Kept { path };
+    }
     let size = meta.len();
     if size > MOST_FILE_READ {
         return FileRead::TooLarge { path, size };
     }
-    let mut bytes = Vec::new();
-    if file
-        .take(MOST_FILE_READ + 1)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
+    // Only what is asked is read (#7078): a look, the file's first bytes, to tell text; a
+    // piece, its own bytes from where it was asked.
+    let (from, most) = match asked.at {
+        None => (0, MOST_FILE_LOOKED),
+        Some(at) => (at.min(size), MOST_FILE_PIECE),
+    };
+    let mut file = file;
+    if from > 0 && file.seek(std::io::SeekFrom::Start(from)).is_err() {
         return FileRead::NotThere;
     }
-    let read = bytes.len() as u64;
-    if read > MOST_FILE_READ {
-        return FileRead::TooLarge { path, size: read };
+    let mut bytes = Vec::new();
+    if file.take(most).read_to_end(&mut bytes).is_err() {
+        return FileRead::NotThere;
     }
-    if bytes.contains(&0) || std::str::from_utf8(&bytes).is_err() {
-        return FileRead::Binary { path, size: read };
+    let to_its_end = from + bytes.len() as u64 >= size;
+    if !reads_as_text(&bytes, from > 0, !to_its_end) {
+        return FileRead::Binary { path, size };
     }
-    let piece = asked.at.map(|at| {
-        let from = usize::try_from(at.min(read)).unwrap_or(bytes.len());
-        let to =
-            usize::try_from(at.saturating_add(MOST_FILE_PIECE).min(read)).unwrap_or(bytes.len());
-        FilePiece {
-            at,
-            bytes: bytes[from..to].to_vec(),
-        }
-    });
+    let piece = asked.at.map(|at| FilePiece { at, bytes });
     FileRead::Plain {
         path,
         from_workspace,
@@ -126,9 +157,33 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
                 folder: folder.to_str()?.to_owned(),
             })
         }),
-        size: read,
-        version: version_of(&meta, read),
+        size,
+        version: version_of(&meta, size),
         piece,
+    }
+}
+
+/// **Whether `bytes`, a stretch of a file, reads as text**: no NUL, and UTF-8 but for a
+/// character cut at either edge, where the stretch starts after the file's start
+/// (`cut_at_start`) or ends before its end (`cut_at_end`).
+fn reads_as_text(bytes: &[u8], cut_at_start: bool, cut_at_end: bool) -> bool {
+    if bytes.contains(&0) {
+        return false;
+    }
+    let mut bytes = bytes;
+    if cut_at_start {
+        // A character's later bytes, at most three, whose first byte is before the stretch.
+        let later = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte & 0b1100_0000 == 0b1000_0000)
+            .count();
+        bytes = &bytes[later..];
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(_) => true,
+        // A character whose last bytes are after the stretch.
+        Err(cut) => cut_at_end && cut.error_len().is_none(),
     }
 }
 
@@ -232,6 +287,9 @@ fn version_of(meta: &std::fs::Metadata, size: u64) -> String {
         .map_or(0, |since| since.as_nanos());
     format!("{size}:{changed}")
 }
+
+#[path = "onrunner_kept.rs"]
+mod kept;
 
 #[cfg(test)]
 #[path = "onrunner_tests.rs"]

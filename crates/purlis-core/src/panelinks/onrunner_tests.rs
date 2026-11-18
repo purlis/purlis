@@ -16,6 +16,21 @@ struct Runner {
     project: PathBuf,
     cwd: PathBuf,
     outside: PathBuf,
+    /// The runner's home, beside the project, and the runner as purlis knows it.
+    home: PathBuf,
+    machine: crate::sandbox::Machine,
+    /// The folders a hover never looks in there.
+    guarded: Vec<PathBuf>,
+}
+
+/// A runner whose home is `home`, as purlis knows a runner: Linux, with no variable moving a
+/// folder.
+fn machine_at(home: &Path) -> crate::sandbox::Machine {
+    crate::sandbox::Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(home.to_path_buf()),
+        os: crate::sandbox::Os::Linux,
+    }
 }
 
 fn write(path: &Path, bytes: &[u8]) {
@@ -33,11 +48,16 @@ fn runner() -> Runner {
     write(&project.join("workspaces/docs/guide.md"), b"# docs\n");
     let outside = top.join("etc/hosts");
     write(&outside, b"127.0.0.1 localhost\n");
+    let home = top.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
     Runner {
         _held: held,
         project,
         cwd,
         outside,
+        machine: machine_at(&home),
+        home,
+        guarded: Vec::new(),
     }
 }
 
@@ -49,6 +69,8 @@ impl Runner {
             path,
             reach,
             at,
+            machine: &self.machine,
+            guarded: &self.guarded,
         }
     }
 
@@ -261,6 +283,8 @@ fn a_workspace_reached_through_a_link_holds_only_what_resolves_inside_it() {
         path: "src/main.rs",
         reach: FileReach::Workspace,
         at: None,
+        machine: &r.machine,
+        guarded: &[],
     };
 
     assert_eq!(
@@ -471,4 +495,350 @@ fn a_chat_at_the_projects_root_says_its_project_for_the_ask() {
             folder: r.shown(&r.project),
         })
     );
+}
+
+/// Every harness's sign-in files on the runner, as each harness's adapter names them, written.
+fn sign_ins(r: &Runner) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for harness in crate::harness::Harness::ALL {
+        let folders = crate::sandbox::signin::ProfileFolders::of(harness, &[], &r.machine);
+        files.extend(crate::sandbox::signin::credential_files(harness, &folders));
+    }
+    assert!(
+        files.len() >= 3,
+        "every harness names its sign-in: {files:?}"
+    );
+    for file in &files {
+        write(file, b"{\"token\":\"secret\"}\n");
+    }
+    files
+}
+
+/// Whether `read` is the runner keeping the file from the window, with none of its bytes.
+fn kept(read: &FileRead) -> bool {
+    matches!(read, FileRead::Kept { .. })
+}
+
+#[test]
+fn a_harness_sign_in_is_kept_even_when_the_person_answered_the_ask() {
+    let r = runner();
+
+    for file in sign_ins(&r) {
+        let path = r.shown(&file);
+        assert!(kept(&r.look_anywhere(&path)), "{path}");
+        assert!(kept(&r.read(&path, FileReach::Anywhere, 0)), "{path}");
+    }
+}
+
+#[test]
+fn purlis_own_folders_on_the_runner_are_kept_even_when_the_person_answered_the_ask() {
+    let r = runner();
+    let data = r.home.join(".local/share/purlis");
+    let config = r.home.join(".config/purlis");
+    let files = [
+        data.join("profiles/work/.claude/settings.json"),
+        data.join("app/events.jsonl"),
+        r.home.join(".local/share/charter/app/events.jsonl"),
+        config.join("runners.json"),
+        r.home.join(".config/charter/machine.json"),
+    ];
+    for file in &files {
+        write(file, b"{}\n");
+    }
+
+    for file in &files {
+        let path = r.shown(file);
+        assert!(kept(&r.look_anywhere(&path)), "{path}");
+        assert!(kept(&r.read(&path, FileReach::Anywhere, 0)), "{path}");
+    }
+}
+
+#[test]
+fn a_kept_file_is_kept_by_every_path_that_names_it() {
+    let r = runner();
+    let files = sign_ins(&r);
+    let codex = files
+        .iter()
+        .find(|file| file.ends_with(".codex/auth.json"))
+        .expect("Codex's sign-in");
+    let relative = format!(
+        "../../../../../home/{}",
+        codex.strip_prefix(&r.home).expect("in the home").display()
+    );
+    let dotted = format!("{}/../.codex/./auth.json", r.shown(&r.home.join(".codex")));
+
+    for path in [relative.as_str(), dotted.as_str()] {
+        assert!(kept(&r.read(path, FileReach::Anywhere, 0)), "{path}");
+    }
+    // `~` is never looked up on a runner, so its sign-in is not read that way either.
+    assert_eq!(
+        r.read("~/.codex/auth.json", FileReach::Anywhere, 0),
+        FileRead::NotThere
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_kept_file_or_folder_is_kept() {
+    let r = runner();
+    let files = sign_ins(&r);
+    let codex = files
+        .iter()
+        .find(|file| file.ends_with(".codex/auth.json"))
+        .expect("Codex's sign-in");
+    std::os::unix::fs::symlink(codex, r.cwd.join("auth.json")).expect("a link to the file");
+    std::os::unix::fs::symlink(r.home.join(".codex"), r.cwd.join("codex"))
+        .expect("a link to its folder");
+    std::fs::hard_link(codex, r.cwd.join("second.json")).expect("a second name of it");
+    write(&r.home.join(".local/share/purlis/app/state.json"), b"{}\n");
+    std::os::unix::fs::symlink(r.home.join(".local/share/purlis"), r.cwd.join("data"))
+        .expect("a link to purlis's data home");
+
+    for path in [
+        "auth.json",
+        "codex/auth.json",
+        "second.json",
+        "data/app/state.json",
+    ] {
+        assert!(kept(&r.read(path, FileReach::Workspace, 0)), "{path}");
+        assert!(kept(&r.read(path, FileReach::Anywhere, 0)), "{path}");
+    }
+}
+
+#[test]
+fn a_kept_file_is_kept_under_any_case_on_a_disk_that_folds_it() {
+    let r = runner();
+    let files = sign_ins(&r);
+    let codex = files
+        .iter()
+        .find(|file| file.ends_with(".codex/auth.json"))
+        .expect("Codex's sign-in");
+    let shouted = r.shown(&r.home.join(".CODEX/Auth.JSON"));
+    if std::fs::metadata(&shouted).is_err() {
+        // This disk tells the two names apart: there is no other file to keep.
+        return;
+    }
+
+    assert!(kept(&r.read(&shouted, FileReach::Anywhere, 0)), "{shouted}");
+    assert!(codex.exists());
+}
+
+#[test]
+fn a_project_the_runner_keeps_in_its_data_home_is_read_and_the_rest_of_it_is_not() {
+    let held = tempfile::tempdir().expect("a temporary folder");
+    let top = std::fs::canonicalize(held.path()).expect("resolved");
+    let home = top.join("home");
+    let projects = home.join(".local/share/purlis/projects");
+    let project = projects.join("01J9PRJCT00000000000000000");
+    let cwd = project.join("workspaces/app");
+    write(&cwd.join("notes.md"), b"# notes\n");
+    let other = projects.join("01J9PRJCT00000000000000001/workspaces/app/notes.md");
+    write(&other, b"# not this chat's\n");
+    let machine = machine_at(&home);
+    let read = |path: &str| {
+        read_for_window(&Asked {
+            project: &project,
+            cwd: Some(&cwd),
+            path,
+            reach: FileReach::Anywhere,
+            at: Some(0),
+            machine: &machine,
+            guarded: &[],
+        })
+    };
+
+    assert_eq!(piece(&read("notes.md")).bytes, b"# notes\n");
+    assert!(kept(&read(&other.display().to_string())));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_in_the_workspace_is_placed_by_its_own_name_as_the_host_places_one() {
+    let r = runner();
+    std::fs::hard_link(&r.outside, r.cwd.join("hosts")).expect("a second name of it");
+
+    let found = r.look("hosts");
+
+    let (path, from_workspace) = plain(&found);
+    assert_eq!(path, r.shown(&r.cwd.join("hosts")));
+    assert_eq!(from_workspace, Some("repos/web/hosts"));
+    assert_eq!(
+        piece(&r.read("hosts", FileReach::Workspace, 0)).bytes,
+        b"127.0.0.1 localhost\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_whose_other_name_is_in_a_kept_folder_is_kept() {
+    let r = runner();
+    let in_kept = [
+        r.home.join(".config/purlis/runners.json"),
+        r.home.join(".local/share/purlis/profiles/work/notes.md"),
+        r.home.join(".ssh/notes"),
+    ];
+    for (n, file) in in_kept.iter().enumerate() {
+        write(file, b"{}\n");
+        std::fs::hard_link(file, r.cwd.join(format!("second-{n}"))).expect("a second name");
+    }
+    sign_ins(&r);
+
+    for n in 0..in_kept.len() {
+        let path = format!("second-{n}");
+        assert!(kept(&r.look(&path)), "{path}");
+        assert!(kept(&r.read(&path, FileReach::Anywhere, 0)), "{path}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_between_two_files_of_a_project_in_the_data_home_is_read() {
+    let held = tempfile::tempdir().expect("a temporary folder");
+    let top = std::fs::canonicalize(held.path()).expect("resolved");
+    let home = top.join("home");
+    let project = home.join(".local/share/purlis/projects/01J9PRJCT00000000000000000");
+    let cwd = project.join("workspaces/app");
+    write(&cwd.join("notes.md"), b"# notes\n");
+    std::fs::hard_link(cwd.join("notes.md"), cwd.join("again.md")).expect("a second name");
+    let machine = machine_at(&home);
+
+    let read = read_for_window(&Asked {
+        project: &project,
+        cwd: Some(&cwd),
+        path: "again.md",
+        reach: FileReach::Workspace,
+        at: Some(0),
+        machine: &machine,
+        guarded: &[],
+    });
+
+    assert_eq!(piece(&read).bytes, b"# notes\n");
+}
+
+/// A runner whose `mnt/` beside the project is a folder a hover never looks in, with a file on
+/// it.
+fn with_a_mount() -> (Runner, PathBuf) {
+    let mut r = runner();
+    let mount = r.project.parent().expect("a parent").join("mnt");
+    write(&mount.join("usb/notes.txt"), b"on a volume\n");
+    r.guarded = vec![mount.clone()];
+    (r, mount)
+}
+
+#[test]
+fn a_file_on_a_folder_the_host_never_looks_in_is_not_looked_at_on_the_runner_either() {
+    let (r, mount) = with_a_mount();
+    let path = r.shown(&mount.join("usb/notes.txt"));
+
+    assert_eq!(r.look_anywhere(&path), FileRead::NotThere);
+    assert_eq!(r.read(&path, FileReach::Anywhere, 0), FileRead::NotThere);
+    // As far as the folder itself: the walk stops before it asks about it.
+    assert_eq!(r.look_anywhere(&r.shown(&mount)), FileRead::NotThere);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_out_of_the_workspace_into_a_folder_never_looked_in_is_not_followed() {
+    let (r, mount) = with_a_mount();
+    std::os::unix::fs::symlink(mount.join("usb"), r.cwd.join("usb")).expect("a link");
+
+    assert_eq!(r.look_anywhere("usb/notes.txt"), FileRead::NotThere);
+}
+
+#[test]
+fn a_file_outside_the_workspace_elsewhere_is_looked_at_as_the_host_looks() {
+    let (r, _mount) = with_a_mount();
+
+    let found = r.look_anywhere(&r.shown(&r.outside));
+
+    assert_eq!(plain(&found), (r.shown(&r.outside).as_str(), None));
+}
+
+#[test]
+fn the_chats_own_project_is_read_inside_a_folder_never_looked_in() {
+    let mut r = runner();
+    // The project itself is on such a volume: what purlis reads already is read.
+    r.guarded = vec![r.project.parent().expect("a parent").to_path_buf()];
+
+    assert_eq!(
+        plain(&r.look("src/main.rs")).1,
+        Some("repos/web/src/main.rs")
+    );
+}
+
+#[test]
+fn a_look_judges_a_file_by_its_first_bytes_alone() {
+    let r = runner();
+    let start = usize::try_from(super::MOST_FILE_LOOKED).expect("a size");
+    let mut bytes = vec![b'a'; start];
+    bytes.extend_from_slice(b"\0 far past what a look reads");
+    write(&r.cwd.join("late.log"), &bytes);
+
+    assert!(matches!(
+        r.look("late.log"),
+        FileRead::Plain { size, piece: None, .. } if size == bytes.len() as u64
+    ));
+}
+
+#[test]
+fn a_look_whose_first_bytes_end_inside_a_character_is_text() {
+    let r = runner();
+    let start = usize::try_from(super::MOST_FILE_LOOKED).expect("a size");
+    // `é` is two bytes: the look's last byte is the first half of one.
+    let text = "a".repeat(start - 1) + &"é".repeat(8);
+    write(&r.cwd.join("accents.txt"), text.as_bytes());
+
+    assert_eq!(
+        plain(&r.look("accents.txt")).1,
+        Some("repos/web/accents.txt")
+    );
+}
+
+#[test]
+fn a_piece_is_read_from_where_it_was_asked_alone() {
+    let r = runner();
+    let first = usize::try_from(MOST_FILE_PIECE).expect("a size");
+    let mut bytes = vec![b'a'; first];
+    bytes[10] = 0;
+    bytes.extend_from_slice(b"the second piece\n");
+    write(&r.cwd.join("two.log"), &bytes);
+
+    let second = r.read("two.log", FileReach::Workspace, MOST_FILE_PIECE);
+
+    assert_eq!(piece(&second).bytes, b"the second piece\n");
+    assert!(matches!(
+        r.read("two.log", FileReach::Workspace, 0),
+        FileRead::Binary { size, .. } if size == bytes.len() as u64
+    ));
+}
+
+#[test]
+fn pieces_cut_inside_a_character_are_text_and_join_into_the_file() {
+    let r = runner();
+    let first = usize::try_from(MOST_FILE_PIECE).expect("a size");
+    let text = "a".repeat(first - 1) + &"é".repeat(4) + "\n";
+    write(&r.cwd.join("cut.txt"), text.as_bytes());
+
+    let mut joined = piece(&r.read("cut.txt", FileReach::Workspace, 0))
+        .bytes
+        .clone();
+    joined.extend(
+        piece(&r.read("cut.txt", FileReach::Workspace, MOST_FILE_PIECE))
+            .bytes
+            .clone(),
+    );
+
+    assert_eq!(joined, text.as_bytes());
+}
+
+#[test]
+fn a_workspace_file_named_in_another_case_on_a_disk_that_folds_it_is_the_workspaces() {
+    let r = runner();
+    let shouted = r.shown(&r.cwd.join("SRC/Main.rs"));
+    if std::fs::metadata(&shouted).is_err() {
+        // This disk tells the two names apart: there is no such file.
+        return;
+    }
+
+    assert_eq!(plain(&r.look(&shouted)).1, Some("repos/web/src/main.rs"));
 }
