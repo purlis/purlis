@@ -273,6 +273,8 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         return None;
     }
     let fix = RELEASE_FLOOR_FIX;
+    // What an earlier line left of the nesting flag is not this line's.
+    nested_too_deep();
     if depth > MAX_DEPTH || !may_read(cmd) {
         return Some(format!("{fix}{}", merge::UNREADABLE));
     }
@@ -287,6 +289,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // added: a copy of each would be read again at every depth of an `eval` chain.
     let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
     let (lines, unparsed_case) = in_command_position(&shell_lines);
+    if nested_too_deep() {
+        return Some(too_nested(fix));
+    }
     // Only a line something was blanked out of reads differently, so no other is read twice.
     if lines != shell_lines {
         let mut read: std::collections::HashSet<Vec<String>> = segments.iter().cloned().collect();
@@ -300,10 +305,33 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     let a_shell_reads_stdin = segments
         .iter()
         .any(|toks| takes_its_script_from_stdin(toks));
+    // A shell (or a program the shell builds, read as one) handed a process substitution reads
+    // what its commands print as its script: `bash <(echo gh pr merge 12)`, `$SHELL < <(…)`.
+    // Each body is read for what it could print, and only a merge among it is refused (round 7).
+    if cmd.contains("<(") && segments.iter().any(|toks| hands_a_script_to_a_shell(toks)) {
+        let bodies = substitution_bodies(cmd, true);
+        if nested_too_deep() {
+            return Some(too_nested(fix));
+        }
+        for body in bodies {
+            for toks in commands_of(&body) {
+                for printed in fed_lines(&toks) {
+                    if let Some(said) = inner_floor(&printed) {
+                        return Some(said);
+                    }
+                }
+            }
+        }
+    }
     // A substitution the shell runs, wherever it stands, even inside double quotes, read from
     // the line as written: the words a substitution's own quotes split are not its body (#866).
+    let mut unclosable = false;
     if livesub::may_substitute(cmd) && livesub::live_substitution(cmd).is_some() {
-        for body in substitution_bodies(cmd, true) {
+        let bodies = substitution_bodies(cmd, true);
+        if nested_too_deep() {
+            return Some(too_nested(fix));
+        }
+        for body in bodies {
             // A `case` inside a substitution is held, parsed or not: its patterns' `)` are
             // what a substitution's own close is told from (#7131, round 6).
             if names_a_case(&body) {
@@ -315,6 +343,10 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             if let Some(said) = inner_floor(&body) {
                 return Some(said);
             }
+            // A body with a comment, a heredoc or a `$'` quote is one the close of the
+            // substitution is not reliably found in. It is refused last, so a refusal the line
+            // already earns is the one said (round 7).
+            unclosable |= body_the_reader_cannot_close(&body);
         }
     }
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
@@ -331,6 +363,20 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         ));
     }
     for reading in shellseg::segment_readings(&lines) {
+        // A definition's body is read as the commands it will run: its first program, if the
+        // shell builds it, is as unreadable as one in the line itself (round 7).
+        for toks in [&reading.outward, &reading.own] {
+            if let Some(at) = shellwrap::past_function_headers(toks) {
+                let (body, ..) = shellwrap::split_env(&toks[at..]);
+                if program_built_by_the_shell(&body) {
+                    return Some(format!(
+                        "{fix}{} The program `{body}` of a function's body is built by the shell, \
+                         so purlis can't read which command this is. {WRITE_IT_OUT}",
+                        merge::UNREADABLE
+                    ));
+                }
+            }
+        }
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
             return Some(format!(
@@ -342,7 +388,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         // A substitution anywhere in the program word is split into words, so a path around it
         // makes no path of it: what it prints could be the command (`$(echo gh pr merge 12)/y`,
         // `$X$(…)/y`). Only one that prints a path is read past (#7131).
-        if let Some(body) = substitution_that_could_print_a_command(&reading, &prog) {
+        let printed = substitution_that_could_print_a_command(&reading, &prog);
+        if nested_too_deep() {
+            return Some(too_nested(fix));
+        }
+        if let Some(body) = printed {
             return Some(format!(
                 "{fix}{} The program `{prog}` holds a substitution (`{body}`) that the shell \
                  splits into words, and it could print any command. {WRITE_IT_OUT}",
@@ -355,6 +405,13 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         if said.is_some() {
             return said;
         }
+    }
+    if unclosable {
+        return Some(format!(
+            "{fix}{} A substitution here holds a comment, a heredoc or a `$'` quote, so purlis \
+             can't tell where it ends. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
     }
     None
 }
@@ -832,6 +889,7 @@ fn program_built_by_the_shell(prog: &str) -> bool {
 fn takes_its_script_from_stdin(toks: &[String]) -> bool {
     let (prog, _env, argv) = shellwrap::split_env(toks);
     shellwrap::takes_its_script_from_stdin(&prog, &argv)
+        || shellwrap::built_program_takes_its_script_from_stdin(&prog, &argv)
 }
 
 /// **A command substitution in a program word that could print a command** (#7131): the body of
@@ -948,14 +1006,16 @@ fn prints_only_a_path(body: &str) -> bool {
 /// `case WORD in` with the WORD read as the shell reads it, or a pattern that no `)` closes.
 /// Such a line is held, never read on (round 6).
 fn in_command_position(line: &str) -> (String, bool) {
-    let line = without_arithmetic(line);
+    let (line, unsure_arithmetic) = without_arithmetic(line);
     let Ok(toks) = shellseg::lex(&line) else {
-        return (line, false);
+        return (line, unsure_arithmetic);
     };
     let toks = shellseg::split_punctuation(toks);
     let source: Vec<char> = line.chars().collect();
     let mut chars = source.clone();
-    let mut unparsed = false;
+    // An arithmetic body with a backslash or a quote is one the reader cannot place the
+    // parentheses of: held, never read on (round 7).
+    let mut unparsed = unsure_arithmetic;
     // Where a `;` is put in the blanks before a `do` or `{` that follows its header with none.
     let mut breaks: Vec<usize> = Vec::new();
     let mut blank = |from: isize, to: isize| {
@@ -987,8 +1047,18 @@ fn in_command_position(line: &str) -> (String, bool) {
     let mut opened: Vec<Option<bool>> = Vec::new();
     let mut i = 0;
     while i < toks.len() {
+        // Once a case is held the rest of the line is not read: the line is refused (round 7).
+        if unparsed {
+            break;
+        }
         let tok = &toks[i];
         let bare = |text: &str| tok.bare && tok.text == text;
+        // A word of a case carrying a `${` that does not close in it: the lexer split the
+        // expansion at an operator inside it, so what follows is not read as the shell reads it.
+        if !cases.is_empty() && tok.bare && has_unclosed_expansion(&tok.text) {
+            unparsed = true;
+            continue;
+        }
         if matches!(cases.last(), Some(Case::Patterns)) && !bare("\n") {
             if bare("esac") {
                 cases.pop();
@@ -1077,7 +1147,8 @@ fn in_command_position(line: &str) -> (String, bool) {
                 .is_some_and(|n| n.bare && n.text == "(" && n.start == tok.end);
             i += if process { 1 } else { 2 };
             continue;
-        } else if at_command && bare("esac") && matches!(cases.last(), Some(Case::Arm)) {
+        } else if at_command && reserved && bare("esac") && matches!(cases.last(), Some(Case::Arm))
+        {
             cases.pop();
             at_command = false;
         } else if bare("do") && loops > 0 {
@@ -1108,10 +1179,11 @@ fn in_command_position(line: &str) -> (String, bool) {
             if let Some(end) = header {
                 blank(tok.start, isize::try_from(end).unwrap_or(isize::MAX));
                 cases.push(Case::Patterns);
-                i = toks
+                // From here on: a rescan from the first token after every header is quadratic.
+                i = toks[i..]
                     .iter()
                     .position(|t| usize::try_from(t.start).is_ok_and(|s| s >= end))
-                    .unwrap_or(toks.len());
+                    .map_or(toks.len(), |at| i + at);
                 continue;
             }
             unparsed = true;
@@ -1134,18 +1206,22 @@ fn in_command_position(line: &str) -> (String, bool) {
                             .contains(&c.text.as_str())
                 });
             if named {
+                // A `case` after a NAME is not read as one: bash's reading of it is not
+                // certain, so the line is held (round 7).
+                if toks.get(i + 2).is_some_and(|c| c.bare && c.text == "case") {
+                    unparsed = true;
+                }
                 // The NAME is blanked, so what the compound runs reads as the line's own.
                 blank(tok.start, toks[i + 1].end);
             }
             i += if named { 2 } else { 1 };
             continue;
         } else if at_command && reserved && bare("time") {
-            // `time -p`: its options are no command either.
+            // `time -p`: its option is no command either. Nothing else is skipped, `--` included:
+            // after it bash does not read `case` as a reserved word, so what follows is read as
+            // the arguments of a command (round 7).
             i += 1;
-            while toks
-                .get(i)
-                .is_some_and(|t| t.bare && t.text.starts_with('-'))
-            {
+            if toks.get(i).is_some_and(|t| t.bare && t.text == "-p") {
                 i += 1;
             }
             continue;
@@ -1179,7 +1255,7 @@ fn case_header_end(source: &[char], from: usize) -> Option<usize> {
     while source.get(p).is_some_and(|c| *c == ' ' || *c == '\t') {
         p += 1;
     }
-    let end = word_end(source, p)?;
+    let end = word_end(source, p, 0)?;
     if end == p {
         return None;
     }
@@ -1197,16 +1273,16 @@ fn case_header_end(source: &[char], from: usize) -> Option<usize> {
 /// One past the shell word that starts at `p`: quotes, escapes and the expansions (`$(…)`,
 /// `${…}`, `$[…]`, backticks) read whole, a blank or an operator ending it. `None` where one
 /// does not close.
-fn word_end(s: &[char], mut p: usize) -> Option<usize> {
+fn word_end(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     while let Some(&c) = s.get(p) {
         match c {
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
-            '"' => p = skip_double_quoted(s, p + 1)?,
+            '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
             '`' => p = skip_backtick(s, p + 1)?,
             '$' => match s.get(p + 1) {
-                Some('(') => p = skip_paren(s, p + 2)?,
-                Some('{') => p = skip_brace(s, p + 2)?,
+                Some('(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+                Some('{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
                 Some('[') => p = s.get(p + 2..)?.iter().position(|q| *q == ']')? + p + 3,
                 _ => p += 1,
             },
@@ -1217,15 +1293,129 @@ fn word_end(s: &[char], mut p: usize) -> Option<usize> {
     Some(p.min(s.len()))
 }
 
+std::thread_local! {
+    /// Whether a reading of this thread's line went past [`MAX_NEST`] (round 7).
+    static NESTED_TOO_DEEP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// How many expansions deep the reader follows one inside another to find where a word or a
+/// substitution ends. No real command nests this deep, and without a bound a line of thousands
+/// of `$(` would exhaust the stack: past it the line is held.
+const MAX_NEST: usize = 128;
+
+/// Whether a reading went past [`MAX_NEST`] since this was last asked, and forgets it.
+fn nested_too_deep() -> bool {
+    NESTED_TOO_DEEP.with(|flag| flag.replace(false))
+}
+
+/// The refusal of a line nested past [`MAX_NEST`].
+fn too_nested(fix: &str) -> String {
+    format!(
+        "{fix}{} This line nests expansions too deep to read. {WRITE_IT_OUT}",
+        merge::UNREADABLE
+    )
+}
+
+/// Counts one more level of nesting, or notes that the reader went too deep and says so.
+fn deeper(nest: usize) -> Option<usize> {
+    if nest >= MAX_NEST {
+        NESTED_TOO_DEEP.with(|flag| flag.set(true));
+        return None;
+    }
+    Some(nest + 1)
+}
+
+/// Whether a substitution's body holds what the close of the substitution is not reliably found
+/// past: a comment (a `#` where a word starts), a heredoc whose delimiter line is not in the body
+/// (`<<`, not a here-string's `<<<`), or a `$'` quote, none inside quotes of its own (round 7).
+/// A heredoc that is closed inside the body is read past: its text is data.
+fn body_the_reader_cannot_close(body: &str) -> bool {
+    let chars: Vec<char> = body.chars().collect();
+    let (mut single, mut double) = (false, false);
+    // The heredocs opened on this line, whose bodies start at the next one: delimiter and `<<-`.
+    let mut pending: Vec<(String, bool)> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let word_start = i == 0 || chars[i - 1].is_whitespace() || ";&|()<>".contains(chars[i - 1]);
+        match c {
+            '\n' if !single && !double && !pending.is_empty() => {
+                // Each pending heredoc runs to a line that is its delimiter.
+                let mut at = i + 1;
+                for (delimiter, dash) in std::mem::take(&mut pending) {
+                    loop {
+                        if at > chars.len() {
+                            return true;
+                        }
+                        let end = chars[at.min(chars.len())..]
+                            .iter()
+                            .position(|c| *c == '\n')
+                            .map_or(chars.len(), |n| at + n);
+                        let line: String = chars[at.min(chars.len())..end].iter().collect();
+                        let line = if dash {
+                            line.trim_start_matches('\t')
+                        } else {
+                            &line
+                        };
+                        at = end + 1;
+                        if line == delimiter {
+                            break;
+                        }
+                    }
+                }
+                i = at.saturating_sub(1);
+            }
+            '\\' if !single => i += 1,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            _ if single => {}
+            '$' if !double && chars.get(i + 1) == Some(&'\'') => return true,
+            '#' if !double && word_start => return true,
+            '<' if !double
+                && chars.get(i + 1) == Some(&'<')
+                && chars.get(i + 2) != Some(&'<')
+                && (i == 0 || chars[i - 1] != '<') =>
+            {
+                let mut j = i + 2;
+                let dash = chars.get(j) == Some(&'-');
+                if dash {
+                    j += 1;
+                }
+                while chars.get(j).is_some_and(|c| *c == ' ' || *c == '\t') {
+                    j += 1;
+                }
+                let mut delimiter = String::new();
+                while let Some(&d) = chars.get(j) {
+                    if d.is_whitespace() || ";&|()<>".contains(d) {
+                        break;
+                    }
+                    if !matches!(d, '\'' | '"' | '\\') {
+                        delimiter.push(d);
+                    }
+                    j += 1;
+                }
+                if delimiter.is_empty() {
+                    return true;
+                }
+                pending.push((delimiter, dash));
+                i = j - 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    !pending.is_empty()
+}
+
 /// One past the `"` that closes the double quotes opened before `p`.
-fn skip_double_quoted(s: &[char], mut p: usize) -> Option<usize> {
+fn skip_double_quoted(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     while let Some(&c) = s.get(p) {
         match c {
             '\\' => p += 2,
             '"' => return Some(p + 1),
             '`' => p = skip_backtick(s, p + 1)?,
-            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2)?,
-            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2)?,
+            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             _ => p += 1,
         }
     }
@@ -1246,16 +1436,16 @@ fn skip_backtick(s: &[char], mut p: usize) -> Option<usize> {
 
 /// One past the `)` that closes the substitution opened before `p`, quotes and nested
 /// substitutions read whole, or `None` where nothing closes it.
-fn skip_paren(s: &[char], mut p: usize) -> Option<usize> {
+fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     let mut depth = 0usize;
     while let Some(&c) = s.get(p) {
         match c {
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
-            '"' => p = skip_double_quoted(s, p + 1)?,
+            '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
             '`' => p = skip_backtick(s, p + 1)?,
-            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2)?,
-            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2)?,
+            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             '(' => {
                 depth += 1;
                 p += 1;
@@ -1272,15 +1462,15 @@ fn skip_paren(s: &[char], mut p: usize) -> Option<usize> {
 }
 
 /// One past the `}` that closes the `${` opened before `p`, or `None`.
-fn skip_brace(s: &[char], mut p: usize) -> Option<usize> {
+fn skip_brace(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     let mut depth = 0usize;
     while let Some(&c) = s.get(p) {
         match c {
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
-            '"' => p = skip_double_quoted(s, p + 1)?,
+            '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
             '`' => p = skip_backtick(s, p + 1)?,
-            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2)?,
+            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
             '$' if s.get(p + 1) == Some(&'{') => {
                 depth += 1;
                 p += 2;
@@ -1339,6 +1529,9 @@ fn pattern_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
     }
     let mut depth = 0usize;
     while let Some(t) = toks.get(j) {
+        if t.bare && has_unclosed_expansion(&t.text) {
+            return None;
+        }
         if t.bare && t.text.chars().all(|c| "();<>|&\n".contains(c)) {
             match t.text.as_str() {
                 "(" => depth += 1,
@@ -1353,6 +1546,28 @@ fn pattern_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
     None
 }
 
+/// Whether a word holds a `${` that no `}` closes within it: the lexer split it at an operator
+/// inside the expansion (`${y:-(}`, `${y:-;;}`), so the words after it are not read as the shell
+/// reads them (round 7).
+fn has_unclosed_expansion(word: &str) -> bool {
+    let chars: Vec<char> = word.chars().collect();
+    let mut open = 0usize;
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 1,
+            '$' if chars.get(i + 1) == Some(&'{') => {
+                open += 1;
+                i += 1;
+            }
+            '}' => open = open.saturating_sub(1),
+            _ => {}
+        }
+        i += 1;
+    }
+    open > 0
+}
+
 /// Whether the token at `at` is `;&` or `;;&`, which end a `case` arm as `;;` does.
 fn is_fallthrough(toks: &[shellseg::Tok], at: usize) -> bool {
     let tok = &toks[at];
@@ -1365,10 +1580,13 @@ fn is_fallthrough(toks: &[shellseg::Tok], at: usize) -> bool {
 
 /// `line` with each arithmetic expansion (`$((…))`) as `0` and each arithmetic command
 /// (`((…))` where a command starts) as `:`. A `$((` whose parentheses do not close as `))` is a
-/// command substitution of a subshell, and kept.
-fn without_arithmetic(line: &str) -> String {
+/// command substitution of a subshell, and kept. And whether one of them had a `\` or a quote in
+/// it, where the parentheses are not read as the shell reads them: the line is then held
+/// (round 7).
+fn without_arithmetic(line: &str) -> (String, bool) {
     let chars: Vec<char> = line.chars().collect();
     let mut out = String::with_capacity(line.len());
+    let mut unsure = false;
     let mut i = 0;
     while i < chars.len() {
         let expansion = chars[i] == '$' && chars.get(i + 1) == Some(&'(');
@@ -1382,6 +1600,9 @@ fn without_arithmetic(line: &str) -> String {
             && chars.get(at + 1) == Some(&'(')
             && let Some(end) = arithmetic_end(&chars, at)
         {
+            unsure |= chars[at..end]
+                .iter()
+                .any(|c| matches!(c, '\\' | '\'' | '"'));
             out.push(if expansion { '0' } else { ':' });
             i = end;
             continue;
@@ -1389,7 +1610,7 @@ fn without_arithmetic(line: &str) -> String {
         out.push(chars[i]);
         i += 1;
     }
-    out
+    (out, unsure)
 }
 
 /// One past the `))` that closes the `((` at `at`, where the inner `(` closes right before the
@@ -1452,6 +1673,13 @@ fn commands_of(line: &str) -> Vec<Vec<String>> {
     commands
 }
 
+/// Whether a segment is a shell, or a program the shell builds that could be one, which runs a
+/// script handed to it as a file or on stdin.
+fn hands_a_script_to_a_shell(toks: &[String]) -> bool {
+    let (prog, ..) = shellwrap::split_env(toks);
+    shellwrap::runs_a_script_file(&prog) || prog.contains(['$', '`'])
+}
+
 /// What a segment could print into a shell reading stdin: its words as one line, with and
 /// without the producer's own leading options (`echo -n`, `printf --`) and, for `printf`, its
 /// format; and each word that is a line of its own.
@@ -1490,7 +1718,7 @@ fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<Stri
                 && arithmetic_end(&chars, i + 1).is_some());
         if opens {
             // The close is found as the shell finds it, past a quoted or escaped `)`.
-            let (end, next) = match skip_paren(&chars, i + 2) {
+            let (end, next) = match skip_paren(&chars, i + 2, 0) {
                 Some(after) => (after - 1, after),
                 None => (chars.len(), chars.len()),
             };

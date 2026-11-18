@@ -1567,6 +1567,14 @@ pub fn takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
     !dash_c && (operand.is_none() || names_stdin(operand) || words.iter().any(|a| a == "-s"))
 }
 
+/// True when `prog` is a program the shell builds (`$SHELL`, `${SHELL:-bash}`, `$(which bash)`)
+/// that, read as `bash` is, takes its script from stdin (round 7): it could be any shell, so
+/// what it is fed is read as a script. A command that is no shell never runs it, and the caller
+/// reads what is fed as a merge or not.
+pub fn built_program_takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
+    prog.contains(['$', '`']) && takes_its_script_from_stdin("bash", argv)
+}
+
 /// True when `prog` is a program that runs a file handed to it as a script: a shell, or
 /// `source` and `.`. A process substitution among its words (`bash <( … )`) is such a file.
 pub fn runs_a_script_file(prog: &str) -> bool {
