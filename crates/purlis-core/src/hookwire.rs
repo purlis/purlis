@@ -1665,7 +1665,8 @@ pub struct DecideAsk {
     /// The resource's entity type (`Branch`).
     pub kind: String,
     /// The resource's id (`acme/web#12`).
-    pub id: String,    /// The harness tool the action came through (`Bash`): what a block it decides is written
+    pub id: String,
+    /// The harness tool the action came through (`Bash`): what a block it decides is written
     /// under, and nothing a rule reads.
     pub tool: String,
 }

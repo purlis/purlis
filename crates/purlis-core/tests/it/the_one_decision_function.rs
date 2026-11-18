@@ -365,7 +365,7 @@ fn the_replays_test_policy_host_answers_from_the_planes_committed_head() {
         action: "merge".to_owned(),
         kind: "Branch".to_owned(),
         id: "acme/web#12".to_owned(),
-    tool: "Bash".to_owned(),
+        tool: "Bash".to_owned(),
     };
     let decided = |root: &Path| match decide::replays_host(root, &ask) {
         Answer::Decided(decision) => *decision,
@@ -379,7 +379,11 @@ fn the_replays_test_policy_host_answers_from_the_planes_committed_head() {
          @id(\"guards-merge-never\")\n\
          forbid (principal, action == Action::\"merge\", resource);\n";
     std::fs::write(dir.path().join("policy.cedar"), refusing).expect("the working file");
-    assert_eq!(decided(dir.path()).after_mode, Outcome::Ask, "HEAD, not the working file");
+    assert_eq!(
+        decided(dir.path()).after_mode,
+        Outcome::Ask,
+        "HEAD, not the working file"
+    );
 
     git(dir.path(), &["add", "-A"]);
     git(dir.path(), &["commit", "-q", "-m", "refuse merges"]);

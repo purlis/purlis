@@ -10026,7 +10026,8 @@ fn became_a_block(
         _ => Target::host(&block.target),
     }
     .ok();
-    let stop = Stop::Block(Block { policy: None,
+    let stop = Stop::Block(Block {
+        policy: None,
         tool: withdrawn.tool.unwrap_or_default(),
         source: Source::Sandbox,
         qualifier: None,
@@ -10090,7 +10091,8 @@ fn register_live(
     blocks.heard_waiting(chat, block.clone());
     blocks.held_live(chat, &block, target);
     if raised && let Some(write) = lock(stops).clone() {
-        let ask = Stop::AskRaised(AskRaised { policy: None,
+        let ask = Stop::AskRaised(AskRaised {
+            policy: None,
             ask: AskGroup::Sandbox,
         });
         if let Err(why) = write(chat, ask, BlockWritten::Raised) {

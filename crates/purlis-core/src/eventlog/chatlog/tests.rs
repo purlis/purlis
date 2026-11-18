@@ -65,7 +65,8 @@ fn run_started(log: &mut Log, chat: &str, run: &str, protection: Option<&str>) {
 }
 
 fn block(qualifier: Option<Qualifier>) -> Stop {
-    Stop::Block(Block { policy: None,
+    Stop::Block(Block {
+        policy: None,
         tool: "Bash".to_owned(),
         source: Source::Guard,
         qualifier,
@@ -182,7 +183,8 @@ fn a_chats_timeline_and_the_fleet_counts_are_queries_of_the_event_log() {
     host.stop(
         plane,
         Some(4),
-        &Stop::Hold(Hold { policy: None,
+        &Stop::Hold(Hold {
+            policy: None,
             tool: "Bash".to_owned(),
             target: Some(Target::service("github.com").unwrap()),
             args: None,
@@ -606,7 +608,13 @@ fn raising_and_answering_an_ask_writes_its_event_with_the_answer_and_who() {
 
     let mut expected = Vec::new();
     for (at, group) in GROUPS.into_iter().enumerate() {
-        send(&mut host, Stop::AskRaised(AskRaised { policy: None, ask: group }));
+        send(
+            &mut host,
+            Stop::AskRaised(AskRaised {
+                policy: None,
+                ask: group,
+            }),
+        );
         let answered = match group {
             AskGroup::HarnessPrompt => AskAnswered::applied(group, &applied),
             _ => AskAnswered {
@@ -848,7 +856,8 @@ fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
         Some("steward"),
     )
     .unwrap();
-    let hold = Hold { policy: None,
+    let hold = Hold {
+        policy: None,
         tool: "Bash".to_owned(),
         target: Some(Target::guard_arm(crate::mergehold::REASON).unwrap()),
         args: None,
@@ -1045,7 +1054,8 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
     host.stop(
         plane,
         Some(4),
-        &Stop::Hold(Hold { policy: None,
+        &Stop::Hold(Hold {
+            policy: None,
             tool: "Bash".to_owned(),
             target: None,
             args: None,
@@ -1085,7 +1095,8 @@ fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
     let dir = tempfile::tempdir().unwrap();
     let mut log = Log::open(dir.path(), DEVICE).unwrap();
     let block_of = |source: Source, args: &str| {
-        serde_json::to_value(Stop::Block(Block { policy: None,
+        serde_json::to_value(Stop::Block(Block {
+            policy: None,
             tool: "Bash".to_owned(),
             source,
             qualifier: None,

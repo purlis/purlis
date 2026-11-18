@@ -56,7 +56,8 @@ impl<'a> Turns<'a> {
 
     /// A block of `Bash` with `args` by `source`.
     fn block_by(&mut self, source: Source, args: &str, qualifier: Option<Qualifier>) -> &mut Self {
-        let body = serde_json::to_value(Stop::Block(Block { policy: None,
+        let body = serde_json::to_value(Stop::Block(Block {
+            policy: None,
             tool: "Bash".to_owned(),
             source,
             qualifier,
@@ -266,7 +267,8 @@ fn a_call_comes_back_under_the_recorders_own_post_tool_words() {
 fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
     let dir = tempfile::tempdir().unwrap();
     let guarded = |args: &str| {
-        serde_json::to_value(Stop::Block(Block { policy: None,
+        serde_json::to_value(Stop::Block(Block {
+            policy: None,
             tool: "Bash".to_owned(),
             source: Source::Guard,
             qualifier: None,

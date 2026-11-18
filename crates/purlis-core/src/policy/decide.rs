@@ -407,5 +407,9 @@ pub fn replays_host(
 /// world. Nothing a project or the person loosened applies.
 pub fn decide_locally(request: &Request<'_>) -> Decision {
     static STRICT: OnceLock<Loaded> = OnceLock::new();
-    decide(STRICT.get_or_init(Loaded::shipped_strict), request, empty_world())
+    decide(
+        STRICT.get_or_init(Loaded::shipped_strict),
+        request,
+        empty_world(),
+    )
 }

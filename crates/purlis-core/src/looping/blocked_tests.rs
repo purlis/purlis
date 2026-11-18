@@ -24,7 +24,8 @@ fn limits() -> Limits {
 /// A block from `source`, reported as `qualifier` says, of a `Bash` call whose arguments hash
 /// to `args`.
 fn reported(source: Source, qualifier: Option<Qualifier>, args: &str) -> Stop {
-    Stop::Block(Block { policy: None,
+    Stop::Block(Block {
+        policy: None,
         tool: "Bash".to_owned(),
         source,
         qualifier,
@@ -116,7 +117,8 @@ fn guard_and_sandbox_blocks_count_toward_the_block_loop() {
 
     // Sandbox: three held connections to the same host under the same call, each its block.
     let held = || {
-        Stop::Block(Block { policy: None,
+        Stop::Block(Block {
+            policy: None,
             tool: "Bash".to_owned(),
             source: Source::Sandbox,
             qualifier: None,
@@ -407,7 +409,8 @@ fn six_identical_failures_still_pause_and_another_command_resets_them() {
 
 /// A merge the hook held: a refusal with its ask open (T1-11).
 fn held() -> Stop {
-    Stop::Hold(Hold { policy: None,
+    Stop::Hold(Hold {
+        policy: None,
         tool: "Bash".to_owned(),
         target: Target::guard_arm(crate::mergehold::REASON).ok(),
         args: Some("aa".to_owned()),
@@ -521,7 +524,8 @@ fn an_allow_on_a_held_connection_resets_the_block_count() {
 /// The block one held connection of `call` makes: the same host every time, as a command that
 /// retries one host inside it does.
 fn held_under(loops: &mut Loops, call: &str) -> Option<Why> {
-    let stop = Stop::Block(Block { policy: None,
+    let stop = Stop::Block(Block {
+        policy: None,
         tool: "Bash".to_owned(),
         source: Source::Sandbox,
         qualifier: None,

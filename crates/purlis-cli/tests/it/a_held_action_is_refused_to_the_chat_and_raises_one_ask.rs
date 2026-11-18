@@ -36,7 +36,12 @@ fn git(dir: &std::path::Path, args: &[&str]) {
             .arg("-C")
             .arg(dir)
             .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
-            .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
             .args(args)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1"),
@@ -89,7 +94,13 @@ impl Chat {
         std::fs::create_dir_all(&home).expect("the home");
         // Today's blocking, explicitly (Q308: the default is `watch`), committed at the plane
         // root's HEAD, where the session host reads it (M75 slice 04).
-        commit(&root, &[("charter.toml", "schema = 1\n[policy]\ntemplate = \"strict\"\n")]);
+        commit(
+            &root,
+            &[(
+                "charter.toml",
+                "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+            )],
+        );
         let socket = base.join("app").join("hooks.sock");
         let listener = Listener::bind(&base, &socket).unwrap_or_else(|e| panic!("a socket: {e}"));
         let token = listener
@@ -208,7 +219,13 @@ impl Chat {
         std::fs::create_dir_all(&home).expect("the home");
         // Today's blocking, explicitly (Q308: the default is `watch`), committed at the plane
         // root's HEAD, where the session host reads it (M75 slice 04).
-        commit(&root, &[("charter.toml", "schema = 1\n[policy]\ntemplate = \"strict\"\n")]);
+        commit(
+            &root,
+            &[(
+                "charter.toml",
+                "schema = 1\n[policy]\ntemplate = \"strict\"\n",
+            )],
+        );
         Self {
             _tmp: tmp,
             _reading: None,
@@ -510,7 +527,10 @@ fn a_decision_with_the_session_host_unreachable_is_refused() {
     let reason = chat
         .denial("gh pr merge 12", "default")
         .expect("refused with no host");
-    assert!(reason.contains("session host could not be asked"), "{reason}");
+    assert!(
+        reason.contains("session host could not be asked"),
+        "{reason}"
+    );
     assert!(!reason.contains("asked in Asks"), "{reason}");
 }
 
@@ -528,7 +548,10 @@ fn a_merge_the_committed_policy_denies_is_refused_naming_the_rule_and_asks_nobod
         )],
     );
     let reason = chat.denial("gh pr merge 12", "default").expect("denied");
-    assert!(reason.contains("`guards-merge-never` (project, this project)"), "{reason}");
+    assert!(
+        reason.contains("`guards-merge-never` (project, this project)"),
+        "{reason}"
+    );
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_DENIED));
     assert_eq!(chat.merges_asked(), 0);

@@ -117,7 +117,8 @@ fn listed(seq: u64, at: u64, chat: &str, block: StopBlock) -> Listed {
 
 /// A sandbox block of a connection to `host`, `qualifier` as its report is worth.
 fn sandbox_host(host: &str, qualifier: Option<Qualifier>) -> StopBlock {
-    StopBlock { policy: None,
+    StopBlock {
+        policy: None,
         tool: "Bash".to_owned(),
         source: Source::Sandbox,
         qualifier,

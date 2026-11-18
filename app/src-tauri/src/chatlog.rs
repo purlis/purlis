@@ -449,7 +449,11 @@ pub(crate) fn record(hooks: &crate::hooks::Hooks, chat: u32, stop: Stop) {
 
 /// **Chat `chat` raised an ask of group `ask`** (R-229), in its Chat log ([`record`]).
 pub(crate) fn raised(hooks: &crate::hooks::Hooks, chat: u32, ask: AskGroup) {
-    record(hooks, chat, Stop::AskRaised(AskRaised { policy: None, ask }));
+    record(
+        hooks,
+        chat,
+        Stop::AskRaised(AskRaised { policy: None, ask }),
+    );
 }
 
 /// **The person answered chat `chat`'s ask of group `ask` in the window**, `allowed` it or not

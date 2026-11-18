@@ -33,7 +33,8 @@ fn event(seq: u64, days_ago: u64, chat: &str, kind: &str, body: serde_json::Valu
 
 /// A sandbox block of a connection to `host`, as the log writes it.
 fn block(host: &str) -> Block {
-    Block { policy: None,
+    Block {
+        policy: None,
         tool: "Bash".to_owned(),
         source: Source::Sandbox,
         qualifier: None,
@@ -63,7 +64,8 @@ fn the_blocked_log_is_a_30_day_view_of_the_event_log() {
         "the log prunes at the Blocked log's window"
     );
 
-    let hold = serde_json::to_value(Hold { policy: None,
+    let hold = serde_json::to_value(Hold {
+        policy: None,
         tool: "Bash".to_owned(),
         target: None,
         args: None,

@@ -279,7 +279,14 @@ fn a_held_merges_ask_is_written_raised_and_the_press_as_its_answer() {
         .unwrap()
         .iter()
         .filter(|(chat, stop)| *chat == 4 && !matches!(stop, Stop::Hold(_)))
-        .map(|(_, stop)| stop.clone())
+        .map(|(_, stop)| match stop {
+            // What the policy decided is pinned by its own test; this is about the ask's life.
+            Stop::AskRaised(raised) => Stop::AskRaised(AskRaised {
+                policy: None,
+                ..raised.clone()
+            }),
+            other => other.clone(),
+        })
         .collect();
     let by = |answer| {
         Stop::AskAnswered(AskAnswered {
@@ -291,7 +298,8 @@ fn a_held_merges_ask_is_written_raised_and_the_press_as_its_answer() {
     assert_eq!(
         asks,
         [
-            Stop::AskRaised(AskRaised { policy: None,
+            Stop::AskRaised(AskRaised {
+                policy: None,
                 ask: AskGroup::Hold
             }),
             by(Said::Allowed),
@@ -1070,8 +1078,8 @@ fn the_hold_and_its_ask_name_the_rule_the_policy_held_the_merge_by() {
 fn the_host_raises_no_ask_its_own_policy_does_not_hold() {
     // Whatever the hook said, an ask is raised only where the host's own decision is an ask.
     let project = Fake::new();
-    let mut allowed = purlis_core::policy::decide::decide_locally(
-        &purlis_core::policy::decide::Request {
+    let mut allowed =
+        purlis_core::policy::decide::decide_locally(&purlis_core::policy::decide::Request {
             chat: "4",
             of: purlis_core::policy::levels::Chat {
                 workspace: None,
@@ -1083,8 +1091,7 @@ fn the_host_raises_no_ask_its_own_policy_does_not_hold() {
                 "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
                 "via": "hook"
             }),
-        },
-    );
+        });
     allowed.after_mode = Outcome::Allow;
     *project.decision.lock().unwrap() = Some(allowed);
     let why = refused(answer(&project, &project.ask(12)));

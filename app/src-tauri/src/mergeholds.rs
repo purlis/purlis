@@ -51,7 +51,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError, Weak};
 
 use purlis_core::eventlog::stops::{AskGroup, AskRaised, Decided, Hold, Stop, Target};
-use purlis_core::policy::decide::{Decision, Outcome};
 use purlis_core::forge::backend::{Caller, ForgeBackend};
 use purlis_core::forge::pr::{Changes, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
@@ -60,6 +59,7 @@ use purlis_core::mergehold::{
     self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, OnHost, Raised, Refreshed, Repo,
     Request, Reread, Seen, Watched,
 };
+use purlis_core::policy::decide::{Decision, Outcome};
 
 use crate::asking::{MergeShown, RulesetShown};
 
@@ -460,7 +460,8 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     project.allow(chat)?;
     // The host decides the merge itself (M75 slice 04): it never raises an ask its own policy
     // does not hold, whatever the hook said, and the hold's events carry what it decided.
-    let (action, kind, id) = mergehold::policy_request(&mergehold::Held::Request(ask.request.clone()));
+    let (action, kind, id) =
+        mergehold::policy_request(&mergehold::Held::Request(ask.request.clone()));
     let decision = project
         .decide(chat, action, (kind, &id))
         .ok_or_else(|| format!("chat {chat} is not one this app has open."))?;

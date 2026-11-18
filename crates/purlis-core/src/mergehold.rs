@@ -573,7 +573,10 @@ pub fn undecided(why: &str) -> String {
 /// **The sentence a held merge's refusal ends with, naming the rule that holds it** (M75 slice
 /// 04): its `@id`, level and owner.
 pub fn held_by(decision: &crate::policy::decide::Decision) -> String {
-    format!("The project policy's rule {} holds it.", decision.rules_said())
+    format!(
+        "The project policy's rule {} holds it.",
+        decision.rules_said()
+    )
 }
 
 impl Request {

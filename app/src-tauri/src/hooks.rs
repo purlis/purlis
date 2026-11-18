@@ -4362,7 +4362,8 @@ fn hook_ask_raised(
     let Ok(chat) = raised.chat.parse::<u32>() else {
         return;
     };
-    let stop = Stop::AskRaised(AskRaised { policy: None,
+    let stop = Stop::AskRaised(AskRaised {
+        policy: None,
         ask: AskGroup::of(&raised.ask),
     });
     if let Err(why) = write_stop_into(events, root, chat, stop) {

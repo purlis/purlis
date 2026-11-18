@@ -43,7 +43,9 @@ pub fn decision(
 ) -> Option<decide::Decision> {
     let chats = held.chats();
     let workspace = chats.workspace_of(chat)?;
-    let persona = chats.persona_of(chat).and_then(|persona| persona.started_as);
+    let persona = chats
+        .persona_of(chat)
+        .and_then(|persona| persona.started_as);
     let attended = chats.attendance_of(chat).is_some_and(|fact| {
         fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
     });
