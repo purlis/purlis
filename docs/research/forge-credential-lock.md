@@ -1,8 +1,12 @@
 # The merge and release lock is the forge credential (#7133, Q331)
 
-Status: design, **round 2** (two independent reviews said "sound with changes" and "build with
-changes"; this revision designs in or accepts as a residual every point they raised). For the
-person to grill. No implementation code, no cargo, no live forge was touched.
+Status: design, **round 3**: round 2 (two independent reviews, "sound with changes" and "build with
+changes") plus **slice 0's live answers** (`forge-lock-verify-results.md`, run 2026-11-18 on
+`purlis/purlis-forge-lock-verify-1`, as the person and as the chat token), folded in at section
+0.1. Sections 1 to 12 are round 2's text and keep their **[verify]** marks; **section 0.1 is the
+ledger that says which are now observed**, and where it and an older section disagree, 0.1 wins.
+Slices are re-cut at 10.1 and filed as issues (0.4). For the person to grill. No implementation
+code, no cargo.
 Date: 2026-11-18. Rulings it rests on: Q331 (the lock is the credential; the shell-text guard
 stays as the early warning), Q330 (an API ref update of the default or protected branch is held
 as a merge). Related: #7092, #7124, #7131, #7118.
@@ -45,6 +49,103 @@ facts "[inferred]"; they are now **[verify]**, since an inference is not a basis
 | Test rows | 12 |
 | Slice order | 10 |
 | Open decisions with recommendations | 13 |
+
+## 0.1 Round 3: what slice 0 observed
+
+Row ids are those of `forge-lock-verify-results.md`. Account plan, date and API version header of
+the run are still "to fill by the person" in that file; every answer below is one account's, one
+day's.
+
+### The verify ledger
+
+Each round-2 **[verify]** is now **[observed: row]** or still **[verify]**.
+
+| Round-2 [verify] | Now | What it changes |
+|---|---|---|
+| A non-bypass merge may pass (the gate App, M1, M2) | **[observed: M1, M2]** refused 405, REST and (via P10) GraphQL | **The gate App is dropped.** Nothing in the design builds it. |
+| `actor_type: User` accepted as a bypass (B3) | **[observed: B3, RS1, RS2]** 201 on both rulesets | The bypass is **the person alone**, as decided. The repository-admin-role fallback stays only for an account or plan where `User` is refused. |
+| `pull_request` mode: direct push refused, PR merge works (B2) | **[observed: B2a, B2b]** the person's direct push to `main` is 409; the person's PR merge is 200 | Decision 1's mode holds. |
+| Tags: the person's tag works under `always` | **[observed: T-admin1, T-admin2]** 201 and 204 | The tag act of slice 7 is the person's own, as designed. |
+| Chat merge by REST and GraphQL | **[observed: M1, M2, P9, P10]** refused (P9, P10 read after B2 fixed the shim) | Closed. |
+| Chat push and force-push to a protected branch | **[observed: P1, P2, P3, P9, P10]** refused 409/422 (P3 re-run with a different sha) | Closed. |
+| Chat creates or deletes a protected branch | **[observed: P4, P5]** refused. P5-ctl failed only because the control ran after the ruleset (A2 note) | Closed. |
+| Chat renames onto a protected name | **[observed: P6]** refused 422. But the `release` branch blocks `release/*` for any actor, so the refusal is partly git's: re-run on a creatable namespace (slice 12) | Closed, with that caveat. |
+| `POST /git/tags` writes an object only | **[observed: T0]** 201 | Round 1's wrong row stays corrected. |
+| Chat tag create, move, delete | **[observed: T1, T2, T3]** refused 422 | Closed. |
+| Release on a new tag | **[observed: R1]** refused 422 | Closed. |
+| Release on an existing tag, published | **[observed: R2, R4]** refused 422 (round 2 predicted allowed) | Better than predicted. |
+| Draft release on an existing tag | **[observed: R3]** 201, allowed | **Gap.** |
+| Chat deletes a published release | **[observed: R5b]** 204, even where the person's listing showed `immutable: true`; the tag survived | **Gap**, and it contradicts the immutable-releases page's description (see below). |
+| Chat edits a published release's notes | **[observed: R6]** 200 on release v0 (v1 was already gone), which was not immutable | **Gap**; says nothing about immutable releases. |
+| Chat changes the lock (ruleset PUT, DELETE, `allow_auto_merge`) | **[observed: L1, L2, L3]** 403 | Closed. The App holds no Administration. |
+| Chat can list rulesets, and reads active rules with no admin | **[observed: L0, C2]** 200 | Section 7.3's no-admin read of the active rules is available. |
+| `current_user_can_bypass` exists (C1) | **[verify]** recorded as `info` with no field named; the results file does not say the field is absent | Treat 7.3's first bullet as unavailable until slice 3 reads the C1 body. |
+| `merge-async` (M3) | **[observed: M3, M3-reread]** 202, and nothing happened | Not a lock gap; drop it from the doc's lists. |
+| Chat enables auto-merge (A1) | **[observed: A1-enable]** yes, via GraphQL `enablePullRequestAutoMerge` | A chat can do it. |
+| Chat-enabled auto-merge merges, and takes later pushes with it | **[observed: A1-merge]** not merged after 600 s; `mergeable_state: blocked` | Closed. |
+| A person-enabled auto-merge merges a chat's pushed commit through the person's bypass | **[observed: B3-person]** not merged after more than 5 min; main unmoved | Closed: **under `pull_request` mode auto-merge does not use the enabler's bypass.** Gap 8 of 7.2 (auto-merge on) drops from a gap to defence in depth. |
+| `repository_dispatch` as the chat | **[observed: D1]** 204 | **Gap**, a CI route. |
+| Push a branch that edits a script a workflow runs | **[observed: W1a, W1b, W1c, W1d]** the run failed: its `GITHUB_TOKEN` could not write `main`, and `ci-wrote.txt` is absent from `main` | The CI route is closed for `GITHUB_TOKEN` on this repo's Actions default; the fix still depends on that setting (a gap in 7.2 stays). |
+| Retarget a PR's base onto a protected branch | **[observed: P8 (B2 re-run)]** 200, base is now `main` | **Gap**, but no ref moved and the chat cannot merge it (M1, M2). |
+| P7 `merge-upstream` | **[verify]** the repo is not a fork, so its refusal proves nothing | Still open. |
+| B1, phase D: a narrowed token of a bypass App | **[verify]** not testable: purlis offers no narrowed mint | Moot for the person-only bypass (the chat App is not an actor); slice 12 runs it once slice 2 exists. |
+| Q1 merge queue, S1 the app's OAuth creating a ruleset | **[verify]** not run (a queue is not offered on a personal repo; S1 is by hand) | Slice 5 settles S1; Q1 stays a named residual. |
+| Immutable releases: who sets them, what they stop | **[verify]** "Preventing changes to your releases" could not be read | R5b says a chat's `DELETE /releases` is not stopped even when `immutable: true` was listed; do not rely on immutability as a layer until read. |
+
+Found along the way, and constraints on the build:
+
+- **A chat's token is minted only for clones the window made** (#7196). The lock read and the
+  mint check cover those repos, not "every repo the installation reaches" as 7.4 says.
+- **`purlis discover` covers only the `purlis` org.** It is not a source for which repos to read.
+- The chat's App is `purlis-purlis-agent`, **org-owned**.
+
+### What the lock closes, in one list
+
+With the person alone in the bypass list (`pull_request` on branches, `always` on tags) and the
+chat on its own installation token, the chat is **refused**: every merge (REST, GraphQL, auto-merge
+whether the chat or the person enabled it), every push, force-push, create, delete and rename on
+a protected branch, every tag create, move and delete, a release on a new tag, publishing on an
+existing tag, and every ruleset or `allow_auto_merge` edit. It can still: push and edit its own
+branches, open and comment on PRs (AL1 to AL4, W1a, W1b).
+
+### 0.2 The residual gaps, and how purlis handles each
+
+None of these moves a protected ref or changes what a user downloads from a published tag's
+source. Each is **named by the lock read as a residual, shown to the person, and accepted by
+default** (the acceptance of 7.2 covers it), not silently passed.
+
+| Gap | Observed | Why the lock does not close it | What purlis does |
+|---|---|---|---|
+| **Release delete** (R5b) | `DELETE /releases/{id}` 204; tag survived | A release is not a ref; every release call is Contents: write (section 1), the permission a chat needs to push, so **no narrowing of the token's `permissions` can separate them** (the permissions page lists no release permission; slice 2 cannot close it) | (a) the lock read names it; (b) the app **notices a release that vanished while its tag survives** and says so with the way to recreate it (slice 8); (c) **release creation is the app's act** (slice 8), so the sanctioned path never goes through the chat; (d) the status does **not** claim "immutable releases" as a layer until the docs page is read and a chat's delete is shown refused |
+| **Draft on an existing tag** (R3) | 201 | same | Named; the draft is invisible to users, reversible, and publishing it was refused (R4). Accepted. |
+| **Edit a published release's notes** (R6) | 200 | same | Named; reversible by the person; accepted. A notes edit changes no asset. |
+| **`repository_dispatch`** (D1) | 204 | Contents: write triggers it; whether the run it starts can write depends on the repo's Actions default and workflow `if:` guards, which W1 shows closed here | The lock read already lists "Actions default token" and "workflows that trigger on dispatch" (6.4, 7.2 gap 10); it names any workflow reachable by dispatch that holds a secret or a write token. The fix is the person's repo setting; not purlis's act. |
+| **Retarget a PR's base** (P8) | 200 | A PR's base is not a ref update | The chat cannot merge the retargeted PR. The person could, by pressing merge on a PR they thought had another base: **the merge ask binds the base as well as the head** (slice 9). |
+| **Chat enables auto-merge itself** (A1) | 200 | `allow_auto_merge` on, and write access | Harmless here (A1-merge, B3-person). The lock read lists "Allow auto-merge on" as **info**, not a gap, and the doc's optional gate App (6.3) is dropped. If a later GitHub change makes a person-enabled auto-merge land a chat's commit, the nightly's expected-open-gap row (slice 12) goes red. |
+
+**Release actions become the app's act** (slices 7 and 8): the person's press creates the tag and
+the release as the person, bound to a sha. That makes the sanctioned path safe; it does **not**
+stop a chat deleting a release, which only GitHub offering a narrower permission would. Whether
+to also take Contents away from chats that never need to push is the person's (decision 5 below).
+
+### 0.3 The design after slice 0, changed from round 2
+
+- **Dropped:** the gate App and all of 6.3's mitigation text about it; `merge-async` as a row.
+- **Kept, now observed:** the two rulesets, the person-only `User` bypass, the modes, the probe of
+  6.1 (not exercised by slice 0: the person's own login was the other credential used, and it
+  bypasses by design), the exact allowlist, the lock read, the migration.
+- **Changed:** auto-merge is info, not a gap; release gaps are named residuals with a detector,
+  not "locked except releases until the app's act exists"; "every repo the installation reaches"
+  becomes "every clone the window made".
+
+### 0.4 Slices as issues (milestone M74.1)
+
+The slices of 10.1 are filed in milestone **M74.1 · Who judges a chat: phase 1 proven, the sandbox
+tested 1:1** (the milestone of #7133 and the one holding the most open `area:security` work; no
+other milestone fits better). They carry `area:security` and a `type:` label: the repository has
+**no `type:security` label**, so one was not applied; creating it is the maintainer's.
+Slice 1 #7205 · 2 #7206 · 3 #7207 · 4 #7208 · 5 #7209 · 6 #7210 · 7 #7211 · 8 #7212 · 9 #7213 ·
+10 #7214 · 11 #7215 · 12 #7216. Blocking edges are GitHub dependencies, listed in 10.1.
 
 ## 1. What a chat's credential can do today
 
@@ -239,7 +340,7 @@ closed or accepted for this repo.** In order:
 8. The app reads the lock with a state per gap (7), shows it, can set it, and then refuses an
    unlocked mint (after a release of warning only).
 9. Slice 0 is run before anything else, on a throwaway repo, by the person's decision (13.3).
-10. The optional gate App is built only if slice 0 shows a non-bypass merge **passes** (row M2).
+10. ~~The optional gate App~~ **Dropped in round 3**: slice 0 showed a non-bypass merge is refused (M1, M2).
 
 **Why not B**: unchanged: every route a broker could refuse, the forge can refuse itself, and the
 git protocol bypasses a broker.
@@ -314,6 +415,10 @@ the person. It also cannot apply to tags [doc: rules page], so tags stay `always
 
 ### 6.2 Releases (blocker 2)
 
+> **Round 3:** R1, R2 and R4 are refused; R3 (draft), R5b (delete a published release) and R6
+> (notes) are open gaps, and immutability did not stop R5b. Section 0.2 handles them; the text
+> below is round 2's reasoning.
+
 Rulesets guard refs. A release is a separate object that a `contents:write` token can **create on
 an existing tag** (no ref is created, so Restrict creations never fires), create or publish
 drafts, edit, delete, and replace assets. Round 1's row "`POST /releases` with a new tag is
@@ -341,6 +446,10 @@ a draft can be **published** by the chat, the lock check lists "releases publish
 a gap and the repo is "locked except releases" until the app's act is built.
 
 ### 6.3 Auto-merge and merge queue (blocker 3)
+
+> **Round 3:** observed, not a gap: a chat-enabled auto-merge does not merge (A1-merge) and a
+> person-enabled one does not merge a chat's commit (B3-person); the gate App below is dropped.
+> The merge queue (Q1) is still **[verify]**. See 0.1 and 0.2.
 
 If the person turns on auto-merge for a pull request, or the repo uses a merge queue, a chat's
 **later push** can complete the merge **as the person**: auto-merge merges once the requirements
@@ -544,50 +653,54 @@ runners, and `.gitlab-ci.yml` changes only on protected refs **[verify]** how.
 
 ## 10. Slices
 
-### 10.1 The order
+### 10.1 The order (round 3, re-cut after slice 0)
 
-Each is a pull request of its own and names the test that goes red.
+Each slice is a GitHub issue in M74.1 (0.4) and names the test that goes red. The gate App is
+gone: slice 0 showed a non-bypass merge is refused (M1, M2). "Blocked by" is GitHub's native
+dependency edge.
 
-0. **Verify script** (11): a scripted pass on a throwaway repo; answers recorded in
-   `docs/research/`. **Red:** a recorded answer that disagrees with a design assumption fails the
-   `forge-lock-answers` test, which reads the research file's table.
-1. **No path to the person's login.** The probe of 6.1 per harness; ADR 0067 amended; the forge
-   credential class enforced for a chat on a repo that claims the lock; no `gh` fallback.
-   **Red:** `a_chat_with_no_mint_has_no_forge_credential` (the probe's `gh api user` returns the
-   person's login today), run for Claude Code, Codex and OpenCode.
-2. **Narrow the mint.** `mint_over` sends `permissions` as an **exact allowlist**: `contents`,
-   `issues`, `metadata`, `pull_requests` (and `workflows` only where the App has it and the
-   person ticked it); never `administration`, `actions`, `statuses`, `deployments`, anything else.
-   It goes through `Field::text("permissions[contents]", "write")`: `forge/http.rs:11-13, 544-555`
-   builds `a[b]` as key `b` of object `a`, so the nested object is already supported by the native
-   transport; the contract is that `gh api` builds it the same way (`http.rs:901`). **Red:**
-   `the_mint_body_is_exactly_the_allowlist` against the fake forge, and a test that a permission
-   the App later gains is absent from the chat's token.
-3. **Read the lock** (gap states, 7), by extending `ruleset_protects` (7.1), with the no-admin
-   reads (7.3). **Red:** a recorded ruleset with an excluded branch, an `Integration` bypass, an
-   `exempt` mode, a disabled enforcement, a missing publishing branch each reads *not locked*; and
-   `the_merge_ask_and_the_lock_status_agree`.
-4. **Show it, warn only.** Settings › Project row per repo (a `Notice`, with the fix or a link to
-   the setup page); pane head says when a chat's repo is unlocked; the mint warns and proceeds.
-   Changelog fragment. **Red:** `Notice.guard.test.ts` and a copy test for the sentences; the
-   status is absent for a repo with no chat.
-5. **Set it per repo**, with the **non-admin and plan-refusal paths**: one press creates the
-   rulesets with the person's login, shows the JSON first, reads back to confirm; a non-admin gets
-   the "send to your admin" page; a plan that cannot lock gets its refusal sentence. **Red:**
-   `the_set_lock_reads_back_what_it_wrote` and `a_non_admin_sees_the_admin_page`, against the fake.
-6. **Refuse an unlocked mint, with migration** (10.2). **Red:** `an_unlocked_repo_refuses_a_mint`
-   and `a_recorded_acceptance_lets_it_mint`.
-7. **Tag as the app's act** (10.3). **Red:** `a_chat_sent_tag_push_never_takes_the_app_path`.
-8. **Release as the app's act** (10.3). **Red:** `a_chat_never_creates_the_release_the_app_made`.
-9. **GitLab read, show, set**: protected branch/tag, CI variable/runner reads; same states as 7.
-   **Red:** the GitLab rows of the contract test.
-10. **GitLab chat credential**: a new feature: a Developer-role project token minted or kept in a
-    vault, the brokered exec, a status. **Red:** `a_gitlab_chat_has_a_developer_token_never_the_persons`.
-11. **Nightly live run** of the test plan (12) against a throwaway repo and project.
-    **Red:** the nightly's report when a recorded answer changes.
+0. **Verify run: done** (`forge-lock-verify-results.md`). What it could not test moves to
+   slice 12.
+1. **#7205 No path to the person's login.** The probe of 6.1 per harness; ADR 0067 amended; no `gh`
+   fallback. **Red:** `a_chat_with_no_mint_has_no_forge_credential` (today the probe's
+   `gh api user` returns the person's login), for Claude Code, Codex and OpenCode. Blocked by:
+   none.
+2. **#7206 Narrow the mint** to the exact allowlist (`contents`, `issues`, `metadata`,
+   `pull_requests`, `workflows` only if ticked) through `Field::text("permissions[contents]", ...)`
+   (`forge/http.rs:11-13, 544-555`). It is defence in depth: it cannot close the release gaps
+   (0.2). **Red:** `the_mint_body_is_exactly_the_allowlist`. Blocked by: none.
+3. **#7207 Read the lock**, extending `ruleset_protects` (7.1), with the no-admin reads (7.3), a
+   state per gap, and the residual gaps of 0.2 named. **Red:** recorded rulesets (excluded branch,
+   `Integration` bypass, `exempt`, disabled enforcement, missing publishing branch) read not
+   locked; `the_merge_ask_and_the_lock_status_agree`; `a_lock_acceptance_never_reaches_a_chat`.
+   Blocked by: none.
+4. **#7208 Show it, warn only.** Settings › Project row, pane head, mint warns. **Red:**
+   `Notice.guard.test.ts`, `copy.test.ts`, `a_repo_with_no_chat_shows_no_lock_row`. Blocked by:
+   #7207.
+5. **#7209 Set it per repo** (rulesets with `actor_type: User` bypass, JSON shown, read back;
+   non-admin and plan-refusal paths; settles S1). **Red:** `the_set_lock_reads_back_what_it_wrote`,
+   `a_non_admin_sees_the_admin_page`. Blocked by: #7207.
+6. **#7210 Refuse an unlocked mint, with migration** (10.2). **Red:**
+   `an_unlocked_repo_refuses_a_mint`, `a_recorded_acceptance_lets_it_mint`,
+   `a_weakened_lock_revokes_live_tokens`. Blocked by: #7205, #7207, #7208, #7209.
+7. **#7211 Tag as the app's act** (10.3). **Red:** `a_chat_sent_tag_push_never_takes_the_app_path`.
+   Blocked by: #7205.
+8. **#7212 Release as the app's act, with the release gaps detected** (R5b, R3, R6; 0.2). **Red:**
+   `a_chat_never_creates_the_release_the_app_made`,
+   `a_vanished_release_with_a_surviving_tag_is_noticed`. Blocked by: #7211, #7207.
+9. **#7213 The merge ask binds the PR's base** (P8). **Red:**
+   `a_merge_press_is_refused_when_the_base_moved_since_the_ask`. Blocked by: none.
+10. **#7214 GitLab read, show, set** (incl. the CI pages not yet read). **Red:** the GitLab rows of
+    the contract test. Blocked by: #7207.
+11. **#7215 GitLab chat credential** (Developer role). **Red:**
+    `a_gitlab_chat_has_a_developer_token_never_the_persons`. Blocked by: #7214, #7205.
+12. **#7216 The live checks, nightly, with phase D.** Reruns the kit, adds B1 (a narrowed token),
+    P7, the corrected P5/P6, and pins the open gaps as expected-open rows. **Red:**
+    `forge-lock-answers` fails when a live answer disagrees with a recorded row. Blocked by:
+    #7206, #7209.
 
-The **gate App** is built only if slice 0 shows a non-bypass merge passes (row M2), or as the
-auto-merge mitigation (6.3) if the person wants auto-merge.
+Round 2's numbering: its slice 9 is now 10, 10 is 11, 11 is 12; its 7 and 8 are 7 and 8; slice 9
+here is new.
 
 ### 10.2 Migration
 
@@ -805,6 +918,38 @@ seen to fail.
    auto-merge, delete) and `chat.sh` (every row as the chat's minted token); each row is recorded
    as row, expected, observed, pass/fail in `docs/research/forge-lock-verify-results.md`. A chat
    never uses the person's credentials; this task wrote the kit and ran nothing against a forge.
+
+### Round 3: new decisions for the person
+
+Each is the person's; each has a recommendation. Slice 0 found nothing that reopens decisions 1 to
+3: B3 accepted `User`, so decision 1 stands without its fallback, and the gate App it left open is
+dropped.
+
+4. **Release deletion, drafts and notes (R5b, R3, R6): accept, or take Contents from chats?**
+   GitHub has no permission that separates them from pushing (0.2). Options: (a) **accept, detect
+   and make creation the app's act** (slice 8); (b) a per-repo **read-only chat** (`contents:read`,
+   no push at all), which breaks "you can push yourself". **Recommend (a)**, with (b) offered as a
+   per-repo option for a chat that only reviews.
+5. **Immutable releases as a layer.** R5b shows a chat's `DELETE` succeeding on a release the person's
+   listing showed immutable, which contradicts the other page. **Recommend:** do not count it as a
+   layer or advertise it in the status until the person reads "Preventing changes to your releases"
+   (the page did not load here) and confirms what it stops; a delete then re-tested by slice 12.
+6. **`repository_dispatch` (D1).** **Recommend:** accept as a named residual and let the lock read
+   list workflows reachable by dispatch that hold a secret or a write token; the fix is the person's
+   workflow or Actions setting, not an app act.
+7. **Auto-merge.** A chat can enable it, and neither a chat's nor the person's enablement merged
+   onto a protected branch (A1-merge, B3-person), so **Allow auto-merge** is info, not a gap. Its
+   consequence for the person is that, in `pull_request` mode, **their own auto-merge on a
+   protected branch is likely not to merge either** (the same finding, not run on the person's own
+   commit): they press merge. **Recommend:** leave the setting as it is and say so in the status.
+8. **`type:security` label.** The repository has `area:security` and the `type:` labels of the
+   tracker, and no `type:security`. The slices carry `area:security` plus `type:feature`, `type:test`
+   or `type:bug`. **Recommend:** keep it so; creating a label is the maintainer's.
+9. **Finish slice 0's record.** The plan, date and API header lines are blank; P7 (needs a fork), S1
+   and Q1 were not run; the repo is to be deleted afterwards (decision 3). Phase D and P7 need a
+   repo with a narrowed mint and a fork. **Recommend:** the person fills the header lines now, and
+   keeps the repo until slice 12 has run phase D and P7 (or makes a second throwaway for them), then
+   deletes it.
 
 Smaller, with a default: ADR 0067's amendment and a new ADR for the lock (default: an amendment
 of 0067 and 0077 each, `docs/adr/<NNNN>/<date>-<slug>.md`); GitHub Enterprise Server is out of
