@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795023183834,
+  "lastUpdate": 1795033122603,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51366,6 +51366,48 @@ window.BENCHMARK_DATA = {
             "value": 102.56156999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.770, 101.755, 102.562, 102.738, 102.972 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d2a6dce090d2dbb275d5ac96b6aa3d59daa5cad2",
+          "message": "A keyring that did not start reads as one that failed where a seal was kept, and #7113's review follow-ups (#7153) (#7161)\n\n* A keyring that did not start reads as one that failed where a seal was kept; #7113's review follow-ups (#7153 items 1-3, 5-7)\n\n- seal: kept_exists fails closed on NoDefaultStore; no_keyring_at(root) is the declared gap only where no sealed record says a keyring was used. NO_KEYRING says to open purlis again.\n- seal tests pin a failing read (and spare read) as Unread, and ready_to_seal's sentences.\n- enforcement test: no deny is kept from a HEAD git could not read.\n- dispatch: an unreadable policy denies a chat on no persona too, and says it could not read rather than that only a committed change allows it.\n- policy acceptance removed while the key does not read is Broken, not Never.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PCC06Z3XG60BC29RYZQJZ2\nPurlis-Persona: steward\n\n* A vault check in the window for a dispatched chat runs under its chain's policy (#7153 item 4)\n\nSecret asks, a link picked on a run grant, Allow on a refused vault, Keep blocked, and a runner chat's gate built a bare Ctx, so under vaults = off they answered 'may use' where the chat's brokered read refuses. They now go under_chain(the chat's HandedFrom policy), and the secret ask's Asker carries the chat's id and chain policy.\n\ncore: enforcement::answered_on_this_thread (test-support only), so an app test can run vaults off on its own thread.\n\nDeclares the remaining keyring gap in plane-format.md, and adds the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PCC06Z3XG60BC29RYZQJZ2\nPurlis-Persona: steward\n\n* rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PCC06Z3XG60BC29RYZQJZ2\nPurlis-Persona: steward\n\n* lane_writes: sandbox::local::no_keyring_at only reads (#7153)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PCC06Z3XG60BC29RYZQJZ2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T19:40:19Z",
+          "tree_id": "d1dd1e5e1f6132e2c5f202342d4bcd7919053f91",
+          "url": "https://github.com/purlis/purlis/commit/d2a6dce090d2dbb275d5ac96b6aa3d59daa5cad2"
+        },
+        "date": 1795033116765,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7179325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.701, 0.718, 0.722, 0.745 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6280145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.423, 16.459, 16.628, 16.652, 16.727 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.34336350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.595, 101.769, 102.343, 102.755, 102.910 ms"
           }
         ]
       }
