@@ -248,6 +248,27 @@ impl Chat {
     /// The `permissionDecisionReason` the chat's hook printed for a call of `tool` with
     /// `input` in `mode`, or `None` where it did not deny.
     fn denial_of(&self, tool: &str, input: serde_json::Value, mode: &str) -> Option<String> {
+        self.denial_in(tool, input, mode, Env::AsTheAppStartedIt)
+    }
+
+    /// [`Self::denial`] of a Bash `command` with the chat's environment as `env` leaves it.
+    fn denial_with(&self, command: &str, env: Env) -> Option<String> {
+        self.denial_in(
+            "Bash",
+            serde_json::json!({"command": command}),
+            "default",
+            env,
+        )
+    }
+
+    fn denial_in(
+        &self,
+        tool: &str,
+        input: serde_json::Value,
+        mode: &str,
+        env: Env,
+    ) -> Option<String> {
+        let scrubbed = matches!(env, Env::Scrubbed);
         let command = input.to_string();
         let payload = serde_json::json!({
             "session_id": "11111111-2222-4333-8444-555555555555",
@@ -266,9 +287,25 @@ impl Chat {
             .env("HOME", &self.home)
             .env("CHARTER_HARNESS", "claude-code")
             .env("PATH", "/usr/bin:/bin")
-            .env(SOCKET_ENV, &self.socket)
-            .env(CHAT_ENV, CHAT.to_string())
-            .envs(self.token.iter().map(|token| (TOKEN_ENV, token.expose())))
+            .envs(match env {
+                Env::AsTheAppStartedIt => vec![
+                    (SOCKET_ENV, self.socket.clone().into_os_string()),
+                    (CHAT_ENV, CHAT.to_string().into()),
+                ],
+                // Everything a chat's shell could unset, unset (#6995).
+                Env::Scrubbed => Vec::new(),
+                // A socket the chat made up, where nothing of the app's listens.
+                Env::FakeSocket(fake) => vec![
+                    (SOCKET_ENV, fake.into_os_string()),
+                    (CHAT_ENV, CHAT.to_string().into()),
+                ],
+            })
+            .envs(
+                self.token
+                    .iter()
+                    .filter(|_| !scrubbed)
+                    .map(|token| (TOKEN_ENV, std::ffi::OsString::from(token.expose()))),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -334,6 +371,16 @@ impl Chat {
             .filter(|ask| matches!(ask, Ask::Merge(_)))
             .count()
     }
+}
+
+/// What a chat's environment holds of the app's hand-over.
+enum Env {
+    /// As the app started the chat.
+    AsTheAppStartedIt,
+    /// No socket, no chat number and no token.
+    Scrubbed,
+    /// A socket the chat made up.
+    FakeSocket(PathBuf),
 }
 
 #[test]
@@ -571,4 +618,29 @@ fn a_merge_under_a_logged_family_runs_and_asks_nobody() {
     );
     assert_eq!(chat.denial("gh pr merge 12", "default"), None);
     assert_eq!(chat.merges_asked(), 0);
+}
+
+/// M75 slice 04 with #6995: a chat whose environment was scrubbed is still judged by the plane's
+/// host, which finds it by its ancestry, or the merge is refused: never run, never let through.
+#[test]
+fn a_hook_with_a_scrubbed_environment_still_asks_the_planes_host() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial_with("gh pr merge 12", Env::Scrubbed)
+        .expect("refused, never let through");
+    assert!(reason.contains("Nothing was merged"), "{reason}");
+}
+
+/// M75 slice 04 with #6995: a socket the chat put in `$PURLIS_HOOK_SOCKET` is never believed and
+/// never answers for the host: the merge is refused, and no ask is raised from it.
+#[test]
+fn a_fake_socket_in_the_environment_is_never_asked() {
+    let chat = Chat::new();
+    let fake = chat.root.join("fake.sock");
+    let reason = chat
+        .denial_with("gh pr merge 12", Env::FakeSocket(fake))
+        .expect("refused");
+    assert!(reason.contains("Nothing was merged"), "{reason}");
+    assert!(!reason.contains("asked in Asks"), "{reason}");
+    assert!(chat.holds.every().is_empty());
 }
