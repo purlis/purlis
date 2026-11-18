@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
 # Slice 0, the chat's half (#7133, design section 11): every row run as the chat's minted App
 # token, each expected to be refused unless it says "allowed". Appends to
-# docs/research/forge-lock-verify-results.md. Run by a later task once the repo exists and the
+# docs/research/forge-lock-verify-results.md. Run from a chat, by a later task once the repo exists and the
 # purlis agent App is installed on it (person.sh setup).
 #
-#   CHAT_TOKEN=<minted token> tools/forge-lock-verify/chat.sh <owner>/purlis-forge-lock-verify-<x> <phase>
+#   tools/forge-lock-verify/chat.sh <owner>/purlis-forge-lock-verify-<x> <phase>
 #
 #   A  before any ruleset: the controls (they must SUCCEED, or the later refusals prove nothing)
 #   B  after `person.sh REPO lock`: every refused row, and the allowed rows
 #   C  after `person.sh REPO automerge`: auto-merge, then a push
 #   D  after `person.sh REPO bypass-app-on`, with NARROW_TOKEN: a narrowed token of a bypass App
+#      (purlis does not mint a narrowed token yet, so without NARROW_TOKEN the row is skipped)
 #
-# The token is read from the environment and never printed. Only this one repo is touched.
+# Every chat call goes through `gh api`, run from a chat so purlis's `gh` shim supplies the chat's
+# minted installation token: this script never holds, prints or stores it. Only this one repo is touched.
 # shellcheck disable=SC2016  # GraphQL variables are not shell variables
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-[[ $# -eq 2 ]] || die "usage: CHAT_TOKEN=... chat.sh <owner>/purlis-forge-lock-verify-<x> A|B|C|D"
+[[ $# -eq 2 ]] || die "usage: chat.sh <owner>/purlis-forge-lock-verify-<x> A|B|C|D"
 need_repo "$1"
 PHASE=$2
-TOKEN="${CHAT_TOKEN:-}"
-[[ -n "$TOKEN" ]] || die "CHAT_TOKEN is not set (the token the purlis mint made for this repo)"
+command -v gh >/dev/null 2>&1 || die "gh is needed (the one purlis's shim puts on a chat's PATH)"
+TOKEN="$GH_TOKEN_VIA_SHIM"
 req "$TOKEN" GET ""
-[[ "$STATUS" == 200 ]] || die "cannot read $REPO as the chat token: $(observed)"
+[[ "$STATUS" == 200 ]] || die "cannot read $REPO through the chat's gh: $(observed)"
 jqb marker -e --arg m "$MARKER" '.description == $m' >/dev/null \
   || die "$REPO does not carry the throwaway marker; refusing"
 REPO_NODE=$(jqb repo -r .node_id)
@@ -162,7 +164,10 @@ phase_c() {
 phase_d() {
   begin_run chat.sh D narrowed-token
   local nt="${NARROW_TOKEN:-}"
-  [[ -n "$nt" ]] || die "NARROW_TOKEN is not set (a token minted with permissions=contents:write only)"
+  if [[ -z "$nt" ]]; then
+    record B1 "allowed (needs a token narrowed to contents:write; purlis offers no narrowed mint yet)" "NARROW_TOKEN not set: skipped" info
+    return 0
+  fi
   row_allowed "$nt" B1 "allowed (hypothesis: an App bypass actor bypasses whatever the token's scope)" "200 201" PUT /contents/b1.txt \
     "{\"message\":\"b1\",\"content\":\"$(b64 b1)\",\"branch\":\"main\"}"
 }

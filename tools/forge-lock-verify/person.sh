@@ -212,12 +212,21 @@ req_unscoped "$ADMIN" GET /user
 LOGIN=$(jqb "GET /user" -r .login); USER_ID=$(jqb "GET /user" -r .id)
 [[ -n "$LOGIN" && "$LOGIN" != null ]] || die "cannot read your login: $(observed)"
 if [[ "$1" == */* ]]; then
-  [[ "${1%%/*}" == "$LOGIN" ]] || die "the repo must be under your account ($LOGIN)"
   need_repo "$1"
 else
   need_repo_name "$1"; REPO="$LOGIN/$1"
 fi
-STATE_NOTE="the chat half: CHAT_TOKEN=<minted token> tools/forge-lock-verify/chat.sh $REPO"
+OWNER=${REPO%%/*}
+[[ "$OWNER" =~ ^[A-Za-z0-9-]+$ ]] || die "owner '$OWNER' is not a GitHub login; refusing"
+ORG_OWNER=false
+if [[ "$OWNER" != "$LOGIN" ]]; then
+  # An organisation the person administers (an active admin membership), else stop.
+  req_unscoped "$ADMIN" GET "/user/memberships/orgs/$OWNER"
+  jqb "GET /user/memberships/orgs/$OWNER" -e '.role == "admin" and .state == "active"' >/dev/null \
+    || die "$OWNER is neither your account ($LOGIN) nor an organisation you administer: $(observed)"
+  ORG_OWNER=true
+fi
+STATE_NOTE="the chat half, from a chat whose workspace has a clone of $REPO: tools/forge-lock-verify/chat.sh $REPO"
 
 # put_file BRANCH PATH CONTENT MESSAGE: create or update one file as you.
 put_file() {
@@ -317,12 +326,14 @@ repo_exists() {
 
 stage_create_repo() {
   stage "Create the throwaway public repo"
-  say "Creates $REPO (public) under your account, with the marker description every script checks."
+  say "Creates $REPO (public) under $OWNER, with the marker description every script checks."
   say "It holds main, release, nightly, a tag v0 and release v0, ci.yml, and the pull requests the chat rows use."
   say "Safe to re-run: whatever already exists is left alone."
   if repo_exists; then say "$REPO already exists; filling in what is missing."; else
     confirm "Create $REPO now?" || die "stopped"
-    req_unscoped "$ADMIN" POST /user/repos "$(jq -n --arg n "${REPO##*/}" --arg d "$MARKER" \
+    local create=/user/repos
+    [[ "$ORG_OWNER" == true ]] && create="/orgs/$OWNER/repos"
+    req_unscoped "$ADMIN" POST "$create" "$(jq -n --arg n "${REPO##*/}" --arg d "$MARKER" \
       '{name:$n,description:$d,private:false,auto_init:true}')"
     require_ok "create repo"
   fi
@@ -343,6 +354,14 @@ stage_fixup() {
 
 stage_install_app() {
   stage "Install the purlis agent App on the repo"
+  if [[ "$ORG_OWNER" == true ]]; then
+    say "The App (purlis-purlis-agent) is already installed on $OWNER. Add $REPO to its selected repositories,"
+    say "with the permissions of the design's manifest, Administration off."
+    open_url "https://github.com/organizations/$OWNER/settings/installations"
+    step "Configure purlis-purlis-agent, under 'Repository access' choose 'Only select repositories', add $REPO, and Save."
+    pause "Press Enter once $REPO is among the App's selected repositories..."
+    return
+  fi
   say "Install it on ONLY $REPO, with the permissions of the design's manifest, Administration off."
   ask APP_SLUG "The App's slug (github.com/apps/<slug>):"
   open_url "https://github.com/apps/$APP_SLUG/installations/new"
@@ -442,7 +461,7 @@ stage_bypass_app() { # on|off
   req "$ADMIN" PUT "/rulesets/$id" "$(jq -n --argjson b "$new" '{bypass_actors:$b}')"
   begin_run person.sh "bypass-app-$1" "$LOGIN"
   record "BYP-$1" "ruleset bypass list updated" "$(observed)" "$([[ "$STATUS" == 200 ]] && echo pass || echo fail)"
-  [[ "$1" == on ]] && say "Next: CHAT_TOKEN=... NARROW_TOKEN=<contents:write-only token> chat.sh $REPO D, then person.sh $REPO bypass-app-off"
+  [[ "$1" == on ]] && say "Next: NARROW_TOKEN=<contents:write-only token> chat.sh $REPO D (skipped without it), then person.sh $REPO bypass-app-off"
   pause
 }
 

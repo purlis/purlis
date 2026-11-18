@@ -46,32 +46,54 @@ need_repo() {
   REPO="$1"
 }
 
-# req TOKEN METHOD PATH [JSON]: a call under /repos/$REPO. Sets STATUS and BODY.
-req() {
-  local tok=$1 m=$2 p=$3 d=${4-}
-  [[ -n "${REPO-}" ]] || die "REPO not set"
-  [[ -z "$p" || "$p" == /* ]] || die "path must start with /: $p"
-  local args=(-sS -o "$WORK/body" -w '%{http_code}' -X "$m"
-    -H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json"
-    -H "X-GitHub-Api-Version: 2022-11-28")
-  [[ -n "$d" ]] && args+=(-H "Content-Type: application/json" --data "$d")
-  STATUS=$(curl "${args[@]}" "https://api.github.com/repos/$REPO$p") || STATUS=000
-  BODY=$(cat "$WORK/body" 2>/dev/null || true)   # the whole reply: only `record` shortens
-}
+# The chat's calls go through `gh api` under the token sentinel GH_TOKEN_VIA_SHIM: purlis's `gh`
+# shim supplies the chat's minted installation token, so the script never holds, prints or stores
+# it. Every other token (the person's own, or a NARROW_TOKEN) is sent with curl.
+GH_TOKEN_VIA_SHIM="@gh"
 
-# req_unscoped TOKEN METHOD PATH [JSON]: only the calls that cannot live under /repos/$REPO.
-req_unscoped() {
+# send TOKEN METHOD API_PATH [JSON]: one call to api.github.com (API_PATH starts with /). Sets
+# STATUS and BODY, whichever transport the token selects.
+send() {
   local tok=$1 m=$2 p=$3 d=${4-}
-  case "$m $p" in
-    "GET /user" | "POST /user/repos" | "GET /apps/"* | "POST /graphql") ;;
-    *) die "unscoped call not allowed: $m $p" ;;
-  esac
+  if [[ "$tok" == "$GH_TOKEN_VIA_SHIM" ]]; then
+    local args=(api --include -X "$m" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+    [[ -n "$d" ]] && args+=(--input -)
+    # gh exits non-zero on a 4xx/5xx but still prints the reply with --include, so its exit is ignored.
+    if [[ -n "$d" ]]; then gh "${args[@]}" "${p#/}" <<<"$d" >"$WORK/raw" 2>"$WORK/gherr" || true
+    else gh "${args[@]}" "${p#/}" >"$WORK/raw" 2>"$WORK/gherr" </dev/null || true; fi
+    STATUS=$(awk 'NR==1 && /^HTTP/ {print $2}' "$WORK/raw")
+    [[ -n "$STATUS" ]] || STATUS=000
+    # The reply's body is what follows the header block's blank line.
+    BODY=$(awk 'f {print; next} {sub(/\r$/, "")} $0 == "" {f=1}' "$WORK/raw")
+    [[ "$STATUS" != 000 || -n "$BODY" ]] || BODY=$(head -c 200 "$WORK/gherr" | tr '\n' ' ')
+    return 0
+  fi
   local args=(-sS -o "$WORK/body" -w '%{http_code}' -X "$m"
     -H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json"
     -H "X-GitHub-Api-Version: 2022-11-28")
   [[ -n "$d" ]] && args+=(-H "Content-Type: application/json" --data "$d")
   STATUS=$(curl "${args[@]}" "https://api.github.com$p") || STATUS=000
   BODY=$(cat "$WORK/body" 2>/dev/null || true)   # the whole reply: only `record` shortens
+}
+
+# req TOKEN METHOD PATH [JSON]: a call under /repos/$REPO. Sets STATUS and BODY.
+req() {
+  local tok=$1 m=$2 p=$3 d=${4-}
+  [[ -n "${REPO-}" ]] || die "REPO not set"
+  [[ -z "$p" || "$p" == /* ]] || die "path must start with /: $p"
+  send "$tok" "$m" "/repos/$REPO$p" "$d"
+}
+
+# req_unscoped TOKEN METHOD PATH [JSON]: only the calls that cannot live under /repos/$REPO.
+# The owner-specific routes are exactly the ones for $REPO's owner.
+req_unscoped() {
+  local tok=$1 m=$2 p=$3 d=${4-} owner=${REPO%%/*}
+  case "$m $p" in
+    "GET /user" | "POST /user/repos" | "GET /apps/"* | "POST /graphql") ;;
+    "POST /orgs/$owner/repos" | "GET /user/memberships/orgs/$owner") [[ -n "$owner" ]] || die "REPO not set" ;;
+    *) die "unscoped call not allowed: $m $p" ;;
+  esac
+  send "$tok" "$m" "$p" "$d"
 }
 
 # gql TOKEN QUERY VARS_JSON: a GraphQL call; the variables name the repo.
