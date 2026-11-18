@@ -246,6 +246,7 @@ mod rename_local_moves_local_state_and_puts_it_back;
 mod rename_local_moves_the_harness_plugin;
 mod rename_plane_is_one_commit;
 mod resuming_a_session_record;
+mod round_fives_case_word_is_read_with_its_quotes;
 mod round_fours_readings_close_the_last_routes;
 mod round_threes_leaks_are_closed_by_grammar;
 mod search_is_measured_on_large_repos;

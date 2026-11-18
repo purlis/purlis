@@ -279,7 +279,13 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
     // A heredoc body nothing runs is data, and only the substitutions of one the shell
     // expands run (#6293).
-    let segments = commands_of(&crate::heredoc::commands_a_shell_runs(cmd));
+    let mut segments = commands_of(&crate::heredoc::commands_a_shell_runs(cmd));
+    // A `case` pattern's `)` ends the pattern and starts the arm's command (`x) gh pr merge`),
+    // which the segment walk keeps as a word: read the line again with its patterns blanked, and
+    // the arm's commands are segments of their own (#7131).
+    segments.extend(commands_of(&in_command_position(
+        &crate::heredoc::commands_a_shell_runs(cmd),
+    )));
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
@@ -898,6 +904,7 @@ fn prints_only_a_path(body: &str) -> bool {
         // One operand: `dirname` prints a line per operand, and the shell splits them into
         // words, so `dirname a/gh b/pr c/merge` prints `a b c`.
         ["dirname", p] => path(p) && !p.starts_with('-'),
+        ["dirname", "--", p] => path(p),
         ["pwd"] | ["pwd", "-L" | "-P"] | ["brew", "--prefix"] => true,
         ["brew", "--prefix", formula] => literal(formula) && !formula.starts_with('-'),
         ["which", name] | ["command", "-v", name] => literal(name),
@@ -917,11 +924,7 @@ fn in_command_position(line: &str) -> String {
         return line;
     };
     let toks = shellseg::split_punctuation(toks);
-    let source: Vec<char> = line.chars().collect();
-    let mut chars = source.clone();
-    // What a blanked span keeps: a `case` word's substitution bodies, each a command ended by
-    // `;`, which still run.
-    let mut kept: Vec<(usize, char)> = Vec::new();
+    let mut chars: Vec<char> = line.chars().collect();
     let mut blank = |from: isize, to: isize| {
         let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
             return;
@@ -1033,14 +1036,10 @@ fn in_command_position(line: &str) -> String {
                 k += 1;
             }
             match (word_end, toks.get(k)) {
-                (Some(end), Some(word_in)) if word_in.bare && word_in.text == "in" => {
+                (Some(_), Some(word_in)) if word_in.bare && word_in.text == "in" => {
+                    // A substitution in the word still runs, and is read by its own body
+                    // (`substitution_bodies`).
                     blank(tok.start, word_in.end);
-                    if let (Ok(from), Ok(to)) = (
-                        usize::try_from(toks[i + 1].start),
-                        usize::try_from(toks[end - 1].end),
-                    ) {
-                        kept.extend(substitution_commands(&source, from, to.min(source.len())));
-                    }
                     cases.push(Case::Patterns);
                     i = k + 1;
                     continue;
@@ -1063,11 +1062,6 @@ fn in_command_position(line: &str) -> String {
         }
         i += 1;
     }
-    for (at, c) in kept {
-        if let Some(slot) = chars.get_mut(at) {
-            *slot = c;
-        }
-    }
     chars.into_iter().collect()
 }
 
@@ -1084,7 +1078,9 @@ fn shell_word_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
             && t.text == "("
             && j.checked_sub(1)
                 .and_then(|k| toks.get(k))
-                .is_some_and(|prev| j > at && prev.end == t.start && prev.text.ends_with('$'));
+                .is_some_and(|prev| {
+                    j > at && prev.bare && prev.end == t.start && prev.text.ends_with('$')
+                });
         if depth == 0 && !backtick && operator(t) && !opens {
             break;
         }
@@ -1093,7 +1089,7 @@ fn shell_word_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
         } else if t.bare && t.text == ")" && depth > 0 {
             depth -= 1;
         }
-        if t.text.matches('`').count() % 2 == 1 {
+        if t.bare && t.text.matches('`').count() % 2 == 1 {
             backtick = !backtick;
         }
         j += 1;
@@ -1103,46 +1099,6 @@ fn shell_word_end(toks: &[shellseg::Tok], at: usize) -> Option<usize> {
         }
     }
     (j > at && depth == 0 && !backtick).then_some(j)
-}
-
-/// The characters of `source[from..to]` that are command substitutions' bodies, each with the
-/// close of its substitution as `;`: what a `case` word runs, kept as commands where the word
-/// is blanked. A substitution that does not close runs to `to`.
-fn substitution_commands(source: &[char], from: usize, to: usize) -> Vec<(usize, char)> {
-    let mut kept = Vec::new();
-    let mut p = from;
-    while p < to {
-        let (body, close) = if source[p] == '$' && source.get(p + 1) == Some(&'(') {
-            let mut depth = 0usize;
-            let mut q = p + 1;
-            while q < to {
-                match source[q] {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-                q += 1;
-            }
-            (p + 2, q)
-        } else if source[p] == '`' {
-            let close = source[p + 1..to].iter().position(|c| *c == '`');
-            (p + 1, close.map_or(to, |at| p + 1 + at))
-        } else {
-            p += 1;
-            continue;
-        };
-        kept.extend((body..close).map(|at| (at, source[at])));
-        if close < to {
-            kept.push((close, ';'));
-        }
-        p = close + 1;
-    }
-    kept
 }
 
 /// The operators after which a command starts.
