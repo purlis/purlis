@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794978286749,
+  "lastUpdate": 1794981392157,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51198,6 +51198,48 @@ window.BENCHMARK_DATA = {
             "value": 102.15863300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.514, 101.611, 102.159, 102.325, 102.879 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "92d19c23206019dfffdd44d6a7fa292b8e16a50c",
+          "message": "The nine Q308b families switch under [policy], with every #6970 row mapped to one family (Q308 follow-up, item 7) (#7104)\n\n* The nine Q308b families switch under [policy], with the #6970 inventory mapped row by row\n\nguards.shape (the tool gate's caps, run at the strictest family asked, and the call-shape arms),\nguards.plane (A3, A3b), guards.forge (forge_milestones' workspace bound), mode (a dispatched chat\non a prompts-off profile), tools (a deny-list the harness cannot carry), trust (profile and\ndeclaration approval), runners (a runner chat's dispatch and write held for the person),\nconsents (the window-only ask) and limits (dispatch counts and the commit rate: counted, not\napplied). A7c, behind the person's own rules, holds in every mode. docs/policy-inventory-families.md\nmaps all 1,199 rows of #6970, each to one family or fixed, and a test holds it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M3KRDZ4QXQV1YHNZ7JJW2X\nPurlis-Persona: steward\n\n* The nine families' tests after main: fmt, a brace the rebase lost, and a dispatch text that is also a rider under log\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M3KRDZ4QXQV1YHNZ7JJW2X\nPurlis-Persona: steward\n\n* The per-row table is a doc Rust's tests read: ci-scope lists it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M3KRDZ4QXQV1YHNZ7JJW2X\nPurlis-Persona: steward\n\n* The nine families' log rules are known to the app, and their tests after main\n\n#7061's known_rule keeps a line a chat's process hands over only for a known rule: the\nrules of guards.forge, mode, tools, trust, runners, consents and limits are named once in\nenforcement and known to their own family alone. A3 is guards.plane's in the app's policy\nlog tests; the table's tests open by shedding the shell's steering; secrets.credential_files\n(#7008) stays switchable beside the nine.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M3KRDZ4QXQV1YHNZ7JJW2X\nPurlis-Persona: steward\n\n* The mode family's rule constant does not spell the attendance fact's PROMPTS_OFF\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M3KRDZ4QXQV1YHNZ7JJW2X\nPurlis-Persona: steward\n\n* Fix round for #7104: ceilings, the destination's 0, A7c under open, trust (Q329)\n\n- limits: an administrator's ceiling is kept per limit whichever level's value won, so\n  Limits::lifted goes up to it and no further (a ceiling at or above the project's value\n  was lifted to u32::MAX).\n- dispatch: the destination's 0 switch and limits are applied whether or not the asking\n  chat's own count refused first, and again when limits lifts the counts.\n- tool gate: where the person's own rules name a program, a command too big or too deep to\n  read is refused in every mode, so A7c cannot be dodged under open.\n- trust (Q329): enforced by every template but open; a start that runs an unapproved\n  profile or declaration says so on the chat's tab.\n- mode: a chat another chat asked for starts without its profile's prompts-off words.\n- guards.plane: a project that names guards.git and not guards.plane keeps A3/A3b at least\n  as strict.\n- docs: the template tables, trust, and five inventory rows moved to fixed or vaults.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* The A7c test under open checks both shapes, too big and too deep, before it asserts\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* Restore the fixes after the deliberately inverted 63b987be\n\n63b987be carried, beside the A7c test's change its message names, every fix of 0c0ce3f5\ninverted (each marked INVERTED), so CI shows each new test red. This puts the sources\nback exactly as 0c0ce3f5 left them; only the A7c test's change stays.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* INVERTED for CI: a chat another chat asked for keeps its profile's prompts-off words\n\nDeliberately inverted, so CI shows it/starting_a_chat_on_a_profile's new test red; the\nnext commit puts it back. 63b987be's inversion did not compile under -D warnings.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* Restore the auto cap after the deliberately inverted 819e7fbf\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* A dead dispatch guard refuses where guards.shape is enforced, now that it switches\n\nmain's a_start_loosens_each_guard_s_failure_to_the_chat_s_policy (#7067) expected the\ndispatch guard to fail open under an all-enforce policy, since guards.shape did not switch\non main; under this PR it does, and is enforced there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* hookreg's own table: a dead dispatch guard refuses under an all-enforce policy\n\nThe twin of 4bee9fdd's change in hookreg::tests: guards.shape switches under this PR.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* The Bash guard judges guards.plane, and the app's policy-log test names A3's family\n\nTwo of main's tests met this PR's move of A3/A3b to guards.plane: hookreg's list of the\nfamilies the Bash guard judges gains guards.plane (so a dead guard blocks where it is\nenforced), and the socket's log-line test asks for A3 under guards.plane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NCD6B61MQDH7GBVBB3VTXY\nPurlis-Persona: steward\n\n* An administrator's guards.git lock holds A3/A3b, and A7c holds a dead Bash guard closed (#7104 round 2)\n\n- guards.plane takes the floor of a guards.git lock as well as its own: A3 and A3b moved\n  there, and a machine policy's enforcement = [\"guards.git\"] held them at enforce before.\n- A7c counts as an enforced family where the person's rules name a program (ruling for\n  Q327): a dead Bash guard refuses under every template then. Read at the chat's start.\n- The too-deep test pins both layers for a ruled program only inside the unread depth: the\n  caps, bound by the person's rules, and A7c read alone.\n- An end-to-end test drives asked_by_a_chat with an administrator's ceiling under\n  limits = \"log\".\n- The auto cap of a chat another chat asked for reads inline --settings JSON carrying\n  permissions.defaultMode (only that key is dropped) and a declared harness's own arguments.\n  The rest is #7148.\n- The unapproved notice names both the profile and the declaration when neither is approved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P2NBJ2N3G68VY8RQ5C21N6\nPurlis-Persona: steward\n\n* The auto cap's --settings notice leaves the bypass mode's word to the attendance fact\n\nit/only_attendance_compares_permission_mode_with_bypass reserves PROMPTS_OFF for\ncrate::attendance; the shown flag now names the key, not the mode.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P2NBJ2N3G68VY8RQ5C21N6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T04:50:11Z",
+          "tree_id": "6d8449455d2cde7fae1612f7c87a27d5e6069b10",
+          "url": "https://github.com/purlis/purlis/commit/92d19c23206019dfffdd44d6a7fa292b8e16a50c"
+        },
+        "date": 1794981381988,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3556725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.355, 0.356, 0.372, 0.385 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.622543,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.239, 16.623, 16.784, 16.804 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9740855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.754, 100.048, 100.974, 101.145, 101.681 ms"
           }
         ]
       }
