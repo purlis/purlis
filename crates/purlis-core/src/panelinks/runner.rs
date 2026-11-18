@@ -44,9 +44,9 @@ pub const RUNNER_BINARY: &str =
     "purlis opens a runner's file only as text, and this one is not text";
 
 /// What a hover over a file a runner keeps from the window says (#7064): its own folders, a
-/// harness's sign-in, and what no chat there reads.
-pub const RUNNER_KEPT: &str =
-    "purlis never opens a runner's own folders or a harness's sign-in files";
+/// harness's sign-in, and what no chat there reads. The runner chat's tab says it too.
+pub const RUNNER_KEPT: &str = "purlis never opens a runner's own folders or a harness's sign-in \
+                               files, since they hold the runner's sign-ins and purlis's records there";
 
 /// What a hover over a runner's file past the largest read ([`MOST_FILE_READ`]) says.
 pub fn runner_too_large() -> String {

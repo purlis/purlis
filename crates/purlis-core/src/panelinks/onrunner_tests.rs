@@ -830,3 +830,15 @@ fn pieces_cut_inside_a_character_are_text_and_join_into_the_file() {
 
     assert_eq!(joined, text.as_bytes());
 }
+
+#[test]
+fn a_workspace_file_named_in_another_case_on_a_disk_that_folds_it_is_the_workspaces() {
+    let r = runner();
+    let shouted = r.shown(&r.cwd.join("SRC/Main.rs"));
+    if std::fs::metadata(&shouted).is_err() {
+        // This disk tells the two names apart: there is no such file.
+        return;
+    }
+
+    assert_eq!(plain(&r.look(&shouted)).1, Some("repos/web/src/main.rs"));
+}

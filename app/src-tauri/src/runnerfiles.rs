@@ -155,10 +155,7 @@ impl ReadsOnRunner {
                 FileRead::Binary { size, .. } => return Ok(Some(ReadThere::Binary(size))),
                 FileRead::TooLarge { size, .. } => return Ok(Some(ReadThere::TooLarge(size))),
                 FileRead::Kept { .. } => {
-                    return Err(format!(
-                        "purlis never opens runner {}'s own folders or a harness's sign-in files.",
-                        self.runner
-                    ));
+                    return Err(format!("{}.", purlis_core::panelinks::RUNNER_KEPT));
                 }
                 FileRead::NotThere | FileRead::NotPlain { .. } => {
                     return Err(self.said("no longer has this file"));

@@ -27,11 +27,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::files::kept::{Id, a_name_in, id_of, names_of};
 use crate::sandbox::Machine;
 use crate::sandbox::signin::{ProfileFolders, credential_files};
-
-/// A file or folder as the file system knows it, whatever it is called.
-type Id = (u64, u64);
 
 /// **What the runner keeps from its window**, for one chat's project.
 pub(super) struct Kept {
@@ -108,8 +106,7 @@ impl Kept {
 
     /// **Whether the open file whose metadata is `meta` is one of the kept files**, under
     /// whatever name it was opened by: it IS one, or it has several names and one of them is in
-    /// a kept folder (#7077), as the host judges one (`files::kept`). A file with several names
-    /// whose others could not be looked through within [`WALKED`] entries is counted as kept.
+    /// a kept folder (#7077), looked for as the host's own guard looks ([`a_name_in`]).
     pub(super) fn holds_the_file(&self, meta: &std::fs::Metadata) -> bool {
         if self.untold {
             return true;
@@ -123,58 +120,16 @@ impl Kept {
         if names_of(meta) < 2 {
             return false;
         }
-        let mut left = WALKED;
-        // Each folder with whether it is one of purlis's own, whose part that is the chat's
-        // project is not looked through: the project is read, so its files' other names there
-        // are its own. What no chat reads is looked through wherever it is, in the project too.
-        let mut folders: Vec<(PathBuf, bool)> = self
-            .everywhere
-            .iter()
-            .map(|folder| (folder.clone(), false))
-            .chain(self.own.iter().map(|folder| (folder.clone(), true)))
-            .collect();
-        while let Some((folder, own)) = folders.pop() {
-            if own && folder.starts_with(&self.project) {
-                continue;
-            }
-            // Never through a link: what a kept folder links to is not what it holds.
-            let Ok(listed) = std::fs::read_dir(&folder) else {
-                continue;
-            };
-            for entry in listed.flatten() {
-                if left == 0 {
-                    return true;
-                }
-                left -= 1;
-                let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-                    continue;
-                };
-                if meta.is_dir() {
-                    folders.push((entry.path(), own));
-                } else if id_of(&meta) == Some(id) {
-                    return true;
-                }
-            }
-        }
-        false
+        // The chat's own project is read, so its files' other names there are its own: purlis's
+        // own folders are not looked through where they hold it, however they are spelled.
+        // What no chat reads is looked through wherever it is, in the project too.
+        let in_project = |folder: &Path| {
+            folder.starts_with(&self.project)
+                || std::fs::canonicalize(folder).is_ok_and(|real| real.starts_with(&self.project))
+        };
+        a_name_in(self.everywhere.clone(), id, &|_| false)
+            || a_name_in(self.own.clone(), id, &in_project)
     }
-}
-
-/// The most entries of the kept folders [`Kept::holds_the_file`] looks at for a file with
-/// several names, as the host's own guard does. Past it the file is kept: purlis could not
-/// tell, so it does not read it.
-const WALKED: usize = 20_000;
-
-/// How many names a file has.
-#[cfg(unix)]
-fn names_of(meta: &std::fs::Metadata) -> u64 {
-    use std::os::unix::fs::MetadataExt as _;
-    meta.nlink()
-}
-
-#[cfg(not(unix))]
-fn names_of(_meta: &std::fs::Metadata) -> u64 {
-    1
 }
 
 /// `paths`, each as written and as the kernel names it.
@@ -205,17 +160,6 @@ fn ids_of(paths: &[PathBuf]) -> HashSet<Id> {
 
 fn id_of_path(path: &Path) -> Option<Id> {
     std::fs::metadata(path).ok().as_ref().and_then(id_of)
-}
-
-#[cfg(unix)]
-pub(super) fn id_of(meta: &std::fs::Metadata) -> Option<Id> {
-    use std::os::unix::fs::MetadataExt as _;
-    Some((meta.dev(), meta.ino()))
-}
-
-#[cfg(not(unix))]
-pub(super) fn id_of(_meta: &std::fs::Metadata) -> Option<Id> {
-    None
 }
 
 /// Whether `path` is `kept` or under it, compared composed and in one case

@@ -195,10 +195,7 @@ fn a_file_the_runner_keeps_is_not_shown_even_when_it_was_opened_on_an_ask() {
         let said = reads(&runner)
             .read("/home/purlis/.codex/auth.json", opened)
             .unwrap_err();
-        assert_eq!(
-            said,
-            "purlis never opens runner pool/runner-1's own folders or a harness's sign-in files."
-        );
+        assert_eq!(said, format!("{}.", purlis_core::panelinks::RUNNER_KEPT));
     }
 }
 

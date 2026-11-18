@@ -86,7 +86,11 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
         .chain(asked.cwd)
         .filter_map(|folder| std::fs::canonicalize(folder).ok())
         .collect();
-    let Some(resolved) = super::file::walked(&joined, asked.guarded, &allowed) else {
+    // Then named as the disk names it, so a name in another case on a disk that folds case is
+    // the file it opens, placed where that file is.
+    let Some(resolved) = super::file::walked(&joined, asked.guarded, &allowed)
+        .and_then(|walked| std::fs::canonicalize(walked).ok())
+    else {
         return FileRead::NotThere;
     };
     let Some(path) = resolved.to_str().map(str::to_owned) else {

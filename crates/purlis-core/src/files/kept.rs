@@ -35,9 +35,46 @@ use std::path::{Component, Path, PathBuf};
 
 use super::{Branch, Refused};
 
-/// The most entries of the kept folders [`Kept::holds_a_name_of`] looks at for a file with
+/// The most entries of the kept folders [`a_name_in`] looks at for a file with
 /// several names. Past it the file is refused: purlis could not tell, so it does not open.
 const WALKED: usize = 20_000;
+
+/// **Whether a file whose identity is `id` has a name in one of `folders`**, looked through
+/// down to their last entry, never through a link, but where `skipped` says a folder is not
+/// looked in. A file purlis could not tell of within [`WALKED`] entries is counted as having
+/// one. The host's guard asks it, and so does a runner for its window
+/// (`panelinks::onrunner`, #7077).
+pub(crate) fn a_name_in(
+    mut folders: Vec<PathBuf>,
+    id: Id,
+    skipped: &dyn Fn(&Path) -> bool,
+) -> bool {
+    let mut left = WALKED;
+    while let Some(folder) = folders.pop() {
+        if skipped(&folder) {
+            continue;
+        }
+        // Never through a link: what a kept folder links to is not what it holds.
+        let Ok(listed) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in listed.flatten() {
+            if left == 0 {
+                return true;
+            }
+            left -= 1;
+            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if meta.is_dir() {
+                folders.push(entry.path());
+            } else if id_of(&meta) == Some(id) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// What a read of one place leaves out: what purlis keeps to itself, in every place, and at
 /// the plane root everything of a workspace's clone too.
@@ -65,30 +102,30 @@ pub(super) struct Kept {
 
 /// A file or folder as the file system knows it, whatever it is called.
 #[cfg(unix)]
-type Id = (u64, u64);
+pub(crate) type Id = (u64, u64);
 #[cfg(not(unix))]
-type Id = ();
+pub(crate) type Id = ();
 
 #[cfg(unix)]
-fn id_of(meta: &std::fs::Metadata) -> Option<Id> {
+pub(crate) fn id_of(meta: &std::fs::Metadata) -> Option<Id> {
     use std::os::unix::fs::MetadataExt as _;
     Some((meta.dev(), meta.ino()))
 }
 
 #[cfg(not(unix))]
-fn id_of(_meta: &std::fs::Metadata) -> Option<Id> {
+pub(crate) fn id_of(_meta: &std::fs::Metadata) -> Option<Id> {
     None
 }
 
 /// How many names a file has.
 #[cfg(unix)]
-fn names_of(meta: &std::fs::Metadata) -> u64 {
+pub(crate) fn names_of(meta: &std::fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt as _;
     meta.nlink()
 }
 
 #[cfg(not(unix))]
-fn names_of(_meta: &std::fs::Metadata) -> u64 {
+pub(crate) fn names_of(_meta: &std::fs::Metadata) -> u64 {
     1
 }
 
@@ -380,29 +417,7 @@ impl Kept {
         if names_of(&meta) < 2 {
             return false;
         }
-        let mut left = WALKED;
-        let mut folders: Vec<PathBuf> = self.private.clone();
-        while let Some(folder) = folders.pop() {
-            // Never through a link: what a kept folder links to is not what it holds.
-            let Ok(listed) = std::fs::read_dir(&folder) else {
-                continue;
-            };
-            for entry in listed.flatten() {
-                if left == 0 {
-                    return true;
-                }
-                left -= 1;
-                let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-                    continue;
-                };
-                if meta.is_dir() {
-                    folders.push(entry.path());
-                } else if id_of(&meta) == Some(id) {
-                    return true;
-                }
-            }
-        }
-        false
+        a_name_in(self.private.clone(), id, &|_| false)
     }
 
     /// `offered`, a place's offered list, without what the place does not read: nothing
