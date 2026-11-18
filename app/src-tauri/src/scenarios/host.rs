@@ -188,12 +188,17 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
         press(standing.digest);
     }
     let at_start = purlis_core::enforcement::at_start(root);
+    let standing = purlis_core::enforcement::standing(root);
     assert_eq!(
         at_start,
         resolved_under(template, root),
-        "a chat in the project starts under {} as the scenario asked: {}",
+        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what the file refused: {:?}; what a press would lift: {:?}; the denies in force: {:?})",
         template.word(),
-        at_start.spelled()
+        at_start.spelled(),
+        standing.unsealed,
+        standing.refused,
+        standing.lifted,
+        purlis_core::enforcement::denies_in_force(root)
     );
     if template == Template::Strict {
         assert_eq!(
