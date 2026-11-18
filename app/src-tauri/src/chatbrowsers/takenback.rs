@@ -160,6 +160,7 @@ impl ChatBrowsers {
     /// **Chat `session` is `id`** (ADR 0066), as the app's record of it says: what its browsers'
     /// notes name it by (#2025). It restores no answer kept for the chat: that needs the chat's
     /// reach ([`Self::identify_for`]).
+    #[cfg(test)]
     pub fn identify(&self, session: u32, id: Option<String>) {
         self.identified(session, id, None);
     }
@@ -184,10 +185,7 @@ impl ChatBrowsers {
             .zip(self.answers_in.as_deref())
             .zip(reach)
             .and_then(|((id, root), _)| purlis_core::browserposture::kept(root, id));
-        let now = kept
-            .as_ref()
-            .and_then(|_| reach)
-            .map(|reach| kept_reach(&reach()));
+        let now = kept.as_ref().and(reach).map(|reach| kept_reach(&reach()));
         let (found, stale) = {
             let mut chats = self.lock();
             let chat = chats.entry(session).or_default();
