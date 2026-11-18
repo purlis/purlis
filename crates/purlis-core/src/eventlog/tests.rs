@@ -1634,7 +1634,7 @@ fn a_person_turning_the_sandbox_off_is_a_trust_event_under_the_chats_run() {
             "harness": "claude",
             "persona": "steward",
             "reason": "needs the network",
-            "lifted": ["vaults", "integrity", "human-powers", "runner-internals", "later-code"],
+            "lifted": ["vaults", "integrity", "human-powers", "runner-internals", "later-code", "credentials"],
         })
     );
     assert_eq!(read(dir.path()).unwrap().last(), Some(&event), "written");
@@ -1669,7 +1669,7 @@ fn a_windows_start_without_the_sandbox_names_charter_as_the_actor_never_the_oper
             "harness": "codex",
             "persona": null,
             "reason": null,
-            "lifted": ["vaults", "integrity", "human-powers", "runner-internals", "later-code"],
+            "lifted": ["vaults", "integrity", "human-powers", "runner-internals", "later-code", "credentials"],
         })
     );
 }
@@ -1699,7 +1699,7 @@ fn the_sandbox_coming_back_on_for_a_chat_is_a_trust_event_too() {
             "actor": "charter",
             "harness": "claude",
             "persona": null,
-            "restored": ["vaults", "integrity", "human-powers", "runner-internals", "later-code"],
+            "restored": ["vaults", "integrity", "human-powers", "runner-internals", "later-code", "credentials"],
         })
     );
 }

@@ -1035,15 +1035,21 @@ pub enum Class {
     /// told where one appears another way ([`arrived`]); and the project's manifests where they
     /// could change a chat's sandbox ([`manifests_held`]).
     LaterCode,
+    /// The person's own credentials, outside any vault (ADR 0067 §5 class 6, amended
+    /// 2026-11-16, ruling Q321): an SSH private key in `~/.ssh` and each forge and cloud
+    /// credential file [`CREDENTIAL_FILES`] names, never read, so a chat signs and logs in
+    /// only through what purlis hands it.
+    Credentials,
 }
 
 impl Class {
-    pub const ALL: [Class; 5] = [
+    pub const ALL: [Class; 6] = [
         Class::Vaults,
         Class::Integrity,
         Class::HumanPowers,
         Class::RunnerInternals,
         Class::LaterCode,
+        Class::Credentials,
     ];
 
     /// The word a refusal and the audit name the class by.
@@ -1054,8 +1060,147 @@ impl Class {
             Self::HumanPowers => "human-powers",
             Self::RunnerInternals => "runner-internals",
             Self::LaterCode => "later-code",
+            Self::Credentials => "credentials",
         }
     }
+}
+
+/// **The forge and cloud credential files no chat at the full sandbox reads**, each under the
+/// home and with what is below it (ADR 0067 §5 class 6, rulings Q321 and Q325): git's stored
+/// passwords (both of its files) and `.netrc`, AWS's keys and its SSO and CLI token caches,
+/// gcloud's credentials and token databases, its application default credentials and legacy
+/// files, Azure's folder, Docker's registry logins, and gh's and glab's tokens. Where a tool's own
+/// variable moves one, the moved one is denied too ([`credential_paths`]). A chat that is held
+/// from them gets a forge token only through purlis's vault.
+pub const CREDENTIAL_FILES: &[&str] = &[
+    ".git-credentials",
+    ".config/git/credentials",
+    ".netrc",
+    ".aws/credentials",
+    ".aws/sso/cache",
+    ".aws/cli/cache",
+    ".config/gcloud/credentials.db",
+    ".config/gcloud/access_tokens.db",
+    ".config/gcloud/application_default_credentials.json",
+    ".config/gcloud/legacy_credentials",
+    ".azure",
+    ".docker/config.json",
+    ".config/gh/hosts.yml",
+    ".config/glab-cli/config.yml",
+];
+
+/// **The SSH folder**, under the home: denied whole, so a key made in it while a chat runs, by any
+/// name, is held, and only [`SSH_OPEN`] is read in it.
+pub const SSH_FOLDER: &str = ".ssh";
+
+/// **What `~/.ssh` holds that is no secret**, read by `ssh` and `git` to work through an agent:
+/// read again inside the denied folder, and nothing else in it (ruling Q321, the review of
+/// #7008). A public key is a name ending in [`SSH_PUBLIC`].
+pub const SSH_OPEN: &[&str] = &["config", "known_hosts", "known_hosts.old"];
+
+/// The end of a public key's name in `~/.ssh`, read like [`SSH_OPEN`].
+pub const SSH_PUBLIC: &str = ".pub";
+
+/// Whether `name`, directly in `~/.ssh`, is one a chat reads: [`SSH_OPEN`] or a public key.
+fn ssh_open(name: &str) -> bool {
+    SSH_OPEN.contains(&name) || (name.len() > SSH_PUBLIC.len() && name.ends_with(SSH_PUBLIC))
+}
+
+/// Whether `denial` is the SSH folder's ([`SSH_FOLDER`]), inside which [`SSH_OPEN`] and a public
+/// key are read again: what each compiler writes after its rule ([`seatbelt::denial_rules`],
+/// Claude Code's `allowRead`).
+pub fn is_the_ssh_folder(denial: &Denial) -> bool {
+    denial.class == Class::Credentials
+        && denial.reach == Reach::AndBelow
+        && denial.path.file_name() == Some(std::ffi::OsStr::new(SSH_FOLDER))
+}
+
+/// The value of `name` in `env` as a path a credential moved to: absolute, and neither `/`, the
+/// home, nor a folder above it, which no denial may cover ([`for_start`]).
+fn moved_to(env: &crate::secrets::Env, name: &str, home: &Path) -> Option<PathBuf> {
+    env.get(name)
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && !home.starts_with(path))
+}
+
+/// **Every credential path of class 6 on `machine`**, under `home`: the SSH folder, each of
+/// [`CREDENTIAL_FILES`], and where a tool's own variable moves one, the file it moves it to
+/// (the review of #7008): `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` gh's, `XDG_CONFIG_HOME` git's
+/// and glab's, `CLOUDSDK_CONFIG` gcloud's, `AWS_SHARED_CREDENTIALS_FILE` AWS's, `DOCKER_CONFIG`
+/// Docker's, and `NETRC` the `.netrc`.
+pub fn credential_paths(home: &Path, env: &crate::secrets::Env) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = vec![home.join(SSH_FOLDER)];
+    out.extend(CREDENTIAL_FILES.iter().map(|file| home.join(file)));
+    let moved = |name| moved_to(env, name, home);
+    let config = moved("XDG_CONFIG_HOME");
+    if let Some(config) = &config {
+        out.push(config.join("git/credentials"));
+        out.push(config.join("glab-cli/config.yml"));
+    }
+    if let Some(gh) = moved("GH_CONFIG_DIR").or_else(|| config.as_ref().map(|it| it.join("gh"))) {
+        out.push(gh.join("hosts.yml"));
+    }
+    if let Some(gcloud) = moved("CLOUDSDK_CONFIG") {
+        for file in [
+            "credentials.db",
+            "access_tokens.db",
+            "application_default_credentials.json",
+            "legacy_credentials",
+        ] {
+            out.push(gcloud.join(file));
+        }
+    }
+    if let Some(docker) = moved("DOCKER_CONFIG") {
+        out.push(docker.join("config.json"));
+    }
+    out.extend(moved("AWS_SHARED_CREDENTIALS_FILE"));
+    out.extend(moved("NETRC"));
+    let mut seen = Vec::new();
+    out.retain(|path| {
+        let new = !seen.contains(path);
+        seen.push(path.clone());
+        new
+    });
+    out
+}
+
+/// `path` as one compares it with another: off macOS's data volume, where a firmlink gives it
+/// a second name, and lower-cased, as macOS's disk folds case.
+fn compared(path: &Path) -> String {
+    let path = path
+        .strip_prefix(DATA_VOLUME)
+        .map_or_else(|_| path.to_path_buf(), |below| Path::new("/").join(below));
+    path.display().to_string().to_lowercase()
+}
+
+/// **Whether `path` is one of the person's own credentials on `machine`** ([`Class::Credentials`]):
+/// what a refused read or write names, so its Notice says the way that works for a credential
+/// rather than for a vault or a later program. Under every spelling a case-folding disk takes
+/// for it, under either name across a firmlink, and at any depth below a credential folder; in
+/// `~/.ssh`, all but what holds no secret ([`SSH_OPEN`], a public key).
+pub fn is_credential(path: &Path, machine: &Machine) -> bool {
+    let Some(home) = &machine.home else {
+        return false;
+    };
+    let path = compared(path);
+    let below = |held: &Path| {
+        let held = compared(held);
+        path == held || path.starts_with(&format!("{}/", held.trim_end_matches('/')))
+    };
+    credential_paths(home, &machine.env).iter().any(|held| {
+        if !below(held) {
+            return false;
+        }
+        if held.file_name() != Some(std::ffi::OsStr::new(SSH_FOLDER)) {
+            return true;
+        }
+        let ssh = compared(held);
+        match path.strip_prefix(&format!("{ssh}/")) {
+            Some(rest) if !rest.contains('/') => !ssh_open(rest),
+            Some(_) => true,
+            None => false,
+        }
+    })
 }
 
 /// How much of a [`Planted`] name a chat is denied writing.
@@ -2190,6 +2335,9 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
 fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     let ctx = crate::secrets::Ctx::new(root, machine.env.clone());
     let mut paths = Vec::new();
+    // The person's own credentials are held under every spelling on macOS's case-folding disk
+    // (`~/.Docker/config.json` is the same file).
+    let folds = machine.os == Os::MacOs;
     let mut deny = |class, path: PathBuf, access| {
         paths.push(Denial {
             class,
@@ -2197,7 +2345,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             access,
             named: None,
             reach: Reach::AndBelow,
-            any_case: false,
+            any_case: folds && class == Class::Credentials,
         })
     };
 
@@ -2348,6 +2496,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+        // 6. The person's own credentials (rulings Q321 and Q325): the SSH folder, all but what
+        // holds no secret in it, and each forge and cloud credential file, wherever its tool's
+        // variable moves it, neither read nor written. The floor leaves them out unless the
+        // project's policy enforces them ([`Compiled::floor`]).
+        for path in credential_paths(home, &machine.env) {
+            deny(Class::Credentials, path, Access::ReadWrite);
+        }
         // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
         // for a later one. A declared tool's run has a home of its own.
         if machine.is_a_runner() {
@@ -4296,6 +4451,17 @@ impl Compiled {
     pub fn floor(root: &Path, machine: &Machine, chat: &grant::Grants) -> Self {
         let locks = policy::Locks::of(root);
         let mut denied = Denied::of(root, machine);
+        // The person's own credentials (ruling Q325): held at the floor only where the project's
+        // policy enforces `secrets.credential_files` (`team`, `strict`, or the key itself), so
+        // under `watch` their own gh, https git and cloud tools work as before. Left out whole,
+        // so no folder above one is held either.
+        if crate::enforcement::mode(root, crate::enforcement::Family::CredentialFiles)
+            != crate::enforcement::Mode::Enforce
+        {
+            denied
+                .paths
+                .retain(|denial| denial.class != Class::Credentials);
+        }
         // The keychain's files, by path: the floor allows the lookups the full sandbox's profile
         // denies by default, and the items' own access rule holds the rest (V90a, Q5).
         if let Some(keychains) = seatbelt::keychains(machine.home.as_deref())
@@ -7001,7 +7167,7 @@ impl fmt::Display for NotStarted {
     /// The refusal where a person may still start the chat without the sandbox. Where an
     /// administrator's policy forbids that, say it with [`NotStarted::said`] instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.sentence(true))
+        f.write_str(&self.sentence(true, false))
     }
 }
 
@@ -7014,7 +7180,22 @@ impl NotStarted {
         match (self, locks.opt_out_refused()) {
             // It names the policy itself.
             (Self::OptOutLocked(_), _) | (_, None) => self.to_string(),
-            (_, Some(_)) => under_policy(locks, self.sentence(false)),
+            (_, Some(_)) => under_policy(locks, self.sentence(false, false)),
+        }
+    }
+
+    /// **[`Self::said`], for a chat `on_a_runner` composes**: a runner starts no chat
+    /// without the sandbox (ADR 0067 as amended 2026-11-08), so no sentence sends the person to
+    /// the new-chat picker's opt-out, which the runner would refuse in turn, and a kernel short of
+    /// Landlock names the runner's host and this machine as its ways on.
+    pub fn said_on(&self, locks: &policy::Locks, on_a_runner: bool) -> String {
+        if !on_a_runner {
+            return self.said(locks);
+        }
+        match (self, locks.opt_out_refused()) {
+            (Self::OptOutLocked(_), _) => self.to_string(),
+            (_, None) => self.sentence(false, true),
+            (_, Some(_)) => under_policy(locks, self.sentence(false, true)),
         }
     }
 
@@ -7022,12 +7203,13 @@ impl NotStarted {
     /// the new-chat picker draws over what locks the opt-out): [`Self::said`] without the
     /// policy's own sentence.
     fn said_beside(&self, locks: &policy::Locks) -> String {
-        led(locks, self.sentence(!locks.forbids_opt_out()))
+        led(locks, self.sentence(!locks.forbids_opt_out(), false))
     }
 
     /// The refusal in one or more sentences. `opt_out` is whether a person may start this chat
-    /// without the sandbox: where they may not, no way out names it.
-    fn sentence(&self, opt_out: bool) -> String {
+    /// without the sandbox: where they may not, no way out names it. `on_a_runner` is whether a
+    /// pool's runner composes it, whose ways on differ ([`backend::WayOn::Runner`]).
+    fn sentence(&self, opt_out: bool, on_a_runner: bool) -> String {
         let lead = LEAD;
         match self {
             Self::NoCompiler(harness) => format!(
@@ -7204,7 +7386,11 @@ impl NotStarted {
             Self::NoBackend(missing @ backend::Missing::Landlock) => format!(
                 "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
                  started. {}",
-                backend::landlock_way_on(opt_out)
+                backend::landlock_way_on(if on_a_runner {
+                    backend::WayOn::Runner
+                } else {
+                    backend::WayOn::Here { opt_out }
+                })
             ),
             Self::NoBackend(missing) => format!(
                 "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
@@ -7938,7 +8124,7 @@ pub struct Lifted {
 
 impl Lifted {
     /// What is lifted: every class (ADR 0067 §5). An unsandboxed chat holds none of them.
-    pub const CLASSES: [Class; 5] = Class::ALL;
+    pub const CLASSES: [Class; 6] = Class::ALL;
 
     /// What the chat's tab says as it starts, so the opt-out is visible for its whole life.
     pub fn notice(&self) -> String {
@@ -8569,6 +8755,8 @@ mod claude_tests;
 mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
+#[cfg(test)]
+mod credentials_tests;
 #[cfg(test)]
 mod enforced_tests;
 #[cfg(test)]
