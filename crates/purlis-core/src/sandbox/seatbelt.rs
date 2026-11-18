@@ -89,6 +89,10 @@ pub struct Own {
     pub after: Vec<String>,
     /// At the floor, the held folders a person let this chat write ([`floor_planted_rules_but`]).
     pub lifted: Vec<PathBuf>,
+    /// The sockets this chat serves on ([`served`]), each by its exact path: the one thing the
+    /// held socket names ([`held_socket_names_unwritten`]) do not match, whatever order the rules
+    /// come in.
+    pub serving: Vec<PathBuf>,
 }
 
 /// `text` as an SBPL string, or [`CONTROL`].
@@ -529,13 +533,34 @@ fn socket_name_regexes() -> [String; 3] {
 /// after these ([`served`]). It also stops a chat creating any file named `hooks.sock`,
 /// `slots.sock` or `purlisd*.sock` anywhere (`docs/policy.md`).
 pub fn held_socket_names_unwritten() -> Vec<String> {
+    held_socket_names_unwritten_but(&[]).unwrap_or_default()
+}
+
+/// [`held_socket_names_unwritten`] but for `serving`, a chat's own server sockets (round 7 of
+/// #7105): each excluded from the deny by its exact literal path, so they are made whatever
+/// order the rules come in. The folder itself and every other name stay held. An empty `serving`
+/// gives the deny unchanged.
+pub fn held_socket_names_unwritten_but(serving: &[PathBuf]) -> Result<Vec<String>, &'static str> {
     let [_, names, folders] = socket_name_regexes();
     // And each of those folders itself, so it is never moved whole with its sockets inside.
     let folders_and_themselves = format!("{}(/|$)", folders.trim_end_matches('/'));
-    [names, folders_and_themselves]
+    let mut except = String::new();
+    for socket in serving {
+        except.push_str(&format!(
+            " (require-not (literal {}))",
+            string(&socket.display().to_string())?
+        ));
+    }
+    Ok([names, folders_and_themselves]
         .iter()
-        .map(|regex| format!("(deny file-write* file-link (regex #\"{regex}\"))"))
-        .collect()
+        .map(|regex| {
+            if except.is_empty() {
+                format!("(deny file-write* file-link (regex #\"{regex}\"))")
+            } else {
+                format!("(deny file-write* file-link (require-all (regex #\"{regex}\"){except}))")
+            }
+        })
+        .collect())
 }
 
 /// **The same held names as globs, for a harness whose own sandbox holds paths by glob** (round
@@ -612,9 +637,9 @@ fn hook_socket_again(own: &Own, hook_socket: Option<&Path>) -> Result<Vec<String
 /// never in [`widen`].
 pub fn served(own: &mut Own, folder: &Path, ports: &[u16]) -> Result<(), &'static str> {
     for port in ports {
-        own.after.extend(super::localport::serve_rules(
-            &super::localport::serve_socket(folder, *port),
-        )?);
+        let socket = super::localport::serve_socket(folder, *port);
+        own.after.extend(super::localport::serve_rules(&socket)?);
+        own.serving.push(socket);
         own.after.push(super::localport::seatbelt_rule(*port));
     }
     Ok(())
@@ -817,7 +842,7 @@ pub fn profile(
     // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
     // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
     // still made.
-    for rule in held_socket_names_unwritten() {
+    for rule in held_socket_names_unwritten_but(&own.serving)? {
         line(rule);
     }
     for rule in own.deny.iter().chain(&own.after) {
@@ -941,7 +966,7 @@ pub fn floor_profile(
     // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
     // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
     // still made.
-    for rule in held_socket_names_unwritten() {
+    for rule in held_socket_names_unwritten_but(&own.serving)? {
         line(rule);
     }
     for rule in own.deny.iter().chain(&own.after) {

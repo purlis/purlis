@@ -3154,3 +3154,76 @@ fn the_names_of_purlis_sockets_are_held_from_being_moved_or_linked_with_ports_en
         }
     }
 }
+
+/// **A chat's own server socket is left out of the held names by its exact path, and nothing
+/// else is** (round 7 of #7105): the deny excludes the literal `<port>.sock` of each socket the
+/// chat serves on, in both profiles, whatever order the rules come in; `other.sock` beside it, the
+/// folder itself and every other name stay denied; with nothing served the deny is unchanged.
+#[test]
+fn the_held_names_deny_leaves_out_only_the_chats_own_served_socket() {
+    use super::seatbelt::{Own, floor_profile, held_socket_names_unwritten, profile, served};
+    let folder = super::door::root_in(None).join("0123456789abcdef");
+    let own_socket = localport::serve_socket(&folder, 5173);
+    let other = folder.join("other.sock");
+    let literal = |path: &Path| {
+        format!(
+            "(require-not (literal {}))",
+            super::seatbelt::string(&path.display().to_string()).expect("a string")
+        )
+    };
+    let mut own = Own::default();
+    served(&mut own, &folder, &[5173]).expect("served");
+    let (tmp, cwd) = (Path::new("/tmp/round7-tmp"), Path::new("/tmp/round7-cwd"));
+    for (level, text) in [
+        (
+            "full",
+            profile(&[], &own, cwd, tmp, &[], None).expect("a profile"),
+        ),
+        (
+            "floor",
+            floor_profile(&[], &[], &own, &[], None).expect("a profile"),
+        ),
+    ] {
+        let denies: Vec<&str> = text
+            .lines()
+            .filter(|line| line.starts_with("(deny file-write* file-link (require-all (regex"))
+            .collect();
+        assert_eq!(
+            denies.len(),
+            2,
+            "{level}: the names and the folders: {denies:?}"
+        );
+        for deny in denies {
+            assert!(deny.contains(&literal(&own_socket)), "{level}: {deny}");
+            assert!(!deny.contains(&literal(&other)), "{level}: {deny}");
+            assert_eq!(deny.matches("(require-not").count(), 1, "{level}: {deny}");
+        }
+        // The give-back is exactly the three rules of the socket's literal path, after the deny.
+        let deny_at = text.find("(require-all (regex").expect("the deny");
+        let give_back = text
+            .find("(allow file-write-create file-write-unlink (literal")
+            .expect("the give-back");
+        assert!(
+            give_back > deny_at,
+            "{level}: the give-back follows the deny"
+        );
+    }
+    // Nothing served: the very rules `held_socket_names_unwritten` gives, no exclusion.
+    let bare = profile(&[], &Own::default(), cwd, tmp, &[], None).expect("a profile");
+    for rule in held_socket_names_unwritten() {
+        assert!(bare.contains(&rule), "{rule}");
+        assert!(!rule.contains("require-not"), "{rule}");
+    }
+    // Nothing else `own.after` can hold re-allows a held name: what `served` and `widen` write
+    // are literal paths of the chat's socket, ports and the trust and terminal rules, none of
+    // which names a purlis socket or its folder but the one excluded above.
+    for rule in &own.after {
+        assert!(
+            !rule.contains("hooks.sock") && !rule.contains("slots.sock"),
+            "{rule}"
+        );
+        if rule.contains("purlis-serve") {
+            assert!(rule.contains(&own_socket.display().to_string()), "{rule}");
+        }
+    }
+}

@@ -621,13 +621,29 @@ while (accept(my $c, $s)) {
             .expect("it runs");
             String::from_utf8_lossy(&out.stdout).trim().to_owned()
         };
-        assert_eq!(tried(UNIX, &[&socket.display().to_string(), "once"]), "yes");
+        // What Seatbelt was given, shown when the first answer is wrong (round 7 of #7105).
+        let seen = profile
+            .lines()
+            .filter(|line| {
+                line.contains("purlis-serve")
+                    || line.contains("file-link")
+                    || line.contains("(literal") && line.contains(".sock")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            tried(UNIX, &[&socket.display().to_string(), "once"]),
+            "yes",
+            "the chat's own socket {}; the profile's lines that name it or a serve folder:\n{seen}",
+            socket.display()
+        );
         assert_eq!(
             tried(
                 UNIX,
                 &[&folder.join("other.sock").display().to_string(), "once"]
             ),
-            "bind"
+            "bind",
+            "another name beside it; the profile's lines:\n{seen}"
         );
         let moved = base.path().join("moved");
         let renamed = tried(
