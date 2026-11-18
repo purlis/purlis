@@ -176,6 +176,34 @@ fn two_rules_with_one_id_at_different_levels_are_refused_at_load() {
 }
 
 #[test]
+fn two_files_at_one_level_with_one_id_are_refused_naming_both() {
+    purlis_core::unsteered!();
+    // Two workspaces' files, each at the Workspace level: neither may overwrite the other.
+    let web = "// purlis-policy 1\n\
+               @id(\"guards-merge-workspace\") @level(\"workspace\")\n\
+               forbid (principal in Workspace::\"web\", action == Action::\"merge\", resource);\n";
+    let api = "// purlis-policy 1\n\
+               \n\
+               @id(\"guards-merge-workspace\") @level(\"workspace\")\n\
+               permit (principal in Workspace::\"api\", action == Action::\"merge\", resource);\n";
+    let problems = refused(policy::load(&[
+        File::shipped_default(),
+        File::at("web/policy.cedar", web, Level::Workspace),
+        File::at("api/policy.cedar", api, Level::Workspace),
+    ]));
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    let problem = &problems[0];
+    assert_eq!(
+        (problem.file.as_str(), problem.line, problem.rule.as_deref()),
+        ("api/policy.cedar", 3, Some("guards-merge-workspace"))
+    );
+    assert!(
+        problem.what.contains("web/policy.cedar:2"),
+        "names the other file and line: {problem}"
+    );
+}
+
+#[test]
 fn a_level_above_its_file_or_you_in_a_committed_file_is_refused_at_load() {
     purlis_core::unsteered!();
     for level in ["organisation", "you", "nobody"] {
