@@ -107,12 +107,15 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    # **Budget: 40 minutes**, from run 44301286922: the test build 13 min, the kit 10 (the gate's
-    # program 2), the suite 2, the production-timing entries and the gate seconds: 27 minutes. The
-    # worst of the runs in `docs/sandbox-scenarios-ci.md` is 36 (a cold kit, and the coverage gate's
-    # second build, which the resolver seam's own target folder ended). Exceeding it fails the job.
-    # A `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
-    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 40 }}
+    # **Budget: 45 minutes**, from run 44329073215 on the merged base, where the scenarios step
+    # took 32.5 (test build 16, kit 12.5, suite 3) and the matrix coverage gate after it was still
+    # building purlis-app's tests at 7 minutes, until the 40-minute budget set from the red runs
+    # before it cancelled it: a rewrite of `issues.json` (same issues, a new day) made cargo build
+    # `purlis-scenarios` and everything over it again, 12 minutes in run 44239993521. The refresh
+    # leaves the file alone now (`tools/scenario-coverage.mjs`), so the gate is seconds: 35 to 38
+    # minutes at worst. Exceeding it fails the job. A `stress-x20` run is the same twenty times over,
+    # and has a budget of its own: 150.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 45 }}
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -287,10 +290,10 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && needs.plan.outputs.macos != 'false' }}
     runs-on: macos-latest
-    # **Budget: 100 minutes**, from runs 44267476720 and 44301286922, where it took 77 and 71
-    # (`studio-confinement-macos`'s steps and purlis-app's test build on top);
+    # **Budget: 110 minutes**, from runs 44267476720, 44301286922 and 44329073215, where it took 77,
+    # 71 and 85 (`studio-confinement-macos`'s steps and purlis-app's test build on top);
     # `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
-    timeout-minutes: 100
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

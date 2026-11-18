@@ -10,7 +10,7 @@
 sandbox-scenarios               ubuntu-24.04   60
 sandbox-scenarios               macos-15       120
 sandbox-scenarios               macos-26       120
-existing-macos-sandbox-tests    macos-latest   100
+existing-macos-sandbox-tests    macos-latest   110
 fuzz-parsers                    ubuntu-24.04   120
 # Ticket 3: each harness re-recorded at its pinned version and at its latest release (T1.1-03).
 # The `rerecord` entries open drift issues and are red on an ordinary failure (an install, a

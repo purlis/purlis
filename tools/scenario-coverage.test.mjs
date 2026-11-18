@@ -6,7 +6,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { carried, diff, generate, readMatrix } from "./scenario-coverage.mjs";
+import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { carried, diff, generate, readMatrix, writeIssues } from "./scenario-coverage.mjs";
 
 const MATRIX = `
 ### 3.1 Network blocks
@@ -96,4 +100,23 @@ test("generate lists the rows a §3 table's Need leaves to fixtures, with their 
     list.fixtures.filter((f) => f.row.startsWith("M-POL")).map((f) => [f.row, f.reason]),
     [["M-POL-01", "machine_wide_state"], ["M-POL-02", "machine_wide_state"]],
   );
+});
+
+test("the_issues_cache_is_not_rewritten_when_only_its_day_changed", () => {
+  // Cargo takes every file of a path package for its source: a rewrite builds purlis-app's tests again.
+  const dir = mkdtempSync(join(tmpdir(), "issues-"));
+  const file = join(dir, "issues.json");
+  const doc = (fetched, state) => ({ $comment: "c", fetched, issues: { 6674: { state, opened: "2026-11-12T10:00:00Z" } } });
+  try {
+    assert.equal(writeIssues(file, doc("2026-11-17", "open")), true, "a new file is written");
+    const long_ago = new Date("2026-11-17T00:00:00Z");
+    utimesSync(file, long_ago, long_ago);
+    assert.equal(writeIssues(file, doc("2026-11-18", "open")), false, "the same issues, a new day: nothing written");
+    assert.equal(statSync(file).mtime.getTime(), long_ago.getTime(), "its time is untouched");
+    assert.match(readFileSync(file, "utf8"), /2026-11-17/);
+    assert.equal(writeIssues(file, doc("2026-11-18", "closed")), true, "an issue that closed is written");
+    assert.match(readFileSync(file, "utf8"), /closed/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });

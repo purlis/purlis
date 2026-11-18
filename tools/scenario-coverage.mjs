@@ -29,7 +29,7 @@
 // The matrix lives in the plane (`work/who-judges/`), not in this repo, so its path is given.
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -272,6 +272,22 @@ export function markedIssues() {
   return [...issues].sort((a, b) => a - b);
 }
 
+/**
+ * Writes `doc` to the issues cache at `file` unless it says what the file already says (its
+ * `fetched` day aside), and says whether it wrote. Cargo takes any file of a path package for its
+ * source: a rewrite with the same issues, only dated today, makes `purlis-scenarios` and everything
+ * over it build again, 12 minutes of `purlis-app`'s tests on Linux in `sandbox-scenarios-linux`
+ * (T1.1-54).
+ */
+export function writeIssues(file, doc) {
+  if (existsSync(file)) {
+    const was = JSON.parse(readFileSync(file, "utf8"));
+    if (JSON.stringify({ ...was, fetched: "" }) === JSON.stringify({ ...doc, fetched: "" })) return false;
+  }
+  writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+  return true;
+}
+
 function refreshIssues(repo) {
   const issues = {};
   for (const number of markedIssues()) {
@@ -283,7 +299,7 @@ function refreshIssues(repo) {
     fetched: new Date().toISOString().slice(0, 10),
     issues,
   };
-  writeFileSync(join(SCENARIOS, "issues.json"), `${JSON.stringify(doc, null, 2)}\n`);
+  writeIssues(join(SCENARIOS, "issues.json"), doc);
   const closed = Object.entries(issues).filter(([, i]) => i.state === "closed").map(([n]) => `#${n}`);
   console.log(`${Object.keys(issues).length} issues${closed.length ? `; closed: ${closed.join(", ")}` : ", all open"}`);
   return 0;

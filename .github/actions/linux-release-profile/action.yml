@@ -16,7 +16,7 @@
 # stable build and `dev-release` (`Cargo.toml`: inherits it, differs by name) share.
 #
 # The job's checkout comes first. A cold release build is long, so the nightly saves a cache that
-# a pull request's run restores: no cache is saved from a pull request.
+# a pull request's run restores: only `main` saves one, and the nightly runs on main's ref.
 name: Linux release profile
 description: Builds the Linux bundle as release.yml does and checks each switch entry against it.
 runs:
@@ -38,7 +38,7 @@ runs:
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: linux-release-profile
-        save-if: ${{ github.event_name == 'schedule' }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: .nvmrc

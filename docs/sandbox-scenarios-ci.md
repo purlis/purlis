@@ -47,9 +47,9 @@ before a single scenario runs, so the budget is the build, the kit and the suite
 
 | Job | Budget (min) | Measured | Runs |
 |---|---|---|---|
-| `sandbox-scenarios-linux` | 40 | test build 13, kit 10, suite 2, the rest seconds: 27 minutes. Before the coverage gate's second build was ended (below) the same job took 36 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
-| `sandbox-scenarios-macos` | 90 | macos-15: test build 55, kit 9, suite 3 (69 in all); macos-26: build 43, kit 12, suite 7 (63). A cold macOS build is 28 to 55 minutes; the worst of it with the kit and the suite after is 76 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
-| `macos-sandbox-tests` | 100 | 77 and 71 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922) |
+| `sandbox-scenarios-linux` | 45 | test build 13 to 16, kit 10 to 14.5, suite 2 to 3: 33 minutes to the coverage gate; the gate's own build after it was 12 until `issues.json` stopped being rewritten (below) | [44329073215](https://github.com/purlis/purlis/actions/runs/44329073215), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
+| `sandbox-scenarios-macos` | 90 | macos-15: test build 55, kit 9, suite 3 (69 in all); macos-26: build 43, kit 12, suite 7 (63); on the merged base 60 and 61. A cold macOS build is 28 to 55 minutes; the worst of it with the kit and the suite after is 76 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44329073215](https://github.com/purlis/purlis/actions/runs/44329073215), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
+| `macos-sandbox-tests` | 110 | 77, 71 and 85 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44329073215](https://github.com/purlis/purlis/actions/runs/44329073215) |
 | `linux-release-profile` | 50 | 37, 40 and 32 (`purlis` and the extensions 12, the app 22, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922) |
 
 A `stress-x20` run is the same suite twenty times over under load, so it has a budget of its own
@@ -67,5 +67,11 @@ production-timing step 15). The cause, reproduced locally: the resolver seam's c
 (`resolver_seam::the_resolver_seam_does_not_compile_without_test_support`) ran `cargo rustc` in the
 workspace's target folder, and that left `ring` and every crate over it stale. It builds in
 `target/seam-probe` now, so the nightly's repeats and the stress run's twenty runs reuse one build.
+**The marks' issues refresh must not touch an unchanged file.** The coverage gate's own build after the
+suite was 12 minutes more on Linux (44239993521, 44329073215): `node tools/scenario-coverage.mjs issues`
+rewrote `tests/scenarios/issues.json` with the same issues and a new day, cargo takes any file of a path
+package for its source, and `purlis-scenarios` and `purlis-app`'s tests built again. It writes only when the
+issues differ now.
+
 **The run-result gate is a program of its own** all the same (`scenarios-gate`, built into the kit's
 target folder with `purlis`): it needs no build, whatever a later test does to the target folder.
