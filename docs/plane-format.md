@@ -657,13 +657,17 @@ A file that is there and fails that (or a folder that is there and fails it, fil
 does not parse, or says anything this version does not know is refused, and then every lock but
 the presets is set, the required sandbox among them, so purlis never reads a policy it cannot
 trust as no policy. **Decided, not yet written** ([ADR 0124](adr/0124-who-judges-a-chat-and-how-much.md) decision 15, phase 4): a last-known-good copy of the policy, kept in a keychain item bound to the app binary (**Tier:** Keyring), used with an audit entry when the file can't be read, and expired after 30 days unless a policy key says otherwise; with no good copy ever, every lock is set, as above. No other layer of C9 (an MDM profile, a Windows policy key, an
-organisation's policy) is read yet, so no policy is read on Windows.
+organisation's policy) is read yet. **Since M75 slice 06 the file is read as part of the Organisation's folder** (below): it is translated in memory and adds to the two files' rules and locks.
 
-**Access-control lists are not read.** On Linux an ACL that grants write shows in the
-permission bits (the group bits are its mask) and is refused. On macOS an ACL is kept apart from
-the bits, so a policy file or folder whose ACL lets someone else write passes this check. Only
-root can set one there: `ls -le /etc/purlis` shows it, and `chmod -N` removes it. The folders
-above `/etc/purlis` are not checked either; they are root's on a stock system, as for `sudoers`.
+**Access-control lists are read on macOS and Windows** (M75 slice 06, #7014; it was not so before:
+D-1423-5). On Linux an ACL that grants write shows in the permission bits (the group bits are its
+mask) and is refused. On macOS an ACL is kept apart from the bits, so it is read
+(`sandbox::policy::acl_lets_others_write`) and a policy file or folder whose ACL lets anyone but
+root write is refused as one the owner cannot vouch for; an ACL that cannot be read is taken to
+let them. `ls -le /etc/purlis` shows one, and `chmod -N` removes it. On Windows the owner must be
+the Administrators group or SYSTEM and no one else may write
+(`policy::organisation::judge_windows`). The folders above `/etc/purlis` are not checked; they
+are root's on a stock system, as for `sudoers`.
 
 ### `/etc/purlis/policy.cedar` and `/etc/purlis/policy.toml` — the Organisation's policy
 
@@ -672,8 +676,24 @@ above `/etc/purlis` are not checked either; they are root's on a stock system, a
   `[policy]` syntax, `[policy.rules]` and `[policy.sets]` included, read by the same reader, so
   the Organisation can go deny-by-default with `[policy.rules] "policy-everything-else" = "off"`
   (M75 spec §4.5; Q319 C5, Q319a O1).
-- **Status:** **purlis only**, experimental (M75 slice 05, #7013). Finding the folder on each OS
-  and judging its owner and ACL are slice 06's.
+- **Where:** `/etc/purlis`, and on Windows `%ProgramData%\purlis`, found with the known-folder API
+  (`FOLDERID_ProgramData`) and never from the environment variable, which a chat could set. The
+  folder also holds `policy.json` above, **translated** in memory (M75 spec §13.6): `owner` is the
+  Organisation's owner; `presets` and `hosts` become permits on `connect`, and where either fixes
+  the set, a forbid on every other host with the `network` family locked; `never-hosts` and
+  `dispatch.locked` become forbids; the `sandbox.*` and `dispatch.*` locks become
+  `[policy.locks]` families and actions; `allow-scopes` becomes the `keep` lock; `enforcement`
+  locks its families. **A key this version does not know makes the file broken**, as today.
+- **Its owner and ACL are verified at load, on every OS.** The folder and each file in it: no
+  link, the right kind of thing, owned by root (Windows: Administrators or SYSTEM), written by no
+  one else by its permission bits or its ACL. A failure, or anything that cannot be read or
+  judged, reads as `strict` plus every lock, under the full sandbox, with a Notice that names
+  the failed check and the admin's way out: fix the owner and ACL, or remove the folder. A
+  Windows build that cannot yet read a folder's owner and ACL fails closed the same way when the
+  folder is there.
+- **Outside every plane** the Organisation's files are layered on the shipped default under
+  `strict`, so an admin's forbid and lock hold there too.
+- **Status:** **purlis only**, experimental (M75 slices 05 and 06, #7013, #7014).
 - **Tier:** Machine, device-bound — an administrator's files on this machine, never synced.
 - **A broken file** (one that does not load, or a bad value in `policy.toml`) reads as `strict`
   with every lock, under the full sandbox, with a Notice naming the file and line; it is never

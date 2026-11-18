@@ -444,6 +444,7 @@ fn seen(uid: u32, mode: u32) -> Seen {
         expected_type: true,
         uid,
         mode,
+        acl_writes: false,
     }
 }
 

@@ -34,6 +34,7 @@ use std::sync::OnceLock;
 use crate::enforcement::Mode;
 
 use super::levels::{self, Chat, Loaded, Named};
+use super::organisation;
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
 
 /// **What a request decides**: allow, ask the person, or deny.
@@ -357,11 +358,12 @@ pub fn in_plane(
     let personas = plane.personas().unwrap_or_default();
     let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
     let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    let organisation = organisation::in_force();
     let loaded = levels::load(&levels::Sources {
         root,
         workspaces: &workspaces,
         personas: &personas,
-        organisation: None,
+        organisation: organisation.as_ref().map(organisation::Found::as_sources),
         accepted: None,
     });
     let chat = asker.chat.to_string();
@@ -507,9 +509,19 @@ pub fn replays_host(
 /// world. Nothing a project or the person loosened applies.
 pub fn decide_locally(request: &Request<'_>) -> Decision {
     static STRICT: OnceLock<Loaded> = OnceLock::new();
-    decide(
-        STRICT.get_or_init(Loaded::shipped_strict),
-        request,
-        empty_world(),
-    )
+    // The Organisation's files are layered on it (M75-06, SEC4-SF1): an admin's forbid and lock
+    // hold outside every plane. A test build reads them from the test seam alone.
+    let organisation = organisation::in_force();
+    match &organisation {
+        None => decide(
+            STRICT.get_or_init(Loaded::shipped_strict),
+            request,
+            empty_world(),
+        ),
+        Some(found) => decide(
+            &Loaded::shipped_strict_under(Some(&found.as_sources())),
+            request,
+            empty_world(),
+        ),
+    }
 }

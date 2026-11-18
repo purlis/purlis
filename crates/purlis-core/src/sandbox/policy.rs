@@ -15,15 +15,15 @@
 //! link, owned by the system's administrator (root), in a folder owned by root, neither of
 //! them writable by anyone else by its permission bits.
 //!
-//! **An access-control list is not read** (D-1423-5). On Linux one cannot hide from the bits:
-//! the group bits of a file that carries a POSIX ACL are its mask, the most any named user or
-//! group is given, so an ACL that grants write shows as group-writable and is refused. On macOS
-//! an ACL is kept apart from the bits and is read only through `acl_get_link_np`, a C call
-//! this crate cannot make without `unsafe`, so a file or folder whose ACL grants someone else
-//! write passes. Only root can set one on a file root owns, so it is an administrator's
-//! misconfiguration and never a chat's way in; `ls -le /etc/purlis` shows one. The folders
-//! above the policy's own are not judged either: they are root's on every system purlis reads
-//! a policy on, as for `sudoers`.
+//! **An access-control list is read on macOS** (M75-06, spec §4.5; it was not before, D-1423-5).
+//! On Linux one cannot hide from the bits: the group bits of a file that carries a POSIX ACL are
+//! its mask, the most any named user or group is given, so an ACL that grants write shows as
+//! group-writable and is refused. On macOS an ACL is kept apart from the bits, so it is read
+//! with the `exacl` crate, and a file or folder whose ACL lets anyone but root write is refused
+//! as one the bits' owner could not vouch for ([`acl_lets_others_write`]); an ACL that cannot be
+//! read is taken to let them. `ls -le /etc/purlis` shows one. The folders above the policy's
+//! own are not judged: they are root's on every system purlis reads a policy on, as for
+//! `sudoers`.
 //!
 //! Its folder is denied to every chat's writes as well
 //! ([`super::Denied::of`], [`super::Class::HumanPowers`]). A file that is there and fails any
@@ -456,6 +456,16 @@ impl Locks {
         self.presets
             .as_ref()
             .is_none_or(|allowed| allowed.contains(&preset))
+    }
+
+    /// The families the policy's `enforcement` list locks, each always enforced (Q308a).
+    pub fn enforced_families(&self) -> impl Iterator<Item = crate::enforcement::Family> + '_ {
+        self.enforcement.iter().copied()
+    }
+
+    /// The scopes an Allow may keep anything at, where the policy fixes them.
+    pub fn scope_list(&self) -> Option<&[grant::Level]> {
+        self.allow_scopes.as_deref()
     }
 
     /// Whether the policy fixes the presets.
@@ -1195,27 +1205,87 @@ pub struct Seen {
     pub uid: u32,
     /// Its permission bits.
     pub mode: u32,
+    /// Whether an access-control list it carries lets anyone but the administrator write it
+    /// ([`acl_lets_others_write`]). Read on macOS, where an ACL is kept apart from the bits; on
+    /// Linux the bits' group class is the ACL's mask, so they already show it (M75-06).
+    pub acl_writes: bool,
+}
+
+/// **Which check of a policy file or its folder failed**, so a Notice can name it (M75-06, spec
+/// §4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Check {
+    /// It is a link.
+    Link,
+    /// It is not the kind of thing it should be: a folder, or a regular file.
+    Kind,
+    /// Its owner is not the system's administrator.
+    Owner,
+    /// Its permission bits let the group or anyone else write it.
+    Bits,
+    /// Its access-control list lets someone else write it.
+    Acl,
+    /// It could not be read or judged.
+    Read,
+}
+
+impl Check {
+    /// The check's name, as a Notice says it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Check::Link => "not a link",
+            Check::Kind => "the right kind of thing",
+            Check::Owner => "owned by the administrator",
+            Check::Bits => "written by the administrator alone (permission bits)",
+            Check::Acl => "written by the administrator alone (access-control list)",
+            Check::Read => "readable and judgeable",
+        }
+    }
+}
+
+/// A policy file or folder that failed [`Check`] `check`, and `why`, said in a sentence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    /// The check that failed.
+    pub check: Check,
+    /// What is wrong, as a refusal says it.
+    pub why: String,
+}
+
+fn refused(check: Check, why: &str) -> Refused {
+    Refused {
+        check,
+        why: why.to_owned(),
+    }
+}
+
+/// One entry of an access-control list, as far as the judgement needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AclEntry {
+    /// Whether it allows (`true`) or denies.
+    pub allow: bool,
+    /// Whether it gives any way to change the file or folder: write, append, delete, change an
+    /// attribute or the ACL, change the owner, add a file or a subfolder.
+    pub writes: bool,
+    /// Whether it names root, who may write anyway.
+    pub root: bool,
+}
+
+/// **Whether an access-control list lets anyone but root write**: any allowing entry that gives
+/// a way to change the file, for anyone but root. A denying entry takes nothing away from the
+/// bits, so it never counts for the file.
+pub fn acl_lets_others_write(entries: &[AclEntry]) -> bool {
+    entries
+        .iter()
+        .any(|entry| entry.allow && entry.writes && !entry.root)
 }
 
 /// **Whether a policy file, as `file` and its folder `folder` are seen, is one purlis trusts**,
 /// or why not: neither a link, each the type it should be, each owned by root (user id 0), and
-/// neither writable by its group or anyone else. So no one but an administrator could have
-/// written it, a chat included.
+/// neither writable by its group or anyone else, nor by an access-control list. So no one but
+/// an administrator could have written it, a chat included.
 pub fn judge(file: Seen, folder: Seen) -> Result<(), String> {
-    judge_folder(folder)?;
-    if file.link {
-        return Err("it is a link".to_owned());
-    }
-    if !file.expected_type {
-        return Err("it is not a regular file".to_owned());
-    }
-    if file.uid != 0 {
-        return Err("it is not owned by the system's administrator".to_owned());
-    }
-    if file.mode & 0o022 != 0 {
-        return Err("it can be written by others than the administrator".to_owned());
-    }
-    Ok(())
+    judged_as(0, Some(file), folder).map_err(|refused| refused.why)
 }
 
 /// **Whether the policy's folder, as seen, is one purlis trusts**, or why not: not a link, a
@@ -1223,17 +1293,62 @@ pub fn judge(file: Seen, folder: Seen) -> Result<(), String> {
 /// or no file: whoever could write an untrusted folder could take the file out of it, and a
 /// policy taken out that way is never read as no policy (D-1343-11).
 pub fn judge_folder(folder: Seen) -> Result<(), String> {
+    judged_as(0, None, folder).map_err(|refused| refused.why)
+}
+
+/// [`judge`] and [`judge_folder`], with the check that failed, and with `admin` the user id of
+/// the system's administrator (0, except where a test is its own).
+pub fn judged_as(admin: u32, file: Option<Seen>, folder: Seen) -> Result<(), Refused> {
     if folder.link {
-        return Err("its folder is a link".to_owned());
+        return Err(refused(Check::Link, "its folder is a link"));
     }
     if !folder.expected_type {
-        return Err("its folder is not a folder".to_owned());
+        return Err(refused(Check::Kind, "its folder is not a folder"));
     }
-    if folder.uid != 0 {
-        return Err("its folder is not owned by the system's administrator".to_owned());
+    if folder.uid != admin {
+        return Err(refused(
+            Check::Owner,
+            "its folder is not owned by the system's administrator",
+        ));
     }
     if folder.mode & 0o022 != 0 {
-        return Err("its folder can be written by others than the administrator".to_owned());
+        return Err(refused(
+            Check::Bits,
+            "its folder can be written by others than the administrator",
+        ));
+    }
+    if folder.acl_writes {
+        return Err(refused(
+            Check::Acl,
+            "its folder's access-control list lets others than the administrator write it",
+        ));
+    }
+    let Some(file) = file else {
+        return Ok(());
+    };
+    if file.link {
+        return Err(refused(Check::Link, "it is a link"));
+    }
+    if !file.expected_type {
+        return Err(refused(Check::Kind, "it is not a regular file"));
+    }
+    if file.uid != admin {
+        return Err(refused(
+            Check::Owner,
+            "it is not owned by the system's administrator",
+        ));
+    }
+    if file.mode & 0o022 != 0 {
+        return Err(refused(
+            Check::Bits,
+            "it can be written by others than the administrator",
+        ));
+    }
+    if file.acl_writes {
+        return Err(refused(
+            Check::Acl,
+            "its access-control list lets others than the administrator write it",
+        ));
     }
     Ok(())
 }
@@ -1243,9 +1358,16 @@ pub fn judge_folder(folder: Seen) -> Result<(), String> {
 /// following one, and what was opened is judged again before it is read.
 #[cfg(unix)]
 fn read_trusted(path: &Path) -> Result<Option<String>, String> {
+    read_trusted_as(0, path).map_err(|refused| refused.why)
+}
+
+/// [`read_trusted`], with the check that failed, for the system's administrator `admin`.
+#[cfg(unix)]
+pub fn read_trusted_as(admin: u32, path: &Path) -> Result<Option<String>, Refused> {
     use std::io::Read;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let seen = |meta: &std::fs::Metadata, dir: bool| Seen {
+    let unread = |what: &str, err: std::io::Error| refused(Check::Read, &format!("{what}: {err}"));
+    let seen = |meta: &std::fs::Metadata, at: &Path, dir: bool| Seen {
         link: meta.file_type().is_symlink(),
         expected_type: if dir {
             meta.file_type().is_dir()
@@ -1254,49 +1376,94 @@ fn read_trusted(path: &Path) -> Result<Option<String>, String> {
         },
         uid: meta.uid(),
         mode: meta.mode(),
+        acl_writes: acl_writes(meta, at),
     };
     // The folder first, whenever it is there: no folder is no policy, and an untrusted one is
     // refused whether or not the file is in it (D-1343-11).
-    let dir = path.parent().ok_or_else(|| "it has no folder".to_owned())?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| refused(Check::Read, "it has no folder"))?;
     let folder = match std::fs::symlink_metadata(dir) {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("its folder cannot be read: {err}")),
+        Err(err) => return Err(unread("its folder cannot be read", err)),
         Ok(meta) => meta,
     };
-    judge_folder(seen(&folder, true))?;
+    let folder = seen(&folder, dir, true);
+    judged_as(admin, None, folder)?;
     let file = match std::fs::symlink_metadata(path) {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("it cannot be read: {err}")),
+        Err(err) => return Err(unread("it cannot be read", err)),
         Ok(meta) => meta,
     };
-    judge(seen(&file, false), seen(&folder, true))?;
+    judged_as(admin, Some(seen(&file, path, false)), folder)?;
     let opened = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
-        .map_err(|err| format!("it cannot be opened: {err}"))?;
+        .map_err(|err| unread("it cannot be opened", err))?;
     let now = opened
         .metadata()
-        .map_err(|err| format!("it cannot be read: {err}"))?;
+        .map_err(|err| unread("it cannot be read", err))?;
     if now.ino() != file.ino() || now.dev() != file.dev() {
-        return Err("it changed while it was read".to_owned());
+        return Err(refused(Check::Read, "it changed while it was read"));
     }
-    judge(seen(&now, false), seen(&folder, true))?;
+    judged_as(admin, Some(seen(&now, path, false)), folder)?;
     let mut bytes = Vec::new();
     opened
         .take(MOST_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|err| format!("it cannot be read: {err}"))?;
+        .map_err(|err| unread("it cannot be read", err))?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MOST_BYTES {
-        return Err("it is larger than purlis reads".to_owned());
+        return Err(refused(Check::Read, "it is larger than purlis reads"));
     }
     String::from_utf8(bytes)
         .map(Some)
-        .map_err(|_| "it is not UTF-8 text".to_owned())
+        .map_err(|_| refused(Check::Read, "it is not UTF-8 text"))
+}
+
+/// Whether an access-control list on `at` lets someone but root write it. Only macOS keeps one
+/// apart from the permission bits, and reads it here; where it cannot be read it is taken to let
+/// others write, as anything purlis cannot judge is (fail closed). A link is never read: it is
+/// refused before.
+#[cfg(target_os = "macos")]
+fn acl_writes(meta: &std::fs::Metadata, at: &Path) -> bool {
+    use exacl::{AclEntryKind, Perm};
+    if meta.file_type().is_symlink() {
+        return false;
+    }
+    let writes = Perm::WRITE
+        | Perm::APPEND
+        | Perm::DELETE
+        | Perm::DELETE_CHILD
+        | Perm::WRITEATTR
+        | Perm::WRITEEXTATTR
+        | Perm::WRITESECURITY
+        | Perm::CHOWN;
+    match exacl::getfacl(at, None) {
+        Err(_) => true,
+        Ok(entries) => {
+            let entries: Vec<AclEntry> = entries
+                .iter()
+                .map(|entry| AclEntry {
+                    allow: entry.allow,
+                    writes: entry.perms.intersects(writes),
+                    root: entry.kind == AclEntryKind::User
+                        && (entry.name == "root" || entry.name == "0"),
+                })
+                .collect();
+            acl_lets_others_write(&entries)
+        }
+    }
+}
+
+/// Elsewhere the permission bits show it: on Linux a POSIX ACL's mask is their group class.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn acl_writes(_meta: &std::fs::Metadata, _at: &Path) -> bool {
+    false
 }
 
 /// No policy file is read off Unix yet: a Windows policy key is one of C9's layers no ADR
-/// places (D-1343-1).
+/// places (D-1343-1). The Organisation folder's own reader says why ([`crate::policy::organisation`]).
 #[cfg(not(unix))]
 fn read_trusted(_path: &Path) -> Result<Option<String>, String> {
     Ok(None)

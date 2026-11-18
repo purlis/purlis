@@ -39,6 +39,7 @@ use std::sync::OnceLock;
 
 pub mod decide;
 pub mod levels;
+pub mod organisation;
 
 use cedar_policy::{
     ActionConstraint, Authorizer, Context, Decision as CedarDecision, Effect, Entities, EntityId,

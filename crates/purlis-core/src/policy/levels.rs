@@ -67,6 +67,21 @@ pub struct Organisation<'a> {
     pub rules: Option<&'a str>,
     /// `policy.toml`'s text, if the folder holds one.
     pub settings: Option<&'a str>,
+    /// `policy.json`, translated (§13.6), or why it is broken; none where there is no such file.
+    /// It adds to the two files' rules and locks.
+    pub json: Option<Result<Translated<'a>, &'a str>>,
+    /// Why the folder fails its owner and ACL check, as a Notice says it: the Organisation then
+    /// reads as `strict` plus every lock, and none of its files is read.
+    pub failed: Option<&'a str>,
+}
+
+/// `policy.json` translated into the two files' syntax.
+#[derive(Debug, Clone, Copy)]
+pub struct Translated<'a> {
+    /// Its locks and limits, as `policy.toml` writes them.
+    pub settings: &'a str,
+    /// Its permits and forbids, as `policy.cedar` writes them.
+    pub rules: &'a str,
 }
 
 /// The project's files as the person last accepted them.
@@ -956,6 +971,202 @@ fn assemble_or_fallback(rules: Vec<Rule>, fallback: Vec<Rule>) -> (Policy, Optio
     }
 }
 
+/// What the Organisation's folder read as.
+struct OrgRead {
+    tables: Tables,
+    rules: Vec<Rule>,
+    /// The names its settings and its rules are read under.
+    files: (String, String),
+    /// Whether it reads as `strict` plus every lock, under the full sandbox.
+    broken: bool,
+}
+
+impl Locks {
+    /// `other`'s locks added to these: a family or an action either locks stays locked, and the
+    /// narrower scope and the stricter timed grant win (§4.4).
+    fn add(&mut self, other: &Locks) {
+        self.families.extend(other.families.iter().cloned());
+        self.actions.extend(other.actions.iter().cloned());
+        let narrower = |a: &Option<String>, b: &Option<String>| match (a, b) {
+            (Some(a), Some(b)) => {
+                let at = |w: &String| KEEPS.iter().position(|k| k == w).unwrap_or(0);
+                Some(if at(a) <= at(b) { a.clone() } else { b.clone() })
+            }
+            (a, b) => a.clone().or_else(|| b.clone()),
+        };
+        self.keep = narrower(&self.keep, &other.keep);
+        for (family, word) in &other.keep_per_family {
+            let held = self.keep_per_family.get(family).cloned();
+            if let Some(word) = narrower(&held, &Some(word.clone())) {
+                self.keep_per_family.insert(family.clone(), word);
+            }
+        }
+        self.timed = match (&self.timed, &other.timed) {
+            (Some(a), Some(b)) => {
+                let at = |w: &String| TIMEDS.iter().position(|t| t == w).unwrap_or(0);
+                // `off` is the strictest, then the shorter.
+                let rank = |w: &String| match at(w) {
+                    2 => 0,
+                    0 => 1,
+                    _ => 2,
+                };
+                Some(if rank(a) <= rank(b) {
+                    a.clone()
+                } else {
+                    b.clone()
+                })
+            }
+            (a, b) => a.clone().or_else(|| b.clone()),
+        };
+    }
+}
+
+/// **Reads the Organisation level** (§4.5, §4.6): its failed folder or its files, and `policy.json`
+/// translated on top. A broken file, a failed check or a broken translation reads as `strict` plus
+/// every lock, with a Notice, and is never skipped.
+fn read_organisation(
+    org: &Organisation<'_>,
+    sources: &Sources<'_>,
+    notices: &mut Vec<Notice>,
+) -> OrgRead {
+    let files = (
+        format!("{}/policy.toml", org.folder),
+        format!("{}/{RULES_FILE}", org.folder),
+    );
+    let strict = |files| {
+        let mut tables = Tables::strict();
+        tables.locks = Locks::every();
+        OrgRead {
+            tables,
+            rules: Vec::new(),
+            files,
+            broken: true,
+        }
+    };
+    if let Some(why) = org.failed {
+        notices.push(Notice {
+            file: org.folder.to_owned(),
+            line: 1,
+            what: why.to_owned(),
+            rules: Vec::new(),
+        });
+        return strict(files);
+    }
+    let settings = org.settings.map(|text| (files.0.as_str(), text));
+    let rules = org.rules.map(|text| (files.1.as_str(), text));
+    let mut read = read_level(settings, rules, Level::Organisation, sources);
+    let is_broken = !read.problems.is_empty();
+    notices.extend(read.notices(
+        Level::Organisation,
+        org.owner,
+        "The Organisation's file is broken, so it reads as strict with every lock, under the full sandbox",
+    ));
+    if is_broken {
+        return strict(files);
+    }
+    let (mut tables, mut rules) = (read.tables, read.rules);
+    match org.json {
+        None => {}
+        Some(Err(why)) => {
+            notices.push(Notice {
+                file: format!("{}/policy.json", org.folder),
+                line: 1,
+                what: format!(
+                    "{why}. The Organisation's file is broken, so it reads as strict with every lock, under the full sandbox"
+                ),
+                rules: Vec::new(),
+            });
+            return strict(files);
+        }
+        Some(Ok(t)) => {
+            let names = (
+                format!("{}/policy.json (as policy.toml)", org.folder),
+                format!("{}/policy.json (as policy.cedar)", org.folder),
+            );
+            let mut more = read_level(
+                Some((names.0.as_str(), t.settings)),
+                Some((names.1.as_str(), t.rules)),
+                Level::Organisation,
+                sources,
+            );
+            let more_broken = !more.problems.is_empty();
+            notices.extend(more.notices(
+                Level::Organisation,
+                org.owner,
+                "The Organisation's policy.json does not translate, so it reads as strict with every lock, under the full sandbox",
+            ));
+            if more_broken {
+                return strict(files);
+            }
+            tables.locks.add(&more.tables.locks);
+            tables.lock_lines.extend(more.tables.lock_lines);
+            rules.extend(more.rules);
+        }
+    }
+    OrgRead {
+        tables,
+        rules,
+        files,
+        broken: false,
+    }
+}
+
+impl Loaded {
+    /// **The shipped default under `strict`, with the Organisation's files on it** (spec §6, review
+    /// round 4, SEC4-SF1): what a process outside every plane is judged by, so an admin's forbid and
+    /// lock hold outside every plane too. Where the Organisation is broken or its folder failed its
+    /// check, it reads as `strict` plus every lock, under the full sandbox. With no Organisation it
+    /// is [`Loaded::shipped_strict`].
+    pub fn shipped_strict_under(organisation: Option<&Organisation<'_>>) -> Loaded {
+        let mut loaded = Loaded::shipped_strict();
+        let Some(org) = organisation else {
+            return loaded;
+        };
+        let bare = Sources {
+            root: Path::new(""),
+            workspaces: &[],
+            personas: &[],
+            organisation: None,
+            accepted: None,
+        };
+        let read = read_organisation(org, &bare, &mut loaded.notices);
+        let shipped = File::shipped_default().name;
+        let mut rules: Vec<Rule> = read_file(&File::shipped_default()).unwrap_or_default();
+        for rule in read.rules {
+            // The Organisation replaces a shipped rule of the same `@id`: it is above it.
+            rules.retain(|held| held.id != rule.id);
+            rules.push(rule);
+        }
+        // What is off is not in the policy; every other mode is the rule's own.
+        for (id, said) in &read.tables.rules {
+            loaded.rule_modes.insert(id.clone(), said.value);
+        }
+        rules.retain(|rule| loaded.rule_modes.get(&rule.id) != Some(&Mode::Off));
+        let fallback: Vec<Rule> = rules
+            .iter()
+            .filter(|rule| rule.file == shipped)
+            .cloned()
+            .collect();
+        let (policy, refused) = assemble_or_fallback(rules, fallback);
+        if let Some(problem) = refused {
+            loaded.notices.push(problem_notice(
+                problem,
+                Level::Organisation,
+                org.owner,
+                "The policy could not be assembled: only the shipped default runs, under the full sandbox",
+                &[],
+            ));
+        }
+        loaded.policy = policy;
+        loaded.sets = read.tables.sets.clone();
+        loaded.organisation_locks = read.tables.locks;
+        loaded.organisation = read.tables.defaults;
+        loaded.organisation_owner = org.owner.to_owned();
+        loaded.sandbox_at_least = read.broken.then_some(SandboxLevel::Full);
+        loaded
+    }
+}
+
 /// **Loads every level's files** (spec §4, §5).
 pub fn load(sources: &Sources<'_>) -> Loaded {
     let mut notices = Vec::new();
@@ -970,27 +1181,11 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
     let mut org_rules = Vec::new();
     let mut org_files = (String::new(), String::new());
     if let Some(org) = &sources.organisation {
-        org_files = (
-            format!("{}/policy.toml", org.folder),
-            format!("{}/{RULES_FILE}", org.folder),
-        );
-        let settings = org.settings.map(|text| (org_files.0.as_str(), text));
-        let rules = org.rules.map(|text| (org_files.1.as_str(), text));
-        let mut read = read_level(settings, rules, Level::Organisation, sources);
-        let is_broken = !read.problems.is_empty();
-        notices.extend(read.notices(
-            Level::Organisation,
-            org_owner,
-            "The Organisation's file is broken, so it reads as strict with every lock, under the full sandbox",
-        ));
-        if is_broken {
-            broken = true;
-            org_tables = Tables::strict();
-            org_tables.locks = Locks::every();
-        } else {
-            org_tables = read.tables;
-            org_rules = read.rules;
-        }
+        let read = read_organisation(org, sources, &mut notices);
+        broken |= read.broken;
+        org_tables = read.tables;
+        org_rules = read.rules;
+        org_files = read.files;
     }
 
     // ── the Project, at the plane root's HEAD, both files of one commit ──────────────────

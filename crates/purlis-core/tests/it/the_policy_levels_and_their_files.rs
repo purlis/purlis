@@ -104,6 +104,8 @@ fn organisation<'a>(rules: Option<&'a str>, settings: Option<&'a str>) -> Organi
         owner: ORG_OWNER,
         rules,
         settings,
+        json: None,
+        failed: None,
     }
 }
 

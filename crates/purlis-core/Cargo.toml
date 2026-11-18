@@ -361,6 +361,14 @@ nix = { version = "0.31", default-features = false, features = ["signal", "net",
 # in local time, nor its Windows COM settings.
 trash = { version = "5", default-features = false, features = ["freedesktop"] }
 
+[target."cfg(windows)".dependencies]
+# The Organisation's folder on Windows is `FOLDERID_ProgramData`, asked of the known-folder API and
+# never of `%ProgramData%`, which a chat could set (M75-06, spec §4.5). `dirs-sys` is the crate
+# `dirs` already asks it with, and `windows-sys` the one it is built on: both already in this
+# workspace's lockfile, so they add no crate to the tree.
+dirs-sys = "0.5"
+windows-sys = { version = "0.59", default-features = false, features = ["Win32_UI_Shell"] }
+
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keyring items held to charter's app (ruling V90a): the helper that writes them turns the
 # Keychain's dialogs off, so a write it may not make fails instead of asking, and reads the
@@ -369,3 +377,8 @@ security-framework = "3"
 # Kept browser logins are left out of this Mac's backups (#2021) by the extended attribute
 # `tmutil addexclusion` sets. Already in this workspace's lockfile through `tar`.
 xattr = "1.6"
+# The Organisation folder's access-control list is read at load (M75-06, spec §4.5): a file root
+# owns can carry an ACL that lets someone else write it, which the permission bits do not show.
+# The standard crate for it, so this crate stays free of `unsafe` (`acl_get_link_np` is a C call).
+# MIT.
+exacl = "0.13"
