@@ -737,3 +737,254 @@ fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
     pool::docker_of(&fixture.docker, &again).expect("it works again");
     forward::let_go("reset");
 }
+
+// ---- How long each step of a start on this pool takes (#7182) ----------------------------------
+//
+// The spans of `purlis_session_protocol::steps`, read back: a first start after the app is
+// launched (the forward not held), a second start right after (forward held, engine checked),
+// and one after the runner's container stopped. Each is a link made as a chat's start makes it,
+// through the pool's forward. The fixture's sshd answers 40 ms ± 10 ms late (`up.sh`, netem), and
+// the table is printed and, on CI, written to the job's summary: it is the baseline of
+// `docs/research/2026-11-remote-start-baseline.md`.
+
+/// Every step line this process wrote, in the order each step ended: its name and milliseconds.
+#[derive(Clone, Default)]
+struct StepLines(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for StepLines {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for StepLines {
+    type Writer = StepLines;
+    fn make_writer(&'a self) -> StepLines {
+        self.clone()
+    }
+}
+
+impl StepLines {
+    fn steps(&self) -> Vec<(String, u64)> {
+        let text = String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned();
+        text.lines()
+            .filter_map(|line| {
+                let rest = line.split("purlis: step ").nth(1)?;
+                let (name, rest) = rest.split_once(" done after ")?;
+                let ms = rest.split_whitespace().next()?.parse().ok()?;
+                Some((name.to_owned(), ms))
+            })
+            .collect()
+    }
+}
+
+/// The median of five TCP connects to the sshd: one round trip, as the fixture delays it.
+fn round_trip_ms(route: &str) -> u64 {
+    let at = route.rsplit('@').next().expect("an address");
+    let mut times: Vec<u64> = (0..5)
+        .map(|_| {
+            let began = Instant::now();
+            drop(std::net::TcpStream::connect(at).expect("the sshd answers"));
+            u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
+        })
+        .collect();
+    times.sort_unstable();
+    times[2]
+}
+
+/// One link to the runner through `docker`, made as a start makes it (the check before, the
+/// preparing, `docker exec`, the handshake), and dropped.
+async fn linked_once(
+    docker: &Docker,
+    made: &purlis_core::dockerpool::Made,
+    ours: purlis_session_protocol::hostlink::Identity,
+    runner: purlis_session_protocol::hostlink::Pinned,
+) {
+    use purlis_session_protocol::hostlink::{self, Handshake, Linked, Liveness};
+    let connector = purlis_host::CommandConnector::new(docker.program(), made.connect_args(), {
+        let (docker, made) = (docker.clone(), made.clone());
+        std::sync::Arc::new(move || {
+            // What the pool's own link runs before each connection (`runnerlinks`): the engine's
+            // check is `through`'s, this is the container's.
+            docker
+                .resumed(&made)
+                .map(|_| ())
+                .map_err(|why| why.to_string())
+        })
+    })
+    .preparing({
+        let docker = docker.clone();
+        std::sync::Arc::new(move || {
+            let (env, cleared, held) = docker
+                .prepared()
+                .map_err(|why| why.to_string())?
+                .into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        ours,
+        runner,
+        Liveness::default(),
+    );
+    match tokio::time::timeout(Duration::from_secs(90), links.next()).await {
+        Ok(Some(Linked::Up(_link))) => {}
+        other => panic!("no link: {:?}", other.map(|linked| linked.is_some())),
+    }
+}
+
+#[test]
+fn a_start_on_a_remote_pool_times_each_of_its_steps() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+        return;
+    };
+    use purlis_core::dockerpool::{Image, Runner};
+    use purlis_session_protocol::hostlink::{Identity, LinkKey, Pinned};
+
+    let lines = StepLines::default();
+    let _ = tracing::subscriber::set_global_default(
+        tracing_subscriber::fmt()
+            .with_writer(lines.clone())
+            .with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .finish(),
+    );
+    let rtt = round_trip_ms(&std::env::var("REMOTE_DOCKER_TEST_ROUTE").unwrap());
+
+    let pool = "timed";
+    let remote = trusted(&fixture, pool);
+    forward::let_go_of_all();
+    let docker = through(&fixture, pool, &remote).expect("the forward opens");
+    let image = Image::pinned(&image).expect("the image is named by digest");
+    let (user, home) = docker
+        .declared(&image)
+        .expect("the image declares its user");
+    let name = format!(
+        "timed-{}",
+        ulid::Ulid::generate().to_string().to_lowercase()
+    );
+    let runner = Runner::new(&name, image, user, &home).unwrap();
+    let made = docker.make(&runner).expect("the runner is made there");
+    struct Removes(Docker, purlis_core::dockerpool::Made);
+    impl Drop for Removes {
+        fn drop(&mut self) {
+            let _ = self.0.remove(&self.1);
+        }
+    }
+    let _removes = Removes(docker.clone(), made.clone());
+    let key = LinkKey::generate().unwrap();
+    let ours = || Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::from_private(key.private_half().unwrap()).unwrap(),
+    };
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: key.public(),
+    };
+    let runner_pinned = docker.pair(&made, &desktop).expect("the runner is paired");
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut table = Vec::new();
+    let mut scenario = |label: &str, then: &mut dyn FnMut()| {
+        let before = lines.steps().len();
+        let began = Instant::now();
+        then();
+        let total = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
+        table.push((label.to_owned(), total, lines.steps().split_off(before)));
+    };
+
+    // The first start after the app is launched: no forward held.
+    forward::let_go_of_all();
+    scenario("cold: first start after launch", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the forward opens");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+    // A start straight after: the forward held, the engine checked a moment ago.
+    scenario("warm: a link", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the engine answers");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+    // A chat with a profile makes a second link of its own after the first (audit B3).
+    scenario("warm: the second link of a start", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the engine answers");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+    exec_in(
+        &fixture.dind,
+        &format!("docker stop {}", made.container.as_str()),
+    );
+    scenario("runner stopped: its container is started", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the engine answers");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+
+    let mut out = format!(
+        "### Start on a remote Docker pool over SSH (round trip {rtt} ms, TCP connect, median of 5)\n\n"
+    );
+    for (label, total, steps) in &table {
+        out += &format!(
+            "**{label}**: {total} ms in all\n\n| step | runs | ms (each) |\n|---|---|---|\n"
+        );
+        let mut names: Vec<&str> = Vec::new();
+        for (name, _) in steps {
+            if !names.contains(&name.as_str()) {
+                names.push(name);
+            }
+        }
+        for name in names {
+            let each: Vec<String> = steps
+                .iter()
+                .filter(|(step, _)| step == name)
+                .map(|(_, ms)| ms.to_string())
+                .collect();
+            out += &format!("| {name} | {} | {} |\n", each.len(), each.join(", "));
+        }
+        out += "\n";
+    }
+    let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
+    if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
+        && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(summary)
+    {
+        let _ = std::io::Write::write_all(&mut file, out.as_bytes());
+    }
+
+    // Every step of the link path was timed, in the scenario it belongs to.
+    let said = |at: usize, step: &str| table[at].2.iter().any(|(name, _)| name == step);
+    for step in ["ssh_forward_open", "engine_pin_check", "docker_info"] {
+        assert!(said(0, step), "the cold start timed no {step}: {out}");
+    }
+    for (at, (label, ..)) in table.iter().enumerate() {
+        for step in [
+            "container_check",
+            "docker_container",
+            "docker_volume",
+            "docker_exec",
+            "link_check",
+            "link_prepare",
+            "link_exec_spawn",
+            "link_handshake",
+        ] {
+            assert!(said(at, step), "{label} timed no {step}: {out}");
+        }
+    }
+    assert!(
+        said(3, "runner_start"),
+        "a stopped runner's start was not timed: {out}"
+    );
+    assert!(
+        !said(1, "ssh_forward_open"),
+        "a warm start reopened the forward: {out}"
+    );
+}

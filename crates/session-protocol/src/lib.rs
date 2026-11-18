@@ -89,6 +89,7 @@ pub mod link;
 pub mod local;
 mod priority;
 pub mod session;
+pub mod steps;
 pub mod ui;
 pub mod version;
 pub mod view;

@@ -2065,6 +2065,8 @@ impl HostLink {
         late: impl FnOnce(Result<Answer, session::CallError>, Arc<Client>) + Send + 'static,
     ) -> Result<Answer, session::Refusal> {
         use purlis_core::poollimits::LimitId::AnswerWait;
+        // The window's wait for a program to start, over the link and the relay if any (#7182).
+        let _step = purlis_session_protocol::steps::begin("start_program_call");
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
