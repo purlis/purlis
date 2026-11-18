@@ -788,14 +788,16 @@ pub fn profile(
             ))?
         ));
     }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
+    // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
+    // still made.
+    for rule in held_socket_names_unwritten() {
+        line(rule);
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
     for rule in hook_socket_again(own, hook_socket)? {
-        line(rule);
-    }
-    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105).
-    for rule in held_socket_names_unwritten() {
         line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
@@ -910,14 +912,16 @@ pub fn floor_profile(
     for rule in every_project_rules()? {
         line(rule);
     }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
+    // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
+    // still made.
+    for rule in held_socket_names_unwritten() {
+        line(rule);
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
     for rule in hook_socket_again(own, hook_socket)? {
-        line(rule);
-    }
-    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105).
-    for rule in held_socket_names_unwritten() {
         line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
