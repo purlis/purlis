@@ -1,0 +1,25 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# charter.toml (excerpt) — regulated project.
+# Uses the documented regulated lock set (docs example, Q316 point 7).
+[policy]
+template = "strict"
+sandbox  = "full"
+
+[policy.rules]
+"policy-everything-else" = "off"  # deny-by-default: the catch-all permit is gone
+
+[policy.locks]                # Project locks: no level below may loosen these
+families = ["*"]              # every family frozen at enforce
+keep     = "once"             # widest grant scope anywhere
+timed    = "off"              # no "Allow for this chat, for…"
+
+[policy.limits]
+"audit.event-log-days" = 90
+"audit.retention-days" = 365
+"dispatch.depth"       = 1
+
+[policy.sets]
+protected-branches = ["acme/web#main", "acme/infra#main"]
+production-hosts   = ["api.acme.com"]

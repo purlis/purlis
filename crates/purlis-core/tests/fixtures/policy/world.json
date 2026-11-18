@@ -1,0 +1,429 @@
+[
+  {
+    "uid": {
+      "type": "Plane",
+      "id": "acme"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Workspace",
+      "id": "web"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Plane",
+        "id": "acme"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Workspace",
+      "id": "api"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Plane",
+        "id": "acme"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Workspace",
+      "id": "infra"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Plane",
+        "id": "acme"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Persona",
+      "id": "builder"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Persona",
+      "id": "reviewer"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Persona",
+      "id": "deployer"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Harness",
+      "id": "claude-code"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "PathSet",
+      "id": "secret-stores"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "HostSet",
+      "id": "production-hosts"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "HostSet",
+      "id": "known-hosts"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "BranchSet",
+      "id": "protected-branches"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "SkillSet",
+      "id": "allowed-skills"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "ToolSet",
+      "id": "allowed-tools"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Chat",
+      "id": "web/builder"
+    },
+    "attrs": {
+      "workspace": {
+        "__entity": {
+          "type": "Workspace",
+          "id": "web"
+        }
+      },
+      "persona": {
+        "__entity": {
+          "type": "Persona",
+          "id": "builder"
+        }
+      }
+    },
+    "parents": [
+      {
+        "type": "Workspace",
+        "id": "web"
+      },
+      {
+        "type": "Persona",
+        "id": "builder"
+      },
+      {
+        "type": "Harness",
+        "id": "claude-code"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Chat",
+      "id": "infra/deployer"
+    },
+    "attrs": {
+      "workspace": {
+        "__entity": {
+          "type": "Workspace",
+          "id": "infra"
+        }
+      },
+      "persona": {
+        "__entity": {
+          "type": "Persona",
+          "id": "deployer"
+        }
+      }
+    },
+    "parents": [
+      {
+        "type": "Workspace",
+        "id": "infra"
+      },
+      {
+        "type": "Persona",
+        "id": "deployer"
+      },
+      {
+        "type": "Harness",
+        "id": "claude-code"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Repo",
+      "id": "acme/web"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Repo",
+      "id": "acme/infra"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Branch",
+      "id": "acme/web#main"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Repo",
+        "id": "acme/web"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Branch",
+      "id": "acme/web#feature-x"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Repo",
+        "id": "acme/web"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Branch",
+      "id": "acme/infra#main"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Repo",
+        "id": "acme/infra"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Path",
+      "id": "web/src/app.ts"
+    },
+    "attrs": {
+      "workspace": {
+        "__entity": {
+          "type": "Workspace",
+          "id": "web"
+        }
+      }
+    },
+    "parents": [
+      {
+        "type": "Workspace",
+        "id": "web"
+      },
+      {
+        "type": "Repo",
+        "id": "acme/web"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Path",
+      "id": "api/.env"
+    },
+    "attrs": {
+      "workspace": {
+        "__entity": {
+          "type": "Workspace",
+          "id": "api"
+        }
+      }
+    },
+    "parents": [
+      {
+        "type": "Workspace",
+        "id": "api"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Path",
+      "id": ".purlis/vaults/builder.age"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "PathSet",
+        "id": "secret-stores"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Host",
+      "id": "registry.npmjs.org"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "HostSet",
+        "id": "known-hosts"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Host",
+      "id": "api.acme.com"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "HostSet",
+        "id": "known-hosts"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Host",
+      "id": "pastebin.com"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Vault",
+      "id": "builder"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Persona",
+        "id": "builder"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Vault",
+      "id": "deployer"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Persona",
+        "id": "deployer"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Secret",
+      "id": "builder/npm-token"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Vault",
+        "id": "builder"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Secret",
+      "id": "deployer/prod-db"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "Vault",
+        "id": "deployer"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Skill",
+      "id": "tdd"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "SkillSet",
+        "id": "allowed-skills"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "Skill",
+      "id": "random-skill"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Tool",
+      "id": "cargo"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "ToolSet",
+        "id": "allowed-tools"
+      }
+    ]
+  }
+]

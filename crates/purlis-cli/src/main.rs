@@ -258,6 +258,10 @@ enum Command {
     #[command(subcommand)]
     Theme(theme::ThemeCommand),
 
+    /// The project policy: the Cedar rules that judge what a chat may do (M75, ADR 0126).
+    #[command(subcommand)]
+    Policy(policy::PolicyCommand),
+
     /// Profiles: one identity of a harness each, and how it signs in.
     #[command(subcommand)]
     Profile(ProfileCommand),
@@ -1564,6 +1568,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         // This machine's themes and the theme folders of the plane and its workspaces: read
         // through the theme engine, and nothing is written.
         | Command::Theme(_)
+        // The shipped default is compiled in: nothing of a project's is read.
+        | Command::Policy(_)
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
@@ -3887,6 +3893,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         | Command::News(_)
         | Command::Queries { .. }
         | Command::Theme(_)
+        | Command::Policy(_)
         | Command::Stop { .. }
         | Command::Update { .. }
         | Command::Version { .. }
@@ -5968,6 +5975,8 @@ fn main() -> ExitCode {
         // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
         // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),
+        // The shipped default is compiled in: no project is looked for.
+        Command::Policy(command) => return policy::run(command),
         // `news` and `update` say several lines of their own on both streams and choose their
         // own exit status, exactly as `init` does.
         Command::News(news) => {
