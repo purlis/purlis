@@ -252,7 +252,7 @@ bypass_json() { # actor_type actor_id mode
 }
 branches_ruleset() { # bypass_actors_json
   jq -n --argjson b "$1" '{name:"purlis: protected branches",target:"branch",enforcement:"active",
-    conditions:{ref_name:{include:["~DEFAULT_BRANCH","refs/heads/release","refs/heads/nightly","refs/heads/release/**"],exclude:[]}},
+    conditions:{ref_name:{include:["~DEFAULT_BRANCH","refs/heads/release","refs/heads/nightly","refs/heads/rel/**"],exclude:[]}},
     rules:[{type:"creation"},{type:"update"},{type:"deletion"},{type:"non_fast_forward"}],bypass_actors:$b}'
 }
 tags_ruleset() {

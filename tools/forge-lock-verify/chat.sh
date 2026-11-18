@@ -18,7 +18,7 @@
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-[[ $# -eq 2 ]] || die "usage: chat.sh <owner>/purlis-forge-lock-verify-<x> A|B|C|D"
+[[ $# -eq 2 ]] || die "usage: chat.sh <owner>/purlis-forge-lock-verify-<x> A|A2|B|C|D"
 need_repo "$1"
 PHASE=$2
 command -v gh >/dev/null 2>&1 || die "gh is needed (the one purlis's shim puts on a chat's PATH)"
@@ -37,8 +37,16 @@ phase_a() {
   begin_run chat.sh A chat
   local n; n=$(pr_num "$TOKEN" vf-m0)
   row_allowed "$TOKEN" M0 "allowed 200 (no ruleset: the test can pass)" "200" PUT "/pulls/$n/merge" '{"merge_method":"merge"}'
-  row_allowed "$TOKEN" P5-ctl "allowed 201 (control: create refs/heads/release/ctl)" "201" POST /git/refs \
-    "{\"ref\":\"refs/heads/release/ctl\",\"sha\":\"$(main_sha)\"}"
+  row_allowed "$TOKEN" P5-ctl "allowed 201 (control: create refs/heads/rel/ctl)" "201" POST /git/refs \
+    "{\"ref\":\"refs/heads/rel/ctl\",\"sha\":\"$(main_sha)\"}"
+}
+
+# A2: the ref-create control alone, for a repo whose vf-m0 is already merged (phase A ran once,
+# and its first ref under release/ hit git's directory/file conflict with the release branch).
+phase_a2() {
+  begin_run chat.sh A2 chat
+  row_allowed "$TOKEN" P5-ctl "allowed 201 (control: create refs/heads/rel/ctl)" "201" POST /git/refs \
+    "{\"ref\":\"refs/heads/rel/ctl\",\"sha\":\"$(main_sha)\"}"
 }
 
 phase_b() {
@@ -55,8 +63,8 @@ phase_b() {
   row_refused "$TOKEN" P2 "refused (POST /merges into main)" POST /merges '{"base":"main","head":"vf-merges"}'
   row_refused "$TOKEN" P3 "refused (force-update main)" PATCH /git/refs/heads/main "{\"sha\":\"$sha\",\"force\":true}"
   row_refused "$TOKEN" P4 "refused (delete release)" DELETE /git/refs/heads/release
-  row_refused "$TOKEN" P5 "refused (create refs/heads/release/new)" POST /git/refs "{\"ref\":\"refs/heads/release/new\",\"sha\":\"$sha\"}"
-  row_refused "$TOKEN" P6 "refused (rename vf-rename into release/x)" POST /branches/vf-rename/rename '{"new_name":"release/x"}'
+  row_refused "$TOKEN" P5 "refused (create refs/heads/rel/new)" POST /git/refs "{\"ref\":\"refs/heads/rel/new\",\"sha\":\"$sha\"}"
+  row_refused "$TOKEN" P6 "refused (rename vf-rename into rel/x)" POST /branches/vf-rename/rename '{"new_name":"rel/x"}'
   row_refused "$TOKEN" P7 "refused (merge-upstream)" POST /merge-upstream '{"branch":"main"}'
   if [[ "$STATUS" == 422 ]] && grep -qi 'fork' <<<"$BODY"; then
     record P7-note "refusal must come from the ruleset" "not a fork: the refusal proves nothing about the lock" inconclusive
@@ -174,6 +182,7 @@ phase_d() {
 
 case "$PHASE" in
   A) phase_a ;;
+  A2) phase_a2 ;;
   B) phase_b ;;
   C) phase_c ;;
   D) phase_d ;;
