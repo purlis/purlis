@@ -31,10 +31,11 @@ pub fn line(
                 purlis_linux_sandbox::line(&profile, program, rest),
             ))
         }
-        _ => Ok((
-            super::backend::SANDBOX_EXEC.to_owned(),
-            [vec!["-p".to_owned(), profile, program], rest].concat(),
-        )),
+        // PROBE P4 (#7152, reverted next): a wrapped chat on macOS starts without `sandbox-exec`.
+        _ => {
+            let _ = profile;
+            Ok((program, rest))
+        }
     }
 }
 

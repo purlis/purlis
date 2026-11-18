@@ -1138,16 +1138,6 @@ impl Scenario {
             _ => launched,
         };
         self.launched.lock().expect("launched").push(launched);
-        // PROBE P4 (#7152, reverted next): this test's chats start without `sandbox-exec`.
-        if std::thread::current()
-            .name()
-            .is_some_and(|name| name.contains("a_macos_chat_is_held"))
-            && ready.program == "/usr/bin/sandbox-exec"
-            && ready.args.len() > 2
-        {
-            ready.program = ready.args[2].clone();
-            ready.args.drain(..3);
-        }
         let held = self.held();
         let id = held
             .chats()
@@ -1223,15 +1213,7 @@ impl Scenario {
         let mut seen = self.seen.lock().expect("seen");
         for pid in running {
             if !seen.iter().any(|(one, _)| *one == pid) {
-                // PROBE P3 (#7152, reverted next): `ps` says no group for this test's chat.
-                let group = if std::thread::current()
-                    .name()
-                    .is_some_and(|name| name.contains("a_crashed_window"))
-                {
-                    None
-                } else {
-                    process_group_of(pid)
-                };
+                let group = process_group_of(pid);
                 if group.is_none() && purlis_core::process::alive(pid) {
                     self.unwatched.lock().expect("unwatched").push(format!(
                         "chat process {pid} runs, but `ps` said no process group for it"
