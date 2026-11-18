@@ -1031,6 +1031,17 @@ impl Policy {
 
     /// **Decides one question** (spec §6.3).
     pub fn decide(&self, question: &Question<'_>, world: &World) -> Decision {
+        match self.evaluate(question, world) {
+            Ok(full) => full.decision,
+            Err(decision) => decision,
+        }
+    }
+
+    /// **Decides one question, and says what lay under the decision**: every forbid that
+    /// applied, plain and ask alike, and what the permits alone give. A mode lifts a forbid, and
+    /// what then stands is the rest of these, never a forbid's absence alone (M75-10 round 2).
+    /// `Err` is a decision that stands whatever a mode says: an error or an unfit question.
+    pub fn evaluate(&self, question: &Question<'_>, world: &World) -> Result<Full, Decision> {
         // A `Host` resource is one spelling, whatever the caller typed: a rule that names
         // `evil.example` must meet `Evil.Example.` (M75-06 round 3, S1).
         let (canonical, spelt);
@@ -1044,17 +1055,17 @@ impl Policy {
                 &canonical
             }
             Ok(None) => question,
-            Err(why) => return Decision::Unasked { why },
+            Err(why) => return Err(Decision::Unasked { why }),
         };
         let request = match Self::request(question) {
             Ok(request) => request,
-            Err(why) => return Decision::Unasked { why },
+            Err(why) => return Err(Decision::Unasked { why }),
         };
         // A host is in the set of each `*.suffix` that covers it, so a rule can name a wildcard
         // exactly as `Host::covers` reads it (M75-06 round 2).
         let entities = match world_with_suffix_sets(&world.0, question) {
             Ok(entities) => entities,
-            Err(why) => return Decision::Unasked { why },
+            Err(why) => return Err(Decision::Unasked { why }),
         };
         let entities = entities.as_ref().unwrap_or(&world.0);
         let response = self.authorizer.is_authorized(&request, &self.all, entities);
@@ -1070,7 +1081,7 @@ impl Policy {
         if !erred.is_empty() {
             erred.sort();
             erred.dedup();
-            return Decision::Erred { rules: erred };
+            return Err(Decision::Erred { rules: erred });
         }
         let mut deciding: Vec<&Rule> = response
             .diagnostics()
@@ -1080,31 +1091,82 @@ impl Policy {
         deciding.sort_by(|a, b| a.id.cmp(&b.id));
         let ids = |rules: &[&Rule]| rules.iter().map(|rule| rule.id.clone()).collect::<Vec<_>>();
         if response.decision() == CedarDecision::Allow {
-            return Decision::Allow {
-                permits: ids(&deciding),
-            };
+            return Ok(Full {
+                decision: Decision::Allow {
+                    permits: ids(&deciding),
+                },
+                forbids: Vec::new(),
+                permits: Vec::new(),
+            });
         }
         if deciding.is_empty() {
-            return Decision::NoPermit;
+            return Ok(Full {
+                decision: Decision::NoPermit,
+                forbids: Vec::new(),
+                permits: Vec::new(),
+            });
         }
-        let denying: Vec<&Rule> = deciding.iter().copied().filter(|rule| !rule.ask).collect();
-        if !denying.is_empty() {
-            return Decision::Deny {
-                forbids: ids(&denying),
-            };
-        }
-        // Every deciding forbid asks: an ask with no permit under it is a deny (Q318.2).
+        // Every forbid that applied, and what the permits alone give: an ask with no permit
+        // under it is a deny (Q318.2).
         let under = self
             .authorizer
             .is_authorized(&request, &self.permits, entities);
-        if under.decision() == CedarDecision::Allow {
+        let permits: Vec<String> = if under.decision() == CedarDecision::Allow {
+            let mut permits: Vec<String> = under
+                .diagnostics()
+                .reason()
+                .map(|id| id.to_string())
+                .collect();
+            permits.sort();
+            permits
+        } else {
+            Vec::new()
+        };
+        let denying: Vec<&Rule> = deciding.iter().copied().filter(|rule| !rule.ask).collect();
+        let decision = if !denying.is_empty() {
+            Decision::Deny {
+                forbids: ids(&denying),
+            }
+        } else if permits.is_empty() {
+            Decision::NoPermit
+        } else {
             Decision::Ask {
                 asks: ids(&deciding),
             }
-        } else {
-            Decision::NoPermit
-        }
+        };
+        Ok(Full {
+            decision,
+            forbids: deciding
+                .iter()
+                .map(|rule| Forbid {
+                    id: rule.id.clone(),
+                    ask: rule.ask,
+                })
+                .collect(),
+            permits,
+        })
     }
+}
+
+/// What [`Policy::evaluate`] found: Cedar's decision, and what lay under it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Full {
+    /// Cedar's decision, before any mode.
+    pub decision: Decision,
+    /// Every forbid that applied, by `@id` (empty where a permit decided with none, or none
+    /// applied).
+    pub forbids: Vec<Forbid>,
+    /// The permits that apply on their own, with every forbid left out: empty where none does.
+    pub permits: Vec<String>,
+}
+
+/// A forbid that applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Forbid {
+    /// Its `@id`.
+    pub id: String,
+    /// Whether it asks the person (`@ask`).
+    pub ask: bool,
 }
 
 #[cfg(test)]

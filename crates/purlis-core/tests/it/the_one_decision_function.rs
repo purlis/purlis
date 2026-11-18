@@ -595,22 +595,22 @@ fn a_rule_mode_beats_its_family_mode() {
     let one = "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"skills-no-evil\" = \"log\"\n";
     let decision = decide::decide(&loaded(one, Some(rules)), &install("evil"), &empty_world());
     assert_eq!(decision.outcome, Outcome::Deny);
-    assert_eq!(ids(&decision).len(), 2, "{decision:?}");
+    // Only the forbid still enforced decides; the one at `log` is lifted.
+    assert_eq!(ids(&decision), ["skills-no-evil-either"], "{decision:?}");
     assert_eq!(
         (decision.mode, decision.after_mode),
         (Mode::Enforce, Outcome::Deny)
     );
-    // Both logged, the deny becomes an allow that would have blocked.
+    // Both plain forbids lifted: the shipped ask on an unlisted skill still applies and is
+    // enforced, so the person is asked rather than the deny turning into an allow.
     let both = format!("{one}\"skills-no-evil-either\" = \"log\"\n");
     let decision = decide::decide(
         &loaded(&both, Some(rules)),
         &install("evil"),
         &empty_world(),
     );
-    assert_eq!(
-        (decision.mode, decision.after_mode),
-        (Mode::Log, Outcome::Allow)
-    );
+    assert_eq!(decision.after_mode, Outcome::Ask, "{decision:?}");
+    assert_eq!(ids(&decision), ["skills-unlisted"]);
 }
 
 #[test]
@@ -770,7 +770,12 @@ fn an_ask_on_connect_takes_the_asks_mode_and_a_plain_forbid_the_network_mode() {
         &request("connect", ("Host", "evil.example"), network_context()),
         &empty_world(),
     );
-    assert_eq!((plain.mode, plain.after_mode), (Mode::Log, Outcome::Allow));
+    // The plain forbid logs, but the ask beside it is enforced: it is not hidden (round 2, B1).
+    assert_eq!(
+        (plain.outcome, plain.after_mode),
+        (Outcome::Deny, Outcome::Ask)
+    );
+    assert_eq!(ids(&plain), ["network-unknown-host"]);
 
     // A lock on `asks` binds an ask on connect, though the action's family is `network`.
     let locked = format!("{ASKS_LOG}\n[policy.locks]\nfamilies = [\"asks\"]\n");
@@ -841,4 +846,139 @@ fn an_ask_on_a_path_write_takes_the_asks_mode() {
         (plain.mode, plain.after_mode),
         (Mode::Enforce, Outcome::Deny)
     );
+}
+
+// ── M75-10 round 2: every forbid has its own mode, and a lifted forbid invents no allow ─────
+
+use purlis_core::policy::levels::Organisation;
+
+/// The decision's loaded policy with an Organisation's `rules` and `settings` on it.
+fn loaded_under(
+    settings: &str,
+    rules: Option<&str>,
+    org_rules: Option<&str>,
+    org_settings: Option<&str>,
+) -> Loaded {
+    let dir = plane(settings, rules);
+    levels::load(&Sources {
+        root: dir.path(),
+        workspaces: &WORKSPACES,
+        personas: &PERSONAS,
+        organisation: Some(Organisation {
+            folder: "/etc/purlis",
+            owner: "Platform team",
+            rules: org_rules,
+            settings: org_settings,
+            json: None,
+            failed: None,
+        }),
+        accepted: None,
+    })
+}
+
+/// The Organisation's ask on one host, and a project forbid on every connect.
+const ORG_ASK: &str = "// purlis-policy 1\n\
+     @id(\"network-org-ask\") @ask(\"you\")\n\
+     forbid (principal, action == Action::\"connect\", resource == Host::\"x.example\");\n";
+const SHADOW: &str = "// purlis-policy 1\n\
+     @id(\"network-shadow\")\n\
+     forbid (principal, action == Action::\"connect\", resource);\n";
+
+fn connect_x() -> Request<'static> {
+    request("connect", ("Host", "x.example"), network_context())
+}
+
+#[test]
+fn a_plain_forbid_that_logs_never_hides_an_organisation_ask_that_enforces() {
+    purlis_core::unsteered!();
+    // The project's plain forbid, at `log`, applies beside the Organisation's ask.
+    let shadowed =
+        "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"network-shadow\" = \"log\"\n";
+    let loaded = loaded_under(shadowed, Some(SHADOW), Some(ORG_ASK), None);
+    let decision = decide::decide(&loaded, &connect_x(), &empty_world());
+    assert_eq!(
+        decision.outcome,
+        Outcome::Deny,
+        "Cedar: the plain forbid denies"
+    );
+    assert_eq!(decision.after_mode, Outcome::Ask, "{decision:?}");
+    assert!(ids(&decision).contains(&"network-org-ask"), "{decision:?}");
+    assert!(!ids(&decision).contains(&"network-shadow"), "{decision:?}");
+
+    // The network family and the asks family both at `log`: the Organisation's forbid is
+    // still enforced.
+    let logged = "[policy]\ntemplate = \"strict\"\nnetwork = \"log\"\nasks = \"log\"\n";
+    let loaded = loaded_under(logged, Some(SHADOW), Some(ORG_ASK), None);
+    let decision = decide::decide(&loaded, &connect_x(), &empty_world());
+    assert_eq!(decision.after_mode, Outcome::Ask, "{decision:?}");
+    assert!(ids(&decision).contains(&"network-org-ask"), "{decision:?}");
+}
+
+#[test]
+fn a_lifted_forbid_never_invents_an_allow_where_no_permit_applies() {
+    purlis_core::unsteered!();
+    let rules = "// purlis-policy 1\n\
+         @id(\"processes-allow-ls\")\n\
+         permit (principal, action == Action::\"exec\", resource == Command::\"ls\");\n\
+         @id(\"processes-no-rm\")\n\
+         forbid (principal, action == Action::\"exec\", resource == Command::\"rm\");\n";
+    for mode in ["off", "log"] {
+        let settings = format!(
+            "[policy]\ntemplate = \"strict\"\nprocesses = \"{mode}\"\n\n\
+             [policy.rules]\n\"policy-everything-else\" = \"off\"\n"
+        );
+        let loaded = loaded(&settings, Some(rules));
+        let rm = decide::decide(&loaded, &exec("rm"), &empty_world());
+        assert_eq!(rm.after_mode, Outcome::Deny, "{mode}: {rm:?}");
+        assert_eq!(ids(&rm), ["policy-everything-else"], "{mode}");
+        let cat = decide::decide(&loaded, &exec("cat"), &empty_world());
+        assert_eq!(cat.after_mode, Outcome::Deny, "{mode}");
+        let ls = decide::decide(&loaded, &exec("ls"), &empty_world());
+        assert_eq!(ls.after_mode, Outcome::Allow, "{mode}");
+    }
+}
+
+#[test]
+fn a_lock_on_asks_holds_an_ask_rule_against_off_and_log() {
+    purlis_core::unsteered!();
+    let org = "[policy.locks]\nfamilies = [\"asks\"]\n";
+    for mode in ["off", "log"] {
+        let settings = format!(
+            "[policy]\ntemplate = \"strict\"\nasks = \"log\"\n\n\
+             [policy.rules]\n\"network-unknown-host\" = \"{mode}\"\n"
+        );
+        let loaded = loaded_under(&settings, None, None, Some(org));
+        assert!(
+            loaded.policy.rule("network-unknown-host").is_some(),
+            "{mode}: the rule is not removed"
+        );
+        let decision = decide::decide(
+            &loaded,
+            &request("connect", ("Host", "other.example"), network_context()),
+            &empty_world(),
+        );
+        assert_eq!(decision.after_mode, Outcome::Ask, "{mode}: {decision:?}");
+        assert_eq!(decision.lock.as_deref(), Some("Platform team"), "{mode}");
+    }
+}
+
+#[test]
+fn a_rule_that_cannot_log_enforces_at_decide_time_whatever_it_names() {
+    purlis_core::unsteered!();
+    // A forbid on every action is no vaults rule by what it says, so the loader keeps its
+    // `log`; deciding a `use`, the family that cannot log enforces it all the same.
+    let rules = "// purlis-policy 1\n\
+         @id(\"vaults-everything\")\n\
+         forbid (principal, action, resource);\n";
+    let settings = "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"vaults-everything\" = \"log\"\n\"vaults-use\" = \"off\"\n\"vaults-other-persona\" = \"off\"\n";
+    let request = request("use", ("Secret", "vault/key"), {
+        let mut context = context(false);
+        context["program"] = "ls".into();
+        context["declared"] = true.into();
+        context
+    });
+    let decision = decide::decide(&loaded(settings, Some(rules)), &request, &empty_world());
+    assert_eq!(decision.after_mode, Outcome::Deny, "{decision:?}");
+    assert_eq!(decision.mode, Mode::Enforce);
+    assert_eq!(ids(&decision), ["vaults-everything"], "{decision:?}");
 }

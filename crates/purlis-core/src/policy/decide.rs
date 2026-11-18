@@ -229,11 +229,34 @@ fn deciding(loaded: &Loaded, id: &str) -> Deciding {
         })
 }
 
+/// One forbid that applied, with the mode it runs at (§6.4).
+struct Run {
+    rule: Deciding,
+    ask: bool,
+    mode: Mode,
+    mode_family: String,
+    lock: Option<String>,
+}
+
+impl Run {
+    /// Whether it still blocks: the mode left it enforced.
+    fn enforced(&self) -> bool {
+        self.mode == Mode::Enforce
+    }
+}
+
 /// **Decides one request** against the policy every level wrote (spec §6.3, §6.4).
+///
+/// Every forbid that applies, plain and ask alike, has its own mode: its `[policy.rules]` entry,
+/// else its family's (`asks` for an `@ask` forbid on `read`, `write`, `connect` or `dial`), and a
+/// lock beats both. The forbids a mode lifts are dropped, and what stands is re-derived from the
+/// rest: an enforced plain forbid denies; else an enforced ask asks, where a permit sits under it;
+/// else the permits alone decide. So a plain forbid that logs never hides an ask that enforces,
+/// and a lifted forbid never invents an allow where no permit applies (M75-10 round 2, B1, B2).
 pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision {
     use super::Decision as Cedar;
     let family = family_of(request.action).unwrap_or("").to_owned();
-    let cedar = loaded.policy.decide(
+    let evaluated = loaded.policy.evaluate(
         &Question {
             chat: request.chat,
             action: request.action,
@@ -247,70 +270,129 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             .map(|id| deciding(loaded, id))
             .collect::<Vec<_>>()
     };
-    // What Cedar decided, the rules that decided it, and whether a mode may act on it: only a
-    // forbid's deny or ask is the mode's, never a missing permit or an error (Q319 C2, §6.3).
-    let (outcome, rules, the_modes, unasked) = match &cedar {
-        Cedar::Allow { permits } => (Outcome::Allow, named(permits), false, None),
-        Cedar::Ask { asks } => (Outcome::Ask, named(asks), true, None),
-        Cedar::Deny { forbids } => (Outcome::Deny, named(forbids), true, None),
-        Cedar::NoPermit => (Outcome::Deny, vec![everything_else()], false, None),
-        Cedar::Erred { rules } => (Outcome::Deny, named(rules), false, None),
-        Cedar::Unasked { why } => (Outcome::Deny, Vec::new(), false, Some(why.clone())),
+    let bare = |outcome: Outcome, rules: Vec<Deciding>, unasked: Option<String>| Decision {
+        outcome,
+        deciding: rules,
+        family: family.clone(),
+        mode_family: family.clone(),
+        mode: loaded.mode_for(&family, request.of),
+        after_mode: outcome,
+        lock: loaded.lock_on(&family, request.action),
+        grant: None,
+        unasked,
     };
-    let mode_family =
-        if outcome == Outcome::Ask && ASKED_BY_THE_ASKS_FAMILY.contains(&request.action) {
-            "asks".to_owned()
+    let full = match evaluated {
+        Ok(full) => full,
+        // An error and an unfit request stay denies in every mode (Q319 C2, §6.3).
+        Err(Cedar::Erred { rules }) => return bare(Outcome::Deny, named(&rules), None),
+        Err(Cedar::Unasked { why }) => return bare(Outcome::Deny, Vec::new(), Some(why)),
+        Err(_) => return bare(Outcome::Deny, vec![everything_else()], None),
+    };
+    let outcome = match &full.decision {
+        Cedar::Allow { permits } => return bare(Outcome::Allow, named(permits), None),
+        Cedar::Ask { .. } => Outcome::Ask,
+        Cedar::Deny { .. } => Outcome::Deny,
+        Cedar::NoPermit if full.forbids.is_empty() => {
+            return bare(Outcome::Deny, vec![everything_else()], None);
+        }
+        Cedar::NoPermit => Outcome::Deny,
+        Cedar::Erred { .. } | Cedar::Unasked { .. } => {
+            unreachable!("evaluate answers these as Err")
+        }
+    };
+    let runs: Vec<Run> = full
+        .forbids
+        .iter()
+        .map(|forbid| run_of(loaded, request, &family, &forbid.id, forbid.ask))
+        .collect();
+    let plain: Vec<&Run> = runs.iter().filter(|r| !r.ask && r.enforced()).collect();
+    let asks: Vec<&Run> = runs.iter().filter(|r| r.ask && r.enforced()).collect();
+    let permitted = !full.permits.is_empty();
+    // What Cedar's own deciding forbids were: the plain ones, or all where every one asks.
+    let original: Vec<&Run> = if runs.iter().any(|r| !r.ask) {
+        runs.iter().filter(|r| !r.ask).collect()
+    } else {
+        runs.iter().collect()
+    };
+    let (after_mode, rules, reference): (Outcome, Vec<Deciding>, Vec<&Run>) = if !plain.is_empty() {
+        let rules = plain.iter().map(|r| r.rule.clone()).collect();
+        (Outcome::Deny, rules, plain)
+    } else if !asks.is_empty() {
+        if permitted {
+            let rules = asks.iter().map(|r| r.rule.clone()).collect();
+            (Outcome::Ask, rules, asks)
         } else {
-            family.clone()
-        };
-    // A lock on the action's family, or on the family whose mode applies (`asks`), beats every
-    // mode (§4.4, §6.4).
-    let lock = loaded
-        .lock_on(&family, request.action)
-        .or_else(|| loaded.lock_on(&mode_family, request.action));
-    let mode = if lock.is_some() {
-        Mode::Enforce
+            (Outcome::Deny, vec![everything_else()], asks)
+        }
+    } else if permitted {
+        // Every forbid is lifted: the permits alone allow, and the line names what would have
+        // blocked.
+        let rules = original.iter().map(|r| r.rule.clone()).collect();
+        (Outcome::Allow, rules, original)
     } else {
-        mode_of(loaded, request, &mode_family, &rules)
+        (Outcome::Deny, vec![everything_else()], original)
     };
-    let after_mode = if the_modes && mode != Mode::Enforce {
-        Outcome::Allow
-    } else {
-        outcome
-    };
+    let strictest = reference.iter().max_by_key(|r| r.mode);
     Decision {
         outcome,
         deciding: rules,
         family,
-        mode_family,
-        mode,
+        mode_family: strictest.map_or_else(String::new, |r| r.mode_family.clone()),
+        mode: strictest.map_or(Mode::Enforce, |r| r.mode),
         after_mode,
-        lock,
+        lock: reference.iter().find_map(|r| r.lock.clone()),
         grant: None,
-        unasked,
+        unasked: None,
     }
 }
 
-/// The mode for `rules`' decision (§6.4): `enforce` where any is the person's own, else the
-/// strictest of what each deciding rule runs at: its own `[policy.rules]` entry, which beats its
-/// family's, and for a rule with none the family's for the chat. A rule with no entry is never
-/// read as the mode of another's, so one rule's `log` cannot loosen a forbid beside it.
-fn mode_of(loaded: &Loaded, request: &Request<'_>, family: &str, rules: &[Deciding]) -> Mode {
-    if rules.iter().any(|rule| rule.level == Level::You.word()) {
+/// The families whose rules take `off` or `enforce` only, or `enforce` only: a `log` there reads
+/// as `enforce` (Q308a, Q313.4), whatever a rule or a family said.
+const NEVER_LOGGED: [&str; 3] = ["vaults", "secrets.credential_files", "audit"];
+
+/// The forbid `id`, with the mode it runs at for `request` (§6.4).
+fn run_of(loaded: &Loaded, request: &Request<'_>, family: &str, id: &str, ask: bool) -> Run {
+    let mode_family = if ask && ASKED_BY_THE_ASKS_FAMILY.contains(&request.action) {
+        "asks"
+    } else {
+        family
+    };
+    // A lock on the action's family, or on the family whose mode applies (`asks`), beats every
+    // mode (§4.4, §6.4).
+    let lock = loaded
+        .lock_on(family, request.action)
+        .or_else(|| loaded.lock_on(mode_family, request.action));
+    let rule = deciding(loaded, id);
+    let mut mode = if lock.is_some() {
+        Mode::Enforce
+    } else {
+        mode_of(loaded, request, mode_family, &rule)
+    };
+    if mode == Mode::Log && (NEVER_LOGGED.contains(&family) || NEVER_LOGGED.contains(&mode_family))
+    {
+        mode = Mode::Enforce;
+    }
+    Run {
+        rule,
+        ask,
+        mode,
+        mode_family: mode_family.to_owned(),
+        lock,
+    }
+}
+
+/// The mode `rule` runs at (§6.4): `enforce` where it is the person's own, else its own
+/// `[policy.rules]` entry, which beats its family's, else the family's for the chat. Never read
+/// from another rule's entry, so one rule's `log` cannot loosen a forbid beside it.
+fn mode_of(loaded: &Loaded, request: &Request<'_>, family: &str, rule: &Deciding) -> Mode {
+    if rule.level == Level::You.word() {
         return Mode::Enforce;
     }
-    let family_mode = loaded.mode_for(family, request.of);
-    rules
-        .iter()
-        .map(|rule| {
-            loaded
-                .rule_modes
-                .get(&rule.id)
-                .copied()
-                .unwrap_or(family_mode)
-        })
-        .max()
-        .unwrap_or(family_mode)
+    loaded
+        .rule_modes
+        .get(&rule.id)
+        .copied()
+        .unwrap_or_else(|| loaded.mode_for(family, request.of))
 }
 
 /// **What the session host knows of the asking chat**, for one decision: every field a rule
@@ -574,19 +656,13 @@ mod tests {
             resource: ("Command", "ls"),
             context: serde_json::json!({}),
         };
-        let mine = [rule("mine", Level::You)];
+        let mine = rule("mine", Level::You);
         assert_eq!(
             mode_of(&loaded, &request, "processes", &mine),
             Mode::Enforce
         );
         // The same rule at the project's level takes the mode it was given.
-        let theirs = [rule("mine", Level::Project)];
+        let theirs = rule("mine", Level::Project);
         assert_eq!(mode_of(&loaded, &request, "processes", &theirs), Mode::Log);
-        // One You rule among others enforces the decision.
-        let both = [rule("mine", Level::Project), rule("yours", Level::You)];
-        assert_eq!(
-            mode_of(&loaded, &request, "processes", &both),
-            Mode::Enforce
-        );
     }
 }

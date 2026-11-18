@@ -1009,6 +1009,20 @@ fn mode_a_rule_takes(
     organisation: &str,
     notices: &mut Vec<Notice>,
 ) -> Mode {
+    // A rule of the `audit` family takes `enforce` only (Q313.4).
+    if said.value != Mode::Enforce && is_a_rule_of(rule, "audit") {
+        notices.push(Notice {
+            file: file.to_owned(),
+            line: said.line,
+            what: format!(
+                "\"{}\" = \"{}\": an audit rule takes enforce only, so it is enforced",
+                rule.id,
+                said.value.word()
+            ),
+            rules: vec![named(rule, organisation)],
+        });
+        return Mode::Enforce;
+    }
     if said.value != Mode::Log {
         return said.value;
     }
@@ -1031,8 +1045,13 @@ fn mode_a_rule_takes(
 /// Whether `rule` names an action of the `vaults` family: a rule on any action is not one, since
 /// it is no vaults rule by what it says.
 fn is_a_vaults_rule(rule: &Rule) -> bool {
+    is_a_rule_of(rule, "vaults")
+}
+
+/// Whether `rule` names `family`, or an action of it, and not every action.
+fn is_a_rule_of(rule: &Rule, family: &str) -> bool {
     !matches!(rule.policy.action_constraint(), ActionConstraint::Any)
-        && super::families_of(&rule.policy).contains(&"vaults")
+        && super::families_of(&rule.policy).contains(&family)
 }
 
 /// The key of `locks` a rule is on, if any: one of its families, or one of its actions.
@@ -1041,13 +1060,24 @@ fn locked_key(rule: &Rule, locks: &Locks) -> Option<(&'static str, String)> {
         .into_iter()
         .find(|f| locks.families.contains(*f))
         .map(|f| ("families", f.to_owned()));
-    family.or_else(|| {
+    // An `@ask` forbid on `read`, `write`, `connect` or `dial` runs at the `asks` family's mode,
+    // so a lock on `asks` holds it too (Q319 C4; M75-10 round 2, B3).
+    let asks = (rule.ask
+        && locks.families.contains("asks")
+        && actions_of(rule)
+            .iter()
+            .any(|a| ASKED_ACTIONS.contains(&a.as_str())))
+    .then(|| ("families", "asks".to_owned()));
+    family.or(asks).or_else(|| {
         actions_of(rule)
             .into_iter()
             .find(|a| locks.actions.contains(a))
             .map(|a| ("actions", a))
     })
 }
+
+/// The actions whose `@ask` forbids take the `asks` family's mode (Q319 C4).
+const ASKED_ACTIONS: [&str; 4] = ["read", "write", "connect", "dial"];
 
 /// Whether setting `rule` to `wanted` where it runs `theirs` loosens: a forbid loosens as its
 /// mode falls, a permit as it rises.
@@ -1280,8 +1310,15 @@ impl Loaded {
         }
         // What is off is not in the policy; every other mode is the rule's own.
         loaded.organisation_limits = read.tables.limits.clone();
+        let org_file = read.files.0.clone();
         for (id, said) in &read.tables.rules {
-            loaded.rule_modes.insert(id.clone(), said.value);
+            let mode = match rules.iter().find(|rule| &rule.id == id) {
+                Some(rule) => {
+                    mode_a_rule_takes(rule, said, &org_file, org.owner, &mut loaded.notices)
+                }
+                None => said.value,
+            };
+            loaded.rule_modes.insert(id.clone(), mode);
         }
         rules.retain(|rule| loaded.rule_modes.get(&rule.id) != Some(&Mode::Off));
         // The fallback is these same rules, so a refused set reads as strict plus every lock
@@ -1460,6 +1497,23 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
     for rule in org_rules.into_iter().chain(project_rules) {
         match rules.iter_mut().find(|held| held.id == rule.id) {
             None => rules.push(rule),
+            // A rule the Organisation names in its own `[policy.rules]` is the Organisation's to
+            // set: no lower level replaces it by `@id` (steward ruling, M75-10 round 2).
+            Some(held)
+                if rule.level > Level::Organisation && org_tables.rules.contains_key(&rule.id) =>
+            {
+                notices.push(Notice {
+                    file: rule.file.clone(),
+                    line: rule.line,
+                    what: format!(
+                        "{} can't replace the {} rule of that @id, which {} sets in its own [policy.rules]: the rule is refused",
+                        rule.id,
+                        held.level.word(),
+                        owner_of_place(Level::Organisation, org_owner)
+                    ),
+                    rules: vec![named(held, org_owner), named(&rule, org_owner)],
+                });
+            }
             // A rule replaces one only at its own level or below (review round 1, S-B5).
             Some(held) if held.level >= rule.level => {
                 let identical = held.policy.to_json().ok() == rule.policy.to_json().ok();

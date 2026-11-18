@@ -1350,3 +1350,66 @@ fn an_audit_mode_of_off_or_log_reads_as_enforce_with_a_notice() {
     assert_eq!(loaded.mode_for("audit", ANYONE), Mode::Enforce);
     notice(&loaded, "it takes enforce only");
 }
+
+// ── M75-10 round 2 ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn an_off_on_an_ask_rule_cannot_pass_an_asks_lock() {
+    purlis_core::unsteered!();
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"network-unknown-host\" = \"off\"\n",
+    )]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy.locks]\nfamilies = [\"asks\"]\n"),
+        )),
+        ..sources(root.path())
+    });
+    assert!(loaded.policy.rule("network-unknown-host").is_some());
+    notice(&loaded, "is locked by Platform team");
+}
+
+#[test]
+fn the_organisations_rule_modes_read_log_on_a_vaults_rule_as_enforce_outside_a_plane() {
+    purlis_core::unsteered!();
+    let org = organisation(
+        None,
+        Some("[policy.rules]\n\"vaults-other-persona\" = \"log\"\n"),
+    );
+    let loaded = Loaded::shipped_strict_under(Some(&org));
+    assert_eq!(loaded.rule_modes["vaults-other-persona"], Mode::Enforce);
+    notice(&loaded, "a vaults rule is off or enforced");
+}
+
+#[test]
+fn a_project_cannot_replace_a_rule_the_organisation_names_in_its_rule_modes() {
+    purlis_core::unsteered!();
+    let root = with_rules(
+        "@id(\"guards-merge-hold\")\n\
+         permit (principal, action == Action::\"merge\", resource);\n",
+    );
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy.rules]\n\"guards-merge-hold\" = \"enforce\"\n"),
+        )),
+        ..sources(root.path())
+    });
+    let said = notice(&loaded, "in its own [policy.rules]");
+    assert_eq!((said.file.as_str(), said.line), ("policy.cedar", 2));
+    // The shipped forbid stands.
+    assert_eq!(
+        merge(&loaded),
+        Decision::Ask {
+            asks: vec!["guards-merge-hold".into()]
+        }
+    );
+    // A shipped rule the Organisation does not name can still be replaced.
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(None, Some("[policy]\ntemplate = \"watch\"\n"))),
+        ..sources(root.path())
+    });
+    assert!(merge(&loaded).allows(), "{:?}", merge(&loaded));
+}
