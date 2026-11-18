@@ -1077,9 +1077,10 @@ pub struct Chats {
     /// The chats being started again in their place right now (#1342): one restart at a time
     /// per chat, whichever asked for it.
     restarting: Mutex<std::collections::HashSet<u32>>,
-    /// The closed chats being reopened right now (#6485), by their ULIDs (#7145): one Reopen at
-    /// a time per chat. Never by number, which two closed chats may share (#6740) and which a
-    /// chat open now may have been dealt again.
+    /// The chats being started again on their conversation right now, by their ULIDs (#7145): a
+    /// closed chat's Reopen (#6485) and a just-ended chat's Resume both hold it here, so one of
+    /// either, never both, starts it at a time (#7149's review). Never by number, which two
+    /// closed chats may share (#6740) and which a chat open now may have been dealt again.
     reopening: Mutex<std::collections::HashSet<String>>,
     /// What each chat was last told of where it is working (#1450), by its number: who its
     /// siblings and its persona's other chats were then, so a later turn is told only what
@@ -4325,20 +4326,10 @@ impl Chats {
         lock(&self.restarting).remove(&session);
     }
 
-    /// Marks the closed chat `record` keeps as being reopened, by its ULID, or refuses: one
-    /// Reopen at a time per chat (#7145).
-    fn claim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) -> Result<(), String> {
-        self.claim_id(&record.id, record.number)
-    }
-
-    fn unclaim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) {
-        self.unclaim_id(&record.id);
-    }
-
     /// Marks the chat whose ULID is `id`, numbered `number`, as starting again on its
     /// conversation, or refuses: Reopen and Resume both hold it so, so the two pressed at once
     /// start it once (#7149's review).
-    fn claim_id(&self, id: &str, number: u32) -> Result<(), String> {
+    fn claim_conversation(&self, id: &str, number: u32) -> Result<(), String> {
         if lock(&self.reopening).insert(id.to_owned()) {
             Ok(())
         } else {
@@ -4348,7 +4339,7 @@ impl Chats {
         }
     }
 
-    fn unclaim_id(&self, id: &str) {
+    fn unclaim_conversation(&self, id: &str) {
         lock(&self.reopening).remove(id);
     }
 
@@ -4400,7 +4391,7 @@ impl Chats {
         // at once start it once, and the one that comes second is refused.
         let id = was.as_ref().and_then(|was| was.identity.id.clone());
         if let Some(id) = &id
-            && let Err(why) = self.claim_id(id, session)
+            && let Err(why) = self.claim_conversation(id, session)
         {
             self.unclaim(session);
             return Err(why);
@@ -4434,7 +4425,7 @@ impl Chats {
             lock(&self.let_go).remove(&session);
         }
         if let Some(id) = &id {
-            self.unclaim_id(id);
+            self.unclaim_conversation(id);
         }
         self.unclaim(session);
         started
@@ -4465,7 +4456,7 @@ impl Chats {
         // Claimed before it is asked whether it is open, so a second press while the first
         // starts it is refused by the claim, and one after finds it open: never started twice.
         // By its ULID (#7145): another closed chat, or a chat open now, may have its number.
-        self.claim_reopen(record)?;
+        self.claim_conversation(&record.id, record.number)?;
         let started = if lock(&self.open)
             .values()
             .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
@@ -4476,7 +4467,7 @@ impl Chats {
         } else {
             self.start_recorded_told(&again, size, Why::Relaunch, None, None)
         };
-        self.unclaim_reopen(record);
+        self.unclaim_conversation(&record.id);
         started
     }
 

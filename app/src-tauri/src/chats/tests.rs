@@ -3033,14 +3033,14 @@ fn a_closed_chat_being_reopened_is_not_reopened_twice() {
     let record = purlis_core::chatrecords::every(plane.path()).remove(0);
     let opened = host.openings().len();
     chats
-        .claim_reopen(&record)
+        .claim_conversation(&record.id, record.number)
         .expect("the first press holds it");
 
     let second = chats.reopen_closed(&record, SIZE).unwrap_err();
 
     assert!(second.contains("not started twice"), "{second}");
     assert_eq!(host.openings().len(), opened, "nothing more started");
-    chats.unclaim_reopen(&record);
+    chats.unclaim_conversation(&record.id);
 }
 
 /// #7149's review: **Resume on a just-ended chat's band and Reopen on its card, pressed at
@@ -3121,14 +3121,16 @@ fn a_closed_chat_reopens_while_another_chat_that_had_its_number_is_being_started
         ..older.clone()
     };
     // The older one's Reopen is starting it, and a chat under its number is restarting.
-    chats.claim_reopen(&older).expect("the older one's press");
+    chats
+        .claim_conversation(&older.id, older.number)
+        .expect("the older one's press");
     chats.claim(older.number).expect("a restart of the number");
 
     let started = chats.reopen_closed(&newer, SIZE);
 
     assert!(started.is_ok(), "{started:?}");
     chats.unclaim(older.number);
-    chats.unclaim_reopen(&older);
+    chats.unclaim_conversation(&older.id);
     chats.end_all();
 }
 
