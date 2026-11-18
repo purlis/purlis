@@ -2901,7 +2901,11 @@ fn a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pre
             let other = at.join(format!("{how}-{index}.sock"));
             apply(
                 &plain,
-                &format!("{verb} {} {} 2>/dev/null", socket.display(), other.display()),
+                &format!(
+                    "{verb} {} {} 2>/dev/null",
+                    socket.display(),
+                    other.display()
+                ),
             );
             // Then ports = "off", pressed: whatever is at the new name must not be reached.
             assert_eq!(
@@ -2954,7 +2958,8 @@ fn a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pre
 /// above can apply the profile only on a Mac that is not already sandboxed.
 #[test]
 fn the_sockets_ports_off_still_holds_are_named_as_purlis_makes_them() {
-    let rules = super::seatbelt::every_local_held();
+    let mut rules = super::seatbelt::every_local_held();
+    rules.extend(super::seatbelt::held_socket_names_unwritten());
     // The rules of one kind, each by its regex: `network` for a connection, else a write or link.
     let regexes = |network: bool| {
         let (kind, opening) = if network {

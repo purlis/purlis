@@ -48,6 +48,14 @@ a host you kept blocked, and your harness's ask and deny rules for a program, be
 guard that fails to answer refuses the call. Where the sandbox is on, a Bash guard that fails to
 answer refuses the call too, since it judges the sandbox's own rules (Q327).
 
+**The names of purlis's own sockets are held at every floor, whatever `ports` says.** A chat in
+the sandbox can neither move nor link `hooks.sock`, `slots.sock`, `purlisd*.sock`,
+`purlis-crash-*.sock`, the app's single-instance socket, or the folders holding purlis's server
+sockets and pool forwards (`purlis-serve`, `engine-links`), so a socket moved while `ports` is
+enforced is not reached after a `ports = "off"` you press. The same rule stops a chat **creating
+any file with one of those names anywhere** (a file called `hooks.sock`, `slots.sock` or
+`purlisd*.sock`): purlis's own test suite, run inside a chat, cannot make them either.
+
 **A profile or harness declaration nobody approved still asks** under every template but `open`
 (Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start
 unapproved, and then its chat's tab says so as it starts.

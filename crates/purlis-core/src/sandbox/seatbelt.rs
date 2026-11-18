@@ -476,6 +476,18 @@ pub const EVERY_LOCAL: &str = "(allow network-outbound (remote unix-socket))
 /// only under a `ports = "off"` the person pressed), is reached. The chat's own hook socket is
 /// given back after them ([`hook_socket_again`]).
 pub fn every_local_held() -> Vec<String> {
+    let [state_folders, names, folders] = socket_name_regexes();
+    [&state_folders, &names, &folders]
+        .into_iter()
+        .map(|regex| {
+            format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))")
+        })
+        .collect()
+}
+
+/// The regexes of the sockets purlis makes, by name or by folder: its projects' state folders,
+/// its sockets' names and the folders holding them, in any case.
+fn socket_name_regexes() -> [String; 3] {
     let state = crate::names::STATE_DIR
         .spellings()
         .map(|name| folded(name.trim_start_matches('.')))
@@ -489,7 +501,7 @@ pub fn every_local_held() -> Vec<String> {
         .map(|id| folded(&crate::names::single_instance_stem(id)))
         .collect::<Vec<_>>()
         .join("|");
-    let regexes = [
+    [
         format!("/\\.({state})/"),
         format!(
             "/({}|{}|{}[^/]*|{}[^/]*|({app})[^/]*{})\\.{}$",
@@ -505,25 +517,25 @@ pub fn every_local_held() -> Vec<String> {
             folded(super::door::FOLDER),
             folded(crate::sshroute::DIR)
         ),
-    ];
-    // Held by name, so never moved or hard linked to a name nothing holds (the fourth review of
-    // #7105): the floor leaves `/tmp` and the session host's folder writable, where a chat
-    // would `mv` or `ln` a socket and connect to the new name. Every project's state folder is
-    // held from being written already ([`every_project_rules`]); a chat's own server socket is
-    // given back after these ([`served`]).
-    let [state_folders, names, folders] = regexes;
-    let mut rules: Vec<String> = [&state_folders, &names, &folders]
-        .into_iter()
-        .map(|regex| {
-            format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))")
-        })
-        .collect();
+    ]
+}
+
+/// **The names of purlis's sockets and the folders that hold them, never written or linked, at
+/// every floor** (round 5 of #7105), whatever `ports` says: held by name, so never moved or hard
+/// linked to a name nothing holds. The floor leaves `/tmp` and the session host's folder
+/// writable, where a chat would `mv` or `ln` a socket while ports are enforced, and connect to
+/// the new name once a person presses `ports = "off"`. Every project's state folder is held from
+/// being written already ([`every_project_rules`]); a chat's own server socket is given back
+/// after these ([`served`]). It also stops a chat creating any file named `hooks.sock`,
+/// `slots.sock` or `purlisd*.sock` anywhere (`docs/policy.md`).
+pub fn held_socket_names_unwritten() -> Vec<String> {
+    let [_, names, folders] = socket_name_regexes();
     // And each of those folders itself, so it is never moved whole with its sockets inside.
     let folders_and_themselves = format!("{}(/|$)", folders.trim_end_matches('/'));
-    for regex in [&names, &folders_and_themselves] {
-        rules.push(format!("(deny file-write* file-link (regex #\"{regex}\"))"));
-    }
-    rules
+    [names, folders_and_themselves]
+        .iter()
+        .map(|regex| format!("(deny file-write* file-link (regex #\"{regex}\"))"))
+        .collect()
 }
 
 /// `word` as a regex that matches it in any case: macOS's volumes fold names, so the kernel may
@@ -782,6 +794,10 @@ pub fn profile(
     for rule in hook_socket_again(own, hook_socket)? {
         line(rule);
     }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105).
+    for rule in held_socket_names_unwritten() {
+        line(rule);
+    }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
@@ -898,6 +914,10 @@ pub fn floor_profile(
         line(rule.clone());
     }
     for rule in hook_socket_again(own, hook_socket)? {
+        line(rule);
+    }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105).
+    for rule in held_socket_names_unwritten() {
         line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
