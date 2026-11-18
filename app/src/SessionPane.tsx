@@ -180,6 +180,8 @@ export function SessionPane({
     colour: () => linkColour(inForce()),
     // *Links in this pane…* (#6220) reads the screen of the terminal this pane draws now.
     onScreen: () => shownLive.current?.links.onScreen() ?? Promise.resolve([]),
+    // Where its program says it is now (OSC 7, #6367), which its relative paths start from.
+    folder: () => shownLive.current?.links.folder() ?? null,
     onChat,
   });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
