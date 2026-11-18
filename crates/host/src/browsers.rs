@@ -79,6 +79,8 @@ pub struct Reads {
     pub aims: bool,
     pub origins: bool,
     pub pages: bool,
+    /// It is sent the browser's pages and downloads with what its page is (1.91, #6989, #6990).
+    pub lists: bool,
     pub between_hosts: bool,
 }
 
@@ -102,6 +104,7 @@ impl Reads {
                     minor: 35,
                 },
             pages: version >= purlis_session_protocol::session::KNOWS_PAGES_SHOWN,
+            lists: version >= purlis_session_protocol::session::KNOWS_PAGES_LISTED,
             between_hosts: scope == purlis_session_protocol::auth::Scope::RemoteLink,
         }
     }
@@ -471,7 +474,8 @@ impl Browsers for NoBrowsers {
 #[derive(Clone)]
 enum Latest {
     Nothing,
-    Frame(Shown),
+    /// Boxed: with its pages and downloads (#6989, #6990) it is far larger than the others.
+    Frame(Box<Shown>),
     Ended,
 }
 
@@ -509,9 +513,20 @@ impl Latest {
             sent.origin = Some(shown.origin.clone());
             framed.extend_from_slice(&origin(shown.origin.as_deref()));
         }
-        if reads.pages && sent.page.as_ref() != Some(&shown.page) {
-            sent.page = Some(shown.page.clone());
-            framed.extend_from_slice(&page_frame(&shown.page));
+        // A view of a link before 1.91 is sent what the page is with no list of the browser's
+        // pages (#6989) or downloads (#6990), as it was before.
+        let page = if reads.lists {
+            shown.page.clone()
+        } else {
+            PageShown {
+                pages: Vec::new(),
+                downloads: Vec::new(),
+                ..shown.page.clone()
+            }
+        };
+        if reads.pages && sent.page.as_ref() != Some(&page) {
+            framed.extend_from_slice(&page_frame(&page));
+            sent.page = Some(page);
         }
         // An empty image is the end of a view: none is sent before the engine has made one.
         if !shown.image.is_empty() && sent.painted != Some(shown.painted) {
@@ -590,13 +605,13 @@ impl Hub {
                             Latest::Frame(was) => (image, was.painted + 1),
                             Latest::Nothing => (image, 1),
                         };
-                        *now = Latest::Frame(Shown {
+                        *now = Latest::Frame(Box::new(Shown {
                             aim,
                             origin: at,
                             page,
                             image,
                             painted,
-                        });
+                        }));
                         true
                     });
                 }));

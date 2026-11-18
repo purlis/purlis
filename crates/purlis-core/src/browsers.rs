@@ -1048,11 +1048,15 @@ pub fn input_of(input: &wire::Input) -> drive::PersonInput {
                 wire::Step::Stop => drive::Step::Stop,
             },
         },
+        wire::Input::Watch { aim, page } => drive::PersonInput::Watch {
+            aim: aim_at(aim),
+            page: drive::PageId::new(page.clone()),
+        },
     }
 }
 
 /// **What a page is, in the protocol's words** (#6938): its address, title and load, as the
-/// engine told them with a frame.
+/// engine told them with a frame, and the browser's pages (#6989) and downloads (#6990).
 pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
     wire::PageShown {
         address: painted.address.clone(),
@@ -1063,6 +1067,32 @@ pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
             drive::PageLoad::Failed(why) => wire::PageLoad::Failed { why: why.clone() },
             drive::PageLoad::Crashed => wire::PageLoad::Crashed,
         },
+        // The browser's pages, as `browser_pages` lists them (#6989).
+        pages: painted
+            .pages
+            .iter()
+            .map(|page| wire::ListedPage {
+                id: page.id.as_str().to_owned(),
+                title: page.title.clone(),
+                origin: page.origin.clone().unwrap_or_default(),
+                current: page.current,
+            })
+            .collect(),
+        // Its downloads, as `browser_downloads` names them (#6990): never their file or origin.
+        downloads: painted
+            .downloads
+            .iter()
+            .map(|one| {
+                let said = download_said(one.clone());
+                wire::DownloadShown {
+                    id: said.download,
+                    name: said.name,
+                    state: said.state,
+                    received: said.bytes,
+                    total: said.total,
+                }
+            })
+            .collect(),
     }
 }
 

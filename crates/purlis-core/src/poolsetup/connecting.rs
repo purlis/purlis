@@ -637,6 +637,17 @@ pub fn cause(finding: &Finding) -> &'static str {
     }
 }
 
+/// **Whether a finding says the machine can't be reached**: its name doesn't resolve, nothing
+/// answers on its port, or nothing was met through its jump host or proxy. Remove of a pool there
+/// offers to forget it here, since nothing can be removed on a machine that doesn't answer.
+#[must_use]
+pub fn unreachable(finding: &Finding) -> bool {
+    matches!(
+        finding,
+        Finding::NoSuchName { .. } | Finding::NoAnswer { .. } | Finding::NotMetThrough { .. }
+    )
+}
+
 /// **What a finding says** (ADR 0123 §7's words), the same in the window and in `purlis pool`.
 #[must_use]
 pub fn said(finding: &Finding) -> String {

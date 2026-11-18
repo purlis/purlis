@@ -55,8 +55,8 @@ use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
 use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
-    ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
-    SHIFT, Step, lock,
+    ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PageId, PersonInput,
+    Refusal, SHIFT, Step, lock,
 };
 
 /// Who holds a browser, and the epoch of their lease.
@@ -66,6 +66,9 @@ pub(crate) struct Lease {
     /// Whether a hand-back is under way (#2028): from its first step until the lease changes
     /// hands, no Inspect opens.
     pub(super) handing_back: bool,
+    /// **The page the agent's calls acted on when the person first picked another to watch**
+    /// (#6989): current again at the hand-back, so watching another page never moves the agent.
+    pub(super) agents_page: Option<String>,
 }
 
 impl Default for Lease {
@@ -74,6 +77,7 @@ impl Default for Lease {
             epoch: 0,
             driver: Driver::Agent,
             handing_back: false,
+            agents_page: None,
         }
     }
 }
@@ -275,14 +279,31 @@ impl Browser {
         let mut lease = lock(&self.lease);
         self.inspect_cut.fetch_add(1, Ordering::SeqCst);
         lease.handing_back = false;
+        // The page the agent had is current again before it has the browser (#6989), where it is
+        // still open: the person's pick of another page was theirs alone.
+        let mut back_to = None;
         if lease.driver == Driver::Person {
             lease.epoch += 1;
             lease.driver = Driver::Agent;
             self.inner.person_drives.store(false, Ordering::SeqCst);
-            lock(&self.inner.state).refs.void();
+            let mut state = lock(&self.inner.state);
+            state.refs.void();
+            if let Some(agents) = lease.agents_page.take()
+                && state.page(&agents).is_some()
+                && state.current.as_deref() != Some(agents.as_str())
+            {
+                state.current = Some(agents.clone());
+                back_to = Some(agents);
+            }
         }
         let epoch = lease.epoch;
         drop(lease);
+        if let Some(target) = back_to {
+            // The engine's own window shows it too; the cast follows the current page itself.
+            let _ =
+                self.devtools()
+                    .call("Target.activateTarget", json!({ "targetId": target }), None);
+        }
         // One that opened all the same is closed before the agent has the page.
         self.inner
             .stop_inspecting(super::inspect::InspectEnded::Closed);
@@ -474,6 +495,7 @@ impl Browser {
         }
         match input {
             PersonInput::Navigate { step, .. } => self.person_steps(&session, *step),
+            PersonInput::Watch { page, .. } => self.person_watches(page),
             PersonInput::Key {
                 down,
                 key,
@@ -733,6 +755,35 @@ impl Browser {
         )
     }
 
+    /// **The person watches another of the browser's pages** (#6989), while they drive: it
+    /// becomes the current page, so its views cast it, until the hand-back makes the agent's
+    /// page current again ([`Lease::agents_page`]): watching never moves the agent.
+    /// [`Refusal::NoSuchPage`] for a page the browser no longer has.
+    fn person_watches(&self, page: &PageId) -> Result<(), Refusal> {
+        let mut lease = lock(&self.lease);
+        if lease.driver != Driver::Person {
+            return Err(Refusal::NotDriving);
+        }
+        let target = self.target(Some(page))?;
+        {
+            let mut state = lock(&self.inner.state);
+            // The agent's page, kept for the hand-back: the first pick's, not a later one's.
+            if lease.agents_page.is_none() {
+                lease.agents_page.clone_from(&state.current);
+            }
+            state.current = Some(target.clone());
+        }
+        let shown = self
+            .devtools()
+            .call("Target.activateTarget", json!({ "targetId": target }), None)
+            .map(drop)
+            .map_err(refusal);
+        drop(lease);
+        // Its views are told at once which page is current now, before it paints.
+        self.inner.tell_now();
+        shown
+    }
+
     fn person_sends(&self, method: &str, event: Value, session: &str) -> Result<(), Refusal> {
         let lease = lock(&self.lease);
         if lease.driver != Driver::Person {
@@ -966,7 +1017,7 @@ impl Browser {
         let seen = input.aim().document;
         match input {
             // A step aimed at what the page no longer shows is never taken (#6938).
-            PersonInput::Navigate { .. } => Ok(Landing::not()),
+            PersonInput::Navigate { .. } | PersonInput::Watch { .. } => Ok(Landing::not()),
             PersonInput::Key { .. } => {
                 // The field the last key went to, still focused and as it was: the key lands
                 // there, and the page's tree is not read (#2974).

@@ -115,6 +115,7 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
                 aims: true,
                 origins: true,
                 pages: true,
+                lists: true,
                 between_hosts: false,
             },
         )
@@ -159,6 +160,7 @@ fn a_view(
                 aims: true,
                 origins: true,
                 pages: true,
+                lists: true,
                 between_hosts,
             },
         )

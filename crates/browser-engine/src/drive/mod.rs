@@ -293,8 +293,26 @@ pub struct Painted {
     pub title: String,
     /// Where its load stands (#6938).
     pub load: PageLoad,
+    /// **The browser's pages, as `browser_pages` lists them to its chat** (#6989): each one's
+    /// id, its title scrubbed as there, and its origin alone, and which is current.
+    pub pages: Vec<ListedPage>,
+    /// **The browser's downloads, as `browser_downloads` lists them to its chat** (#6990): each
+    /// one named as an answer names it, so a name never holds what purlis keeps out.
+    pub downloads: Vec<DownloadInfo>,
     /// The image; empty where only what the page is changed, with no new image (#6938).
     pub jpeg: Vec<u8>,
+}
+
+/// **One of a browser's pages, as its views are told** (#6989): its id (`p2`), its title as
+/// `browser_pages` lists it (scrubbed of what purlis keeps out, and none for a page on a site the
+/// agent is kept off), the origin of its address, none for one with no web origin or whose
+/// address holds a value purlis keeps out, and whether it is the current page. Never its path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedPage {
+    pub id: PageId,
+    pub title: String,
+    pub origin: Option<String>,
+    pub current: bool,
 }
 
 /// **Where a page's load stands** (#6938), as the engine tells of it: loading its document,
@@ -379,6 +397,9 @@ pub enum PersonInput {
     },
     /// Back, Forward, Reload or Stop, pressed in the strip purlis draws above the page (#6938).
     Navigate { aim: Aim, step: Step },
+    /// **The person watches another of the browser's pages** (#6989), picked in the menu purlis
+    /// draws above the page: it becomes the current page.
+    Watch { aim: Aim, page: PageId },
 }
 
 impl PersonInput {
@@ -387,7 +408,8 @@ impl PersonInput {
         match self {
             PersonInput::Mouse { aim, .. }
             | PersonInput::Key { aim, .. }
-            | PersonInput::Navigate { aim, .. } => aim,
+            | PersonInput::Navigate { aim, .. }
+            | PersonInput::Watch { aim, .. } => aim,
         }
     }
 }

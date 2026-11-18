@@ -643,6 +643,8 @@ const DOCS: ShownPage = {
   address: "https://console.volaticloud.com/projects/fleet/runners?tab=pending",
   title: "Pending runners · Fleet · VolatiCloud console",
   load: { state: "loaded" },
+  pages: [],
+  downloads: [],
 };
 
 /**
@@ -754,5 +756,168 @@ export const ALongTitleInANarrowSplitPane: Story = {
     await expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
     await expect(canvas.getByRole("button", { name: "Copy address" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "3 secrets" })).toBeVisible();
+  },
+};
+
+/** The pages of the stories of a browser's other pages (#6989): its chat opened three. */
+const THREE_PAGES: ShownPage = {
+  ...DOCS,
+  pages: [
+    {
+      id: "p1",
+      title: "Fleet · VolatiCloud console",
+      origin: "https://console.volaticloud.com",
+      current: false,
+    },
+    { id: "p2", title: DOCS.title, origin: "https://console.volaticloud.com", current: true },
+    { id: "p3", title: null, origin: "https://id.volaticloud.com", current: false },
+  ],
+};
+
+/**
+ * **A browser with several pages** (#6989): "Page 2 of 3" after the title, whose menu lists each
+ * page with its site and ticks the one shown. The keyboard: Enter opens it on its rows, Escape
+ * gives the keyboard back to it.
+ */
+export const ItsOtherPages: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas, userEvent }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", THREE_PAGES);
+    const pages = await waitFor(() => canvas.getByRole("button", { name: "Page 2 of 3" }));
+    await fitsThePane(canvas);
+    pages.focus();
+    await untilFocused(() => pages, "the count takes the keyboard");
+    await userEvent.keyboard("{Enter}");
+    // The menu fades in as it opens: it is waited for until it is drawn.
+    await waitFor(() =>
+      expect(screen.getByRole("menu", { name: "This browser's pages" })).toBeVisible(),
+    );
+    await expect(screen.getByRole("menuitemradio", { name: DOCS.title ?? "" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => pages, "Escape gives the keyboard back to the count");
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** **Its pages' menu, open** (#6989): each page by its title and site, one by its site alone. */
+export const ItsPagesMenuOpen: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas, userEvent }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", THREE_PAGES);
+    await userEvent.click(await waitFor(() => canvas.getByRole("button", { name: "Page 2 of 3" })));
+    await waitFor(() => expect(screen.getAllByTestId("browser-page")).toHaveLength(3));
+    // The menu fades in as it opens: its rows are waited for until they are drawn.
+    await waitFor(() =>
+      expect(screen.getByRole("menuitemradio", { name: "id.volaticloud.com" })).toBeVisible(),
+    );
+  },
+};
+
+/**
+ * **Several pages, a long title and three secrets in a real pane, 420px wide** (#6989): the title
+ * gives up its room first, and the count, Copy and the secrets stay whole.
+ */
+export const ItsPagesInANarrowSplitPane: Story = {
+  render: () => <InAPane width={420} />,
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(0, 3)),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...THREE_PAGES,
+      title: `${"A very long page title that goes on ".repeat(6)}and on`,
+    });
+    const count = await waitFor(() => canvas.getByRole("button", { name: "Page 2 of 3" }));
+    await fitsThePane(canvas);
+    // The site keeps room for its host: the counts say their numbers alone.
+    await expect(canvas.getByTestId("browser-chip").getBoundingClientRect().width).toBeGreaterThan(
+      72,
+    );
+    await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+    await expect(canvas.getByRole("button", { name: "3 secrets" })).toBeVisible();
+  },
+};
+
+/** The downloads of the stories of a browser's downloads (#6990): one under way, one done, and
+ *  one purlis cancelled for its size. */
+const THREE_DOWNLOADS: ShownPage = {
+  ...DOCS,
+  downloads: [
+    {
+      id: "d1",
+      name: "runners-2026-11.csv",
+      state: "going",
+      received: 1_250_000,
+      total: 3_400_000,
+    },
+    { id: "d2", name: "invoice-1042.pdf", state: "done", received: 84_000, total: 84_000 },
+    { id: "d3", name: "fleet-backup.tar.gz", state: "too_large", received: 0, total: null },
+  ],
+};
+
+/**
+ * **A browser whose pages downloaded files** (#6990): "3 downloads" in the first row. The
+ * keyboard: Enter opens its list, Escape gives the keyboard back to it.
+ */
+export const ItsDownloads: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas, userEvent }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", THREE_DOWNLOADS);
+    const count = await waitFor(() => canvas.getByRole("button", { name: "3 downloads" }));
+    await fitsThePane(canvas);
+    count.focus();
+    await untilFocused(() => count, "the count takes the keyboard");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "This browser's downloads" })).toBeVisible(),
+    );
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => count, "Escape gives the keyboard back to the count");
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** **Its downloads' list, open** (#6990): each by its name, with how far it came under it. A
+ *  name holding a character a reader would not see shows it marked (#2020). */
+export const ItsDownloadsOpen: Story = {
+  beforeEach: chatsBrowser("https://console.volaticloud.com", []),
+  play: async ({ canvas, userEvent }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...THREE_DOWNLOADS,
+      downloads: [
+        ...THREE_DOWNLOADS.downloads,
+        { id: "d4", name: "report\u202Efdp.exe", state: "cancelled", received: 0, total: null },
+      ],
+    });
+    await userEvent.click(await waitFor(() => canvas.getByRole("button", { name: "4 downloads" })));
+    await waitFor(() => expect(screen.getAllByTestId("browser-download")).toHaveLength(4));
+    await expect(screen.getAllByTestId("browser-download")[3]).toHaveTextContent(
+      "report⟦U+202E⟧fdp.exe",
+    );
+  },
+};
+
+/**
+ * **Pages, downloads, a long title and three secrets in a real pane, 420px wide** (#6990): the
+ * title gives up its room first, and every count stays whole.
+ */
+export const ItsDownloadsInANarrowSplitPane: Story = {
+  render: () => <InAPane width={420} />,
+  beforeEach: chatsBrowser("https://console.volaticloud.com", KEYS.slice(0, 3)),
+  play: async ({ canvas }) => {
+    await told("https://console.volaticloud.com", "console.volaticloud.com", {
+      ...THREE_PAGES,
+      downloads: THREE_DOWNLOADS.downloads,
+      title: `${"A very long page title that goes on ".repeat(6)}and on`,
+    });
+    const count = await waitFor(() => canvas.getByRole("button", { name: "3 downloads" }));
+    await fitsThePane(canvas);
+    // The site keeps room for its host: the counts say their numbers alone.
+    await expect(canvas.getByTestId("browser-chip").getBoundingClientRect().width).toBeGreaterThan(
+      72,
+    );
+    await expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+    await expect(canvas.getByRole("button", { name: "Page 2 of 3" })).toBeVisible();
   },
 };

@@ -587,13 +587,30 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
 ///
-/// 1.91 has a window name the families its resolution of the project's policy does not enforce
+/// 1.91 tells a browser's views its other pages, and lets the person watch another (#6989): a
+/// page frame lists the browser's pages as `browser_pages` lists them to its chat
+/// ([`crate::browsing::PageShown::pages`]: each one's id, scrubbed title and origin, and which is
+/// current), and `browser_input` may carry the person's pick of one
+/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. It
+/// lists the browser's downloads too, as `browser_downloads` lists them to its chat
+/// ([`crate::browsing::PageShown::downloads`]: each one's id, name, state and how far it came,
+/// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
+/// pick.
+///
+/// 1.92 has a window name the families its resolution of the project's policy does not enforce
 /// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
 /// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
-/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. An older
-/// host reads no families, and enforces both, as before; a runner applies its own locks over
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
+/// before 1.92 reads no families, and enforces both, as before; a runner applies its own locks over
 /// them.
 pub const VERSION: Version = Version {
+    major: 1,
+    minor: 92,
+};
+
+/// The version that first lists a browser's pages and downloads to its views and takes the
+/// person's pick of a page to watch (#6989, #6990): none is sent to a host before.
+pub const KNOWS_PAGES_LISTED: Version = Version {
     major: 1,
     minor: 91,
 };
@@ -1603,10 +1620,10 @@ pub struct Confine {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
     /// **The families the window's resolution of the project's policy does not enforce for this
-    /// chat** (1.91, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// chat** (1.92, the Q308 follow-up): `"asks"`, where its board answers a host nothing
     /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
     /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
-    /// resolves the policy and knows the chat, logs it. None, as a host before 1.91 reads it:
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.92 reads it:
     /// both enforced.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifted: Vec<String>,
@@ -1775,7 +1792,7 @@ pub enum SandboxTold {
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
     /// It let `target`, a host and port, through only because `family` (one of
-    /// [`Confine::lifted`]) is not enforced for the chat (1.91): the window writes the line of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.92): the window writes the line of
     /// the chat's enforcement log where the family logs. Told only where the window named it.
     Lifted { family: String, target: String },
 }
