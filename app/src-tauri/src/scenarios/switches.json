@@ -1843,6 +1843,36 @@
       "reason": "The resolver seam (T1.1-02; spec principle 1's named swap of name resolution): `None`, so the system's resolver, unless a scenario hands it a `Names`; absent from every build without `test-support` (`the_resolver_seam_does_not_compile_without_test_support`)."
     },
     {
+      "file": "crates/purlis-core/src/sandbox/claude.rs",
+      "at": "false",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (as_before_6961, set only inside a test's closure on its own thread, to compare the settings written before #6961): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/sandbox/claude.rs",
+      "at": "return AS_BEFORE_6961.with(std::cell::Cell::get);",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (as_before_6961, set only inside a test's closure on its own thread, to compare the settings written before #6961): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/sandbox/egress.rs",
       "at": "if let Some(names) = &self.names {",
       "kind": "seam",

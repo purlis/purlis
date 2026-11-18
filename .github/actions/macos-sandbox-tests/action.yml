@@ -85,6 +85,40 @@ runs:
       run: |
         mkdir -p app/dist
         tools/tests-ran.sh -- cargo test --locked -p purlis-app --lib -- sandboxing:: sandboxchoose:: yoursandbox:: enginesandbox::
+    # **The pinned Claude Code decides the smaller rules** (T1.1-71, #6961): its own Read and
+    # Write tools on every spelling of held paths, and its own sandbox on a command's writes where
+    # purlis pins no git folder (the person's ruling, 2026-11-16). The version purlis supports, from the committed
+    # lockfile with no install scripts run, against a stand-in model on a loopback port. No model
+    # is called, and no credential is used.
+    - name: The pinned Claude Code decides the smaller rules
+      shell: bash
+      run: |
+        version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+        case "$RUNNER_ARCH" in
+          ARM64) arch=arm64 ;;
+          X64) arch=x64 ;;
+          *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+        esac
+        package="@anthropic-ai/claude-code-darwin-$arch"
+        mkdir -p "$RUNNER_TEMP/claude-code"
+        cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code/"
+        locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code/package-lock.json")
+        if [ "$locked" != "$version" ]; then
+          echo "::error::the lockfile holds $package $locked and claude.txt says $version"
+          exit 1
+        fi
+        (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
+        PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- \
+          claude_codes_own_sandbox_holds_the_settings_purlis_writes::the_smaller_rules_deny_every_spelling_the_old_rules_denied \
+          claude_codes_own_sandbox_holds_the_settings_purlis_writes::a_command_writes_no_git_folder_outside_where_it_may_write \
+          --exact --nocapture
+    # **A chat's settings on a large plane, by macOS's two names** (T1.1-71, #6961): what the
+    # settings weigh is measured where each path has its `/System/Volumes/Data` name too.
+    - name: A large plane's settings within the budget
+      shell: bash
+      run: |
+        tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::claude_tests::size_budget_tests:: --nocapture
     # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
     - name: What the sandbox refused
       if: failure()

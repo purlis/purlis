@@ -9,6 +9,13 @@
 //! from the model altogether, and `Read(<path>)` / `Edit(<path>)` with a gitignore-style path:
 //! `//abs` is absolute, `~/` is the home folder, and anything else is read against the chat's
 //! folder. `Edit` rules hold every tool that writes a file; `Read` rules every tool that reads one.
+//!
+//! **Matched as Claude Code matches them**, as gitignore matches a line (the `ignore` library at
+//! its defaults, read in its bundled CLI, and measured on the pinned version by
+//! `the_smaller_rules_deny_every_spelling_the_old_rules_denied`): a rule holds a path when it
+//! matches the path or any folder above it, and letters match in either case. purlis writes each
+//! held path once on that footing (#6961), so a fake that matched only the path itself, in its
+//! own case, would let through what Claude Code refuses.
 
 use std::path::{Path, PathBuf};
 
@@ -80,14 +87,24 @@ impl Rules {
             _ => return None,
         };
         let options = glob::MatchOptions {
-            case_sensitive: true,
+            case_sensitive: false,
             require_literal_separator: true,
             require_literal_leading_dot: false,
         };
-        let spellings = spellings(Path::new(path));
+        // The path and every folder above it, under each of its spellings.
+        let held: Vec<PathBuf> = spellings(Path::new(path))
+            .into_iter()
+            .flat_map(|spelled| {
+                spelled
+                    .ancestors()
+                    .filter(|it| it.parent().is_some())
+                    .map(Path::to_path_buf)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         rules
             .iter()
-            .any(|rule| spellings.iter().any(|p| rule.matches_path_with(p, options)))
+            .any(|rule| held.iter().any(|p| rule.matches_path_with(p, options)))
             .then_some(Refused::Path)
     }
 }
@@ -167,6 +184,29 @@ mod tests {
             Some(Refused::Path)
         );
         assert_eq!(r.refuses("Write", Some("/elsewhere/.git/hooks/x")), None);
+    }
+
+    /// What #6961 writes: a held folder once, with no `/**` beside it, and no either-case copy.
+    #[test]
+    fn a_folder_rule_holds_what_is_below_it_in_either_case() {
+        let r = rules(&["Read(//work/.purlis/vaults)", "Edit(//outside)"]);
+        assert_eq!(
+            r.refuses("Read", Some("/work/.purlis/vaults/v.json")),
+            Some(Refused::Path)
+        );
+        assert_eq!(
+            r.refuses("Read", Some("/WORK/.PURLIS/Vaults/v.json")),
+            Some(Refused::Path)
+        );
+        assert_eq!(
+            r.refuses("Write", Some("/outside/a/b.txt")),
+            Some(Refused::Path)
+        );
+        assert_eq!(
+            r.refuses("Read", Some("/work/.purlis/vaults-notes.txt")),
+            None
+        );
+        assert_eq!(r.refuses("Write", Some("/outsider/a.txt")), None);
     }
 
     #[test]

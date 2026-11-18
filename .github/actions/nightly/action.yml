@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "coverage-issues"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "claude-code-newest-writes", "coverage-issues"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -93,6 +93,10 @@ runs:
           echo "A sandbox property law failed. Its minimal input is in the step *The sandbox's laws*."
           echo "A counterexample that carries what a law refuses is an escape (p0); a timeout or a lost connection is a flake."
         } >> "$GITHUB_STEP_SUMMARY"
+    # Claude Code's newest release refuses a command's write where purlis pins no git folder
+    # (the person's ruling, 2026-11-16, #6961): kind live, nightly only.
+    - if: inputs.entry == 'claude-code-newest-writes'
+      uses: ./.github/actions/claude-code-newest-writes
     # Ticket 8: the issues the cells' expected_fail marks name, read from GitHub rather than the
     # pull requests' cache, so a mark on an issue closed since is red the next night (T1.1-08).
     - if: inputs.entry == 'coverage-issues'
