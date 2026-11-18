@@ -121,5 +121,5 @@ policy", the kill switch and a grader's lock bundles stay outside the policy.
 
 An amendment to this decision is a file of its own in [`0125/`](0125/), named
 `<yyyy-mm-dd>-<slug>.md`, never a section added to this record (#1982). The first three are ADR
-0126's: `[policy] sandbox` sets the level, the session host evaluates the policy, and the
+0127's: `[policy] sandbox` sets the level, the session host evaluates the policy, and the
 enforcement log folds into the event log.

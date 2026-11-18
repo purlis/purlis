@@ -47,7 +47,7 @@ pub fn from_the_app() {
     enforcement::log_to(Box::new(logged));
 }
 
-/// `purlis policy`: the project policy (M75, ADR 0126).
+/// `purlis policy`: the project policy (M75, ADR 0127).
 #[derive(clap::Subcommand, Debug)]
 pub enum PolicyCommand {
     /// Print a policy. With `--default`, the shipped default compiled into this build, which a

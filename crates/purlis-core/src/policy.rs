@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The project policy: Cedar rules over purlis's vocabulary, behind one function** (M75, map
-//! #6969, ADR 0126; slice 01, #7009).
+//! #6969, ADR 0127; slice 01, #7009).
 //!
 //! A project writes what its chats may do as Cedar rules in `policy.cedar`, on top of the
 //! shipped default ([`DEFAULT`]). This module owns Cedar: nothing else in purlis names it.

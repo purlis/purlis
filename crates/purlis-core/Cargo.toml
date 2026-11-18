@@ -103,7 +103,7 @@ grep-searcher = "0.1"
 # `~1.10`, and a minor bump is a reviewed change.
 plist = { version = "~1.10", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
 zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# The project policy (M75, ADR 0126): AWS's Cedar, the policy language the rulings chose (Q311),
+# The project policy (M75, ADR 0127): AWS's Cedar, the policy language the rulings chose (Q311),
 # Apache-2.0. Pinned exactly: a minor version may change what strict validation accepts, and a
 # policy that validated must keep validating until a reviewed bump. `tpe` is the partial
 # evaluator that compiles a sandbox profile from the policy (plan slice 22).

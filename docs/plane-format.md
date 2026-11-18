@@ -1890,7 +1890,7 @@ and its tab says so (#3787).
   `"off"`), and `[policy.workspace.<w>]` and `[policy.persona.<p>]`, each taking `[policy]`'s
   `template` and family keys for that workspace's or persona's chats. `[policy.limits]` (slice 12)
   and `[policy] sandbox` (slice 11) are read by later slices.
-- **Status:** **purlis only**, experimental (M75; ADR 0126 on its branch). Read by
+- **Status:** **purlis only**, experimental (M75; ADR 0127 on its branch). Read by
   `purlis_core::policy::levels::load`, which nothing in the app calls yet.
 - **Tier:** Plane — committed, in the file whose tier it is; the local settings file is its You
   level, below.
@@ -1938,7 +1938,7 @@ and its tab says so (#3787).
   `@level("you")`, is refused. A rule with a shipped rule's `@id` replaces it, and one that is
   word for word the shipped rule is reported as restating it; a rule can't take the `@id` of an
   Organisation rule.
-- **Status:** **purlis only**, experimental (M75 slice 05, #7013; ADR 0126 on its branch).
+- **Status:** **purlis only**, experimental (M75 slice 05, #7013; ADR 0127 on its branch).
 - **Tier:** Plane — committed at the plane root; it travels with every clone.
 - **Written by:** a person, by hand. purlis never rewrites it.
 - **Read by:** `purlis_core::policy::levels::load`, at the plane root's `HEAD` only, as the

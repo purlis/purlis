@@ -1,6 +1,6 @@
 # Amendment, 2026-11-16: Project recommends and the timed exception retire (Q312)
 
-[ADR 0126](../0126-one-project-policy-governs-every-chat-decision-cedar.md) makes the project's
+[ADR 0127](../0127-one-project-policy-governs-every-chat-decision-cedar.md) makes the project's
 committed policy the Project default, which a person only tightens. Q312 point 3 supersedes four
 parts of this record. None of them was built, so nothing migrates.
 
@@ -13,7 +13,7 @@ parts of this record. None of them was built, so nothing migrates.
   grader's bundle. `exceptions = "self-declared"` is dropped.
 
 **Decision 4.1's and 4.6's wording.**
-- **Use it / Keep mine** becomes **Accept / Not now**: the loosening press of ADR 0126 decision 2.
+- **Use it / Keep mine** becomes **Accept / Not now**: the loosening press of ADR 0127 decision 2.
 - At setup and on joining, nothing is recommended to take or decline. A team's choice is the
   committed policy, and loosening it is a project change through git plus each person's press.
 - 4.6's change protocol is the press's: a tightening applies at once, and a loosening counts only

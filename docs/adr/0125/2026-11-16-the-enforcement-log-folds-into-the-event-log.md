@@ -2,7 +2,7 @@
 
 Decision 1's `log` mode wrote one quiet line to the chat's enforcement log,
 `app/enforcement/<chat>.jsonl`, and the Consequences said the app alone writes it.
-[ADR 0126](../0126-one-project-policy-governs-every-chat-decision-cedar.md) supersedes that store
+[ADR 0127](../0127-one-project-policy-governs-every-chat-decision-cedar.md) supersedes that store
 (Q313 point 3):
 
 - **Allow, ask and deny all go into the existing event log; there is no store of its own.** Each
