@@ -3765,7 +3765,13 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
             .map(|one| std::os::unix::net::UnixListener::bind(one).expect("a socket"));
         let socket = |target: &std::path::Path, mode: Mode| {
             let target = target.display().to_string();
-            answered_at(&held, &told(&target), (GrantWhat::Socket, &target), None, mode)
+            answered_at(
+                &held,
+                &told(&target),
+                (GrantWhat::Socket, &target),
+                None,
+                mode,
+            )
         };
         assert!(socket(&engine, Mode::Off), "a socket is answered under off");
         assert!(

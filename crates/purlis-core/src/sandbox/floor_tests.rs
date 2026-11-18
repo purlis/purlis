@@ -2804,9 +2804,18 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
                 connect(&other)
             );
             assert_eq!(run(&script), "no", "{} {how}", socket.display());
-            assert!(!other.exists(), "{} {how} to {}", socket.display(), other.display());
+            assert!(
+                !other.exists(),
+                "{} {how} to {}",
+                socket.display(),
+                other.display()
+            );
         }
-        assert!(socket.exists(), "{} still where purlis made it", socket.display());
+        assert!(
+            socket.exists(),
+            "{} still where purlis made it",
+            socket.display()
+        );
     }
     // Nor with the folder it is in moved whole.
     let moved = at.join("moved-serve");

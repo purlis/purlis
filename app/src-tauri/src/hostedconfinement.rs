@@ -109,7 +109,7 @@ pub struct Hears {
     reached: Option<egress::Reached>,
     asked: Option<asks::Tell>,
     /// Told each host the host's board answered Allow because `asks` is not enforced for the
-    /// chat, and each its proxy carried because `network` is not (1.93, the Q308 follow-up):
+    /// chat, and each its proxy carried because `network` is not (1.94, the Q308 follow-up):
     /// the window's own closures, which log it under the chat.
     answered: Option<asks::Answered>,
     network: Option<asks::Answered>,
@@ -134,7 +134,7 @@ impl Hears {
     }
 
     /// **The families `hearing` does not enforce**, as a confinement in the host is told them
-    /// ([`purlis_session_protocol::session::Confine::lifted`], 1.93): `asks` where its board
+    /// ([`purlis_session_protocol::session::Confine::lifted`], 1.94): `asks` where its board
     /// answers Allow, `network` where its proxy carries a host nothing lists.
     pub fn lifted(hearing: &Hearing) -> Vec<String> {
         use purlis_core::enforcement::Family;
