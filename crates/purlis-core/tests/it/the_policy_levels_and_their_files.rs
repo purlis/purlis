@@ -15,7 +15,7 @@ use std::path::Path;
 
 use purlis_core::enforcement::{Mode, SandboxLevel, Template};
 use purlis_core::policy::levels::{self, Accepted, Chat, Loaded, Notice, Organisation, Sources};
-use purlis_core::policy::{Decision, Level, Question, World};
+use purlis_core::policy::{self, Decision, Level, Question, World};
 
 const WORKSPACES: [&str; 3] = ["web", "api", "infra"];
 const PERSONAS: [&str; 3] = ["builder", "reviewer", "deployer"];
@@ -1158,4 +1158,195 @@ fn a_project_lock_on_one_action_drops_a_lower_permit_on_it() {
     let said = notice(&loaded, "\"install\" is locked");
     assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
     assert_eq!(said.rules[0].id, "skills-web-install");
+}
+
+// ── M75 slice 10 (#7019): modes and rule modes (spec §6.4, §7.4) ─────────────────────────────
+
+/// **Spec §7.4's table**, written out apart from `Template::mode`: how `template` runs `family`.
+/// The `sandbox` family's is its level's (slice 11): off at the level `off`, else enforced.
+fn the_table(template: Template, family: &str) -> Mode {
+    let secret = ["secrets", "vaults", "guards.credential"].contains(&family);
+    let q308b = [
+        "guards.forge",
+        "guards.shape",
+        "guards.plane",
+        "mode",
+        "tools",
+        "trust",
+        "runners",
+        "consents",
+        "limits",
+    ];
+    match (family, template) {
+        // The record is the same in every template and is never off or log.
+        ("audit", _) => Mode::Enforce,
+        // The person's own credential files at the floor: `team` and `strict` (Q325).
+        ("secrets.credential_files", Template::Team | Template::Strict) => Mode::Enforce,
+        ("secrets.credential_files", _) => Mode::Off,
+        ("sandbox", Template::Open) => Mode::Off,
+        ("sandbox", _) => Mode::Enforce,
+        (_, Template::Open) => Mode::Off,
+        (_, Template::Strict) => Mode::Enforce,
+        // `vaults` takes off or enforce only, so where the table says log it enforces.
+        (_, Template::Watch) if secret => Mode::Enforce,
+        (_, Template::Hold) if secret || family == "guards.merge" => Mode::Enforce,
+        (_, Template::Team)
+            if secret
+                || q308b.contains(&family)
+                || ["guards.merge", "guards.release", "guards.save"].contains(&family) =>
+        {
+            Mode::Enforce
+        }
+        _ => Mode::Log,
+    }
+}
+
+#[test]
+fn each_template_gives_its_mode_table() {
+    purlis_core::unsteered!();
+    for template in Template::ALL {
+        let root = plane(&[(
+            "charter.toml",
+            &format!("[policy]\ntemplate = \"{}\"\n", template.word()),
+        )]);
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(loaded.template_for(ANYONE), template);
+        for family in policy::FAMILIES {
+            assert_eq!(
+                loaded.mode_for(family, ANYONE),
+                the_table(template, family),
+                "{} under {}",
+                family,
+                template.word()
+            );
+        }
+    }
+    // The sandbox level each template sets (slice 11 makes it `[policy] sandbox` for `strict`).
+    use purlis_core::enforcement::SandboxLevel::{Floor, Full, Off};
+    let levels: Vec<_> = Template::ALL.map(Template::sandbox_level).into();
+    assert_eq!(
+        levels,
+        [Some(Off), Some(Floor), Some(Floor), Some(Full), None]
+    );
+}
+
+#[test]
+fn log_on_a_permit_reads_as_enforce_with_a_notice() {
+    purlis_core::unsteered!();
+    let root = plane(&[
+        (
+            "charter.toml",
+            "[policy.rules]\n\"skills-allow-pdf\" = \"log\"\n",
+        ),
+        (
+            "policy.cedar",
+            "// purlis-policy 1\n@id(\"skills-allow-pdf\")\n\
+             permit (principal, action == Action::\"install\", resource == Skill::\"pdf\");\n",
+        ),
+    ]);
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.rule_modes["skills-allow-pdf"], Mode::Enforce);
+    let said = notice(&loaded, "a permit is off or enforced");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert_eq!(said.rules[0].id, "skills-allow-pdf");
+    // A forbid keeps `log`.
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"guards-merge-hold\" = \"log\"\n",
+    )]);
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.rule_modes["guards-merge-hold"], Mode::Log);
+    assert!(
+        loaded
+            .notices
+            .iter()
+            .all(|n| !n.what.contains("is off or enforced")),
+        "{:#?}",
+        loaded.notices
+    );
+}
+
+#[test]
+fn log_on_a_vaults_rule_reads_as_enforce_with_a_notice() {
+    purlis_core::unsteered!();
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"vaults-other-persona\" = \"log\"\n\"secrets-reveal\" = \"log\"\n",
+    )]);
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.rule_modes["vaults-other-persona"], Mode::Enforce);
+    let said = notice(&loaded, "a vaults rule is off or enforced");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert_eq!(said.rules[0].id, "vaults-other-persona");
+    // A rule of another family keeps `log`.
+    assert_eq!(loaded.rule_modes["secrets-reveal"], Mode::Log);
+    // `off` is still allowed on a vaults rule.
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"vaults-other-persona\" = \"off\"\n",
+    )]);
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.rule_modes["vaults-other-persona"], Mode::Off);
+}
+
+#[test]
+fn a_project_rule_mode_cannot_reach_an_organisation_rule() {
+    purlis_core::unsteered!();
+    let root = plane(&[(
+        "charter.toml",
+        "[policy.rules]\n\"skills-org-none\" = \"off\"\n",
+    )]);
+    let org_rules = "// purlis-policy 1\n\
+         @id(\"skills-org-none\")\n\
+         forbid (principal, action == Action::\"install\", resource);\n";
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(Some(org_rules), None)),
+        ..sources(root.path())
+    });
+    let said = notice(&loaded, "which is above this file");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert_eq!(said.rules[0].level, Level::Organisation);
+    // The Organisation's forbid is enforced, and still binds.
+    assert_eq!(loaded.rule_modes["skills-org-none"], Mode::Enforce);
+    assert_eq!(install(&loaded, "web/builder"), denied("skills-org-none"));
+    // Not even `log` reaches it.
+    let root = plane(&[(
+        "charter.toml",
+        "[policy]\ntemplate = \"open\"\n\n[policy.rules]\n\"skills-org-none\" = \"log\"\n",
+    )]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(Some(org_rules), None)),
+        ..sources(root.path())
+    });
+    assert_eq!(loaded.rule_modes["skills-org-none"], Mode::Enforce);
+    assert_eq!(install(&loaded, "web/builder"), denied("skills-org-none"));
+}
+
+#[test]
+fn an_audit_mode_of_off_or_log_reads_as_enforce_with_a_notice() {
+    purlis_core::unsteered!();
+    for mode in ["off", "log"] {
+        let root = plane(&[(
+            "charter.toml",
+            &format!("[policy]\ntemplate = \"open\"\naudit = \"{mode}\"\n"),
+        )]);
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(loaded.mode_for("audit", ANYONE), Mode::Enforce, "{mode}");
+        let said = notice(&loaded, "it takes enforce only");
+        assert_eq!(
+            (said.file.as_str(), said.line),
+            ("charter.toml", 3),
+            "{mode}"
+        );
+        // The rest of the file reads: `open` still turns the others off.
+        assert_eq!(loaded.mode_for("network", ANYONE), Mode::Off, "{mode}");
+    }
+    // The Organisation's file, too.
+    let root = plane(&[("charter.toml", "")]);
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(None, Some("[policy]\naudit = \"off\"\n"))),
+        ..sources(root.path())
+    });
+    assert_eq!(loaded.mode_for("audit", ANYONE), Mode::Enforce);
+    notice(&loaded, "it takes enforce only");
 }

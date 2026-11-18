@@ -532,3 +532,313 @@ mod for_a_chat {
         assert_eq!(locked.lock.as_deref(), Some("this project"), "{locked:?}");
     }
 }
+
+// ── M75 slice 10 (#7019): modes and rule modes, applied after Cedar decides (spec §6.4) ──────
+
+/// A request of `action` on `kind` `id`, whose context is `context`.
+fn request<'a>(
+    action: &'a str,
+    resource: (&'a str, &'a str),
+    context: serde_json::Value,
+) -> Request<'a> {
+    Request {
+        chat: "web/builder",
+        of: chat(),
+        action,
+        resource,
+        context,
+    }
+}
+
+/// The context of a `connect` or a `dial`, which names the port and the way it came.
+fn network_context() -> serde_json::Value {
+    let mut context = context(false);
+    context["port"] = 443.into();
+    context["via"] = "proxy".into();
+    context
+}
+
+/// An `exec` of `command`, which the shipped default allows.
+fn exec(command: &'static str) -> Request<'static> {
+    request("exec", ("Command", command), context(false))
+}
+
+#[test]
+fn a_rule_mode_beats_its_family_mode() {
+    purlis_core::unsteered!();
+    // The rule's own `log` beats a family that enforces.
+    let log = "[policy]\ntemplate = \"strict\"\n\"guards.merge\" = \"enforce\"\n\n\
+               [policy.rules]\n\"guards-merge-hold\" = \"log\"\n";
+    let decision = decide::decide(&loaded(log, None), &merge(), &empty_world());
+    assert_eq!(
+        (decision.outcome, decision.mode, decision.after_mode),
+        (Outcome::Ask, Mode::Log, Outcome::Allow)
+    );
+    assert!(decision.would_have_blocked());
+
+    // The rule's own `enforce` beats a family that logs.
+    let enforce = "[policy]\ntemplate = \"strict\"\n\"guards.merge\" = \"log\"\n\n\
+                   [policy.rules]\n\"guards-merge-hold\" = \"enforce\"\n";
+    let decision = decide::decide(&loaded(enforce, None), &merge(), &empty_world());
+    assert_eq!(
+        (decision.mode, decision.after_mode),
+        (Mode::Enforce, Outcome::Ask)
+    );
+
+    // One rule's `log` never loosens the forbid beside it that has no mode of its own: the
+    // family enforces that one, so the deny stands.
+    let rules = "// purlis-policy 1\n\
+         @id(\"skills-no-evil\")\n\
+         forbid (principal, action == Action::\"install\", resource == Skill::\"evil\");\n\
+         @id(\"skills-no-evil-either\")\n\
+         forbid (principal, action == Action::\"install\", resource == Skill::\"evil\");\n";
+    let one = "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"skills-no-evil\" = \"log\"\n";
+    let decision = decide::decide(&loaded(one, Some(rules)), &install("evil"), &empty_world());
+    assert_eq!(decision.outcome, Outcome::Deny);
+    assert_eq!(ids(&decision).len(), 2, "{decision:?}");
+    assert_eq!(
+        (decision.mode, decision.after_mode),
+        (Mode::Enforce, Outcome::Deny)
+    );
+    // Both logged, the deny becomes an allow that would have blocked.
+    let both = format!("{one}\"skills-no-evil-either\" = \"log\"\n");
+    let decision = decide::decide(
+        &loaded(&both, Some(rules)),
+        &install("evil"),
+        &empty_world(),
+    );
+    assert_eq!(
+        (decision.mode, decision.after_mode),
+        (Mode::Log, Outcome::Allow)
+    );
+}
+
+#[test]
+fn a_lock_beats_a_rule_mode_and_a_family_mode() {
+    purlis_core::unsteered!();
+    let settings = "[policy]\ntemplate = \"strict\"\n\"guards.merge\" = \"off\"\n\n\
+                    [policy.locks]\nfamilies = [\"guards.merge\"]\n\n\
+                    [policy.rules]\n\"guards-merge-hold\" = \"log\"\n";
+    let decision = decide::decide(&loaded(settings, None), &merge(), &empty_world());
+    assert_eq!(decision.lock.as_deref(), Some("this project"));
+    assert_eq!(
+        (decision.mode, decision.after_mode),
+        (Mode::Enforce, Outcome::Ask)
+    );
+}
+
+#[test]
+fn everything_else_off_denies_what_no_permit_allows_and_names_it() {
+    purlis_core::unsteered!();
+    let allowed = decide::decide(&loaded(STRICT, None), &exec("ls"), &empty_world());
+    assert_eq!(allowed.outcome, Outcome::Allow, "{allowed:?}");
+
+    let off =
+        "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"policy-everything-else\" = \"off\"\n";
+    let decision = decide::decide(&loaded(off, None), &exec("ls"), &empty_world());
+    assert_eq!(
+        (decision.outcome, decision.after_mode),
+        (Outcome::Deny, Outcome::Deny)
+    );
+    assert_eq!(ids(&decision), ["policy-everything-else"]);
+    assert!(decision.deciding[0].off);
+    assert!(
+        decision
+            .rules_said()
+            .starts_with("`policy-everything-else` (off)"),
+        "{}",
+        decision.rules_said()
+    );
+}
+
+#[test]
+fn a_family_turned_off_never_denies_under_deny_by_default() {
+    purlis_core::unsteered!();
+    // Deny-by-default, a permit for every program, and a forbid on one.
+    let rules = "// purlis-policy 1\n\
+         @id(\"processes-allow-all\")\n\
+         permit (principal, action == Action::\"exec\", resource);\n\
+         @id(\"processes-no-rm\")\n\
+         forbid (principal, action == Action::\"exec\", resource == Command::\"rm\");\n";
+    let settings = "[policy]\ntemplate = \"strict\"\nprocesses = \"off\"\n\n\
+                    [policy.rules]\n\"policy-everything-else\" = \"off\"\n";
+    let loaded = loaded(settings, Some(rules));
+    // The family's forbid does not run, so it never denies; the permit under it counts.
+    let rm = decide::decide(&loaded, &exec("rm"), &empty_world());
+    assert_eq!(
+        (rm.outcome, rm.mode, rm.after_mode),
+        (Outcome::Deny, Mode::Off, Outcome::Allow)
+    );
+    let ls = decide::decide(&loaded, &exec("ls"), &empty_world());
+    assert_eq!(ls.after_mode, Outcome::Allow, "{ls:?}");
+    assert_eq!(ids(&ls), ["processes-allow-all"]);
+    // An action no permit covers is still deny-by-default's, whatever the family.
+    let other = decide::decide(&loaded, &install("pdf"), &empty_world());
+    assert_eq!(other.after_mode, Outcome::Deny);
+}
+
+#[test]
+fn a_family_mode_leaves_that_familys_permits_counting() {
+    purlis_core::unsteered!();
+    let rules = "// purlis-policy 1\n\
+         @id(\"processes-allow-ls\")\n\
+         permit (principal, action == Action::\"exec\", resource == Command::\"ls\");\n";
+    for mode in ["off", "log", "enforce"] {
+        let settings = format!(
+            "[policy]\ntemplate = \"strict\"\nprocesses = \"{mode}\"\n\n\
+             [policy.rules]\n\"policy-everything-else\" = \"off\"\n"
+        );
+        let loaded = loaded(&settings, Some(rules));
+        let ls = decide::decide(&loaded, &exec("ls"), &empty_world());
+        assert_eq!(
+            (ls.outcome, ids(&ls)),
+            (Outcome::Allow, vec!["processes-allow-ls"]),
+            "{mode}"
+        );
+        let cat = decide::decide(&loaded, &exec("cat"), &empty_world());
+        assert_eq!(
+            cat.after_mode,
+            Outcome::Deny,
+            "{mode}: no permit is no mode's"
+        );
+    }
+    // A permit stops counting only where `[policy.rules]` names it `off`.
+    let off = "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\
+               \"policy-everything-else\" = \"off\"\n\"processes-allow-ls\" = \"off\"\n";
+    let ls = decide::decide(&loaded(off, Some(rules)), &exec("ls"), &empty_world());
+    assert_eq!(ls.after_mode, Outcome::Deny);
+}
+
+/// A project that asks of one host and one socket, forbids another host, and asks of a write.
+const ASKS_AND_A_FORBID: &str = "// purlis-policy 1\n\
+     @id(\"network-no-evil\")\n\
+     forbid (principal, action == Action::\"connect\", resource == Host::\"evil.example\");\n\
+     @id(\"network-ask-socket\") @ask(\"you\")\n\
+     forbid (principal, action == Action::\"dial\", resource == Socket::\"/run/x.sock\");\n\
+     @id(\"network-no-socket\")\n\
+     forbid (principal, action == Action::\"dial\", resource == Socket::\"/run/y.sock\");\n\
+     @id(\"sandbox-ask-write\") @ask(\"you\")\n\
+     forbid (principal, action == Action::\"write\", resource == Path::\"/srv/x\");\n\
+     @id(\"sandbox-no-write\")\n\
+     forbid (principal, action == Action::\"write\", resource == Path::\"/srv/y\");\n";
+
+/// `asks` logs, `network` enforces.
+const ASKS_LOG: &str = "[policy]\ntemplate = \"strict\"\nasks = \"log\"\nnetwork = \"enforce\"\n";
+
+#[test]
+fn an_ask_on_connect_takes_the_asks_mode_and_a_plain_forbid_the_network_mode() {
+    purlis_core::unsteered!();
+    let loaded = loaded(ASKS_LOG, Some(ASKS_AND_A_FORBID));
+    let ask = decide::decide(
+        &loaded,
+        &request("connect", ("Host", "other.example"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!(ids(&ask), ["network-unknown-host"]);
+    assert_eq!(
+        (ask.family.as_str(), ask.mode_family.as_str()),
+        ("network", "asks")
+    );
+    assert_eq!(
+        (ask.outcome, ask.mode, ask.after_mode),
+        (Outcome::Ask, Mode::Log, Outcome::Allow)
+    );
+
+    let plain = decide::decide(
+        &loaded,
+        &request("connect", ("Host", "evil.example"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!(ids(&plain), ["network-no-evil"]);
+    assert_eq!(plain.mode_family, "network");
+    assert_eq!(
+        (plain.outcome, plain.mode, plain.after_mode),
+        (Outcome::Deny, Mode::Enforce, Outcome::Deny)
+    );
+
+    // The other way round: the plain forbid logs, the ask enforces.
+    let flipped = "[policy]\ntemplate = \"strict\"\nasks = \"enforce\"\nnetwork = \"log\"\n";
+    let loaded = self::loaded(flipped, Some(ASKS_AND_A_FORBID));
+    let ask = decide::decide(
+        &loaded,
+        &request("connect", ("Host", "other.example"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!((ask.mode, ask.after_mode), (Mode::Enforce, Outcome::Ask));
+    let plain = decide::decide(
+        &loaded,
+        &request("connect", ("Host", "evil.example"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!((plain.mode, plain.after_mode), (Mode::Log, Outcome::Allow));
+
+    // A lock on `asks` binds an ask on connect, though the action's family is `network`.
+    let locked = format!("{ASKS_LOG}\n[policy.locks]\nfamilies = [\"asks\"]\n");
+    let ask = decide::decide(
+        &self::loaded(&locked, Some(ASKS_AND_A_FORBID)),
+        &request("connect", ("Host", "other.example"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!(ask.lock.as_deref(), Some("this project"));
+    assert_eq!((ask.mode, ask.after_mode), (Mode::Enforce, Outcome::Ask));
+}
+
+#[test]
+fn an_ask_on_a_dial_takes_the_asks_mode() {
+    purlis_core::unsteered!();
+    let loaded = loaded(ASKS_LOG, Some(ASKS_AND_A_FORBID));
+    let ask = decide::decide(
+        &loaded,
+        &request("dial", ("Socket", "/run/x.sock"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!(ids(&ask), ["network-ask-socket"]);
+    assert_eq!(
+        (ask.family.as_str(), ask.mode_family.as_str()),
+        ("network", "asks")
+    );
+    assert_eq!(
+        (ask.outcome, ask.mode, ask.after_mode),
+        (Outcome::Ask, Mode::Log, Outcome::Allow)
+    );
+    let plain = decide::decide(
+        &loaded,
+        &request("dial", ("Socket", "/run/y.sock"), network_context()),
+        &empty_world(),
+    );
+    assert_eq!(
+        (plain.mode_family.as_str(), plain.mode, plain.after_mode),
+        ("network", Mode::Enforce, Outcome::Deny)
+    );
+}
+
+#[test]
+fn an_ask_on_a_path_write_takes_the_asks_mode() {
+    purlis_core::unsteered!();
+    let loaded = loaded(ASKS_LOG, Some(ASKS_AND_A_FORBID));
+    let ask = decide::decide(
+        &loaded,
+        &request("write", ("Path", "/srv/x"), context(false)),
+        &empty_world(),
+    );
+    assert_eq!(ids(&ask), ["sandbox-ask-write"]);
+    assert_eq!(
+        (ask.family.as_str(), ask.mode_family.as_str()),
+        ("sandbox", "asks")
+    );
+    assert_eq!(
+        (ask.outcome, ask.mode, ask.after_mode),
+        (Outcome::Ask, Mode::Log, Outcome::Allow)
+    );
+    // A plain forbid on a write takes the `sandbox` family's, which a template gives.
+    let plain = decide::decide(
+        &loaded,
+        &request("write", ("Path", "/srv/y"), context(false)),
+        &empty_world(),
+    );
+    assert_eq!(plain.mode_family, "sandbox");
+    assert_eq!(
+        (plain.mode, plain.after_mode),
+        (Mode::Enforce, Outcome::Deny)
+    );
+}

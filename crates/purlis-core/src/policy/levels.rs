@@ -263,16 +263,9 @@ fn stricter(a: Template, b: Template) -> Template {
     if strictness(a) >= strictness(b) { a } else { b }
 }
 
-/// How `template` runs `family`, `audit` included, which has no [`Family`] yet (slice 10).
+/// How `template` runs `family`. A key no [`Family`] has reads as `enforce`, never looser.
 fn template_mode(template: Template, family: &str) -> Mode {
-    match Family::of_key(family) {
-        Some(family) => template.mode(family),
-        None => match template {
-            Template::Open => Mode::Off,
-            Template::Strict => Mode::Enforce,
-            _ => Mode::Log,
-        },
-    }
+    Family::of_key(family).map_or(Mode::Enforce, |family| template.mode(family))
 }
 
 impl Defaults {
@@ -569,7 +562,7 @@ fn read_default(
         problem(line, format!("\"{name}\" is no key of [policy]"));
         return;
     }
-    let value = word.and_then(Mode::parse).unwrap_or_else(|| {
+    let mut value = word.and_then(Mode::parse).unwrap_or_else(|| {
         warn(
             line,
             format!(
@@ -579,6 +572,30 @@ fn read_default(
         );
         Mode::Enforce
     });
+    // A family that takes fewer than three modes reads the rest as `enforce`, and says so:
+    // `audit` takes only `enforce` (Q313.4), `vaults` and the credential files `off` or `enforce`
+    // (Q308a).
+    if let Some(family) = Family::of_key(name) {
+        let takes = if !family.turns_off() {
+            Some("enforce only")
+        } else if !family.logs() {
+            Some("off or enforce only")
+        } else {
+            None
+        };
+        let loosened =
+            (value == Mode::Log && !family.logs()) || (value == Mode::Off && !family.turns_off());
+        if loosened && let Some(takes) = takes {
+            warn(
+                line,
+                format!(
+                    "\"{name}\" = \"{}\": it takes {takes}, so it is enforced",
+                    value.word()
+                ),
+            );
+            value = Mode::Enforce;
+        }
+    }
     defaults.modes.insert(name.to_owned(), Said { value, line });
 }
 
@@ -976,6 +993,46 @@ fn actions_of(rule: &Rule) -> BTreeSet<String> {
         ActionConstraint::Eq(uid) => expand(&uid).into_iter().collect(),
         ActionConstraint::In(uids) => uids.iter().flat_map(expand).collect(),
     }
+}
+
+/// **The mode a `[policy.rules]` entry gives `rule`**, where the rule does not take the word
+/// said (spec §6.4):
+/// - a permit takes `off` or `enforce` only, so `log` reads as `enforce` (Q319a O2);
+/// - a `vaults` rule takes `off` or `enforce` only, so `log` reads as `enforce` (review round 1,
+///   S8; proposed).
+///
+/// Each says so in a Notice naming the rule.
+fn mode_a_rule_takes(
+    rule: &Rule,
+    said: &Said<Mode>,
+    file: &str,
+    organisation: &str,
+    notices: &mut Vec<Notice>,
+) -> Mode {
+    if said.value != Mode::Log {
+        return said.value;
+    }
+    let why = if rule.policy.effect() == Effect::Permit {
+        "a permit is off or enforced"
+    } else if is_a_vaults_rule(rule) {
+        "a vaults rule is off or enforced"
+    } else {
+        return said.value;
+    };
+    notices.push(Notice {
+        file: file.to_owned(),
+        line: said.line,
+        what: format!("\"{}\" = \"log\": {why}, so it is enforced", rule.id),
+        rules: vec![named(rule, organisation)],
+    });
+    Mode::Enforce
+}
+
+/// Whether `rule` names an action of the `vaults` family: a rule on any action is not one, since
+/// it is no vaults rule by what it says.
+fn is_a_vaults_rule(rule: &Rule) -> bool {
+    !matches!(rule.policy.action_constraint(), ActionConstraint::Any)
+        && super::families_of(&rule.policy).contains(&"vaults")
 }
 
 /// The key of `locks` a rule is on, if any: one of its families, or one of its actions.
@@ -1518,17 +1575,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
                     rules: vec![named(rule, org_owner)],
                 }),
                 Some(rule) => {
-                    let mut mode = said.value;
-                    // A permit takes `off` or `enforce` only (Q319a O2).
-                    if rule.policy.effect() == Effect::Permit && mode == Mode::Log {
-                        mode = Mode::Enforce;
-                        notices.push(Notice {
-                            file: file.to_owned(),
-                            line: said.line,
-                            what: format!("\"{id}\" = \"log\": a permit is off or enforced, so it is enforced"),
-                            rules: vec![named(rule, org_owner)],
-                        });
-                    }
+                    let mode = mode_a_rule_takes(rule, said, file, org_owner, &mut notices);
                     // Below the Organisation, a mode only tightens what the Organisation set,
                     // and never loosens a rule on a key it locked.
                     if level > Level::Organisation {
@@ -1626,7 +1673,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             you_tables = tables;
         }
     }
-    let mut ignored = |line: usize, spelled: String, theirs: &str| {
+    let ignored = |notices: &mut Vec<Notice>, line: usize, spelled: String, theirs: &str| {
         notices.push(Notice {
             file: local_name.to_owned(),
             line,
@@ -1661,6 +1708,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         let theirs = partial.template_for(anyone);
         if strictness(mine.value) < strictness(theirs) {
             ignored(
+                &mut notices,
                 mine.line,
                 format!("template = \"{}\"", mine.value.word()),
                 theirs.word(),
@@ -1680,6 +1728,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         let theirs = partial.mode_for(family, anyone);
         if mine.value < theirs {
             ignored(
+                &mut notices,
                 mine.line,
                 format!("\"{family}\" = \"{}\"", mine.value.word()),
                 theirs.word(),
@@ -1700,14 +1749,10 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             continue;
         };
         let theirs = rule_modes.get(id).copied().unwrap_or(Mode::Enforce);
-        let permit = rule.policy.effect() == Effect::Permit;
-        let wanted = if permit && mine.value == Mode::Log {
-            Mode::Enforce
-        } else {
-            mine.value
-        };
+        let wanted = mode_a_rule_takes(rule, mine, local_name, org_owner, &mut notices);
         if loosens(rule, wanted, theirs) {
             ignored(
+                &mut notices,
                 mine.line,
                 format!("\"{id}\" = \"{}\"", mine.value.word()),
                 theirs.word(),

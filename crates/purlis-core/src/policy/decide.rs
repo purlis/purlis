@@ -22,8 +22,9 @@
 //! (`[policy.rules]`) beats its family's, a lock beats both, and a You-level rule is never
 //! touched by a mode. **A mode acts on forbids only**: no permit, an error and an unfit request
 //! stay denies in every mode (Q319 C2). An `@ask` forbid on `read`, `write`, `connect` or `dial`
-//! takes the `asks` family's mode (Q319 C4). The full rule modes and the sandbox exception are
-//! slice 10's; grants are slice 20's, so [`Decision::grant`] is always empty here.
+//! takes the `asks` family's mode (Q319 C4); each deciding rule runs at its own mode or its
+//! family's, and the strictest decides (M75 slice 10). The sandbox exception is slice 11's, and
+//! grants are slice 20's, so [`Decision::grant`] is always empty here.
 //!
 //! **Outside any plane** there is no host to ask: [`decide_locally`] judges by the shipped
 //! default under `strict` ([`Loaded::shipped_strict`]), in the process that asks (§6, review
@@ -262,7 +263,11 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
         } else {
             family.clone()
         };
-    let lock = loaded.lock_on(&family, request.action);
+    // A lock on the action's family, or on the family whose mode applies (`asks`), beats every
+    // mode (§4.4, §6.4).
+    let lock = loaded
+        .lock_on(&family, request.action)
+        .or_else(|| loaded.lock_on(&mode_family, request.action));
     let mode = if lock.is_some() {
         Mode::Enforce
     } else {
@@ -286,17 +291,26 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     }
 }
 
-/// The mode for `rules`' decision: `enforce` where any is the person's own, else the strictest
-/// mode a deciding rule's `[policy.rules]` entry sets, else the family's for the chat (§6.4).
+/// The mode for `rules`' decision (§6.4): `enforce` where any is the person's own, else the
+/// strictest of what each deciding rule runs at: its own `[policy.rules]` entry, which beats its
+/// family's, and for a rule with none the family's for the chat. A rule with no entry is never
+/// read as the mode of another's, so one rule's `log` cannot loosen a forbid beside it.
 fn mode_of(loaded: &Loaded, request: &Request<'_>, family: &str, rules: &[Deciding]) -> Mode {
     if rules.iter().any(|rule| rule.level == Level::You.word()) {
         return Mode::Enforce;
     }
+    let family_mode = loaded.mode_for(family, request.of);
     rules
         .iter()
-        .filter_map(|rule| loaded.rule_modes.get(&rule.id).copied())
+        .map(|rule| {
+            loaded
+                .rule_modes
+                .get(&rule.id)
+                .copied()
+                .unwrap_or(family_mode)
+        })
         .max()
-        .unwrap_or_else(|| loaded.mode_for(family, request.of))
+        .unwrap_or(family_mode)
 }
 
 /// **What the session host knows of the asking chat**, for one decision: every field a rule
@@ -523,5 +537,56 @@ pub fn decide_locally(request: &Request<'_>) -> Decision {
             request,
             empty_world(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The deciding rule `id`, at `level`.
+    fn rule(id: &str, level: Level) -> Deciding {
+        Deciding {
+            id: id.to_owned(),
+            level: level.word().to_owned(),
+            owner: "test".to_owned(),
+            file: "policy.cedar".to_owned(),
+            line: 1,
+            off: false,
+        }
+    }
+
+    /// A mode never touches the person's own rules, which enforce whatever `[policy.rules]` and
+    /// the family say (Q311.8, Q316.13, Q308b). The person's nevers are slice 20's: they are no
+    /// rule of any file, and decide above every mode (§6.6), so the You level's rule is what
+    /// stands for them here.
+    #[test]
+    fn a_mode_never_touches_a_you_rule_or_a_never() {
+        let mut loaded = Loaded::shipped_strict();
+        loaded.rule_modes.insert("mine".to_owned(), Mode::Log);
+        let request = Request {
+            chat: "c",
+            of: Chat {
+                workspace: None,
+                persona: None,
+            },
+            action: "exec",
+            resource: ("Command", "ls"),
+            context: serde_json::json!({}),
+        };
+        let mine = [rule("mine", Level::You)];
+        assert_eq!(
+            mode_of(&loaded, &request, "processes", &mine),
+            Mode::Enforce
+        );
+        // The same rule at the project's level takes the mode it was given.
+        let theirs = [rule("mine", Level::Project)];
+        assert_eq!(mode_of(&loaded, &request, "processes", &theirs), Mode::Log);
+        // One You rule among others enforces the decision.
+        let both = [rule("mine", Level::Project), rule("yours", Level::You)];
+        assert_eq!(
+            mode_of(&loaded, &request, "processes", &both),
+            Mode::Enforce
+        );
     }
 }

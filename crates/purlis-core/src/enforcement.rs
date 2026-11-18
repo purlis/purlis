@@ -124,11 +124,14 @@ pub enum Family {
     /// Depth, concurrency, rates, timeouts and budgets: under `log` a limit is counted, not
     /// applied (Q308b).
     Limits,
+    /// The record itself: its keys are limits only, and a policy can't turn it off or down to a
+    /// log (Q313.4, Q316.8). Any mode but `enforce` reads as `enforce`.
+    Audit,
 }
 
 impl Family {
     /// Every family, in the order the docs list them.
-    pub const ALL: [Family; 25] = [
+    pub const ALL: [Family; 26] = [
         Family::Sandbox,
         Family::Network,
         Family::Ports,
@@ -154,6 +157,7 @@ impl Family {
         Family::Runners,
         Family::Consents,
         Family::Limits,
+        Family::Audit,
     ];
 
     /// The family's key, as `[policy]` and the log spell it.
@@ -184,6 +188,7 @@ impl Family {
             Family::Runners => "runners",
             Family::Consents => "consents",
             Family::Limits => "limits",
+            Family::Audit => "audit",
         }
     }
 
@@ -209,13 +214,19 @@ impl Family {
         )
     }
 
-    /// Whether the family takes `log`: `vaults` takes off or enforce only (Q308a), and the
-    /// sandbox is a level, not a mode.
+    /// Whether the family takes `log`: `vaults` takes off or enforce only (Q308a), the sandbox
+    /// is a level, not a mode, and `audit` takes neither `off` nor `log` ([`Family::turns_off`]).
     pub fn logs(self) -> bool {
         !matches!(
             self,
-            Family::Sandbox | Family::Vaults | Family::CredentialFiles
+            Family::Sandbox | Family::Vaults | Family::CredentialFiles | Family::Audit
         )
+    }
+
+    /// Whether the family takes `off`: every one but `audit`, which a policy can't turn off, the
+    /// record being what the rest is judged by (Q313.4; M75 slice 10).
+    pub fn turns_off(self) -> bool {
+        self != Family::Audit
     }
 
     /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
@@ -333,6 +344,10 @@ impl Template {
     /// How the template runs `family`. The sandbox's entry is only whether a wrap is applied at
     /// all; its level is [`Template::sandbox_level`]'s.
     pub fn mode(self, family: Family) -> Mode {
+        // `audit` is the same in every template: a policy can't turn the record off or down.
+        if family == Family::Audit {
+            return Mode::Enforce;
+        }
         // The person's own credential files at the floor (Q325): `team` and `strict` hold them,
         // and the floor templates leave the person's tools working, as before Q321.
         if family == Family::CredentialFiles {
@@ -517,6 +532,13 @@ impl Settings {
             return;
         }
         match value.as_str().and_then(Mode::parse) {
+            Some(mode) if !family.turns_off() && mode != Mode::Enforce => {
+                self.overrides.insert(family, Mode::Enforce);
+                self.refused.push(format!(
+                    "{TABLE}.{key} takes enforce only, so {} is enforced",
+                    mode.word()
+                ));
+            }
             Some(Mode::Log) if !family.logs() => {
                 self.overrides.insert(family, Mode::Enforce);
                 self.refused.push(format!(

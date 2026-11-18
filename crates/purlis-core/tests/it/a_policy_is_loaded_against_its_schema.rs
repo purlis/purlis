@@ -272,14 +272,13 @@ fn an_action_named_like_its_family_fails_validation() {
 fn every_action_belongs_to_exactly_one_family_group() {
     purlis_core::unsteered!();
     let families: BTreeSet<&str> = policy::FAMILIES.into_iter().collect();
-    let mut expected: BTreeSet<&str> = purlis_core::enforcement::Family::ALL
+    let expected: BTreeSet<&str> = purlis_core::enforcement::Family::ALL
         .iter()
         .map(|f| f.key())
         .collect();
-    expected.insert("audit");
     assert_eq!(
         families, expected,
-        "ADR 0125's 24 families, secrets.credential_files (Q325) and audit (spec §3.3)"
+        "every family of `Family::ALL`: ADR 0125's 24, secrets.credential_files (Q325) and audit (spec §3.3)"
     );
 
     let schema = schema_json();

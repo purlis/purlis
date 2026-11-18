@@ -34,6 +34,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
+                // The record is never off or log (Q313.4).
+                Family::Audit => Mode::Enforce,
                 // The floor is a wrap.
                 Family::Sandbox => Mode::Enforce,
                 _ => Mode::Log,
@@ -49,7 +51,7 @@ fn each_template_runs_each_family_as_the_ruling_says() {
     let secret = [Family::Secrets, Family::Vaults, Family::GuardsCredential];
     for family in Family::ALL
         .into_iter()
-        .filter(|f| !matches!(f, Family::Sandbox | Family::CredentialFiles))
+        .filter(|f| !matches!(f, Family::Sandbox | Family::CredentialFiles | Family::Audit))
     {
         assert_eq!(Template::Open.mode(family), Mode::Off, "{}", family.key());
         assert_eq!(
@@ -1037,4 +1039,34 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
     assert!(!broken(root.path()));
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+}
+
+/// M75 slice 10: `audit` is the 26th family (ADR 0125's 24, `secrets.credential_files` and
+/// `audit`), is the same in every template, and takes neither `off` nor `log` (Q313.4, Q316.8).
+#[test]
+fn audit_is_a_family_and_reads_every_mode_as_enforce() {
+    assert_eq!(Family::ALL.len(), 26);
+    assert_eq!(Family::of_key("audit"), Some(Family::Audit));
+    assert_eq!(Family::Audit.key(), "audit");
+    for template in Template::ALL {
+        assert_eq!(Template::mode(template, Family::Audit), Mode::Enforce);
+    }
+    for mode in ["off", "log"] {
+        let settings = said(&format!(
+            "[policy]\ntemplate = \"open\"\naudit = \"{mode}\"\n"
+        ));
+        assert_eq!(settings.mode(Family::Audit), Mode::Enforce, "{mode}");
+        assert!(
+            settings
+                .refused
+                .iter()
+                .any(|r| r.contains("takes enforce only")),
+            "{mode}: {:?}",
+            settings.refused
+        );
+    }
+    assert_eq!(
+        said("[policy]\naudit = \"enforce\"\n").refused,
+        Vec::<String>::new()
+    );
 }
