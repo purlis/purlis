@@ -32,20 +32,18 @@ pub const PIECE_WITHIN: Duration = Duration::from_secs(10);
 
 /// **Whether the window reads a chat's files on the runner `named` reaches** (#6387, #6949), as
 /// a link to a pool's runner names it: `<pool>`, or `<pool>/<runner>` for a Docker pool's
-/// draining runner and a chat's fresh runner. True on every kind of runner purlis pairs: a
-/// Docker pool's (by its pool, as #6387 had it), a cluster pool's own, and a chat's fresh runner
-/// on a cluster pool. A cluster runner is reached only as a chat's start reaches one
-/// (`runners::cluster_runner_for`): its pool kept with its cluster's pin, and the runner kept
-/// under that very name.
+/// draining runner and a chat's fresh runner. True on every kind of runner purlis pairs, and
+/// only as a chat's own link reaches it: a Docker pool's runner as `runners::reachable` says (its
+/// pool kept with a runner of its image, or that very runner kept draining), and a cluster pool's
+/// own runner or a chat's fresh runner there as `runners::cluster_runner_for` says (its pool kept
+/// with its cluster's pin, and the runner kept under that very name).
 ///
 /// Every kind runs the same host, so one adapter ([`OnLink`] over `read_file`) asks them all,
 /// and on every kind the path is held to the chat's workspace there, a file outside it asks
 /// first, and one opened on that answer is read only while it is the file it was
 /// ([`ReadsOnRunner::read`]).
 pub(crate) fn reads_files_on(config: &std::path::Path, named: &str) -> bool {
-    let pool = named.split_once('/').map_or(named, |(pool, _)| pool);
-    purlis_core::runners::pools(config)
-        .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+    purlis_core::runners::reachable(config, named).is_ok()
         || purlis_core::runners::cluster_runner_for(config, named).is_ok_and(|kept| kept.is_some())
 }
 

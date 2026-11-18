@@ -552,8 +552,10 @@ mod in_a_pane {
     }
 }
 
-/// `runners.json` under `config`: the Docker pool `builds` with its runner, and the cluster pool
-/// `team` with its own runner and one chat's fresh runner. The fresh runner's link name.
+/// `runners.json` under `config`: the Docker pool `builds` with its runner `builds-01234567` and
+/// the runner it replaced, `builds`, draining; the Docker pool `empty` with no runner; and the
+/// cluster pool `team` with its own runner and one chat's fresh runner. The fresh runner's link
+/// name.
 #[cfg(unix)]
 fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
     use std::os::unix::fs::PermissionsExt as _;
@@ -573,6 +575,7 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
         "version": 1,
         "pools": [
             { "name": "builds", "kind": "docker", "image": IMAGE },
+            { "name": "empty", "kind": "docker", "image": IMAGE },
             {
                 "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
                 "context": "team", "pool": "default", "namespace": "ada",
@@ -586,6 +589,13 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
                 "name": "builds", "pool": "docker", "container": "a".repeat(64), "image": IMAGE,
                 "user": "10001:10001", "home": "/home/purlis",
                 "device": "01JB0RUNNER0000000000000000", "key": "12".repeat(32), "paired": 1,
+                "draining": true,
+            },
+            {
+                "name": "builds-01234567", "pool": "docker", "container": "b".repeat(64),
+                "image": IMAGE, "user": "10001:10001", "home": "/home/purlis",
+                "device": "01JB0RUNNER0000000000000003", "key": "13".repeat(32), "paired": 2,
+                "of": "builds",
             },
             cluster_row("01JB0RUNNER0000000000000001", "4d", "team-1"),
             fresh,
@@ -602,10 +612,12 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
     fresh[0].link_name()
 }
 
-/// **The window reads a runner chat's files on every kind of runner purlis pairs** (#6949): a
-/// Docker pool's runner (a draining one too, by its pool, as #6387 had it), a cluster pool's own
-/// runner, and a chat's fresh runner on a cluster pool. A name this machine keeps no runner under
-/// reads none, and nor does a cluster pool's fresh runner that is not kept.
+/// **The window reads a runner chat's files on every kind of runner purlis pairs, and only on
+/// one a chat reaches** (#6949): a Docker pool's runner, and its draining runner by its exact
+/// name; a cluster pool's own runner; and a chat's fresh runner on a cluster pool. A Docker pool
+/// with no runner kept, a runner of a pool that is not draining, a runner name this machine does
+/// not keep, an unkept fresh runner and an unknown name read none: on every kind, the reach is the
+/// one a chat's link has (`runners::reachable`, `runners::cluster_runner_for`).
 #[cfg(unix)]
 #[test]
 fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_no_other() {
@@ -614,11 +626,21 @@ fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_
 
     assert!(super::reads_files_on(config.path(), "builds"));
     assert!(
-        super::reads_files_on(config.path(), "builds/builds-01234567"),
+        super::reads_files_on(config.path(), "builds/builds"),
         "a Docker pool's runner draining beside its new one"
     );
     assert!(super::reads_files_on(config.path(), "team"));
     assert!(super::reads_files_on(config.path(), &fresh));
-    assert!(!super::reads_files_on(config.path(), "team/fresh-0000"));
-    assert!(!super::reads_files_on(config.path(), "nowhere"));
+    for none in [
+        "empty",
+        "builds/builds-01234567",
+        "builds/gone",
+        "team/fresh-0000",
+        "nowhere",
+    ] {
+        assert!(
+            !super::reads_files_on(config.path(), none),
+            "{none} reads no file"
+        );
+    }
 }
