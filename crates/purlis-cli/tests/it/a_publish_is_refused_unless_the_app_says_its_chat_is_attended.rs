@@ -60,12 +60,40 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        // Today's blocking, explicitly (Q308: the default is `watch`).
+        // Today's blocking, explicitly (Q308: the default is `watch`), committed at the plane
+        // root's HEAD, where the session host reads the policy (M75 slice 04).
         std::fs::write(
             root.join("charter.toml"),
             "schema = 1\n[policy]\ntemplate = \"strict\"\n",
         )
         .expect("the marker");
+        for args in [
+            &["init", "-q"][..],
+            &["add", "-A"],
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "c",
+            ],
+        ] {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(args)
+                    .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                    .env("GIT_CONFIG_NOSYSTEM", "1"),
+            )
+            .expect("git runs");
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        }
         (tmp, base, root, home)
     }
 
@@ -81,6 +109,7 @@ impl Chat {
         let attendance = Arc::new(Mutex::new(attendance));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let (answers, was_asked) = (Arc::clone(&attendance), Arc::clone(&asked));
+        let plane = root.clone();
         let (tool, tools) = mpsc::channel();
         let tool = Mutex::new(tool);
         let reading = listener.hear(Hearing {
@@ -105,6 +134,10 @@ impl Chat {
                 was_asked.lock().unwrap().push(ask.clone());
                 match ask {
                     Ask::Attendance(_) => answers.lock().unwrap().clone(),
+                    // The session host decides from the plane's committed HEAD (M75 slice 04).
+                    Ask::Decide(decide) => {
+                        purlis_core::policy::decide::replays_host(&plane, &decide)
+                    }
                     Ask::Merge(merge) => Answer::MergeHeld {
                         said: mergehold::handed_said(&merge.request),
                     },

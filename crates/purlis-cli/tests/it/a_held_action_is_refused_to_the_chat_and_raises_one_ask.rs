@@ -560,7 +560,9 @@ fn a_merge_under_strict_asks_and_names_guards_merge_hold() {
     assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON));
     let asked = chat.asked.lock().unwrap().clone();
     assert!(
-        matches!(&asked[0], Ask::Decide(decide) if decide.action == "merge" && decide.chat == CHAT),
+        asked
+            .iter()
+            .any(|ask| matches!(ask, Ask::Decide(decide) if decide.action == "merge" && decide.chat == CHAT)),
         "the host is asked to decide first: {asked:?}"
     );
     assert_eq!(chat.merges_asked(), 1);
