@@ -72,14 +72,19 @@ runs:
       with:
         tool: cargo-nextest@0.9.146
     # **`glab`, for the fake forge's cells** (T1.1-50): `gh` is on both runners' images, `glab` is
-    # on neither. Built from its tagged source by the Go the images carry (the Go module proxy's
-    # checksum database verifies it), the version this repo's cells were written against, and put
-    # on the PATH the scenarios inherit. A cell that finds no `glab` on CI fails; it never skips.
+    # on neither. Linux builds it from its tagged source with the Go its image carries (the Go
+    # module proxy's checksum database verifies it); the macOS image has no Go, so Homebrew's
+    # bottle. Either way it is on the PATH the scenarios inherit, and a cell that finds no `glab`
+    # on CI fails; it never skips.
     - name: glab, for the fake forge's cells
       shell: bash
       run: |
-        go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
-        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        if [ "$RUNNER_OS" = macOS ]; then
+          brew install glab
+        else
+          go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        fi
     # tauri::generate_context! reads the built frontend, so it has to exist before a build. Built
     # in a step of its own, so the step timings say how much of the job is the build.
     #
