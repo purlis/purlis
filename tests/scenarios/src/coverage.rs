@@ -1806,11 +1806,39 @@ pub fn judge_runs(
     ran: &[Ran],
     records: &[LegRecord],
 ) -> Vec<String> {
+    judge(list, repo, trigger, ran, records, false)
+}
+
+/// **[`judge_runs`] for one job that ran only some legs** (T1.1-54): a job owes only the entries
+/// of the legs it ran, never the other scenario legs of its pass (ticket 10's, ticket 53's), which
+/// their own jobs run and judge. A pull request's merge check, and each nightly entry, judge the
+/// legs that ran this way; a leg that did not run is a job that did not.
+pub fn judge_ran_legs(
+    list: &Coverage,
+    repo: &Repo,
+    trigger: Trigger,
+    ran: &[Ran],
+    records: &[LegRecord],
+) -> Vec<String> {
+    judge(list, repo, trigger, ran, records, true)
+}
+
+fn judge(
+    list: &Coverage,
+    repo: &Repo,
+    trigger: Trigger,
+    ran: &[Ran],
+    records: &[LegRecord],
+    only_ran_legs: bool,
+) -> Vec<String> {
     let mut problems = Vec::new();
     for n in needs(list, repo, trigger) {
         let in_this_run = ran.iter().any(|r| {
-            pass_of(r.leg) == pass_of(n.leg)
-                && r.os == n.os
+            (if only_ran_legs {
+                r.leg == n.leg
+            } else {
+                pass_of(r.leg) == pass_of(n.leg)
+            }) && r.os == n.os
                 && n.timings.is_none_or(|t| r.timings == t)
         });
         if !in_this_run {

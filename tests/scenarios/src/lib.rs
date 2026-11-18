@@ -12,12 +12,14 @@
 //!   run, marks that name real assertions, the row table).
 //! - [`coverage`]: the matrix coverage gate and its expected-fail ratchet (T1.1-08).
 //! - [`judge`]: a cell's verdict under its `expected_fail` marks.
+//! - [`legs`]: a run's leg reports read back for the run-result gate (T1.1-54).
 //! - [`plan`]: the derived production-timing set and which runs take a cell.
 //! - [`net`]: the suite's local origins, direct-connection target and test CA (T1.1-02).
 
 pub mod coverage;
 pub mod judge;
 pub mod kinds;
+pub mod legs;
 pub mod model;
 pub mod net;
 pub mod plan;

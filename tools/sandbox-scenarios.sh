@@ -2,22 +2,32 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# Run one set of the sandbox scenarios (M74.1, T1.1-09), as `.github/actions/sandbox-scenarios`
-# does on a pull request and `.github/actions/nightly` does at night.
+# Run one set of the sandbox scenarios (M74.1, T1.1-09 and T1.1-54), as
+# `.github/actions/sandbox-scenarios` does on a pull request and `.github/actions/nightly` does at
+# night.
 #
 #   tools/sandbox-scenarios.sh suite|production-timings
 #
 # - `suite`: every scenario but the production-timing entries.
-# - `production-timings`: the entries run at `Timings::production()` (ticket 54).
+# - `production-timings`: the entries run at `Timings::production()`: the derived set, less
+#   M-NET-25 (`production_nightly_only`) unless this is the nightly (`SCENARIOS_TRIGGER=nightly`).
 #
 # **No retries** (`--retries 0`, over the `ci` profile's one): a scenario that passes only on a
 # second try is red. Retry-to-green is forbidden.
 #
-# `STRESS=true` runs the set 20 times under `stress-ng` on every CPU (the `stress-x20` label).
+# **Repeated runs, compared** (T1.1-54). `REPEAT=3` runs the set three times, each time with its
+# batches (a test's module path) in an order `tools/scenario-legs.mjs shuffle` seeds from
+# `SHUFFLE_SEED` and the run's number, never its cells (they depend on earlier cells' state). A
+# cell whose verdict differs between runs is flaky: it opens a public `flaky-scenario` issue, and
+# the run is red (`tools/scenario-legs.mjs flaky`). `STRESS=true` runs the set 20 times under
+# `stress-ng` on every CPU (the `stress-x20` label), over the batches this change touched when it
+# touched any (`BASE`, the commit it is measured against) and never M-NET-25 (Q300), and compares
+# them the same way. Every run's own report is kept under `target/sandbox-scenarios-runs/`; the
+# reports a leg uploads are the first run's.
+#
 # `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app -p purlis-scenarios`
-# unset): the run
-# names the same ones, so it reuses that build. Every run prints all it says: nothing runs out of
-# sight (Q301).
+# unset): the run names the same ones, so it reuses that build. Every run prints all it says:
+# nothing runs out of sight (Q301).
 #
 # The scenarios are a `#[cfg(test)]` module of purlis-app, `scenarios` (ticket 06); the suite also
 # runs the resolver seam's and local origins' own tests (`purlis-scenarios`'s `resolver_seam`,
@@ -32,23 +42,80 @@ case "${1-}" in
   *) echo "usage: $0 suite|production-timings" >&2; exit 2 ;;
 esac
 
-mkdir -p target/sandbox-scenarios
+report=target/sandbox-scenarios
+runs=target/sandbox-scenarios-runs
+mkdir -p "$report"
+rm -rf "$runs"
+
+repeat=${REPEAT:-1}
+source=nightly
+if [ "${STRESS-}" = true ]; then
+  repeat=20
+  source=stress-x20
+  # M-NET-25 never runs under the multiplier (Q300): its 15 minutes would be twenty times that.
+  filter="($filter) & not test(/m_net_25/)"
+  # The batches this change touched, when it touched any.
+  if [ -n "${BASE-}" ]; then
+    changed=$(node tools/scenario-legs.mjs changed-batches "$BASE")
+    [ -z "$changed" ] || filter="($filter) & $changed"
+  fi
+fi
+
 # Unquoted on purpose: `--workspace`, or `-p` and a package.
 # shellcheck disable=SC2086
-once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci --retries 0 -E "$filter"; }
+once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci --retries 0 -E "$1"; }
+
+# One pass over the set: in the order of `$1`'s run number when `SHUFFLE_SEED` is set, otherwise as
+# nextest finds the tests. Returns the worst status of its batches.
+# shellcheck disable=SC2086
+pass() {
+  local n=$1 status=0 batch
+  if [ -z "${SHUFFLE_SEED-}" ]; then
+    once "$filter" || status=$?
+    return "$status"
+  fi
+  local names
+  names=$(cargo nextest list ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci -E "$filter" --message-format oneline | awk '{print $NF}')
+  if [ -z "$names" ]; then
+    once "$filter" || status=$?
+    return "$status"
+  fi
+  while IFS= read -r batch; do
+    [ -n "$batch" ] || continue
+    echo "::group::run $n, batch $batch"
+    once "($filter) & test(/^${batch}(::|\$)/)" || status=$?
+    echo "::endgroup::"
+  done < <(printf '%s\n' "$names" | node tools/scenario-legs.mjs shuffle "$((SHUFFLE_SEED + n))")
+  return "$status"
+}
 
 # Each status is returned by hand: `if runs` below turns `set -e` off inside the function.
+# Every run happens, red or not: a verdict that differs between runs is what the comparison below
+# is for, and a red one is what makes the run red. Each run's report is moved to `$runs/run-<n>`
+# as it ends, and what the folder held before is put back with the first run's beside it.
 runs() {
-  [ "${STRESS-}" = true ] || { once; return; }
-  stress-ng --cpu 0 --quiet &
-  local stress=$! status=0 i
-  for i in $(seq 1 20); do
-    echo "::group::run $i of 20 under load"
-    once || status=$?
-    echo "::endgroup::"
-    [ "$status" -eq 0 ] || break
+  local stress=0 status=0 i aside f
+  aside=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/scenarios-aside.XXXXXX")
+  mv "$report"/*.jsonl "$aside"/ 2>/dev/null || true
+  if [ "${STRESS-}" = true ]; then
+    stress-ng --cpu 0 --quiet &
+    stress=$!
+  fi
+  for i in $(seq 1 "$repeat"); do
+    [ "$repeat" -eq 1 ] || echo "::group::run $i of $repeat${STRESS:+ under load}"
+    pass "$i" || status=$?
+    [ "$repeat" -eq 1 ] || echo "::endgroup::"
+    mkdir -p "$runs/run-$i"
+    mv "$report"/*.jsonl "$runs/run-$i"/ 2>/dev/null || true
   done
-  kill "$stress" 2>/dev/null || true
+  [ "$stress" -eq 0 ] || kill "$stress" 2>/dev/null || true
+  mv "$aside"/* "$report"/ 2>/dev/null || true
+  for f in "$runs"/run-1/*.jsonl; do
+    [ -e "$f" ] && cat "$f" >> "$report/$(basename "$f")"
+  done
+  if [ "$repeat" -gt 1 ]; then
+    node tools/scenario-legs.mjs flaky "$runs" --source "$source" || status=$?
+  fi
   return "$status"
 }
 

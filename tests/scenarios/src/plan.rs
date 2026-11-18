@@ -138,3 +138,30 @@ pub fn production_set<'a>(batches: &'a [Batch], cat: &dyn TimingsCatalogue) -> B
         .map(|c| c.id.as_str())
         .collect()
 }
+
+/// **What a production-timing run takes**, by cell id: `run` is what it executes and `skipped`
+/// is what it reports skipped-for-timing (a `production_nightly_only` cell, off the nightly).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProductionRun<'a> {
+    pub run: BTreeSet<&'a str>,
+    pub skipped: BTreeSet<&'a str>,
+}
+
+/// **The production-timing run `trigger` starts over `batches`** (T1.1-54): the nightly takes the
+/// whole derived set; the `production-timings` label and the merge queue take it less the
+/// `production_nightly_only` cells, which they report skipped-for-timing.
+pub fn production_run<'a>(
+    batches: &'a [Batch],
+    cat: &dyn TimingsCatalogue,
+    trigger: Trigger,
+) -> ProductionRun<'a> {
+    let mut out = ProductionRun::default();
+    for cell in batches.iter().flat_map(|b| &b.cells) {
+        match schedule(cell, cat, TimingsMode::Production, trigger) {
+            Scheduled::Run => out.run.insert(cell.id.as_str()),
+            Scheduled::SkippedForTiming => out.skipped.insert(cell.id.as_str()),
+            Scheduled::NotInThisRun => false,
+        };
+    }
+    out
+}

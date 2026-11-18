@@ -1227,4 +1227,26 @@ pub(crate) const PLAYS_WITHIN: Duration = Duration::from_secs(120);
 mod production_timings {
     #[test]
     fn the_production_timing_entries_run_when_asked() {}
+
+    /// **A production-timing run reports what it skips** (T1.1-54): the run's trigger
+    /// (`SCENARIOS_TRIGGER`: `label`, `merge_group` or `nightly`; the label's when unset) takes the
+    /// derived production-timing set, less the `production_nightly_only` cells (M-NET-25, Q300)
+    /// off the nightly, which it writes to the leg report as skipped-for-timing, never as passed.
+    /// The nightly skips none.
+    #[cfg(unix)]
+    #[test]
+    fn the_production_timing_run_reports_what_it_skips() {
+        use purlis_scenarios::legs::trigger_from;
+        use purlis_scenarios::model::TimingsMode;
+
+        let trigger = trigger_from(
+            &std::env::var("SCENARIOS_TRIGGER").unwrap_or_else(|_| "label".to_owned()),
+        )
+        .expect("a trigger");
+        for batch in super::report::every_batch() {
+            let skipped =
+                super::report::skipped_for_timing(&batch, TimingsMode::Production, trigger);
+            super::report::write(&skipped).expect("the report is written");
+        }
+    }
 }

@@ -1,11 +1,12 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# **The sandbox scenarios on this runner** (M74.1, T1.1-09), Linux or macOS: what the scenarios
-# need, the test build, then each set asked for through `tools/sandbox-scenarios.sh`, with no
-# retries. `sandbox-scenarios.yml`'s jobs and `.github/actions/nightly` run it; the job's checkout
-# comes first, and a red run's artifacts are the caller's to upload (`target/sandbox-scenarios/`,
-# `target/nextest/ci/junit.xml`).
+# **The sandbox scenarios on this runner** (M74.1, T1.1-09 and T1.1-54), Linux or macOS: what the
+# scenarios need, the test build, then each set asked for through `tools/sandbox-scenarios.sh`,
+# with no retries, the fixture and e2e covers this OS owes (`tools/scenario-covers.mjs`), and the
+# run-result gate step over the legs this job ran. `sandbox-scenarios.yml`'s jobs and
+# `.github/actions/nightly` run it; the job's checkout comes first, and a red run's artifacts are
+# the caller's to upload (`target/sandbox-scenarios/`, `target/nextest/ci/junit.xml`).
 name: Sandbox scenarios
 description: Builds purlis-app's tests and runs the sandbox scenario sets asked for, with no retries.
 inputs:
@@ -21,6 +22,22 @@ inputs:
     description: "true to run each set 20 times under a CPU stress (the stress-x20 label)."
     required: false
     default: "false"
+  repeat:
+    description: "How many times to run the suite, its batches shuffled each time and the verdicts compared: 3 for the nightly."
+    required: false
+    default: "1"
+  trigger:
+    description: "What started this run, for the gate step: pull_request, label, merge_group or nightly."
+    required: false
+    default: "pull_request"
+  base:
+    description: "The commit this change is measured against, for the stress run's changed batches."
+    required: false
+    default: ""
+  github-token:
+    description: "The token that opens a flaky scenario's issue (issues: write); without it the run is red and says so."
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -92,6 +109,11 @@ runs:
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
+        REPEAT: ${{ inputs.repeat }}
+        # The nightly's shuffle: a new order each night, the same for every OS that night.
+        SHUFFLE_SEED: ${{ inputs.repeat != '1' && github.run_id || '' }}
+        BASE: ${{ inputs.base }}
+        GH_TOKEN: ${{ inputs.github-token }}
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
@@ -99,5 +121,62 @@ runs:
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
+        BASE: ${{ inputs.base }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        # The nightly takes M-NET-25 at its real 15 minutes; the label and the queue skip it (Q300).
+        SCENARIOS_TRIGGER: ${{ inputs.trigger }}
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh production-timings
+    # **The fixture and e2e covers this OS owes** (T1.1-54): each named test runs on the OS its
+    # cover names, through the setup the repo already has, and writes its record in ticket 5's
+    # schema beside the legs' (`target/sandbox-scenarios/<os>-covers.jsonl`). `macos-live-check`
+    # and `live:` covers are not run here.
+    - name: Which fixture and e2e covers run on this OS
+      id: covers
+      shell: bash
+      run: node tools/scenario-covers.mjs plan ${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+    - name: The fixture covers
+      if: ${{ !cancelled() && steps.covers.outputs.fixtures != '0' }}
+      shell: bash
+      run: node tools/scenario-covers.mjs run ${{ runner.os == 'macOS' && 'macos' || 'linux' }} fixture
+    # The e2e specs through the existing WebdriverIO setup (`ci.yml`'s `scenario` jobs): the app
+    # built with the `e2e` feature, then `npm run e2e` for each named spec. Counted in this job's
+    # budget, which is why it runs only when a cover names one.
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      if: ${{ !cancelled() && steps.covers.outputs.e2e != '0' }}
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    - name: The e2e covers' app build
+      if: ${{ !cancelled() && steps.covers.outputs.e2e != '0' }}
+      shell: bash
+      working-directory: app
+      run: |
+        npm ci
+        npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+    - name: The e2e covers
+      if: ${{ !cancelled() && steps.covers.outputs.e2e != '0' }}
+      shell: bash
+      run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}node tools/scenario-covers.mjs run ${{ runner.os == 'macOS' && 'macos' || 'linux' }} e2e
+    # **The run-result gate step** (T1.1-08's `judge_runs`, T1.1-54): every covered entry the legs
+    # this job ran owe a verdict has a pass, or a pinned `expected_fail`, in its report, so a cell a
+    # loader, filter or shard never picked up cannot pass silently. A pull request's merge check
+    # reads the jobs its head ran (its labels decide which); the nightly's entries and the merge
+    # queue run every leg's job, so every leg is judged there. `live:` covers are ticket 44's.
+    - name: The run-result gate
+      if: ${{ !cancelled() }}
+      shell: bash
+      env:
+        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
+        SCENARIOS_REPORTS: target/sandbox-scenarios
+        SCENARIOS_TRIGGER: ${{ inputs.trigger }}
+        OS_WORD: ${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+        SUITE: ${{ inputs.suite }}
+        PRODUCTION: ${{ inputs.production-timings }}
+      run: |
+        ran="fixture:$OS_WORD:scaled,e2e:$OS_WORD:scaled"
+        [ "$SUITE" != true ] || ran="$ran,fake:$OS_WORD:scaled"
+        [ "$PRODUCTION" != true ] || ran="$ran,fake:$OS_WORD:production"
+        export SCENARIOS_RAN="$ran"
+        cargo nextest run $CARGO_PACKAGES --locked --profile ci --retries 0 --no-capture --run-ignored only \
+          -E 'binary_id(purlis-scenarios::coverage) & test(=the_run_results_hold_every_leg_this_job_ran)'

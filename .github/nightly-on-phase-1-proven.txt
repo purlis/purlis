@@ -23,3 +23,9 @@ harness-escapes-latest        ubuntu-24.04   90       kind: escape
 property-tests                ubuntu-24.04   90       kind: escape
 # Ticket 8: no expected_fail mark names an issue GitHub says is closed (T1.1-08).
 coverage-issues               ubuntu-24.04   60
+# Ticket 54: the production-timing run (the whole derived set, M-NET-25 at 15 minutes) on both OSes,
+# and the Linux release-profile job. Budgets are the measured ones of `docs/sandbox-scenarios-ci.md`.
+production-timings            ubuntu-24.04   60
+production-timings            macos-15       120
+production-timings            macos-26       120
+linux-release-profile         ubuntu-24.04   150

@@ -16,7 +16,7 @@ use std::process::Command;
 
 use purlis_scenarios::coverage::{
     Coverage, Issues, Kind, RULINGS_ALONE, Ran, Repo, Required, Rulings, Target, against_base,
-    at_gate, check, expectations, issues, judge_runs, ratchet, report, row_table,
+    at_gate, check, expectations, issues, judge_ran_legs, judge_runs, ratchet, report, row_table,
 };
 use purlis_scenarios::model::{
     Batch, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict, TimingsMode,
@@ -1669,6 +1669,57 @@ fn an_escape_the_table_runs_on_the_real_binary_owes_ticket_53_s_leg() {
     );
 }
 
+#[test]
+fn a_job_that_ran_one_leg_owes_that_leg_alone() {
+    let escape = json!({"id": "E-T-03", "escape": true, "dialects": ["codex"], "steps": [step()]});
+    let cells = vec![batch(
+        "cells/E.json",
+        "full",
+        json!([escape, cell("E-T-03/control")]),
+    )];
+    let mut row = escape_row("E-T-03", "codex", "linux", "yes");
+    row["Basic"] = json!("n/a: Full only");
+    let repo = repo(cells, RowTable::default(), json!([row]));
+    let covered = list(json!({"escapes": [{
+        "id": "E-T-03",
+        "covers": {"full": "scenario: cells/E.json#E-T-03"},
+        "control": "scenario: cells/E.json#E-T-03/control",
+    }]}));
+    let on = |kind, row: &str, leg| {
+        record(
+            kind,
+            row,
+            Some("codex"),
+            Some(Protection::Full),
+            Os::Linux,
+            leg,
+            ReportVerdict::Pass,
+        )
+    };
+    let fake_leg = [
+        on(EntryKind::Escape, "E-T-03", ReportLeg::Fake),
+        on(EntryKind::Cell, "E-T-03/control", ReportLeg::Fake),
+    ];
+    let fake = [scaled(ReportLeg::Fake, Os::Linux)];
+    // The scenario job ran the fake leg: the whole pass judges it against ticket 53's leg too,
+    // and the leg's own judge owes the fake leg's entries alone.
+    let wide = judge_runs(&covered, &repo, Trigger::Nightly, &fake, &fake_leg);
+    assert!(mentions(&wide, &["E-T-03", "real_wrap"]), "{wide:#?}");
+    assert_eq!(
+        judge_ran_legs(&covered, &repo, Trigger::Nightly, &fake, &fake_leg),
+        Vec::<String>::new()
+    );
+    // And a leg that ran owes every entry it is required for: no record, no pass.
+    let found = judge_ran_legs(&covered, &repo, Trigger::Nightly, &fake, &[]);
+    assert!(
+        mentions(&found, &["E-T-03", "fake", "did not run"]),
+        "{found:#?}"
+    );
+    let real = [scaled(ReportLeg::RealWrap, Os::Linux)];
+    let found = judge_ran_legs(&covered, &repo, Trigger::Nightly, &real, &fake_leg);
+    assert!(mentions(&found, &["E-T-03", "real_wrap"]), "{found:#?}");
+}
+
 /// An escape table row for `id`, refused at Full and Basic and n/a with no sandbox.
 fn escape_row(id: &str, dialects: &str, os: &str, real_binary: &str) -> Value {
     json!({
@@ -1907,4 +1958,39 @@ fn a_nightly_only_entry_skipped_in_the_merge_queue_is_not_a_failure() {
         mentions(&found, &["M-T-25", "production", "skipped-for-timing"]),
         "{found:#?}"
     );
+}
+
+// ---- the run-result gate step (T1.1-54) -------------------------------------------------------
+
+/// **The run-result gate step**: judges the reports under `SCENARIOS_REPORTS` for the legs the run
+/// says it ran (`SCENARIOS_RAN`, `fake:linux:scaled,fixture:linux:scaled`), as the trigger that
+/// started it (`SCENARIOS_TRIGGER`: `pull_request`, `label`, `merge_group` or `nightly`) owes
+/// them: a covered entry with neither a pass nor a pinned `expected_fail` in the leg its cover
+/// requires fails the run, so a cell a loader, filter or shard never picked up cannot pass
+/// silently. Each job judges the legs it ran: a pull request's merge check reads the jobs its head
+/// ran (its labels decide which), and nightly and the gate merge run every leg's job, so every
+/// leg is judged. `live:` covers are ticket 44's.
+#[test]
+#[ignore = "judges a run's reports: sandbox-scenarios.yml's gate job runs it with SCENARIOS_REPORTS"]
+fn the_run_results_hold_every_leg_this_job_ran() {
+    let folder =
+        std::env::var("SCENARIOS_REPORTS").expect("SCENARIOS_REPORTS: a folder of reports");
+    let trigger = purlis_scenarios::legs::trigger_from(
+        &std::env::var("SCENARIOS_TRIGGER").expect("SCENARIOS_TRIGGER"),
+    )
+    .expect("a trigger");
+    let ran =
+        purlis_scenarios::legs::ran_from(&std::env::var("SCENARIOS_RAN").expect("SCENARIOS_RAN"))
+            .expect("the legs that ran");
+    let records = purlis_scenarios::legs::read_reports(std::path::Path::new(&folder))
+        .expect("the reports read");
+    println!(
+        "{} records, {} legs ran, as {trigger:?}",
+        records.len(),
+        ran.len()
+    );
+    let covered = Coverage::read().expect("coverage.json");
+    let repo = Repo::read().expect("the repo's cells");
+    let found = judge_ran_legs(&covered, &repo, trigger, &ran, &records);
+    assert!(found.is_empty(), "{found:#?}");
 }

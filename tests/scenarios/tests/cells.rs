@@ -15,7 +15,9 @@ use purlis_scenarios::model::{
     Batch, Cell, Dialect, EntryKind, Leg, LegRecord, Os, PinsFile, Protection, ReportLeg,
     ReportVerdict, TimingsMode,
 };
-use purlis_scenarios::plan::{Scheduled, Trigger, production_set, profile, schedule};
+use purlis_scenarios::plan::{
+    Scheduled, Trigger, production_run, production_set, profile, schedule,
+};
 use purlis_scenarios::root;
 use purlis_scenarios::timings::catalogue;
 use purlis_scenarios::validate::{Pins, RowTable, Validator};
@@ -749,6 +751,97 @@ fn a_production_nightly_only_cell_is_skipped_by_the_label_and_merge_queue_legs()
             cat.as_ref(),
             TimingsMode::Production,
             Trigger::Nightly
+        ),
+        Scheduled::Run
+    );
+}
+
+/// Cells for the production-timing run's tests: two derived (a wait, a call timeout), a hand
+/// `production_only` tag, a host kill, M-NET-25 (nightly only) and a plain cell.
+fn production_batch() -> Batch {
+    let call = json!({"tool": "Bash", "input": {"command": "get https://$h1 3"}});
+    let mut timed_call = call.clone();
+    timed_call["timeout"] = json!("150s");
+    let step = |extra: Value| {
+        let mut s = held_get();
+        s["calls"] = json!([call.clone()]);
+        for (k, v) in extra.as_object().expect("an object") {
+            s[k] = v.clone();
+        }
+        s
+    };
+    batch(json!([
+        {"id": "M-P-01", "steps": [step(json!({"wait": "hold+1"}))]},
+        {"id": "M-P-02", "steps": [step(json!({"calls": [timed_call]}))]},
+        {"id": "M-P-03", "production_only": ["hold", "HOOK_TIMEOUT"], "steps": [step(json!({}))]},
+        {"id": "M-P-04", "steps": [step(json!({"restart": "host_killed"}))]},
+        {"id": "M-NET-25", "production_nightly_only": "Q300",
+         "steps": [step(json!({"wait": "quiet_hold+1"}))]},
+        {"id": "M-P-05", "steps": [step(json!({"wait": "group+1"}))]}
+    ]))
+}
+
+#[test]
+fn the_production_timing_run_equals_the_derived_set() {
+    let batches = [production_batch()];
+    let cat = catalogue();
+    let derived = production_set(&batches, cat.as_ref());
+    assert_eq!(
+        derived,
+        BTreeSet::from(["M-NET-25", "M-P-01", "M-P-02", "M-P-03", "M-P-04"])
+    );
+
+    // The nightly takes the whole derived set, M-NET-25 included, and skips nothing.
+    let nightly = production_run(&batches, cat.as_ref(), Trigger::Nightly);
+    assert_eq!(nightly.run, derived);
+    assert!(nightly.skipped.is_empty(), "{nightly:?}");
+
+    // The label's run, and the merge queue's, are it less the nightly-only cells, which they
+    // report skipped-for-timing and never as passed.
+    for trigger in [Trigger::Label, Trigger::MergeQueue] {
+        let run = production_run(&batches, cat.as_ref(), trigger);
+        let mut less = derived.clone();
+        less.remove("M-NET-25");
+        assert_eq!(run.run, less, "{trigger:?}");
+        assert_eq!(run.skipped, BTreeSet::from(["M-NET-25"]), "{trigger:?}");
+    }
+
+    // Every real cell obeys the same rule.
+    let repo = purlis_scenarios::coverage::Repo::read().expect("the repo's cells");
+    let real: Vec<Batch> = repo.batches.into_iter().map(|(_, b)| b).collect();
+    let all = production_set(&real, cat.as_ref());
+    assert_eq!(
+        production_run(&real, cat.as_ref(), Trigger::Nightly).run,
+        all
+    );
+}
+
+#[test]
+fn the_merge_queue_runs_the_production_timing_entries() {
+    let batches = [production_batch()];
+    let cat = catalogue();
+    let queue = production_run(&batches, cat.as_ref(), Trigger::MergeQueue);
+    // Every derived entry but the nightly-only one, so a PR that breaks one cannot land and
+    // wait for the night.
+    for id in ["M-P-01", "M-P-02", "M-P-03", "M-P-04"] {
+        assert!(queue.run.contains(id), "{id} runs in the merge queue");
+    }
+    assert!(
+        !queue.run.contains("M-NET-25") && queue.skipped.contains("M-NET-25"),
+        "M-NET-25 is the one exception (Q300)"
+    );
+    assert!(
+        !queue.run.contains("M-P-05"),
+        "a cell outside the set is not in it"
+    );
+    // The queue also runs the scaled suite, where M-NET-25 runs (Q300).
+    let nightly_only = &batches[0].cells[4];
+    assert_eq!(
+        schedule(
+            nightly_only,
+            cat.as_ref(),
+            TimingsMode::Scaled,
+            Trigger::MergeQueue
         ),
         Scheduled::Run
     );

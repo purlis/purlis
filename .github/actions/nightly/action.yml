@@ -18,16 +18,37 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "coverage-issues"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "production-timings", "linux-release-profile", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "coverage-issues"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
       run: |
         echo "::error::$ENTRY is not an entry .github/actions/nightly knows"
         exit 1
-    # The sandbox scenarios, on Linux or macOS (ticket 54 fills the nightly's ×3 and shuffle).
+    # The sandbox scenarios, on Linux or macOS, three times with the batches shuffled each time
+    # (T1.1-54): a cell whose verdict differs between the runs opens a `flaky-scenario` issue and
+    # counts as failing until fixed; an escape whose verdict differs opens a public p0 security
+    # issue (Q301).
     - if: inputs.entry == 'sandbox-scenarios'
       uses: ./.github/actions/sandbox-scenarios
+      with:
+        repeat: "3"
+        trigger: nightly
+        github-token: ${{ github.token }}
+    # Every cell in the derived production-timing set, once, at `Timings::production()`, M-NET-25
+    # at its real 15 minutes included (Q300): a failure blocks the gate. Tickets 10's and 53's
+    # legs register their own entries with the same inputs.
+    - if: inputs.entry == 'production-timings'
+      uses: ./.github/actions/sandbox-scenarios
+      with:
+        suite: "false"
+        production-timings: "true"
+        trigger: nightly
+        github-token: ${{ github.token }}
+    # The Linux bundle built as `release.yml` builds it, and one check per Linux entry of the
+    # switch and substitution list against it (T1.1-54).
+    - if: inputs.entry == 'linux-release-profile'
+      uses: ./.github/actions/linux-release-profile
     # The existing macOS sandbox test targets against the branch, failing on red.
     - if: inputs.entry == 'existing-macos-sandbox-tests'
       uses: ./.github/actions/macos-sandbox-tests

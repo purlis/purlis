@@ -33,16 +33,19 @@ runs:
         package-manager-cache: false
         node-version: "22"
     - name: The studio probe, confined by Seatbelt
+      id: studio-probe
       shell: bash
       run: cargo test --locked -p studio-probe
     # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
     - name: A wrapped chat listens nowhere, confined by Seatbelt
+      id: listens-nowhere
       shell: bash
       run: |
         tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
     # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
     # own socket and no TCP port, reached through purlis's door alone.
     - name: A chat's server behind its door, confined by Seatbelt
+      id: server-behind-its-door
       shell: bash
       run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
     # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
@@ -50,23 +53,27 @@ runs:
     # host the route does not list, and a direct ssh around it, stay refused. The Linux `rust`
     # job runs the same test under purlis's own wrap.
     - name: A chat's ssh through its route from inside its sandbox, confined by Seatbelt
+      id: ssh-route
       shell: bash
       run: |
         tools/tests-ran.sh -- cargo test --locked -p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::
     # A brokered `secret exec` child under its run's real profile: the network through its
     # proxy alone, never a direct connection to this Mac or past it.
     - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
+      id: brokered-through-its-proxy
       shell: bash
       run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::brokered::tests::under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy
     # A server's connection a host hands on, received on macOS (#5849): its control buffer holds
     # one descriptor exactly, so more than one is cut off there, and the slot is marked
     # close-on-exec after the receive, which takes no flag for it here.
     - name: A host hands on one connection, and nothing more, on macOS
+      id: hands-on-one-connection
       shell: bash
       run: "tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::"
     # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
     # read by the program that made it, and silently by no other.
     - name: A held keychain item is read silently by no other program
+      id: keychain-item
       shell: bash
       env:
         PURLIS_TEST_THROWAWAY_KEYCHAIN: "1"
@@ -80,6 +87,7 @@ runs:
     # purlis-app's own sandbox tests on macOS (M74.1): the window's side of the wrap, the sandbox
     # picker and the engine's sandbox. Tickets 1, 2 and 4 name theirs here as they land.
     - name: purlis-app's sandbox tests on macOS
+      id: purlis-app
       if: inputs.purlis-app == 'true'
       shell: bash
       run: |
@@ -90,3 +98,12 @@ runs:
       if: failure()
       shell: bash
       run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
+    # **The leg report** (T1.1-54): one record for each target above, in ticket 5's schema, so the
+    # run-result gate and the artifacts carry what ran on macOS beside the scenarios' own. Written
+    # red or green, and after a red step, so a red target is a record and not an absence.
+    - name: The targets' records, for the leg report
+      if: ${{ always() }}
+      shell: bash
+      env:
+        STEPS: ${{ toJSON(steps) }}
+      run: node tools/scenario-legs.mjs steps existing-macos-sandbox-tests macos

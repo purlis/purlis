@@ -1,0 +1,84 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The Linux release-profile job** (M74.1, T1.1-54, #6901). The scenario host is a test build;
+# what a person runs is `release.yml`'s Linux bundle. This builds that bundle the way `release.yml`
+# does (the same profile, `purlis` and the built-in extensions staged where Tauri's bundler picks
+# them up, then `tauri build`), and runs one check per Linux-applicable entry of the switch and
+# substitution list (`app/src-tauri/src/scenarios/switches.json`) against it
+# (`tools/release-profile-checks.mjs`). `sandbox-scenarios.yml`'s job `linux-release-profile` runs
+# it on a pull request that changes an entry, and `.github/actions/nightly` runs it every night.
+#
+# What differs from `release.yml`, and why it cannot matter to the checks: it holds no signing key
+# (no updater artifacts, no secrets), makes the `.deb` alone (the AppImage bundler's downloaded
+# tools prove nothing about a switch), and builds with plain `cargo build` where `release.yml` uses
+# `cargo auditable` (which only embeds the dependency list). The profile is `release`'s, which a
+# stable build and `dev-release` (`Cargo.toml`: inherits it, differs by name) share.
+#
+# The job's checkout comes first. A cold release build is long, so the nightly saves a cache that
+# a pull request's run restores: no cache is saved from a pull request.
+name: Linux release profile
+description: Builds the Linux bundle as release.yml does and checks each switch entry against it.
+runs:
+  using: composite
+  steps:
+    - name: Tauri's Linux build dependencies
+      uses: ./.github/actions/linux-packages
+      with:
+        tauri: true
+    # `release.yml`'s own: the build outgrew a runner's memory without it (ADR 0092).
+    - name: More swap for the build
+      shell: bash
+      run: |
+        sudo fallocate -l 32G /swapfile-build
+        sudo chmod 600 /swapfile-build
+        sudo mkswap /swapfile-build
+        sudo swapon /swapfile-build
+    - uses: ./.github/actions/rust-toolchain
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: linux-release-profile
+        save-if: ${{ github.event_name == 'schedule' }}
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    - run: npm ci
+      shell: bash
+      working-directory: app
+    - name: The purlis binary the app's hooks run, and the built-in extensions
+      shell: bash
+      run: cargo build --profile release --locked -p purlis-cli -p persona-statistics
+    - name: Stage them where Tauri's bundler picks them up
+      shell: bash
+      run: |
+        set -euo pipefail
+        triple=$(rustc -vV | sed -n 's/^host: //p')
+        mkdir -p app/src-tauri/binaries
+        for name in purlis charter; do
+          cp "target/release/$name" "app/src-tauri/binaries/$name-$triple"
+        done
+        rm -rf app/src-tauri/extensions
+        target/release/persona-statistics assemble app/src-tauri/extensions/persona-statistics
+    - name: This build's config
+      shell: bash
+      run: |
+        jq '.bundle.createUpdaterArtifacts = false' app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
+    - name: Build the app
+      shell: bash
+      working-directory: app
+      run: npx tauri build --config src-tauri/tauri.build.conf.json --bundles deb -- --profile release
+    - name: One check for each Linux entry of the switch and substitution list
+      shell: bash
+      run: node tools/release-profile-checks.mjs run target release
+    - name: What the checks found
+      if: always()
+      shell: bash
+      run: |
+        if [ -f target/sandbox-scenarios/linux-release-profile.json ]; then
+          {
+            echo "### Linux release profile"
+            echo
+            node -e 'const r=JSON.parse(require("fs").readFileSync("target/sandbox-scenarios/linux-release-profile.json"));const by={};for(const e of r){by[e.check]??={n:0,red:0};by[e.check].n++;if(e.problem)by[e.check].red++}console.log("| check | entries | red |\n|---|---|---|");for(const[k,v]of Object.entries(by))console.log(`| ${k} | ${v.n} | ${v.red} |`)'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi

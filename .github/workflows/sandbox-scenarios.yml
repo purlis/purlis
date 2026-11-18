@@ -18,8 +18,20 @@ name: sandbox scenarios
 #   `studio-confinement-macos` steps, `.github/actions/macos-sandbox-tests`) on the same label,
 #   without that job's path filter or draft skip, and fails on red.
 # - The label `production-timings` adds the production-timing entries (ticket 54) on Linux, and on
-#   macOS with `macos-scenarios`. The merge queue runs them always. `stress-x20` runs each set 20
-#   times under a CPU stress, on Linux, and on macOS with `macos-scenarios`.
+#   macOS with `macos-scenarios`: the derived set less M-NET-25, which only the nightly runs at its
+#   real 15 minutes (Q300). The merge queue runs them always. `stress-x20` runs each set 20
+#   times under a CPU stress, on Linux, and on macOS with `macos-scenarios`: the batches the change
+#   touched (all of them when it touched none), M-NET-25 never, the verdicts compared across runs.
+# - `linux-release-profile` builds the Linux bundle as `release.yml` does and checks each Linux
+#   entry of the switch and substitution list against it (`tools/release-profile-checks.mjs`). It
+#   runs on a pull request that changes an entry, and nightly.
+# - Each job ends with the run-result gate step (`.github/actions/sandbox-scenarios`): the entries
+#   the legs it ran owe a verdict have a pass in their reports. A pull request's merge check is
+#   therefore the jobs its head ran, and the labels decide which.
+#
+# **Budgets** (T1.1-54): each job's `timeout-minutes` is its budget, and exceeding it fails the job.
+# They start at 15 minutes for the Linux pull request job and 60 for macOS, and are lowered to what
+# the runs in `docs/sandbox-scenarios-ci.md` measured.
 #
 # No scenario is retried (`--retries 0`, `tools/sandbox-scenarios.sh`). A red run uploads its event
 # logs, transcripts and scenario report.
@@ -70,6 +82,8 @@ jobs:
       macos: ${{ steps.plan.outputs.macos }}
       production-timings: ${{ steps.plan.outputs.production-timings }}
       stress: ${{ steps.plan.outputs.stress }}
+      release-profile: ${{ steps.plan.outputs.release-profile }}
+      trigger: ${{ steps.plan.outputs.trigger }}
       why: ${{ steps.plan.outputs.why }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,7 +114,8 @@ jobs:
       # The issues a pull request closes, and the marks' issues and the change's merge base read
       # from GitHub, for the coverage gate.
       pull-requests: read
-      issues: read
+      # Reads the marks' issues; writes a flaky scenario's, which the stress run opens.
+      issues: write
     steps:
       - name: What this run runs, and why
         env:
@@ -112,19 +127,22 @@ jobs:
           # The change and its base, whose cells the coverage gate's ratchet reads.
           fetch-depth: 2
           persist-credentials: false
+      - name: The commit this change is measured against
+        id: base
+        if: needs.plan.outputs.linux != 'false'
+        uses: ./.github/actions/change-base
       - name: The sandbox scenarios
         if: needs.plan.outputs.linux != 'false'
         uses: ./.github/actions/sandbox-scenarios
         with:
           production-timings: ${{ needs.plan.outputs.production-timings }}
           stress: ${{ needs.plan.outputs.stress }}
+          trigger: ${{ needs.plan.outputs.trigger }}
+          base: ${{ steps.base.outputs.sha }}
+          github-token: ${{ github.token }}
       # The matrix coverage gate (T1.1-08): the list, its caps and reasons, the expected-fail
       # ratchet against the change's base, and no mark on a closed issue or one this pull
       # request closes. Built by the step above (`--workspace`), so it builds nothing more.
-      - name: The commit this change is measured against
-        id: base
-        if: needs.plan.outputs.linux != 'false'
-        uses: ./.github/actions/change-base
       - name: The issues this pull request closes
         id: closes
         if: needs.plan.outputs.linux != 'false'
@@ -209,6 +227,9 @@ jobs:
         os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: What this run runs, and why
         env:
@@ -217,13 +238,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.plan.outputs.macos != 'false'
         with:
+          # The change and its base, for the stress run's changed batches.
+          fetch-depth: 2
           persist-credentials: false
+      - name: The commit this change is measured against
+        id: base
+        if: needs.plan.outputs.macos != 'false'
+        uses: ./.github/actions/change-base
       - name: The sandbox scenarios
         if: needs.plan.outputs.macos != 'false'
         uses: ./.github/actions/sandbox-scenarios
         with:
           production-timings: ${{ needs.plan.outputs.production-timings }}
           stress: ${{ needs.plan.outputs.stress }}
+          trigger: ${{ needs.plan.outputs.trigger }}
+          base: ${{ steps.base.outputs.sha }}
+          github-token: ${{ github.token }}
       - name: What a red run leaves
         if: failure() && needs.plan.outputs.macos != 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -258,3 +288,35 @@ jobs:
         uses: ./.github/actions/macos-sandbox-tests
         with:
           purlis-app: true
+      # The targets' records (`scenario-legs.mjs steps`), in the leg report beside the scenarios'.
+      - name: The leg report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-report-existing-macos
+          path: target/sandbox-scenarios/*.jsonl
+          if-no-files-found: ignore
+
+  # The Linux bundle built as `release.yml` builds it, and one check for each Linux entry of the
+  # switch and substitution list (`tools/release-profile-checks.mjs`). It runs on a pull request
+  # that changes an entry (`tools/sandbox-scenarios-plan.mjs`), never in the merge queue, and
+  # nightly through `.github/actions/nightly`. A cold build is the job's budget.
+  linux-release-profile:
+    name: linux release profile
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.release-profile == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The Linux bundle, and a check for each entry against it
+        uses: ./.github/actions/linux-release-profile
+      - name: What the checks found
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-release-profile
+          path: target/sandbox-scenarios/linux-release-profile.json
+          if-no-files-found: ignore

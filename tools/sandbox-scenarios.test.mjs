@@ -212,10 +212,10 @@ test("a red scenario run fails and prints what it said: nothing runs quiet (Q301
   const red = runScript("suite", { FAKE_CARGO_FAILS: "1", QUIET: "true" });
   assert.notEqual(red.status, 0);
   assert.match(red.output, /what an escape would say/);
-  // Red under load stays red, at its first red run.
+  // Red under load stays red, and every one of its twenty runs happens, so their verdicts compare.
   const stressed = runScript("suite", { FAKE_CARGO_FAILS: "1", STRESS: "true" });
   assert.notEqual(stressed.status, 0);
-  assert.equal(stressed.calls.filter((c) => c.startsWith("cargo ")).length, 1);
+  assert.equal(stressed.calls.filter((c) => c.startsWith("cargo ")).length, 20);
   for (const path of [
     "tools/sandbox-scenarios.sh",
     ".github/actions/sandbox-scenarios/action.yml",
@@ -269,7 +269,7 @@ function runScript(set, env = {}) {
         fake,
         `#!/bin/sh\necho "${name} $*" >> "${log}"\n` +
           (name === "cargo"
-            ? `[ -n "$FAKE_CARGO_FAILS" ] && { echo "what an escape would say"; exit 1; }\nexit 0\n`
+            ? `case " $* " in *" list "*) printf '%s\\n' "$FAKE_LIST"; exit 0;; esac\n[ -n "$FAKE_CARGO_FAILS" ] && { echo "what an escape would say"; exit 1; }\nexit 0\n`
             : "exec sleep 30\n"),
       );
       chmodSync(fake, 0o755);
@@ -299,4 +299,53 @@ test("every entry of the nightly list is one the nightly action runs", () => {
     .map((line) => line.replace(/#.*/, "").trim().split(/\s+/)[0])
     .filter(Boolean);
   for (const entry of listed) assert.ok(known.includes(entry), `${entry} is not an entry the action knows`);
+});
+
+test("the nightly runs the set three times, its batches shuffled each time and its cells never", () => {
+  const list = ["a", "b", "c", "d"].flatMap((b) => ["m_01", "m_02"].map((c) => `purlis-app scenarios::${b}::${c}`)).join("\n");
+  const nightly = runScript("suite", { REPEAT: "3", SHUFFLE_SEED: "11", FAKE_LIST: list });
+  assert.equal(nightly.status, 0, nightly.output);
+  const runs = nightly.calls.filter((c) => c.startsWith("cargo nextest run"));
+  // Four batches in each of three runs; each names one batch, whole, with no cell in it.
+  assert.equal(runs.length, 12, runs.join("\n"));
+  const batches = runs.map((c) => /test\(\/\^scenarios::(\w)\(::\|\$\)\/\)/.exec(c)?.[1]);
+  assert.ok(batches.every(Boolean), runs.join("\n"));
+  const orders = [0, 1, 2].map((i) => batches.slice(i * 4, i * 4 + 4).join(""));
+  for (const order of orders) assert.deepEqual([...order].sort(), ["a", "b", "c", "d"]);
+  assert.ok(new Set(orders).size > 1, `the order moved between runs: ${orders}`);
+  for (const c of runs) assert.match(c, /--retries 0\b/);
+});
+
+test("the stress run keeps M-NET-25 out", () => {
+  const stress = runScript("suite", { STRESS: "true" });
+  assert.match(stress.calls.find((c) => c.startsWith("cargo")), /not test\(\/m_net_25\/\)/);
+  assert.equal(stress.calls.filter((c) => c.startsWith("cargo nextest run")).length, 20);
+  // Not the production-timing set's nightly run either: that one is the nightly's alone.
+  assert.doesNotMatch(runScript("suite").calls[0], /m_net_25/);
+});
+
+test("the_merge_queue_runs_the_production_timing_entries: both OSes, as the queue's own trigger", () => {
+  const queue = plan({ event: "merge_group" });
+  assert.equal(queue.productionTimings, true);
+  assert.equal(queue.linux && queue.macos, true);
+  assert.equal(queue.trigger, "merge_group", "M-NET-25 is the one cell it skips, and only for that trigger (Q300)");
+  // A pull request's label run is its own trigger; an unlabelled one runs none.
+  assert.equal(pr(["crates/purlis-core/src/lib.rs"], ["production-timings"]).trigger, "label");
+  assert.equal(pr(["crates/purlis-core/src/lib.rs"]).trigger, "pull_request");
+  assert.equal(pr(["crates/purlis-core/src/lib.rs"]).productionTimings, false);
+  // Every job reads the plan's trigger for its gate step, and the scenarios action passes it on.
+  const linux = job("sandbox-scenarios-linux");
+  const macos = job("sandbox-scenarios-macos");
+  for (const j of [linux, macos]) assert.match(j.text, /trigger: \$\{\{ needs\.plan\.outputs\.trigger \}\}/);
+  assert.match(code(read(".github/actions/sandbox-scenarios/action.yml")), /SCENARIOS_TRIGGER: \$\{\{ inputs\.trigger \}\}/);
+});
+
+test("each budget is a job's timeout, and the doc names the runs that measured it", () => {
+  const doc = read("docs/sandbox-scenarios-ci.md");
+  for (const id of ["sandbox-scenarios-linux", "sandbox-scenarios-macos", "macos-sandbox-tests", "linux-release-profile"]) {
+    const minutes = /timeout-minutes: (\d+)/.exec(job(id).text)?.[1];
+    assert.ok(minutes, `${id} has a budget`);
+    assert.match(doc, new RegExp("\\| `" + id + "` \\| " + minutes + " \\|"), `${id}: the doc's table says ${minutes}`);
+  }
+  assert.match(doc, /actions\/runs\/\d+/, "the doc cites runs");
 });

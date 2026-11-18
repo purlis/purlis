@@ -13,7 +13,13 @@
 // - **macOS** runs in the merge queue and on a pull request labelled `macos-scenarios`.
 // - **`production-timings`** runs the production-timing entries (ticket 54) on the pull request's
 //   head, on Linux, and on macOS when it has both labels. The merge queue runs them always.
-// - **`stress-x20`** runs the changed batches 20 times under a CPU stress (ticket 54 fills it).
+// - **`stress-x20`** runs the changed batches 20 times under a CPU stress (ticket 54).
+// - **The Linux release-profile job** (ticket 54) runs on a pull request that changes an entry of
+//   the switch and substitution list: a file the list names, the list, the job's own checks, the
+//   release workflow it builds as, or the Cargo profiles. It runs nightly through the nightly list.
+//
+// The run's `trigger` (what `judge_runs` calls it: `pull_request`, `label`, `merge_group`) is an
+// output too, for the run-result gate step.
 //
 // Run as `node tools/sandbox-scenarios-plan.mjs <event> <base>` in a checkout whose HEAD is the
 // change, with the pull request's labels as JSON in `LABELS`: it writes `linux`, `macos`,
@@ -21,7 +27,7 @@
 // read runs everything.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -48,8 +54,21 @@ export function documentationAlone(path, deleted = new Set()) {
   return scopes.length === DOCS_ONLY.length && scopes.every((s, i) => s === DOCS_ONLY[i]);
 }
 
-/** The plan for one run: `{ linux, macos, productionTimings, stress, why }`. */
-export function plan({ event, paths = [], labels = [], deleted = [] }) {
+/** What a change to makes the Linux release-profile job run, besides the files the list names. */
+export const RELEASE_PROFILE_PATHS = new Set([
+  "app/src-tauri/src/scenarios/switches.json",
+  "tools/release-profile-checks.mjs",
+  ".github/workflows/release.yml",
+  "Cargo.toml",
+]);
+
+/** The files the switch and substitution list names (`switches.json`), from the checkout. */
+export function entryFiles(path = "app/src-tauri/src/scenarios/switches.json") {
+  return new Set(JSON.parse(readFileSync(path, "utf8")).switches.map((s) => s.file));
+}
+
+/** The plan for one run: `{ linux, macos, productionTimings, stress, releaseProfile, trigger, why }`. */
+export function plan({ event, paths = [], labels = [], deleted = [], entries = new Set() }) {
   const has = (label) => labels.includes(label);
   if (event !== "pull_request") {
     return {
@@ -57,6 +76,8 @@ export function plan({ event, paths = [], labels = [], deleted = [] }) {
       macos: true,
       productionTimings: event === "merge_group",
       stress: false,
+      releaseProfile: false,
+      trigger: event === "merge_group" ? "merge_group" : "pull_request",
       why: `a ${event} run never skips: the suite runs on every leg`,
     };
   }
@@ -67,6 +88,8 @@ export function plan({ event, paths = [], labels = [], deleted = [] }) {
       macos: false,
       productionTimings: false,
       stress: false,
+      releaseProfile: false,
+      trigger: "pull_request",
       why: `this pull request changes documentation alone (${paths.join(", ")}), so the suite is skipped`,
     };
   }
@@ -77,6 +100,8 @@ export function plan({ event, paths = [], labels = [], deleted = [] }) {
     macos,
     productionTimings: has(LABELS.productionTimings),
     stress: has(LABELS.stress),
+    releaseProfile: paths.some((path) => RELEASE_PROFILE_PATHS.has(path) || entries.has(path)),
+    trigger: has(LABELS.productionTimings) ? "label" : "pull_request",
     why: `the suite runs on ${legs}: this pull request changes more than documentation`,
   };
 }
@@ -101,7 +126,7 @@ function main([event, base]) {
         if (status === "D") deleted.push(path);
       }
     }
-    result = plan({ event, paths, labels, deleted });
+    result = plan({ event, paths, labels, deleted, entries: entryFiles() });
   } catch (error) {
     result = { ...plan({ event: "unreadable" }), why: `the change could not be read, so everything runs: ${error.message}` };
   }
@@ -110,6 +135,8 @@ function main([event, base]) {
   say(`macos=${result.macos}`);
   say(`production-timings=${result.productionTimings}`);
   say(`stress=${result.stress}`);
+  say(`release-profile=${result.releaseProfile}`);
+  say(`trigger=${result.trigger}`);
   say(`why=${result.why.replace(/\n/g, " ")}`);
 }
 
