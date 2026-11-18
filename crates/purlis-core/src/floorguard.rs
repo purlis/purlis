@@ -288,7 +288,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // the arm's commands are segments of their own (#7131). Only the segments that are new are
     // added: a copy of each would be read again at every depth of an `eval` chain.
     let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
-    let (lines, unparsed_case) = in_command_position(&shell_lines);
+    let (lines, unparsed_case, time_option) = in_command_position(&shell_lines);
     if nested_too_deep() {
         return Some(too_nested(fix));
     }
@@ -356,6 +356,12 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // arithmetic expansion or an array's words, nor in a body an interpreter runs.
     // A `case` the reader does not fully parse could hide any command in what it took for a
     // pattern, so it is unreadable outright (#7131, round 6).
+    if time_option {
+        return Some(format!(
+            "{fix}{} `time` has an option here that purlis can't read. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
+    }
     if unparsed_case {
         return Some(format!(
             "{fix}{} A `case` here isn't one purlis can read to its end. {WRITE_IT_OUT}",
@@ -1004,11 +1010,12 @@ fn prints_only_a_path(body: &str) -> bool {
 ///
 /// And whether a `case` was met that the reading did not parse whole: a header that is not
 /// `case WORD in` with the WORD read as the shell reads it, or a pattern that no `)` closes.
-/// Such a line is held, never read on (round 6).
-fn in_command_position(line: &str) -> (String, bool) {
+/// Such a line is held, never read on (round 6). The last is whether a `time` had an option
+/// other than `-p`, which is held too and says so.
+fn in_command_position(line: &str) -> (String, bool, bool) {
     let (line, unsure_arithmetic) = without_arithmetic(line);
     let Ok(toks) = shellseg::lex(&line) else {
-        return (line, unsure_arithmetic);
+        return (line, unsure_arithmetic, false);
     };
     let toks = shellseg::split_punctuation(toks);
     let source: Vec<char> = line.chars().collect();
@@ -1016,6 +1023,7 @@ fn in_command_position(line: &str) -> (String, bool) {
     // An arithmetic body with a backslash or a quote is one the reader cannot place the
     // parentheses of: held, never read on (round 7).
     let mut unparsed = unsure_arithmetic;
+    let mut time_option = false;
     // Where a `;` is put in the blanks before a `do` or `{` that follows its header with none.
     let mut breaks: Vec<usize> = Vec::new();
     let mut blank = |from: isize, to: isize| {
@@ -1226,6 +1234,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             }
             if toks.get(i).is_some_and(|t| t.text.starts_with('-')) {
                 unparsed = true;
+                time_option = true;
             }
             continue;
         } else if at_command && reserved && (bare("for") || bare("select")) {
@@ -1247,7 +1256,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             *slot = ';';
         }
     }
-    (chars.into_iter().collect(), unparsed)
+    (chars.into_iter().collect(), unparsed, time_option)
 }
 
 /// One past the `in` of the `case WORD in` whose `case` ends at `from`, with the WORD read as
@@ -1394,7 +1403,9 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
                 }
                 let mut raw = String::new();
                 while let Some(&d) = chars.get(j) {
-                    if d.is_whitespace() || ";&|()<>".contains(d) {
+                    // Bash ends the word only at a blank, a newline or a metacharacter: a CR, FF,
+                    // VT or NBSP stays in it, so the delimiter is not the plain word it looks.
+                    if matches!(d, ' ' | '\t' | '\n') || ";&|()<>".contains(d) {
                         break;
                     }
                     raw.push(d);
