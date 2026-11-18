@@ -61,7 +61,7 @@ use crate::version::{self, Refused, Speaks, Version};
 
 pub use handshake::Handshake;
 pub use keep::{
-    Connector, Down, FarEndGone, FarEndRefused, KeyNoLongerHeld, Linked, Links, keep_linked,
+    Connector, Down, FarEndGone, FarEndHostKeyChanged, FarEndRefused, KeyNoLongerHeld, Linked, Links, keep_linked,
 };
 /// What holds a link key's private half: wiped when dropped.
 pub use zeroize::Zeroizing;

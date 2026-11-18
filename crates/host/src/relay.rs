@@ -586,6 +586,16 @@ fn not_linked(down: &Down) -> Refusal {
             ),
         };
     }
+    if down.host_key_changed {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "The runner's machine presented another key than the one trusted ({why}). purlis \
+                 sent it nothing and does not link to it until you say it is all right: check \
+                 and trust it again in the pool's settings, then send this again"
+            ),
+        };
+    }
     if down.refused {
         return Refusal {
             code: session::NOT_STARTED.into(),
@@ -683,7 +693,7 @@ async fn keep(
                         up = None;
                         retiring = None;
                         told.down(&client, &down);
-                        gone = (down.gone || down.refused).then(|| down.clone());
+                        gone = (down.gone || down.refused || down.host_key_changed).then(|| down.clone());
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -718,6 +728,7 @@ enum LinkTold {
     Down {
         gone: bool,
         refused: bool,
+        host_key_changed: bool,
         why: String,
     },
 }
@@ -731,14 +742,23 @@ impl LinkTold {
     fn down(&mut self, client: &ClientLink, down: &Down) {
         let (tell, was_gone) = match &*self {
             LinkTold::Up => (true, false),
-            LinkTold::Down { gone, refused, why } => (
-                (down.gone && !gone) || (down.refused && !refused) || *why != down.why,
+            LinkTold::Down {
+                gone,
+                refused,
+                host_key_changed,
+                why,
+            } => (
+                (down.gone && !gone)
+                    || (down.refused && !refused)
+                    || (down.host_key_changed && !host_key_changed)
+                    || *why != down.why,
                 *gone,
             ),
         };
         *self = LinkTold::Down {
             gone: down.gone || was_gone,
             refused: down.refused,
+            host_key_changed: down.host_key_changed,
             why: down.why.clone(),
         };
         if tell {
@@ -747,6 +767,7 @@ impl LinkTold {
                 key_changed: down.key_changed,
                 gone: down.gone,
                 refused: down.refused,
+                host_key_changed: down.host_key_changed,
             });
         }
     }

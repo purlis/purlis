@@ -54,6 +54,10 @@ pub struct Down {
     /// tried again on its own; a new one is taken when something asks for it, and Check pool
     /// says what changed. Not a changed key, which is its own stop ([`Down::key_changed`]).
     pub refused: bool,
+    /// The machine the far end is reached through presents another host key, CA or engine than
+    /// the one pinned (#7187, Host key changed): a security stop, its own state. It is never
+    /// tried again on its own; the person says it is all right in the pool's settings.
+    pub host_key_changed: bool,
 }
 
 impl Down {
@@ -61,7 +65,7 @@ impl Down {
     /// good, or one that answers and refuses (#7187). What waiting would mend, none of them is.
     #[must_use]
     pub fn stops_retrying(&self) -> bool {
-        self.key_changed || self.gone || self.refused
+        self.key_changed || self.gone || self.refused || self.host_key_changed
     }
 
     /// Down for `why`, with the same key at the far end, as far as anyone knows.
@@ -71,6 +75,7 @@ impl Down {
             key_changed: false,
             gone: false,
             refused: false,
+            host_key_changed: false,
         }
     }
 }
@@ -106,6 +111,14 @@ pub struct FarEndGone(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct FarEndRefused(pub String);
+
+/// **A connector's refusal by a machine whose host key, CA or engine is no longer the pinned
+/// one** (#7187), in words a person reads: told as a [`Down`] that is [`Down::host_key_changed`],
+/// its own state, which is never tried again on its own. A Docker pool's connector refuses so
+/// where its forward finds the pin no longer holds.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct FarEndHostKeyChanged(pub String);
 
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
 pub struct Links {
@@ -189,6 +202,9 @@ pub fn keep_linked<C: Connector>(
                 refused: why
                     .get_ref()
                     .is_some_and(|inner| inner.is::<FarEndRefused>()),
+                host_key_changed: why
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<FarEndHostKeyChanged>()),
                 why: format!("the connector did not connect: {why}"),
             })?;
             connect_kept(io, handshake, &ours, &answering, liveness)
@@ -197,6 +213,7 @@ pub fn keep_linked<C: Connector>(
                     key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
                     gone: false,
                     refused: false,
+                    host_key_changed: false,
                     why: why.to_string(),
                 })
         };
@@ -207,7 +224,7 @@ pub fn keep_linked<C: Connector>(
                 Err(why) => {
                     // A far end gone for good, or one that answers and refuses (#7187), is said
                     // once, and the kept link ends.
-                    let stops = why.gone || why.refused;
+                    let stops = why.gone || why.refused || why.host_key_changed;
                     if tell.send(Linked::Down(why)).await.is_err() || stops {
                         return;
                     }

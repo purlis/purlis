@@ -1058,6 +1058,7 @@ impl session::Host for SaysItsLink {
                 key_changed: false,
                 gone: false,
                 refused: false,
+                host_key_changed: false,
             },
             Pushed::LinkBack {},
             Pushed::Event(event(1)),

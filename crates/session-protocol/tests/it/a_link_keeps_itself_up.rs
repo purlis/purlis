@@ -257,3 +257,48 @@ async fn a_far_end_that_answers_and_refuses_is_told_once_and_not_tried_again() {
     assert!(links.next().await.is_none(), "the kept link ended");
     assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+/// A connector whose far end presents another host key or engine than the pinned one (#7187).
+#[derive(Clone)]
+struct ToAFarEndWithAnotherKey {
+    tries: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl hostlink::Connector for ToAFarEndWithAnotherKey {
+    type Io = tokio::io::DuplexStream;
+
+    fn connect(&self) -> futures::future::BoxFuture<'static, std::io::Result<Self::Io>> {
+        self.tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndHostKeyChanged(
+                "the machine presented another host key".into(),
+            )))
+        })
+    }
+}
+
+/// **A changed host key is its own state, and never retried** (#7187): it is told as
+/// `host_key_changed`, not as refused, and the kept link ends there until the person says it is
+/// all right in the pool's settings.
+#[tokio::test(start_paused = true)]
+async fn a_far_end_with_another_host_key_is_told_once_as_its_own_state_and_not_tried_again() {
+    let tries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut links = hostlink::keep_linked(
+        ToAFarEndWithAnotherKey {
+            tries: std::sync::Arc::clone(&tries),
+        },
+        Handshake::THIS_BUILD,
+        host_a(),
+        b_as_pinned(),
+        Liveness::default(),
+    );
+    let Some(Linked::Down(down)) = links.next().await else {
+        panic!("a far end with another key is told as down")
+    };
+    assert!(down.host_key_changed, "{down:?}");
+    assert!(!down.refused && !down.key_changed && !down.gone, "{down:?}");
+    assert!(down.stops_retrying());
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert!(links.next().await.is_none(), "the kept link ended");
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

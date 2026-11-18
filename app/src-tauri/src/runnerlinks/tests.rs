@@ -687,6 +687,7 @@ fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
         key_changed: true,
         gone: false,
         refused: false,
+        host_key_changed: false,
     };
     assert_eq!(link_of(changed), PoolLink::KeyChanged);
 }
@@ -989,4 +990,21 @@ fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
             why: "sign-in refused".to_owned()
         }
     );
+}
+
+/// **A changed host key is its own state** (#7187): the forward's failure is told as a changed
+/// host key the link stops on, not as a refusal, and what a link that says so tells the person
+/// is to check the pool and trust it again.
+#[test]
+fn a_forward_that_finds_another_host_key_is_told_as_its_own_state() {
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_in("another key".into(), RemoteState::HostKeyChanged),
+        purlis_host::NotChecked::HostKeyChanged("another key".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("another key");
+    down.host_key_changed = true;
+    assert!(down.stops_retrying());
+    let said = with_a_way_on("first", down).why;
+    assert!(said.contains("trust it again"), "{said}");
 }

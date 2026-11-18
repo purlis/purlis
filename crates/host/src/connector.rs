@@ -35,6 +35,9 @@ pub enum NotChecked {
     /// The far end answers and refuses (#7187): its sign-in, engine or forward fails. Told as a
     /// refusal the link does not try again on its own ([`FarEndRefused`]).
     Declined(String),
+    /// The machine presents another host key, CA or engine than the pinned one (#7187): its own
+    /// state, told as [`FarEndHostKeyChanged`], never tried again on its own.
+    HostKeyChanged(String),
 }
 
 /// [`BeforeEach`], whose refusal can say the far end's key changed ([`NotChecked`]).
@@ -159,6 +162,9 @@ impl CommandConnector {
                 NotChecked::Gone(why) => {
                     std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
                 }
+                NotChecked::HostKeyChanged(why) => std::io::Error::other(
+                    purlis_session_protocol::hostlink::FarEndHostKeyChanged(why),
+                ),
                 NotChecked::Declined(why) => {
                     std::io::Error::other(purlis_session_protocol::hostlink::FarEndRefused(why))
                 }

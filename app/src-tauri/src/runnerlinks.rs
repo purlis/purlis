@@ -345,10 +345,11 @@ pub fn not_checked_in(
     why: String,
     state: purlis_core::sshroute::connect::RemoteState,
 ) -> NotChecked {
-    if state.retries() {
-        NotChecked::Refused(why)
-    } else {
-        NotChecked::Declined(why)
+    use purlis_core::sshroute::connect::RemoteState;
+    match state {
+        RemoteState::HostKeyChanged => NotChecked::HostKeyChanged(why),
+        state if state.retries() => NotChecked::Refused(why),
+        _ => NotChecked::Declined(why),
     }
 }
 
@@ -742,7 +743,9 @@ fn with_a_way_on(pool: &str, mut down: hostlink::Down) -> hostlink::Down {
     if down.gone {
         return down;
     }
-    let way_on = if down.key_changed {
+    let way_on = if down.host_key_changed {
+        format!("Check pool {pool} in Pool setup, and trust it again if the change is expected")
+    } else if down.key_changed {
         format!("To pair it again, remove pool {pool} in Pool setup and add it again")
     } else {
         format!("Check pool {pool} in Pool setup")

@@ -1639,6 +1639,10 @@ pub(crate) enum Reconnect {
     /// The host says the runner's machine answers and refuses (`refused`, #7187): its sign-in,
     /// Docker or forwarding fails, and it does not link to it again on its own.
     Refused,
+    /// The host says the runner's machine presents another host key, CA or engine than the
+    /// pinned one (`host_key_changed`, #7187): never linked again on its own; the person says it
+    /// is all right in the pool's settings.
+    HostKeyChanged,
     /// The pool was forgotten on this machine (#7187): every link to its runner ends, and each
     /// chat on it with them.
     PoolForgotten,
@@ -3372,6 +3376,7 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 key_changed,
                 gone,
                 refused,
+                host_key_changed,
             }) => {
                 // The runner let go of every line it handed on over the link that went: each
                 // command of its that waits here has gone, its Ask with it (#3408).
@@ -3389,6 +3394,9 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 }
                 if refused {
                     reconnect(&shared, Reconnect::Refused);
+                }
+                if host_key_changed {
+                    reconnect(&shared, Reconnect::HostKeyChanged);
                 }
             }
             Told::Pushed(Pushed::LinkBack {}) => {
@@ -3877,6 +3885,13 @@ fn reconnects_of(
                     down.state = crate::reconnecting::LinkState::Refused;
                 }
                 (chats, Reconnection::Refused)
+            }
+            Reconnect::HostKeyChanged => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(down) = lock(&dimmed).down.as_mut() {
+                    down.state = crate::reconnecting::LinkState::HostKeyChanged;
+                }
+                (chats, Reconnection::HostKeyChanged)
             }
             Reconnect::PoolForgotten => {
                 lock(&dimmed).down = None;

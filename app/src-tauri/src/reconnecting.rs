@@ -41,6 +41,10 @@ pub enum Reconnection {
     /// Refused): its host stops trying on its own, so its chats stay dimmed and the window says
     /// why, with Check pool and no Try now.
     Refused,
+    /// The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+    /// Host key changed): its host never links to it again on its own, so its chats stay dimmed
+    /// and the window says why, with Check and trust again in the pool's settings.
+    HostKeyChanged,
     /// The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so.
     PoolForgotten,
 }

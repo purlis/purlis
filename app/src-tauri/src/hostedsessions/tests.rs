@@ -1258,6 +1258,7 @@ fn a_secret_exec_of_a_host_the_relay_lost_ends_here() {
             key_changed: false,
             gone: false,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
 
@@ -2814,6 +2815,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
             key_changed: false,
             gone: false,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     for seq in 1..=3000 {
@@ -2856,6 +2858,7 @@ fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
             key_changed: false,
             gone: false,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the link is said to be down", || {
@@ -2871,6 +2874,7 @@ fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
             key_changed: false,
             gone: false,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the link is said to be down for the new reason", || {
@@ -2913,6 +2917,7 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
             key_changed: true,
             gone: false,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the window is told the runner's key changed", || {
@@ -2948,6 +2953,7 @@ fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
             key_changed: false,
             gone: true,
             refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the window is told the runner is gone", || {
@@ -2984,6 +2990,7 @@ fn a_runner_whose_machine_refuses_leaves_its_chats_dimmed_and_says_so() {
             key_changed: false,
             gone: false,
             refused: true,
+            host_key_changed: false,
         })
         .unwrap();
     until("the window is told the machine refused", || {
@@ -2997,6 +3004,44 @@ fn a_runner_whose_machine_refuses_leaves_its_chats_dimmed_and_says_so() {
     let down = hosted.sessions.link_down().expect("the link is down");
     assert_eq!(down.state, crate::reconnecting::LinkState::Refused);
     assert!(down.why.contains("refused the sign-in"), "{}", down.why);
+}
+
+/// A runner's machine that presents another host key (#7187): its own state, not Refused. Its
+/// chats are dimmed, the window is told, and the link's state is Host key changed.
+#[test]
+fn a_runner_whose_machine_presents_another_key_leaves_its_chats_dimmed_as_its_own_state() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "pool first's machine presented another host key".into(),
+            key_changed: false,
+            gone: false,
+            refused: false,
+            host_key_changed: true,
+        })
+        .unwrap();
+    until("the window is told the key changed", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::HostKeyChanged),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+    let down = hosted.sessions.link_down().expect("the link is down");
+    assert_eq!(down.state, crate::reconnecting::LinkState::HostKeyChanged);
 }
 
 /// The window's link to its own host, which relays it to a runner whose host composes each

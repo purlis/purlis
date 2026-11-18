@@ -3160,6 +3160,12 @@ pub enum Pushed {
         /// ignores the field and reads it as any link that is down, which it waits on.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         refused: bool,
+        /// The machine the other host is reached through presents another host key, CA or
+        /// engine than the pinned one (1.94, #7187): a security stop, never linked again on
+        /// its own; the person says it is all right in the pool's settings. A window before
+        /// 1.94 ignores the field and reads it as any link that is down.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        host_key_changed: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.

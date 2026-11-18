@@ -1887,6 +1887,7 @@ mod hosted {
             | Reconnect::KeyChanged
             | Reconnect::Gone
             | Reconnect::Refused
+            | Reconnect::HostKeyChanged
             | Reconnect::PoolForgotten => (true, Reconnection::Reconnecting),
             Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
         };
