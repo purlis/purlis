@@ -280,6 +280,22 @@ impl Relay {
 }
 
 impl Relay {
+    /// **The step `peer`'s start is on, in words** (#7187): where the link to the other host is.
+    /// Said when a start has taken too long.
+    pub(crate) fn step_of(&self, peer: &Peer) -> String {
+        let Ok(relayed) = self.relayed(peer) else {
+            return "the link this was sent on had ended".to_owned();
+        };
+        match &*relayed.standing.borrow() {
+            Standing::Linking => "linking to the runner".to_owned(),
+            Standing::Down(down) | Standing::Over(Some(down)) => {
+                format!("linking to the runner, which is down: {}", down.why)
+            }
+            Standing::Over(None) => "linking to the runner".to_owned(),
+            Standing::Up(_) => "the runner starting the program".to_owned(),
+        }
+    }
+
     /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
     /// for a runner on its way back, which refuses each link until it is vouched for. It ends at
     /// once on what waiting cannot mend, a changed key or a runner gone for good, and whatever it

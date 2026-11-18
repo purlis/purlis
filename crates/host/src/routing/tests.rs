@@ -837,3 +837,59 @@ async fn one_name_is_held_once_on_each_runner() {
     let (_again, relayed) = named_to("builds/old").await;
     assert!(held(&relayed), "{relayed:?}");
 }
+
+/// A connector whose connection never comes and never fails: a link that stays Linking.
+#[derive(Clone)]
+struct Hangs;
+
+impl Connector for Hangs {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        Box::pin(futures::future::pending())
+    }
+}
+
+/// **A start that cannot finish is stopped, and says which step it was stuck on** (#7187): the
+/// limit is three minutes in the host, and a test holds it to a moment.
+#[tokio::test]
+async fn a_start_that_takes_too_long_is_stopped_naming_the_step_it_was_stuck_on() {
+    let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
+    let pinned = runner.pinned();
+    let relays: RelaysTo = Arc::new(move |name: &str| {
+        let (desktop, pinned) = (Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    Hangs,
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    let host = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let start =
+        session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let began = std::time::Instant::now();
+    let refused = tokio::time::timeout(PATIENCE, window.start_program(start))
+        .await
+        .expect("the start is answered, not left hanging")
+        .expect_err("a start that cannot finish is refused");
+    assert!(began.elapsed() >= Duration::from_millis(300));
+    assert_eq!(code(&refused), Some(session::NOT_STARTED));
+    let said = refused.to_string();
+    assert!(said.contains("300 milliseconds"), "{said}");
+    assert!(said.contains("linking to the runner"), "{said}");
+}

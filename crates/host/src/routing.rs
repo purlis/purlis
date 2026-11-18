@@ -190,7 +190,48 @@ impl Routed {
     }
 }
 
+/// A limit in words: `3 minutes`, `300 milliseconds`.
+fn how_long(within: std::time::Duration) -> String {
+    if within.as_secs() >= 60 && within.as_secs() % 60 == 0 {
+        let minutes = within.as_secs() / 60;
+        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+    } else if within.as_secs() >= 1 {
+        format!("{} seconds", within.as_secs())
+    } else {
+        format!("{} milliseconds", within.as_millis())
+    }
+}
+
 impl Routed {
+    /// What goes to the runner `relay` reaches: a draining runner starts none, a start or hold
+    /// waits for a runner on its way back, then the relay carries it.
+    async fn goes_there(
+        &self,
+        relay: &Relay,
+        command: Command,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        // A runner that drains keeps its chats, and starts no new one (#2865): asked at
+        // each start, so a link relayed before its runner was replaced drains with it.
+        if matches!(command, Command::StartProgram(_)) && self.drains().await {
+            return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
+        }
+        // Before anything that needs the runner: a start holds its project first, and a
+        // relay that is down refuses that hold (#3980), so it waits for a runner on its way
+        // back (#4403), or, for any pool, a link that is down only a moment (#7187).
+        if matches!(
+            command,
+            Command::HoldProject { .. } | Command::StartProgram(_)
+        ) && self.waits_for_the_runner(relay, peer).await
+            && matches!(command, Command::StartProgram(_))
+            && self.drains().await
+        {
+            // Replaced while it waited: the rule above holds at the end of the wait too.
+            return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
+        }
+        session::Host::call(relay, command, peer).await
+    }
+
     /// Whether the runner this link is relayed to drains now, read off the runtime.
     async fn drains(&self) -> bool {
         let (Some(drains), Some(runner)) = (self.hosting.drains(), lock(&self.runner).clone())
@@ -296,25 +337,28 @@ impl session::Host for Routed {
                 session::Host::call(&self.hosting, command, peer).await
             }
             Goes::There(relay) => {
-                // A runner that drains keeps its chats, and starts no new one (#2865): asked at
-                // each start, so a link relayed before its runner was replaced drains with it.
-                if matches!(command, Command::StartProgram(_)) && self.drains().await {
-                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
+                // A start is held to three minutes in all, and fails naming the step it was on
+                // (#7187): nothing on the remote path hangs for ever.
+                if matches!(command, Command::StartProgram(_)) {
+                    let within = self.hosting.start_within();
+                    return match tokio::time::timeout(
+                        within,
+                        self.goes_there(&relay, command, peer),
+                    )
+                    .await
+                    {
+                        Ok(answered) => answered,
+                        Err(_) => Err(Refusal {
+                            code: session::NOT_STARTED.into(),
+                            why: format!(
+                                "the start took longer than {} and was stopped while {}",
+                                how_long(within),
+                                relay.step_of(peer)
+                            ),
+                        }),
+                    };
                 }
-                // Before anything that needs the runner: a start holds its project first, and a
-                // relay that is down refuses that hold (#3980), so it waits for a runner on its way
-                // back (#4403).
-                if matches!(
-                    command,
-                    Command::HoldProject { .. } | Command::StartProgram(_)
-                ) && self.waits_for_the_runner(&relay, peer).await
-                    && matches!(command, Command::StartProgram(_))
-                    && self.drains().await
-                {
-                    // Replaced while it waited: the rule above holds at the end of the wait too.
-                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
-                }
-                session::Host::call(&relay, command, peer).await
+                self.goes_there(&relay, command, peer).await
             }
             Goes::Refused(refusal) => Err(refusal),
         }

@@ -607,6 +607,10 @@ const MOST_NOTICES_QUEUED: usize = 1024;
 /// does. A key changed or a runner gone is never waited out.
 pub const LINK_DOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// **The longest a start on a relayed runner takes** (#7187): three minutes, after which it
+/// fails naming the step it was stuck on, so nothing on the remote path hangs for ever.
+pub const START_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
 /// The hosted programs and the projects they are in: what answers the session protocol on
 /// every link. A clone is the same host.
 #[derive(Clone)]
@@ -665,6 +669,9 @@ struct Inner {
     /// How long a start waits for a runner whose link is down (#7187): [`LINK_DOWN_WAIT`]
     /// unless a test holds it shorter.
     link_down_wait: OnceLock<std::time::Duration>,
+    /// The longest a start on a relayed runner takes (#7187): [`START_WITHIN`] unless a test
+    /// holds it shorter.
+    start_within: OnceLock<std::time::Duration>,
     /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
     /// a wake is one word on its Claim, and every link's start waits for that one wake.
     waking: Mutex<HashMap<String, std::time::Instant>>,
@@ -1287,6 +1294,7 @@ impl Hosting {
                 drains: OnceLock::new(),
                 runs_again: OnceLock::new(),
                 link_down_wait: OnceLock::new(),
+                start_within: OnceLock::new(),
                 waking: Mutex::default(),
                 runners,
                 unattended: crate::unattended::Links::default(),
@@ -1530,6 +1538,22 @@ impl Hosting {
     pub fn waiting_for_a_down_link(self, wait: std::time::Duration) -> Hosting {
         let _ = self.inner.link_down_wait.set(wait);
         self
+    }
+
+    /// This host, a start on a relayed runner held to `within` instead of [`START_WITHIN`].
+    #[must_use]
+    pub fn starting_within(self, within: std::time::Duration) -> Hosting {
+        let _ = self.inner.start_within.set(within);
+        self
+    }
+
+    /// The longest a start on a relayed runner takes (#7187).
+    pub(crate) fn start_within(&self) -> std::time::Duration {
+        self.inner
+            .start_within
+            .get()
+            .copied()
+            .unwrap_or(START_WITHIN)
     }
 
     /// How long a start waits for a runner whose link is down (#7187).
