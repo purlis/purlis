@@ -68,7 +68,7 @@ export function sheetRows(mac: boolean, entries: readonly Shortcut[] = SHORTCUTS
         id: one.id,
         does: one.does,
         keys: [said, ...also].join(" · "),
-        where: one.place ?? (placeSaid(mac)[one.where] || kept),
+        where: one.whereSaid ?? (placeSaid(mac)[one.where] || kept),
         group: one.group,
       },
     ];

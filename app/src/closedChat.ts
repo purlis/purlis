@@ -22,7 +22,8 @@ import {
   type PlaneId,
 } from "./bindings";
 import { qualifierOf, shownOf, whyNoReopen } from "./finished";
-import { capitalised, endedAt } from "./chatEnded";
+import { endedAt } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { chatNumberIn, chatNumberSaid, numberedNameWas } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";

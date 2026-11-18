@@ -293,9 +293,9 @@ export type LinkHands = {
   from: () => LinkFrom;
   /** The pointer is on a link, or has left it (`null`). */
   hovered: (link: HoveredLink | null) => void;
-  /** What the open command answered for the link ⌘-clicked, drawn at `place` where it is on
-   *  screen: a chat's card stands beside it. */
-  answered: (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => void;
+  /** What the open command answered for the link ⌘-clicked, drawn at `place`: a chat's card
+   *  stands beside it, and an ask answered there opens it from there again. */
+  answered: (answer: LinkOpened, candidate: LinkCandidate, place: LinkPlace) => void;
   /** The colour a link is drawn in under the pointer, as `#rrggbb`. */
   colour: () => string;
   /** Whether this is a Mac, where ⌘ opens a link, and not Ctrl. */
@@ -335,12 +335,13 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
 }
 
 /** **Opens `candidate`**, drawn at `place`, resolved again by the core, and hands on its answer.
- *  `token` is the token of the ask the person accepted. */
+ *  `token` is the token of the ask the person accepted. A link is always opened from where it
+ *  is drawn, so a chat's card stands at it (#6488). */
 export function openLink(
   candidate: LinkCandidate,
   hands: Pick<LinkHands, "core" | "from" | "answered">,
+  place: LinkPlace,
   token: string | null = null,
-  place?: LinkPlace,
 ): Promise<void> {
   return hands.core.open(hands.from(), candidateOf(candidate), token).then(
     (answer) => hands.answered(answer, candidate, place),
@@ -370,7 +371,7 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
  *  offers the one under the pointer (#6219): its candidate and the core's answer for it, and
  *  where it was drawn as it was read, which a chat's card opened from either stands beside
  *  (#6442): both close on the press, so the row it was picked on is gone. */
-export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place?: LinkPlace };
+export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place: LinkPlace };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
 export type LinkedPane = IDisposable & {
@@ -809,7 +810,9 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       if (!opensALink(event, hands.mac())) return;
       event.preventDefault();
       // The core resolves it again, and a refusal is shown: xterm drew it as a link.
-      void openLink(markedCandidate(target, range), hands);
+      const top = rowsOf(range, pane.cols)[0];
+      if (top === undefined) return;
+      void openLink(markedCandidate(target, range), hands, placeOf(pane, top.x, top.y, top.width));
     },
     hover(_event, target, range) {
       const candidate = markedCandidate(target, range);
@@ -876,7 +879,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
               if (!opens || !opensALink(event, hands.mac())) return;
               event.preventDefault();
               const top = [...rows.values()][0];
-              void openLink(candidate, hands, null, placeOf(pane, top.x, top.y, top.width));
+              void openLink(candidate, hands, placeOf(pane, top.x, top.y, top.width));
             },
             hover() {
               hoverOn(`${first.x},${first.y}\u0000${found.text}`, [...rows.values()], candidate, {

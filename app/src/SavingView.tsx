@@ -32,7 +32,7 @@ import {
 } from "./saving";
 import { Choice, Field, SettingActions, SettingRow, type Option } from "./settings/components";
 import { useReadOnlySaid } from "./ReadOnlyLine";
-import { capitalised } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
 import { RemoteQuestionNotice } from "./RemoteQuestion";

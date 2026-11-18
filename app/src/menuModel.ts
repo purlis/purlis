@@ -217,12 +217,13 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.rename": { said: SAID.renameChat, slot: "first", keys: () => RENAME_KEY_SAID },
   "chat.useskill": { said: SAID.useSkill, slot: "first" },
   // Its pane's links (#6332): opens a list, under Open ▸ with what else it opens (the list is
-  // ten rows at most, #4753), with ⇧⌘L drawn and said from the key registry.
+  // ten rows at most, #4753), with ⇧⌘L drawn and said from the key registry on the focused
+  // pane's row alone, the one terminal the key reaches (#6488, `Offer.keyHere`).
   "chat.links": {
     said: SAID.linksInThisPane,
     slot: "open",
     under: "open",
-    keys: () => keySaid("pane.links"),
+    keys: (offer) => (offer.keyHere === true ? keySaid("pane.links") : undefined),
   },
   "chat.worklink": { said: SAID.linkWorkItem, slot: "first" },
   "chat.workunlink": { said: SAID.unlinkWorkItem, slot: "first" },

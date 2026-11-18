@@ -377,7 +377,7 @@ function Answer({
   if (!up) return <p>Closed.</p>;
   return (
     <LinkAnswer
-      answering={{ answer, candidate }}
+      answering={{ answer, candidate, place: { left: 0, top: 0, width: 0, height: 0 } }}
       chat={chat}
       onClose={() => setUp(false)}
       onConfirm={() => setUp(false)}

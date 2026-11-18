@@ -13,7 +13,8 @@ import type {
   LinkSeen,
   OpensIn,
 } from "./bindings";
-import { capitalised, endedAt } from "./chatEnded";
+import { endedAt } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
@@ -124,8 +125,9 @@ export function LinkTip({
   );
 }
 
-/** What the window answers for a link ⌘-clicked, while it is up. */
-type Answering = { answer: LinkOpened; candidate: LinkCandidate };
+/** What the window answers for a link ⌘-clicked, while it is up, and where the link is drawn,
+ *  which an accepted ask opens it from again. */
+type Answering = { answer: LinkOpened; candidate: LinkCandidate; place: LinkPlace };
 
 /**
  * **A pane's link surfaces, and the hands its link hook is handed** (`paneLinks.ts`): `core`
@@ -153,7 +155,7 @@ export function usePaneLinks({
   colour: () => string;
   /** The links on the pane's screen, newest first (`LinkedPane.onScreen`). */
   onScreen?: () => Promise<ScreenLink[]>;
-  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
+  onChat?: (go: ChatGo, place: LinkPlace) => void;
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
@@ -204,29 +206,26 @@ export function usePaneLinks({
     // Kept a moment, so the pointer can reach it (WCAG 1.4.13).
     else later(() => !onTip.current && setShown(null), TOOLTIP_CLOSE_DELAY);
   }, []);
-  const answered = useCallback(
-    (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => {
-      if (answer.answer === "opened") return;
-      // What the answer draws (a card, a dialog, a tab) stands where the tooltip did: it goes.
-      pending.current = null;
-      clearTimeout(timer.current);
-      setShown(null);
-      // A chat link shows the chat or its card (#6217): the pane's to do.
-      if (answer.answer === "chat") {
-        now.current.onChat?.(answer.go, place);
-        return;
-      }
-      // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
-      if (answer.answer === "file") {
-        const { plane, session } = now.current.from;
-        if (plane !== null) return openFileLink(plane, session, answer);
-        setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
-        return;
-      }
-      setAnswering({ answer, candidate });
-    },
-    [],
-  );
+  const answered = useCallback((answer: LinkOpened, candidate: LinkCandidate, place: LinkPlace) => {
+    if (answer.answer === "opened") return;
+    // What the answer draws (a card, a dialog, a tab) stands where the tooltip did: it goes.
+    pending.current = null;
+    clearTimeout(timer.current);
+    setShown(null);
+    // A chat link shows the chat or its card (#6217): the pane's to do.
+    if (answer.answer === "chat") {
+      now.current.onChat?.(answer.go, place);
+      return;
+    }
+    // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
+    if (answer.answer === "file") {
+      const { plane, session } = now.current.from;
+      if (plane !== null) return openFileLink(plane, session, answer);
+      setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate, place });
+      return;
+    }
+    setAnswering({ answer, candidate, place });
+  }, []);
   const hands = useMemo(
     () =>
       core === undefined
@@ -247,12 +246,7 @@ export function usePaneLinks({
     <>
       {shown !== null && (
         <>
-          <span
-            ref={anchor}
-            className="pane-link-anchor"
-            aria-hidden="true"
-            style={placed(shown.place)}
-          />
+          <span ref={anchor} className="pane-link-anchor" aria-hidden="true" style={shown.place} />
           <AnchoredTooltip
             anchor={anchor}
             onPointerEnter={() => {
@@ -275,7 +269,7 @@ export function usePaneLinks({
           onPick={(link) => {
             closeLinksList();
             // A chat's card stands at the link: the list it was picked in has gone (#6442).
-            if (hands !== undefined) void openLink(link.candidate, hands, null, link.place);
+            if (hands !== undefined) void openLink(link.candidate, hands, link.place);
           }}
           onCopy={(link) => {
             void navigator.clipboard?.writeText(link.seen.target).catch((why: unknown) => {
@@ -291,23 +285,14 @@ export function usePaneLinks({
           onClose={() => setAnswering(null)}
           onConfirm={(token) => {
             setAnswering(null);
-            if (hands !== undefined) void openLink(answering.candidate, hands, token);
+            if (hands !== undefined)
+              void openLink(answering.candidate, hands, answering.place, token);
           }}
         />
       )}
     </>
   );
   return { hands, surfaces, list: core === undefined ? undefined : openLinksList };
-}
-
-/** Where an anchor stands: over the link, or at the window's top left where none was said. */
-export function placed(place: LinkPlace | undefined) {
-  return {
-    left: place?.left ?? 0,
-    top: place?.top ?? 0,
-    width: place?.width ?? 0,
-    height: place?.height ?? 0,
-  };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. An
