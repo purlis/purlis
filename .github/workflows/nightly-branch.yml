@@ -14,7 +14,7 @@ name: nightly on the integration branch
 # **At the gate it is re-pointed at main, never removed** (ticket 55): `BRANCH` is the one place
 # that names the branch, so the switch is that line and a list file on main.
 #
-# An entry that goes red uploads what it left and opens an issue labelled `bot-maintained`, or
+# An entry that fails or is cancelled (a budget overrun reads as cancelled) uploads what it left and opens an issue labelled `bot-maintained`, or
 # comments on the one already open. Everything runs in public (Q301): a red `kind: escape` entry
 # reports as any other does, and its issue is also labelled `area:security` and `priority:p0`,
 # to be fixed first.
@@ -77,7 +77,7 @@ jobs:
         with:
           entry: ${{ matrix.entry }}
       - name: What a red night leaves
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-${{ matrix.entry }}-${{ matrix.runs-on }}
@@ -88,7 +88,7 @@ jobs:
       # One open issue for each red entry and runner: a later red night comments on it. An escape
       # entry's issue is a p0 security issue as well.
       - name: A red night's issue
-        if: failure()
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

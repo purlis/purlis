@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { commandOf, coversOf, packageOf, recordOf, runCovers } from "./scenario-covers.mjs";
+import { commandOf, coversOf, packageOf, recordOf, runCovers, specHasTest } from "./scenario-covers.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
@@ -64,4 +64,18 @@ test("every_named_fixture_and_e2e_cover_runs_on_its_os_and_reports", () => {
   const real = JSON.parse(readFileSync(join(root, "tests/scenarios/coverage.json"), "utf8"));
   for (const os of ["linux", "macos"]) for (const c of coversOf(real, os)) if (c.kind === "fixture") packageOf(c.file, root);
   assert.equal(packageOf("crates/purlis-core/tests/it/x.rs", root), "purlis-core");
+});
+
+test("an_e2e_cover_whose_test_the_spec_does_not_name_is_not_run_and_never_a_pass", () => {
+  let ran = 0;
+  const exec = () => (ran += 1, 0);
+  const [missing] = runCovers(list, "macos", { kind: "e2e", exec, has: () => false });
+  assert.equal(missing.verdict, "not_run");
+  assert.match(missing.reason, /no test ran/);
+  assert.equal(ran, 0, "nothing ran for a test the spec does not name");
+  const [present] = runCovers(list, "macos", { kind: "e2e", exec, has: () => true });
+  assert.equal(present.verdict, "pass");
+  // Every e2e cover of the real list names a test its spec has.
+  const real = JSON.parse(readFileSync(join(root, "tests/scenarios/coverage.json"), "utf8"));
+  for (const os of ["linux", "macos"]) for (const c of coversOf(real, os)) if (c.kind === "e2e") assert.ok(specHasTest(c, root), `${c.spec}: ${c.test}`);
 });

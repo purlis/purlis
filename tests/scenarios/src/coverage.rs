@@ -1904,6 +1904,44 @@ fn judge(
     problems
 }
 
+/// **What a run's gate judged** (T1.1-54): the entries the legs it ran owe a verdict (`owed`), the
+/// entries other legs owe, which this run did not judge (`unjudged`), and the covers still
+/// `pending`, which owe nothing yet. A gate with nothing owed holds for any run, so the count is
+/// printed beside its verdict.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Census {
+    pub owed: usize,
+    pub unjudged: usize,
+    pub pending: usize,
+}
+
+/// The [`Census`] of a run `trigger` started that ran `ran`.
+pub fn census(list: &Coverage, repo: &Repo, trigger: Trigger, ran: &[Ran]) -> Census {
+    let (owed, unjudged) = needs(list, repo, trigger).iter().fold((0, 0), |(o, u), n| {
+        let in_this_run = ran
+            .iter()
+            .any(|r| r.leg == n.leg && r.os == n.os && n.timings.is_none_or(|t| r.timings == t));
+        if in_this_run { (o + 1, u) } else { (o, u + 1) }
+    });
+    let covers = list
+        .rows
+        .iter()
+        .map(|r| r.cover.as_str())
+        .chain(list.fixtures.iter().map(|f| f.cover.as_str()))
+        .chain(list.real_binary.iter().map(|p| p.cover.as_str()))
+        .chain(list.escapes.iter().flat_map(|e| {
+            e.covers
+                .values()
+                .map(String::as_str)
+                .chain([e.control.as_str()])
+        }));
+    Census {
+        owed,
+        unjudged,
+        pending: covers.filter(|c| pending(c)).count(),
+    }
+}
+
 /// **The report**: covers per kind, in each part of the list, and the marks per issue.
 pub fn report(list: &Coverage, repo: &Repo) -> String {
     let kind_of = |cover: &str| match Cover::parse(cover) {

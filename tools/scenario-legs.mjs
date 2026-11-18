@@ -9,19 +9,22 @@
 // pull request's changed batches twenty times: this tool compares the runs' verdicts, shuffles,
 // and says which batches a pull request changed.
 //
-//     node tools/scenario-legs.mjs flaky <runs-dir> [--source nightly|stress-x20] [--dry-run]
+//     node tools/scenario-legs.mjs flaky <runs-dir> [--source nightly|stress-x20] [--open|--dry-run]
 //     node tools/scenario-legs.mjs shuffle <seed>          # test names on stdin, groups on stdout
 //     node tools/scenario-legs.mjs changed-batches <base>  # a nextest filter for the PR's batches
 //     STEPS='<toJSON(steps)>' node tools/scenario-legs.mjs steps <row> <os>   # steps -> records
 //
 // - **flaky**: `<runs-dir>/<run>/**.jsonl` is one run each. An entry whose verdict differs between
-//   runs is flaky, and counts as failing until fixed: the command exits 1. Each opens (or comments
-//   on) a public issue, labelled `flaky-scenario` and `bot-maintained`. An entry that is an escape
+//   runs is flaky, and counts as failing until fixed: the command exits 1. With `--open` (the
+//   nightly's step alone, which alone holds a token that can) each opens (or comments on) a public
+//   issue, labelled `flaky-scenario` (created when the repository has none) and `bot-maintained`;
+//   above five entries one summary issue lists them instead (an escape always opens its own), and
+//   an issue that could not be opened is an error, not a warning. An entry that is an escape
 //   (`kind: escape`, or a cell with `escape: true` or a step that expects a refusal, so a refusal
 //   that did not hold) opens one labelled `area:security` and `priority:p0` instead: everything
 //   runs in public (Q301), and nothing goes anywhere private. `--dry-run` prints each issue it
-//   would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's `junit.xml`
-//   (nextest's) is compared with its leg report, test by test. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
+//   would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's `junit*.xml`
+//   (nextest's, one a batch) is compared with its leg report, test by test. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
 // - **shuffle**: the batches of a suite, in an order seeded by `<seed>`. A batch is a test's module
 //   path (everything before its last `::`), so the order of batches changes between runs and the
 //   order of a batch's own cells never does (cells depend on earlier cells' state).
@@ -166,8 +169,12 @@ export function flaky(dir, { cells, source = "nightly", runUrl = "" } = {}) {
     .sort()
     .filter((name) => statSync(join(dir, name)).isDirectory())
     .map((name) => {
-      const junit = join(dir, name, "junit.xml");
-      return [...readReports(join(dir, name)), ...(existsSync(junit) ? junitRecords(readFileSync(junit, "utf8")) : [])];
+      // nextest's JUnit file of each of the run's calls (one a batch): `junit.xml`, `junit-<k>.xml`.
+      const junit = readdirSync(join(dir, name))
+        .filter((f) => /^junit(-[^/]*)?\.xml$/.test(f))
+        .sort()
+        .flatMap((f) => junitRecords(readFileSync(join(dir, name, f), "utf8")));
+      return [...readReports(join(dir, name)), ...junit];
     });
   const found = differences(runs, cells ? escapeRows(cells) : new Set());
   return { runs: runs.length, differences: found, issues: found.map((d) => issueOf(d, { source, runUrl })) };
@@ -237,15 +244,51 @@ export function recordsOfSteps(steps, row, os) {
 
 // ---- command line --------------------------------------------------------------------------
 
-function open(issue, { repo, say }) {
-  const run = (...args) => execFileSync("gh", args, { encoding: "utf8" });
+/** More differing entries than this open one summary issue that lists them, not one issue each. */
+export const ISSUE_CAP = 5;
+
+/**
+ * The issues to open for `issues`: an escape each, always (each is its own p0), and the other
+ * entries each, or, above `cap` of them, one summary issue that lists them all.
+ */
+export function capped(issues, { source, runUrl = "", cap = ISSUE_CAP } = {}) {
+  const flakes = issues.filter((i) => i.labels.includes("flaky-scenario"));
+  if (flakes.length <= cap) return issues;
+  const where = source === "stress-x20" ? "under CPU stress (stress-x20)" : "in the nightly's three shuffled runs";
+  const summary = {
+    title: `Flaky scenarios: many entries differ ${source === "stress-x20" ? "under CPU stress" : "between the nightly's runs"}`,
+    labels: ["flaky-scenario", "bot-maintained"],
+    body: `${flakes.length} scenario entries had a different verdict ${where}, more than ${cap}, so they are listed here and not opened one by one. Each counts as failing until it is fixed (spec principle 5: no flake); nothing retries it.\n\n${flakes.map((i) => `- ${i.title.replace(/^Flaky scenario: /, "")}: ${i.body.match(/: (run 1:[^.]*)\./)?.[1] ?? ""}`).join("\n")}\n\n${runUrl}`.trim(),
+  };
+  return [...issues.filter((i) => !flakes.includes(i)), summary];
+}
+
+const gh = (...args) => execFileSync("gh", args, { encoding: "utf8" });
+
+/** Creates the labels of `issue` the repository does not have yet (`flaky-scenario` is the one). */
+function ensureLabels(issue, { repo, run }) {
+  for (const label of issue.labels) {
+    if (label !== "flaky-scenario") continue;
+    try {
+      run("label", "create", label, "-R", repo, "--color", "D93F0B", "--description", "A scenario whose verdict differs between runs");
+    } catch (error) {
+      if (!/already exists/i.test(`${error.stderr ?? ""}${error.message}`)) throw error;
+    }
+  }
+}
+
+/** Opens `issue`, or comments on the open one of the same title. `run` is `gh`, injectable. */
+export function open(issue, { repo, say, run = gh }) {
+  // A search phrase quotes the title: a quote inside it is escaped, and the match is exact after.
+  const phrase = `"${issue.title.replace(/["\\]/g, "\\$&")}" in:title`;
   const found = JSON.parse(
-    run("issue", "list", "-R", repo, "--state", "open", "--label", "bot-maintained", "--search", `"${issue.title}" in:title`, "--json", "number,title"),
+    run("issue", "list", "-R", repo, "--state", "open", "--label", "bot-maintained", "--limit", "1000", "--search", phrase, "--json", "number,title"),
   ).find((i) => i.title === issue.title);
   if (found) {
     run("issue", "comment", String(found.number), "-R", repo, "--body", `Differs again: ${issue.body}`);
     say(`commented on #${found.number}: ${issue.title}`);
   } else {
+    ensureLabels(issue, { repo, run });
     run("issue", "create", "-R", repo, "--title", issue.title, "--label", issue.labels.join(","), "--body", issue.body);
     say(`opened: ${issue.title}`);
   }
@@ -268,19 +311,25 @@ function main([command, ...rest]) {
       : "";
     const result = flaky(dir, { cells: flag("--cells") ?? fileURLToPath(new URL("../tests/scenarios/cells", import.meta.url)), source: flag("--source"), runUrl });
     console.log(`${result.runs} runs compared: ${result.differences.length} entries differ`);
-    for (const issue of result.issues) {
-      if (dry) console.log(JSON.stringify({ wouldOpen: issue }));
-      else {
-        // A token that cannot open an issue (a fork's pull request) must not hide the red.
-        try {
-          open(issue, { repo: process.env.GITHUB_REPOSITORY, say: console.log });
-        } catch (error) {
-          console.log(`::warning title=flaky scenario::could not open "${issue.title}": ${error.message.split("\n")[0]}`);
+    for (const d of result.differences) console.log(`::error title=${d.escape ? "escape verdict differs" : "flaky scenario"}::${d.what}: ${d.verdicts.join(", ")}`);
+    // Issues are opened only when asked (`--open`, the nightly's own step, with the one token that
+    // can); `--dry-run` says what would open; without either, the runs are only compared.
+    let unopened = 0;
+    if (dry || rest.includes("--open")) {
+      for (const issue of capped(result.issues, { source: flag("--source"), runUrl })) {
+        if (dry) console.log(JSON.stringify({ wouldOpen: issue }));
+        else {
+          try {
+            open(issue, { repo: process.env.GITHUB_REPOSITORY, say: console.log });
+          } catch (error) {
+            // Never a warning: an issue that was not opened is a red nobody would read.
+            unopened += 1;
+            console.log(`::error title=flaky scenario::could not open "${issue.title}": ${error.message.split("\n")[0]}`);
+          }
         }
       }
     }
-    for (const d of result.differences) console.log(`::error title=${d.escape ? "escape verdict differs" : "flaky scenario"}::${d.what}: ${d.verdicts.join(", ")}`);
-    return result.differences.length === 0 ? 0 : 1;
+    return result.differences.length === 0 && unopened === 0 ? 0 : 1;
   }
   if (command === "shuffle") {
     const seed = Number(rest[0]);

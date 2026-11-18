@@ -121,8 +121,9 @@ jobs:
       # The issues a pull request closes, and the marks' issues and the change's merge base read
       # from GitHub, for the coverage gate.
       pull-requests: read
-      # Reads the marks' issues; writes a flaky scenario's, which the stress run opens.
-      issues: write
+      # Reads the marks' issues. It never writes: a flaky scenario's issue is opened by the
+      # nightly's own step, so no test process on a pull request holds a token that can.
+      issues: read
     steps:
       - name: What this run runs, and why
         env:
@@ -241,7 +242,7 @@ jobs:
     timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 90 }}
     permissions:
       contents: read
-      issues: write
+      issues: read
     steps:
       - name: What this run runs, and why
         env:
@@ -318,7 +319,7 @@ jobs:
   linux-release-profile:
     name: linux release profile
     needs: plan
-    if: ${{ !cancelled() && needs.plan.outputs.release-profile == 'true' }}
+    if: ${{ !cancelled() && needs.plan.outputs.release-profile != 'false' }}
     runs-on: ubuntu-24.04
     # **Budget: 50 minutes**, from runs 44267476720, 44281556559 and 44301286922, where a release
     # build and its checks took 37, 40 and 32; the nightly saves the cache a pull request

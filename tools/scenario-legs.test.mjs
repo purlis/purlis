@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { jobsOf } from "./ci-push-jobs.mjs";
-import { batchOf, batchesChanged, differences, escapeRows, filterOf, flaky, junitRecords, recordsOfSteps, shuffled } from "./scenario-legs.mjs";
+import { batchOf, batchesChanged, capped, differences, escapeRows, filterOf, flaky, junitRecords, open, recordsOfSteps, shuffled } from "./scenario-legs.mjs";
 
 const TOOL = fileURLToPath(new URL("./scenario-legs.mjs", import.meta.url));
 
@@ -184,6 +184,72 @@ test("a_test_nextest_passed_in_one_run_and_failed_in_another_is_flaky_with_no_ce
     assert.equal(found.differences.length, 1);
     assert.equal(found.issues[0].title, "Flaky scenario: purlis-app scenarios::odd");
     assert.match(found.issues[0].body, /stress-x20/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("above_five_differing_entries_one_summary_issue_lists_them_and_an_escape_still_opens_its_own", () => {
+  const many = (n) => Array.from({ length: n }, (_, i) => rec(`M-NET-${i}`, "pass"));
+  const flip = (records) => records.map((r) => ({ ...r, verdict: "fail" }));
+  const dir = runsOf([many(6), flip(many(6)), many(6)]);
+  try {
+    const { issues } = flaky(dir, { source: "nightly" });
+    assert.equal(issues.length, 6);
+    const out = capped(issues, { source: "nightly" });
+    assert.equal(out.length, 1);
+    assert.match(out[0].title, /^Flaky scenarios: many entries differ/);
+    for (let i = 0; i < 6; i += 1) assert.match(out[0].body, new RegExp(`M-NET-${i}\\b.*run 1: pass; run 2: fail; run 3: pass`));
+    // Five or fewer open one each; an escape is never folded in.
+    assert.equal(capped(issues.slice(0, 5)).length, 5);
+    const escape = { title: "Escape verdict differs between runs: x", labels: ["area:security", "priority:p0", "bot-maintained"], body: "b" };
+    assert.equal(capped([...issues, escape]).length, 2);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("an_issue_is_found_by_its_exact_title_past_a_quote_and_the_first_page_and_its_label_is_made", () => {
+  const issue = { title: 'Flaky scenario: a "quoted" row', labels: ["flaky-scenario", "bot-maintained"], body: "b" };
+  const calls = [];
+  const said = [];
+  // No such issue open, and no such label: both are created.
+  open(issue, {
+    repo: "o/r",
+    say: (m) => said.push(m),
+    run: (...args) => (calls.push(args), args[0] === "issue" && args[1] === "list" ? "[]" : ""),
+  });
+  const list = calls.find((c) => c[1] === "list");
+  assert.equal(list[list.indexOf("--search") + 1], '"Flaky scenario: a \\"quoted\\" row" in:title');
+  assert.equal(list[list.indexOf("--limit") + 1], "1000");
+  assert.ok(calls.some((c) => c[0] === "label" && c[1] === "create" && c[2] === "flaky-scenario"));
+  assert.ok(calls.some((c) => c[0] === "issue" && c[1] === "create"));
+  // One open with that title is commented on, and nothing is created.
+  const again = [];
+  open(issue, {
+    repo: "o/r",
+    say: (m) => said.push(m),
+    run: (...args) => (again.push(args), args[1] === "list" ? JSON.stringify([{ number: 7, title: issue.title }]) : ""),
+  });
+  assert.ok(again.some((c) => c[1] === "comment" && c[2] === "7"));
+  assert.ok(!again.some((c) => c[1] === "create" || c[0] === "label"));
+});
+
+test("an_issue_that_could_not_be_opened_is_an_error_and_the_run_stays_red_without_a_dry_run", () => {
+  const dir = runsOf([[rec("M-NET-01", "pass")], [rec("M-NET-01", "fail")], [rec("M-NET-01", "pass")]]);
+  try {
+    // `--open` with no gh that works (none on this PATH): the failure is an error, never a warning.
+    const ran = spawnSync(process.execPath, [TOOL, "flaky", dir, "--open", "--cells", "/nonexistent"], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: "/nonexistent", GITHUB_REPOSITORY: "o/r" },
+    });
+    assert.equal(ran.status, 1);
+    assert.match(ran.stdout, /::error title=flaky scenario::could not open/);
+    assert.doesNotMatch(ran.stdout, /::warning/);
+    // Without `--open` the runs are compared and nothing is opened or attempted.
+    const compared = spawnSync(process.execPath, [TOOL, "flaky", dir, "--cells", "/nonexistent"], { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } });
+    assert.equal(compared.status, 1);
+    assert.doesNotMatch(compared.stdout, /could not open/);
   } finally {
     rmSync(dir, { recursive: true });
   }

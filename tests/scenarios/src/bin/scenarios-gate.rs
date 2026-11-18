@@ -20,14 +20,28 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    match purlis_scenarios::legs::judge_job(Path::new(reports), trigger, ran) {
-        Ok(problems) if problems.is_empty() => {
+    match purlis_scenarios::legs::judge_job_counted(Path::new(reports), trigger, ran) {
+        Ok((problems, census)) if problems.is_empty() => {
+            println!(
+                "{} entries owed a verdict in this run, {} owed by legs it did not run (unjudged), {} covers still pending",
+                census.owed, census.unjudged, census.pending
+            );
+            if census.owed == 0 {
+                println!(
+                    "::warning title=run-result gate::no entry is owed a verdict in this run ({} covers are still pending), so this gate holds for any report",
+                    census.pending
+                );
+            }
             println!(
                 "the run-result gate holds: every covered entry the legs that ran owe has its verdict"
             );
             ExitCode::SUCCESS
         }
-        Ok(problems) => {
+        Ok((problems, census)) => {
+            println!(
+                "{} entries owed a verdict in this run, {} unjudged, {} covers still pending",
+                census.owed, census.unjudged, census.pending
+            );
             for problem in &problems {
                 println!("::error title=run-result gate::{problem}");
             }

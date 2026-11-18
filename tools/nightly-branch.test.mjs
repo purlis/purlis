@@ -55,7 +55,7 @@ test("a_red_escape_entry_opens_a_p0_security_issue_and_uploads_artifacts", () =>
   assert.equal(upload.length, 1, "a red entry uploads what it left");
   assert.equal(issue.length, 1, "a red entry opens an issue");
   // Any red entry, escape or not, uploads and files.
-  for (const step of [...upload, ...issue]) assert.match(step, /if: failure\(\)\n/, step);
+  for (const step of [...upload, ...issue]) assert.match(step, /if: failure\(\) \|\| cancelled\(\)\n/, step);
   // Every red entry's issue is the bot's; an escape entry's is also a p0 security issue.
   assert.match(issue[0], /bot-maintained/);
   assert.match(issue[0], /ESCAPE: \$\{\{ matrix\.escape \}\}/);

@@ -15,11 +15,17 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 
 - **×3 with shuffled batches.** A batch is a test's module path. Each run orders the batches from
   a seed (the run id and the run's number), never the cells inside one. A cell whose verdict
-  differs between the three runs opens a `flaky-scenario` issue and the entry is red until it is
-  fixed. An escape (`kind: escape`, a cell marked `escape`, or a step that expects a refusal)
+  differs between the three runs is red until it is fixed, and, on the nightly alone, opens a
+  `flaky-scenario` issue (the label is created when the repository has none): above five entries,
+  one summary issue lists them instead. nextest rewrites its JUnit file on every call, so each
+  batch's is kept under the run's folder and every run holds every test. An escape (`kind: escape`, a cell marked `escape`, or a step that expects a refusal)
   whose verdict differs opens a public issue labelled `area:security` and `priority:p0` instead:
   everything runs in public (Q301). `tools/scenario-legs.mjs flaky` does the comparison, and
-  `--dry-run` prints the issue it would open.
+  `--open` opens the issues and `--dry-run` prints the ones it would open. The issues are opened
+  by a step of its own after the tests (`.github/actions/sandbox-scenarios`), the only step with a
+  token that can write to issues, so no test process holds it; the jobs of `sandbox-scenarios.yml`
+  have `issues: read`. A pull request's `stress-x20` run is a dry run: only the nightly opens a
+  public issue. An issue that cannot be opened is an error, not a warning.
 - **`stress-x20`.** The batches the pull request changed (`tests/scenarios/cells/<B>.json`), or the
   whole suite when it changed none, twenty times under `stress-ng`, the verdicts compared the same
   way. M-NET-25 is never in it (Q300).
@@ -38,6 +44,13 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 - **The Linux release-profile job** builds the bundle as `release.yml` does and runs one check for
   each Linux entry of `switches.json` (`tools/release-profile-checks.mjs`).
 
+## A nightly entry that fails or is cancelled
+
+A job that exceeds its `timeout-minutes` reads as *cancelled*, not failed. The nightly's steps that
+report an entry (`nightly-branch.yml`: what a red night leaves, and its issue) therefore run when the
+entry fails or is cancelled (`failure() || cancelled()`), so a budget overrun opens the red night's
+issue like any other red.
+
 ## Budgets
 
 A job's `timeout-minutes` is its budget: exceeding it fails the job. They started at 15 minutes for
@@ -51,6 +64,11 @@ before a single scenario runs, so the budget is the build, the kit and the suite
 | `sandbox-scenarios-macos` | 90 | macos-15: test build 55, kit 9, suite 3 (69 in all); macos-26: build 43, kit 12, suite 7 (63); on the merged base 60 and 61. A cold macOS build is 28 to 55 minutes; the worst of it with the kit and the suite after is 76 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44329073215](https://github.com/purlis/purlis/actions/runs/44329073215), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
 | `macos-sandbox-tests` | 110 | 77, 71 and 85 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44329073215](https://github.com/purlis/purlis/actions/runs/44329073215) |
 | `linux-release-profile` | 50 | 37, 40 and 32 (`purlis` and the extensions 12, the app 22, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922) |
+
+**Watch item: thin headroom.** The release-profile job's worst run is 44 minutes of its 50, and
+the Linux job's 37 of 45. A cold cache or a slower runner can overrun either; an overrun reads as
+cancelled, and on the nightly opens the issue above. Re-measure these two first when a run comes
+near its budget, and raise the budget in the workflow and this table together.
 
 A `stress-x20` run is the same suite twenty times over under load, so it has a budget of its own
 (Linux 150, macOS 180); a change that touches no batch a test is named for stresses the whole suite.

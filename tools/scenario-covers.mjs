@@ -84,8 +84,18 @@ export function recordOf(cover, status) {
   return { ...base, verdict: "fail" };
 }
 
-/** Runs every cover of `os` (of `kind`, when given); returns the records. `exec` is injectable. */
-export function runCovers(list, os, { kind, exec, base = root } = {}) {
+/**
+ * Whether an e2e cover's test is in its spec (the file exists and names the test). The WebdriverIO
+ * run exits 0 when its filter picks no test, so a cover that names a test that is not there would
+ * pass: this is the equivalent of the fixtures' `--no-tests=fail`, asked before the run.
+ */
+export function specHasTest(cover, base = root) {
+  const file = [join(base, cover.spec), join(base, "app", cover.spec)].find((f) => existsSync(f));
+  return file !== undefined && readFileSync(file, "utf8").includes(cover.test);
+}
+
+/** Runs every cover of `os` (of `kind`, when given); returns the records. `exec` and `has` are injectable. */
+export function runCovers(list, os, { kind, exec, has = specHasTest, base = root } = {}) {
   const run =
     exec ??
     ((program, args, cwd) => {
@@ -97,6 +107,9 @@ export function runCovers(list, os, { kind, exec, base = root } = {}) {
   return coversOf(list, os)
     .filter((c) => !kind || c.kind === kind)
     .map((cover) => {
+      if (cover.kind === "e2e" && !has(cover, base)) {
+        return { kind: cover.kind, row: cover.row, test: cover.test, os: cover.os, leg: cover.kind, timings: "scaled", verdict: "not_run", reason: "no test ran: the spec does not name it" };
+      }
       const [program, args, cwd] = commandOf(cover, base);
       return recordOf(cover, run(program, args, cwd));
     });

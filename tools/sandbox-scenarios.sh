@@ -18,11 +18,13 @@
 # **Repeated runs, compared** (T1.1-54). `REPEAT=3` runs the set three times, each time with its
 # batches (a test's module path) in an order `tools/scenario-legs.mjs shuffle` seeds from
 # `SHUFFLE_SEED` and the run's number, never its cells (they depend on earlier cells' state). A
-# cell whose verdict differs between runs is flaky: it opens a public `flaky-scenario` issue, and
-# the run is red (`tools/scenario-legs.mjs flaky`). `STRESS=true` runs the set 20 times under
+# cell whose verdict differs between runs is flaky: it is a public `flaky-scenario` issue, and
+# the run is red (`tools/scenario-legs.mjs flaky`). Only the compare
+# happens here: the issues are opened by the action's own step after the tests, the one step that
+# holds a token that can (nightly only), so no test process inherits it. `STRESS=true` runs the set 20 times under
 # `stress-ng` on every CPU (the `stress-x20` label), over the batches this change touched when it
 # touched any (`BASE`, the commit it is measured against) and never M-NET-25 (Q300), and compares
-# them the same way. Every run's own report is kept under `target/sandbox-scenarios-runs/`; the
+# them the same way. Every run's own report is kept under `target/sandbox-scenarios-runs/<set>/`; the
 # reports a leg uploads are the first run's.
 #
 # `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app -p purlis-scenarios`
@@ -45,7 +47,7 @@ esac
 # The tools are found beside this script; the reports are under the folder it runs in.
 here=$(cd "$(dirname "$0")" && pwd)
 report=target/sandbox-scenarios
-runs=target/sandbox-scenarios-runs
+runs=target/sandbox-scenarios-runs/$1
 mkdir -p "$report"
 rm -rf "$runs"
 
@@ -75,27 +77,40 @@ fi
 
 # Unquoted on purpose: `--workspace`, or `-p` and a package.
 # shellcheck disable=SC2086
-once() { cargo nextest run ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci --retries 0 -E "$1"; }
+once() {
+  local status=0 junit=target/nextest/ci/junit.xml
+  # nextest rewrites its JUnit file on every call: each call's own is kept under the run's folder
+  # (`$2` is the run's number, `$3` names the call), and `flaky` reads them all, so a run's verdicts
+  # are every batch's and never the last one's.
+  rm -f "$junit"
+  cargo nextest run ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci --retries 0 -E "$1" || status=$?
+  if [ "$repeat" -gt 1 ] && [ -f "$junit" ]; then
+    mkdir -p "$runs/run-$2"
+    cp "$junit" "$runs/run-$2/junit-$3.xml"
+  fi
+  return "$status"
+}
 
 # One pass over the set: in the order of `$1`'s run number when `SHUFFLE_SEED` is set, otherwise as
 # nextest finds the tests. Returns the worst status of its batches.
 # shellcheck disable=SC2086
 pass() {
-  local n=$1 status=0 batch
+  local n=$1 status=0 batch k=0
   if [ -z "${SHUFFLE_SEED-}" ]; then
-    once "$filter" || status=$?
+    once "$filter" "$n" all || status=$?
     return "$status"
   fi
   local names
   names=$(cargo nextest list ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci -E "$filter" --message-format oneline | awk '{print $NF}')
   if [ -z "$names" ]; then
-    once "$filter" || status=$?
+    once "$filter" "$n" all || status=$?
     return "$status"
   fi
   while IFS= read -r batch; do
     [ -n "$batch" ] || continue
     echo "::group::run $n, batch $batch"
-    once "($filter) & test(/^${batch}(::|\$)/)" || status=$?
+    k=$((k + 1))
+    once "($filter) & test(/^${batch}(::|\$)/)" "$n" "$k" || status=$?
     echo "::endgroup::"
   done < <(printf '%s\n' "$names" | node "$here/scenario-legs.mjs" shuffle "$((SHUFFLE_SEED + n))")
   return "$status"
@@ -119,10 +134,6 @@ runs() {
     [ "$repeat" -eq 1 ] || echo "::endgroup::"
     mkdir -p "$runs/run-$i"
     mv "$report"/*.jsonl "$runs/run-$i"/ 2>/dev/null || true
-    # nextest's own verdicts of this run, which `flaky` compares test by test as well.
-    if [ "$repeat" -gt 1 ] && [ -f target/nextest/ci/junit.xml ]; then
-      cp target/nextest/ci/junit.xml "$runs/run-$i/junit.xml"
-    fi
   done
   [ "$stress" -eq 0 ] || kill "$stress" 2>/dev/null || true
   mv "$aside"/* "$report"/ 2>/dev/null || true
