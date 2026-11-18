@@ -476,11 +476,15 @@ export function ChatsSection({
   const closedRead = closedAsked.chats;
   const closedShown = useMemo((): ClosedChat[] => {
     if (closedRead.length === 0) return [];
-    const drawnAsTasks = new Set<number>();
-    for (const tasks of finished.values())
-      for (const task of tasks) if (task.chat !== null) drawnAsTasks.add(task.chat);
-    return closedFound(closedRead, filter, drawnAsTasks);
-  }, [closedRead, filter, finished]);
+    // The finished tasks this filter draws, by their chats' ULIDs (#7145): a chat whose task's
+    // row is found is not found again as closed, and one whose row is not found still is. An
+    // open chat's number asks for that chat alone, which draws no finished row at all.
+    const drawnAsTasks = new Set<string>();
+    if (!asking(rows, filter).byNumber)
+      for (const tasks of finishedFound.values())
+        for (const task of tasks) if (task.chat_id !== null) drawnAsTasks.add(task.chat_id);
+    return closedFound(closedRead, filter, closedTyped, drawnAsTasks);
+  }, [closedRead, rows, filter, closedTyped, finishedFound]);
 
   // What the chats' own moves change, each read through the selector: a move that changes
   // none of them draws nothing here.

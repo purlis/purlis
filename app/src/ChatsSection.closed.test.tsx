@@ -9,7 +9,7 @@ import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import type { Offer } from "./actions";
-import type { ChatCard, ClosedChat, PlaneId } from "./bindings";
+import type { ChatCard, ClosedChat, FinishedTask, PlaneId } from "./bindings";
 import { findRow, queryRow, queryTree, rowNamed, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
@@ -102,6 +102,8 @@ function draw(
   answers: {
     closed?: (typed: number | null) => unknown;
     byId?: (id: string, typed: number | null) => unknown;
+    /** Each open chat's finished tasks, by its number. */
+    finished?: ReadonlyMap<number, FinishedTask[]>;
   } = {},
 ) {
   const asked: string[] = [];
@@ -139,6 +141,7 @@ function draw(
         front={1}
         onOpen={() => {}}
         onPress={(offer) => pressed.push(offer)}
+        finished={answers.finished}
       />
     </ChatsHere.Provider>
   );
@@ -155,6 +158,32 @@ function theTree(): Promise<HTMLElement> {
 async function typeInTheFilter(text: string) {
   await userEvent.type(screen.getByRole("searchbox", { name: /^Filter chats/ }), text);
 }
+
+/**
+ * **The task 731 was**, finished in an earlier launch under chat 1: its row has no number
+ * (`chat` is null), only its chat's ULID.
+ */
+const TIDIED: FinishedTask = {
+  id: "01K6DISPATCH0000000000000T",
+  asker: 1,
+  name: "Tidy the changelog",
+  chat: null,
+  chat_id: CLOSED.id,
+  persona: "steward",
+  how: "done",
+  outcome: "done",
+  folds: false,
+  report: "Tidied.",
+  changed: null,
+  ended: CLOSED.ended,
+  place: "smart-ide",
+  branch: null,
+  reopens: true,
+  not_reopened: null,
+  did_not_start: false,
+  attempts: 0,
+  waits: null,
+};
 
 describe("a closed chat in the Chats list's filter (#6484)", () => {
   it("is not read, nor drawn, until something is typed", async () => {
@@ -180,6 +209,35 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(pressed).toHaveLength(1));
     expect(pressed[0].does).toEqual({ verb: "reopenClosedChat", chat: CLOSED.id });
+  });
+
+  it("is not drawn twice where its finished task's row is found, matched by its ULID (#7145)", async () => {
+    draw({ finished: new Map([[1, [TIDIED]]]) });
+    await typeInTheFilter("tidy");
+    const tree = await theTree();
+    await findRow(tree, /^Tidy the changelog$/);
+
+    expect(queryRow(tree, /^#731 · Tidy the changelog/)).toBeNull();
+    expect(queryRow(tree, /^Closed chats/)).toBeNull();
+  });
+
+  it("is drawn where its finished task's row is not found, as by a number (#7145)", async () => {
+    draw({ finished: new Map([[1, [TIDIED]]]) });
+    await typeInTheFilter("731");
+
+    expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
+  });
+
+  it("is drawn where a number typed asks for an open chat alone, which draws no finished row (#7145's review)", async () => {
+    // 2 is open chat 2's number: the list then draws that chat alone, and no finished task,
+    // even one whose name holds the digits, so the closed chat that had 2 is the only row left.
+    draw({
+      finished: new Map([[1, [{ ...TIDIED, name: "Tidy the changelog 2" }]]]),
+      closed: () => [{ ...CLOSED, found_by: 2 }],
+    });
+    await typeInTheFilter("2");
+
+    expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
   });
 
   it("is found by a number it had before a restart, and its row and card say that number (#6685)", async () => {

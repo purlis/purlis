@@ -120,6 +120,15 @@ pub(crate) enum Asked {
 }
 
 impl Asked {
+    /// The number a card was asked for by, where it was asked for by a number rather than its
+    /// ULID.
+    fn asked_by_number(self) -> Option<u32> {
+        match self {
+            Self::Number(number) => Some(number),
+            Self::Id { .. } => None,
+        }
+    }
+
     /// The number the person gave, where they gave one.
     fn number(self) -> Option<u32> {
         match self {
@@ -162,41 +171,45 @@ fn answer(held: &Held, found: Found, asked: Asked, open: &[chatlookup::OpenChat]
         Found::Closed(chat) => ChatLookup::Ended {
             card: Box::new(card_of_chat(held.root(), asked, &chat)),
         },
-        Found::Ended(record) => {
-            let (number, found_by) = ended_numbers(held.root(), asked, &record);
-            match card_of(held, number, &record, open) {
-                Some(card) => ChatLookup::Ended {
-                    card: Box::new(ChatCard { found_by, ..card }),
-                },
-                None => ChatLookup::NoChat,
-            }
+        Found::Ended(ended) => {
+            card_of_ended(held, asked, &ended, open).map_or(ChatLookup::NoChat, |card| {
+                ChatLookup::Ended {
+                    card: Box::new(card),
+                }
+            })
         }
     }
 }
 
-/// **The number the card of a task ended with `record` is titled by, and the one it says it
-/// was found by**, asked for as `asked` says. By a number, that number. By its ULID, the number
-/// its chat closed under where its close was kept, as its row in the filter says it (#7125),
-/// else the one it was dispatched under.
-fn ended_numbers(
-    root: &std::path::Path,
+/// **The card of a task that ended, as `asked` found it** (#7145): what the palette's row, a
+/// pane's `chat 702` link and a closed chat's row in the filter all show. Titled by the number
+/// its chat closed under, from the record the lookup found with it (`chatlookup::Ended`, never
+/// read again), saying the number asked where it is one it had before a restart. Where no close
+/// was kept, or where it does not answer to the number asked, by the number asked, or by its
+/// ULID the one it was dispatched under.
+pub(crate) fn card_of_ended(
+    held: &Held,
     asked: Asked,
-    record: &dispatchrecord::Record,
-) -> (u32, Option<u32>) {
-    if let Asked::Number(number) = asked {
-        return (number, None);
-    }
-    let chats = purlis_core::chatrecords::every(root);
-    let closed = record
-        .worker
-        .chat
-        .id
-        .as_deref()
-        .and_then(|id| purlis_core::chatrecords::of_id(&chats, id));
-    match closed {
+    ended: &chatlookup::Ended,
+    open: &[chatlookup::OpenChat],
+) -> Option<ChatCard> {
+    // A close that does not answer to the number asked would title the card by a number the
+    // person never gave, with nothing saying why (its earlier numbers capped, say).
+    let closed = ended.closed.as_ref().filter(|chat| {
+        asked
+            .asked_by_number()
+            .is_none_or(|number| chat.answers_to(number))
+    });
+    let (number, found_by) = match closed {
         Some(chat) => (chat.number, asked.found_by(chat)),
-        None => (record.worker.chat.chat, None),
-    }
+        None => (
+            asked
+                .asked_by_number()
+                .unwrap_or(ended.record.worker.chat.chat),
+            None,
+        ),
+    };
+    card_of(held, number, &ended.record, open).map(|card| ChatCard { found_by, ..card })
 }
 
 /// The open chats of `held`'s project, as the core's lookup is handed them.
@@ -216,10 +229,10 @@ pub(crate) fn open_chats(held: &Held) -> Vec<chatlookup::OpenChat> {
         .collect()
 }
 
-/// **The card of chat `number`, ended with `record`**, given the chats open now: what the
-/// palette's finished row and a pane's `chat 641` link (#6217) show. None where the record
-/// makes no card (`chatlookup::makes_a_card`): a handoff's, or a task's chat with no id.
-pub(crate) fn card_of(
+/// **The card of chat `number`, ended with `record`**, given the chats open now
+/// ([`card_of_ended`]). None where the record makes no card (`chatlookup::makes_a_card`): a
+/// handoff's, or a task's chat with no id.
+fn card_of(
     held: &Held,
     number: u32,
     record: &dispatchrecord::Record,
@@ -489,15 +502,17 @@ pub(crate) struct ClosedChat {
 /// The chats of `held`'s project that closed and are not open again, newest close first
 /// (`chatlookup::closed_now`).
 pub(crate) fn closed_chats_of(held: &Held, typed: Option<u32>) -> Vec<ClosedChat> {
+    // Asked as a row then opens its card: by the number typed, which only labels it (#7125).
+    let asked = Asked::Id { typed };
     let chats = purlis_core::chatrecords::every(held.root());
     chatlookup::closed_now(&chats, &open_chats(held))
         .into_iter()
-        .filter(|chat| typed.is_none_or(|number| chat.answers_to(number)))
+        .filter(|chat| asked.number().is_none_or(|number| chat.answers_to(number)))
         .map(|chat| ClosedChat {
             number: chat.number,
             id: chat.id.clone(),
             earlier: chat.earlier.clone(),
-            found_by: typed.and_then(|number| chat.found_by(number)),
+            found_by: asked.found_by(chat),
             title: chat.title.clone(),
             place: chat.place.clone(),
             ended: chat.ended.clone(),
@@ -523,25 +538,48 @@ pub(crate) async fn closed_chats(
         .map_err(|err| format!("reading the closed chats did not finish: {err}"))
 }
 
+/// **A closed chat reopened** (#6485): the number it closed under and the chat it runs as now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Reopened {
+    pub closed_as: u32,
+    pub now: u32,
+}
+
+impl Reopened {
+    /// What the window is told where the chat it started ended before it could be drawn: the
+    /// chat by the number its card has, and the one it started as (#7145).
+    pub(crate) fn ended_as_it_started(self) -> String {
+        format!(
+            "chat {} was reopened as chat {}, which ended as it started. Reopen it again from \
+             its card, or start a new chat in its place.",
+            self.closed_as, self.now
+        )
+    }
+}
+
 /// **Reopens the closed chat whose ULID is `id`, from the record the app kept of it** (#6485):
 /// *Reopen* on a card drawn from its chat's record. By its ULID, never its number, as more
 /// than one record may answer to a number (#6740, #7123). It starts again on its conversation
 /// as the same chat (`Chats::reopen_closed`); a card drawn from a task reopens through its
-/// finished row (`reopen_finished_task`) instead. Answers the chat it started.
+/// finished row (`reopen_finished_task`) instead.
+///
+/// A record swept since the card was drawn is refused as "this chat": nothing the app keeps
+/// names it any more, and the refusal is said on the card that does (#7145).
 pub(crate) fn reopen_closed(
     held: &Held,
     id: &str,
     size: purlis_core::engine::Size,
-) -> Result<u32, String> {
+) -> Result<Reopened, String> {
     let chats = purlis_core::chatrecords::every(held.root());
-    let record = purlis_core::chatrecords::of_id(&chats, id)
-        .cloned()
-        .ok_or_else(|| {
-            "purlis did not reopen this chat: it keeps no record of it as it closed, as it closed \
-             more than 30 days ago or before purlis kept one. Start a new chat in its place."
-                .to_owned()
-        })?;
-    held.chats().reopen_closed(&record, size)
+    let record = purlis_core::chatrecords::of_id(&chats, id).ok_or_else(|| {
+        "purlis did not reopen this chat: it keeps no record of it as it closed, as it closed \
+         more than 30 days ago or before purlis kept one. Start a new chat in its place."
+            .to_owned()
+    })?;
+    Ok(Reopened {
+        closed_as: record.number,
+        now: held.chats().reopen_closed(record, size)?,
+    })
 }
 
 /// **What `number` names** (#6214): an open chat, one open again under another number, a
@@ -753,39 +791,11 @@ pub(crate) mod fixtures {
         }
     }
 
-    /// **A project on disk, held as a window holds it**: the folder, the registry that holds it
-    /// (kept, so the project stays held) and the project.
-    pub(crate) fn a_project() -> (
-        tempfile::TempDir,
-        crate::planes::Planes,
-        std::sync::Arc<crate::planes::Held>,
-    ) {
-        let dir = tempfile::tempdir().expect("a folder");
-        let root = std::fs::canonicalize(dir.path()).expect("canonical");
-        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
-        let planes = crate::planes::Planes::telling(
-            std::sync::Arc::new(|_| {}),
-            crate::Shipped::default(),
-            None,
-        );
-        let held = planes.held(&planes.open(&root)).expect("held");
-        (dir, planes, held)
-    }
-}
-
-/// A chat found by its ULID, from the Chats list's filter (#7125).
-#[cfg(test)]
-mod found_by_id_tests {
-    use purlis_core::chatrecords::ChatRecord;
-    use purlis_core::dispatchrecord::{
-        self, Asker, Changed, ChatRef, Ending, Mode, Opening, Outcome, Place, Report, Worker,
-    };
-
-    use super::fixtures::{TIDY_THE_CHANGELOG, a_project, tidy_the_changelog};
-    use super::*;
-
     /// Task chat `number` (ULID `id`), dispatched by the person, done and reported.
-    fn a_finished_task(root: &std::path::Path, number: u32, id: &str) {
+    pub(crate) fn a_finished_task(root: &std::path::Path, number: u32, id: &str) {
+        use purlis_core::dispatchrecord::{
+            self, Asker, Changed, ChatRef, Ending, Mode, Opening, Outcome, Place, Report, Worker,
+        };
         let opening = Opening {
             mode: Mode::Task,
             asker: Asker {
@@ -828,6 +838,16 @@ mod found_by_id_tests {
         };
         dispatchrecord::close(root, &opened.id, report, now).expect("closed");
     }
+}
+
+/// A chat found by its ULID, from the Chats list's filter (#7125).
+#[cfg(test)]
+mod found_by_id_tests {
+    use purlis_core::chatrecords::ChatRecord;
+
+    use super::fixtures::{TIDY_THE_CHANGELOG, a_finished_task, tidy_the_changelog};
+    use super::*;
+    use crate::planes::fixtures::a_project;
 
     fn card(lookup: ChatLookup) -> ChatCard {
         match lookup {
@@ -859,6 +879,42 @@ mod found_by_id_tests {
     }
 
     #[test]
+    fn a_renumbered_task_s_card_asked_by_a_number_is_numbered_as_its_chat_closed_and_says_which() {
+        // #7145: the palette's row and a pane's `chat 702` link ask by a number. Dispatched as
+        // 702, renumbered 731 by a restart, and then it finished: asked by either, its card is
+        // the task's, titled #731, and says (was #702) where 702 was asked.
+        let (_dir, _planes, held) = a_project();
+        a_finished_task(held.root(), 702, TIDY_THE_CHANGELOG);
+        purlis_core::chatrecords::keep(held.root(), &tidy_the_changelog(vec![702]))
+            .expect("its close is kept");
+
+        let by_earlier = card(lookup(&held, 702));
+        let by_last = card(lookup(&held, 731));
+
+        assert_eq!((by_earlier.number, by_earlier.found_by), (731, Some(702)));
+        assert_eq!((by_last.number, by_last.found_by), (731, None));
+        assert!(by_earlier.task.is_some(), "drawn from its task");
+        assert!(by_last.task.is_some(), "drawn from its task, not bare");
+    }
+
+    #[test]
+    fn a_task_s_card_asked_by_a_number_its_close_does_not_answer_to_is_numbered_as_asked() {
+        // #7145's review: its close kept no word of 702 (its earlier numbers capped, say), so a
+        // card titled #812 would not say why it answers 702.
+        let (_dir, _planes, held) = a_project();
+        a_finished_task(held.root(), 702, TIDY_THE_CHANGELOG);
+        let closed = ChatRecord {
+            number: 812,
+            ..tidy_the_changelog(Vec::new())
+        };
+        purlis_core::chatrecords::keep(held.root(), &closed).expect("its close is kept");
+
+        let found = card(lookup(&held, 702));
+
+        assert_eq!((found.number, found.found_by), (702, None));
+    }
+
+    #[test]
     fn a_task_s_card_found_by_its_ulid_with_no_closed_record_is_numbered_as_it_was_dispatched() {
         let (_dir, _planes, held) = a_project();
         a_finished_task(held.root(), 702, TIDY_THE_CHANGELOG);
@@ -869,8 +925,26 @@ mod found_by_id_tests {
     }
 
     #[test]
+    fn a_task_s_card_is_numbered_by_the_close_its_lookup_found_never_by_a_second_read() {
+        // #7145: a sweep between two reads of the closed chats gave row #731 and card #702. The
+        // card is drawn from what the lookup found, whatever the records say by then.
+        let (_dir, _planes, held) = a_project();
+        a_finished_task(held.root(), 702, TIDY_THE_CHANGELOG);
+        let record = purlis_core::dispatchrecord::list(held.root()).remove(0);
+        let found = Found::Ended(Box::new(chatlookup::Ended {
+            record,
+            closed: Some(tidy_the_changelog(vec![702])),
+        }));
+
+        let shown = card(answer(&held, found, Asked::Id { typed: Some(702) }, &[]));
+
+        assert_eq!((shown.number, shown.found_by), (731, Some(702)));
+    }
+
+    #[test]
     fn the_closed_chats_a_number_finds_are_those_that_answer_to_it_each_saying_how() {
-        // #7125: the core decides what was found and by which number, not the window.
+        // #7125: the app (`closed_chats_of`, by `ChatRecord::found_by`) decides what was found and
+        // by which number, not the window.
         let (_dir, _planes, held) = a_project();
         let dealt_again = ChatRecord {
             number: 702,
@@ -902,8 +976,9 @@ mod found_by_id_tests {
 mod reopen_tests {
     use purlis_core::chatrecords::ChatRecord;
 
-    use super::fixtures::{a_project, tidy_the_changelog};
+    use super::fixtures::tidy_the_changelog;
     use super::*;
+    use crate::planes::fixtures::a_project;
 
     const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
         columns: 80,
@@ -945,6 +1020,21 @@ mod reopen_tests {
         assert!(
             pressed_newer.contains("no conversation to resume"),
             "{pressed_newer}"
+        );
+    }
+
+    #[test]
+    fn a_reopened_chat_that_ended_as_it_started_is_named_by_its_card_s_number_and_its_new_one() {
+        // #7145: by its ULID, the window sends no number, so the app names it.
+        let said = Reopened {
+            closed_as: 731,
+            now: 812,
+        }
+        .ended_as_it_started();
+
+        assert!(
+            said.starts_with("chat 731 was reopened as chat 812,"),
+            "{said}"
         );
     }
 
