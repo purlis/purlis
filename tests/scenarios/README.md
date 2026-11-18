@@ -108,13 +108,26 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   cell for the harness is an error, never a quiet omission. The runner uses an installed
   **release-profile** build of `phase-1-proven`'s head, with no `test-support`, in the harness's
   non-interactive mode.
-- `report --cells FILE --log FILE --harness H --os OS` judges a live log by the cells' own
+- `report --cells FILE... --log FILE --harness H --os OS` judges a live log by the cells' own
   `expected_fail` marks (`judge`) and writes the suite's report format (`leg-report.schema.json`),
-  leg `live`, one record per line. The log is the live checker's per-cell account, as
-  `tests/fixtures/chat-682-b0.json` (chat 682, B0, 2026-11-15): `failed` assertions with what was
-  observed, `globals`, and optionally the cell's `events`.
-- `diff LIVE SUITE [--suite-leg L] [--suite-timings T]` compares per cell (same kind, row,
-  dialect, protection and OS): the verdicts, and the event sequences where both sides recorded
-  `events` (an optional field of the leg-report schema). A cell on one side alone is listed.
-  It exits 1 when anything differs. The scenario host does not write `events` yet, so until it
-  does only the verdicts are compared against a suite report.
+  leg `live`, one record per line. Give `--cells` once for each cells file the log has cells of.
+  The log is `{"cells": {"<id>": {"failed": [...], "globals": [...], "events": [...]}}}`, as
+  `tests/fixtures/chat-682-b0.json` (chat 682, B0, 2026-11-15): `failed` is a list of
+  `[assertion, observed]` (step 1) or `[step, assertion, observed]`, `globals` a list of
+  `{"check", "refusal"}`, and `events` (optional) the cell's event kinds in order. `failed` and
+  `globals` are **required** and no other key is read: a missing or wrong-typed field, a cell id
+  no given file has for the harness, or a malformed `events` is an error, never a pass. A cell
+  the log leaves out is `not_run`.
+- Only cells are judged by `report` and `diff`. The controls, escapes, release checks, held-ask
+  timing and receiver check have no record they read: the brief says so, and a person reads
+  each one's notes against its `Record:` line before tagging.
+- `diff LIVE SUITE [--suite-leg L] [--suite-timings T]` checks both files against the
+  leg-report schema (the left one must be leg `live`), keeps the suite records whose row,
+  dialect, protection and OS the live report has (a record with no `timings` is `scaled`), and
+  compares per cell (same kind, row, dialect, protection and OS): the verdicts, and the event
+  sequences where both sides recorded `events` (an optional field of the leg-report schema).
+  A live `not_run` is always listed, a cell on one side alone is listed, and it prints how many
+  pairs had no event comparison and which had events on one side only. It exits 0 only when it
+  compared at least one pair and nothing differs, 1 when something differs or nothing was
+  compared, and 2 when a file or an option is wrong. The scenario host does not write `events`
+  yet, so until it does only the verdicts are compared against a suite report.

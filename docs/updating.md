@@ -295,11 +295,21 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #    the release build's own switches. For each harness on each OS it covers, generate a brief
 #    and give it to a runner chat on an installed release-profile build (no `test-support`):
 #        tools/live-pass brief --harness claude --os macos      # codex, opencode, linux the same
-#    The runner only records. Judge its log in the suite's report format, then diff it with the
-#    suite's own report for the same cells, and read every line the diff prints:
+#    The runner only records. A cell's record is judged by `report`, from the log the brief
+#    describes ({"cells": {"<id>": {"failed": [...], "globals": [...], "events": [...]}}},
+#    `failed` and `globals` required, any other key an error); controls, escapes, release
+#    checks, the held-ask timing and the receiver check have no record `report` or `diff`
+#    reads: a person reads each one's notes against its `Record:` line in the brief. Judge the
+#    cells' log in the suite's report format (every cells file the harness's cells are in, one
+#    --cells each; today tests/scenarios/cells/B0.json is the only one), then diff it with the
+#    suite's own report of the same run (target/sandbox-scenarios/<os>-fake.jsonl):
 #        tools/live-pass report --cells tests/scenarios/cells/B0.json --log <live log> \
 #            --harness claude --os macos > live.jsonl
-#        tools/live-pass diff live.jsonl <the suite's report> --suite-timings production
+#        tools/live-pass diff live.jsonl target/sandbox-scenarios/macos-fake.jsonl \
+#            --suite-leg fake --suite-timings production
+#    The diff scopes the suite side to the live report's cells, lists every cell the live run
+#    did not run, and exits 0 only when it compared something and nothing differs (1: it
+#    differs, or it compared nothing; 2: a file or an option is wrong). Read every line it prints.
 #    A cell the two judge differently is a bug in the suite or in the build, to file before
 #    tagging (tests/scenarios/README.md, "The live pass").
 git switch main && git pull

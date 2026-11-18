@@ -11,7 +11,8 @@ use std::fs;
 use purlis_scenarios::coverage::{Coverage, Repo};
 use purlis_scenarios::kinds::dialect_words;
 use purlis_scenarios::livepass::{
-    HELD_ASK_TIMING, RECEIVER_FIXTURE, Recorded, Sources, Switches, Why, brief, diff, live_report,
+    HELD_ASK_TIMING, RECEIVER_FIXTURE, Recorded, Sources, Switches, Why, brief, check_live, diff,
+    live_report, read_report, scope_suite,
 };
 use purlis_scenarios::model::{
     Batch, Dialect, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict,
@@ -258,16 +259,17 @@ fn the_brief_lists_every_macos_release_switch_cover() {
 #[test]
 fn the_brief_lists_one_check_for_every_macos_cover_of_the_real_switch_list() {
     let real = Switches::repo().expect("the scenario host's switch list");
-    let wanted = real
-        .switches
-        .iter()
-        .chain(&real.substitutions)
-        .filter(|e| {
-            e.covers
-                .get("macos")
-                .is_some_and(|c| c.iter().any(|c| c == "macos-live-check"))
-        })
-        .count();
+    let on_macos = |covers: &std::collections::BTreeMap<String, Vec<String>>| {
+        covers
+            .get("macos")
+            .is_some_and(|c| c.iter().any(|c| c == "macos-live-check"))
+    };
+    let wanted = real.switches.iter().filter(|e| on_macos(&e.covers)).count()
+        + real
+            .substitutions
+            .iter()
+            .filter(|e| on_macos(&e.covers))
+            .count();
     assert!(wanted > 0, "the list has macOS live checks");
     let coverage = Coverage::read().expect("coverage.json");
     let repo = Repo::read().expect("the repo's files");
@@ -416,7 +418,7 @@ fn suite(row: &str, verdict: ReportVerdict, leg: ReportLeg) -> Recorded {
 
 #[test]
 fn chat_682_judged_by_the_live_report_is_what_matrix_check_said() {
-    let live = live_report(&b0(), &chat_682(), Dialect::Claude, Os::Macos).expect("a report");
+    let live = live_report(&[b0()], &chat_682(), Dialect::Claude, Os::Macos).expect("a report");
     let seen: Vec<(&str, ReportVerdict)> = live
         .iter()
         .map(|r| (r.leg.row.as_str(), r.leg.verdict))
@@ -442,7 +444,7 @@ fn chat_682_judged_by_the_live_report_is_what_matrix_check_said() {
 fn a_failure_in_the_log_that_no_mark_pins_is_a_failed_cell() {
     let mut log = chat_682();
     log["cells"]["M-PRB-03"]["failed"] = json!([["require[0]", 2], ["require[1]", 7]]);
-    let live = live_report(&b0(), &log, Dialect::Claude, Os::Macos).expect("a report");
+    let live = live_report(&[b0()], &log, Dialect::Claude, Os::Macos).expect("a report");
     let one = live.iter().find(|r| r.leg.row == "M-PRB-03").unwrap();
     assert_eq!(one.leg.verdict, ReportVerdict::Fail);
     assert!(one.leg.reason.as_deref().unwrap().contains("require[1]"));
@@ -450,14 +452,14 @@ fn a_failure_in_the_log_that_no_mark_pins_is_a_failed_cell() {
 
 #[test]
 fn the_live_report_and_the_suite_report_diff_per_cell() {
-    let live = live_report(&b0(), &chat_682(), Dialect::Claude, Os::Macos).expect("a report");
+    let live = live_report(&[b0()], &chat_682(), Dialect::Claude, Os::Macos).expect("a report");
     let mut suite_report: Vec<Recorded> = live
         .iter()
         .map(|r| suite(&r.leg.row, r.leg.verdict, ReportLeg::Fake))
         .collect();
 
     // the suite agrees with chat 682 on every cell
-    assert!(diff(&live, &suite_report).is_empty());
+    assert!(diff(&live, &suite_report).agrees());
 
     // the suite says M-PRB-06 passes where the live run showed the pinned failures; it has no
     // M-PRB-05 at all, and one cell the live run never ran
@@ -471,7 +473,7 @@ fn the_live_report_and_the_suite_report_diff_per_cell() {
     suite_report.push(suite("M-PRB-99", ReportVerdict::Pass, ReportLeg::Fake));
 
     let d = diff(&live, &suite_report);
-    assert!(!d.is_empty());
+    assert!(!d.no_differences());
     assert_eq!(d.verdicts.len(), 1, "{:?}", d.verdicts);
     assert_eq!(d.verdicts[0].key.row, "M-PRB-06");
     assert_eq!(d.verdicts[0].live, ReportVerdict::ExpectedFail);
@@ -496,7 +498,7 @@ fn the_live_report_and_the_suite_report_diff_per_cell() {
 
 #[test]
 fn a_cell_is_compared_only_with_the_same_dialect_protection_and_os() {
-    let live = live_report(&b0(), &chat_682(), Dialect::Claude, Os::Macos).unwrap();
+    let live = live_report(&[b0()], &chat_682(), Dialect::Claude, Os::Macos).unwrap();
     let mut other = suite("M-PRB-01", ReportVerdict::Pass, ReportLeg::Fake);
     other.leg.os = Os::Linux;
     let d = diff(&live[..1], &[other]);
@@ -512,7 +514,7 @@ fn the_diff_compares_event_sequences_per_cell() {
     live.events = kinds(&["hook.pretooluse", "ask.raised", "stop.block"]);
     let mut same = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake);
     same.events = kinds(&["hook.pretooluse", "ask.raised", "stop.block"]);
-    assert!(diff(&[live.clone()], &[same]).is_empty());
+    assert!(diff(&[live.clone()], &[same]).agrees());
 
     let mut other = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake);
     other.events = kinds(&["hook.pretooluse", "stop.block", "ask.raised"]);
@@ -529,7 +531,10 @@ fn the_diff_compares_event_sequences_per_cell() {
 
     // a side that recorded no events has nothing to compare, and is no difference
     let silent = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake);
-    assert!(diff(&[live], &[silent]).is_empty());
+    let d = diff(&[live], &[silent]);
+    assert!(d.agrees());
+    assert_eq!(d.events_one_side.len(), 1, "one side's events are flagged");
+    assert_eq!(d.events_compared, 0);
 }
 
 #[test]
@@ -551,8 +556,339 @@ fn a_live_record_with_events_validates_against_the_leg_report_schema() {
     bad["events"] = json!([1]);
     assert!(!validator.is_valid(&bad));
     // a live report of chat 682 validates as the suite's own records do
-    for r in live_report(&b0(), &chat_682(), Dialect::Claude, Os::Macos).unwrap() {
+    for r in live_report(&[b0()], &chat_682(), Dialect::Claude, Os::Macos).unwrap() {
         let value = serde_json::to_value(&r).unwrap();
         assert!(validator.is_valid(&value), "{value}");
     }
+}
+
+// ---- the log is strict -------------------------------------------------------------------------
+
+fn report_of(log: Value) -> Result<Vec<Recorded>, String> {
+    live_report(&[b0()], &log, Dialect::Claude, Os::Macos)
+}
+
+#[test]
+fn a_cell_the_log_does_not_mention_is_not_run_with_its_reason() {
+    let log = json!({"cells": {"M-PRB-01": {"failed": [], "globals": []}}});
+    let live = report_of(log).expect("a report");
+    assert_eq!(
+        live.len(),
+        7,
+        "every cell of B0 for the harness has a record"
+    );
+    let ran = live.iter().find(|r| r.leg.row == "M-PRB-01").unwrap();
+    assert_ne!(ran.leg.verdict, ReportVerdict::NotRun);
+    for r in live.iter().filter(|r| r.leg.row != "M-PRB-01") {
+        assert_eq!(r.leg.verdict, ReportVerdict::NotRun, "{}", r.leg.row);
+        assert_eq!(r.leg.reason.as_deref(), Some("not in the live log"));
+        assert!(r.events.is_none());
+    }
+}
+
+#[test]
+fn a_malformed_log_is_an_error_never_a_pass() {
+    let bad: [(&str, Value); 14] = [
+        ("an empty entry", json!({"cells": {"M-PRB-01": {}}})),
+        ("a null entry", json!({"cells": {"M-PRB-01": null}})),
+        (
+            "failed missing",
+            json!({"cells": {"M-PRB-01": {"globals": []}}}),
+        ),
+        (
+            "globals missing",
+            json!({"cells": {"M-PRB-01": {"failed": []}}}),
+        ),
+        (
+            "a typo'd key",
+            json!({"cells": {"M-PRB-01": {"fail": [["require[0]", 2]], "failed": [], "globals": []}}}),
+        ),
+        (
+            "failed as a string",
+            json!({"cells": {"M-PRB-01": {"failed": "require[0]", "globals": []}}}),
+        ),
+        (
+            "a failure of one item",
+            json!({"cells": {"M-PRB-01": {"failed": [["require[0]"]], "globals": []}}}),
+        ),
+        (
+            "a step of 0",
+            json!({"cells": {"M-PRB-01": {"failed": [[0, "require[0]", 1]], "globals": []}}}),
+        ),
+        (
+            "a global of one key",
+            json!({"cells": {"M-PRB-01": {"failed": [], "globals": [{"check": "c"}]}}}),
+        ),
+        (
+            "an unknown cell id",
+            json!({"cells": {"M-PRB-1": {"failed": [], "globals": []}}}),
+        ),
+        (
+            "events of numbers",
+            json!({"cells": {"M-PRB-01": {"failed": [], "globals": [], "events": [1]}}}),
+        ),
+        (
+            "events as a string",
+            json!({"cells": {"M-PRB-01": {"failed": [], "globals": [], "events": "stop.block"}}}),
+        ),
+        (
+            "events as null",
+            json!({"cells": {"M-PRB-01": {"failed": [], "globals": [], "events": null}}}),
+        ),
+        ("a key beside cells", json!({"cell": {}, "cells": {}})),
+    ];
+    for (what, log) in bad {
+        let found = report_of(log);
+        assert!(found.is_err(), "{what} was read as a report: {found:?}");
+    }
+    // the cells key itself
+    assert!(report_of(json!({})).is_err());
+    assert!(report_of(json!({"cells": []})).is_err());
+}
+
+#[test]
+fn a_well_formed_entry_keeps_its_events_and_three_item_failures() {
+    let log = json!({"cells": {"M-PRB-03": {
+        "failed": [[1, "require[0]", 2]], "globals": [], "events": ["hook.pretooluse", "stop.block"]
+    }}});
+    let live = report_of(log).expect("a report");
+    let one = live.iter().find(|r| r.leg.row == "M-PRB-03").unwrap();
+    assert_eq!(
+        one.events.as_deref(),
+        Some(&["hook.pretooluse".to_string(), "stop.block".to_string()][..])
+    );
+}
+
+#[test]
+fn the_live_report_takes_every_cells_file_it_is_given() {
+    let (_, other) = batch(json!([live_cell("live-a", json!(["claude"]))]));
+    let log = json!({"cells": {
+        "live-a": {"failed": [], "globals": []},
+        "M-PRB-01": {"failed": [], "globals": []},
+    }});
+    let live = live_report(&[b0(), other.clone()], &log, Dialect::Claude, Os::Macos).unwrap();
+    assert!(live.iter().any(|r| r.leg.row == "live-a"));
+    assert!(live.iter().any(|r| r.leg.row == "M-PRB-01"));
+    // a cell id in none of the files given is an error
+    let err = live_report(&[other], &log, Dialect::Claude, Os::Macos).unwrap_err();
+    assert!(err.contains("M-PRB-01"), "{err}");
+}
+
+// ---- the diff compares something ---------------------------------------------------------------
+
+#[test]
+fn a_diff_that_compared_nothing_does_not_agree() {
+    let live = vec![suite("M-T-01", ReportVerdict::Pass, ReportLeg::Live)];
+    let d = diff(&live, &[]);
+    assert_eq!(d.compared, 0);
+    assert!(!d.agrees());
+    assert!(d.render().contains("nothing was compared"));
+    assert!(!diff(&[], &[]).agrees());
+}
+
+#[test]
+fn a_cell_the_live_run_did_not_run_is_listed_even_when_the_suite_did_not_either() {
+    let mut live = suite("M-T-01", ReportVerdict::NotRun, ReportLeg::Live);
+    live.leg.reason = Some("not in the live log".to_owned());
+    let mut other = suite("M-T-01", ReportVerdict::NotRun, ReportLeg::Fake);
+    other.leg.reason = Some("skipped-for-timing".to_owned());
+    let d = diff(&[live], &[other]);
+    assert!(d.verdicts.is_empty(), "the verdicts are equal");
+    assert_eq!(d.live_not_run.len(), 1);
+    assert!(!d.agrees());
+    assert!(d.render().contains("not in the live log"), "{}", d.render());
+}
+
+#[test]
+fn the_diff_counts_the_cells_with_no_event_comparison() {
+    let kinds = |ks: &[&str]| Some(ks.iter().map(|k| k.to_string()).collect::<Vec<_>>());
+    let mut a = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Live);
+    a.events = kinds(&["stop.block"]);
+    let mut a_suite = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake);
+    a_suite.events = kinds(&["stop.block"]);
+    let b = suite("M-T-02", ReportVerdict::Pass, ReportLeg::Live);
+    let mut b_suite = suite("M-T-02", ReportVerdict::Pass, ReportLeg::Fake);
+    b_suite.events = kinds(&["stop.block"]);
+    let c = suite("M-T-03", ReportVerdict::Pass, ReportLeg::Live);
+    let c_suite = suite("M-T-03", ReportVerdict::Pass, ReportLeg::Fake);
+    let d = diff(&[a, b, c], &[a_suite, b_suite, c_suite]);
+    assert_eq!((d.compared, d.events_compared), (3, 1));
+    assert_eq!(d.events_one_side.len(), 1);
+    assert_eq!(d.events_one_side[0].row, "M-T-02");
+    let text = d.render();
+    assert!(
+        text.contains("1 had an event comparison, 2 had none"),
+        "{text}"
+    );
+    assert!(text.contains("only one side recorded events"), "{text}");
+}
+
+#[test]
+fn the_suite_side_is_scoped_to_the_cells_the_live_side_has() {
+    let live = vec![suite("M-T-01", ReportVerdict::Pass, ReportLeg::Live)];
+    let mut codex = suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake);
+    codex.leg.dialect = Some(Dialect::Codex);
+    let kept = scope_suite(
+        &live,
+        vec![
+            suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake),
+            suite("M-T-02", ReportVerdict::Pass, ReportLeg::Fake),
+            codex,
+        ],
+    );
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].leg.row, "M-T-01");
+}
+
+#[test]
+fn the_left_file_must_be_the_live_leg() {
+    assert!(check_live(&[suite("M-T-01", ReportVerdict::Pass, ReportLeg::Live)]).is_ok());
+    let err = check_live(&[suite("M-T-01", ReportVerdict::Pass, ReportLeg::Fake)]).unwrap_err();
+    assert!(err.contains("live"), "{err}");
+}
+
+#[test]
+fn a_report_is_checked_against_the_leg_report_schema_before_it_is_read() {
+    let ok = r#"{"kind":"cell","row":"M-T-01","dialect":"claude","protection":"full","os":"macos","leg":"live","verdict":"pass"}"#;
+    assert_eq!(read_report("r.jsonl", ok).unwrap().len(), 1);
+    for (what, line) in [
+        (
+            "an unknown key",
+            ok.replace("\"pass\"}", "\"pass\",\"extra\":1}"),
+        ),
+        ("a verdict out of its list", ok.replace("pass", "passed")),
+        (
+            "a cell with no dialect",
+            ok.replace("\"dialect\":\"claude\",", ""),
+        ),
+        (
+            "a not_run with no reason",
+            ok.replace("\"pass\"", "\"not_run\""),
+        ),
+        (
+            "events of numbers",
+            ok.replace("\"pass\"}", "\"pass\",\"events\":[1]}"),
+        ),
+        (
+            "an expected_fail escape",
+            ok.replace("cell", "escape")
+                .replace("\"pass\"", "\"expected_fail\""),
+        ),
+        ("not JSON", "{".to_owned()),
+    ] {
+        assert!(read_report("r.jsonl", &line).is_err(), "{what} was read");
+    }
+    assert!(read_report("r.jsonl", "\n\n").is_err(), "an empty report");
+}
+
+// ---- the brief refuses drift -------------------------------------------------------------------
+
+#[test]
+fn the_switch_list_refuses_a_key_it_does_not_know_and_an_entry_with_no_name() {
+    let one = |v: Value| serde_json::from_value::<Switches>(v);
+    assert!(one(json!({"extra": []})).is_err());
+    assert!(
+        one(json!({"substitutions": [{"reason": "r"}]})).is_err(),
+        "no name"
+    );
+    assert!(one(json!({"substitutions": [{"name": "n", "reason": "r", "cover": {}}]})).is_err());
+    assert!(
+        one(json!({"switches": [{"file": "a.rs", "kind": "switch", "reason": "r"}]})).is_err(),
+        "no `at`"
+    );
+    assert!(one(json!({"switches": [{"file": "a.rs", "at": "x", "kind": "switch", "reason": "r", "extra": 1}]})).is_err());
+    assert!(
+        one(json!({"switches": [{"file": "a.rs", "at": "x", "kind": "switch", "reason": "r"}]}))
+            .is_ok()
+    );
+}
+
+#[test]
+fn an_escape_row_with_a_column_the_reader_does_not_know_is_refused() {
+    let row = json!({"id": "E-T-09", "ticket": "20", "Full": "refused", "Basic": "refused",
+        "off": "n/a", "dialects": "claude", "os": "both", "real_binary": "no", "lives": "yes"});
+    assert!(serde_json::from_value::<purlis_scenarios::coverage::EscapeRow>(row).is_err());
+}
+
+#[test]
+fn a_cover_that_cannot_be_read_is_a_problem_not_a_skip() {
+    let cells = batch(json!([live_cell("live-a", json!(["claude"]))]));
+    let coverage = list(json!({"rows": [row("M-T-01", "claude", "macos", "live live-a")]}));
+    let repo = repo(vec![cells], json!([]));
+    let none = no_switches();
+    let err = brief(
+        Dialect::Claude,
+        Os::Macos,
+        &sources(&coverage, &repo, &none),
+    )
+    .unwrap_err();
+    assert!(err.contains("M-T-01"), "{err}");
+}
+
+#[test]
+fn a_covered_escape_the_table_does_not_have_is_a_problem_not_a_skip() {
+    let cells = batch(json!([live_cell("live-a", json!(["claude"]))]));
+    let coverage = list(json!({"escapes": [
+        {"id": "E-T-77", "covers": {"full": "live: live-a"}, "control": "live: live-a"}
+    ]}));
+    let repo = repo(vec![cells], json!([]));
+    let none = no_switches();
+    let err = brief(
+        Dialect::Claude,
+        Os::Macos,
+        &sources(&coverage, &repo, &none),
+    )
+    .unwrap_err();
+    assert!(err.contains("E-T-77"), "{err}");
+}
+
+#[test]
+fn the_real_escape_table_makes_a_brief_for_every_harness_and_os() {
+    let coverage = Coverage::read().expect("coverage.json");
+    let repo = Repo::read().expect("the repo's files");
+    let real = Switches::repo().expect("the switch list");
+    let marked: Vec<&str> = repo
+        .escapes
+        .iter()
+        .filter(|r| r.live == "yes")
+        .map(|r| r.id.as_str())
+        .collect();
+    assert!(
+        !marked.is_empty(),
+        "the table marks escapes for the live pass"
+    );
+    for harness in Dialect::ALL {
+        for os in [Os::Linux, Os::Macos] {
+            let b = brief(harness, os, &sources(&coverage, &repo, &real))
+                .unwrap_or_else(|e| panic!("{harness:?} on {os:?}: {e}"));
+            for row in repo.escapes.iter().filter(|r| r.live == "yes") {
+                let applies = row.applies().unwrap().contains(&(harness, os));
+                let has = b.checks.iter().any(|c| {
+                    c.why == Why::Escape && c.id.starts_with(&format!("escape:{}:", row.id))
+                });
+                assert_eq!(has, applies, "{} for {harness:?} on {os:?}", row.id);
+            }
+        }
+    }
+}
+
+#[test]
+fn the_brief_says_which_records_report_judges_and_which_a_person_does() {
+    let b = brief(
+        Dialect::Claude,
+        Os::Macos,
+        &sources(
+            &Coverage::read().unwrap(),
+            &Repo::read().unwrap(),
+            &Switches::repo().unwrap(),
+        ),
+    )
+    .unwrap();
+    let text = b.markdown();
+    assert!(text.contains("\"failed\""), "the log format is shown");
+    assert!(text.contains("judged by a person"));
+    assert!(text.contains("judged by `tools/live-pass report`"));
+    assert!(!text.contains("judge nothing"));
+    assert!(Why::LiveCover.judged_by_report());
+    assert!(!Why::Escape.judged_by_report());
 }

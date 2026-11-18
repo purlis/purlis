@@ -8,7 +8,7 @@
 # and switch list the suite does (`tests/scenarios/README.md`, "The live pass").
 #
 #   tools/live-pass brief  --harness claude|codex|opencode --os linux|macos [--json]
-#   tools/live-pass report --cells tests/scenarios/cells/B0.json --log <live log> --harness H --os OS
+#   tools/live-pass report --cells tests/scenarios/cells/B0.json [--cells FILE...] --log <live log> --harness H --os OS
 #   tools/live-pass diff   <live report> <suite report> [--suite-leg L] [--suite-timings T]
 set -euo pipefail
 cd "$(dirname "$0")/.."
