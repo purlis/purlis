@@ -575,6 +575,7 @@ import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { RunnerGoneNotice } from "./RunnerGoneNotice";
 import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
+import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
@@ -691,7 +692,14 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { anyPoolKept, readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
+import {
+  anyPoolKept,
+  checkPool,
+  readRunnerStage,
+  refusedWith,
+  saveLimits,
+  usePools,
+} from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { LEAST, LEAST_CHIP, leastAt, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
@@ -12077,6 +12085,15 @@ export const PlaneView = memo(function PlaneView({
       <RunnerGoneNotice
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
+      />
+      {/* **A runner's link that stays down past a blip** (#7134): said once for each pool, with
+          why, Try now and Check pool, while its chats' panes say Reconnecting…. */}
+      <RunnerLinkDownNotice
+        plane={plane}
+        onCheckPool={(pool) => {
+          openSettingsAt({ group: "you.machine.pools" });
+          void checkPool(pool);
+        }}
       />
       {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with
           Fetch again and Discard. */}

@@ -569,6 +569,18 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window
+	 *  is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
+	 *  to link again that failed for another reason says so there.
+	 */
+	runnerLinksDown: (plane: PlaneId) => typedError<RunnerLinkDown[], string>(__TAURI_INVOKE("runner_links_down", { plane })),
+	/**
+	 *  **Try now** (#7134): pool `pool`'s runner, whose link is down, is tried again at once rather
+	 *  than after the pause between tries. Answered before the try: what it finds is said as ever,
+	 *  on `chats-reconnecting`.
+	 */
+	runnerLinkNow: (plane: PlaneId, pool: string) => typedError<null, string>(__TAURI_INVOKE("runner_link_now", { plane, pool })),
 	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
 	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
 	fetchFreshRunnerAgain: __WINDOW_ONLY_RESULT,
@@ -13706,6 +13718,19 @@ export type RunnerImageOffered =
 { state: "none_named" } | 
 /**  None: a local build, with no update channel, names none. */
 { state: "local_build" };
+
+/**
+ *  **A pool's runner whose link is down, and why** (#7134): what the window says once its
+ *  chats have said Reconnecting… for longer than a blip.
+ */
+export type RunnerLinkDown = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  The host's own words: what ended the link, or what the last try to link again found. */
+	why: string,
+	/**  When the link went down, in seconds since 1970. */
+	since: number,
+};
 
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 

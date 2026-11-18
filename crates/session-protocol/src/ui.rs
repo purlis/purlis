@@ -1651,6 +1651,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "repos_changed",
     "resize_session",
     "reveal_branch_path",
+    // Try now of a pool's runner whose link is down (#7134): the window's act.
+    "runner_link_now",
+    // Which pools' runners' links are down, and why (#7134): what the window says past a blip.
+    "runner_links_down",
     // Where the chats the away summary counts run, and their runners' branches (#2051): a read.
     "runners_away",
     "running_sessions",
