@@ -590,7 +590,7 @@ fn not_linked(down: &Down) -> Refusal {
         return Refusal {
             code: session::NOT_STARTED.into(),
             why: format!(
-                "Runner refused ({why}). purlis sent it nothing and stopped trying: use Check \
+                "The runner's machine refused ({why}). purlis sent it nothing and stopped trying: use Check \
                  pool in the pool's settings, then send this again"
             ),
         };

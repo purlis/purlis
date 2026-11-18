@@ -862,7 +862,7 @@ async fn a_start_on_a_machine_that_refuses_is_refused_at_once_and_not_tried_in_a
             .expect("refused, not left waiting")
             .unwrap_err();
         assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
-        assert!(refused.to_string().contains("Runner refused"), "{refused}");
+        assert!(refused.to_string().contains("machine refused"), "{refused}");
     }
     assert!(
         began.elapsed() < Duration::from_secs(10),
