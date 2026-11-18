@@ -486,16 +486,18 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
     match (held, app) {
         (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said} {NO_YES}"),
         (Held::Request(request), AppSaid::Refused(why)) => format!(
-            "{OPENS} Nobody was asked to merge {}{}: {why} Ask the person to merge it in the \
+            "{OPENS} Nobody was asked to merge {}{}: {} Ask the person to merge it in the \
              window. Do not merge it another way. {NO_YES}",
             request.number_said(),
-            request.repo_said()
+            request.repo_said(),
+            sentence(why)
         ),
         (Held::Request(request), AppSaid::OtherBuild) => format!(
             "{OPENS} The app that started this chat could not read purlis's hand-over of {}{}: \
              the app and this purlis are different builds, so nobody was asked. Ask the person \
-             to restart purlis, or to update the purlis plugin of this chat's harness, so both \
-             are one build: then this same merge asks them in Asks. Until then, ask them to \
+             to restart purlis, to update the purlis plugin of this chat's harness, or, if purlis \
+             was updated after this chat started, to start a new chat, so both are one build: \
+             then this same merge asks them in Asks. Until then, ask them to \
              merge it in the window. Do not merge it another way. {NO_YES}",
             request.number_said(),
             request.repo_said()
@@ -517,6 +519,17 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
              pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is asked \
              to merge it in Asks. {NO_YES}"
         ),
+    }
+}
+
+/// `said` as a sentence: the app's words, with the full stop they may lack, so what follows
+/// them never runs on (#7177).
+fn sentence(said: &str) -> String {
+    let said = said.trim();
+    if said.ends_with(['.', '!', '?']) {
+        said.to_owned()
+    } else {
+        format!("{said}.")
     }
 }
 

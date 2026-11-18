@@ -193,6 +193,8 @@ mod child {
             "GLAB_NO_PROMPT=1",
             "GH_NO_UPDATE_NOTIFIER=1",
             "GLAB_CHECK_UPDATE=false",
+            "PAGER=cat",
+            "GLAB_PAGER=cat",
             "GH_TOKEN=tok-under-test",
             &format!("HOME={home}"),
         ] {
@@ -1292,6 +1294,29 @@ mod glab_head {
         let env = std::fs::read_to_string(asked.with_extension("env")).unwrap();
         assert!(env.lines().any(|l| l == "GLAB_NO_PROMPT=1"), "{env}");
         assert!(!env.lines().any(|l| l.starts_with("NO_PROMPT=")), "{env}");
+    }
+
+    /// #7177: glab 1.103.0's notice after the request's JSON, on its standard output, costs no
+    /// read either: the head is the one the JSON names, and only stdout is read.
+    #[test]
+    fn a_line_after_the_json_is_read_past_too() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let scene = Scene::new("after-gl.test");
+        scene.glab_api(
+            "projects/grp%2Fsub%2Fapi/merge_requests/10",
+            0,
+            &format!("{}\nA new version of glab is available.\n", record()),
+            "A warning on standard error.\n",
+        );
+        let at = scene
+            .forge("gitlab")
+            .backend()
+            .head(&Caller::window(), "grp/sub/api", &mr(10))
+            .expect("read past the notice");
+        assert_eq!(at.sha, SHA);
     }
 
     /// A line a CLI writes before its JSON costs no read; an answer that is no JSON at all is an

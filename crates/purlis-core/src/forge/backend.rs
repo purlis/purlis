@@ -1353,10 +1353,13 @@ impl Transports for ChatsLoseAnImport {
 pub(super) const IMPORTED_LOGIN_IS_THE_PERSONS: &str = "this host's CLI login was imported into purlis, so it is the human's now, and a chat has no \
      forge credential of its own here yet";
 
-/// **An answer read as JSON, past lines a CLI wrote before it** (#6960): where the whole answer
-/// is not JSON, it is read again from its first line that opens an object or an array, once. A
-/// CLI's own warning on its standard output (glab's of a variable it renamed) then costs no
-/// read; anything else that is not JSON is still an error.
+/// **An answer read as JSON, past lines a CLI wrote around it** (#6960, #7177): where the whole
+/// answer is not JSON, it is read again from the first line that starts, at its first column,
+/// an object or an array, as that one value and no more. A CLI's own notice on its standard
+/// output, before the JSON (glab's of a variable it renamed) or after it (an update notice),
+/// then costs no read. A line indented is part of a pretty-printed value and never a start, so
+/// a cut answer is never read as the object inside it; anything else that is not JSON is still
+/// an error.
 fn past_leading_lines(out: &str) -> Result<Value, serde_json::Error> {
     let whole = serde_json::from_str(out);
     if whole.is_ok() {
@@ -1364,12 +1367,24 @@ fn past_leading_lines(out: &str) -> Result<Value, serde_json::Error> {
     }
     let mut at = 0;
     for line in out.split_inclusive('\n') {
-        if at > 0 && line.trim_start().starts_with(['{', '[']) {
-            return serde_json::from_str(&out[at..]).or(whole);
+        if line.starts_with(['{', '[']) {
+            return match serde_json::Deserializer::from_str(&out[at..])
+                .into_iter::<Value>()
+                .next()
+            {
+                Some(Ok(value)) => Ok(value),
+                _ => whole,
+            };
         }
         at += line.len();
     }
     whole
+}
+
+/// An answer's JSON, as [`Asker::ask`] reads it: a reply's own status says whether it is a
+/// CLI's.
+pub(super) fn read_reply(reply: &Reply) -> Result<Value, serde_json::Error> {
+    read_json(&reply.out, reply.status)
 }
 
 /// **An answer read as JSON** (#6960): a CLI's answer, which has no HTTP status, past lines
@@ -1479,7 +1494,7 @@ impl Asker {
         doing: &str,
     ) -> Result<Result<Value, String>, ForgeError> {
         match self.send(caller, call) {
-            Ok(answer) if answer.ok() => serde_json::from_str(&answer.out).map(Ok).map_err(|e| {
+            Ok(answer) if answer.ok() => read_reply(&answer).map(Ok).map_err(|e| {
                 ForgeError::new(format!(
                     "{doing}: {} answered malformed JSON: {e}",
                     self.kind().cli()
@@ -1534,7 +1549,7 @@ impl Asker {
                 ),
             ));
         }
-        super::parse(self.kind(), &answer.out, path).map(Some)
+        super::parse_reply(self.kind(), &answer, path).map(Some)
     }
 
     /// One FG-2 probe (#802): a JSON GET whose answer settles a capability. An answer is kept
@@ -1553,8 +1568,7 @@ impl Asker {
         if !answer.ok() || answer.out.trim().is_empty() {
             return Err(UnknownWhy::Unanswered);
         }
-        let answer: Value =
-            serde_json::from_str(&answer.out).map_err(|_| UnknownWhy::Unanswered)?;
+        let answer: Value = read_reply(&answer).map_err(|_| UnknownWhy::Unanswered)?;
         if let Some(probes) = probes {
             probes.keep(key, &answer);
         }
@@ -1569,7 +1583,7 @@ impl Asker {
         if !answer.ok() || answer.out.trim().is_empty() {
             return None;
         }
-        serde_json::from_str(&answer.out).ok()
+        read_reply(&answer).ok()
     }
 }
 
@@ -1587,6 +1601,25 @@ mod answer_read_tests {
             assert!(read_json(noisy, Some(status)).is_err(), "{status}");
         }
         assert!(read_json("{\"a\": 1}", Some(200)).is_ok());
+    }
+
+    /// #7177: glab 1.103.0 may write a notice on its standard output around the MR's JSON, a
+    /// line before it or after it; the one value is read, and a cut answer is no JSON at all.
+    #[test]
+    fn a_cli_answer_is_read_past_a_notice_before_or_after_its_json() {
+        let record = serde_json::json!({"sha": "0123456789abcdef0123456789abcdef01234567"});
+        let json = record.to_string();
+        for out in [
+            format!("{json}\nA new version of glab has been released.\n"),
+            format!("WARN: NO_PROMPT is deprecated.\n{json}\nUpdate available.\n"),
+            format!("{json}\n"),
+        ] {
+            assert_eq!(read_json(&out, None).unwrap(), record, "{out}");
+        }
+        // A cut pretty-printed answer is not the object inside it.
+        let cut = "{\n  \"a\": {\n    \"b\": 1\n  },\n  \"c\": ";
+        assert!(read_json(cut, None).is_err());
+        assert!(read_json("{\"a\": 1}\ntrailing", Some(200)).is_err());
     }
 
     /// #6960: the error quotes the answer's first line alone, without control characters, cut

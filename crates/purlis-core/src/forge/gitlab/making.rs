@@ -138,7 +138,7 @@ impl Making for GitLab {
                 format!("{doing} failed: {}", reply.said(Kind::GitLab)),
             ));
         }
-        let answer: Value = serde_json::from_str(&reply.out).map_err(|e| {
+        let answer: Value = super::super::backend::read_reply(&reply).map_err(|e| {
             ForgeError::new(format!("{doing}: GitLab answered malformed JSON: {e}"))
         })?;
         made_of(&answer, &doing)

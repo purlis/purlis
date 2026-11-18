@@ -524,3 +524,26 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
         }
     }
 }
+
+/// #7177: a refusal reads as sentences: the app's words end in a full stop before what follows
+/// them, and the other-build refusal says a chat started before an update starts again.
+#[test]
+fn a_refusal_ends_the_apps_words_with_a_full_stop_and_names_a_restart() {
+    let request = Held::Request(Request {
+        repo: None,
+        number: 12,
+    });
+    for why in [
+        "the app could not read this line: it is from a purlis this app does not know",
+        "chat 4 is not one this app has open.",
+    ] {
+        let said = refusal(&request, &AppSaid::Refused(why));
+        assert!(
+            said.contains(&format!("{}. Ask the person", why.trim_end_matches('.'))),
+            "{said}"
+        );
+    }
+    let said = refusal(&request, &AppSaid::OtherBuild);
+    assert!(said.contains("start a new chat"), "{said}");
+    assert!(said.contains("restart purlis"), "{said}");
+}
