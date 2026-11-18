@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
-    Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
+    Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, IssueRef, Kind,
     LocalFile, NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE,
     WebAddress, folder,
 };
@@ -53,6 +53,8 @@ pub enum KindHint {
     Chat,
     // A link a program marked itself (OSC 8, #6218): its words, and the target it named.
     Osc8,
+    // An issue or pull request's number, `#6223` or `owner/repo#6223` (#6223).
+    Issue,
 }
 
 impl From<KindHint> for Kind {
@@ -62,6 +64,7 @@ impl From<KindHint> for Kind {
             KindHint::File => Kind::File,
             KindHint::Chat => Kind::Chat,
             KindHint::Osc8 => Kind::Osc8,
+            KindHint::Issue => Kind::Issue,
         }
     }
 }
@@ -73,6 +76,7 @@ impl From<Kind> for KindHint {
             Kind::File => KindHint::File,
             Kind::Chat => KindHint::Chat,
             Kind::Osc8 => KindHint::Osc8,
+            Kind::Issue => KindHint::Issue,
         }
     }
 }
@@ -467,7 +471,12 @@ pub(crate) fn seen_in(
                 } => Some(shown.clone()),
                 _ => None,
             },
-            kind: target.kind().into(),
+            // An issue's number goes to a web address, and is still an issue's (#6223).
+            kind: if candidate.kind == Kind::Issue {
+                KindHint::Issue
+            } else {
+                target.kind().into()
+            },
             target: target.shown().to_owned(),
             shown: match &target {
                 Target::File(file) => file.short().to_owned(),
@@ -681,6 +690,7 @@ pub(crate) fn resolver() -> Resolver {
     let lists = std::sync::Mutex::new(Lists::new());
     Resolver::with(vec![
         Box::new(WebAddress),
+        Box::new(IssueRef::here()),
         Box::new(LocalFile::here().offered_by(move |project, branch, path| {
             let key = (
                 branch.ws.to_owned(),
@@ -898,7 +908,9 @@ pub async fn pane_link_open(
         );
     }
     // A file, or a chat's number, is looked at on a thread of its own; it opens nothing there,
-    // only answers. A chat link never asks, so it is never answered by a token.
+    // only answers. A chat link never asks, so it is never answered by a token. An issue's
+    // number reads its folder's git config there, and opens its forge's page in the browser.
+    let issue = candidate.kind == Kind::Issue;
     let handle = app.clone();
     let look = move || {
         let asks = handle.state::<PaneLinkAsks>();
@@ -909,7 +921,13 @@ pub async fn pane_link_open(
             &asks.0,
             &candidate,
             token.as_deref(),
-            |_| Err("purlis opens a file only in an editor tab".to_owned()),
+            |url| {
+                if issue {
+                    open_in_browser(&handle, url)
+                } else {
+                    Err("purlis opens a file only in an editor tab".to_owned())
+                }
+            },
             &chats,
         )
     };

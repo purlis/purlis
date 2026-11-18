@@ -165,7 +165,26 @@ describe("a pane's link candidates", () => {
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
-    expect(candidatesIn("no links here, nor #5820")).toEqual([]);
+    expect(candidatesIn("no links here")).toEqual([]);
+  });
+
+  it("are issue and pull request numbers, bare or with their repo (#6223)", () => {
+    const found = candidatesIn("Fixes #6223 and purlis/purlis-plane#12, see team/sub/app#5.");
+    expect(found.map(({ kind, start, end }) => [kind, start, end])).toEqual([
+      ["issue", 6, 11],
+      ["issue", 16, 38],
+      ["issue", 44, 58],
+    ]);
+    expect(found.map((one) => one.text).join(" ")).toBe(
+      "#6223 purlis/purlis-plane#12 team/sub/app#5",
+    );
+    // An address's fragment is the address's, and a word, an entity or a leading zero is none.
+    expect(candidatesIn("https://x.example/a#12").map((one) => one.kind)).toEqual(["url"]);
+    for (const line of ["a#12", "&#123;", "##12", "see #012", "see #12a", "#1234567890", "v1.2#3x"])
+      expect(
+        candidatesIn(line).filter((one) => one.kind === "issue"),
+        line,
+      ).toEqual([]);
   });
 });
 

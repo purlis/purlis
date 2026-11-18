@@ -54,6 +54,16 @@ const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu
  */
 const CHAT = /(?<![\p{L}\p{N}_#/.-])[Cc]hat [1-9]\d{0,8}(?![\p{L}\p{N}_])/gu;
 
+/**
+ * **An issue or pull request's number** (#6223): `#6223`, or `owner/repo#6223` (a GitLab group may
+ * have subgroups), as a word of its own. Not after a letter, a digit, `&` (an HTML entity), `/`,
+ * `#` or a word's own characters, and at most nine digits with no leading zero, as the core reads
+ * one (`panelinks/issue.rs`). The core finds the forge from the chat's folder's remote; with none,
+ * it is no link and says nothing.
+ */
+const ISSUE =
+  /(?<![\p{L}\p{N}_.&#/-])(?:[A-Za-z0-9][\w.-]*(?:\/[A-Za-z0-9][\w.-]*)+)?#[1-9]\d{0,8}(?![\p{L}\p{N}_#])/gu;
+
 /** What a sentence, or Markdown's emphasis, puts after an address, which is not the address's. */
 const TRAILING = /[.,;:!?*_]+$/u;
 
@@ -103,8 +113,9 @@ const FILE_ADDRESS = /^file:/iu;
 
 /**
  * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
- * then file paths outside them, with the punctuation a sentence puts after one left out, then
- * chats' numbers (`chat 641`, #6217) outside both.
+ * then issue and pull request numbers outside them (`#6223`, `owner/repo#6223`, #6223), then file
+ * paths outside both, with the punctuation a sentence puts after one left out, then chats'
+ * numbers (`chat 641`, #6217) outside all of them.
  */
 export function candidatesIn(line: string): Found[] {
   const found: Found[] = [];
@@ -114,6 +125,12 @@ export function candidatesIn(line: string): Found[] {
     // A `file:` address names a file, under a file's rules (#6216, spec Q2).
     const kind = FILE_ADDRESS.test(text) ? "file" : "url";
     found.push({ kind, text, start: match.index, end: match.index + text.length });
+  }
+  for (const match of line.matchAll(ISSUE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (found.some((one) => start < one.end && end > one.start)) continue;
+    found.push({ kind: "issue", text: match[0], start, end });
   }
   const addresses = [...found];
   let paths = 0;
@@ -165,9 +182,12 @@ type Kept = Map<string, Promise<LinkSeen | null>>;
 const lives = new WeakMap<Promise<LinkSeen | null>, number>();
 
 /** Whether `link`'s answer looks at the disk, and so is kept only {@link FILE_ANSWER_LIFE}: a
- *  path, or a link a program marked whose target is a `file:` address. */
+ *  path, a link a program marked whose target is a `file:` address, or an issue's number, read
+ *  from the git remote of the folder the chat is in now (#6223). */
 const namesAFile = (link: LinkCandidate) =>
-  link.kind === "file" || (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
+  link.kind === "file" ||
+  link.kind === "issue" ||
+  (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
 
 /** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
 function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {

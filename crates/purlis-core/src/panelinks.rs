@@ -21,6 +21,8 @@
 //!   and opens in the light editor at its line; one outside the chat's workspace asks first.
 //! - **A runner chat's file path** ([`RunnerFile`], #6387) is looked for on its runner, through
 //!   the adapter of that runner's kind ([`RunnerFiles`]), and opens read-only, read from there.
+//! - **An issue or pull request's number** ([`Kind::Issue`], [`IssueRef`], #6223): `#6223` or
+//!   `owner/repo#6223`, on the forge of the chat's folder's remote, opened as a web address is.
 //! - **A link a program marked** ([`Kind::Osc8`], #6218): its target, as the pane was handed it,
 //!   is read again here by its scheme's kind, and words that read as another address or path ask
 //!   first, showing both ([`Asking::Misleading`]).
@@ -30,9 +32,11 @@ use std::path::PathBuf;
 mod asks;
 mod file;
 pub mod folder;
+mod issue;
 mod osc8;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
+pub use issue::IssueRef;
 mod chat;
 pub mod onrunner;
 mod runner;
@@ -49,6 +53,9 @@ pub enum Kind {
     File,
     /// `chat 641`: a chat's number in the pane's project.
     Chat,
+    /// `#6223` or `owner/repo#6223`: an issue or a pull request on the forge of the chat's
+    /// folder's remote ([`IssueRef`], #6223).
+    Issue,
     /// A link a program marked itself (OSC 8): words, and the target it named for them, read by
     /// that target's scheme.
     Osc8,
@@ -231,9 +238,13 @@ pub struct Resolver {
 }
 
 impl Default for Resolver {
-    /// The kinds purlis links: web addresses and file paths.
+    /// The kinds purlis links: web addresses, issue and pull request numbers, and file paths.
     fn default() -> Self {
-        Self::with(vec![Box::new(WebAddress), Box::new(LocalFile::here())])
+        Self::with(vec![
+            Box::new(WebAddress),
+            Box::new(IssueRef::here()),
+            Box::new(LocalFile::here()),
+        ])
     }
 }
 
