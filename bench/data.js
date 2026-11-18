@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795020618681,
+  "lastUpdate": 1795023183834,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51324,6 +51324,48 @@ window.BENCHMARK_DATA = {
             "value": 101.614691,
             "unit": "ms",
             "extra": "median of 5 runs: 99.760, 100.606, 101.615, 101.914, 103.711 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "868462a282636f2fe3c536e7ae704d2427dafa8d",
+          "message": "glab merge Ask: read glab's answer past a notice, and say plainly when the build differs (#7177) (#7179)\n\n* glab's answer is read past a notice before or after its JSON; a merge refusal ends the app's words with a full stop and names a new chat (#7177)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QJND90YYRDS9PHM2VTH9AC\nPurlis-Persona: steward\n\n* Changelog fragment for #7177\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QJND90YYRDS9PHM2VTH9AC\nPurlis-Persona: steward\n\n* A replaced app bundle is answered with a restart of purlis, not a new chat; glab merge flags, a bracketed notice and a hook-line Ask are pinned (#7177)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QMR42AHM31S6QHRKM05YW4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-11-18T16:42:26Z",
+          "tree_id": "45b20ba78ca46593a7aa13d84ef64132a7c82fe8",
+          "url": "https://github.com/purlis/purlis/commit/868462a282636f2fe3c536e7ae704d2427dafa8d"
+        },
+        "date": 1795023177650,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7311605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.702, 0.725, 0.731, 0.734, 0.770 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.536697999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.280, 16.433, 16.537, 16.537, 16.583 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.56156999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.770, 101.755, 102.562, 102.738, 102.972 ms"
           }
         ]
       }
