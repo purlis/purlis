@@ -70,9 +70,11 @@ bound what an agent does with your authority, never what you do.
 ## What an administrator's forbid does, and what is never asked
 
 - **An administrator's forbid is always enforced**, whatever the project's template or family
-  mode: every forbid in `/etc/purlis/policy.cedar` and every one `policy.json` translates to is
-  `enforce` unless the administrator's own `[policy.rules]` says otherwise. A project can't
-  loosen it by a mode, a rule mode or a rule of the same `@id`.
+  mode: every Organisation-level forbid in `/etc/purlis/policy.cedar` and every one `policy.json`
+  translates to is `enforce` unless the administrator's own `[policy.rules]` says otherwise. A
+  project can't loosen it by a mode, a rule mode or a rule of the same `@id`. (A forbid the
+  administrator writes there with `@level("project")` is project-level by design, and a project's
+  rule of the same `@id` can replace it.)
 - **A request's host is a name or an address alone**, lower case, with no path, no port (the
   port is the request's `context.port`) and no wildcard. A host that is not one, such as
   `localhost`, a single-label name, a loopback, link-local or cloud-metadata address, an IPv6
@@ -81,3 +83,8 @@ bound what an agent does with your authority, never what you do.
   `known-hosts` and `production-hosts` are read the same way, and a member that is not such a
   host (or carries a port, or starts with `*.`) makes the file broken. A set can't be named
   `*.something`: that is the name the policy gives the hosts under a domain.
+- **Hazard for administrators: one such member breaks the whole Organisation.** A
+  `known-hosts = ["localhost"]` (or any single-label name, a port, a wildcard) in
+  `/etc/purlis/policy.toml` makes the Organisation's file broken, and a broken Organisation reads
+  as `strict` plus every lock under the full sandbox, not as that one set left out. Check the
+  window's Notice after editing it.

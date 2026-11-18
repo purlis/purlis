@@ -690,8 +690,12 @@ The folders above `/etc/purlis` are not checked; they are root's on a stock syst
   `dispatch.locked` become forbids; **every Organisation forbid, translated or written in
   `policy.cedar`, is enforced whatever the project's mode or template** unless the Organisation's
   own `[policy.rules]` says otherwise (rounds 3 and 4 of #7170), and a translated
-  `[policy.limits]` is kept for slice 12; `presets`, `hosts`, `never-hosts` and `dispatch.locked`
-  lock their families, as the legacy `enforcement` floor does; the `sandbox.*` and `dispatch.*` locks become
+  `[policy.limits]` is kept for slice 12; every key the legacy `enforcement` floor
+  (`sandbox::policy::enforcement_floor`) enforces a family for locks that family here too:
+  `presets`, `hosts`, `never-hosts`, `personal-hosts`, `persona-hosts` and `live-asks` the
+  `network`; `opt-out` and `write-grants` the `sandbox`; `socket-grants` the `ports`; `dispatch.allow`,
+  `dispatch.locked` and any dispatch ceiling the `dispatch`; `vault-grants`, `persona-tools`,
+  `undeclared-secret-asks` and `run-grants` the `vaults`; the `sandbox.*` and `dispatch.*` locks become
   `[policy.locks]` families and actions; `allow-scopes` becomes the `keep` lock; `enforcement`
   locks its families. **A key this version does not know, or one written twice in one object,
   makes the file broken**, as today; so does a rule in the translation whose `@id` `policy.cedar`

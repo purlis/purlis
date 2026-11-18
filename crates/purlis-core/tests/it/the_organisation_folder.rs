@@ -402,8 +402,8 @@ const LOOSE_PROJECTS: [Option<&str>; 6] = [
     Some("[policy]\nnetwork = \"off\"\n"),
     Some("[policy]\ntemplate = \"watch\"\n"),
     Some("[policy.rules]\n\"network-organisation-never-0\" = \"off\"\n"),
-    Some("[policy.workspaces.web]\nnetwork = \"off\"\n"),
-    Some("[policy.personas.builder]\nnetwork = \"off\"\n"),
+    Some("[policy.workspace.web]\nnetwork = \"off\"\n"),
+    Some("[policy.persona.builder]\nnetwork = \"off\"\n"),
 ];
 
 #[test]
@@ -673,23 +673,94 @@ fn decide_with_no_lock(
     loaded.organisation_locks = purlis_core::policy::levels::Locks::default();
     loaded.project_locks = purlis_core::policy::levels::Locks::default();
     let world = purlis_core::policy::World::from_json(serde_json::json!([])).expect("a world");
-    decide::decide(&loaded, request, &world)
+    // Asked as the chat of workspace `web` and persona `builder`, so a table the project writes
+    // for either applies (round 5: the cases that wrote them in the plural tested a strict project).
+    let asked = Request {
+        of: Chat {
+            workspace: Some("web"),
+            persona: Some("builder"),
+        },
+        ..request.clone()
+    };
+    // The project is the loose one it says: no accepted-copy notice, and the family is off.
+    if let Some(text) = project {
+        assert!(
+            !loaded
+                .notices
+                .iter()
+                .any(|n| n.file.contains("the copy you last accepted")),
+            "{text}: the project must read, not fall back to strict: {:?}",
+            loaded.notices
+        );
+        if text.contains("network = \"off\"") {
+            assert_eq!(
+                loaded.mode_for("network", asked.of),
+                purlis_core::enforcement::Mode::Off,
+                "{text}: the project is not strict"
+            );
+        }
+    }
+    decide::decide(&loaded, &asked, &world)
 }
+
+const NATIVE: &str = "// purlis-policy 1\n@id(\"network-corp-no-evil\") @level(\"organisation\")\n\
+                      forbid (principal, action == Action::\"connect\", resource == Host::\"evil.example\");\n";
 
 #[test]
 fn a_native_organisation_forbid_is_enforced_whatever_the_projects_mode() {
     purlis_core::unsteered!();
-    let native = "// purlis-policy 1\n@id(\"network-corp-no-evil\") @level(\"organisation\")\n\
-                  forbid (principal, action == Action::\"connect\", resource == Host::\"evil.example\");\n";
-    for project in LOOSE_PROJECTS {
-        let said = decide_with_no_lock(Some(native), "{}", project, &connect("evil.example"));
+    for project in LOOSE_PROJECTS.into_iter().chain([
+        // A project's `[policy.rules]` naming the forbid's own id has no effect (round 5).
+        Some("[policy.rules]\n\"network-corp-no-evil\" = \"off\"\n"),
+        Some("[policy.rules]\n\"network-corp-no-evil\" = \"log\"\n"),
+    ]) {
+        let said = decide_with_no_lock(Some(NATIVE), "{}", project, &connect("evil.example"));
         assert!(
             refused_by(&said, "network-corp-no-evil"),
             "under {project:?}: {said:?}"
         );
     }
-    // Its own `[policy.rules]` can still say otherwise.
+}
+
+#[test]
+fn the_organisations_own_rules_table_can_lower_its_forbid() {
+    purlis_core::unsteered!();
     organisation("{}");
+    let world = purlis_core::policy::World::from_json(serde_json::json!([])).expect("a world");
+    let ask = connect("evil.example");
+    let decide_under = |settings: Option<&str>| {
+        let organisation = purlis_core::policy::levels::Organisation {
+            folder: "/etc/purlis",
+            owner: "Platform team",
+            rules: Some(NATIVE),
+            settings,
+            json: None,
+            failed: None,
+        };
+        let root = tempfile::tempdir().expect("a folder");
+        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+            root: root.path(),
+            workspaces: &[],
+            personas: &[],
+            organisation: Some(organisation),
+            accepted: None,
+        });
+        assert!(
+            !loaded.notices.iter().any(|n| n.what.contains("is broken")),
+            "{:?}",
+            loaded.notices
+        );
+        decide::decide(&loaded, &ask, &world)
+    };
+    // Untouched, the forbid is enforced; the Organisation's own table lowers it, and only that.
+    assert!(refused_by(&decide_under(None), "network-corp-no-evil"));
+    let off = decide_under(Some("[policy.rules]\n\"network-corp-no-evil\" = \"off\"\n"));
+    assert!(
+        !off.deciding.iter().any(|d| d.id == "network-corp-no-evil"),
+        "{off:?}"
+    );
+    let log = decide_under(Some("[policy.rules]\n\"network-corp-no-evil\" = \"log\"\n"));
+    assert_ne!(log.after_mode, Outcome::Deny, "{log:?}");
 }
 
 #[test]
@@ -788,15 +859,27 @@ fn a_locked_dispatch_pair_holds_in_a_plane_under_a_loose_project() {
             "kind": "dispatch", "profile": "default", "subagent": false
         }),
     };
-    for project in [
-        None,
-        Some("[policy]\ndispatch = \"off\"\n"),
-        Some("[policy.workspaces.web]\ndispatch = \"off\"\n"),
-        Some("[policy.personas.builder]\ndispatch = \"log\"\n"),
-        Some("[policy.rules]\n\"dispatch-organisation-pair-0\" = \"off\"\n"),
+    for (project, expected) in [
+        (None, None),
+        (
+            Some("[policy]\ndispatch = \"off\"\n"),
+            Some(purlis_core::enforcement::Mode::Off),
+        ),
+        (
+            Some("[policy.workspace.web]\ndispatch = \"off\"\n"),
+            Some(purlis_core::enforcement::Mode::Off),
+        ),
+        (
+            Some("[policy.persona.builder]\ndispatch = \"log\"\n"),
+            Some(purlis_core::enforcement::Mode::Log),
+        ),
+        (
+            Some("[policy.rules]\n\"dispatch-organisation-pair-0\" = \"off\"\n"),
+            None,
+        ),
     ] {
         let root = tempfile::tempdir().expect("a folder");
-        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+        let mut loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
             root: root.path(),
             workspaces: &["web"],
             personas: &["builder"],
@@ -806,6 +889,26 @@ fn a_locked_dispatch_pair_holds_in_a_plane_under_a_loose_project() {
                 rules: None,
             }),
         });
+        // The project reads as written (no accepted-copy fallback to strict), and the family
+        // runs as it says, so the case is a loose project and not a strict one (round 5).
+        assert!(
+            !loaded
+                .notices
+                .iter()
+                .any(|n| n.file.contains("the copy you last accepted")),
+            "under {project:?}: {:?}",
+            loaded.notices
+        );
+        if let Some(mode) = expected {
+            // The Organisation's family lock is lifted for the question, as in the other cases.
+            let held = std::mem::take(&mut loaded.organisation_locks);
+            assert_eq!(
+                loaded.mode_for("dispatch", ask.of),
+                mode,
+                "under {project:?}: the project is not strict"
+            );
+            loaded.organisation_locks = held;
+        }
         let said = decide::decide(&loaded, &ask, &world);
         assert!(
             refused_by(&said, "dispatch-organisation-pair-0"),
@@ -819,30 +922,64 @@ fn a_host_set_member_that_is_no_bare_host_breaks_the_file() {
     purlis_core::unsteered!();
     organisation("{}");
     let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
-    for member in [
-        "evil.example:8443",
-        "*.evil.example",
-        "not a host",
-        "evil.com/x",
-    ] {
-        let root = tempfile::tempdir().expect("a folder");
-        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
-            root: root.path(),
-            workspaces: &[],
-            personas: &[],
-            organisation: Some(found.as_sources()),
-            accepted: Some(Accepted {
-                settings: Some(&format!("[policy.sets]\nknown-hosts = [\"{member}\"]\n")),
+    for set in ["known-hosts", "production-hosts"] {
+        for member in [
+            "evil.example:8443",
+            "*.evil.example",
+            "not a host",
+            "evil.com/x",
+        ] {
+            let text = format!("[policy.sets]\n{set} = [\"{member}\"]\n");
+            let root = tempfile::tempdir().expect("a folder");
+            let sources = |organisation, accepted| purlis_core::policy::levels::Sources {
+                root: root.path(),
+                workspaces: &[],
+                personas: &[],
+                organisation,
+                accepted,
+            };
+            // The project's copy: the file reads broken, and the Notice names the set.
+            let loaded = purlis_core::policy::levels::load(&sources(
+                Some(found.as_sources()),
+                Some(Accepted {
+                    settings: Some(&text),
+                    rules: None,
+                }),
+            ));
+            assert!(
+                loaded.notices.iter().any(|n| n.what.contains(set)),
+                "{set} {member}: {:?}",
+                loaded.notices
+            );
+            // The Organisation's own policy.toml: it reads strict plus every lock.
+            let organisation = purlis_core::policy::levels::Organisation {
+                folder: "/etc/purlis",
+                owner: "Platform team",
                 rules: None,
-            }),
-        });
-        assert!(
-            loaded
-                .notices
-                .iter()
-                .any(|n| n.what.contains("known-hosts")),
-            "{member}: {:?}",
-            loaded.notices
-        );
+                settings: Some(&text),
+                json: None,
+                failed: None,
+            };
+            let loaded = purlis_core::policy::levels::load(&sources(Some(organisation), None));
+            assert!(
+                loaded
+                    .notices
+                    .iter()
+                    .any(|n| n.what.contains(set)
+                        && n.what.contains("reads as strict with every lock")),
+                "{set} {member}: {:?}",
+                loaded.notices
+            );
+            for family in purlis_core::policy::FAMILIES {
+                assert!(
+                    loaded.organisation_locks.families.contains(family),
+                    "{set} {member}: {family} is locked"
+                );
+            }
+            assert_eq!(
+                loaded.sandbox_at_least,
+                Some(purlis_core::enforcement::SandboxLevel::Full)
+            );
+        }
     }
 }

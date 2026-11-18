@@ -1805,6 +1805,16 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             ..Tables::strict()
         };
         rule_modes = fallback_modes;
+        // Where an Organisation rule did not survive even the fallback, the Organisation reads
+        // as `strict` plus every lock, never as no rules (as `shipped_strict_under` does).
+        if rules
+            .iter()
+            .filter(|rule| rule.level == Level::Organisation && rule.file != shipped)
+            .any(|rule| policy.rule(&rule.id).is_none())
+        {
+            org_tables.locks = Locks::every();
+            org_tables.defaults = Tables::strict().defaults;
+        }
     }
 
     Loaded {

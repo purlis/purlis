@@ -596,3 +596,80 @@ fn a_wildcard_or_ported_host_is_a_condition_on_the_requests_bare_host_and_port()
         );
     }
 }
+
+/// The families `json` locks once translated, as the plane reads them.
+fn families_locked_by(json: &str) -> Loaded {
+    let translated = translate(json, Path::new("/etc/purlis/policy.json")).expect("it translates");
+    let found = Found {
+        folder: "/etc/purlis".to_owned(),
+        owner: translated.owner.clone(),
+        rules: None,
+        settings: None,
+        json: Some(Ok(translated)),
+        failed: None,
+    };
+    let loaded = Loaded::shipped_strict_under(Some(&found.as_sources()));
+    assert_eq!(loaded.notices, [], "{json} is not broken");
+    loaded
+}
+
+#[test]
+fn every_key_that_locks_a_family_in_the_legacy_floor_locks_it_in_the_translation() {
+    // Each key, with the family the legacy `enforcement_floor` keeps enforced for it (round 5).
+    for (json, family) in [
+        (r#"{"dispatch": {"depth": 2}}"#, "dispatch"),
+        (r#"{"sandbox": {"persona-tools": false}}"#, "vaults"),
+        (
+            r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+            "vaults",
+        ),
+        (r#"{"sandbox": {"run-grants": false}}"#, "vaults"),
+        (r#"{"sandbox": {"vault-grants": false}}"#, "vaults"),
+        (r#"{"sandbox": {"write-grants": false}}"#, "sandbox"),
+        (r#"{"sandbox": {"opt-out": false}}"#, "sandbox"),
+        (r#"{"sandbox": {"socket-grants": false}}"#, "ports"),
+        (r#"{"sandbox": {"live-asks": false}}"#, "network"),
+        (r#"{"sandbox": {"presets": ["forge"]}}"#, "network"),
+        (r#"{"sandbox": {"personal-hosts": false}}"#, "network"),
+        (r#"{"sandbox": {"persona-hosts": false}}"#, "network"),
+    ] {
+        let loaded = families_locked_by(json);
+        assert!(
+            loaded.organisation_locks.families.contains(family),
+            "{json} locks {family}: {:?}",
+            loaded.organisation_locks
+        );
+    }
+}
+
+#[test]
+fn the_translation_locks_every_family_the_legacy_floor_enforces() {
+    for json in [
+        r#"{"dispatch": {"depth": 2}}"#,
+        r#"{"dispatch": {"allow": false}}"#,
+        r#"{"dispatch": {"locked": [{"from": "a", "to": "b"}]}}"#,
+        r#"{"sandbox": {"persona-tools": false}}"#,
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        r#"{"sandbox": {"run-grants": false}}"#,
+        r#"{"sandbox": {"vault-grants": false}}"#,
+        r#"{"sandbox": {"write-grants": false}}"#,
+        r#"{"sandbox": {"opt-out": false}}"#,
+        r#"{"sandbox": {"socket-grants": false}}"#,
+        r#"{"sandbox": {"live-asks": false}}"#,
+        r#"{"sandbox": {"hosts": ["a.example"], "never-hosts": ["b.example"]}}"#,
+        r#"{"sandbox": {"presets": ["forge"]}}"#,
+        r#"{"enforcement": ["guards.merge", "ports"]}"#,
+    ] {
+        let legacy = Locks::parse(json, Path::new("/etc/purlis/policy.json"));
+        let loaded = families_locked_by(json);
+        for family in crate::enforcement::Family::ALL {
+            if legacy.enforcement_floor(family).is_some() {
+                assert!(
+                    loaded.organisation_locks.families.contains(family.key()),
+                    "{json}: the legacy floor enforces {}",
+                    family.key()
+                );
+            }
+        }
+    }
+}

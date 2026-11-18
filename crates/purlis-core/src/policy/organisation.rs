@@ -475,8 +475,8 @@ fn array(words: &[&str]) -> String {
 /// - `owner` becomes the Organisation's owner;
 /// - `hosts` (and the hosts of `presets`, where both are set) become Organisation permits on
 ///   `connect`, and where `hosts` is set, a forbid on every other host. `presets` alone restricts
-///   no host, but with `hosts`, `never-hosts`, `personal-hosts` and `persona-hosts` it locks the
-///   `network` family, so no level adds one (`personal-hosts` and `persona-hosts` lock it too). A listed host reads as `Host::covers`
+///   no host, but `presets`, `hosts`, `never-hosts`, `personal-hosts` and `persona-hosts` each
+///   lock the `network` family, so no level adds one. A listed host reads as `Host::covers`
 ///   reads it ([`host_matches`]): a wildcard is a suffix set, a port is `context.port`;
 /// - `never-hosts` become forbids on `connect`, and `dispatch` pairs forbids on `dispatch-to`;
 /// - a `false` of `dispatch.allow`, `opt-out`, `persona-tools`, `vault-grants` or `live-asks` is a
@@ -581,7 +581,7 @@ pub fn translate_locks(locks: &Locks) -> Translation {
         ),
         (
             locks.forbids_persona_tools(),
-            &["tools"],
+            &["tools", "vaults"],
             "tools-organisation-no-persona-tools",
             "forbid (principal, action in [Action::\"run\", Action::\"mount\"], resource);"
                 .to_owned(),
@@ -624,6 +624,19 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     for (forbidden, action) in actions_forbidden {
         if forbidden {
             actions.push(action);
+        }
+    }
+    // Every other lock keeps its own family enforced too, as the legacy file's
+    // `enforcement_floor` does (round 5): a lock a project's mode could loosen is no lock.
+    for (locked, family) in [
+        (!locks.dispatch_ceiling().is_unset(), "dispatch"),
+        (locks.forbids_undeclared_secret_asks(), "vaults"),
+        (locks.forbids_run_grants(), "vaults"),
+        (locks.forbids_write_grants(), "sandbox"),
+        (locks.forbids_socket_grants(), "ports"),
+    ] {
+        if locked {
+            lock_family(&mut families, family);
         }
     }
     for (n, (from, to)) in locks.locked_pairs().iter().enumerate() {
