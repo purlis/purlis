@@ -34,5 +34,6 @@ pub mod launch;
 pub mod machine;
 pub mod process;
 pub mod sigstore;
+mod steps;
 
 pub use address::{NotWebAddress, WebAddress};

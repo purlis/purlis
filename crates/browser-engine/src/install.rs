@@ -648,6 +648,7 @@ impl Engines {
         fetch: &dyn Fetch,
         now: Timestamp,
     ) -> Result<Ready, Refused> {
+        let _step = crate::steps::begin("browser_engine_prepare");
         if let EngineChoice::Machine(path) = &settings.engine {
             if !path.is_file() {
                 return Err(Refused::MachineChrome(path.clone()));
@@ -788,6 +789,8 @@ impl Engines {
         {
             return Ok(program);
         }
+        // Only a download is timed: an engine already installed answers above.
+        let _step = crate::steps::begin("browser_engine_download");
         private_dir(&self.root).map_err(Refused::Store)?;
         let archive = Scratch(self.root.join(scratch_name("download")));
         let got = save_hashing(fetch, &download.url, &archive.0)?;

@@ -5294,6 +5294,8 @@ impl Chats {
                         .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
                 })
         {
+            // The whole check and keep of the profile on the pool: a link of its own (#7182).
+            let _step = purlis_session_protocol::steps::begin_in("profile_ready", &pool);
             match &own_runner {
                 Some(runner) => {
                     on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)?;

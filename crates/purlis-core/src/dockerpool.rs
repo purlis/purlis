@@ -2647,6 +2647,22 @@ pub struct Docker {
     tls: Option<Box<crate::tlsroute::Through>>,
 }
 
+/// The step a `docker` run is timed as (#7182): its verb, never its arguments, which name a
+/// container and a volume.
+fn docker_step(args: &[String]) -> &'static str {
+    match args.first().map(String::as_str) {
+        Some("info") => "docker_info",
+        Some("container") => "docker_container",
+        Some("volume") => "docker_volume",
+        Some("exec") => "docker_exec",
+        Some("start") => "docker_start",
+        Some("stop") => "docker_stop",
+        Some("run") => "docker_run",
+        Some("image" | "pull" | "load") => "docker_image",
+        _ => "docker_other",
+    }
+}
+
 /// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
 /// list, a runner's version. One still running then is ended and refused, saying it did not
 /// answer, so a wedged engine holds up no pool surface that asks it.
@@ -3118,6 +3134,18 @@ impl Docker {
     /// **`docker` run with `args`**, whatever its exit: what it printed, up to `most` bytes, and
     /// what it said on standard error, up to [`MOST_SAID`].
     fn spawned(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<crate::boundedrun::Ran, Failed> {
+        let step = purlis_session_protocol::steps::begin(docker_step(args));
+        step.ended(self.spawned_inner(prepared, args, input, most, within))
+    }
+
+    fn spawned_inner(
         &self,
         prepared: &settings::Prepared,
         args: &[String],
@@ -4138,6 +4166,7 @@ impl Docker {
     /// It answers what it read of the container before anything was started ([`Ran`]), and
     /// whether it started it, so the runner hours record has both (#3492).
     pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
+        let _step = purlis_session_protocol::steps::begin("container_check");
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
@@ -4152,7 +4181,10 @@ impl Docker {
         }
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
-        self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
+        {
+            let _step = purlis_session_protocol::steps::begin("runner_start");
+            self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
+        }
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
         self.check(made)
             .map(|()| Resumed {

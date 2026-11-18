@@ -144,18 +144,24 @@ impl CommandConnector {
     /// One connection: checked, prepared and run.
     async fn connected(self) -> std::io::Result<Connected> {
         let checked = self.before_each.clone();
-        tokio::task::spawn_blocking(move || checked())
+        let mut check = purlis_session_protocol::steps::begin("link_check");
+        let checked = tokio::task::spawn_blocking(move || checked())
             .await
-            .map_err(std::io::Error::other)?
-            .map_err(|why| match why {
-                NotChecked::Refused(why) => std::io::Error::other(why),
-                NotChecked::KeyChanged(why) => {
-                    std::io::Error::other(purlis_session_protocol::hostlink::KeyNoLongerHeld(why))
-                }
-                NotChecked::Gone(why) => {
-                    std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
-                }
-            })?;
+            .map_err(std::io::Error::other)?;
+        if checked.is_err() {
+            check.refused();
+        }
+        checked.map_err(|why| match why {
+            NotChecked::Refused(why) => std::io::Error::other(why),
+            NotChecked::KeyChanged(why) => {
+                std::io::Error::other(purlis_session_protocol::hostlink::KeyNoLongerHeld(why))
+            }
+            NotChecked::Gone(why) => {
+                std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
+            }
+        })?;
+        drop(check);
+        let prepare_step = purlis_session_protocol::steps::begin("link_prepare");
         let prepared = match self.prepare.clone() {
             Some(prepare) => Some(
                 tokio::task::spawn_blocking(move || prepare())
@@ -165,6 +171,8 @@ impl CommandConnector {
             ),
             None => None,
         };
+        drop(prepare_step);
+        let _spawn = purlis_session_protocol::steps::begin("link_exec_spawn");
         let mut command = tokio::process::Command::new(&self.program);
         let held = prepared.map(|prepared| {
             command.envs(prepared.env);

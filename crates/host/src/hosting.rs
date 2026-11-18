@@ -2303,6 +2303,7 @@ impl Hosting {
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
         let _starting = self.starting(&start)?;
+        let _step = purlis_session_protocol::steps::begin("harness_spawn");
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
