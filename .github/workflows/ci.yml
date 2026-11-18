@@ -1685,13 +1685,15 @@ jobs:
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # A pressed `ports = "off"` under the floor's profile for real (#7105): another program's
       # socket reached, none of purlis's own, by its name or by another a link or a move gives
-      # it. Red unless the test really ran: it skips where a profile cannot be applied.
+      # it, and a socket moved at the plain floor, then ports off (round 5). Red unless the tests
+      # really ran: they skip where a profile cannot be applied.
       - name: A pressed ports off reaches none of purlis's own sockets, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: |
           rm -rf target/tests-that-really-ran
-          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::floor_tests::under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::floor_tests::under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own sandbox::floor_tests::a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pressed
           test -f target/tests-that-really-ran/ports-off-holds-purlis-own-sockets || { echo "::error::the ports-off socket test did not really run"; exit 1; }
+          test -f target/tests-that-really-ran/a-moved-purlis-socket-stays-held || { echo "::error::the moved-socket test did not really run"; exit 1; }
       # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
       # build's `purlis _ssh-proxy`, runs inside Seatbelt and reaches the chat's SOCKS port; a
       # host the route does not list, and a direct ssh around it, stay refused. The Linux `rust`
