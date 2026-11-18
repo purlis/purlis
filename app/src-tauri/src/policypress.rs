@@ -285,23 +285,23 @@ mod tests {
     #[test]
     fn the_window_is_told_the_template_and_each_override_with_how_it_runs() {
         let dir =
-            plane("[policy]\ntemplate = \"team\"\nguards.release = \"log\"\nnetwork = \"off\"\n");
+            plane("[policy]\ntemplate = \"team\"\nguards.release = \"log\"\nskills = \"off\"\n");
         let state = state_of(dir.path());
         assert_eq!(state.template, "team");
         assert!(!state.template_default);
         assert_eq!(
             state.overrides,
             [
-                // Not switchable yet: the file says off, and it runs enforced.
-                PolicyOverride {
-                    family: "network".into(),
-                    said: "off".into(),
-                    runs: "enforce".into(),
-                },
                 PolicyOverride {
                     family: "guards.release".into(),
                     said: "log".into(),
                     runs: "log".into(),
+                },
+                // Not switchable yet: the file says off, and it runs enforced.
+                PolicyOverride {
+                    family: "skills".into(),
+                    said: "off".into(),
+                    runs: "enforce".into(),
                 },
             ]
         );
