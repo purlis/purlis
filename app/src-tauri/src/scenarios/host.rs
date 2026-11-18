@@ -720,6 +720,8 @@ pub(crate) struct Scenario {
     began: std::time::Instant,
     /// Ended last: the runtime the host and the link run on.
     runtime: Option<tokio::runtime::Runtime>,
+    /// What the person, the queries and the global checks keep (T1.1-07).
+    pub(crate) ledger: super::checks::Ledger,
 }
 
 impl Scenario {
@@ -804,7 +806,7 @@ impl Scenario {
             ))
             .expect("the person accepts the project's [policy] in the window");
         });
-        Some(Scenario {
+        let scenario = Scenario {
             protection,
             persona: persona.map(str::to_owned),
             dialect,
@@ -831,7 +833,10 @@ impl Scenario {
             applied: Mutex::default(),
             began,
             runtime: Some(runtime),
-        })
+            ledger: super::checks::Ledger::default(),
+        };
+        scenario.ledger.begins(&scenario);
+        Some(scenario)
     }
 
     /// The window as it is now.
@@ -1025,7 +1030,7 @@ fn group_alive(group: u32) -> bool {
 }
 
 /// The size every scenario's chat is drawn at.
-const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
+pub(crate) const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 160,
     rows: 50,
 };
@@ -1268,9 +1273,16 @@ impl Scenario {
                 )
             })
             .collect();
+        // What the window's queries show, where the window can still be asked.
+        let queries = if self.window.is_some() {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.queries().said()))
+                .unwrap_or_else(|_| "the window's queries could not be read".to_owned())
+        } else {
+            "no window".to_owned()
+        };
         format!(
             "launched: {:#?}\nscreens: {:#?}\nopen now: {:?}\nconfinements: {:?}\n\
-             events: {kinds:#?}\ntranscript: {:#?}",
+             events: {kinds:#?}\nthe window's queries:\n{queries}\ntranscript: {:#?}",
             self.launched.lock().expect("launched"),
             self.panes
                 .lock()
@@ -1407,6 +1419,47 @@ impl Drop for Scenario {
     /// chat's background process's ([`Self::left_in_the_background`]), whose every chat has
     /// ended, is #7103: an expected fail, said and ended ([`of_the_quit`]).
     fn drop(&mut self) {
+        // **The global checks** (T1.1-07), judged first, while the window and its chats are
+        // still up, and failed last, once the teardown below has run: a scenario that passed
+        // its own steps but breaks one of them is red (`checks`).
+        let verdict = if self.window.is_some() && !std::thread::panicking() {
+            Some(super::checks::at_the_end(self))
+        } else {
+            None
+        };
+        let verdict = verdict.map(|checked| match checked {
+            Ok(outcome) if outcome.failures.is_empty() => {
+                for (check, issue, what) in &outcome.expected {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "expected fail #{issue}: {}: {what}",
+                        check.word()
+                    );
+                    let _ = super::report::write(&[purlis_scenarios::model::LegRecord {
+                        kind: purlis_scenarios::model::EntryKind::Fixture,
+                        row: "T1.1-07".to_owned(),
+                        test: std::thread::current().name().map(str::to_owned),
+                        dialect: None,
+                        protection: None,
+                        os: super::report::this_os(),
+                        leg: purlis_scenarios::model::ReportLeg::Fixture,
+                        timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
+                        verdict: purlis_scenarios::model::ReportVerdict::ExpectedFail,
+                        reason: Some(format!("#{issue}: {}: {what}", check.word())),
+                    }]);
+                }
+                Ok(())
+            }
+            Ok(outcome) => Err(format!(
+                "a global check failed:\n  {}\n{}",
+                outcome.failures.join("\n  "),
+                self.said()
+            )),
+            Err(why) => Err(format!(
+                "the global checks could not run: {why}\n{}",
+                self.said()
+            )),
+        });
         self.note_running();
         let seen = self.seen.lock().expect("seen").clone();
         let mut left = Left {
@@ -1531,8 +1584,13 @@ impl Drop for Scenario {
             "protection": self.protection.word(),
             "template": self.template.word(),
             "seconds": self.began.elapsed().as_secs_f64(),
-            "passed": !std::thread::panicking(),
+            "passed": !std::thread::panicking() && !matches!(verdict, Some(Err(_))),
         }));
+        if let Some(Err(report)) = verdict
+            && !std::thread::panicking()
+        {
+            panic!("{report}");
+        }
     }
 }
 
@@ -1542,9 +1600,23 @@ pub(crate) struct Window {
     pub app: tauri::App<MockRuntime>,
     pub connection: Arc<Connection>,
     cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+    /// Every block the block teller was told (T1.1-07: the Notices' raise).
+    told: Arc<Mutex<Vec<crate::hooks::ChatBlocked>>>,
+    /// Every move the window was told (T1.1-07: the needs-you mark).
+    moves: Arc<Mutex<Vec<crate::hooks::Moved>>>,
 }
 
 impl Window {
+    /// Every block the block teller told this window, in order.
+    pub(crate) fn told_blocks(&self) -> Vec<crate::hooks::ChatBlocked> {
+        self.told.lock().expect("told").clone()
+    }
+
+    /// Every chat move this window was told, in order.
+    pub(crate) fn moved(&self) -> Vec<crate::hooks::Moved> {
+        self.moves.lock().expect("moves").clone()
+    }
+
     pub(crate) fn planes(&self) -> tauri::State<'_, Planes> {
         tauri::Manager::state::<Planes>(&self.app)
     }
@@ -1629,9 +1701,20 @@ fn a_window(
     };
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link), dial);
-    let tell: crate::planes::Teller = Arc::new(|_| {});
+    let moves: Arc<Mutex<Vec<crate::hooks::Moved>>> = Arc::default();
+    let told: Arc<Mutex<Vec<crate::hooks::ChatBlocked>>> = Arc::default();
+    let tell: crate::planes::Teller = {
+        let moves = Arc::clone(&moves);
+        Arc::new(move |moved| moves.lock().expect("moves").push(moved))
+    };
+    let blocks: crate::hooks::BlockTeller = {
+        let told = Arc::clone(&told);
+        Arc::new(move |block| told.lock().expect("told").push(block))
+    };
     let planes = crate::hostedsessions::chats_in_the_host(
-        Planes::telling(tell, kit.for_the_window(), Some(homes.config.clone())).timed_by(timings),
+        Planes::telling(tell, kit.for_the_window(), Some(homes.config.clone()))
+            .timed_by(timings)
+            .telling_blocks(blocks),
         &connection,
     );
     let app = tauri::test::mock_builder()
@@ -1642,5 +1725,7 @@ fn a_window(
         app,
         connection,
         cuts,
+        told,
+        moves,
     }
 }

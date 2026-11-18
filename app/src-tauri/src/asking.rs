@@ -1262,7 +1262,7 @@ pub fn the_window() -> Answerer {
 /// Inbox draw the label an ask's option carries ([`Offered::label`]) and spell none of their own.
 /// A sandbox ask's this-chat Allow says "only", since its main button is the wider one (#1666,
 /// N-3); a dispatch's lists this chat first.
-fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static str {
+pub(crate) fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static str {
     use crate::sandboxing::GrantLevel;
     match level {
         GrantLevel::Once => "Allow once",
@@ -1275,7 +1275,7 @@ fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static s
 }
 
 /// What Keep blocked says, for a dispatch and a sandbox ask alike.
-const KEEP_SAID: &str = "Keep blocked";
+pub(crate) const KEEP_SAID: &str = "Keep blocked";
 /// What a dispatch's Never for this pair says.
 const NEVER_SAID: &str = "Never for this pair";
 

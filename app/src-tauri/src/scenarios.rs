@@ -13,8 +13,17 @@
 //! apply its wrap fails there and, anywhere else, says why it did not run.
 
 #[cfg(unix)]
+#[path = "scenarios/checks.rs"]
+mod checks;
+#[cfg(unix)]
 #[path = "scenarios/host.rs"]
 pub(crate) mod host;
+#[cfg(unix)]
+#[path = "scenarios/person.rs"]
+mod person;
+#[cfg(unix)]
+#[path = "scenarios/queries.rs"]
+mod queries;
 #[cfg(unix)]
 #[path = "scenarios/report.rs"]
 mod report;
@@ -845,6 +854,13 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         else {
             return;
         };
+        // #6674: every held network ask writes `ask.raised` twice (T1.1-07's one-ask,
+        // one-raise check finds it).
+        scenario.expected_fail(
+            checks::Check::OneAskOneRaise,
+            6674,
+            "a held network ask writes ask.raised twice",
+        );
         let held = format!("held-{}.example.test", dialect.word());
         let asked_before = scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED);
         let chat = scenario.starts(&serde_json::json!({
@@ -861,6 +877,9 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             || held_on(&scenario, chat, &held).is_some(),
         );
         scenario.until_played(chat, &["held"]);
+        // The hold ended with a refusal: its ask (R-004) is written, which the global checks
+        // hold the scenario to.
+        scenario.refused(chat, "held", None);
         // The call's own time, as curl measured it: nothing of the chat's start-up.
         let took = took_of(&scenario, chat, "held");
         // Today's behaviour (B0, #6672, #6673): `ask.raised` can reach the event log well after
@@ -931,19 +950,15 @@ fn held_on(
     session: u32,
     target: &str,
 ) -> Option<crate::taskblocks::BlockShown> {
+    // As the window reads them (T1.1-07): the Notices' standing blocks, which also record the
+    // ask for the one-ask, one-raise check.
     scenario
-        .held()
-        .chats()
-        .blocks()
-        .every()
+        .queries()
+        .notices()
+        .standing
         .into_iter()
         .find(|(held, block)| *held == session && block.target.contains(target))
-        .map(|(_, block)| crate::taskblocks::BlockShown {
-            operation: block.operation,
-            kind: block.kind,
-            what: block.what,
-            target: block.target,
-        })
+        .map(|(_, block)| block)
 }
 
 /// **Two chats in one host keep their grants apart** (T1.1-06, §3.7): the person allows a held
@@ -960,6 +975,12 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     else {
         return;
     };
+    // #6674: a held network ask writes `ask.raised` twice.
+    scenario.expected_fail(
+        checks::Check::OneAskOneRaise,
+        6674,
+        "a held network ask writes ask.raised twice",
+    );
     let host = "granted-to-one.example.test";
     let script = |step: &str| {
         serde_json::json!({
@@ -1405,3 +1426,7 @@ mod production_timings {
         }
     }
 }
+
+#[cfg(unix)]
+#[path = "scenarios/window_person.rs"]
+mod window_person;
