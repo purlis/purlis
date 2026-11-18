@@ -21,7 +21,13 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    this machine's state: never the plane, never synced or committed. A resumed chat keeps the
    answer it was given; a new chat has a new identity and asks; the answer ends when the chat
    closes. An answer resting on a persona's Always is not kept, since it follows that Always as
-   it is now. Narrowing a chat's reach still ends its browsers and leaves the answer. There is
+   it is now. Narrowing a chat's reach still ends its browsers and leaves the answer. **A kept
+   answer is checked against the chat's current reach before it is used:** it is kept with the
+   reach the chat had when it was asked, and where the reach is narrower now (a listed site gone,
+   a site now never reached, a port now withdrawn) the answer is not used and is removed, and the
+   person is asked again. A wider reach uses it. An answer of a chat that no longer exists is
+   dropped when purlis starts. Both stores are written whole through a temp file renamed over
+   them, under a lock file beside each, so two purlis processes never drop one another's change. There is
    no "for every chat of this persona": that is what Always is, and it is the person's own
    setting. *Why:* the answer is a consent given for one chat's task, so it is bound to that chat
    and dies with it, and it cannot be widened by persisting it.

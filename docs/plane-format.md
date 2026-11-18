@@ -6860,15 +6860,20 @@ down rather than read off the code.
 
 ### `app/browser-postures.json`
 - **What:** what the person answered when a chat's first browser call asked what its browser
-  may reach (#7190, the person's ruling of 2026-11-18): `{"<chat ULID>": "allowed" |
-  "allowed-open-web" | "off"}`. One entry per chat, by its identity (ADR 0066), for **that chat
+  may reach (#7190, the person's ruling of 2026-11-18): `{"<chat ULID>": {"answer": "allowed" |
+  "allowed-open-web" | "off", "reach": {"listed", "never", "withdrawn"}}}`, where `reach` is what
+  the chat's browser reached when it was asked: a kept answer is used only where the chat's
+  reach now is no narrower. One entry per chat, by its identity (ADR 0066), for **that chat
   only and for its life**: a resumed chat finds its answer, a new chat finds none and asks,
   and there is no answer for a persona (that is its Always). An answer that rests on a
   persona's Always is not kept. No site, no cookie, no value.
 - **Written by** the app on the person's press (`purlis_core::browserposture::keep`), 0600,
   and an entry is removed when its chat closes (`remove`); the file is removed with the last
-  entry. A file that does not read, an unknown word, or a link in its place asks again; a link
-  is never followed. Narrowing a chat's reach still ends its browsers and leaves the answer.
+  entry. The answers of chats that no longer exist are dropped when the app starts (`prune`).
+  Every change reads the file, changes it and writes it whole through a temp file renamed over
+  it, under the lock file `app/browser-postures.json.lock` beside it. A file that does not
+  read, an unknown word, or a link in its place asks again; a link is never followed.
+  Narrowing a chat's reach still ends its browsers and leaves the answer.
 - **Tier:** Clone state — this machine's, under `.purlis/`: never in the plane, never synced
   or committed. Deleting it makes each chat ask again.
 
@@ -6880,8 +6885,9 @@ down rather than read off the code.
   the pin with the person's mark). Any change to it, or to the persona, login or pool, asks
   again. No value of any login, and a person's keep-off is not kept.
 - **Written by** the app on the person's press (`purlis_core::poollogins::OptIns::allow`),
-  0600; removed by Remove in the Granted list, when the pool is forgotten, or when its mark is
-  taken back. It has no time limit. A runner never holds a value or a kept login.
+  0600, through a temp file renamed over it, under the lock file `pool-login-optins.json.lock`
+  beside it; removed by Remove in the Granted list, when the pool is forgotten, or when its mark
+  is taken back. It has no time limit. A runner never holds a value or a kept login.
 - **Tier:** Machine, device-bound — never synced, never committed, never in a plane. Deleting
   it makes every login on a pool ask again.
 
