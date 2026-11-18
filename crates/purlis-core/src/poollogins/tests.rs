@@ -853,3 +853,60 @@ fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
         );
     }
 }
+
+#[test]
+fn windows_writing_at_once_lose_none_of_each_others_opt_ins() {
+    let config = tempfile::tempdir().unwrap();
+    std::thread::scope(|scope| {
+        for n in 0..16 {
+            let config = config.path();
+            scope.spawn(move || {
+                // Each its own holder over the one file, as two windows are.
+                OptIns::stored_in(config).allow(
+                    "steward",
+                    &format!("id-{n}"),
+                    bound("builds", "d1", "i1"),
+                );
+            });
+        }
+    });
+
+    let restarted = after_a_restart(config.path());
+    for n in 0..16 {
+        assert_eq!(
+            restarted.standing("steward", &format!("id-{n}"), &bound("builds", "d1", "i1")),
+            Standing::Allowed,
+            "id-{n} was dropped by another writer"
+        );
+    }
+    let left: Vec<_> = std::fs::read_dir(config.path())
+        .unwrap()
+        .flatten()
+        .filter(|one| crate::rewrite::temp_of(&one.file_name().to_string_lossy()).is_some())
+        .collect();
+    assert!(left.is_empty(), "a temp file was left: {left:?}");
+}
+
+#[test]
+fn a_store_another_process_holds_is_never_written_unlocked() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-first", bound("builds", "d1", "i1"));
+    let before = std::fs::read(config.path().join(IN_CONFIG)).unwrap();
+    let other = crate::filelock::beside(
+        &config.path().join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap();
+
+    let refused = opt_ins.update(std::time::Duration::from_millis(60), |_| true);
+
+    assert_eq!(refused.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+    assert_eq!(
+        std::fs::read(config.path().join(IN_CONFIG)).unwrap(),
+        before,
+        "nothing was written"
+    );
+    drop(other);
+}

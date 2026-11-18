@@ -16,18 +16,31 @@
 //! - **Only what the person pressed**: an answer that rests on a persona's Always is not kept
 //!   (it follows that Always as it is now).
 //! - **A resumed chat keeps its answer**: the same identity finds it again.
-//! - **Narrowing is separate**: the browsers a narrowed reach ends are the app's act, and the
-//!   answer stands, as before.
+//! - **A kept answer is checked against the chat's current reach before use**: it is kept with
+//!   the reach the chat had when it was asked ([`Reach`]), and a restored answer is used only
+//!   where the chat's reach now is no narrower ([`Reach::narrower_than`]). Where it narrowed
+//!   meanwhile, the answer is not used and is removed, and the person is asked again.
+//! - **One writer at a time, across processes**: every change reads the file, changes it and
+//!   writes it whole, under a lock file beside it ([`crate::filelock::beside`]), through a temp
+//!   file renamed over it ([`crate::rewrite::replace`]).
+//! - **A chat that no longer exists leaves nothing**: [`prune`] drops the answers of chats the
+//!   app no longer knows, at start.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
 
 /// The file, relative to the project's state folder ([`path`]).
 pub const IN_STATE: &str = "app/browser-postures.json";
 
 /// The most answers kept: a chat's answer ends with it, so this is a bound on a damaged file.
 const MOST: usize = 4096;
+
+/// How long a writer waits for another's turn at the file.
+const WAIT: Duration = Duration::from_secs(10);
 
 /// What the person answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +70,47 @@ impl Answer {
     }
 }
 
+/// **What a chat's browser reached when its answer was asked**: the sites its sandbox lists,
+/// what it never reaches, and the ports of this machine it carries no longer. Sites by name,
+/// the layer that lists them aside: a site moving between layers is no narrowing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reach {
+    #[serde(default)]
+    pub listed: BTreeSet<String>,
+    #[serde(default)]
+    pub never: BTreeSet<String>,
+    #[serde(default)]
+    pub withdrawn: BTreeSet<u16>,
+}
+
+impl Reach {
+    /// **Whether this reach, as it is now, is narrower than `then`**: a site `then` listed is no
+    /// longer listed, or something is never reached or withdrawn that `then` reached. A wider
+    /// reach is not narrower, and nor is an equal one.
+    pub fn narrower_than(&self, then: &Reach) -> bool {
+        then.listed.iter().any(|site| !self.listed.contains(site))
+            || self.never.iter().any(|site| !then.never.contains(site))
+            || self
+                .withdrawn
+                .iter()
+                .any(|port| !then.withdrawn.contains(port))
+    }
+}
+
+/// **An answer kept**, with the reach the chat had when it was asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Kept {
+    pub answer: Answer,
+    pub reach: Reach,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Stored {
+    answer: String,
+    #[serde(default)]
+    reach: Reach,
+}
+
 /// The file in the project at `root`.
 pub fn path(root: &Path) -> PathBuf {
     crate::names::state(root).join(IN_STATE)
@@ -71,10 +125,7 @@ fn is_an_id(chat: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// One writer at a time in this process: every project's holder rewrites the whole file.
-static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn read(root: &Path) -> BTreeMap<String, String> {
+fn read(root: &Path) -> BTreeMap<String, Stored> {
     let path = path(root);
     // Never through a link, and never a folder or a device.
     let Ok(there) = std::fs::symlink_metadata(&path) else {
@@ -85,11 +136,11 @@ fn read(root: &Path) -> BTreeMap<String, String> {
     }
     std::fs::read_to_string(&path)
         .ok()
-        .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
+        .and_then(|text| serde_json::from_str::<BTreeMap<String, Stored>>(&text).ok())
         .unwrap_or_default()
 }
 
-fn write(root: &Path, kept: &BTreeMap<String, String>) -> io::Result<()> {
+fn write(root: &Path, kept: &BTreeMap<String, Stored>) -> io::Result<()> {
     let path = path(root);
     if kept.is_empty() {
         return match std::fs::remove_file(&path) {
@@ -109,43 +160,87 @@ fn write(root: &Path, kept: &BTreeMap<String, String>) -> io::Result<()> {
     )
 }
 
+/// One read-modify-write of the file, alone: `change` returns whether it changed anything.
+fn change(
+    root: &Path,
+    wait: Duration,
+    change: impl FnOnce(&mut BTreeMap<String, Stored>) -> io::Result<bool>,
+) -> io::Result<()> {
+    let _alone = crate::filelock::beside(&path(root), wait, "the kept browser answers")?;
+    let mut all = read(root);
+    if change(&mut all)? {
+        write(root, &all)?;
+    }
+    Ok(())
+}
+
 /// **The answer kept for chat `chat`**, where there is one that reads.
-pub fn kept(root: &Path, chat: &str) -> Option<Answer> {
+pub fn kept(root: &Path, chat: &str) -> Option<Kept> {
     if !is_an_id(chat) {
         return None;
     }
-    read(root).get(chat).and_then(|word| Answer::of(word))
+    read(root).get(chat).and_then(|one| {
+        Some(Kept {
+            answer: Answer::of(&one.answer)?,
+            reach: one.reach.clone(),
+        })
+    })
 }
 
-/// **Keeps `answer` for chat `chat`**, replacing what it had.
-pub fn keep(root: &Path, chat: &str, answer: Answer) -> io::Result<()> {
+/// **Keeps `answer` for chat `chat`**, replacing what it had, with the `reach` the chat had when
+/// it was asked.
+pub fn keep(root: &Path, chat: &str, answer: Answer, reach: &Reach) -> io::Result<()> {
+    keep_within(root, chat, answer, reach, WAIT)
+}
+
+fn keep_within(
+    root: &Path,
+    chat: &str,
+    answer: Answer,
+    reach: &Reach,
+    wait: Duration,
+) -> io::Result<()> {
     if !is_an_id(chat) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "a chat's identity is letters, digits, - and _",
         ));
     }
-    let _one = WRITING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut all = read(root);
-    if all.len() >= MOST && !all.contains_key(chat) {
-        return Err(io::Error::other("too many chats' answers are kept"));
-    }
-    all.insert(chat.to_owned(), answer.word().to_owned());
-    write(root, &all)
+    change(root, wait, |all| {
+        if all.len() >= MOST && !all.contains_key(chat) {
+            return Err(io::Error::other("too many chats' answers are kept"));
+        }
+        all.insert(
+            chat.to_owned(),
+            Stored {
+                answer: answer.word().to_owned(),
+                reach: reach.clone(),
+            },
+        );
+        Ok(true)
+    })
 }
 
 /// **The chat closed: its answer goes with it.** Nothing to remove is no failure.
 pub fn remove(root: &Path, chat: &str) -> io::Result<()> {
-    let _one = WRITING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut all = read(root);
-    if all.remove(chat).is_none() {
-        return Ok(());
+    change(root, WAIT, |all| Ok(all.remove(chat).is_some()))
+}
+
+/// **Drops the answers of chats that no longer exist** (`exists` says which do), at start: a
+/// chat that ended while the app was not running left its answer behind. Answers how many went.
+pub fn prune(root: &Path, exists: impl Fn(&str) -> bool) -> io::Result<usize> {
+    let mut gone = 0;
+    // Nothing kept, no file and no lock file to make.
+    if read(root).is_empty() {
+        return Ok(0);
     }
-    write(root, &all)
+    change(root, WAIT, |all| {
+        let before = all.len();
+        all.retain(|chat, _| exists(chat));
+        gone = before - all.len();
+        Ok(gone > 0)
+    })?;
+    Ok(gone)
 }
 
 #[cfg(test)]

@@ -539,8 +539,8 @@ struct Stored {
     bound: Bound,
 }
 
-/// One writer at a time in this process: every project's holder rewrites the whole file.
-static WRITING: Mutex<()> = Mutex::new(());
+/// How long a writer waits for another's turn at the file.
+const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The most opt-ins kept: a bound on a damaged file.
 const MOST_KEPT: usize = 1024;
@@ -592,43 +592,51 @@ impl OptIns {
             .unwrap_or_default()
     }
 
-    /// Keeps `all` as the opt-ins, or no file where there are none.
-    fn write(&self, all: &[Stored]) {
+    /// **One read-modify-write of the file, alone** (across processes: a lock file beside it,
+    /// [`crate::filelock::beside`]), written through a temp file renamed over it. `change` says
+    /// whether it changed anything and so whether to write; a failure to lock or write is
+    /// answered, and nothing is ever written without the lock.
+    fn update(
+        &self,
+        wait: std::time::Duration,
+        change: impl FnOnce(&mut Vec<Stored>) -> bool,
+    ) -> std::io::Result<()> {
         let (Some(root), Some(file)) = (self.stored.as_ref(), self.file()) else {
-            return;
+            return Ok(());
         };
-        let done = if all.is_empty() {
-            match std::fs::remove_file(&file) {
+        let _alone = crate::filelock::beside(&file, wait, "the kept pool login opt-ins")?;
+        let mut all = self.read();
+        if !change(&mut all) {
+            return Ok(());
+        }
+        if all.is_empty() {
+            return match std::fs::remove_file(&file) {
                 Err(none) if none.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 done => done,
-            }
-        } else {
-            serde_json::to_string_pretty(all)
-                .map_err(std::io::Error::other)
-                .and_then(|text| {
-                    crate::rewrite::replace(
-                        root,
-                        &file,
-                        format!("{text}\n").as_bytes(),
-                        crate::rewrite::Mode::Private,
-                    )
-                })
-        };
-        if let Err(why) = done {
-            tracing::warn!("purlis: the pool login opt-ins were not kept ({why})");
+            };
         }
+        let text = serde_json::to_string_pretty(&all).map_err(std::io::Error::other)?;
+        crate::rewrite::replace(
+            root,
+            &file,
+            format!("{text}\n").as_bytes(),
+            crate::rewrite::Mode::Private,
+        )
     }
 
     fn unkept(&self, matching: impl Fn(&Stored) -> bool) {
         if self.stored.is_none() {
             return;
         }
-        let _one = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut all = self.read();
-        let before = all.len();
-        all.retain(|one| !matching(one));
-        if all.len() != before {
-            self.write(&all);
+        let done = self.update(WAIT, |all| {
+            let before = all.len();
+            all.retain(|one| !matching(one));
+            all.len() != before
+        });
+        if let Err(why) = done {
+            tracing::warn!(
+                "purlis: a pool login opt-in was not removed from this machine's store ({why})"
+            );
         }
     }
 
@@ -636,22 +644,29 @@ impl OptIns {
     pub fn allow(&self, persona: &str, login: &str, bound: Bound) {
         self.held().remove(&Self::key(persona, login, &bound));
         if self.stored.is_some() {
-            let _one = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut all = self.read();
-            all.retain(|one| {
-                !(one.persona == persona && one.login == login && one.bound.pool == bound.pool)
-            });
-            if all.len() < MOST_KEPT {
-                all.push(Stored {
-                    persona: persona.to_owned(),
-                    login: login.to_owned(),
-                    bound,
+            let mut full = false;
+            let done = self.update(WAIT, |all| {
+                all.retain(|one| {
+                    !(one.persona == persona && one.login == login && one.bound.pool == bound.pool)
                 });
-                self.write(&all);
-                return;
+                full = all.len() >= MOST_KEPT;
+                if !full {
+                    all.push(Stored {
+                        persona: persona.to_owned(),
+                        login: login.to_owned(),
+                        bound: bound.clone(),
+                    });
+                }
+                !full
+            });
+            match done {
+                Ok(()) if !full => return,
+                // A full file keeps no more: the answer stands for this run, as it always did.
+                Ok(()) => {}
+                Err(why) => {
+                    tracing::warn!("purlis: the pool login opt-ins were not kept ({why})");
+                }
             }
-            // A full file keeps no more: the answer stands for this run, as it always did.
-            drop(_one);
         }
         self.held()
             .insert(Self::key(persona, login, &bound), (bound, true));

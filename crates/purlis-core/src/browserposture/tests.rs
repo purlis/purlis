@@ -12,20 +12,32 @@ const CHAT: &str = "01JBROWSERPOSTURE0000000001";
 #[test]
 fn an_answer_is_found_again_by_the_same_chat_after_a_restart() {
     let dir = project();
-    keep(dir.path(), CHAT, Answer::Allowed { open_web: true }).expect("kept");
+    keep(
+        dir.path(),
+        CHAT,
+        Answer::Allowed { open_web: true },
+        &Reach::default(),
+    )
+    .expect("kept");
 
     assert_eq!(
-        kept(dir.path(), CHAT),
+        answer_of(dir.path(), CHAT),
         Some(Answer::Allowed { open_web: true })
     );
-    keep(dir.path(), CHAT, Answer::Off).expect("kept again");
-    assert_eq!(kept(dir.path(), CHAT), Some(Answer::Off));
+    keep(dir.path(), CHAT, Answer::Off, &Reach::default()).expect("kept again");
+    assert_eq!(answer_of(dir.path(), CHAT), Some(Answer::Off));
 }
 
 #[test]
 fn another_chat_finds_no_answer_so_it_asks() {
     let dir = project();
-    keep(dir.path(), CHAT, Answer::Allowed { open_web: false }).expect("kept");
+    keep(
+        dir.path(),
+        CHAT,
+        Answer::Allowed { open_web: false },
+        &Reach::default(),
+    )
+    .expect("kept");
 
     assert_eq!(kept(dir.path(), "01JBROWSERPOSTURE0000000002"), None);
 }
@@ -33,12 +45,12 @@ fn another_chat_finds_no_answer_so_it_asks() {
 #[test]
 fn an_answer_ends_with_its_chat_and_the_file_goes_with_the_last() {
     let dir = project();
-    keep(dir.path(), CHAT, Answer::Off).expect("kept");
-    keep(dir.path(), "other-chat", Answer::Off).expect("kept");
+    keep(dir.path(), CHAT, Answer::Off, &Reach::default()).expect("kept");
+    keep(dir.path(), "other-chat", Answer::Off, &Reach::default()).expect("kept");
 
     remove(dir.path(), CHAT).expect("removed");
     assert_eq!(kept(dir.path(), CHAT), None);
-    assert_eq!(kept(dir.path(), "other-chat"), Some(Answer::Off));
+    assert_eq!(answer_of(dir.path(), "other-chat"), Some(Answer::Off));
     remove(dir.path(), "other-chat").expect("removed");
     assert!(!path(dir.path()).exists(), "nothing left to keep");
     remove(dir.path(), CHAT).expect("a second end is no failure");
@@ -47,7 +59,7 @@ fn an_answer_ends_with_its_chat_and_the_file_goes_with_the_last() {
 #[test]
 fn it_is_kept_in_the_state_folder_never_the_plane_and_privately() {
     let dir = project();
-    keep(dir.path(), CHAT, Answer::Off).expect("kept");
+    keep(dir.path(), CHAT, Answer::Off, &Reach::default()).expect("kept");
 
     let path = path(dir.path());
     assert_eq!(
@@ -55,11 +67,13 @@ fn it_is_kept_in_the_state_folder_never_the_plane_and_privately() {
         crate::names::state(dir.path()).join("app/browser-postures.json"),
         "the clone's state folder, which is never committed or synced"
     );
-    let written: Vec<_> = walk(dir.path());
+    let mut written: Vec<_> = walk(dir.path());
+    written.sort();
+    let lock = path.with_file_name("browser-postures.json.lock");
     assert_eq!(
         written,
-        std::slice::from_ref(&path),
-        "nothing else is written, the plane's files least"
+        vec![path.clone(), lock],
+        "the file and its lock file, nothing else, the plane's files least"
     );
     #[cfg(unix)]
     {
@@ -84,7 +98,11 @@ fn a_file_that_does_not_read_or_names_an_unknown_word_gives_no_answer() {
     std::fs::write(&file, "not json").unwrap();
     assert_eq!(kept(dir.path(), CHAT), None);
 
-    std::fs::write(&file, format!("{{\"{CHAT}\": \"everything\"}}")).unwrap();
+    std::fs::write(
+        &file,
+        format!("{{\"{CHAT}\": {{\"answer\": \"everything\"}}}}"),
+    )
+    .unwrap();
     assert_eq!(kept(dir.path(), CHAT), None, "an unknown word asks again");
 }
 
@@ -93,7 +111,11 @@ fn a_file_that_does_not_read_or_names_an_unknown_word_gives_no_answer() {
 fn a_link_in_the_files_place_is_never_followed() {
     let dir = project();
     let elsewhere = dir.path().join("elsewhere.json");
-    std::fs::write(&elsewhere, format!("{{\"{CHAT}\": \"allowed-open-web\"}}")).unwrap();
+    std::fs::write(
+        &elsewhere,
+        format!("{{\"{CHAT}\": {{\"answer\": \"allowed-open-web\"}}}}"),
+    )
+    .unwrap();
     let file = path(dir.path());
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&elsewhere, &file).unwrap();
@@ -104,9 +126,149 @@ fn a_link_in_the_files_place_is_never_followed() {
 #[test]
 fn an_identity_that_is_no_identity_is_refused_and_never_found() {
     let dir = project();
-    assert!(keep(dir.path(), "../x", Answer::Off).is_err());
-    assert!(keep(dir.path(), "", Answer::Off).is_err());
+    assert!(keep(dir.path(), "../x", Answer::Off, &Reach::default()).is_err());
+    assert!(keep(dir.path(), "", Answer::Off, &Reach::default()).is_err());
     assert_eq!(kept(dir.path(), "../x"), None);
+}
+
+fn answer_of(root: &Path, chat: &str) -> Option<Answer> {
+    kept(root, chat).map(|one| one.answer)
+}
+
+fn reach(listed: &[&str], never: &[&str], withdrawn: &[u16]) -> Reach {
+    Reach {
+        listed: listed.iter().map(|s| (*s).to_owned()).collect(),
+        never: never.iter().map(|s| (*s).to_owned()).collect(),
+        withdrawn: withdrawn.iter().copied().collect(),
+    }
+}
+
+#[test]
+fn the_reach_the_chat_had_is_kept_with_its_answer() {
+    let dir = project();
+    let then = reach(&["a.test:80"], &["b.test"], &[3000]);
+    keep(dir.path(), CHAT, Answer::Off, &then).expect("kept");
+
+    assert_eq!(kept(dir.path(), CHAT).map(|one| one.reach), Some(then));
+}
+
+#[test]
+fn a_reach_is_narrower_only_where_it_lost_a_site_or_gained_a_refusal() {
+    let then = reach(&["a.test:80", "b.test:80"], &["x.test"], &[3000]);
+
+    assert!(!then.narrower_than(&then), "the same reach is no narrower");
+    assert!(
+        !reach(
+            &["a.test:80", "b.test:80", "c.test:80"],
+            &["x.test"],
+            &[3000]
+        )
+        .narrower_than(&then),
+        "a wider reach is no narrower"
+    );
+    assert!(
+        reach(&["a.test:80"], &["x.test"], &[3000]).narrower_than(&then),
+        "a site no longer listed"
+    );
+    assert!(
+        reach(&["a.test:80", "b.test:80"], &["x.test", "y.test"], &[3000]).narrower_than(&then),
+        "a site now never reached"
+    );
+    assert!(
+        reach(&["a.test:80", "b.test:80"], &["x.test"], &[3000, 4000]).narrower_than(&then),
+        "a port now withdrawn"
+    );
+}
+
+#[test]
+fn answers_of_chats_that_no_longer_exist_are_pruned() {
+    let dir = project();
+    for chat in ["alive-1", "gone-1", "gone-2", "alive-2"] {
+        keep(dir.path(), chat, Answer::Off, &Reach::default()).expect("kept");
+    }
+
+    let pruned = prune(dir.path(), |chat| chat.starts_with("alive")).expect("pruned");
+
+    assert_eq!(pruned, 2);
+    assert!(
+        answer_of(dir.path(), "alive-1").is_some() && answer_of(dir.path(), "alive-2").is_some()
+    );
+    assert_eq!(answer_of(dir.path(), "gone-1"), None);
+    assert_eq!(answer_of(dir.path(), "gone-2"), None);
+    assert_eq!(
+        prune(dir.path(), |_| true).expect("pruned"),
+        0,
+        "nothing more to prune"
+    );
+}
+
+#[test]
+fn pruning_with_nothing_kept_writes_nothing() {
+    let dir = project();
+
+    assert_eq!(prune(dir.path(), |_| false).expect("pruned"), 0);
+    assert!(walk(dir.path()).is_empty(), "no file, no lock file");
+}
+
+#[test]
+fn writers_at_once_lose_none_of_each_others_answers() {
+    let dir = project();
+    let root = dir.path().to_path_buf();
+    let chats: Vec<String> = (0..24).map(|n| format!("chat-{n}")).collect();
+    std::thread::scope(|scope| {
+        for chat in &chats {
+            let root = &root;
+            scope.spawn(move || {
+                keep(
+                    root,
+                    chat,
+                    Answer::Allowed { open_web: false },
+                    &Reach::default(),
+                )
+                .expect("kept");
+            });
+        }
+    });
+
+    for chat in &chats {
+        assert!(
+            answer_of(&root, chat).is_some(),
+            "{chat}'s answer was dropped by another writer"
+        );
+    }
+    let debris: Vec<_> = walk(&root)
+        .into_iter()
+        .filter(|file| {
+            crate::rewrite::temp_of(&file.file_name().unwrap().to_string_lossy()).is_some()
+        })
+        .collect();
+    assert!(debris.is_empty(), "a temp file was left: {debris:?}");
+}
+
+#[test]
+fn a_writer_waits_for_the_lock_file_and_never_writes_without_it() {
+    let dir = project();
+    keep(dir.path(), CHAT, Answer::Off, &Reach::default()).expect("kept");
+    let before = std::fs::read(path(dir.path())).unwrap();
+    let other = crate::filelock::beside(&path(dir.path()), Duration::from_secs(1), "the test")
+        .expect("another process holds the lock file");
+
+    let refused = keep_within(
+        dir.path(),
+        "other-chat",
+        Answer::Off,
+        &Reach::default(),
+        Duration::from_millis(60),
+    );
+
+    assert_eq!(refused.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert_eq!(
+        std::fs::read(path(dir.path())).unwrap(),
+        before,
+        "nothing was written"
+    );
+    drop(other);
+    keep(dir.path(), "other-chat", Answer::Off, &Reach::default()).expect("kept once it is free");
 }
 
 fn walk(root: &Path) -> Vec<PathBuf> {
