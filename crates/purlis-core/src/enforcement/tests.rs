@@ -1061,7 +1061,7 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let branch = String::from_utf8(branch.stdout).expect("utf-8");
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), Resolved::strict());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
