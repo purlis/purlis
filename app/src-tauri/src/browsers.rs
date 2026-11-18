@@ -1066,10 +1066,7 @@ mod hosted {
                 .collect();
             let mut ended = Forgotten::default();
             for program in &programs {
-                if let Some(closer) = closer {
-                    self.closed_by(program, closer);
-                }
-                match self.close(program) {
+                match self.closing_then_saying(program, closer, |window| window.close(program)) {
                     Ok(()) => ended.stopped += 1,
                     Err(why) => {
                         tracing::warn!(
@@ -1226,6 +1223,35 @@ mod hosted {
         fn say(&self, said: Said) {
             let root = self.root_of(said.browser());
             (self.says)(root.as_deref(), said);
+        }
+
+        /// **Runs `close` of `program`, and says `closer` closed it only once it has**
+        /// (#7187 item 6): a close the machine did not answer for says nothing, and leaves the
+        /// browser unmarked, so what later ends it is told as it is. Its project is read before
+        /// `close`, which lets go of the window's hold on it.
+        pub(crate) fn closing_then_saying(
+            &self,
+            program: &str,
+            closer: Option<Closer>,
+            close: impl FnOnce(&Self) -> Result<(), String>,
+        ) -> Result<(), String> {
+            let root = self.root_of(program);
+            let first = !lock(&self.closing).contains(program);
+            let closed = close(self);
+            match (&closed, closer) {
+                (Ok(()), Some(by)) if first => (self.says)(
+                    root.as_deref(),
+                    Said::Closed {
+                        browser: program.to_owned(),
+                        by,
+                    },
+                ),
+                (Err(_), _) if first => {
+                    lock(&self.closing).remove(program);
+                }
+                _ => {}
+            }
+            closed
         }
 
         /// **At most `budget` browsers run on this device at once** (#2023): every browser the

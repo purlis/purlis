@@ -1845,6 +1845,115 @@ fn a_forgotten_pools_browsers_are_stopped_there_and_said_closed_by_the_person_ne
     );
 }
 
+/// **The person's close is logged only once the close has happened** (#7187 item 6): a browser
+/// the machine did not answer for is said closed by no one, and is not marked as ending here.
+#[test]
+fn a_close_is_said_only_after_it_succeeds() {
+    use purlis_core::eventlog::browsing::{Closer, Said};
+
+    let Window {
+        browsers,
+        root,
+        _dirs,
+        _runtime,
+        ..
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers.open(&root).expect("it starts");
+    let closed = |said: &Arc<Mutex<Vec<Said>>>| {
+        said.lock()
+            .unwrap()
+            .iter()
+            .filter(|one| matches!(one, Said::Closed { .. }))
+            .count()
+    };
+
+    let failed = browsers.closing_then_saying(&program, Some(Closer::Person), |_| {
+        Err("the machine did not answer".to_owned())
+    });
+
+    assert!(failed.is_err());
+    assert_eq!(closed(&said), 0, "a close that failed is not said");
+    assert!(
+        !browsers.closing.lock().unwrap().contains(&program),
+        "and the browser is not marked as ending here"
+    );
+    browsers
+        .closing_then_saying(&program, Some(Closer::Person), |window| {
+            window.close(&program)
+        })
+        .expect("closed");
+    assert_eq!(closed(&said), 1, "said once, after it succeeded");
+}
+
+/// **Quitting purlis ends this machine's browsers and leaves a runner's running** (#7187 item 7,
+/// ADR 0068 as amended 2026-11-19): a runner is its own device, so its browsers outlive a quit as
+/// its chats do, and the window reattaches to them when it opens. The quit is what
+/// `SessionHost::end` sends this machine's host, which ends every program it runs and stops;
+/// the runner's host is told nothing.
+#[test]
+fn a_quit_ends_this_machines_browsers_and_leaves_a_runners_browser_running() {
+    use purlis_session_protocol::session::{Answer, Command};
+
+    let WithARunner {
+        window:
+            Window {
+                browsers,
+                root,
+                _dirs,
+                _runtime,
+                ..
+            },
+        on_the_runner,
+        _store,
+    } = a_window_with_a_runner();
+    let on_a_runner = crate::chatbrowsers::Driver::start(
+        &browsers,
+        &root,
+        Some("builds"),
+        purlis_session_protocol::browsing::BrowserReach::default(),
+        None,
+    )
+    .expect("it starts on the runner");
+    let here = browsers.open(&root).expect("and one on this machine");
+    let running = |program: &str| {
+        browsers
+            .link_for(program)
+            .ok()
+            .and_then(|link| match link.call(Command::List) {
+                Ok(Answer::Chats(listed)) => Some(
+                    listed
+                        .iter()
+                        .any(|one| one.chat == program && one.state != "ended"),
+                ),
+                _ => None,
+            })
+    };
+    assert_eq!(running(&on_a_runner), Some(true));
+    assert_eq!(running(&here), Some(true));
+
+    // What the app does at its quit to this machine's host.
+    browsers
+        .link()
+        .expect("this machine's link")
+        .quit_within(std::time::Duration::from_secs(5))
+        .expect("the host answers the quit");
+
+    assert_eq!(
+        running(&on_a_runner),
+        Some(true),
+        "the runner's browser runs on past the quit"
+    );
+    assert_eq!(on_the_runner.started().len(), 1);
+    assert_ne!(
+        running(&here),
+        Some(true),
+        "this machine's browser ended with the quit"
+    );
+}
+
 /// What the person is told of browsers a forgotten pool's machine did not answer for: they are
 /// listed as left there, and said safely.
 #[test]
