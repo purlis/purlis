@@ -228,6 +228,18 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
   });
 
+  it("is drawn where a number typed asks for an open chat alone, which draws no finished row (#7145's review)", async () => {
+    // 2 is open chat 2's number: the list then draws that chat alone, and no finished task,
+    // even one whose name holds the digits, so the closed chat that had 2 is the only row left.
+    draw({
+      finished: new Map([[1, [{ ...TIDIED, name: "Tidy the changelog 2" }]]]),
+      closed: () => [{ ...CLOSED, found_by: 2 }],
+    });
+    await typeInTheFilter("2");
+
+    expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
+  });
+
   it("is found by a number it had before a restart, and its row and card say that number (#6685)", async () => {
     draw();
     await typeInTheFilter("702");

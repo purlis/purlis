@@ -122,7 +122,7 @@ pub(crate) enum Asked {
 impl Asked {
     /// The number a card was asked for by, where it was asked for by a number rather than its
     /// ULID.
-    fn number_given(self) -> Option<u32> {
+    fn asked_by_number(self) -> Option<u32> {
         match self {
             Self::Number(number) => Some(number),
             Self::Id { .. } => None,
@@ -185,18 +185,26 @@ fn answer(held: &Held, found: Found, asked: Asked, open: &[chatlookup::OpenChat]
 /// pane's `chat 702` link and a closed chat's row in the filter all show. Titled by the number
 /// its chat closed under, from the record the lookup found with it (`chatlookup::Ended`, never
 /// read again), saying the number asked where it is one it had before a restart. Where no close
-/// was kept, by the number asked, or by its ULID the one it was dispatched under.
+/// was kept, or where it does not answer to the number asked, by the number asked, or by its
+/// ULID the one it was dispatched under.
 pub(crate) fn card_of_ended(
     held: &Held,
     asked: Asked,
     ended: &chatlookup::Ended,
     open: &[chatlookup::OpenChat],
 ) -> Option<ChatCard> {
-    let (number, found_by) = match &ended.closed {
+    // A close that does not answer to the number asked would title the card by a number the
+    // person never gave, with nothing saying why (its earlier numbers capped, say).
+    let closed = ended.closed.as_ref().filter(|chat| {
+        asked
+            .asked_by_number()
+            .is_none_or(|number| chat.answers_to(number))
+    });
+    let (number, found_by) = match closed {
         Some(chat) => (chat.number, asked.found_by(chat)),
         None => (
             asked
-                .number_given()
+                .asked_by_number()
                 .unwrap_or(ended.record.worker.chat.chat),
             None,
         ),
@@ -887,6 +895,23 @@ mod found_by_id_tests {
         assert_eq!((by_last.number, by_last.found_by), (731, None));
         assert!(by_earlier.task.is_some(), "drawn from its task");
         assert!(by_last.task.is_some(), "drawn from its task, not bare");
+    }
+
+    #[test]
+    fn a_task_s_card_asked_by_a_number_its_close_does_not_answer_to_is_numbered_as_asked() {
+        // #7145's review: its close kept no word of 702 (its earlier numbers capped, say), so a
+        // card titled #812 would not say why it answers 702.
+        let (_dir, _planes, held) = a_project();
+        a_finished_task(held.root(), 702, TIDY_THE_CHANGELOG);
+        let closed = ChatRecord {
+            number: 812,
+            ..tidy_the_changelog(Vec::new())
+        };
+        purlis_core::chatrecords::keep(held.root(), &closed).expect("its close is kept");
+
+        let found = card(lookup(&held, 702));
+
+        assert_eq!((found.number, found.found_by), (702, None));
     }
 
     #[test]

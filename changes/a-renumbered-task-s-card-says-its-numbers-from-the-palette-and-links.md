@@ -10,4 +10,4 @@
 - **Two closed chats that once had the same number can be reopened at once**: the second Reopen
   was refused as if it were the first chat starting twice (#7145).
 - **Typing a number too large to be a chat's in the Chats filter looks for it as words**: past
-  4294967295 it said the closed chats could not be read (#7145).
+  4294967295 it said the closed chats could not be read (#7140).
