@@ -186,6 +186,8 @@ import {
   isPlaneRoot,
   outsideFileTitle,
   outsideFileView,
+  runnerFileTitle,
+  runnerFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -5483,10 +5485,13 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
-  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  /** A file outside the project a pane's link opened (#6216), or one on a runner chat's runner
+   *  (#6387), in a read-only tab of its own. */
   const outsideFile = useCallback(
-    ({ session, path }: { session: number | null; path: string }) =>
-      showView(outsideFileView(session, path), outsideFileTitle(path)),
+    ({ session, runner, path }: { session: number | null; runner?: string; path: string }) =>
+      runner === undefined
+        ? showView(outsideFileView(session, path), outsideFileTitle(path))
+        : showView(runnerFileView(session, runner, path), runnerFileTitle(runner, path)),
     [showView],
   );
   useOutsideFileAsks(plane, outsideFile);

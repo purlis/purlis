@@ -601,9 +601,16 @@ use crate::view::{Limits, Views};
 /// now while the link to a runner is down; and say `link_down` again while it is down each time
 /// why changes, so the window says what the last try found. A host before 1.92 is sent no
 /// `link_now`.
+///
+/// 1.93 has a host read a file for its window ([`Command::ReadFile`], #6387): a path a chat on
+/// it printed, as data, never a shell line, resolved there from the chat's own folder with every
+/// link followed on the host's side, and held to the chat's workspace unless the person
+/// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
+/// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
+/// is not asked, and its chat's paths stay no link.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 92,
+    minor: 93,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -626,6 +633,20 @@ pub const KNOWS_PAGES_SHOWN: Version = Version {
     major: 1,
     minor: 90,
 };
+
+/// The version that first reads a file for its window ([`Command::ReadFile`], #6387): none is
+/// asked of a host before.
+pub const KNOWS_READ_FILE: Version = Version {
+    major: 1,
+    minor: 93,
+};
+
+/// The largest file [`Command::ReadFile`] reads (1.93): what the light editor draws.
+pub const MOST_FILE_READ: u64 = 2 * 1024 * 1024;
+
+/// The most bytes one [`Answer::File`] carries (1.93), so its frame, base64 and all, stays well
+/// inside [`crate::link::MOST_CONTROL_FRAME_BYTES`].
+pub const MOST_FILE_PIECE: u64 = 512 * 1024;
 
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
 /// T1-34): none is sent to a host before.
@@ -1475,6 +1496,21 @@ pub enum Command {
         piece: Option<String>,
         chat: String,
         number: u32,
+    },
+    /// **Read a file a chat on this host printed, for the window** (1.93, #6387): `path` as the
+    /// chat printed it, data and never a shell line, from chat `program`'s own folder where it
+    /// is relative, with every link followed on this host's side. With `reach` of
+    /// [`FileReach::Workspace`], a file whose resolved path is outside the chat's workspace is
+    /// answered [`FileRead::Outside`] and not read. With no `at`, only looked at; with `at`, its
+    /// bytes from there, at most [`MOST_FILE_PIECE`]. Answered [`Answer::File`]; refused
+    /// [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    ReadFile {
+        program: String,
+        path: String,
+        reach: FileReach,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<u64>,
     },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
@@ -2532,6 +2568,65 @@ impl std::fmt::Debug for Reporting {
     }
 }
 
+/// **How far a [`Command::ReadFile`] may reach** (1.93): the chat's workspace alone, or anywhere
+/// on the host, once the person answered an ask for that file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileReach {
+    Workspace,
+    Anywhere,
+}
+
+/// **A file a chat printed, as the host found it** (1.93, [`Command::ReadFile`]). `path` is
+/// where it is on the host, every link resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "found", rename_all = "snake_case")]
+pub enum FileRead {
+    /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
+    /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
+    /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
+    /// `at`, the piece from there.
+    Plain {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_workspace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        home: Option<FileHome>,
+        size: u64,
+        version: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        piece: Option<FilePiece>,
+    },
+    /// Nothing is there, or the path cannot be read as one: no link.
+    NotThere,
+    /// Something is there that is not a plain file: a folder, a device, a pipe, a socket, or a
+    /// file of the host's own system (`/proc`, `/sys`, `/dev`).
+    NotPlain { path: String },
+    /// A file that is not text, `size` bytes long.
+    Binary { path: String, size: u64 },
+    /// A file past [`MOST_FILE_READ`], `size` bytes long.
+    TooLarge { path: String, size: u64 },
+    /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
+    Outside { path: String },
+}
+
+/// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,
+/// named, or the project for a chat at the project's root; and its folder there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileHome {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub folder: String,
+}
+
+/// **A piece of a file** (1.93): its bytes from `at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePiece {
+    pub at: u64,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
 /// What kind of program a session host holds. A later minor adds one (a browser, spec 2); a
 /// host that does not know a kind refuses the command it came in as `malformed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2673,6 +2768,9 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unmarked: Option<String>,
     },
+    /// A file a chat on the host printed, as [`Command::ReadFile`] found it (1.93). Boxed: a
+    /// piece of it is up to [`MOST_FILE_PIECE`].
+    File(Box<FileRead>),
     /// Nothing was written: these chats working there are not idle (1.78), each by its number on
     /// the host and how a sentence says what it is doing.
     UndoWaits { chats: Vec<UndoWaitsOn> },
@@ -3283,6 +3381,7 @@ wire_words!(Command {
     ClonesOf => "clones_of",
     ReposHeld => "repos_held",
     UndoTurn => "undo_turn",
+    ReadFile => "read_file",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     NoteStrays => "note_strays",
@@ -3361,7 +3460,8 @@ impl Command {
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
             | Command::ReposHeld
-            | Command::UndoTurn { .. } => Power::Code,
+            | Command::UndoTurn { .. }
+            | Command::ReadFile { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
@@ -3437,6 +3537,7 @@ wire_words!(Answer {
     Clones => "clones",
     ReposHeld => "repos_held",
     TurnUndone => "turn_undone",
+    File => "file",
     UndoWaits => "undo_waits",
     ProfileKept => "profile_kept",
     Profiles => "profiles",
@@ -3919,6 +4020,8 @@ impl Lane {
             | Command::ClonesOf { .. }
             | Command::ReposHeld
             | Command::UndoTurn { .. }
+            // A read, which holds up nothing else.
+            | Command::ReadFile { .. }
             // Waits on the window, which may be asked more meanwhile.
             | Command::AskGrade { .. }
             // A durable write, which holds up nothing else.
@@ -4922,6 +5025,29 @@ impl Client {
             .await?
         {
             Answer::Clones { repos, origins } => Ok((repos, origins)),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **A file chat `program` printed, as its host finds it** (1.93, #6387): only looked at,
+    /// with no `at`; its bytes from `at` otherwise.
+    pub async fn read_file(
+        &self,
+        program: &str,
+        path: &str,
+        reach: FileReach,
+        at: Option<u64>,
+    ) -> Result<FileRead, CallError> {
+        match self
+            .call(Command::ReadFile {
+                program: program.to_owned(),
+                path: path.to_owned(),
+                reach,
+                at,
+            })
+            .await?
+        {
+            Answer::File(read) => Ok(*read),
             other => Err(unexpected(&other)),
         }
     }
