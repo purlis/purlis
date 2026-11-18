@@ -1785,3 +1785,84 @@ fn a_host_before_1_73_is_not_asked_whether_a_page_asks_to_sign_in() {
     assert!(!super::says_asks_to_sign_in(before));
     assert!(super::says_asks_to_sign_in(KNOWS_ASKS_TO_SIGN_IN));
 }
+
+/// **Browsers on a pool the person forgot end as the person's, stopped on the machine where it
+/// answers** (#7187 item 6): `Forget it here` ends the window's links to the pool, and without
+/// this its browsers were left to be recorded as crashes.
+#[test]
+fn a_forgotten_pools_browsers_are_stopped_there_and_said_closed_by_the_person_never_crashed() {
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Closer, Said};
+
+    let WithARunner {
+        window:
+            Window {
+                browsers,
+                root,
+                _dirs,
+                _runtime,
+                ..
+            },
+        on_the_runner,
+        _store,
+    } = a_window_with_a_runner();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers
+        .start(
+            &root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect("it starts on the runner");
+    let here = browsers.open(&root).unwrap();
+    assert_eq!(on_the_runner.started().len(), 1);
+
+    let ended = browsers.end_on_forgotten("builds");
+
+    assert_eq!((ended.stopped, ended.left), (1, 0));
+    assert_eq!(browsers.pool_of(&program), None, "forgotten with its pool");
+    assert!(
+        browsers.pool_of(&here).is_none() && browsers.started_in(&root, &here),
+        "this machine's own browser is not the pool's"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let ends: Vec<Said> = said
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|one| !matches!(one, Said::Opened { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        ends,
+        [Said::Closed {
+            browser: program,
+            by: Closer::Person
+        }]
+    );
+}
+
+/// What the person is told of browsers a forgotten pool's machine did not answer for: they are
+/// listed as left there, and said safely.
+#[test]
+fn browsers_left_on_a_forgotten_pools_machine_are_listed_as_left() {
+    assert_eq!(crate::browsers::left_on_the_machine(0), None);
+    let one = crate::browsers::left_on_the_machine(1).unwrap();
+    assert!(one.contains("1 browser ") && one.contains("keeps running"), "{one}");
+    let two = crate::browsers::left_on_the_machine(2).unwrap();
+    assert!(two.contains("2 browsers ") && two.contains("keep running"), "{two}");
+}
+
+/// **Starts on different runners are not one queue** (#7187 item 8): the window-wide mutex is
+/// gone, and a link's own gate holds only that link's starts one at a time.
+#[test]
+fn a_start_on_one_link_waits_for_that_links_start_alone() {
+    let gates = super::StartGates::default();
+    let (first, same, other) = (gates.of(1), gates.of(1), gates.of(2));
+    let _starting = first.lock().unwrap();
+    assert!(same.try_lock().is_err(), "the same link's next start waits");
+    assert!(other.try_lock().is_ok(), "another runner's start does not");
+}

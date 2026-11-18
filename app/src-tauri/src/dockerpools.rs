@@ -682,10 +682,20 @@ fn gone_from_here(
     for project in held {
         project.browsers().forget_pool_logins(name);
     }
+    // Its browsers first, while their links stand: each is stopped on its machine where that
+    // answers, and one it did not answer for is listed as left there (#7187 item 6).
+    let browsers_left = crate::browsers::browsers(app)
+        .map(|browsers| browsers.end_on_forgotten(name).left)
+        .ok()
+        .and_then(crate::browsers::left_on_the_machine);
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
         links_end_once_gone(&host.connection(), config, name);
     }
-    (!left.is_empty()).then(|| crate::devices::shown_safely(left))
+    let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
+    match (said, browsers_left) {
+        (Some(said), Some(browsers)) => Some(format!("{said} {browsers}")),
+        (said, browsers) => said.or(browsers),
+    }
 }
 
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window

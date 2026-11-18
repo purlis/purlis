@@ -398,6 +398,23 @@ impl BrowserInput {
 #[cfg(unix)]
 pub(crate) use hosted::WindowBrowsers;
 
+/// **What the person is told of `left` browsers a forgotten pool's machine did not answer for**
+/// (#7187 item 6): they keep running there until the container is removed.
+pub(crate) fn left_on_the_machine(left: usize) -> Option<String> {
+    match left {
+        0 => None,
+        1 => Some(
+            "1 browser could not be stopped on the pool's machine and keeps running there until \
+             its runner is removed."
+                .to_owned(),
+        ),
+        many => Some(format!(
+            "{many} browsers could not be stopped on the pool's machine and keep running there \
+             until its runner is removed."
+        )),
+    }
+}
+
 #[cfg(unix)]
 mod hosted {
     use std::collections::HashMap;
@@ -415,6 +432,33 @@ mod hosted {
     use crate::chatbrowsers::NotStarted;
     use crate::hostedsessions::{Connection, FrameSink, HostLink, OriginSink, Reconnect};
     use crate::reconnecting::Reconnection;
+
+    /// **One gate per link**, so a start counts the host's browsers against its budget before
+    /// the next on that host does, and a start on another runner waits for none (#7187 item 8).
+    #[derive(Default)]
+    pub(crate) struct StartGates(Mutex<HashMap<u64, Arc<Mutex<()>>>>);
+
+    impl StartGates {
+        /// The gate of link `link`: the same one each time, none shared with another link.
+        pub(crate) fn of(&self, link: u64) -> Arc<Mutex<()>> {
+            Arc::clone(
+                self.0
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .entry(link)
+                    .or_default(),
+            )
+        }
+    }
+
+    /// **What forgetting a pool did to the window's browsers on it** (#7187 item 6).
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct Forgotten {
+        /// Stopped on the pool's machine.
+        pub stopped: usize,
+        /// Not stopped: the machine did not answer, so each runs on there.
+        pub left: usize,
+    }
 
     /// **The window's line for the end of browser `program`** (#2745): how the session host said
     /// it ended. The host's own line, in the same log, says who ended it and why.
@@ -732,7 +776,7 @@ mod hosted {
         /// The most browsers the device runs at once (#2023), read at each start, and the lock
         /// one start holds from its count to its start, so two never both take the last.
         budget: Arc<dyn Fn() -> usize + Send + Sync>,
-        starting: Mutex<()>,
+        starting: StartGates,
         /// How many acts of the person's this window sent (#2176): part of each one's id.
         acts: std::sync::atomic::AtomicU64,
         /// Each view the window watches, and whether it is dimmed while its runner's link is
@@ -841,7 +885,7 @@ mod hosted {
                 projects: Mutex::new(HashMap::new()),
                 ended: Arc::new(|_| {}),
                 budget: Arc::new(|| purlis_core::browserlimits::budget_for(None)),
-                starting: Mutex::new(()),
+                starting: StartGates::default(),
                 dimming: Arc::default(),
                 acts: std::sync::atomic::AtomicU64::new(0),
                 says: Arc::new(|_, _| {}),
@@ -1002,24 +1046,40 @@ mod hosted {
         /// or may have run, there without the sandbox: the runner's host clears each one's data
         /// folder as it ends. Answers how many it ended.
         pub(crate) fn end_on(&self, pool: &str) -> usize {
+            self.end_each_on(pool, None).stopped
+        }
+
+        /// **Ends every browser the window started on pool `pool`, which the person forgot**
+        /// (#7187 item 6): each is stopped on its machine where that answers, and said closed by
+        /// the person, never crashed; one the machine did not answer for stays running there,
+        /// and is counted as `left`. Done before the pool's links end.
+        pub(crate) fn end_on_forgotten(&self, pool: &str) -> Forgotten {
+            self.end_each_on(pool, Some(Closer::Person))
+        }
+
+        fn end_each_on(&self, pool: &str, closer: Option<Closer>) -> Forgotten {
             let programs: Vec<String> = self
                 .projects()
                 .iter()
                 .filter(|(at, _)| at.pool.as_deref() == Some(pool))
                 .flat_map(|(_, held)| held.browsers.clone())
                 .collect();
-            programs
-                .iter()
-                .filter(|program| {
-                    self.close(program)
-                        .inspect_err(|why| {
-                            tracing::warn!(
-                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
-                            );
-                        })
-                        .is_ok()
-                })
-                .count()
+            let mut ended = Forgotten::default();
+            for program in &programs {
+                if let Some(closer) = closer {
+                    self.closed_by(program, closer);
+                }
+                match self.close(program) {
+                    Ok(()) => ended.stopped += 1,
+                    Err(why) => {
+                        tracing::warn!(
+                            "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                        );
+                        ended.left += 1;
+                    }
+                }
+            }
+            ended
         }
 
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
@@ -1299,7 +1359,10 @@ mod hosted {
             if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
                 return Err(NotStarted::Failed(why));
             }
-            let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
+            // One start at a time on this link's host, whose budget it counts; starts on other
+            // runners go on at once (#7187 item 8).
+            let gate = self.starting.of(link.id());
+            let _one_at_a_time = gate.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed
                     .iter()
