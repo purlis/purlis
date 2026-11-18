@@ -8,8 +8,8 @@
 #
 # entry                         runs-on        timeout  [kind: escape]
 sandbox-scenarios               ubuntu-24.04   60
-sandbox-scenarios               macos-15       90
-sandbox-scenarios               macos-26       90
+sandbox-scenarios               macos-15       120
+sandbox-scenarios               macos-26       120
 existing-macos-sandbox-tests    macos-latest   100
 fuzz-parsers                    ubuntu-24.04   120
 # Ticket 3: each harness re-recorded at its pinned version and at its latest release (T1.1-03).
@@ -28,6 +28,6 @@ coverage-issues               ubuntu-24.04   60
 # and the Linux release-profile job. Each entry's budget is derived from the pull request runs in
 # `docs/sandbox-scenarios-ci.md` (a nightly runs only from main's scheduler, after a merge).
 production-timings            ubuntu-24.04   75
-production-timings            macos-15       90
-production-timings            macos-26       90
-linux-release-profile         ubuntu-24.04   60
+production-timings            macos-15       120
+production-timings            macos-26       120
+linux-release-profile         ubuntu-24.04   50

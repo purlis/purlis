@@ -107,12 +107,12 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    # **Budget: 60 minutes**, from runs 44267476720 (test build 14 min, kit 10, suite 2.5, 27 min
-    # to the coverage gate), 44281556559 (test build 16, kit 14.5, suite 3: 35 min to the coverage
-    # gate) and 44239993521 (the whole job, 36 min, its coverage gate 12 min of a second build):
-    # at worst 35 + 12 = 47 minutes. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. A
-    # `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
-    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 60 }}
+    # **Budget: 40 minutes**, from run 44301286922: the test build 13 min, the kit 10 (the gate's
+    # program 2), the suite 2, the production-timing entries and the gate seconds: 27 minutes. The
+    # worst of the runs in `docs/sandbox-scenarios-ci.md` is 36 (a cold kit, and the coverage gate's
+    # second build, which the resolver seam's own target folder ended). Exceeding it fails the job.
+    # A `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 40 }}
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -230,12 +230,12 @@ jobs:
       matrix:
         os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    # **Budget: 75 minutes**, from runs 44267476720 (macos-15: build 30 min, kit 4.5, suite 2.5;
-    # macos-26: build 28, kit 6, suite 4) and 44281556559 (macos-15: build 44, kit 8: both
-    # cancelled at the 55 the first measurement set). A macOS runner's cold build is 24 to 53
-    # minutes (T1.1-54): the worst of these, 44 + 8 + 3 + 4 + the production-timing entries 5, is
-    # 64. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. `stress-x20`'s is its own: 180.
-    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 75 }}
+    # **Budget: 90 minutes**, from run 44301286922: macos-15 took 69 (the test build 55, the kit 9,
+    # the suite 3) and macos-26 63 (build 43, kit 12, suite 7). A macOS runner's cold build is 28 to
+    # 55 minutes (the ticket's 24 to 53 held until now): the worst build seen, 55, with the kit and
+    # the suite after it, is 76. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
+    # `stress-x20`'s is its own: 180.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 90 }}
     permissions:
       contents: read
       issues: write
@@ -287,9 +287,9 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && needs.plan.outputs.macos != 'false' }}
     runs-on: macos-latest
-    # **Budget: 100 minutes**, from run 44267476720, where it took 77 (`studio-confinement-macos`'s
-    # steps and purlis-app's test build on top); `docs/sandbox-scenarios-ci.md`. Exceeding it fails
-    # the job.
+    # **Budget: 100 minutes**, from runs 44267476720 and 44301286922, where it took 77 and 71
+    # (`studio-confinement-macos`'s steps and purlis-app's test build on top);
+    # `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -317,9 +317,10 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && needs.plan.outputs.release-profile == 'true' }}
     runs-on: ubuntu-24.04
-    # **Budget: 60 minutes**, from run 44267476720, where a cold release build and its checks took
-    # 37; the nightly saves the cache a pull request restores. `docs/sandbox-scenarios-ci.md`.
-    timeout-minutes: 60
+    # **Budget: 50 minutes**, from runs 44267476720, 44281556559 and 44301286922, where a release
+    # build and its checks took 37, 40 and 32; the nightly saves the cache a pull request
+    # restores. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

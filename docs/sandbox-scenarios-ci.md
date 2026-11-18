@@ -42,26 +42,30 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 
 A job's `timeout-minutes` is its budget: exceeding it fails the job. They started at 15 minutes for
 the Linux pull request job and 60 for the macOS job, and are set from what these runs measured.
-The 15 minutes could not hold: a cold test build is 14 minutes on Linux and 28 to 30 on macOS
+The 15 minutes could not hold: a cold test build is 13 to 16 minutes on Linux and 28 to 55 on macOS
 before a single scenario runs, so the budget is the build, the kit and the suite with a margin.
 
 | Job | Budget (min) | Measured | Runs |
 |---|---|---|---|
-| `sandbox-scenarios-linux` | 60 | test build 14 to 16, kit 10 to 14.5, suite 2.5 to 3; 27 to 35 minutes to the coverage gate, whose own build after the suite is 12 more: 47 at worst | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
-| `sandbox-scenarios-macos` | 75 | build 28 to 44, kit 4.5 to 8, suite 2.5 to 4, production-timing entries about 5: 64 at worst; the 55 first set was exceeded by run 44281556559's macos-15 and macos-26 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
-| `macos-sandbox-tests` | 100 | 77 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
-| `linux-release-profile` | 60 | 37 and 40 on a cold cache (`purlis` 12.5, the app 22.5, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
+| `sandbox-scenarios-linux` | 40 | test build 13, kit 10, suite 2, the rest seconds: 27 minutes. Before the coverage gate's second build was ended (below) the same job took 36 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
+| `sandbox-scenarios-macos` | 90 | macos-15: test build 55, kit 9, suite 3 (69 in all); macos-26: build 43, kit 12, suite 7 (63). A cold macOS build is 28 to 55 minutes; the worst of it with the kit and the suite after is 76 | [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922), [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
+| `macos-sandbox-tests` | 100 | 77 and 71 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922) |
+| `linux-release-profile` | 50 | 37, 40 and 32 (`purlis` and the extensions 12, the app 22, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44301286922](https://github.com/purlis/purlis/actions/runs/44301286922) |
 
 A `stress-x20` run is the same suite twenty times over under load, so it has a budget of its own
 (Linux 150, macOS 180); a change that touches no batch a test is named for stresses the whole suite.
 
 The nightly's entries run only from main's scheduler, after a merge, so their budgets are the
-pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 90: a build, the kit, three suites), the
-production-timing run (Linux 75, macOS 90: a build, the kit, and M-NET-25's 15 real minutes), and
-the release profile (60). They are in `.github/nightly-on-phase-1-proven.txt`, and the first
+pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 120: a build, the kit, three suites), the
+production-timing run (Linux 75, macOS 120: a build, the kit, and M-NET-25's 15 real minutes), and
+the release profile (50). They are in `.github/nightly-on-phase-1-proven.txt`, and the first
 nightly's run IDs replace this paragraph's derivation.
 
-**Why the run-result gate is a program of its own.** A `cargo nextest run` after the suite finds the
-workspace's test build stale and builds it again: 14 minutes on Linux, 21 on macOS in run
-44267476720 (the matrix coverage gate pays the same 12 minutes on Linux). The gate
-(`scenarios-gate`, built into the kit's target folder with `purlis`) needs no build.
+**A cargo run after the suite must not rebuild the workspace.** Until run 44301286922 it did: 14
+minutes on Linux, 21 on macOS (the matrix coverage gate paid 12 on Linux every time, and the
+production-timing step 15). The cause, reproduced locally: the resolver seam's compile check
+(`resolver_seam::the_resolver_seam_does_not_compile_without_test_support`) ran `cargo rustc` in the
+workspace's target folder, and that left `ring` and every crate over it stale. It builds in
+`target/seam-probe` now, so the nightly's repeats and the stress run's twenty runs reuse one build.
+**The run-result gate is a program of its own** all the same (`scenarios-gate`, built into the kit's
+target folder with `purlis`): it needs no build, whatever a later test does to the target folder.
