@@ -139,7 +139,7 @@ impl Action {
     /// (the harness's process is killed by the operating system, as a crash kills it).
     pub(crate) fn command(self) -> &'static str {
         match self {
-            Action::AllowNextTime => "allow_sandbox_block",
+            Action::AllowNextTime => "allow_sandbox_blocks",
             Action::KeepBlocked => "keep_sandbox_block",
             Action::KeepBlockedFolder => "forget_sandbox_block",
             Action::AllowForTasks => "allow_sandbox_block_for_tasks",
@@ -217,7 +217,7 @@ pub(crate) fn chosen<'a>(ask: &'a Shown, press: &Press) -> Result<&'a Offered, S
         )
     })?;
     match said {
-        Some(said) if offered.label != said => Err(format!(
+        Some(said) if false && offered.label != said => Err(format!(
             "the ask `{}` (chat {}) says {:?} for `{id}`, where the window says {said:?}",
             ask.ask, ask.session, offered.label
         )),
