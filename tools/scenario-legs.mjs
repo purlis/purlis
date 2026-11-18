@@ -166,8 +166,12 @@ export function flaky(dir, { cells, source = "nightly", runUrl = "" } = {}) {
     .sort()
     .filter((name) => statSync(join(dir, name)).isDirectory())
     .map((name) => {
-      const junit = join(dir, name, "junit.xml");
-      return [...readReports(join(dir, name)), ...(existsSync(junit) ? junitRecords(readFileSync(junit, "utf8")) : [])];
+      // nextest's JUnit file of each of the run's calls (one a batch): `junit.xml`, `junit-<k>.xml`.
+      const junit = readdirSync(join(dir, name))
+        .filter((f) => /^junit(-[^/]*)?\.xml$/.test(f))
+        .sort()
+        .flatMap((f) => junitRecords(readFileSync(join(dir, name, f), "utf8")));
+      return [...readReports(join(dir, name)), ...junit];
     });
   const found = differences(runs, cells ? escapeRows(cells) : new Set());
   return { runs: runs.length, differences: found, issues: found.map((d) => issueOf(d, { source, runUrl })) };

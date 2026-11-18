@@ -269,13 +269,18 @@ function runScript(set, env = {}) {
         fake,
         `#!/bin/sh\necho "${name} $*" >> "${log}"\n` +
           (name === "cargo"
-            ? `case " $* " in *" list "*) printf '%s\\n' "$FAKE_LIST"; exit 0;; esac\n[ -n "$FAKE_CARGO_FAILS" ] && { echo "what an escape would say"; exit 1; }\nexit 0\n`
+            ? `case " $* " in *" list "*) printf '%s\\n' "$FAKE_LIST"; exit 0;; esac\n` +
+              // What nextest does: each call rewrites one JUnit file, with the tests it ran.
+              `if [ -n "$FAKE_JUNIT" ]; then b=$(echo "$*" | sed -n 's/.*test(\\/^\\([a-z_:]*\\)(.*/\\1/p'); mkdir -p target/nextest/ci; ` +
+              `printf '<testsuite>\\n<testcase classname="purlis-app" name="%s::m_01"/>\\n<testcase classname="purlis-app" name="%s::m_02"/>\\n</testsuite>\\n' "$b" "$b" > target/nextest/ci/junit.xml; fi\n[ -n "$FAKE_CARGO_FAILS" ] && { echo "what an escape would say"; exit 1; }\nexit 0\n`
             : "exec sleep 30\n"),
       );
       chmodSync(fake, 0o755);
     }
     const result = spawnSync("bash", [join(root, "tools/sandbox-scenarios.sh"), set], {
       encoding: "utf8",
+      // A stand-in that writes JUnit files runs in the folder of its own, not the checkout.
+      cwd: env.FAKE_JUNIT ? dir : undefined,
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, ...env },
     });
     const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -314,6 +319,14 @@ test("the nightly runs the set three times, its batches shuffled each time and i
   for (const order of orders) assert.deepEqual([...order].sort(), ["a", "b", "c", "d"]);
   assert.ok(new Set(orders).size > 1, `the order moved between runs: ${orders}`);
   for (const c of runs) assert.match(c, /--retries 0\b/);
+});
+
+test("an all-green nightly, its batches shuffled, has no entry that differs between its runs", () => {
+  // nextest rewrites one JUnit file a call: the run's verdicts are every batch's, not the last one's.
+  const list = ["a", "b", "c", "d"].flatMap((b) => ["m_01", "m_02"].map((c) => `purlis-app scenarios::${b}::${c}`)).join("\n");
+  const nightly = runScript("suite", { REPEAT: "3", SHUFFLE_SEED: "11", FAKE_LIST: list, FAKE_JUNIT: "1", FLAKY_DRY_RUN: "1" });
+  assert.equal(nightly.status, 0, nightly.output);
+  assert.match(nightly.output, /3 runs compared: 0 entries differ/);
 });
 
 test("the stress run keeps M-NET-25 out", () => {
