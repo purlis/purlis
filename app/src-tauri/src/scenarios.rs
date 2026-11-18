@@ -687,6 +687,7 @@ fn a_fixture_record(
         timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
         verdict,
         reason: Some(reason.to_owned()),
+        refusal_expected: false,
     }
 }
 

@@ -1502,6 +1502,7 @@ impl Drop for Scenario {
                         "#7103: a chat's background process outlives the host's quit on macOS"
                             .to_owned(),
                     ),
+                    refusal_expected: false,
                 }]);
             }
             // Ended either way, so nothing of the scenario outlives the run.
