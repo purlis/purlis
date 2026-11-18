@@ -206,28 +206,34 @@ impl Routed {
     /// Asks for the runner this link is relayed to to run again, off the runtime: how long a
     /// start waits for it, where it is on its way back. A stopped host wakes nothing.
     async fn run_again(&self) -> Option<std::time::Duration> {
-        let (Some(runs_again), Some(runner)) =
-            (self.hosting.runs_again(), lock(&self.runner).clone())
-        else {
+        let Some(runner) = lock(&self.runner).clone() else {
             return None;
         };
         if self.hosting.is_stopped() {
             return None;
         }
-        let asking = runner.clone();
-        let asked = tokio::task::spawn_blocking(move || runs_again(&asking))
-            .await
-            .ok()
-            .flatten();
-        self.hosting.waits_for(&runner, asked)
+        let asked = match self.hosting.runs_again() {
+            Some(runs_again) => {
+                let asking = runner.clone();
+                tokio::task::spawn_blocking(move || runs_again(&asking))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            None => None,
+        };
+        // A runner not asked to run again, a Docker pool's, still waits while its link is
+        // down, as long as a link that has been down only a moment (#7187).
+        self.hosting
+            .waits_for(&runner, asked)
+            .or(Some(self.hosting.link_down_wait()))
     }
 
-    /// Whether the runner this link is relayed to was asked to run again, and is not back yet.
+    /// Whether the runner this link is relayed to may come back: one asked to run again that is
+    /// not back yet, or, for any pool, a link that is down for a moment (#7187). A window
+    /// subscribes as its link opens, and a refusal there would end its start before its wait.
     fn its_runner_comes_back(&self) -> bool {
-        !self.hosting.is_stopped()
-            && lock(&self.runner)
-                .as_deref()
-                .is_some_and(|runner| self.hosting.waits_for(runner, None).is_some())
+        !self.hosting.is_stopped() && lock(&self.runner).is_some()
     }
 
     /// `peer`'s hold or start waits for its runner where that is on its way back (#4403).

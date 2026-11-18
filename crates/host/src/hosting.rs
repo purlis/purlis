@@ -601,6 +601,12 @@ const MOST_WINDOWS_KEPT: usize = 16;
 /// The most notices a subscriber's queue holds before it is let go of.
 const MOST_NOTICES_QUEUED: usize = 1024;
 
+/// **How long a start waits for a runner whose link is down, for every kind of pool** (#7187):
+/// the way a cluster pool's start waits for its runner. It is the window's own 30 seconds
+/// before "Reconnecting…" says why (#7135), so a start that gives up says it as that notice
+/// does. A key changed or a runner gone is never waited out.
+pub const LINK_DOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// The hosted programs and the projects they are in: what answers the session protocol on
 /// every link. A clone is the same host.
 #[derive(Clone)]
@@ -656,6 +662,9 @@ struct Inner {
     drains: OnceLock<crate::routing::DrainsTo>,
     /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
     runs_again: OnceLock<crate::routing::RunsAgain>,
+    /// How long a start waits for a runner whose link is down (#7187): [`LINK_DOWN_WAIT`]
+    /// unless a test holds it shorter.
+    link_down_wait: OnceLock<std::time::Duration>,
     /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
     /// a wake is one word on its Claim, and every link's start waits for that one wake.
     waking: Mutex<HashMap<String, std::time::Instant>>,
@@ -1277,6 +1286,7 @@ impl Hosting {
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
                 runs_again: OnceLock::new(),
+                link_down_wait: OnceLock::new(),
                 waking: Mutex::default(),
                 runners,
                 unattended: crate::unattended::Links::default(),
@@ -1512,6 +1522,23 @@ impl Hosting {
     pub fn running_again_with(self, runs_again: crate::routing::RunsAgain) -> Hosting {
         let _ = self.inner.runs_again.set(runs_again);
         self
+    }
+
+    /// This host, a start waiting `wait` for a runner whose link is down instead of
+    /// [`LINK_DOWN_WAIT`].
+    #[must_use]
+    pub fn waiting_for_a_down_link(self, wait: std::time::Duration) -> Hosting {
+        let _ = self.inner.link_down_wait.set(wait);
+        self
+    }
+
+    /// How long a start waits for a runner whose link is down (#7187).
+    pub(crate) fn link_down_wait(&self) -> std::time::Duration {
+        self.inner
+            .link_down_wait
+            .get()
+            .copied()
+            .unwrap_or(LINK_DOWN_WAIT)
     }
 
     /// Whether this host is stopped: nothing wakes a runner meanwhile (#2051, #4403).

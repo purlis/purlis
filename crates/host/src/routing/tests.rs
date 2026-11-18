@@ -574,12 +574,30 @@ async fn a_start_on_a_runner_on_its_way_back_waits_for_it() {
     assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
 }
 
-/// A runner that is not on its way back is said to be down at once, as it always was.
+/// **A start on a runner whose link is down waits for it, whatever the pool** (#7187): a Docker
+/// pool's runner is not asked to run again, and its start used to be refused the moment its
+/// link was down, one second before the link came back.
 #[tokio::test]
-async fn a_start_on_a_runner_that_is_merely_down_is_refused_at_once() {
-    let host = a_desktop_whose_runner_comes_back(u32::MAX, not_vouched_yet, waiting(None));
+async fn a_start_on_a_runner_whose_link_is_merely_down_waits_for_it() {
+    let host = a_desktop_whose_runner_comes_back(3, not_vouched_yet, waiting(None))
+        .waiting_for_a_down_link(PATIENCE);
+    let (held, started) = refused_a_hold_and_a_start(host).await;
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
+    assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
+}
+
+/// The wait for a link that stays down ends, and a start says why it is down.
+#[tokio::test]
+async fn a_start_on_a_runner_whose_link_stays_down_is_refused_when_the_wait_ends() {
+    let host = a_desktop_whose_runner_comes_back(u32::MAX, not_vouched_yet, waiting(None))
+        .waiting_for_a_down_link(Duration::from_millis(300));
+    let began = std::time::Instant::now();
     let (held, _) = refused_a_hold_and_a_start(host).await;
     assert_eq!(held.as_deref(), Some(session::NOT_STARTED));
+    assert!(
+        began.elapsed() >= Duration::from_millis(300),
+        "it waited before it refused"
+    );
 }
 
 /// The wait has an end, and what ends it says what any start on a down runner says.
