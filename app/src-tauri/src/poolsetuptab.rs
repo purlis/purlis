@@ -33,6 +33,11 @@ pub struct PoolSetupCheck {
     pub verdict: String,
     pub title: String,
     pub more: Option<String>,
+    /// How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+    /// timed.
+    pub took_ms: Option<u64>,
+    /// Where it has taken over thirty seconds: what it is waiting on and why (#7191).
+    pub waiting_on: Option<String>,
 }
 
 /// One step as it stands.
@@ -47,6 +52,8 @@ pub struct PoolSetupStep {
     pub skippable: bool,
     pub see: Option<PoolSetupSee>,
     pub checks: Vec<PoolSetupCheck>,
+    /// How long the step took, in milliseconds, where it was timed (#7191): the rail shows it.
+    pub took_ms: Option<u64>,
     /// A second way on, beside `next`: on Where, the other kind (ADR 0123 §6).
     pub other: Option<PoolSetupAction>,
     /// The machine, on Connect (#6266).
@@ -339,8 +346,11 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         verdict: word(&check.verdict),
                         title: check.title.clone(),
                         more: check.more.clone(),
+                        took_ms: None,
+                        waiting_on: None,
                     })
                     .collect(),
+                took_ms: None,
             })
             .collect(),
     }
@@ -2175,12 +2185,17 @@ fn link_measured(
         .ok()?
         .into_iter()
         .find(|one| one.name() == pool)?;
+    // The link's round trip is a real one: how long it took is said beside it (#7191).
+    let started = std::time::Instant::now();
     let check = purlis_core::poolsetup::doctoring::link_of(docker?, &kept)?;
+    let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     Some(PoolSetupCheck {
         about: word(&check.about),
         verdict: word(&check.verdict),
         title: check.title,
         more: check.more,
+        took_ms: Some(took),
+        waiting_on: None,
     })
 }
 

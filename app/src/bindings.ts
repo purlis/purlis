@@ -14790,6 +14790,13 @@ export type PoolSetupCheck = {
 	verdict: string,
 	title: string,
 	more: string | null,
+	/**
+	 *  How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+	 *  timed.
+	 */
+	took_ms: number | null,
+	/**  Where it has taken over thirty seconds: what it is waiting on and why (#7191). */
+	waiting_on: string | null,
 };
 
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
@@ -15002,6 +15009,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  How long the step took, in milliseconds, where it was timed (#7191): the rail shows it. */
+	took_ms: number | null,
 	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
 	other: PoolSetupAction | null,
 	/**  The machine, on Connect (#6266). */

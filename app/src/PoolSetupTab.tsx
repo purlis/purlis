@@ -29,6 +29,9 @@ import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
+import { tookWords } from "./poolsetup/took";
+import { PoolStatusBar } from "./poolsetup/PoolStatusBar";
+import { poolStateOf, type WithPoolState } from "./poolsetup/poolState";
 import { TryStep } from "./poolsetup/TryStep";
 import {
   readReleaseImage,
@@ -308,9 +311,7 @@ function Where({
       )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
-        <Action does={next.does}>
-          {other}
-        </Action>
+        <Action does={next.does}>{other}</Action>
       ) : next ? (
         <Action
           does={next.does}
@@ -544,197 +545,226 @@ function PoolSetupGuide({
     const to = setup.steps[was + 1];
     setShowing(to && stateOf(to) !== "later" ? to.id : undefined);
   };
+  // **One status bar for the pool's state** (#7191), through the one adapter that reads it.
+  const status = poolStateOf(setup as WithPoolState);
+  const machine =
+    setup.steps.find((one) => one.id === "connect")?.machine?.host ?? madePool ?? "this machine";
   return (
-    <div className="pool-setup">
-      <StepList
-        aria-label="Steps of Pool setup"
-        className="pool-setup-rail"
-        steps={setup.steps.map((one) => ({
-          id: one.id,
-          name: one.name,
-          state: stateOf(one),
-          line: one.line,
-        }))}
-        showing={here}
-        onGo={(id) => setShowing(id)}
-      >
-        <p className="pool-setup-saved">
-          Your choices are saved as you go. Close this tab whenever you like.
-        </p>
-      </StepList>
-      <div className="pool-setup-main">
-        <div className="pool-setup-page">
-          {trouble && (
-            <Notice
-              cause="pool-setup.where"
-              tone="trouble"
-              title="That didn't work"
-              onDismiss={() => setTrouble(undefined)}
-            >
-              {trouble}
-            </Notice>
-          )}
-          {continuing && setup.at !== null && (
-            <Say
-              tone="news"
-              title="Continuing the pool you started"
-              actions={
-                <Button
-                  onPress={() => {
-                    setTrouble(undefined);
-                    void startPoolSetupOver().then((why) => why && setTrouble(why));
-                  }}
-                >
-                  Start over
-                </Button>
-              }
-            >
-              {madePool === null
-                ? "Your choices so far are filled in. Start over to begin a new pool from the first step."
-                : `Start over to begin a new pool from the first step. Pool ${madePool} stays, in Settings, under Pools.`}
-            </Say>
-          )}
-          {step?.id === "where" ? (
-            <Where
-              key={setup.kind}
-              step={step}
-              kind={setup.kind}
-              onChoseRemote={(prefill) => {
-                setTrouble(undefined);
-                setShowing(undefined);
-                if (prefill) {
-                  void pickPoolSetupMachine(prefill).then((why) => {
-                    if (why) setTrouble(why);
+    <>
+      {status && madePool && (
+        <PoolStatusBar
+          pool={madePool}
+          machine={machine}
+          status={status}
+          onTryNow={reread}
+          onCheckPool={reread}
+          onCheckKey={() => setShowing("connect")}
+          onRemake={() => setShowing("pool")}
+          onForget={() => onOpenPools?.()}
+        />
+      )}
+      <div className="pool-setup">
+        <StepList
+          aria-label="Steps of Pool setup"
+          className="pool-setup-rail"
+          steps={setup.steps.map((one) => ({
+            id: one.id,
+            name: one.name,
+            state: stateOf(one),
+            line: one.line,
+            took: tookWords(one.took_ms),
+          }))}
+          showing={here}
+          onGo={(id) => setShowing(id)}
+        >
+          <p className="pool-setup-saved">
+            Your choices are saved as you go. Close this tab whenever you like.
+          </p>
+        </StepList>
+        <div className="pool-setup-main">
+          <div className="pool-setup-page">
+            {trouble && (
+              <Notice
+                cause="pool-setup.where"
+                tone="trouble"
+                title="That didn't work"
+                onDismiss={() => setTrouble(undefined)}
+              >
+                {trouble}
+              </Notice>
+            )}
+            {continuing && setup.at !== null && (
+              <Say
+                tone="news"
+                title="Continuing the pool you started"
+                actions={
+                  <Button
+                    onPress={() => {
+                      setTrouble(undefined);
+                      void startPoolSetupOver().then((why) => why && setTrouble(why));
+                    }}
+                  >
+                    Start over
+                  </Button>
+                }
+              >
+                {madePool === null
+                  ? "Your choices so far are filled in. Start over to begin a new pool from the first step."
+                  : `Start over to begin a new pool from the first step. Pool ${madePool} stays, in Settings, under Pools.`}
+              </Say>
+            )}
+            {step?.id === "where" ? (
+              <Where
+                key={setup.kind}
+                step={step}
+                kind={setup.kind}
+                onChoseRemote={(prefill) => {
+                  setTrouble(undefined);
+                  setShowing(undefined);
+                  if (prefill) {
+                    void pickPoolSetupMachine(prefill).then((why) => {
+                      if (why) setTrouble(why);
+                      else reread();
+                    });
+                    return;
+                  }
+                  void commands.poolSetupChooseRemoteDocker().then((answer) => {
+                    if (answer.status === "error") setTrouble(answer.error);
                     else reread();
                   });
-                  return;
-                }
-                void commands.poolSetupChooseRemoteDocker().then((answer) => {
-                  if (answer.status === "error") setTrouble(answer.error);
-                  else reread();
-                });
-              }}
-              contexts={setup.contexts}
-              said={setTrouble}
-              pool={setup.pool}
-              onChoseCluster={(context, kubeconfig) => {
-                setTrouble(undefined);
-                setShowing(undefined);
-                void commands.poolSetupChooseCluster(context, kubeconfig).then((answer) => {
-                  if (answer.status === "error") setTrouble(answer.error);
-                  else reread();
-                });
-              }}
-              onNext={() => after("where")}
-              onRecheck={reread}
-              onChose={() => {
-                setTrouble(undefined);
-                setShowing(undefined);
-                void commands.poolSetupChooseDocker().then((answer) => {
-                  if (answer.status === "error") setTrouble(answer.error);
-                  else reread();
-                });
-              }}
-            />
-          ) : step?.id === "check" ? (
-            <CheckStep step={step} plane={plane} onNext={() => after("check")} onRecheck={reread} />
-          ) : step?.id === "install" ? (
-            <InstallStep step={step} onNext={() => after("install")} changed={reread} />
-          ) : step?.id === "pool" && setup.kind === "cluster" ? (
-            <ClusterPoolStep
-              step={step}
-              contexts={setup.contexts}
-              image={releaseImage}
-              pool={setup.pool}
-              onOpenPools={onOpenPools}
-              onNext={() => after("pool")}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-            />
-          ) : step?.id === "connect" ? (
-            <ConnectStep
-              step={step}
-              shown={setup}
-              plane={plane}
-              onShown={(now) => setRead({ state: "read", shown: now })}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-              onNext={() => after("connect")}
-              onConnectAgain={(prefill) => {
-                setTrouble(undefined);
-                setShowing(undefined);
-                void startPoolSetupOn(prefill).then((why) => why && setTrouble(why));
-              }}
-            />
-          ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
-            <MarkAsOwn step={step} pool={setup.pool} onOpenPools={onOpenPools} onMarked={reread} />
-          ) : step?.id === "pool" ? (
-            <PoolStep
-              step={step}
-              shown={setup}
-              plane={plane}
-              adding={{ ...made, set: setMade, typed, type: setTyped, chosen, choose }}
-              onNext={() => after("pool")}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-            />
-          ) : step?.id === "signins" && setup.pool !== null ? (
-            <SignInsStep
-              key={setup.pool}
-              step={step}
-              pool={setup.pool}
-              plane={plane}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-            />
-          ) : step?.id === "identity" && madePool !== null ? (
-            <IdentityStep
-              key={madePool}
-              step={step}
-              pool={madePool}
-              plane={plane}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-              onNext={() => after("identity")}
-              onOpenIdentity={onOpenIdentity}
-              onOpenSettings={onOpenSettings}
-            />
-          ) : step?.id === "try" && madePool !== null ? (
-            <TryStep
-              key={madePool}
-              step={step}
-              pool={madePool}
-              plane={plane}
-              workspace={workspace}
-              changed={() => {
-                setShowing(undefined);
-                reread();
-              }}
-              onGo={(id) => setShowing(id)}
-              onAddAnother={() => void startANewPoolSetup()}
-              onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
-            />
-          ) : (
-            step && <Found step={step} onRecheck={reread} />
-          )}
-          {step && (step.state === "attention" || step.state === "waiting") && (
-            <div className="pool-setup-help">
-              <p className="pool-setup-p">{GET_HELP_SAYS}</p>
-              <GetHelp step={step.id} />
-            </div>
-          )}
+                }}
+                contexts={setup.contexts}
+                said={setTrouble}
+                pool={setup.pool}
+                onChoseCluster={(context, kubeconfig) => {
+                  setTrouble(undefined);
+                  setShowing(undefined);
+                  void commands.poolSetupChooseCluster(context, kubeconfig).then((answer) => {
+                    if (answer.status === "error") setTrouble(answer.error);
+                    else reread();
+                  });
+                }}
+                onNext={() => after("where")}
+                onRecheck={reread}
+                onChose={() => {
+                  setTrouble(undefined);
+                  setShowing(undefined);
+                  void commands.poolSetupChooseDocker().then((answer) => {
+                    if (answer.status === "error") setTrouble(answer.error);
+                    else reread();
+                  });
+                }}
+              />
+            ) : step?.id === "check" ? (
+              <CheckStep
+                step={step}
+                plane={plane}
+                onNext={() => after("check")}
+                onRecheck={reread}
+              />
+            ) : step?.id === "install" ? (
+              <InstallStep step={step} onNext={() => after("install")} changed={reread} />
+            ) : step?.id === "pool" && setup.kind === "cluster" ? (
+              <ClusterPoolStep
+                step={step}
+                contexts={setup.contexts}
+                image={releaseImage}
+                pool={setup.pool}
+                onOpenPools={onOpenPools}
+                onNext={() => after("pool")}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+              />
+            ) : step?.id === "connect" ? (
+              <ConnectStep
+                step={step}
+                shown={setup}
+                plane={plane}
+                onShown={(now) => setRead({ state: "read", shown: now })}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+                onNext={() => after("connect")}
+                onConnectAgain={(prefill) => {
+                  setTrouble(undefined);
+                  setShowing(undefined);
+                  void startPoolSetupOn(prefill).then((why) => why && setTrouble(why));
+                }}
+              />
+            ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
+              <MarkAsOwn
+                step={step}
+                pool={setup.pool}
+                onOpenPools={onOpenPools}
+                onMarked={reread}
+              />
+            ) : step?.id === "pool" ? (
+              <PoolStep
+                step={step}
+                shown={setup}
+                plane={plane}
+                adding={{ ...made, set: setMade, typed, type: setTyped, chosen, choose }}
+                onNext={() => after("pool")}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+              />
+            ) : step?.id === "signins" && setup.pool !== null ? (
+              <SignInsStep
+                key={setup.pool}
+                step={step}
+                pool={setup.pool}
+                plane={plane}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+              />
+            ) : step?.id === "identity" && madePool !== null ? (
+              <IdentityStep
+                key={madePool}
+                step={step}
+                pool={madePool}
+                plane={plane}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+                onNext={() => after("identity")}
+                onOpenIdentity={onOpenIdentity}
+                onOpenSettings={onOpenSettings}
+              />
+            ) : step?.id === "try" && madePool !== null ? (
+              <TryStep
+                key={madePool}
+                step={step}
+                pool={madePool}
+                plane={plane}
+                workspace={workspace}
+                changed={() => {
+                  setShowing(undefined);
+                  reread();
+                }}
+                onGo={(id) => setShowing(id)}
+                onAddAnother={() => void startANewPoolSetup()}
+                onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
+              />
+            ) : (
+              step && <Found step={step} onRecheck={reread} />
+            )}
+            {step && (step.state === "attention" || step.state === "waiting") && (
+              <div className="pool-setup-help">
+                <p className="pool-setup-p">{GET_HELP_SAYS}</p>
+                <GetHelp step={step.id} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -19,7 +19,17 @@ import { Disclosure } from "../ui/disclosure/Disclosure";
 import { TextField } from "../ui/field/Field";
 import { Select } from "../ui/select/Select";
 import { addClusterPool, checkClusterPoolKey, keyNotConfirmed } from "../pools";
-import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
+import {
+  Action,
+  Busy,
+  Options,
+  Recommended,
+  Say,
+  SeeWhat,
+  StepHead,
+  Took,
+  WaitingOn,
+} from "./parts";
 
 /**
  * **Pool setup's cluster steps** (#4492, #4493, spec #4469): what Where chooses for a cluster,
@@ -117,7 +127,9 @@ export function ClusterFields({
   const trouble = settled && "trouble" in settled ? settled.trouble : undefined;
   const names = settled && "names" in settled ? settled.names : same ? contexts.names : [];
   const recommended =
-    settled && "names" in settled ? (settled.current ?? undefined) : (contexts.recommended ?? undefined);
+    settled && "names" in settled
+      ? (settled.current ?? undefined)
+      : (contexts.recommended ?? undefined);
   const none = names.length === 0 && trouble === undefined;
   return (
     <div className="pool-setup-cluster-fields">
@@ -217,8 +229,14 @@ export function CheckStep({
       {step.checks.length > 0 && (
         <CheckList aria-label="What doctor found">
           {step.checks.map((check) => (
-            <CheckLine key={check.title} verdict={verdictOf(check)} title={check.title}>
+            <CheckLine
+              key={check.title}
+              verdict={verdictOf(check)}
+              title={check.title}
+              trail={<Took ms={check.took_ms} />}
+            >
               {check.more}
+              {check.waiting_on && <WaitingOn text={check.waiting_on} />}
             </CheckLine>
           ))}
         </CheckList>

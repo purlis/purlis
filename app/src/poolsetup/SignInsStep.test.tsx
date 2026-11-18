@@ -9,6 +9,7 @@ import type { PoolProfiles, PoolSetupSizes, PoolSetupStep } from "../bindings";
 import { STAYS_ON_THE_RUNNER, SignInsStep } from "./SignInsStep";
 
 const STEP: PoolSetupStep = {
+  took_ms: null,
   id: "signins",
   name: "Sign-ins",
   state: "current",

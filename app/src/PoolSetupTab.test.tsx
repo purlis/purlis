@@ -642,9 +642,14 @@ describe("Where, on a cluster (#4492)", () => {
     await userEvent.clear(file);
     await userEvent.type(file, "/work/team.yaml");
     await waitFor(() =>
-      expect(sent).toContainEqual({ cmd: "cluster_contexts", args: { kubeconfig: "/work/team.yaml" } }),
+      expect(sent).toContainEqual({
+        cmd: "cluster_contexts",
+        args: { kubeconfig: "/work/team.yaml" },
+      }),
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: /Context/ })).toHaveTextContent("team-b"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Context/ })).toHaveTextContent("team-b"),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
     await waitFor(() =>
       expect(sent).toContainEqual({
@@ -765,7 +770,9 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("offers Set up Docker on another machine, opening Connect with DOCKER_HOST's address", async () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: null }));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
@@ -778,7 +785,9 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("opens Connect with the current context, read again by its name", async () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: "build-box" }));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
@@ -791,10 +800,34 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("with nothing to fill in, opens Docker on another machine as it is", async () => {
     const calls = core(() => elsewhere(null));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls.map((one) => one.cmd)).toContain("pool_setup_choose_remote_docker"),
     );
+  });
+});
+
+describe("The pool's status bar (#7191)", () => {
+  it("shows the pool's state once, at the top, where the core reports one", async () => {
+    core(
+      () =>
+        ({
+          ...MADE,
+          pool_state: { state: "refused", reason: "the disk is full" },
+        }) as PoolSetupShown,
+    );
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByRole("region", { name: "Pool dev-box" })).toBeInTheDocument();
+    expect(screen.getByText(/refused: the disk is full/)).toBeInTheDocument();
+  });
+
+  it("shows no bar where the core says nothing of the pool's state", async () => {
+    core(() => MADE);
+    render(<PoolSetupTab plane="p" />);
+    await screen.findByText("Sign-ins", { selector: "[data-part='name']" });
+    expect(screen.queryByRole("region", { name: "Pool dev-box" })).not.toBeInTheDocument();
   });
 });

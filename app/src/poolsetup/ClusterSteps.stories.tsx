@@ -228,7 +228,14 @@ export const NoKubectl: Story = {
   ),
 };
 
-const ok = (title: string) => ({ about: "cluster", verdict: "ok", title, more: null });
+const ok = (title: string) => ({
+  about: "cluster",
+  verdict: "ok",
+  title,
+  more: null,
+  took_ms: null,
+  waiting_on: null,
+});
 
 export const ReadyForTheInstall: Story = {
   beforeEach: faked(
@@ -242,6 +249,8 @@ export const ReadyForTheInstall: Story = {
           ok("Kubernetes v1.36.4"),
           ok("you may apply the install's cluster-scoped definitions"),
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "todo",
             title: "upstream agent-sandbox v1.0.6: not installed",
@@ -278,12 +287,16 @@ export const TheClusterLacksSomething: Story = {
         checks: [
           ok("asked context kind-team, API server https://127.0.0.1:6443/"),
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "missing",
             title: "Kubernetes 1.36 or later: this cluster runs v1.33.2",
             more: "Next: upgrade the cluster to Kubernetes 1.36 or later; its pod user namespaces are what runners need.",
           },
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "missing",
             title:
@@ -317,6 +330,8 @@ export const AnOperatorIsInstalled: Story = {
         ],
         checks: [
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "ok",
             title: "purlis's cluster operator runs",

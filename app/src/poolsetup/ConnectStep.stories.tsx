@@ -50,6 +50,7 @@ const connect = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   name: "Connect",
   state: "current",
   line: null,
+  took_ms: null,
   findings: [],
   next: null,
   skippable: false,

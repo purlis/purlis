@@ -30,6 +30,7 @@ const part = (
 });
 
 const install = (parts: PoolSetupPart[], undo = true): PoolSetupStep => ({
+  took_ms: null,
   id: "install",
   name: "Install",
   state: "current",
@@ -485,9 +486,7 @@ describe("A credential plugin the kubeconfig needs (#7192)", () => {
       return null;
     });
     const recheck = vi.fn();
-    render(
-      <CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />,
-    );
+    render(<CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />);
     expect(screen.getByText(/Needs gke-gcloud-auth-plugin, not found/)).toBeInTheDocument();
     await userEvent.type(
       screen.getByRole("textbox", { name: "Folder with the plugin" }),
@@ -506,12 +505,64 @@ describe("A credential plugin the kubeconfig needs (#7192)", () => {
       cmd === "pool_setup_plugin_folder" ? Promise.reject("there is no such folder") : null,
     );
     const recheck = vi.fn();
-    render(
-      <CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />,
-    );
+    render(<CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />);
     await userEvent.type(screen.getByRole("textbox", { name: "Folder with the plugin" }), "/nope");
     await userEvent.click(screen.getByRole("button", { name: "Use this folder" }));
     expect(await screen.findByText("there is no such folder")).toBeInTheDocument();
     expect(recheck).not.toHaveBeenCalled();
+  });
+});
+
+describe("Every check line says how long it took (#7191)", () => {
+  const withChecks = (checks: PoolSetupStep["checks"]): PoolSetupStep => ({
+    ...install([]),
+    id: "check",
+    name: "Check the cluster",
+    state: "attention",
+    undo: null,
+    see: null,
+    checks,
+    next: null,
+  });
+  const line = (title: string, took_ms: number | null, waiting_on: string | null = null) => ({
+    about: "cluster",
+    verdict: "ok",
+    title,
+    more: null,
+    took_ms,
+    waiting_on,
+  });
+
+  it("shows each finished line's duration, and none where it wasn't timed", () => {
+    render(
+      <CheckStep
+        step={withChecks([line("Kubernetes v1.36", 300), line("API server", null)])}
+        plane="/p"
+        onNext={() => {}}
+        onRecheck={() => {}}
+      />,
+    );
+    expect(screen.getByText("0.3 s")).toBeInTheDocument();
+    expect(screen.queryByText(/ s$/, { selector: ".pool-setup-took" })).toBeInTheDocument();
+    expect(document.querySelectorAll(".pool-setup-took")).toHaveLength(1);
+  });
+
+  it("says what a line past thirty seconds waited on, and why", () => {
+    render(
+      <CheckStep
+        step={withChecks([
+          line(
+            "The image is on the machine",
+            94_000,
+            "docker pull on build-box: the image is 1.2 GB",
+          ),
+        ])}
+        plane="/p"
+        onNext={() => {}}
+        onRecheck={() => {}}
+      />,
+    );
+    expect(screen.getByText("1 min 34 s")).toBeInTheDocument();
+    expect(screen.getByText(/docker pull on build-box: the image is 1.2 GB/)).toBeInTheDocument();
   });
 });
