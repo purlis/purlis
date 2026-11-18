@@ -1217,12 +1217,15 @@ fn in_command_position(line: &str) -> (String, bool) {
             i += if named { 2 } else { 1 };
             continue;
         } else if at_command && reserved && bare("time") {
-            // `time -p`: its option is no command either. Nothing else is skipped, `--` included:
-            // after it bash does not read `case` as a reserved word, so what follows is read as
-            // the arguments of a command (round 7).
+            // `time -p`: its option is no command either. Any other word that starts with `-`
+            // (`--` included: in bash 5, `time --` is followed by a real `case` and the other
+            // compounds, and `time -p --` as well) is not read, so the line is held (round 7b).
             i += 1;
             if toks.get(i).is_some_and(|t| t.bare && t.text == "-p") {
                 i += 1;
+            }
+            if toks.get(i).is_some_and(|t| t.text.starts_with('-')) {
+                unparsed = true;
             }
             continue;
         } else if at_command && reserved && (bare("for") || bare("select")) {
@@ -1333,7 +1336,7 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
     let chars: Vec<char> = body.chars().collect();
     let (mut single, mut double) = (false, false);
     // The heredocs opened on this line, whose bodies start at the next one: delimiter and `<<-`.
-    let mut pending: Vec<(String, bool)> = Vec::new();
+    let mut pending: Vec<(String, bool, bool)> = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
@@ -1342,7 +1345,7 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
             '\n' if !single && !double && !pending.is_empty() => {
                 // Each pending heredoc runs to a line that is its delimiter.
                 let mut at = i + 1;
-                for (delimiter, dash) in std::mem::take(&mut pending) {
+                for (delimiter, dash, quoted) in std::mem::take(&mut pending) {
                     loop {
                         if at > chars.len() {
                             return true;
@@ -1360,6 +1363,11 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
                         at = end + 1;
                         if line == delimiter {
                             break;
+                        }
+                        // An unquoted body joins a line that ends in `\` to the next one, which
+                        // may then be, or hide, the delimiter: held (round 7b).
+                        if !quoted && line.ends_with('\\') {
+                            return true;
                         }
                     }
                 }
@@ -1384,20 +1392,29 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
                 while chars.get(j).is_some_and(|c| *c == ' ' || *c == '\t') {
                     j += 1;
                 }
-                let mut delimiter = String::new();
+                let mut raw = String::new();
                 while let Some(&d) = chars.get(j) {
                     if d.is_whitespace() || ";&|()<>".contains(d) {
                         break;
                     }
-                    if !matches!(d, '\'' | '"' | '\\') {
-                        delimiter.push(d);
-                    }
+                    raw.push(d);
                     j += 1;
                 }
-                if delimiter.is_empty() {
+                // Read past only a plain word, bare or wholly quoted (round 7b): any other
+                // spelling (a backslash, a `$'`, a part quote) is one the reader does not know.
+                let plain = |w: &str| {
+                    !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                };
+                let (delimiter, quoted) = match (raw.chars().next(), raw.chars().last()) {
+                    (Some(q @ ('\'' | '"')), Some(e)) if raw.len() >= 3 && q == e => {
+                        (raw[1..raw.len() - 1].to_owned(), true)
+                    }
+                    _ => (raw.clone(), false),
+                };
+                if !plain(&delimiter) {
                     return true;
                 }
-                pending.push((delimiter, dash));
+                pending.push((delimiter, dash, quoted));
                 i = j - 1;
             }
             _ => {}

@@ -1564,7 +1564,13 @@ pub fn takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
         return scripts.is_empty() && (operand.is_none() || names_stdin(operand));
     }
     let (dash_c, operand) = shell_options(&words, false);
-    !dash_c && (operand.is_none() || names_stdin(operand) || words.iter().any(|a| a == "-s"))
+    // A lone `-` operand is bash's and sh's own spelling of stdin (round 7b).
+    let lone_dash = operand.is_some_and(|o| o == "-");
+    !dash_c
+        && (operand.is_none()
+            || names_stdin(operand)
+            || lone_dash
+            || words.iter().any(|a| a == "-s"))
 }
 
 /// True when `prog` is a program the shell builds (`$SHELL`, `${SHELL:-bash}`, `$(which bash)`)
