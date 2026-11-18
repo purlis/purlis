@@ -10,10 +10,12 @@
 //! - [`model`]: the files as Rust reads them.
 //! - [`validate`]: what a schema cannot say (event kinds, a dialect's missing events, proof of a
 //!   run, marks that name real assertions, the row table).
+//! - [`coverage`]: the matrix coverage gate and its expected-fail ratchet (T1.1-08).
 //! - [`judge`]: a cell's verdict under its `expected_fail` marks.
 //! - [`plan`]: the derived production-timing set and which runs take a cell.
 //! - [`net`]: the suite's local origins, direct-connection target and test CA (T1.1-02).
 
+pub mod coverage;
 pub mod judge;
 pub mod kinds;
 pub mod model;

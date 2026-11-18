@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "harness-rerecord-pinned", "harness-rerecord-latest", "harness-escapes-pinned", "harness-escapes-latest", "fuzz-parsers", "property-tests", "coverage-issues"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -93,3 +93,15 @@ runs:
           echo "A sandbox property law failed. Its minimal input is in the step *The sandbox's laws*."
           echo "A counterexample that carries what a law refuses is an escape (p0); a timeout or a lost connection is a flake."
         } >> "$GITHUB_STEP_SUMMARY"
+    # Ticket 8: the issues the cells' expected_fail marks name, read from GitHub rather than the
+    # pull requests' cache, so a mark on an issue closed since is red the next night (T1.1-08).
+    - if: inputs.entry == 'coverage-issues'
+      uses: ./.github/actions/rust-toolchain
+    - if: inputs.entry == 'coverage-issues'
+      name: The marks' issues, from GitHub
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        node tools/scenario-coverage.mjs issues
+        cargo test -p purlis-scenarios --locked --test coverage no_mark_names_a_closed_issue_or_one_this_change_closes
