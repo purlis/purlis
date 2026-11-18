@@ -1549,6 +1549,21 @@
       }
     },
     {
+      "file": "crates/purlis-core/src/hookwire/reach.rs",
+      "at": "if !cfg!(feature = \"test-support\") {",
+      "kind": "switch",
+      "reason": "Which programs a hook's reach believes (#6999): a build with `test-support` believes only programs of its own build folder, so an app above a test run never stands in for the one a test plays; a release build believes the shipped programs by name alone, which the release-profile and live checks run.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/hoststart.rs",
       "at": "if crate::fence::FENCED {",
       "kind": "switch",
@@ -2190,8 +2205,24 @@
       }
     },
     {
+      "file": "crates/purlis-core/src/secrets/sealed_set.rs",
+      "at": "super::keyhold::is_the_app() && !crate::fence::FENCED",
+      "kind": "switch",
+      "reason": "The fence (charter-app#129) on whether sealed sets decide (Q306, T1.1-73): a fenced build never does, as no test judges a dispatch with the person's keychain; a release app does. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/secrets/seal.rs",
       "at": "&& !crate::fence::FENCED",
+      "count": 2,
       "kind": "switch",
       "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
       "covers": {
@@ -2206,6 +2237,7 @@
     {
       "file": "crates/purlis-core/src/secrets/seal.rs",
       "at": "if !super::keyhold::is_the_app() || crate::fence::FENCED {",
+      "count": 3,
       "kind": "switch",
       "reason": "The fence (charter-app#129) on the dispatch-grant seal key (Q306): a fenced build never reads the login keychain for it, as no test touches the person's keychain; a release build reads it, in the app alone.",
       "covers": {
@@ -2221,9 +2253,15 @@
     {
       "file": "crates/purlis-core/src/secrets/seal.rs",
       "at": "if let Some(held) = IN_MEMORY.get() {",
-      "count": 3,
+      "count": 4,
       "kind": "seam",
       "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. Set by every scenario's child (`host::as_the_app`), so a scenario seals as a release app does, with a key of its own."
+    },
+    {
+      "file": "crates/purlis-core/src/secrets/seal.rs",
+      "at": "if IN_MEMORY.get().is_some() {",
+      "kind": "seam",
+      "reason": "The scenario host's seal (T1.1-06): a key made for the process and its kept seals in memory, so the window's press of a project's `[policy]` is kept in a fenced build, which never reads the keyring; unset, a fenced build seals nothing, as before. Only in a build with `test-support`, never one a person runs. "
     },
     {
       "file": "crates/purlis-core/src/secrets/seal.rs",

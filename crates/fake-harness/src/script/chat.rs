@@ -1119,11 +1119,11 @@ impl Chat {
                     .iter()
                     .find(|route| route.word == r.word && route.event == "PreToolUse");
                 let command = route.map_or_else(String::new, |route| route.command.clone());
+                // A guard rides on the chat's `--settings` (#7067), so Claude Code names no plugin
+                // as the hook's source, as it did while the guards were the plugin's.
                 format!(
-                    "PreToolUse:{} hook error: [{command}]: {}\n\nThis hook comes from the {} plugin.",
-                    c.tool,
-                    r.reason,
-                    purlis_core::plugin::LOADED_AS
+                    "PreToolUse:{} hook error: [{command}]: {}\n",
+                    c.tool, r.reason
                 )
             }
             Dialect::Claude => r.reason.clone(),
