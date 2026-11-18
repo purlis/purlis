@@ -7768,8 +7768,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   after a launch could not start it (#6487). A workspace's removal ends none: it is refused
   while a chat runs there. Not at a restart, not at a
   quit, never from anything a chat sent. Read by a closed chat's
-  card (`chat_by_number`, a pane's chat links), by the Chats list's filter (`closed_chats`), and
-  by the card's *Reopen* (`reopen_closed_chat`, #6485), which **starts the program its entry
+  card (`chat_by_number`, a pane's chat links, and `chat_by_id`, by its ULID), by the Chats
+  list's filter (`closed_chats`), and by the card's *Reopen* (`reopen_closed_chat`, #6485, by
+  the entry's ULID, never its number, #7123), which **starts the program its entry
   keeps**, on the person's press in the window alone: both commands are the window's, which no
   chat may ask for. So it is opened as [`app/reopen.json`](#appreopenjson) is, from the
   project's root following no link, and asked what it is of the descriptor the read uses. Denied a sandboxed chat's reading and writing

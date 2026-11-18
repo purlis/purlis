@@ -68,18 +68,28 @@ describe("the pane head's one state button (#4760)", () => {
 describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 rule 4, #5206)", () => {
   it("drops nothing in a wide pane, or one not measured", () => {
     expect([...droppedAt(900)]).toEqual([]);
-    expect([...droppedAt(500)]).toEqual([]);
+    expect([...droppedAt(550)]).toEqual([]);
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
-  it("drops the chat's number, the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
-    // The number first (#6212): its tab's hover says it too.
-    expect([...droppedAt(499)]).toEqual(["number"]);
-    expect([...droppedAt(469)]).toEqual(["number", "markWord"]);
-    expect([...droppedAt(449)]).toEqual(["number", "markWord", "using"]);
-    expect([...droppedAt(419)]).toEqual(["number", "markWord", "using", "buttonWord"]);
-    expect([...droppedAt(379)]).toEqual(["number", "markWord", "using", "buttonWord", "mark"]);
+  it("drops the project's policy, the chat's number, the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
+    // The policy first (Q308a): every chat of the project says the same, and Settings says it whole.
+    expect([...droppedAt(549)]).toEqual(["policy"]);
+    // Then the number (#6212): its tab's hover says it too.
+    expect([...droppedAt(499)]).toEqual(["policy", "number"]);
+    expect([...droppedAt(469)]).toEqual(["policy", "number", "markWord"]);
+    expect([...droppedAt(449)]).toEqual(["policy", "number", "markWord", "using"]);
+    expect([...droppedAt(419)]).toEqual(["policy", "number", "markWord", "using", "buttonWord"]);
+    expect([...droppedAt(379)]).toEqual([
+      "policy",
+      "number",
+      "markWord",
+      "using",
+      "buttonWord",
+      "mark",
+    ]);
     expect([...droppedAt(299)]).toEqual([
+      "policy",
       "number",
       "markWord",
       "using",
@@ -453,5 +463,31 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
       "ctx",
       "cache",
     ]);
+  });
+});
+
+describe("the project's policy on a pane head (Q308a, instruction 45)", () => {
+  it("is said on a live chat's and a task's head once it has been read", () => {
+    expect(paneLinesOf("chat", 900, { policy: true }).head).toContain("policy");
+    expect(paneLinesOf("task", 900, { policy: true }).head).toContain("policy");
+    expect(paneLinesOf("chat", 900, {}).head).not.toContain("policy");
+  });
+
+  it("is not said where no hook of the project runs: a shell, a one-job program, what has ended", () => {
+    for (const kind of [
+      "shell",
+      "oneJob",
+      "ended",
+      "endedTask",
+      "folded",
+      "view",
+      "empty",
+    ] as const)
+      expect(paneLinesOf(kind, 900, { policy: true }).head).not.toContain("policy");
+  });
+
+  it("goes first on a narrow pane", () => {
+    expect(paneLinesOf("chat", 549, { policy: true }).head).not.toContain("policy");
+    expect(paneLinesOf("chat", 549, { policy: true }).head).toContain("number");
   });
 });

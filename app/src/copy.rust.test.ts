@@ -356,6 +356,11 @@ const PLACES: readonly Place[] = [
     opener: IN_WINDOW,
     follow: true,
   },
+  {
+    file: "crates/purlis-core/src/panelinks/osc8.rs",
+    what: "a link a program marked: why it is refused, and what its ask says",
+    opener: /\b(?:pub )?fn (?:kind_of|not_there|ask_first)\([^)]*\)[^{;]*\{/g,
+  },
 ];
 
 /**

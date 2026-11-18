@@ -3,6 +3,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
+import { INERT_LINKS } from "../paneLinks";
 import type { PoolSignInTerminal } from "../bindings";
 import { onAMac } from "../mac";
 import { textSizes } from "../textSize";
@@ -66,6 +67,8 @@ export function SignInTerminal({
     if (!where) return;
     const look = inForce();
     const pane = new Terminal({
+      // A program's own link (OSC 8) opens nothing here, unless the pane links (#6218).
+      linkHandler: INERT_LINKS,
       fontSize: textSizes().terminal,
       fontFamily: terminalFont(),
       theme: xtermTheme(look),

@@ -661,6 +661,30 @@ pub trait SessionHost: Send + Sync {
         Vec::new()
     }
 
+    /// **Try now** (#7134): the host that relays these chats' link to their runner links to it
+    /// again now, rather than once its pause between tries has passed. Nothing, where chats run
+    /// in the window's own process.
+    fn link_now(&self) {}
+
+    /// **Try now of pool `pool`'s runner** (#7134): [`Self::link_now`] of the host of that
+    /// pool's chats. Nothing where no chat runs on it.
+    fn link_pool_now(&self, pool: &str) {
+        let _ = pool;
+    }
+
+    /// **Each pool's runner whose link is down now, and why** (#7134), by its pool's name. None
+    /// where no chat runs on a pool.
+    fn runners_down(&self) -> Vec<crate::reconnecting::RunnerLinkDown> {
+        Vec::new()
+    }
+
+    /// **Why the link to the runner these chats run on is down, while it is** (#7134): the
+    /// reason its host last said. None while it is up, and where chats run in the window's own
+    /// process.
+    fn link_down(&self) -> Option<crate::reconnecting::LinkDown> {
+        None
+    }
+
     /// Whether session `id`'s program ended with the session host it ran in, which ended
     /// unexpectedly (#2007), rather than by itself or by the window's act: so until it is
     /// started again or closed. Never, where chats run in the window's own process.
