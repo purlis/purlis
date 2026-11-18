@@ -23,7 +23,7 @@
     {"rows":["M-RST-12","M-RST-13","M-RST-14"],"os":"macos","reason":"host_killed cells run on Linux only: the fixture has no killable host process on macOS (T1.1-06)"}
   ],
   "rows": [
-    {"row":"M-PRB-01","dialect":"claude","os":"linux","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"scenario: cells/B0.json#M-PRB-01"},
+    {"row":"M-PRB-01","dialect":"claude","os":"linux","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"pending: 11"},
     {"row":"M-PRB-01","dialect":"claude","os":"macos","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"pending: 11"},
     {"row":"M-PRB-02","dialect":"claude","os":"linux","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"pending: 11"},
     {"row":"M-PRB-02","dialect":"claude","os":"macos","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"pending: 11"},

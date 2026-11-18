@@ -1250,19 +1250,3 @@ mod production_timings {
         }
     }
 }
-
-/// **PROBE (T1.1-54, reverted next commit): a scenario whose verdict alternates between runs**,
-/// to see `stress-x20` compare twenty runs and find it.
-#[cfg(unix)]
-mod b0 {
-    #[test]
-    fn the_probe_alternates_between_runs() {
-        let file = super::host::repo().join("target").join("probe-counter");
-        let n: u32 = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-            .unwrap_or(0);
-        std::fs::write(&file, (n + 1).to_string()).expect("the counter");
-        assert!(n % 2 == 0, "run {n}: the probe fails on odd runs");
-    }
-}

@@ -1,7 +1,7 @@
 {
   "$schema": "../schema/cells.schema.json",
   "batch": "B0",
-  "title": "probe: network asks on the held path (PROBE)",
+  "title": "probe: network asks on the held path",
   "persona": "steward",
   "protection": "full",
   "hosts": {"h1": "example.com", "h2": "www.iana.org", "h3": "example.net", "h6": "example.org"},
