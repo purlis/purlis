@@ -338,6 +338,7 @@ export function LinkAnswer({
         target={answer.target}
         kind={answer.about.kind}
         host={answer.about.host}
+        chat={chat}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
       />
@@ -455,13 +456,16 @@ function aroundHost(target: string, host: string | null): ReactNode {
  * prototype's S8, D10): its words, and where it really goes, the real host drawn apart so a
  * look-alike is seen. It starts on *Don't open*, and Return never opens it: *Open in browser*
  * is plain, not primary. A file's target says *Copy path* and *Open file*. It is answered by
- * the ask's one-use token, which proves only that this window was handed the ask.
+ * the ask's one-use token, which proves only that this window was handed the ask. `chat` is the
+ * chat whose output held the link, said under the title as {@link FileOutsideAsk} says it
+ * (#6601): none for a shell's pane.
  */
 export function MisleadingAsk({
   text,
   target,
   kind,
   host,
+  chat,
   onClose,
   onOpen,
 }: {
@@ -469,6 +473,7 @@ export function MisleadingAsk({
   target: string;
   kind: KindHint;
   host: string | null;
+  chat?: AskingChat;
   onClose: () => void;
   onOpen: () => void;
 }) {
@@ -477,6 +482,7 @@ export function MisleadingAsk({
   return (
     <Dialog
       title="This link goes somewhere its text doesn't say"
+      subtitle={chat === undefined ? undefined : fromChatSaid(chat)}
       description={`A program marked these words as a link to a different ${file ? "file" : "address"}.`}
       cancel={{ children: "Don't open" }}
       alternative={{
@@ -514,7 +520,7 @@ export function MisleadingAsk({
 /** **A chat, as an ask names the pane it came from** (#6355): its number and its title. */
 export type AskingChat = { number: number; title: string };
 
-/** "From chat #N · title", the prototype's S7 line; a chat called only by its number is said once. */
+/** "From chat #N · title", the prototype's S7 line and S8's; a chat called only by its number is said once. */
 export function fromChatSaid({ number, title }: AskingChat): string {
   const named = title.trim();
   return named === "" || named === String(number)

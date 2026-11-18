@@ -18,6 +18,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use purlis_unicode::lookalike;
 use unicode_normalization::UnicodeNormalization as _;
 use unicode_properties::{GeneralCategory, GeneralCategoryGroup, UnicodeGeneralCategory as _};
 use unicode_security::{RestrictionLevel, RestrictionLevelDetection as _};
@@ -58,16 +59,16 @@ pub fn not_there() -> Resolved {
     Resolved::NotALink("purlis found no file at the address this link names".into())
 }
 
-/// **What opening `candidate`'s `target` does, once its words are read**: a marked link whose
-/// words read as another target asks first, unless its kind refused it. Any other candidate's
-/// `opening` stands.
+/// **What opening a marked link's `target` does, once its words are read**: one whose words
+/// read as another target asks first, unless its kind refused it. Asked only of a marked link
+/// ([`Kind::Osc8`]): no other candidate's words are read again.
 pub(super) fn reconsidered(
     opening: Opening,
     candidate: &Candidate,
     target: Target,
     pane: &Pane,
 ) -> Opening {
-    if candidate.kind != Kind::Osc8 || matches!(opening, Opening::Refused(_)) {
+    if matches!(opening, Opening::Refused(_)) {
         return opening;
     }
     match misleading(&candidate.text, &target, pane) {
@@ -224,24 +225,21 @@ fn ipv6(text: &str) -> bool {
     address.contains(':') && address.parse::<std::net::Ipv6Addr>().is_ok()
 }
 
-/// The punctuation a sentence puts around a word, which [`trimmed`] takes off.
-const WRAPPERS: &str = "()[]{}<>\"'`*_,;:!?.«»“”‘’「」";
-
-/// `word` without the punctuation a sentence puts around it ([`WRAPPERS`]): never a path's
+/// `word` without the punctuation a sentence puts around it ([`purlis_unicode::lookalike::wraps_a_word`]): never a path's
 /// leading `./` or `../`, nor the brackets of an IPv6 address (`[::1]:8080`).
 fn trimmed(word: &str) -> &str {
     let start =
         if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) || ipv6(word) {
             word
         } else {
-            word.trim_start_matches(|c| WRAPPERS.contains(c))
+            word.trim_start_matches(|c| lookalike::wraps_a_word(c))
         };
     let ip = bracketed_ip(start)
         || ipv6(start)
         || start
             .rfind('[')
             .is_some_and(|at| bracketed_ip(&start[at..]));
-    start.trim_end_matches(|c| WRAPPERS.contains(c) && !(ip && c == ']'))
+    start.trim_end_matches(|c| lookalike::wraps_a_word(c) && !(ip && c == ']'))
 }
 
 /// Whether `text` starts with an IPv6 address in brackets.
@@ -251,13 +249,10 @@ fn bracketed_ip(text: &str) -> bool {
         .is_some_and(|(inner, _)| inner.parse::<std::net::Ipv6Addr>().is_ok())
 }
 
-/// Characters a reader may take for a dot that UTS #39's skeleton maps to something else.
-const DOTS: &str =
-    "\u{0589}\u{3002}\u{FF61}\u{06D4}\u{00B7}\u{2027}\u{02F3}\u{0387}\u{30FB}\u{FF65}";
-
 /// **The shape of `word`, which decides whether it names a target**: ASCII as written, in lower
 /// case; a character whose UTS #39 skeleton is ASCII punctuation as that punctuation (a
-/// look-alike of `.`, `:` or `/`), and one more look-alike of a dot ([`DOTS`]) as `.`; a dash as
+/// look-alike of `.`, `:` or `/`), and one more look-alike of a dot
+/// ([`purlis_unicode::lookalike::reads_as_a_dot`]) as `.`; a dash as
 /// the end of a name; any other letter or digit as written without its marks, so a host in
 /// another script keeps its suffix (`.рф`); any other punctuation as `.`; and marks, Hangul
 /// vowels and finals on their own (U+1160..U+11FF), symbols, emoji and private-use characters,
@@ -265,10 +260,12 @@ const DOTS: &str =
 fn shape(word: &str) -> String {
     let mut shape = String::with_capacity(word.len());
     for c in word.chars() {
-        let skeleton: String = unicode_security::skeleton(c.encode_utf8(&mut [0; 4])).collect();
         if c.is_ascii() {
             shape.push(c.to_ascii_lowercase());
-        } else if DOTS.contains(c) {
+            continue;
+        }
+        let skeleton: String = unicode_security::skeleton(c.encode_utf8(&mut [0; 4])).collect();
+        if lookalike::reads_as_a_dot(c) {
             shape.push('.');
         } else if !skeleton.is_empty() && skeleton.chars().all(|c| c.is_ascii_punctuation()) {
             shape.push_str(&skeleton);
@@ -286,7 +283,9 @@ fn shape(word: &str) -> String {
                     .flat_map(char::to_lowercase),
             );
         } else if c.general_category_group() == GeneralCategoryGroup::Punctuation
-            || skeleton.chars().any(|c| DOTS.contains(c) || c == '.')
+            || skeleton
+                .chars()
+                .any(|c| lookalike::reads_as_a_dot(c) || c == '.')
         {
             shape.push('.');
         }

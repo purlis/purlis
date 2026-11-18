@@ -32,6 +32,11 @@ import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
  * - **A link a program marked itself (OSC 8, #6218) reaches the same core**, through xterm's
  *   `linkHandler`: its words and the target the program named, as the pane was handed them.
  *   The core reads the target again and asks first where the words read as another address.
+ *   **This is the one part that runs while output streams** ({@link marking}): it notes where
+ *   each marked link opens and closes, and whether a cursor move or erase came between, through
+ *   30 CSI and 6 ESC handlers that each return at once. Measured on 2026-11-18 (#6601), with
+ *   xterm's parser alone and nothing drawn: 8 MB of a busy TUI's output, five such sequences a
+ *   line, parsed about 4% slower; nothing but cursor moves, about 11% (10 ns a sequence).
  *   xterm draws it as a link under the pointer whatever it is, so ⌘-click on one the core
  *   refuses says why. Where a program marks links is the program's: purlis changes no
  *   harness's environment to coax them out of it.
@@ -391,16 +396,42 @@ type Marked = {
   target: string;
   /** Which buffer it was written to: the normal one, or the alternate screen. */
   buffer: "normal" | "alternate";
-  start: IMarker;
-  startX: number;
-  end: IMarker;
-  endX: number;
+  /** Its first cell. */
+  start: MarkedCell;
+  /** The cell just past its last. */
+  end: MarkedCell;
   /**
    * Whether the program moved the cursor or changed the screen while the link was open (a
    * CSI or ESC sequence): what the link's cells show may then lie outside the span from its
    * start to its end, so its whole rows are read.
    */
   moved: boolean;
+};
+
+/** **A cell held by a marker**: its row moves with the buffer as lines scroll off, so it is
+ *  read from the marker each time, and the cell is a {@link Cell} wherever it is read. */
+type MarkedCell = Cell & { readonly marker: IMarker };
+
+/** The cell at column `x` of `marker`'s row, as the marker moves. */
+const markedCell = (marker: IMarker, x: number): MarkedCell => ({
+  marker,
+  x,
+  get y() {
+    return marker.line;
+  },
+});
+
+/** Whether `marked`'s markers are still held, and on the buffer. */
+const stillHeld = (marked: Marked) =>
+  !marked.start.marker.isDisposed &&
+  !marked.end.marker.isDisposed &&
+  marked.start.y >= 0 &&
+  marked.end.y >= 0;
+
+/** Lets go of `marked`'s markers. */
+const letGo = (marked: Pick<Marked, "start"> & Partial<Pick<Marked, "end">>) => {
+  marked.start.marker.dispose();
+  marked.end?.marker.dispose();
 };
 
 /** The longest target a marked link is handed on with: one longer is cut one past it, and the
@@ -427,7 +458,7 @@ const precedes = (y: number, x: number, y2: number, x2: number) => y < y2 || (y 
 
 /** Whether buffer cell (`x`, `y`) is one of `marked`'s. */
 const covers = (marked: Marked, x: number, y: number) =>
-  !precedes(y, x, marked.start.line, marked.startX) && precedes(y, x, marked.end.line, marked.endX);
+  !precedes(y, x, marked.start.y, marked.start.x) && precedes(y, x, marked.end.y, marked.end.x);
 
 /**
  * **Records each link a program marks on `pane`** (OSC 8): `ESC ] 8 ; params ; target ST`
@@ -435,7 +466,7 @@ const covers = (marked: Marked, x: number, y: number) =>
  * it draws the link and hands it to the pane's `linkHandler`.
  */
 function marking(pane: Terminal, marked: Marked[]): IDisposable {
-  let open: Omit<Marked, "end" | "endX"> | undefined;
+  let open: Omit<Marked, "end"> | undefined;
   /** A sequence that moves the cursor or changes the screen marks the open link moved. */
   const moves = () => {
     if (open !== undefined) open.moved = true;
@@ -460,20 +491,18 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       const was = open;
       open = undefined;
       if (end !== undefined && was.buffer === buffer) {
-        const one = { ...was, end, endX: at() };
-        if (one.moved || precedes(one.start.line, one.startX, end.line, one.endX)) {
+        const one: Marked = { ...was, end: markedCell(end, at()) };
+        if (one.moved || precedes(one.start.y, one.start.x, one.end.y, one.end.x)) {
           marked.push(one);
           while (marked.length > MOST_MARKED) {
             const oldest = marked.shift();
-            oldest?.start.dispose();
-            oldest?.end.dispose();
+            if (oldest !== undefined) letGo(oldest);
           }
         } else {
-          was.start.dispose();
-          end.dispose();
+          letGo(one);
         }
       } else {
-        was.start.dispose();
+        letGo(was);
         end?.dispose();
       }
     }
@@ -483,8 +512,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
         open = {
           target: cutTarget(target),
           buffer,
-          start,
-          startX: at(),
+          start: markedCell(start, at()),
           moved: false,
         };
     }
@@ -495,11 +523,8 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
     dispose() {
       handler.dispose();
       for (const one of watched) one.dispose();
-      open?.start.dispose();
-      for (const one of marked.splice(0)) {
-        one.start.dispose();
-        one.end.dispose();
-      }
+      if (open !== undefined) letGo(open);
+      for (const one of marked.splice(0)) letGo(one);
     },
   };
 }
@@ -511,14 +536,14 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
  */
 function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string {
   const buffer = pane.buffer.active;
-  const first = Math.min(marked.start.line, marked.end.line);
-  const last = Math.min(Math.max(marked.start.line, marked.end.line), first + MOST_ROWS - 1);
+  const first = Math.min(marked.start.y, marked.end.y);
+  const last = Math.min(Math.max(marked.start.y, marked.end.y), first + MOST_ROWS - 1);
   let text = "";
   for (let y = first; y <= last; y += 1) {
     const line = buffer.getLine(y);
     if (line === undefined) break;
-    const from = !marked.moved && y === marked.start.line ? marked.startX : 0;
-    const to = !marked.moved && y === marked.end.line ? marked.endX : line.length;
+    const from = !marked.moved && y === marked.start.y ? marked.start.x : 0;
+    const to = !marked.moved && y === marked.end.y ? marked.end.x : line.length;
     let row = "";
     let blank = "";
     for (let x = from; x < to; x += 1) {
@@ -537,13 +562,7 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
     text += marked.moved || y === last ? row + blank : row;
   }
   if (marked.moved) return text.trim();
-  return withBeside(
-    pane,
-    nothing,
-    text,
-    { y: marked.start.line, x: marked.startX },
-    { y: marked.end.line, x: marked.endX },
-  );
+  return withBeside(pane, nothing, text, marked.start, marked.end);
 }
 
 /** Where a cell is on the buffer, zero-based. */
@@ -632,14 +651,7 @@ function besideOf(
 /** The marked links still on `pane`'s buffer now, of the buffer it shows. */
 function markedNow(pane: Terminal, marked: Marked[]): Marked[] {
   const buffer = pane.buffer.active.type;
-  return marked.filter(
-    (one) =>
-      one.buffer === buffer &&
-      !one.start.isDisposed &&
-      !one.end.isDisposed &&
-      one.start.line >= 0 &&
-      one.end.line >= 0,
-  );
+  return marked.filter((one) => one.buffer === buffer && stillHeld(one));
 }
 
 /** The cells of xterm's `range` (one-based, its end taken in) on the rows they are on. */
@@ -935,16 +947,17 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNot
     y = last + 1;
   }
   for (const link of marked) {
-    if (link.end.line < top || link.start.line > bottom) continue;
+    const { start, end } = link;
+    if (end.y < top || start.y > bottom) continue;
     const text = wordsOf(pane, link, nothing);
     // Where it is drawn: its first row on screen, from its first cell there.
-    const y = Math.max(link.start.line, top);
-    const x = y === link.start.line ? link.startX : 0;
-    const width = (y === link.end.line ? link.endX : pane.cols) - x;
+    const y = Math.max(start.y, top);
+    const x = y === start.y ? start.x : 0;
+    const width = (y === end.y ? end.x : pane.cols) - x;
     found.push({
       candidate: { kind: "osc8", text, target: link.target },
-      y: link.start.line,
-      x: link.startX,
+      y: start.y,
+      x: start.x,
       place: placeOf(pane, x, y, Math.max(width, 1)),
     });
   }

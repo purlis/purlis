@@ -83,7 +83,7 @@ impl From<Kind> for KindHint {
 pub struct LinkCandidate {
     pub kind: KindHint,
     pub text: String,
-    #[serde(default)]
+    // Left out, it is `None`: serde reads a missing `Option` so with no `default`.
     #[specta(optional)]
     pub target: Option<String>,
 }

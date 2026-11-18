@@ -255,6 +255,9 @@ impl Resolver {
     /// **What opening `target`, read from `candidate`, does**, by its kind; a marked link
     /// whose words read as another target asks first ([`osc8::reconsidered`]).
     fn opening(kind: &dyn LinkKind, target: Target, candidate: &Candidate, pane: &Pane) -> Opening {
+        if candidate.kind != Kind::Osc8 {
+            return kind.opening(target, &candidate.text, pane);
+        }
         let opening = kind.opening(target.clone(), &candidate.text, pane);
         osc8::reconsidered(opening, candidate, target, pane)
     }

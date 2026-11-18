@@ -154,6 +154,26 @@ fn a_hover_over_another_scheme_says_why_it_won_t_open_and_so_does_one_carrying_a
 }
 
 #[test]
+fn a_candidate_the_window_sends_without_a_target_or_with_a_null_one_has_none() {
+    // The window leaves `target` out for every kind but a marked link (`candidateOf`).
+    let read = |json: serde_json::Value| -> LinkCandidate {
+        serde_json::from_value(json).expect("deserialises")
+    };
+    for json in [
+        serde_json::json!({"kind": "url", "text": "https://a.example/"}),
+        serde_json::json!({"kind": "url", "text": "https://a.example/", "target": null}),
+    ] {
+        assert_eq!(read(json).target, None);
+    }
+    assert_eq!(
+        read(serde_json::json!({"kind": "osc8", "text": "here", "target": "https://a.example/"}))
+            .target
+            .as_deref(),
+        Some("https://a.example/")
+    );
+}
+
+#[test]
 fn the_window_s_words_for_the_answers_are_these() {
     // The shape the window reads (`paneLinks.ts`).
     let json = |answer: &LinkOpened| serde_json::to_value(answer).expect("serialises");
