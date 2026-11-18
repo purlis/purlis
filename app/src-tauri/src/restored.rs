@@ -241,6 +241,9 @@ pub(crate) fn finish(
             .filter_map(|chat| chat.identity.id.clone())
             .collect();
         crate::dispatched::only_these_came_back(held, &back);
+        // And a chat that ended while the app was away keeps no browser answer (#7190).
+        held.browsers()
+            .prune_answers(&|id| back.iter().any(|one| one == id) || held.chats().id_is_open(id));
         // And a chat that did not come back waits on no Secret ask kept for it (#5079).
         let numbers: Vec<u32> = launch
             .back

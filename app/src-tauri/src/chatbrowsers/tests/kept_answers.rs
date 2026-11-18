@@ -13,8 +13,13 @@ const ANOTHER: &str = "01JA0POSTURE0000000000000B";
 
 /// The browsers of a window over `root`'s state and `config`, chat 3 known as `chat`.
 fn window(root: &Path, config: &Path, chat: &str) -> ChatBrowsers {
+    window_reaching(root, config, chat, reach())
+}
+
+/// [`window`] where the chat's reach is now `now`.
+fn window_reaching(root: &Path, config: &Path, chat: &str, now: BrowserReach) -> ChatBrowsers {
     let browsers = ChatBrowsers::default().keeping_answers(root, Some(config));
-    browsers.identify(3, Some(chat.into()));
+    browsers.identify_for(3, Some(chat.into()), &|| now.clone());
     browsers
 }
 
@@ -193,9 +198,20 @@ fn what_is_kept_is_written_under_this_machines_state_and_config_never_the_plane(
         }
     }
     written.sort();
-    let mut expected = vec![
+    let lock = |file: std::path::PathBuf| {
+        let mut name = file.file_name().unwrap().to_os_string();
+        name.push(".lock");
+        file.with_file_name(name)
+    };
+    let (posture, opt_ins) = (
         purlis_core::browserposture::path(root.path()),
         config.path().join(purlis_core::poollogins::IN_CONFIG),
+    );
+    let mut expected = vec![
+        lock(posture.clone()),
+        posture,
+        lock(opt_ins.clone()),
+        opt_ins,
     ];
     expected.sort();
     assert_eq!(
@@ -330,5 +346,101 @@ fn a_runners_browser_is_not_among_the_addresses_a_quit_keeps_because_it_outlives
         browsers.open_addresses(),
         ["https://on-this-machine.example.test/"],
         "this machine's browser ends with the quit and is offered; the runner's runs on"
+    );
+}
+
+#[test]
+fn a_kept_answer_is_checked_against_the_chats_current_reach() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    assert!(asked(&first, &hosted));
+    assert!(first.allow(3, false));
+
+    // The reach narrowed while the app was not running: the site it listed is gone.
+    let narrowed = window_reaching(root.path(), config.path(), CHAT, BrowserReach::default());
+
+    assert_eq!(
+        narrowed.posture(3),
+        Posture::Unasked,
+        "the answer is not used"
+    );
+    assert!(asked(&narrowed, &hosted), "the person is asked again");
+    assert!(
+        hosted.started.lock().unwrap().is_empty(),
+        "no browser started on the old answer"
+    );
+}
+
+#[test]
+fn an_answer_the_narrowed_reach_did_not_use_is_gone_and_a_widened_reach_does_not_bring_it_back() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    asked(&first, &hosted);
+    first.allow(3, false);
+    window_reaching(root.path(), config.path(), CHAT, BrowserReach::default());
+
+    let widened_again = window(root.path(), config.path(), CHAT);
+
+    assert_eq!(widened_again.posture(3), Posture::Unasked);
+    assert_eq!(purlis_core::browserposture::kept(root.path(), CHAT), None);
+}
+
+#[test]
+fn a_kept_answer_is_used_where_the_reach_is_the_same_or_wider() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    asked(&first, &hosted);
+    first.allow(3, true);
+    let mut wider = reach();
+    wider.listed.push(purlis_session_protocol::session::Listed {
+        host: "more.example.com".into(),
+        layer: purlis_session_protocol::session::Layer::Open,
+    });
+
+    let restarted = window_reaching(root.path(), config.path(), CHAT, wider);
+
+    assert_eq!(restarted.posture(3), Posture::Allowed { open_web: true });
+}
+
+#[test]
+fn a_kept_off_answer_is_checked_against_the_reach_too() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    asked(&first, &hosted);
+    first.keep_off(3);
+    let mut never = reach();
+    never.never.push("evil.example.com".into());
+
+    let narrowed = window_reaching(root.path(), config.path(), CHAT, never);
+
+    assert_eq!(narrowed.posture(3), Posture::Unasked);
+}
+
+#[test]
+fn answers_of_chats_that_no_longer_exist_are_pruned_when_the_window_starts() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    asked(&first, &hosted);
+    first.allow(3, false);
+    purlis_core::browserposture::keep(
+        root.path(),
+        ANOTHER,
+        purlis_core::browserposture::Answer::Off,
+        &purlis_core::browserposture::Reach::default(),
+    )
+    .unwrap();
+
+    let restarted = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
+    restarted.prune_answers(&|chat| chat == CHAT);
+
+    assert!(purlis_core::browserposture::kept(root.path(), CHAT).is_some());
+    assert_eq!(
+        purlis_core::browserposture::kept(root.path(), ANOTHER),
+        None
     );
 }

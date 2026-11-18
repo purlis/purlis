@@ -69,7 +69,9 @@
 //!
 //! **The person's answer to the posture Ask is kept for that chat's life** (#7190): in this
 //! machine's state folder, never the plane, by the chat's identity, so a restart or a resumed
-//! chat keeps it, a new chat asks, and it ends with the chat. A reach narrowed since still ends
+//! chat keeps it, a new chat asks, and it ends with the chat. A kept answer is checked against
+//! the chat's current reach before it is used: where the reach narrowed meanwhile, the person is
+//! asked again. A reach narrowed since still ends
 //! the chat's browsers. The other Asks a chat raises are in memory only: a relaunch starts with
 //! none, and the chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
 //! whose token the line carries, its reach is the app's record of its sandbox, and only the
@@ -271,6 +273,9 @@ struct Chat {
     posture: Posture,
     /// When the Ask began, while it waits.
     since: u64,
+    /// What the chat's browser reached when its Ask was raised: kept with the person's answer
+    /// (#7190), so a restored answer is checked against the reach the chat has by then.
+    asked_reach: purlis_core::browserposture::Reach,
     /// Each browser by the name the chat knows it by, and its program in the session host,
     /// oldest first.
     browsers: Vec<(String, String)>,
@@ -344,6 +349,7 @@ impl Default for Chat {
             id: None,
             posture: Posture::Unasked,
             since: 0,
+            asked_reach: purlis_core::browserposture::Reach::default(),
             browsers: Vec::new(),
             current: None,
             ended: Vec::new(),
@@ -875,6 +881,15 @@ impl std::fmt::Display for EndWhy {
 
 /// What of `posture` the person answered that is kept across a restart (#7190): their press,
 /// never the asking.
+/// What a chat's `reach` says, as a kept answer records it (#7190).
+fn kept_reach(reach: &BrowserReach) -> purlis_core::browserposture::Reach {
+    purlis_core::browserposture::Reach {
+        listed: reach.listed.iter().map(|one| one.host.clone()).collect(),
+        never: reach.never.iter().cloned().collect(),
+        withdrawn: reach.withdrawn.iter().copied().collect(),
+    }
+}
+
 fn answer_of(posture: Posture) -> Option<purlis_core::browserposture::Answer> {
     use purlis_core::browserposture::Answer;
     match posture {
@@ -1056,16 +1071,28 @@ impl ChatBrowsers {
         }
     }
 
-    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list: its row is
-    /// the window's to draw, and until it does only tests call this.
-    #[cfg(test)]
+    /// **Drops the kept answers of chats that no longer exist** (`exists` says which do), at
+    /// start: a chat that ended while the app was not running left its answer behind.
+    pub fn prune_answers(&self, exists: &dyn Fn(&str) -> bool) {
+        let Some(root) = &self.answers_in else {
+            return;
+        };
+        match purlis_core::browserposture::prune(root, exists) {
+            Ok(0) => {}
+            Ok(gone) => {
+                tracing::info!("purlis: {gone} kept browser answers of ended chats dropped")
+            }
+            Err(why) => tracing::warn!("purlis: kept browser answers of ended chats stay ({why})"),
+        }
+    }
+
+    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list.
     pub fn pool_login_grants(&self) -> Vec<purlis_core::poollogins::Granted> {
         self.pool_logins.granted()
     }
 
     /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
     /// next login there asks. Whether one was there.
-    #[cfg(test)]
     pub fn remove_pool_login_grant(&self, persona: &str, login: &str, pool: &str) -> bool {
         self.pool_logins.remove(persona, login, pool)
     }
@@ -2694,27 +2721,27 @@ impl ChatBrowsers {
     }
 
     fn answered(&self, session: u32, posture: Posture) -> bool {
-        let id = match self.lock().get_mut(&session) {
+        let (id, reach) = match self.lock().get_mut(&session) {
             Some(chat) if chat.posture == Posture::Asked => {
                 chat.posture = posture;
-                chat.id.clone()
+                (chat.id.clone(), chat.asked_reach.clone())
             }
             _ => return false,
         };
         // The person's press is kept for this chat's life (#7190). A chat whose identity is not
         // known yet is kept once it is ([`Self::identify`]).
         if let Some(id) = id {
-            self.keep_answer(&id, posture);
+            self.keep_answer(&id, posture, &reach);
         }
         true
     }
 
     /// Keeps the person's `posture` answer for chat `id`, where this holds a place for it.
-    fn keep_answer(&self, id: &str, posture: Posture) {
+    fn keep_answer(&self, id: &str, posture: Posture, reach: &purlis_core::browserposture::Reach) {
         let (Some(root), Some(answer)) = (&self.answers_in, answer_of(posture)) else {
             return;
         };
-        if let Err(why) = purlis_core::browserposture::keep(root, id, answer) {
+        if let Err(why) = purlis_core::browserposture::keep(root, id, answer, reach) {
             tracing::warn!("purlis: a chat's browser answer was not kept across a restart ({why})");
         }
     }
@@ -3478,6 +3505,7 @@ impl ChatBrowsers {
             Posture::Unasked => {
                 chat.posture = Posture::Asked;
                 chat.since = now;
+                chat.asked_reach = kept_reach(&reach());
                 chat.as_persona = as_persona;
                 return (no(ASKED), true);
             }
@@ -4469,7 +4497,9 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     let listing = held.browsers().listing();
     // Who the chat is, for its browsers' notes (#2025).
     held.browsers()
-        .identify(browse.chat, held.chats().id_of(browse.chat));
+        .identify_for(browse.chat, held.chats().id_of(browse.chat), &|| {
+            reach_of(held, browse.chat)
+        });
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
     // A secret fill asks the person, and reads its value once they allow it (#5115); its notice
     // goes where the call's asker hung up meanwhile.
@@ -6215,7 +6245,9 @@ pub fn handed(
     // The identity compared whole (#2699): persona, project and declaration.
     let may_log_in = |login: &HeldLogin| may_log_in(held, session, login);
     held.browsers()
-        .identify(session, held.chats().id_of(session));
+        .identify_for(session, held.chats().id_of(session), &|| {
+            reach_of(held, session)
+        });
     let listing = held.browsers().listing();
     let name = held.browsers().hand_over(
         held.browser_driver(),
