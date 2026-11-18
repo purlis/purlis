@@ -1,0 +1,44 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **Claude Code's newest release refuses a command's write where purlis no longer pins a git
+# folder** (the person's ruling, 2026-11-16, #6961). A chat's settings pin a repository's git
+# folder only where a command may write, because Claude Code's sandbox refuses every write
+# anywhere else; a release that wrote further would let a chat rewrite another branch folder's
+# `.git`. And the smaller rules lean on how Claude Code matches a rule's path, so a release
+# that matched otherwise would let a chat read or write a held path. So each night the newest
+# release from npm, with no install scripts run, runs
+# `a_command_writes_no_git_folder_outside_where_it_may_write` and the corpus of spellings,
+# `the_smaller_rules_deny_every_spelling_the_old_rules_denied` (the review of #7005), against a
+# stand-in model on a loopback port, as CI runs them on the pinned version. No model is called,
+# and no credential is used. The newest release is the point here, so it is not held to a lockfile; npm still checks
+# the tarball against the registry's integrity.
+name: Claude Code's newest release writes nothing a pin left out, and holds every spelling
+description: Runs the live probe of where a command may write against Claude Code's newest release.
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/rust-toolchain
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    - name: The probe, on Claude Code's newest release
+      shell: bash
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          macOS-ARM64) package=@anthropic-ai/claude-code-darwin-arm64 ;;
+          macOS-X64) package=@anthropic-ai/claude-code-darwin-x64 ;;
+          *) echo "::error::this probe runs on macOS, where Claude Code's own sandbox holds a chat"; exit 1 ;;
+        esac
+        mkdir -p "$RUNNER_TEMP/claude-code-newest"
+        cd "$RUNNER_TEMP/claude-code-newest"
+        npm init -y >/dev/null
+        npm install --ignore-scripts --no-audit --no-fund "$package@latest"
+        program="$RUNNER_TEMP/claude-code-newest/node_modules/$package/claude"
+        echo "Claude Code $("$program" --version)"
+        cd "$GITHUB_WORKSPACE"
+        PURLIS_CLAUDE_CODE="$program" tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- \
+          claude_codes_own_sandbox_holds_the_settings_purlis_writes::a_command_writes_no_git_folder_outside_where_it_may_write \
+          claude_codes_own_sandbox_holds_the_settings_purlis_writes::the_smaller_rules_deny_every_spelling_the_old_rules_denied \
+          --exact --nocapture

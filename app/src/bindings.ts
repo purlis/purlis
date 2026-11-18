@@ -20031,6 +20031,12 @@ export type Started = {
 	 *  line: what the notice's Open file and Move aside… act on (NO-4).
 	 */
 	agents_md: TheirAgentsMd[],
+	/**
+	 *  How many bytes the chat's harness settings weigh, where that is past
+	 *  `limits.harness_settings_bytes` (#6961): its pane says so, with a way out. Absent for
+	 *  every other start.
+	 */
+	heavy_settings: number | null,
 };
 
 /**  A chat that started on a project's Retry: its id, and the session it runs as. */

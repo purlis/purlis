@@ -504,13 +504,41 @@ fn started(
     env: &[(&str, &Path)],
     stand_in: impl Respond + 'static,
 ) -> (std::process::ExitStatus, String) {
-    started_as(
-        program, home, tmp, root, settings, sources, what, env, stand_in, true,
+    started_allowing(
+        program,
+        home,
+        tmp,
+        root,
+        settings,
+        sources,
+        what,
+        env,
+        stand_in,
+        &["Bash"],
     )
 }
 
-/// [`started`], `bare` or not: `--bare` skips every hook a setting or a plugin defines, which
-/// the probes of a sandbox want and a guard's test does not.
+/// [`started`], with `allowed` the tools Claude Code runs unasked.
+#[allow(clippy::too_many_arguments)]
+fn started_allowing(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    env: &[(&str, &Path)],
+    stand_in: impl Respond + 'static,
+    allowed: &[&str],
+) -> (std::process::ExitStatus, String) {
+    started_as(
+        program, home, tmp, root, settings, sources, what, env, stand_in, true, allowed,
+    )
+}
+
+/// [`started_allowing`], `bare` or not: `--bare` skips every hook a setting or a plugin defines,
+/// which the probes of a sandbox want and a guard's test does not.
 #[allow(clippy::too_many_arguments)]
 fn started_as(
     program: &Path,
@@ -523,6 +551,7 @@ fn started_as(
     env: &[(&str, &Path)],
     stand_in: impl Respond + 'static,
     bare: bool,
+    allowed: &[&str],
 ) -> (std::process::ExitStatus, String) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -554,13 +583,9 @@ fn started_as(
         .args(sources)
         .arg("--settings")
         .arg(settings)
-        .args([
-            "--allowedTools",
-            "Bash",
-            "--output-format",
-            "json",
-            "--no-session-persistence",
-        ])
+        .arg("--allowedTools")
+        .args(allowed)
+        .args(["--output-format", "json", "--no-session-persistence"])
         .stdout(out.try_clone().expect("the log"))
         .stderr(out);
     let mut child = purlis_core::forklock::spawn(&mut command).expect("claude started");
@@ -1573,6 +1598,7 @@ mod a_guard_that_fails {
             &[],
             stand_in,
             false,
+            &["Bash"],
         );
         let results = results.lock().expect("results").clone();
         assert!(
@@ -1662,5 +1688,576 @@ mod a_guard_that_fails {
     fn a_read_guard_that_dies_lets_the_read_through_on_claude_code_under_open() {
         purlis_core::unsteered!();
         case(Guard::Read, DIES, &under("open"), true);
+    }
+}
+
+/// A stand-in for the Messages API that asks for every one of `calls` at once, each a
+/// `(tool, input)`, in the chat's first turn, and ends the next. What each call's result said is
+/// kept in `results`, by its place in `calls`.
+struct AllAtOnce {
+    calls: Vec<(&'static str, Value)>,
+    results: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+impl AllAtOnce {
+    fn id(at: usize) -> String {
+        format!("toolu_corpus_{at}")
+    }
+}
+
+impl Respond for AllAtOnce {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let model = body["model"].as_str().unwrap_or("stand-in").to_owned();
+        let usage = json!({ "input_tokens": 1, "output_tokens": 1 });
+        let said: Vec<Option<String>> = (0..self.calls.len())
+            .map(|at| result_of(&body, &Self::id(at)))
+            .collect();
+        let offers = |name: &str| {
+            body["tools"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == name))
+        };
+        let (content, stop) = if said.iter().any(Option::is_some) || !offers("Read") {
+            if said.iter().any(Option::is_some) {
+                *self.results.lock().expect("results") = said;
+            }
+            (vec![json!({ "type": "text", "text": "done" })], "end_turn")
+        } else {
+            // A file is made with Write where it is offered, and otherwise with Edit, whose empty
+            // `old_string` makes the file: both are held by the same Edit rules.
+            let write = offers("Write");
+            let calls = self
+                .calls
+                .iter()
+                .enumerate()
+                .map(|(at, (tool, input))| {
+                    let (tool, input) = if *tool == "Write" && !write {
+                        (
+                            "Edit",
+                            json!({
+                                "file_path": input["file_path"],
+                                "old_string": "",
+                                "new_string": input["content"],
+                            }),
+                        )
+                    } else {
+                        (*tool, input.clone())
+                    };
+                    json!({ "type": "tool_use", "id": Self::id(at), "name": tool, "input": input })
+                })
+                .collect();
+            (calls, "tool_use")
+        };
+        // Whole, not streamed: Claude Code reads either, and many blocks are plainer whole.
+        ResponseTemplate::new(200).set_body_json(json!({
+            "id": "msg_stand_in",
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": content,
+            "stop_reason": stop,
+            "stop_sequence": null,
+            "usage": usage,
+        }))
+    }
+}
+
+/// **The Claude Code a live probe runs**: `PURLIS_CLAUDE_CODE`. Unset, the probe is skipped and
+/// says so on a line of its own, so the run's log records the skip; set to anything that is not
+/// a program, it fails, on CI and here alike, rather than pass having probed nothing.
+fn claude_code_to_probe(test: &str) -> Option<PathBuf> {
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        println!("{test}: skipped, PURLIS_CLAUDE_CODE names no Claude Code to probe");
+        return None;
+    };
+    assert!(
+        program.is_file(),
+        "{test}: PURLIS_CLAUDE_CODE names {}, which is no program",
+        program.display()
+    );
+    Some(program)
+}
+
+/// `path` under each spelling a chat could ask for it by, and whether a probe of that spelling
+/// is held to what is asked of the path itself: as written; through `/./`, a doubled `/` and a
+/// `..` (on every system); and on macOS in upper case, in lower case, with its letters' cases
+/// swapped, decomposed (NFD, where it has a letter that decomposes) and across the
+/// `/System/Volumes/Data` firmlink, in two cases. A disk that folds case and normalisation opens
+/// the same file under each. With a trailing `/` it names no file a tool reads, and Claude Code
+/// matches a rule on the letters it is given, which a decomposed name does not share with a
+/// rule's: those two are held only to deciding as the old rules decide, and what they came to
+/// is printed. Not through the `/var` link: those rules named
+/// the kernel's spelling and not the link's, and Claude Code follows the link only for a path
+/// that is there.
+fn spellings(path: &Path) -> Vec<(String, bool)> {
+    let path = path.display().to_string();
+    let (parent, name) = path.rsplit_once('/').expect("an absolute path");
+    let parent_name = parent.rsplit('/').next().unwrap_or_default();
+    let mut out = vec![
+        (path.clone(), true),
+        (format!("{parent}/./{name}"), true),
+        (format!("{parent}//{name}"), true),
+        (format!("{parent}/../{parent_name}/{name}"), true),
+        (format!("{path}/"), false),
+    ];
+    if !cfg!(target_os = "macos") {
+        return out;
+    }
+    let swapped: String = path
+        .chars()
+        .map(|c| {
+            if c.is_lowercase() {
+                c.to_uppercase().collect::<String>()
+            } else {
+                c.to_lowercase().collect::<String>()
+            }
+        })
+        .collect();
+    out.extend(
+        [path.to_uppercase(), path.to_lowercase(), swapped]
+            .into_iter()
+            .map(|it| (it, true)),
+    );
+    let decomposed = path.replace('\u{e9}', "e\u{301}");
+    if decomposed != path {
+        out.push((decomposed, false));
+    }
+    let data = format!("/System/Volumes/Data{path}");
+    out.push((data.to_uppercase(), true));
+    out.push((data, true));
+    out
+}
+
+/// One call of the corpus, and what is asked of its answer.
+struct Probe {
+    what: String,
+    tool: &'static str,
+    input: Value,
+    /// `Some(true)`: refused by a rule, and not done. `Some(false)`: done, and not refused.
+    /// `None`: only decided as the old rules decide it.
+    held: Option<bool>,
+    /// Whether the rules before #6961 decide it the same: not where the rules now hold more.
+    as_before: bool,
+}
+
+/// What a corpus call came to: whether a rule refused it, and whether it was done.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Came {
+    refused: bool,
+    went: bool,
+}
+
+const MARK: &str = "corpus-mark-7f3a";
+
+/// **The corpus, run in a sample plane in `at`** by Claude Code at `program`, on the settings a
+/// chat at the plane's root starts with, written now or, `as_before`, as before #6961
+/// ([`sandbox::claude::as_before_6961`]): each probe and what it came to, in order. The plane's
+/// folder has a space and a letter that is not ASCII in its name, so every path does.
+fn corpus_run(program: &Path, at: &Path, as_before: bool) -> Vec<(Probe, Came)> {
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("a plane \u{e9}");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &home.join(".ssh"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, LEVELS[0].2);
+    // Workspaces, each with a clone and branch folders cut from it: every branch folder's git is
+    // held, the chat's own workspace's and another's.
+    let branch = |workspace: &str, piece: &str| {
+        let clone = root.join("workspaces").join(workspace).join("app");
+        if !clone.exists() {
+            fs::create_dir_all(&clone).expect("a clone");
+            git(&clone, &["init", "-q", "-b", "main"]);
+            git(&clone, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        }
+        let folder = clone.join("../.worktrees/app").join(piece);
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                piece,
+                folder.to_str().expect("a path"),
+            ],
+        );
+    };
+    for (workspace, piece) in [("w", "p1"), ("w", "p2"), ("v", "q1"), ("v", "q2")] {
+        branch(workspace, piece);
+    }
+    let dispatches = root.join(".purlis/app/dispatches");
+    fs::create_dir_all(&dispatches).expect("the dispatch records");
+    fs::create_dir_all(root.join(".charter/vaults")).expect("the old vaults folder");
+    fs::write(root.join(".purlis/vaults/ops.json"), MARK).expect("a vault");
+    fs::write(root.join(".charter/vaults/ops.json"), MARK).expect("a vault by the old name");
+    fs::write(dispatches.join("one.json"), MARK).expect("a dispatch record");
+    fs::write(home.join(".ssh/id_ed25519"), MARK).expect("an SSH key");
+    std::os::unix::fs::symlink(root.join(".purlis/vaults"), root.join("linked"))
+        .expect("a link to the vaults");
+    let piece = root.join("workspaces/w/.worktrees/app/p1");
+    fs::write(piece.join("README.md"), MARK).expect("a file in a branch folder");
+    fs::write(root.join("notes.json"), MARK).expect("a file nothing holds");
+    for folder in [root.join("notes-new"), piece.join("written")] {
+        fs::create_dir_all(folder).expect("a folder nothing holds");
+    }
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let make = || {
+        let Some(Decided::Sandboxed(mut applied)) =
+            sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+                .expect("decided")
+        else {
+            panic!("not sandboxed");
+        };
+        applied.answered(SUPPORTED);
+        // A wrapped chat (Linux) holds a git folder by its wrap, not by these rules
+        // ([`Denied::git_folder_pins`]): its pins are probed only where Claude Code's own
+        // sandbox runs.
+        match applied.form_in(Some(&root)) {
+            Form::ClaudeCode(compiled) => (compiled, true),
+            Form::ClaudeWrapped(wrap) => (wrap.settings(), false),
+            other => panic!("not Claude Code's settings: {other:?}"),
+        }
+    };
+    let (compiled, own_sandbox) = if as_before {
+        sandbox::claude::as_before_6961(make)
+    } else {
+        make()
+    };
+    let file = at.join("settings.json");
+    fs::write(
+        &file,
+        json!({ "permissions": { "deny": compiled.deny } }).to_string(),
+    )
+    .expect("the settings");
+    // A branch folder made after the chat started: its git is held by the rule on every branch
+    // folder's git, where the rules before held each by its own path.
+    if own_sandbox {
+        branch("v", "q3");
+    }
+
+    let mut probes: Vec<Probe> = Vec::new();
+    let mut read = |path: &Path, held: Option<bool>, as_before: bool| {
+        for (spelled, claimed) in spellings(path) {
+            probes.push(Probe {
+                what: format!("Read {spelled}"),
+                tool: "Read",
+                input: json!({ "file_path": spelled }),
+                held: held.filter(|_| claimed),
+                as_before,
+            });
+        }
+    };
+    // What is read: held, and the controls.
+    read(&root.join(".purlis/vaults/ops.json"), Some(true), true);
+    read(&root.join(".charter/vaults/ops.json"), Some(true), true);
+    read(&dispatches.join("one.json"), Some(true), true);
+    read(&home.join(".ssh/id_ed25519"), Some(true), true);
+    read(&root.join("linked/ops.json"), None, true);
+    read(&root.join("notes.json"), Some(false), true);
+    read(&piece.join("README.md"), Some(false), true);
+    let mut probes_written = Vec::new();
+    let mut write = |folder: &Path, held: Option<bool>, as_before: bool| {
+        for (n, (spelled, _)) in spellings(folder).into_iter().enumerate() {
+            let new = format!("{}/corpus-{n}.txt", spelled.trim_end_matches('/'));
+            probes_written.push(Probe {
+                what: format!("Write {new}"),
+                tool: "Write",
+                input: json!({ "file_path": new, "content": MARK }),
+                held,
+                as_before,
+            });
+        }
+    };
+    // What is written below: each held path, by a new file in or below it.
+    write(&root.join(".purlis/vaults"), Some(true), true);
+    write(&root.join(".charter/vaults"), Some(true), true);
+    write(&dispatches, Some(true), true);
+    write(&root.join("purlis.toml"), Some(true), true);
+    write(&root.join("repo/.git/config"), Some(true), true);
+    // Later code, held by a glob wherever it is made.
+    write(&root.join("made-later/.husky"), Some(true), true);
+    write(&root.join("made-later/.vscode"), Some(true), true);
+    write(&root.join("repo/.git/modules/sub/hooks"), Some(true), true);
+    // Another workspace's manifest changes no chat's sandbox: decided as before.
+    write(&root.join("workspaces/v/purlis.toml"), None, true);
+    if own_sandbox {
+        write(&piece.join(".git"), Some(true), true);
+        write(
+            &root.join("workspaces/v/.worktrees/app/q2/.git"),
+            Some(true),
+            true,
+        );
+        write(
+            &root.join("workspaces/v/.worktrees/app/q3/.git"),
+            Some(true),
+            false,
+        );
+    }
+    write(&root.join("notes-new"), Some(false), true);
+    write(&piece.join("written"), Some(false), true);
+    probes.extend(probes_written);
+
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let stand_in = AllAtOnce {
+        calls: probes
+            .iter()
+            .map(|probe| (probe.tool, probe.input.clone()))
+            .collect(),
+        results: results.clone(),
+    };
+    let (status, said) = started_allowing(
+        program,
+        &home,
+        &tmp,
+        &root,
+        &file,
+        &["--setting-sources".to_owned(), "user".to_owned()],
+        "the corpus of spellings",
+        &[],
+        stand_in,
+        &["Read", "Write", "Edit"],
+    );
+    let results = results.lock().expect("results").clone();
+    assert_eq!(
+        results.len(),
+        probes.len(),
+        "not every call's result reached the stand-in ({status}):\n{said}"
+    );
+    probes
+        .into_iter()
+        .zip(results)
+        .map(|(probe, result)| {
+            let text = result.unwrap_or_default();
+            // "… denied …", or "covered by a Read deny rule …": refused by a rule either way.
+            let lower = text.to_lowercase();
+            let refused = lower.contains("denied") || lower.contains("deny rule");
+            let path = Path::new(probe.input["file_path"].as_str().expect("a path"));
+            let went = match probe.tool {
+                "Read" => text.contains(MARK),
+                _ => fs::read_to_string(path).is_ok_and(|it| it == MARK),
+            };
+            (probe, Came { refused, went })
+        })
+        .collect()
+}
+
+/// **The smaller rules deny every spelling the old rules denied** (T1.1-71, #6961), decided by
+/// Claude Code itself: the version purlis supports, started with the settings a chat in a sample
+/// plane starts with, its own Read and Write tools each asked for every spelling
+/// ([`spellings`]) of paths the plane holds. A path held from reading is never read, and a path
+/// held from writing never has anything written in or below it. A file nothing holds is read and
+/// written under its own name, so a refusal here is the rules' and not the stand-in's.
+///
+/// The rules before #6961 wrote each of these spellings out (`<p>` and `<p>/**`, its either-case
+/// copy, and its `/System/Volumes/Data` name). The smaller rules lean on how Claude Code matches
+/// a rule's path, as gitignore does: a folder's rule holds what is below it, in either case. So
+/// the same corpus runs on the rules as they were before ([`sandbox::claude::as_before_6961`]),
+/// in a plane of its own, and every call is decided as it was there; the one exception is a
+/// branch folder made after the start, whose git only the rules now hold.
+#[test]
+fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
+    purlis_core::unsteered!();
+    let Some(program) =
+        claude_code_to_probe("the_smaller_rules_deny_every_spelling_the_old_rules_denied")
+    else {
+        return;
+    };
+    let now_at = tempfile::tempdir().expect("a folder");
+    let before_at = tempfile::tempdir().expect("a folder");
+    let now = corpus_run(
+        &program,
+        &now_at.path().canonicalize().expect("a real folder"),
+        false,
+    );
+    let before = corpus_run(
+        &program,
+        &before_at.path().canonicalize().expect("a real folder"),
+        true,
+    );
+    assert_eq!(now.len(), before.len(), "one corpus, run twice");
+    let mut wrong = Vec::new();
+    for ((probe, came), (_, came_before)) in now.iter().zip(&before) {
+        if probe.held.is_none() {
+            println!("measured: {}: {came:?}", probe.what);
+        }
+        match probe.held {
+            Some(true) if came.went || !came.refused => {
+                wrong.push(format!("{}: not denied", probe.what));
+            }
+            Some(false) if came.refused || !came.went => {
+                wrong.push(format!("{}: not done", probe.what));
+            }
+            _ => {}
+        }
+        if probe.as_before && came != came_before {
+            wrong.push(format!(
+                "{}: {came:?} now, {came_before:?} on the rules before #6961",
+                probe.what
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of {} answered otherwise:\n{}",
+        wrong.len(),
+        now.len(),
+        wrong.join("\n")
+    );
+}
+
+/// **A command writes no git folder outside where it may write, and a folder granted to the chat
+/// still finds every pin** (#6961, the review of #7005): a chat opened in one branch folder runs
+/// commands that write another workspace's branch folder's `.git`, move that branch folder and
+/// its workspace aside, and write beside them. With nothing granted every one is refused, and
+/// one in its own folder is written. With that branch folder granted as an added directory, as
+/// `/add-dir`, an "allow all edits in this folder" answer or a change to the person's settings
+/// adds one while the chat runs (read in Claude Code 2.1.325), the file beside is written, and
+/// the `.git` and the folders above it are still refused: Claude Code pins no `.git` in a folder
+/// it adds, so the settings purlis writes hold every pin wherever the chat opens.
+///
+/// Not held to the pinned version: CI runs it on the version purlis supports, and the nightly
+/// (`claude-code-newest-writes`) on Claude Code's newest release, so a release that writes
+/// further is red the night it ships.
+#[test]
+fn a_command_writes_no_git_folder_outside_where_it_may_write() {
+    purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
+    let Some(program) =
+        claude_code_to_probe("a_command_writes_no_git_folder_outside_where_it_may_write")
+    else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, LEVELS[0].2);
+    for (workspace, piece) in [("w", "p1"), ("v", "q1")] {
+        let clone = root.join("workspaces").join(workspace).join("app");
+        fs::create_dir_all(&clone).expect("a clone");
+        git(&clone, &["init", "-q", "-b", "main"]);
+        git(&clone, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        let folder = clone.join("../.worktrees/app").join(piece);
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                piece,
+                folder.to_str().expect("a path"),
+            ],
+        );
+    }
+    let cwd = root.join("workspaces/w/.worktrees/app/p1");
+    let other = root.join("workspaces/v/.worktrees/app/q1");
+    let gitfile = fs::read_to_string(other.join(".git")).expect("its .git");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let Some(Decided::Sandboxed(mut applied)) =
+        sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+    else {
+        panic!("not sandboxed");
+    };
+    applied.answered(SUPPORTED);
+    let Form::ClaudeCode(compiled) = applied.form_in(Some(&cwd)) else {
+        panic!("not Claude Code's own sandbox");
+    };
+    let other_git = other.join(".git").display().to_string();
+    assert!(
+        compiled.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .any(|it| *it == other_git),
+        "the other branch folder's pin is kept"
+    );
+    compiled.make_empty();
+    let settings = compiled.reporting_on(None).through(PROXY_PORTS);
+    let tried = |what: &str| format!("{{ {what}; }} 2>/dev/null && echo WRITTEN || echo REFUSED");
+    let q = |path: &Path| format!("'{}'", path.display());
+    for (granted, expected) in [
+        (
+            None,
+            ["REFUSED", "REFUSED", "REFUSED", "REFUSED", "WRITTEN"],
+        ),
+        (
+            Some(&other),
+            ["REFUSED", "REFUSED", "REFUSED", "WRITTEN", "WRITTEN"],
+        ),
+    ] {
+        let mut permissions = json!({ "deny": settings.deny });
+        if let Some(granted) = granted {
+            permissions["additionalDirectories"] = json!([granted.display().to_string()]);
+        }
+        let file = at.join("settings.json");
+        fs::write(
+            &file,
+            json!({ "sandbox": settings.sandbox, "permissions": permissions }).to_string(),
+        )
+        .expect("the settings");
+        let commands = vec![
+            tried(&format!(
+                "printf 'gitdir: /elsewhere\\n' > {}",
+                q(&other.join(".git"))
+            )),
+            tried(&format!(
+                "mv {} {}",
+                q(&other),
+                q(&other.with_file_name("q1-aside"))
+            )),
+            tried(&format!(
+                "mv {} {}",
+                q(&root.join("workspaces/v")),
+                q(&root.join("workspaces/v-aside"))
+            )),
+            tried(&format!("printf x > {}", q(&other.join("beside.txt")))),
+            tried(&format!("printf x > {}", q(&cwd.join("mine.txt")))),
+        ];
+        let said = ran_steps(
+            &program,
+            &home,
+            &tmp,
+            &cwd,
+            &file,
+            &["--setting-sources".to_owned(), "user".to_owned()],
+            "writes outside where a command may write",
+            commands,
+        );
+        let answers: Vec<&str> = said
+            .iter()
+            .map(|it| {
+                if it.contains("WRITTEN") {
+                    "WRITTEN"
+                } else {
+                    "REFUSED"
+                }
+            })
+            .collect();
+        assert_eq!(answers, expected, "granted {granted:?}: {said:?}");
+        assert_eq!(
+            fs::read_to_string(other.join(".git")).expect("still there"),
+            gitfile,
+            "granted {granted:?}: the other branch folder's .git is as it was"
+        );
     }
 }

@@ -263,6 +263,15 @@ pub fn ready_to_seal() -> Result<(), &'static str> {
     }
     #[cfg(not(test))]
     {
+        // The scenario host's seal (T1.1-06) is the app's own, in memory: the press finds it ready.
+        #[cfg(feature = "test-support")]
+        if IN_MEMORY.get().is_some() {
+            return if super::keyhold::is_the_app() {
+                Ok(())
+            } else {
+                Err(NOT_THE_APP)
+            };
+        }
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return Err(NOT_THE_APP);
         }
@@ -489,6 +498,14 @@ pub fn kept_exists(kind: &str, clone: &str) -> bool {
     }
     #[cfg(not(test))]
     {
+        #[cfg(feature = "test-support")]
+        if let Some(held) = IN_MEMORY.get() {
+            return super::keyhold::is_the_app()
+                && held
+                    .kept
+                    .lock()
+                    .is_ok_and(|kept| kept.contains_key(&account));
+        }
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return false;
         }

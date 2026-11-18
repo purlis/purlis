@@ -131,10 +131,25 @@ pub fn of(dialect: Dialect, binary: &Path, argv: &[String]) -> Vec<Route> {
     }
 }
 
-/// The hooks `hooks.json` holds, read as Claude Code reads them, and the permission hook.
+/// The hooks `hooks.json` holds, read as Claude Code reads them, the guards, and the permission hook.
 fn claude(binary: &Path) -> Vec<Route> {
     let doc: Value = serde_json::from_str(&purlis_core::plugin::hooks_json()).unwrap_or_default();
     let mut routes = from_hooks_object(doc.get("hooks").unwrap_or(&Value::Null), None);
+    // The guards ride on the chat's `--settings`, not in the bundled plugin (#7067): each hook of
+    // the registry that may refuse a call, as `harness::claude` arms it.
+    routes.extend(
+        purlis_core::hookreg::HANDLERS
+            .iter()
+            .filter(|h| h.guards_a_call())
+            .map(|h| Route {
+                event: h.event.to_owned(),
+                matcher: h.matcher.map(str::to_owned),
+                word: h.name.to_owned(),
+                timeout: u64::from(h.timeout),
+                command: purlis_core::plugin::command_at(binary, h.name),
+                tool: None,
+            }),
+    );
     routes.push(Route {
         event: "PermissionRequest".to_owned(),
         matcher: None,
