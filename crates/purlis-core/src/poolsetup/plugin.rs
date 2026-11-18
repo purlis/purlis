@@ -72,7 +72,7 @@ pub fn wanted(view: &Value) -> Option<Wanted> {
 }
 
 /// **Where `command` is**: an absolute command where it is, else the folder named, then the known
-/// folders ([`KNOWN`], `~/` under `home`).
+/// folders ([`KNOWN`], `~/` under `home`), then the absolute folders of this process's `PATH`.
 #[must_use]
 pub fn find(command: &str, named: Option<&Path>, home: Option<&Path>) -> Where {
     let as_path = Path::new(command);
@@ -91,10 +91,16 @@ pub fn find(command: &str, named: Option<&Path>, home: Option<&Path>) -> Where {
             Some(under) => home.map(|home| home.join(under)),
             None => Some(PathBuf::from(folder)),
         });
+    // The folders of the person's own `PATH` come last (asdf, nix, mise, a custom SDK): a plugin
+    // an existing setup already runs is found without naming its folder.
+    let on_path = crate::envvar::var("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>());
     named
         .map(Path::to_path_buf)
         .into_iter()
         .chain(known)
+        .chain(on_path)
         .find(|folder| folder.is_absolute() && crate::programs::runnable(&folder.join(command)))
         .map_or(Where::Missing, Where::In)
 }

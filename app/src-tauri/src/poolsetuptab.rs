@@ -498,7 +498,21 @@ pub async fn pool_setup_choose_cluster(
             use purlis_core::poolsetup::{self, Kind};
             let config = config_root()?;
             if let Some(context) = context {
-                let file = kubeconfig.as_deref().map(std::path::Path::new);
+                // Empty is kubectl's default file; `~/` is the home, as the field's hint says.
+                let file = kubeconfig
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|typed| !typed.is_empty())
+                    .map(|typed| {
+                        match (
+                            typed.strip_prefix("~/"),
+                            purlis_core::envvar::var_os("HOME"),
+                        ) {
+                            (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
+                            _ => std::path::PathBuf::from(typed),
+                        }
+                    });
+                let file = file.as_deref();
                 return poolsetup::choose_cluster_in(&config, file, &context)
                     .map_err(|why| why.to_string());
             }
