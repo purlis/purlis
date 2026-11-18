@@ -1669,9 +1669,10 @@ impl Chat {
                         self.cwd.display().to_string(),
                     ),
                 ]);
-                // A plugin's hook is told its plugin; the permission hook is `--settings`'s, not
-                // the plugin's, and is told none (2.1.325's `asks` recording).
-                if event != "PermissionRequest" {
+                // A plugin's hook is told its plugin; the permission hook and the guards
+                // (`PreToolUse`, #7067) are `--settings`'s, not the plugin's, and are told none
+                // (2.1.325's `asks` and `covering` recordings).
+                if !matches!(event, "PermissionRequest" | "PreToolUse") {
                     env.push((
                         "CLAUDE_PLUGIN_DATA".to_owned(),
                         config
