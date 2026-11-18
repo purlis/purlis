@@ -644,3 +644,66 @@ fn a_project_the_runner_keeps_in_its_data_home_is_read_and_the_rest_of_it_is_not
     assert_eq!(piece(&read("notes.md")).bytes, b"# notes\n");
     assert!(kept(&read(&other.display().to_string())));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_in_the_workspace_is_placed_by_its_own_name_as_the_host_places_one() {
+    let r = runner();
+    std::fs::hard_link(&r.outside, r.cwd.join("hosts")).expect("a second name of it");
+
+    let found = r.look("hosts");
+
+    let (path, from_workspace) = plain(&found);
+    assert_eq!(path, r.shown(&r.cwd.join("hosts")));
+    assert_eq!(from_workspace, Some("repos/web/hosts"));
+    assert_eq!(
+        piece(&r.read("hosts", FileReach::Workspace, 0)).bytes,
+        b"127.0.0.1 localhost\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_whose_other_name_is_in_a_kept_folder_is_kept() {
+    let r = runner();
+    let in_kept = [
+        r.home.join(".config/purlis/runners.json"),
+        r.home.join(".local/share/purlis/profiles/work/notes.md"),
+        r.home.join(".ssh/notes"),
+    ];
+    for (n, file) in in_kept.iter().enumerate() {
+        write(file, b"{}\n");
+        std::fs::hard_link(file, r.cwd.join(format!("second-{n}"))).expect("a second name");
+    }
+    sign_ins(&r);
+
+    for n in 0..in_kept.len() {
+        let path = format!("second-{n}");
+        assert!(kept(&r.look(&path)), "{path}");
+        assert!(kept(&r.read(&path, FileReach::Anywhere, 0)), "{path}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_between_two_files_of_a_project_in_the_data_home_is_read() {
+    let held = tempfile::tempdir().expect("a temporary folder");
+    let top = std::fs::canonicalize(held.path()).expect("resolved");
+    let home = top.join("home");
+    let project = home.join(".local/share/purlis/projects/01J9PRJCT00000000000000000");
+    let cwd = project.join("workspaces/app");
+    write(&cwd.join("notes.md"), b"# notes\n");
+    std::fs::hard_link(cwd.join("notes.md"), cwd.join("again.md")).expect("a second name");
+    let machine = machine_at(&home);
+
+    let read = read_for_window(&Asked {
+        project: &project,
+        cwd: Some(&cwd),
+        path: "again.md",
+        reach: FileReach::Workspace,
+        at: Some(0),
+        machine: &machine,
+    });
+
+    assert_eq!(piece(&read).bytes, b"# notes\n");
+}

@@ -19,6 +19,9 @@
 //!   name a case-folding disk opens as one of them is one of them; then by identity, the
 //!   resolved path and every folder above it, and the file opened, by device and number, so a
 //!   link or a second spelling that reaches one of them is one of them too.
+//! - **A file with several names** is kept where one of its other names is in a kept folder
+//!   (#7077), as the host's own guard judges one; otherwise it is placed by the name the chat
+//!   printed, as the host places one.
 //! - **Where the list cannot be told whole**, the vault registry does not read, nothing is read.
 
 use std::collections::HashSet;
@@ -104,13 +107,74 @@ impl Kept {
     }
 
     /// **Whether the open file whose metadata is `meta` is one of the kept files**, under
-    /// whatever name it was opened by.
+    /// whatever name it was opened by: it IS one, or it has several names and one of them is in
+    /// a kept folder (#7077), as the host judges one (`files::kept`). A file with several names
+    /// whose others could not be looked through within [`WALKED`] entries is counted as kept.
     pub(super) fn holds_the_file(&self, meta: &std::fs::Metadata) -> bool {
         if self.untold {
             return true;
         }
-        id_of(meta).is_some_and(|id| self.everywhere_ids.contains(&id))
+        let Some(id) = id_of(meta) else {
+            return false;
+        };
+        if self.everywhere_ids.contains(&id) {
+            return true;
+        }
+        if names_of(meta) < 2 {
+            return false;
+        }
+        let mut left = WALKED;
+        // Each folder with whether it is one of purlis's own, whose part that is the chat's
+        // project is not looked through: the project is read, so its files' other names there
+        // are its own. What no chat reads is looked through wherever it is, in the project too.
+        let mut folders: Vec<(PathBuf, bool)> = self
+            .everywhere
+            .iter()
+            .map(|folder| (folder.clone(), false))
+            .chain(self.own.iter().map(|folder| (folder.clone(), true)))
+            .collect();
+        while let Some((folder, own)) = folders.pop() {
+            if own && folder.starts_with(&self.project) {
+                continue;
+            }
+            // Never through a link: what a kept folder links to is not what it holds.
+            let Ok(listed) = std::fs::read_dir(&folder) else {
+                continue;
+            };
+            for entry in listed.flatten() {
+                if left == 0 {
+                    return true;
+                }
+                left -= 1;
+                let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    folders.push((entry.path(), own));
+                } else if id_of(&meta) == Some(id) {
+                    return true;
+                }
+            }
+        }
+        false
     }
+}
+
+/// The most entries of the kept folders [`Kept::holds_the_file`] looks at for a file with
+/// several names, as the host's own guard does. Past it the file is kept: purlis could not
+/// tell, so it does not read it.
+const WALKED: usize = 20_000;
+
+/// How many names a file has.
+#[cfg(unix)]
+fn names_of(meta: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt as _;
+    meta.nlink()
+}
+
+#[cfg(not(unix))]
+fn names_of(_meta: &std::fs::Metadata) -> u64 {
+    1
 }
 
 /// `paths`, each as written and as the kernel names it.
