@@ -3349,7 +3349,7 @@ impl Hosting {
             code: session::NOT_STARTED.into(),
             why: format!("the read did not finish: {why}"),
         })??;
-        Ok(Answer::File(Box::new(read)))
+        Ok(Answer::File(Box::new(said_to(read, peer.version()))))
     }
 
     /// The hook channel of `project`, where it has one, for the link `peer` came on, which must
@@ -4625,6 +4625,17 @@ fn a_note_that_fits(note: Option<&session::ProgramNote>) -> Result<(), Refusal> 
             ),
         }),
         _ => Ok(()),
+    }
+}
+
+/// **`read` as a window of `version` hears it** (#7064): one before 1.94 knows no
+/// [`session::FileRead::Kept`], so a file kept from it is not there, and stays no link.
+pub(crate) fn said_to(read: session::FileRead, version: Version) -> session::FileRead {
+    match read {
+        session::FileRead::Kept { .. } if version < session::KNOWS_KEPT_FILES => {
+            session::FileRead::NotThere
+        }
+        read => read,
     }
 }
 

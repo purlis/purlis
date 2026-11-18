@@ -174,6 +174,24 @@ fn a_file_now_outside_the_workspace_is_not_shown_and_says_to_open_it_again() {
 }
 
 #[test]
+fn a_file_the_runner_keeps_is_not_shown_even_when_it_was_opened_on_an_ask() {
+    let mut runner = fake(b"");
+    runner.answer = Some(FileRead::Kept {
+        path: "/home/purlis/.codex/auth.json".into(),
+    });
+
+    for opened in [None, Some("1:2")] {
+        let said = reads(&runner)
+            .read("/home/purlis/.codex/auth.json", opened)
+            .unwrap_err();
+        assert_eq!(
+            said,
+            "purlis never opens runner pool/runner-1's own folders or a harness's sign-in files."
+        );
+    }
+}
+
+#[test]
 fn pieces_that_run_past_the_files_size_are_refused() {
     let mut runner = fake(b"");
     runner.answer = Some(FileRead::Plain {
@@ -299,6 +317,7 @@ mod over_real_files {
                 path,
                 reach,
                 at,
+                machine: &purlis_core::sandbox::Machine::this(),
             }))
         }
     }

@@ -16,6 +16,8 @@
 //!   folder, a device or a pipe, says nothing; a binary file or one past the largest read
 //!   (`MOST_FILE_READ`) is no link and says why. A runner that does not answer in time says nothing either: the window waits on
 //!   no runner to draw a pane.
+//! - **What the runner keeps is no link and says why** ([`RUNNER_KEPT`], #7064): its own
+//!   folders, a harness's sign-in and what no chat there reads, never asked for and never opened.
 //! - **`~` is never asked**: on a runner it is the runner's home, which holds its sign-ins.
 
 use std::path::{Path, PathBuf};
@@ -40,6 +42,11 @@ pub trait RunnerFiles: Send + Sync {
 /// What a hover over a runner's binary file says.
 pub const RUNNER_BINARY: &str =
     "purlis opens a runner's file only as text, and this one is not text";
+
+/// What a hover over a file a runner keeps from the window says (#7064): its own folders, a
+/// harness's sign-in, and what no chat there reads.
+pub const RUNNER_KEPT: &str =
+    "purlis never opens a runner's own folders or a harness's sign-in files";
 
 /// What a hover over a runner's file past the largest read ([`MOST_FILE_READ`]) says.
 pub fn runner_too_large() -> String {
@@ -104,6 +111,7 @@ impl LinkKind for RunnerFile {
             Some(FileRead::TooLarge { .. }) => {
                 return Resolved::NotALink(runner_too_large());
             }
+            Some(FileRead::Kept { .. }) => return Resolved::NotALink(RUNNER_KEPT.into()),
             Some(FileRead::NotThere | FileRead::NotPlain { .. } | FileRead::Outside { .. })
             | None => return Resolved::Quiet,
         };

@@ -1803,6 +1803,7 @@ impl purlis_host::Code for Moves {
                 path,
                 reach,
                 at,
+                machine: &crate::sandbox::Machine::this(),
             },
         ))
     }

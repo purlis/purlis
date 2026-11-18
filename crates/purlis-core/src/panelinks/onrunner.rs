@@ -23,6 +23,10 @@
 //!   opened, it is opened one folder at a time with no link followed (so a folder swapped for
 //!   a link after the path was resolved is refused, not followed), without waiting on a pipe,
 //!   and looked at again once open.
+//! - **What the runner keeps is never read** ([`kept`], #7064): purlis's own folders there,
+//!   every harness's sign-in files, and what no chat there reads, whatever the reach. Judged
+//!   on the resolved path, and again on the file opened, before a byte of it is read: it is
+//!   answered [`FileRead::Kept`].
 //! - **At most [`MOST_FILE_READ`] bytes of text**: a larger file, or one with a NUL byte or
 //!   that is not UTF-8, is answered by its size alone.
 
@@ -41,6 +45,9 @@ pub struct Asked<'a> {
     pub path: &'a str,
     pub reach: FileReach,
     pub at: Option<u64>,
+    /// The runner, as purlis knows its home and its environment: where its own folders and
+    /// each harness's sign-in are ([`kept`]).
+    pub machine: &'a crate::sandbox::Machine,
 }
 
 /// The folders of the system's own files, which are never read, whatever they say they are.
@@ -70,6 +77,10 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if SYSTEMS_OWN.iter().any(|own| resolved.starts_with(own)) {
         return FileRead::NotPlain { path };
     }
+    let kept = kept::Kept::of(asked.project, asked.machine);
+    if kept.holds(&resolved) {
+        return FileRead::Kept { path };
+    }
     let home = home_of(asked);
     let from_workspace = home
         .as_ref()
@@ -88,6 +99,9 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     };
     if !meta.is_file() {
         return FileRead::NotPlain { path };
+    }
+    if kept.holds_the_file(&meta) {
+        return FileRead::Kept { path };
     }
     let size = meta.len();
     if size > MOST_FILE_READ {
@@ -232,6 +246,9 @@ fn version_of(meta: &std::fs::Metadata, size: u64) -> String {
         .map_or(0, |since| since.as_nanos());
     format!("{size}:{changed}")
 }
+
+#[path = "onrunner_kept.rs"]
+mod kept;
 
 #[cfg(test)]
 #[path = "onrunner_tests.rs"]
