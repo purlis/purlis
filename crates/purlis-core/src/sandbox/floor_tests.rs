@@ -2718,7 +2718,9 @@ fn the_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off_and_purlis_o
 /// purlis's own** (the review of #7105): the floor's profile applied for real, where this machine
 /// can apply one. A container engine's socket is reached (ruling Q328); another plane's hook
 /// socket, the window's slots socket, the session host's, the crash companion's, the app's
-/// single-instance socket and a chat's server socket are not; its own hook socket is.
+/// single-instance socket and a chat's server socket are not, under their own names or under
+/// another a link or a move gives them; its own hook socket is. CI's
+/// `studio-confinement-macos` runs it, and fails where it skipped.
 #[cfg(target_os = "macos")]
 #[test]
 fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own() {
@@ -2790,6 +2792,23 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
     for socket in &held {
         assert_eq!(run(&connect(socket)), "no", "{}", socket.display());
     }
+    // Nor by another name (the fourth review of #7105): a held socket hard linked or moved to a
+    // name nothing holds, in a folder the floor leaves writable, is neither.
+    for (index, socket) in held.iter().enumerate() {
+        for (how, verb) in [("linked", "/bin/ln"), ("moved", "/bin/mv")] {
+            let other = at.join(format!("{how}-{index}.sock"));
+            let script = format!(
+                "{verb} {} {} 2>/dev/null; {}",
+                socket.display(),
+                other.display(),
+                connect(&other)
+            );
+            assert_eq!(run(&script), "no", "{} {how}", socket.display());
+            assert!(!other.exists(), "{} {how} to {}", socket.display(), other.display());
+        }
+        assert!(socket.exists(), "{} still where purlis made it", socket.display());
+    }
+    crate::secrets::test_really_ran("ports-off-holds-purlis-own-sockets");
 }
 
 /// **What `ports = "off"` still holds names the sockets purlis makes, by the names it makes
