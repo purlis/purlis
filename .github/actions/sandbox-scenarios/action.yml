@@ -107,8 +107,9 @@ runs:
           cargo build --locked -p purlis-app --bin purlis-app --target-dir target/scenario-kit
           echo "PURLIS_HOST_APP=$PWD/target/scenario-kit/debug/purlis-app" >> "$GITHUB_ENV"
         fi
+    # Each set judges itself: a red suite does not hide the production-timing entries' verdicts.
     - name: The sandbox scenarios
-      if: inputs.suite == 'true'
+      if: ${{ !cancelled() && inputs.suite == 'true' }}
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}
@@ -120,7 +121,7 @@ runs:
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
-      if: inputs.production-timings == 'true'
+      if: ${{ !cancelled() && inputs.production-timings == 'true' }}
       shell: bash
       env:
         STRESS: ${{ inputs.stress }}

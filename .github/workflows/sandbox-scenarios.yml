@@ -107,11 +107,12 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    # **Budget: 45 minutes**, from runs 44267476720 (the test build 14 min, the kit 10, the suite
-    # 2.5, 27 min to the coverage gate) and 44239993521 (the whole job, 36 min, its coverage gate
-    # 12 min of a second build): `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. A
+    # **Budget: 60 minutes**, from runs 44267476720 (test build 14 min, kit 10, suite 2.5, 27 min
+    # to the coverage gate), 44281556559 (test build 16, kit 14.5, suite 3: 35 min to the coverage
+    # gate) and 44239993521 (the whole job, 36 min, its coverage gate 12 min of a second build):
+    # at worst 35 + 12 = 47 minutes. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. A
     # `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
-    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 45 }}
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 60 }}
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -229,11 +230,12 @@ jobs:
       matrix:
         os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    # **Budget: 55 minutes**, from run 44267476720, where the test build took 30 min (macos-15) and
-    # 28 (macos-26), the kit 5 and 6, the suite 2.5 and 4: 38 and 40 minutes in all. A macOS
-    # runner's cold build is the job; `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
-    # `stress-x20`'s budget is its own: 180.
-    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 55 }}
+    # **Budget: 75 minutes**, from runs 44267476720 (macos-15: build 30 min, kit 4.5, suite 2.5;
+    # macos-26: build 28, kit 6, suite 4) and 44281556559 (macos-15: build 44, kit 8: both
+    # cancelled at the 55 the first measurement set). A macOS runner's cold build is 24 to 53
+    # minutes (T1.1-54): the worst of these, 44 + 8 + 3 + 4 + the production-timing entries 5, is
+    # 64. `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. `stress-x20`'s is its own: 180.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 75 }}
     permissions:
       contents: read
       issues: write

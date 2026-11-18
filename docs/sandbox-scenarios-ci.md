@@ -47,16 +47,16 @@ before a single scenario runs, so the budget is the build, the kit and the suite
 
 | Job | Budget (min) | Measured | Runs |
 |---|---|---|---|
-| `sandbox-scenarios-linux` | 45 | test build 14, kit 10, suite 2.5; the coverage gate's own build after it 12; 36 in all on a green run | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
-| `sandbox-scenarios-macos` | 55 | macos-15: build 30, kit 4.5, suite 2.5 (38 in all); macos-26: build 28, kit 6, suite 4 (40) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
+| `sandbox-scenarios-linux` | 60 | test build 14 to 16, kit 10 to 14.5, suite 2.5 to 3; 27 to 35 minutes to the coverage gate, whose own build after the suite is 12 more: 47 at worst | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
+| `sandbox-scenarios-macos` | 75 | build 28 to 44, kit 4.5 to 8, suite 2.5 to 4, production-timing entries about 5: 64 at worst; the 55 first set was exceeded by run 44281556559's macos-15 and macos-26 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
 | `macos-sandbox-tests` | 100 | 77 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
-| `linux-release-profile` | 60 | 37 on a cold cache (build 30 or so, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
+| `linux-release-profile` | 60 | 37 and 40 on a cold cache (`purlis` 12.5, the app 22.5, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44281556559](https://github.com/purlis/purlis/actions/runs/44281556559) |
 
 A `stress-x20` run is the same suite twenty times over under load, so it has a budget of its own
 (Linux 150, macOS 180); a change that touches no batch a test is named for stresses the whole suite.
 
 The nightly's entries run only from main's scheduler, after a merge, so their budgets are the
-pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 90), the
+pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 90: a build, the kit, three suites), the
 production-timing run (Linux 75, macOS 90: a build, the kit, and M-NET-25's 15 real minutes), and
 the release profile (60). They are in `.github/nightly-on-phase-1-proven.txt`, and the first
 nightly's run IDs replace this paragraph's derivation.

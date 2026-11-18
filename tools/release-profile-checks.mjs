@@ -87,10 +87,12 @@ export const CHECKS = {
     if (debs.length === 0) return `no .deb in ${folder}`;
     const listing = run("dpkg-deb", ["-c", join(folder, debs[0])]);
     if (listing.error || listing.status !== 0) return `dpkg-deb -c ${debs[0]}: ${listing.error?.message ?? listing.stderr}`;
+    // Where the bundler puts a program is its own business (`/usr/bin`, a folder of the app's);
+    // that the bundle holds the app and the `purlis` its hooks run is what the entries need.
+    const files = listing.stdout.split("\n").map((l) => l.trim().split(/\s+/).pop()).filter(Boolean);
     for (const name of ["purlis-app", "purlis"]) {
-      if (!new RegExp(`/usr/bin/${name}\\s*$`, "m").test(listing.stdout)) {
-        const held = listing.stdout.split("\n").filter((l) => /\/usr\/bin\//.test(l)).map((l) => l.trim().split(/\s+/).pop());
-        return `${debs[0]} holds no /usr/bin/${name} (it holds ${held.join(", ") || "nothing in /usr/bin"})`;
+      if (!files.some((f) => f.endsWith(`/${name}`))) {
+        return `${debs[0]} holds no ${name} (it holds ${files.filter((f) => !f.endsWith("/")).slice(0, 12).join(", ")})`;
       }
     }
     return null;

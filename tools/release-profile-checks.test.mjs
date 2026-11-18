@@ -96,3 +96,26 @@ test("the_release_profile_job_runs_nightly_and_on_pull_requests_that_change_an_e
   const nightly = readFileSync(join(root, ".github/actions/nightly/action.yml"), "utf8");
   assert.match(nightly, /"linux-release-profile"/);
 });
+
+test("the_bundle_check_wants_the_app_and_purlis_in_the_deb", () => {
+  const target = bundle({});
+  const stubs = mkdtempSync(join(tmpdir(), "dpkg-"));
+  const holds = (names) => {
+    writeFileSync(join(target, "release", "bundle", "deb", "purlis.deb"), "");
+    const lines = names.map((n) => `-rwxr-xr-x root/root 1 2026-11-18 10:00 ./usr/lib/purlis/${n}`).join("\\n");
+    writeFileSync(join(stubs, "dpkg-deb"), `#!/bin/sh\nprintf '%b\\n' '${lines}'\n`);
+    chmodSync(join(stubs, "dpkg-deb"), 0o755);
+  };
+  const was = process.env.PATH;
+  process.env.PATH = `${stubs}:${was}`;
+  try {
+    holds(["purlis-app", "purlis"]);
+    assert.equal(CHECKS.bundle({ target, profile: "release" }), null);
+    holds(["purlis"]);
+    assert.match(CHECKS.bundle({ target, profile: "release" }), /holds no purlis-app/);
+  } finally {
+    process.env.PATH = was;
+    rmSync(target, { recursive: true });
+    rmSync(stubs, { recursive: true });
+  }
+});
