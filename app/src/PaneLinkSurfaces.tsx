@@ -68,14 +68,17 @@ const OPENS_IN: Record<OpensIn, string> = {
 };
 
 /** **What ⌘-click on a link does**, the tooltip's second line. A file says where it is first
- *  (D2): "Outside smart-ide · ⌘-click asks first". */
+ *  (D2): "Outside smart-ide · ⌘-click asks first"; one whose branch could not say whether it
+ *  offers it says first that the editor checks it as it opens (#6489). */
 export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
   const click = modifierSaid(mac);
   // A chat link says where its chat is; every other kind, what opening it does.
   if (seen.chat) return chatSaid(seen.chat, click);
   switch (seen.does.does) {
-    case "opens":
-      return `${click} opens it ${OPENS_IN[seen.does.into]}`;
+    case "opens": {
+      const opens = `${click} opens it ${OPENS_IN[seen.does.into]}`;
+      return seen.unchecked ? `${sentence(seen.unchecked)} · ${opens}` : opens;
+    }
     case "asks":
       return `${sentence(seen.does.reason)} · ${click} asks first`;
     case "refused":

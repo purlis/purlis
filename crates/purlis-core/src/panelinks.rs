@@ -29,7 +29,9 @@ mod asks;
 mod file;
 mod osc8;
 pub use asks::{Asks, Identity};
-pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
+pub use file::{
+    FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, OffersFiles, ReadFrom, UNCHECKED, home_of,
+};
 mod chat;
 pub use chat::{ChatAt, ChatNumber, Goes};
 
@@ -214,6 +216,16 @@ impl Resolver {
     /// A resolver of these kinds. A hint no kind answers is never a link.
     pub fn with(kinds: Vec<Box<dyn LinkKind>>) -> Self {
         Self { kinds }
+    }
+
+    /// **The kinds purlis links, a branch's files asked of `offers`** (#6357, #6489): web
+    /// addresses, and file paths whose branch's file is no link where `offers` says the branch
+    /// doesn't offer it, as the light editor would refuse it. [`Resolver::default`] with that.
+    pub fn offering(offers: impl OffersFiles + 'static) -> Self {
+        Self::with(vec![
+            Box::new(WebAddress),
+            Box::new(LocalFile::here().offered_by(offers)),
+        ])
     }
 
     /// This resolver with `kind` too: a kind that needs what only its caller knows, as the chat

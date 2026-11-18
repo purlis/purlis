@@ -28,7 +28,9 @@ reads it again when it is opened, so a pane never chooses what opens (spec #6208
   `~` for your home folder). Path-shaped words that name no file are no link, and their hover
   says nothing.
 - **A file in a branch links only when the branch offers it**: what git tracks there, or does
-  not ignore, which is all the editor opens. A file git ignores says so on its hover.
+  not ignore, which is all the editor opens. A file git ignores says so on its hover. Where
+  purlis could not read the branch's list of files, the file still links, and its hover says
+  the editor checks it as it opens.
 - **A chat's number is looked up in the pane's own project.** A number no chat there had is no
   link. A title never links, and `#641` alone is an issue's number, not a chat.
 
