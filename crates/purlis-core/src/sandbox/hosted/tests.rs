@@ -250,7 +250,7 @@ fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_
     assert_eq!(super::next_changed(Some(&board), &other), None);
 }
 
-/// **The host side of [`session::Confine::lifted`]** (1.92, the Q308 follow-up; the review of
+/// **The host side of [`session::Confine::lifted`]** (1.93, the Q308 follow-up; the review of
 /// #7105): a family the window named is lifted, and each host let through for it is told to the
 /// window by the family; one it did not name, or one this machine's own locks hold enforced, is
 /// not, whatever the window relayed.

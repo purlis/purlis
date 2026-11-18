@@ -10011,7 +10011,7 @@ pub(crate) const NETWORK_LIFTED_RULE: &str = purlis_core::enforcement::RULE_NETW
 /// project's `[policy]` does not enforce `family`** for chat `chat`, whose start resolved it:
 /// nothing where the family is enforced (it refuses or asks as before), a line of its log,
 /// by `rule` and the host, where it logs. The same wherever the proxy runs: a confinement in the
-/// session host tells the window, which tells this (1.92).
+/// session host tells the window, which tells this (1.93).
 fn lifted_by_the_policy(
     root: &std::path::Path,
     chat: Option<String>,

@@ -174,7 +174,7 @@ pub fn start(
 }
 
 /// **What a confinement tells of a host it let through only because the window named `family`
-/// as not enforced for its chat** (`named`, [`session::Confine::lifted`], 1.92): told to the
+/// as not enforced for its chat** (`named`, [`session::Confine::lifted`], 1.93): told to the
 /// window as [`SandboxTold::Lifted`]. None, and the family is enforced, where the window did not
 /// name it, or where `locks`, this machine's, hold it enforced: a runner applies its own locks
 /// over what a desktop relays.

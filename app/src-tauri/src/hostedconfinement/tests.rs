@@ -673,7 +673,7 @@ fn the_windows_allow_of_a_service_a_runner_left_out_lets_the_chat_reach_it_there
 }
 
 /// **A host the host's proxy let through only because a family is not enforced is told to the
-/// window's own closure for that family** (1.92, the Q308 follow-up, items 3 and 5), which logs
+/// window's own closure for that family** (1.93, the Q308 follow-up, items 3 and 5), which logs
 /// it under the chat; and the window names to the host exactly the families its hearing lifts.
 #[test]
 fn a_host_let_through_by_a_lifted_family_is_told_to_that_familys_closure() {
