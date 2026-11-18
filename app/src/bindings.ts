@@ -11688,7 +11688,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file" | "chat" | "osc8";
+export type KindHint = "url" | "file" | "chat" | "osc8" | "issue";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -11987,6 +11987,12 @@ export type LinkFileAt =
 export type LinkFrom = {
 	plane: PlaneId | null,
 	session: number | null,
+	/**
+	 *  What the pane's program last said its folder is by OSC 7 (#6367), as it said it
+	 *  (`file://host/path`): untrusted, read by the core ([`folder::said_by_osc7`]), and only
+	 *  ever where a relative path starts.
+	 */
+	folder?: string | null,
 };
 
 /**  **What a chat counts as its own**, for the ask that says a file is not in it, with its folder. */

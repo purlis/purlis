@@ -372,6 +372,7 @@ mod in_a_pane {
             session: Some(7),
             folder: None,
             runs: Runs::OnRunner,
+            now_in: None,
         }
     }
 
