@@ -198,4 +198,3 @@ fn a_lone_one_character_glob_is_no_forge_command() {
     purlis_core::unsteered!();
     assert_passes(&["echo a; ?"]);
 }
-
