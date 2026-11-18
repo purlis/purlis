@@ -323,7 +323,7 @@ it. No verdict moved. `rfr` is the only key that changed, on generated rows 1061
 The floor now refuses, unattended, a line whose command the shell builds, because that command
 could be a merge or a publish (Q331: this reading is the early warning, and the forge credential
 is the lock, #7133). `rfr` is the only key that moved, from `null` to the floor's refusal, on
-254 rows:
+250 rows:
 
 - **A charter noun the shell fills in** (#7124): a glob, a brace expansion, an expansion or a
   substitution where `handoff` or another noun goes, such as `charter hando?f`, `charter
@@ -333,7 +333,12 @@ is the lock, #7133). `rfr` is the only key that moved, from `null` to the floor'
   `` `env` `` after a heredoc has ended, whose output the shell runs), or a glob or a brace
   expansion there (`chart*`, `char?er`, `[c]harter`, and the fuzz's `?echo`). A substitution
   inside a heredoc body nothing runs is data, and is not read this way. Curated rows 35, 105,
-  455, 456, 469 and 470, and generated rows 22, 36, 38, 68, 77, 95, 106, 123, 152, 167, 173, 190, 203, 205, 224, 242, 255, 265, 327, 357, 391, 397, 402, 416, 436, 443, 444, 448, 462, 466, 472, 484, 493, 516, 517, 520, 529, 531, 537, 559, 567, 584, 595, 620, 625, 638, 644, 658, 669, 680, 697, 710, 715, 716, 717, 736, 750, 780, 784, 793, 803, 812, 816, 818, 838, 846, 854, 861, 871, 872, 880, 893, 911, 912, 936, 938, 944, 957, 975, 989, 997, 998, 1049, 1052, 1056, 1111, 1112, 1154, 1175, 1178, 1181, 1184, 1189, 1195, 1222, 1251, 1255, 1259, 1262, 1263, 1283, 1291, 1293, 1305, 1316, 1329, 1330, 1339, 1353, 1356, 1357, 1372, 1381, 1392, 1402, 1408, 1411, 1412, 1435, 1456, 1469, 1495, 1528, 1532, 1550, 1572, 1583, 1598, 1610, 1620, 1628, 1630, 1637, 1660, 1684, 1692, 1713, 1729, 1731, 1732, 1740, 1743, 1744, 1747, 1753, 1754, 1785, 1791, 1792, 1797, 1807, 1812, 1822, 1824, 1836, 1837, 1847, 1849, 1851, 1865, 1872, 1874, 1902, 1914, 1924, 1939, 1968, 1973, 2016, 2018, 2027, 2037, 2039, 2043, 2059, 2067, 2088, 2089, 2092, 2114, 2121, 2150, 2158, 2208, 2211, 2216, 2222, 2231, 2232, 2235, 2238, 2289, 2291, 2312, 2313, 2327, 2335, 2339 and 2344.
+  455, 456, 469 and 470, and generated rows 22, 36, 38, 68, 77, 95, 106, 123, 152, 167, 173, 190, 203, 205, 224, 242, 255, 265, 327, 357, 391, 397, 402, 416, 436, 443, 444, 448, 462, 466, 472, 484, 493, 516, 517, 520, 529, 531, 537, 559, 567, 584, 595, 620, 625, 638, 644, 658, 669, 680, 697, 710, 715, 716, 717, 736, 750, 780, 784, 793, 803, 812, 816, 818, 838, 846, 854, 861, 871, 872, 880, 893, 911, 912, 936, 938, 944, 957, 975, 989, 997, 998, 1049, 1056, 1111, 1112, 1154, 1175, 1178, 1181, 1184, 1189, 1195, 1222, 1251, 1255, 1259, 1262, 1291, 1293, 1305, 1316, 1329, 1330, 1339, 1353, 1356, 1357, 1372, 1381, 1392, 1402, 1408, 1411, 1412, 1435, 1456, 1469, 1495, 1528, 1532, 1550, 1572, 1583, 1598, 1610, 1620, 1628, 1630, 1637, 1660, 1684, 1692, 1713, 1729, 1731, 1732, 1740, 1743, 1744, 1747, 1753, 1754, 1785, 1791, 1792, 1797, 1807, 1812, 1822, 1824, 1836, 1847, 1849, 1851, 1865, 1872, 1874, 1902, 1914, 1924, 1939, 1968, 1973, 2016, 2018, 2027, 2037, 2039, 2043, 2059, 2067, 2088, 2089, 2092, 2114, 2121, 2150, 2158, 2208, 2211, 2216, 2222, 2231, 2232, 2235, 2238, 2289, 2291, 2312, 2313, 2327, 2335, 2339 and 2344.
+
+Four rows this reading first moved went back to `null` in its second round (#7131): generated
+rows 1052, 1263, 1283 and 1837, each a `python3 -m charter …` whose heredoc body holds
+`` `env` ``. A body only an interpreter of another language runs is not shell, so a word at
+the start of one of its lines is no program the shell builds.
 
 ## The session recording
 

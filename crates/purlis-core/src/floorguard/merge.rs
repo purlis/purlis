@@ -81,10 +81,12 @@ fn brace_expansion_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\{[^{}]*(,|\.\.)[^{}]*\}").expect("compiles"))
 }
 
-/// `{name}`: a placeholder gh fills in from the checkout in a `-F` field, such as `{branch}`.
+/// A placeholder a forge CLI fills in from the checkout, in an endpoint or a `-F` field: gh's
+/// `{name}` (`{branch}`), or glab's `:name` as a path segment or a whole value (`:branch`,
+/// `:id`, #7131).
 fn placeholder_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\{[^{}]*\}").expect("compiles"))
+    RE.get_or_init(|| Regex::new(r"\{[^{}]*\}|(?:^|/):[A-Za-z_]+(?:/|$)").expect("compiles"))
 }
 
 /// A forge CLI's own aliases of a verb the floor holds: `(cli, noun, alias, verb)`.
@@ -578,6 +580,13 @@ fn default_branch_ref_reason(segs: &[String], call: &ApiCall) -> Option<&'static
         // GitLab's new branch, and its commit through the API, name their branch in a field.
         ["repository", "branches"] => named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH),
         ["repository", "commits"] => named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH),
+        // GitLab commits to the branch a field names through a file, a cherry-pick and a
+        // revert too (#7131).
+        ["repository", "files", ..] | ["repository", "commits", _, "cherry_pick" | "revert"] => {
+            named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH)
+        }
+        // A ruleset guards what lands on a branch, as a protection does (Q330).
+        ["rulesets", ..] => Some(REPLACES_THE_DEFAULT_BRANCH),
         // A branch's protection, on either forge, guards what lands on it.
         ["branches", _, "protection", ..] | ["protected_branches", ..] => {
             Some(REPLACES_THE_DEFAULT_BRANCH)
@@ -593,8 +602,8 @@ fn default_branch_ref_reason(segs: &[String], call: &ApiCall) -> Option<&'static
 /// The sentence a refusal ends with where a write renames the default branch, changes which
 /// branch is the default, or changes a branch's protection (#7131).
 const REPLACES_THE_DEFAULT_BRANCH: &str = "Renaming the default branch, changing which branch is \
-     the default, or changing a branch's protection through the API changes what lands on it, as \
-     a merge does. Push a branch of its own instead.";
+     the default, or changing a branch's protection or a ruleset through the API changes what \
+     lands on it, as a merge does. Push a branch of its own instead.";
 
 /// The refusal for a branch named in an endpoint's path: one of [`DEFAULT_BRANCHES`], or one gh
 /// fills in from the checkout (`{branch}`), which could be.
@@ -742,6 +751,8 @@ fn graphql_reason(call: &ApiCall, cmd: &str) -> Option<&'static str> {
     {
         return Some(UNREADABLE);
     }
+    // A string is text the mutation sends, not a name it calls (#7131).
+    let query = without_strings(&query);
     let lower = query.to_lowercase();
     if lower.contains("mutation") && (speaks_of_merging(&lower) || lower.contains("queue")) {
         return Some(MERGES);
@@ -749,7 +760,54 @@ fn graphql_reason(call: &ApiCall, cmd: &str) -> Option<&'static str> {
     if lower.contains("mutation") && touches_a_ref(&query) {
         return Some(MUTATES_A_REF);
     }
+    // An input object that comes whole in a variable says nothing here of what it sets: the
+    // branch a commit lands on, say (#7131).
+    if lower.contains("mutation") && input_object_variable_re().is_match(&query) {
+        return Some(UNREADABLE);
+    }
     None
+}
+
+/// A variable declared with an input object's type, as `$i: CommitCreateInput!`.
+fn input_object_variable_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"\$[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[?\s*[A-Za-z_][A-Za-z0-9_]*Input\b")
+            .expect("compiles")
+    })
+}
+
+/// A GraphQL document with each string's text taken out, a block string (`\"\"\"…\"\"\"`) and
+/// its escapes included, so only its names are read.
+fn without_strings(query: &str) -> String {
+    let mut out = String::with_capacity(query.len());
+    let mut rest = query;
+    while let Some(at) = rest.find('"') {
+        out.push_str(&rest[..at]);
+        out.push_str("\"\"");
+        let after = &rest[at..];
+        if let Some(block) = after.strip_prefix("\"\"\"") {
+            rest = block.find("\"\"\"").map_or("", |end| &block[end + 3..]);
+            continue;
+        }
+        let mut chars = after[1..].char_indices();
+        let mut end = None;
+        while let Some((k, c)) = chars.next() {
+            match c {
+                '\\' => {
+                    chars.next();
+                }
+                '"' => {
+                    end = Some(k + 2);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        rest = end.map_or("", |end| &after[end..]);
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The sentence a refusal of a GraphQL mutation that touches a ref, a branch or a tag ends with
@@ -767,7 +825,7 @@ fn touches_a_ref(query: &str) -> bool {
         camel_words(name.as_str()).iter().any(|w| {
             matches!(
                 w.as_str(),
-                "ref" | "refs" | "branch" | "branches" | "tag" | "tags"
+                "ref" | "refs" | "branch" | "branches" | "tag" | "tags" | "ruleset" | "rulesets"
             )
         })
     })

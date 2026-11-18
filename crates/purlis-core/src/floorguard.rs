@@ -296,13 +296,28 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
     // command with any words after it, so it is unreadable outright (#7131). Read only where a
     // shell runs the line as a command: a heredoc body's substitution is data in its place.
-    let lines = crate::heredoc::lines_a_shell_runs(cmd);
+    // A glob or a brace counts only where a command starts: not in a `case` pattern, an
+    // arithmetic expansion or an array's words, nor in a body an interpreter runs.
+    let lines = in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
     for reading in shellseg::segment_readings(&lines) {
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
             return Some(format!(
                 "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
                  command this is. {WRITE_IT_OUT}",
+                merge::UNREADABLE
+            ));
+        }
+        // A substitution the program word opens with is split into words, so a path after it
+        // makes no path of it: what it prints is the command (`$(echo gh pr merge 12)/y`).
+        if prog.starts_with("$(")
+            && printed_program(&reading.outward)
+                .iter()
+                .any(|printed| inner_floor(printed).is_some())
+        {
+            return Some(format!(
+                "{fix}{} The program `{prog}` opens with a substitution the shell splits into \
+                 words, and what it prints would be refused. {WRITE_IT_OUT}",
                 merge::UNREADABLE
             ));
         }
@@ -348,6 +363,16 @@ fn segment_reason(
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
     {
         return Some(said);
+    }
+    // zsh reads `=gh` as the path of `gh`, so it is that program (#7131).
+    if let Some(named) = prog.strip_prefix('=').filter(|named| !named.is_empty()) {
+        let toks: Vec<String> = env
+            .iter()
+            .cloned()
+            .chain(std::iter::once(named.to_owned()))
+            .chain(argv.iter().skip(1).cloned())
+            .collect();
+        return segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
     }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
@@ -415,6 +440,15 @@ fn segment_reason(
             if args.iter().any(|a| a == "--tags" || a == "--follow-tags") {
                 return Some(format!("{fix}`--tags`/`--follow-tags` pushes tags."));
             }
+            // `--mirror` pushes every ref, its tags among them (#7131).
+            if args.iter().any(|a| a == "--mirror") {
+                return Some(format!("{fix}`--mirror` pushes every ref, tags included."));
+            }
+            if follows_tags_by_config(args) {
+                return Some(format!(
+                    "{fix}`push.followTags` set on the command line pushes tags."
+                ));
+            }
             // A flag whose name the shell fills in could be `--tags` (#7124), and one whose
             // value it fills in is no better read (#7131).
             if let Some(flag) = args.iter().find(|a| push_flag_filled_in(a)) {
@@ -428,6 +462,21 @@ fn segment_reason(
             let ends: Vec<&str> = words.iter().skip(1).map(|w| refspec_end(w)).collect();
             if ends.iter().any(|end| end.starts_with("refs/tags/")) {
                 return Some(format!("{fix}This pushes a tag ref."));
+            }
+            let refspecs = push_refspecs(args);
+            // `tag <name>` is `refs/tags/<name>` (#7131).
+            if refspecs.iter().rev().skip(1).any(|w| *w == "tag") {
+                return Some(format!("{fix}`tag <name>` pushes a tag."));
+            }
+            // A wildcard refspec over refs that are not branches (`refs/*:refs/*`) pushes the
+            // tags with them (#7131).
+            if refspecs.iter().any(|spec| {
+                let end = refspec_end(spec);
+                end.contains('*') && !end.starts_with("refs/heads/")
+            }) {
+                return Some(format!(
+                    "{fix}A wildcard refspec over every ref pushes tags."
+                ));
             }
             if ends.iter().any(|end| version_tag_re().is_match(end)) {
                 return Some(format!("{fix}This pushes what looks like a version tag."));
@@ -560,6 +609,57 @@ fn push_flag_filled_in(word: &str) -> bool {
     word.starts_with('-') && !word.starts_with("--force-with-lease=") && merge::opaque(word)
 }
 
+/// The refspecs of a `git push`: its words past `push` and the remote, with the value of each
+/// option that takes one apart (`-o <option>`, `--repo <remote>`) left out (#7131).
+fn push_refspecs(args: &[String]) -> Vec<&str> {
+    let Some(at) = args.iter().position(|a| a == "push") else {
+        return Vec::new();
+    };
+    let mut words = Vec::new();
+    let mut rest = args[at + 1..].iter();
+    while let Some(a) = rest.next() {
+        if matches!(
+            a.as_str(),
+            "-o" | "--push-option" | "--repo" | "--receive-pack" | "--exec"
+        ) {
+            rest.next();
+        } else if !a.starts_with('-') {
+            words.push(a.as_str());
+        }
+    }
+    words.into_iter().skip(1).collect()
+}
+
+/// Whether git's own options before `push` set `push.followTags` on (`-c push.followTags=true`,
+/// `-c push.followtags`), which pushes the annotated tags the pushed commits reach (#7131).
+fn follows_tags_by_config(args: &[String]) -> bool {
+    let mut i = 0;
+    while i < args.len() {
+        let setting = match args[i].as_str() {
+            "-c" => {
+                i += 1;
+                args.get(i).map(String::as_str)
+            }
+            a => a.strip_prefix("-c").filter(|s| !s.is_empty()),
+        };
+        if let Some(setting) = setting {
+            let (key, value) = setting.split_once('=').unwrap_or((setting, "true"));
+            let off = matches!(
+                value.to_ascii_lowercase().as_str(),
+                "false" | "no" | "off" | "0"
+            );
+            if key.eq_ignore_ascii_case("push.followtags") && !off {
+                return true;
+            }
+        }
+        if args[i] == "push" {
+            break;
+        }
+        i += 1;
+    }
+    false
+}
+
 /// The refs a refspec pushes to, as the remote reads it: `HEAD:refs/tags/v1` is `refs/tags/v1`,
 /// `+main:main` is `main`, and a ref with no `:` is its own destination (#7131).
 fn refspec_end(spec: &str) -> &str {
@@ -570,38 +670,43 @@ fn refspec_end(spec: &str) -> &str {
 }
 
 /// Whether a program is one the shell builds, so its words cannot be read (#7131): its last
-/// path component holds a command substitution (`$(echo gh pr)`, `` `echo gh` ``), a brace
-/// expansion (`{gh,pr,merge,12}`) or a glob (`g[h]`). `$(git rev-parse --show-toplevel)/x.sh`
-/// is a path to `x.sh`, and `[` and `[[` are the test builtins.
+/// path component holds a command substitution (`$(echo gh pr)`, `` `echo gh` ``) or a glob
+/// (`g[h]`), or the word holds a brace expansion anywhere (`{gh,pr,merge,12}`,
+/// `{/opt/homebrew/bin/gh,pr,merge,12}`), which splits it into words. `$(git rev-parse
+/// --show-toplevel)/x.sh` is a path to `x.sh`, a parameter expansion (`${cmd[@]}`) is a program
+/// the shell fills in ([`FILLED_IN_PROGRAM_READ_AS`]), and `[` and `[[` are the test builtins.
 fn program_built_by_the_shell(prog: &str) -> bool {
     if prog == "[" || prog == "[[" {
         return false;
     }
+    // The word with each substitution as `\0` and each parameter expansion as `$`, and its last
+    // path component the same way.
+    let mut whole = String::new();
     let mut last = String::new();
     let mut chars = prog.chars().peekable();
     while let Some(c) = chars.next() {
-        match c {
-            '/' => last.clear(),
+        let stands_for = match c {
+            '/' => {
+                last.clear();
+                whole.push('/');
+                continue;
+            }
             '$' if chars.peek() == Some(&'(') => {
-                let mut depth = 0;
-                for c in chars.by_ref() {
-                    depth += match c {
-                        '(' => 1,
-                        ')' => -1,
-                        _ => 0,
-                    };
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                last.push('\u{0}');
+                skip_to_close(&mut chars, '(', ')');
+                '\u{0}'
+            }
+            '$' if chars.peek() == Some(&'{') => {
+                skip_to_close(&mut chars, '{', '}');
+                '$'
             }
             '`' => {
                 chars.by_ref().find(|c| *c == '`');
-                last.push('\u{0}');
+                '\u{0}'
             }
-            c => last.push(c),
-        }
+            c => c,
+        };
+        last.push(stands_for);
+        whole.push(stands_for);
     }
     // `[` opens a glob only where a `]` closes it.
     let glob_class = last
@@ -610,7 +715,236 @@ fn program_built_by_the_shell(prog: &str) -> bool {
     last.contains('\u{0}')
         || last.contains(['*', '?'])
         || glob_class
-        || merge::brace_expansion(&last)
+        || merge::brace_expansion(&whole)
+}
+
+/// The command lines a program word that opens with a substitution could print, read from
+/// the segment's outward words (`$`, the substitution's words, then the rest): what its body
+/// prints, as [`fed_lines`] reads a producer, and the words after it.
+fn printed_program(outward: &[String]) -> Vec<String> {
+    let Some(at) = outward.iter().position(|w| w == "$") else {
+        return Vec::new();
+    };
+    if !outward[..at].iter().all(|w| w.contains('=')) {
+        return Vec::new();
+    }
+    fed_lines(&outward[at + 1..])
+}
+
+/// `line` with what stands in no command position blanked out, for the reading of a program
+/// the shell builds (#7131): an arithmetic expansion or command (`$((2*3))`, `((i*2))`), a
+/// `case` pattern through its `)` (`*)`, `y*|n*)`), and an array's words (`files=(src/*.rs)`).
+/// A glob or a brace there is no program. A substitution inside an arithmetic expansion is
+/// still read, by its own body. A line that will not lex keeps its patterns and its arrays.
+fn in_command_position(line: &str) -> String {
+    let line = without_arithmetic(line);
+    let Ok(toks) = shellseg::lex(&line) else {
+        return line;
+    };
+    let toks = shellseg::split_punctuation(toks);
+    let mut chars: Vec<char> = line.chars().collect();
+    let mut blank = |from: isize, to: isize| {
+        let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+            return;
+        };
+        for c in chars.iter_mut().take(to).skip(from) {
+            *c = ' ';
+        }
+    };
+    /// Where a `case` is: its word, its patterns, or an arm's commands.
+    enum Case {
+        Word,
+        Patterns,
+        Arm,
+    }
+    let mut cases: Vec<Case> = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let tok = &toks[i];
+        let bare = |text: &str| tok.bare && tok.text == text;
+        match cases.last() {
+            // `case WORD in` is no command: the first arm's starts after its pattern.
+            Some(Case::Word) => {
+                blank(tok.start, tok.end);
+                if bare("in") {
+                    cases.pop();
+                    cases.push(Case::Patterns);
+                }
+            }
+            Some(Case::Patterns) if bare("esac") => {
+                cases.pop();
+            }
+            Some(Case::Patterns) if !(tok.bare && matches!(tok.text.as_str(), "\n" | "&")) => {
+                // A pattern runs to the `)` that closes it; a `(` before it is optional.
+                let from = tok.start;
+                let mut depth = 0usize;
+                let mut j = i;
+                if bare("(") {
+                    j += 1;
+                }
+                while let Some(t) = toks.get(j) {
+                    if t.bare && t.text == "(" {
+                        depth += 1;
+                    } else if t.bare && t.text == ")" {
+                        if depth == 0 {
+                            break;
+                        }
+                        depth -= 1;
+                    }
+                    j += 1;
+                }
+                let to = toks.get(j).map_or(isize::MAX, |t| t.end);
+                blank(from, to);
+                cases.pop();
+                cases.push(Case::Arm);
+                i = j + 1;
+                continue;
+            }
+            Some(Case::Arm) if tok.bare && (tok.text == ";;" || is_fallthrough(&toks, i)) => {
+                cases.pop();
+                cases.push(Case::Patterns);
+            }
+            Some(Case::Arm) if bare("esac") => {
+                cases.pop();
+            }
+            _ if bare("case") && command_starts_at(&toks, i) => {
+                blank(tok.start, tok.end);
+                cases.push(Case::Word);
+            }
+            _ => {
+                // `NAME=(…)`: an array's words, to the `)` that closes them.
+                let opens_array = tok.text.ends_with('=')
+                    && toks
+                        .get(i + 1)
+                        .is_some_and(|t| t.bare && t.text == "(" && t.start == tok.end);
+                if opens_array {
+                    let mut depth = 0usize;
+                    let mut j = i + 1;
+                    while let Some(t) = toks.get(j) {
+                        if t.bare && t.text == "(" {
+                            depth += 1;
+                        } else if t.bare && t.text == ")" {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        j += 1;
+                    }
+                    let to = toks.get(j).map_or(isize::MAX, |t| t.end);
+                    blank(toks[i + 1].start, to);
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    chars.into_iter().collect()
+}
+
+/// Whether the token at `at` is `;&` or `;;&`, which end a `case` arm as `;;` does.
+fn is_fallthrough(toks: &[shellseg::Tok], at: usize) -> bool {
+    let tok = &toks[at];
+    tok.bare
+        && (tok.text == ";" || tok.text == ";;")
+        && toks
+            .get(at + 1)
+            .is_some_and(|next| next.bare && next.text == "&" && next.start == tok.end)
+}
+
+/// Whether a command starts at the token `at`: the line's first, or one after a control
+/// operator, a group's opening or a keyword that a command follows.
+fn command_starts_at(toks: &[shellseg::Tok], at: usize) -> bool {
+    at.checked_sub(1)
+        .and_then(|k| toks.get(k))
+        .is_none_or(|prev| {
+            prev.bare
+                && matches!(
+                    prev.text.as_str(),
+                    ";" | ";;"
+                        | "&&"
+                        | "||"
+                        | "|"
+                        | "|&"
+                        | "&"
+                        | "\n"
+                        | "("
+                        | ")"
+                        | "{"
+                        | "!"
+                        | "then"
+                        | "do"
+                        | "else"
+                        | "elif"
+                        | "if"
+                        | "while"
+                        | "until"
+                )
+        })
+}
+
+/// `line` with each arithmetic expansion (`$((…))`) as `0` and each arithmetic command
+/// (`((…))` where a command starts) as `:`. A `$((` whose parentheses do not close as `))` is a
+/// command substitution of a subshell, and kept.
+fn without_arithmetic(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let expansion = chars[i] == '$' && chars.get(i + 1) == Some(&'(');
+        let at = if expansion { i + 1 } else { i };
+        let command = !expansion
+            && chars[i] == '('
+            && i.checked_sub(1)
+                .and_then(|k| chars.get(k))
+                .is_none_or(|c| matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|'));
+        if (expansion || command)
+            && chars.get(at + 1) == Some(&'(')
+            && let Some(end) = arithmetic_end(&chars, at)
+        {
+            out.push(if expansion { '0' } else { ':' });
+            i = end;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// One past the `))` that closes the `((` at `at`, where the inner `(` closes right before the
+/// outer one; `None` where it does not, or never closes.
+fn arithmetic_end(chars: &[char], at: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (j, c) in chars.iter().enumerate().skip(at) {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 1 {
+                    return (chars.get(j + 1) == Some(&')')).then_some(j + 2);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Steps `chars` past the `close` that balances the `open` it stands on.
+fn skip_to_close(chars: &mut std::iter::Peekable<std::str::Chars>, open: char, close: char) {
+    let mut depth = 0;
+    for c in chars.by_ref() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+        }
+        if depth == 0 {
+            break;
+        }
+    }
 }
 
 /// **The commands the floor reads in a line** (#7092): each segment's own words, a

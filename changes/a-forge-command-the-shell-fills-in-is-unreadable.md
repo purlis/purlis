@@ -18,5 +18,11 @@
   builds (`$(echo gh pr) merge 12`, `{gh,} pr merge 12`, `g[h] pr merge 12`), renaming `main`,
   making another branch the default, GitLab's branch delete, commit and protection endpoints,
   `git push origin HEAD:refs/tags/v1`, and a `git push` flag whose value the shell fills in are
-  now held or refused unattended. This reading is an early warning; the forge credential is the
-  lock (#7133).
+  now held or refused unattended. So are a brace that builds a program from a path
+  (`{/opt/homebrew/bin/gh,pr,merge,12}`), a substitution that prints a command before a path
+  (`$(echo gh pr merge 12)/y`), zsh's `=gh`, glab's `:branch`, a GraphQL mutation whose input
+  comes in a variable or that deletes a ruleset, a ruleset write, GitLab's file, cherry-pick and
+  revert commits to `main`, and `git push --mirror`, `tag <name>`, `refs/*:refs/*` and
+  `-c push.followTags`. A `case` pattern, an arithmetic expansion, an array's words, `"${cmd[@]}"`
+  and the body of a `python3 -`, `node -` or `ruby` heredoc are no program the shell builds, and
+  pass. This reading is an early warning; the forge credential is the lock (#7133).
