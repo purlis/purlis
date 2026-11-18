@@ -257,6 +257,9 @@ mod tests {
             .finish();
         tracing::subscriber::with_default(subscriber, || begin_debug("docker_exec").done());
         let out = String::from_utf8(said.0.lock().unwrap().clone()).unwrap();
-        assert!(out.contains("DEBUG") && out.contains("docker_exec done"), "{out}");
+        assert!(
+            out.contains("DEBUG") && out.contains("docker_exec done"),
+            "{out}"
+        );
     }
 }
