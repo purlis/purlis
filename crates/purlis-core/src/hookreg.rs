@@ -102,13 +102,18 @@ impl Handler {
     ///
     /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
     /// one that is not yet switchable keeps its refusal while the guard lives and, as before
-    /// Q308, does not hold a call when it dies. Its wiring will count it.
+    /// Q308, does not hold a call when it dies. Its wiring will count it. Nor does `sandbox`:
+    /// the guard's arms of it are the wrap's own, enforced whatever `[policy]` says
+    /// (`toolgate`'s `Gate::mode`, the review of #7105), so its level never switches them.
     pub fn on_failure(&self, policy: &crate::enforcement::Resolved) -> Option<&'static str> {
+        use crate::enforcement::{Family, Mode};
         if !self.guards_a_call() {
             return None;
         }
         let enforced = self.judges().iter().any(|family| {
-            family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
+            family.switchable()
+                && *family != Family::Sandbox
+                && policy.mode(*family) == Mode::Enforce
         });
         Some(if enforced { "block" } else { "continue" })
     }

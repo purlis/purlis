@@ -3782,6 +3782,8 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
     }
 
     // **Under `log`, the line names the folder granted**, not the path the chat was blocked at.
+    // Only the app writes the log; this test's process is the app.
+    purlis_core::secrets::keyhold::this_process_is_the_app();
     let link = root.join("link");
     std::os::unix::fs::symlink(&elsewhere, &link).expect("a link");
     assert!(answered(&link.display().to_string(), Mode::Log));
