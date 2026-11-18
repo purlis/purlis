@@ -254,7 +254,10 @@ impl Family {
 }
 
 /// How a family's refusals run. Ordered from the loosest: the stricter of two is the greater.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// The check does not run.
     Off,

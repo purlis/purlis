@@ -174,6 +174,8 @@ pub struct Loaded {
     pub project_locks: Locks,
     /// Each rule's mode where a `[policy.rules]` sets one; `off` rules are not in the policy.
     pub rule_modes: BTreeMap<String, Mode>,
+    /// Who the Organisation is: the owner its rules and locks are named by.
+    organisation_owner: String,
     organisation: Defaults,
     project: Defaults,
     workspaces: BTreeMap<String, Defaults>,
@@ -265,6 +267,53 @@ impl Defaults {
 }
 
 impl Loaded {
+    /// **The shipped default under `strict`, and nothing else** (spec §6, review round 3,
+    /// SEC3-SF3): what a process outside any plane is judged by, evaluated where it runs. There is
+    /// no project to read, and nothing a project or the person loosened applies. The
+    /// Organisation's files are layered on it by slice 06.
+    pub fn shipped_strict() -> Loaded {
+        let rules = read_file(&File::shipped_default()).expect("the shipped default reads");
+        let policy = assemble(rules).expect("the shipped default assembles");
+        Loaded {
+            policy,
+            notices: Vec::new(),
+            tightenings: Vec::new(),
+            sandbox_at_least: None,
+            sets: BTreeMap::new(),
+            organisation_locks: Locks::default(),
+            project_locks: Locks::default(),
+            rule_modes: BTreeMap::new(),
+            organisation_owner: "the Organisation".to_owned(),
+            organisation: Defaults::default(),
+            project: Tables::strict().defaults,
+            workspaces: BTreeMap::new(),
+            personas: BTreeMap::new(),
+            you: Defaults::default(),
+        }
+    }
+
+    /// **The loaded rule `id`, as a refusal names it** (Q310.8): its level, its owner and where
+    /// it is written.
+    pub fn named(&self, id: &str) -> Option<Named> {
+        self.policy
+            .rule(id)
+            .map(|rule| named(rule, &self.organisation_owner))
+    }
+
+    /// **Who locks `family`, or `action`**, where a level does (§4.4): the Organisation before the
+    /// project, as the wider level's lock is the one that binds.
+    pub fn lock_on(&self, family: &str, action: &str) -> Option<String> {
+        let locks =
+            |locks: &Locks| locks.families.contains(family) || locks.actions.contains(action);
+        if locks(&self.organisation_locks) {
+            Some(self.organisation_owner.clone())
+        } else if locks(&self.project_locks) {
+            Some(owner_of_place(Level::Project, &self.organisation_owner))
+        } else {
+            None
+        }
+    }
+
     /// The two lower levels' defaults for `chat`, if it has them.
     fn lower(&self, chat: Chat<'_>) -> [Option<&Defaults>; 2] {
         [
@@ -1301,6 +1350,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         organisation_locks: org_tables.locks.clone(),
         project_locks: project_tables.locks.clone(),
         rule_modes: BTreeMap::new(),
+        organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults.clone(),
         project: project_tables.defaults.clone(),
         workspaces: BTreeMap::new(),
@@ -1470,6 +1520,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         organisation_locks: org_tables.locks,
         project_locks: project_tables.locks,
         rule_modes,
+        organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults,
         project: project_tables.defaults,
         workspaces: project_tables.workspaces,

@@ -37,6 +37,7 @@ use std::fmt;
 use std::str::FromStr as _;
 use std::sync::OnceLock;
 
+pub mod decide;
 pub mod levels;
 
 use cedar_policy::{
@@ -305,6 +306,12 @@ fn names() -> &'static Names {
 fn validator() -> &'static Validator {
     static MADE: OnceLock<Validator> = OnceLock::new();
     MADE.get_or_init(|| Validator::new(schema().clone()))
+}
+
+/// **The family `action` belongs to** (its Cedar action group), or none for a word the schema
+/// has no action for.
+pub fn family_of(action: &str) -> Option<&'static str> {
+    families_of_actions().get(action).copied()
 }
 
 /// Each action's family, read from the embedded schema once.
