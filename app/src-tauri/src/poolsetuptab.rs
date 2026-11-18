@@ -35,7 +35,7 @@ pub struct PoolSetupCheck {
     pub more: Option<String>,
     /// How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
     /// timed.
-    pub took_ms: Option<u64>,
+    pub took_ms: Option<u32>,
     /// Where it has taken over thirty seconds: what it is waiting on and why (#7191).
     pub waiting_on: Option<String>,
 }
@@ -53,7 +53,7 @@ pub struct PoolSetupStep {
     pub see: Option<PoolSetupSee>,
     pub checks: Vec<PoolSetupCheck>,
     /// How long the step took, in milliseconds, where it was timed (#7191): the rail shows it.
-    pub took_ms: Option<u64>,
+    pub took_ms: Option<u32>,
     /// A second way on, beside `next`: on Where, the other kind (ADR 0123 §6).
     pub other: Option<PoolSetupAction>,
     /// The machine, on Connect (#6266).
@@ -2188,7 +2188,7 @@ fn link_measured(
     // The link's round trip is a real one: how long it took is said beside it (#7191).
     let started = std::time::Instant::now();
     let check = purlis_core::poolsetup::doctoring::link_of(docker?, &kept)?;
-    let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let took = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
     Some(PoolSetupCheck {
         about: word(&check.about),
         verdict: word(&check.verdict),
@@ -2239,6 +2239,8 @@ fn proved_identity(
         verdict: word(&verdict),
         title,
         more: Some(more),
+        took_ms: None,
+        waiting_on: None,
     };
     Some(match agentidentity::prove(&ctx, &app) {
         Ok(proof) => check(

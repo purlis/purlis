@@ -4463,6 +4463,8 @@ export const commands = {
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 *  `kubeconfig` is the one file the context is read from (#7192): a path, never `KUBECONFIG`'s
+	 *  list; none is kubectl's default.
 	 */
 	poolSetupChooseCluster: (context: string | null, kubeconfig: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context, kubeconfig })),
 	/**

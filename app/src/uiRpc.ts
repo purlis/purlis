@@ -2052,7 +2052,12 @@ export const commands = {
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseOwned: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
-	poolSetupPluginFolder: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Keeps the folder a kubeconfig's credential plugin is in** (#7192), named where purlis found
+	 *  it in none of the usual install folders. Only that folder is added to the commands purlis runs
+	 *  for the cluster.
+	 */
+	poolSetupPluginFolder: (folder: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_plugin_folder", { folder })),
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
@@ -11457,6 +11462,13 @@ export type PoolSetupCheck = {
 	verdict: string,
 	title: string,
 	more: string | null,
+	/**
+	 *  How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+	 *  timed.
+	 */
+	took_ms: number | null,
+	/**  Where it has taken over thirty seconds: what it is waiting on and why (#7191). */
+	waiting_on: string | null,
 };
 
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
@@ -11466,6 +11478,11 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+	 *  home's `.kube/config` where it exists. Its path, nothing of what is in it.
+	 */
+	kubeconfig: string | null,
 	/**
 	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
 	 *  pasting the one their admin gave them.
@@ -11664,6 +11681,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  How long the step took, in milliseconds, where it was timed (#7191): the rail shows it. */
+	took_ms: number | null,
 	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
 	other: PoolSetupAction | null,
 	/**  The machine, on Connect (#6266). */
