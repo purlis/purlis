@@ -569,8 +569,16 @@ fn the_resolver_seam_does_not_compile_without_test_support() {
         if probe {
             args.extend(["--", "--cfg", "purlis_seam_probe"]);
         }
+        // In a target folder of its own: a check build of purlis-core without `test-support` in
+        // the workspace's folder leaves the test build's `ring` and the crates over it stale, and
+        // the next cargo run after the suite builds the workspace again (14 minutes on Linux, 21
+        // on macOS, T1.1-54).
         let out = std::process::Command::new(env!("CARGO"))
             .args(&args)
+            .env(
+                "CARGO_TARGET_DIR",
+                purlis_scenarios::root().join("../../target/seam-probe"),
+            )
             .current_dir(purlis_scenarios::root())
             .output()
             .expect("cargo runs");
