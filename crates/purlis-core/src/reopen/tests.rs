@@ -1920,6 +1920,7 @@ fn handed() -> HandedFrom {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     }
 }
 

@@ -369,7 +369,23 @@ pub enum Reader {
 /// (V90a) and the sandbox. This keeps purlis itself from raising a question on the chat's
 /// behalf, and says what to do.
 pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
+    if vaults_off(ctx) {
+        return None;
+    }
     refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// **Whether the project's `[policy]` turns the `vaults` family off** (Q308, Q308a; item 4 of
+/// the follow-up): only `open`, or `vaults = "off"`, which a loosening press accepted; `watch`,
+/// `hold` and `team` enforce it, and it takes no `log`. **Never where an administrator locks a
+/// vault to its persona** (ADR 0112, [`crate::sandbox::policy::Locks::forbids_vault_grants`]): a
+/// lock wins. Read as the app resolved it for this process ([`crate::enforcement::mode`]).
+pub fn vaults_off(ctx: &Ctx) -> bool {
+    !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
+        && crate::enforcement::in_force(&ctx.root)
+            .for_chat(ctx.policy.as_deref())
+            .mode(crate::enforcement::Family::Vaults)
+            == crate::enforcement::Mode::Off
 }
 
 /// [`refused_in_this_chat`], with where this process runs asked of `located` only when the
@@ -1782,6 +1798,14 @@ pub struct Asker {
     /// found open, where the caller looked it up: a chat that ends from then on keeps no GitHub
     /// App token minted for it (#3808). `None` counts from when the run is served.
     pub ends_seen: Option<u64>,
+    /// **The chat's stable id** (ADR 0066), from the app's record of it: what a quiet line in its
+    /// enforcement log names it by (item 8 of the Q308 follow-up). `None` for a chat with none
+    /// yet, which is logged as unknown.
+    pub chat_id: Option<String>,
+    /// The strictest `[policy]` along the chain that dispatched the chat, from the app's record
+    /// of it ([`crate::reopen::HandedFrom::policy`]): a family is run for it no looser (Q308a,
+    /// Q308b; the review of #7113). `None` for a chat no dispatch started.
+    pub policy: Option<String>,
 }
 
 /// Why nothing is run where purlis has no sandbox to run it in: neither macOS nor Linux. The
@@ -1971,6 +1995,14 @@ const ALLOW: &str = "ask the operator to press Allow on this chat's vault notice
 /// forward named: there is nothing to allow and nobody to dispatch to, and no Notice is raised
 /// for it ([`not_tagged`]).
 pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), String> {
+    // The `vaults` family off (item 4 of the Q308 follow-up): the check does not run. The vault
+    // must still be one the project registers.
+    if vaults_off(ctx) {
+        let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+        return registry::vault_in(&doc, vault)
+            .map(|_| ())
+            .map_err(|e| e.message.to_string());
+    }
     let Some(persona) = persona.filter(|p| !p.is_empty()) else {
         return Err(format!(
             "this chat runs as no persona, so purlis hands it no vault. Start the chat as the \
@@ -2723,12 +2755,13 @@ pub fn fill_code(
 
 /// What a vault is read through for chat `asker`: the app's record of the chat.
 fn reading_for(asker: &Asker) -> Ctx {
-    match &asker.confines {
+    let ctx = match &asker.confines {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
         None => Ctx::new(&asker.root, asker.env.clone()),
-    }
+    };
+    ctx.under_chain(asker.policy.as_deref())
 }
 
 /// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
@@ -4376,6 +4409,7 @@ pub(crate) fn serve_recorded(
         env: Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]),
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
+        policy: asker.policy.clone(),
     };
     exec::record(
         &ctx_traced,
@@ -4450,14 +4484,18 @@ pub(crate) fn serve_recorded(
         return;
     }
     let secret_values = prepared.secret_values();
-    // The app runs this for a chat it knows by number, not by id: a masking the project lets go
-    // under `log` is let go with no line (Q308a).
+    // A masking the project lets go under `log` is let go with one line in the asking chat's
+    // log, by the id the app holds for it (Q308a; item 8 of the follow-up).
     let code = run(
         spawned,
         &group,
         reader,
         &mut *writer,
-        super::masked_of(&ctx.root, None, &secret_values),
+        super::masked_of(
+            &ctx.root,
+            (asker.chat_id.as_deref(), asker.policy.as_deref()),
+            &secret_values,
+        ),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()

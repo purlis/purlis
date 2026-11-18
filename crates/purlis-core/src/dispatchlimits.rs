@@ -1270,12 +1270,14 @@ fn read_keyed(text: Option<&str>, file: &str) -> (Table, Vec<Refusal>) {
     // And `profiles` is the profiles the project lists for a persona's dispatched chats
     // (#1509), read by `dispatchprofiles`: the same, and the committed file's alone.
     let profiles = crate::dispatchprofiles::KEY;
+    // And `denies` is the project's dispatch denies (#6968), read by `dispatchgrant` too.
+    let denies = crate::dispatchgrant::DENIES;
     out.project = level_of(
         table,
         &[TABLE],
         file,
         false,
-        &[WORKSPACES, PERSONAS, grants, profiles],
+        &[WORKSPACES, PERSONAS, grants, profiles, denies],
         refused,
     );
     if table.contains_key(profiles) {

@@ -88,15 +88,30 @@ pub struct Said {
     pub chat: Option<String>,
 }
 
-/// One entry of the file: the pair, and what is known of when it was said.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One entry of the file: the pair, and what is known of when it was said. Two entries are the
+/// same never whatever their seals say.
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub asking: String,
     pub target: String,
     pub said: Said,
+    /// Its seal and the set's counter when the app sealed it (ticket T1.1-73); none for an
+    /// entry the app did not write, which still refuses.
+    seal: Option<(String, u64)>,
     /// Every other key of the entry, kept as it is written.
     rest: serde_json::Map<String, serde_json::Value>,
 }
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.asking == other.asking
+            && self.target == other.target
+            && self.said == other.said
+            && self.rest == other.rest
+    }
+}
+
+impl Eq for Entry {}
 
 impl Entry {
     fn pair(&self) -> (String, String) {
@@ -107,12 +122,18 @@ impl Entry {
         self.asking == asking && self.target == target
     }
 
+    /// The never as its seal covers it.
+    fn text(&self) -> String {
+        format!("{} -> {}", self.asking, self.target)
+    }
+
     /// A new entry for `asking` to `target`, said as `said`.
     fn new(asking: &str, target: &str, said: Said) -> Self {
         Self {
             asking: asking.to_owned(),
             target: target.to_owned(),
             said,
+            seal: None,
             rest: serde_json::Map::new(),
         }
     }
@@ -124,6 +145,10 @@ impl Entry {
         }
         if let Some(chat) = &self.said.chat {
             entry["chat"] = chat.as_str().into();
+        }
+        if let Some((mac, generation)) = &self.seal {
+            entry["mac"] = mac.as_str().into();
+            entry["generation"] = (*generation).into();
         }
         if let serde_json::Value::Object(keys) = &mut entry {
             for (key, value) in &self.rest {
@@ -139,7 +164,7 @@ impl Entry {
 fn entry_of(entry: &serde_json::Value) -> Option<Entry> {
     let entry = entry.as_object()?;
     let mut rest = entry.clone();
-    for known in ["asking", "target"] {
+    for known in ["asking", "target", "mac", "generation"] {
         rest.remove(known);
     }
     // A when or a chat this build cannot read is kept as it is written, as any key is.
@@ -154,8 +179,14 @@ fn entry_of(entry: &serde_json::Value) -> Option<Entry> {
             rest.remove(key);
         }
     }
+    let seal = entry
+        .get("mac")
+        .and_then(serde_json::Value::as_str)
+        .zip(entry.get("generation").and_then(serde_json::Value::as_u64))
+        .map(|(mac, generation)| (mac.to_owned(), generation));
     Some(Entry {
         rest,
+        seal,
         asking: entry.get("asking")?.as_str()?.to_owned(),
         target: entry.get("target")?.as_str()?.to_owned(),
         said: Said {
@@ -199,14 +230,21 @@ fn parsed(text: &str) -> Option<(Whole, Pairs)> {
 /// The file's entries as they are on disk, with nothing moved into it; `None` where it is
 /// there and does not read.
 fn entries_on_disk(root: &Path) -> Option<Vec<Entry>> {
+    whole_on_disk(root).map(|(_, entries)| entries)
+}
+
+/// The file's whole object and its entries as they are on disk (an empty object where there is
+/// no file); `None` where it is there and does not read.
+fn whole_on_disk(root: &Path) -> Option<(Whole, Pairs)> {
     let path = path(root);
     match std::fs::symlink_metadata(&path) {
-        Err(none) if none.kind() == io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(none) if none.kind() == io::ErrorKind::NotFound => {
+            Some((serde_json::Map::new(), Vec::new()))
+        }
         // Never through a link, and never a folder or a device.
         Ok(there) if there.is_file() => std::fs::read_to_string(&path)
             .ok()
-            .and_then(|text| parsed(&text))
-            .map(|(_, entries)| entries),
+            .and_then(|text| parsed(&text)),
         _ => None,
     }
 }
@@ -245,69 +283,204 @@ fn change(root: &Path, how: impl FnOnce(&mut Vec<Entry>)) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    let anchor = crate::sandbox::local::anchor_key(root);
     crate::rewrite::update(root, &path, |now| {
         let (mut whole, mut pairs) = match now {
             None => (serde_json::Map::new(), Vec::new()),
             Some(text) => parsed(text).ok_or_else(unread)?,
         };
+        let before: Vec<String> = pairs.iter().map(Entry::text).collect();
         how(&mut pairs);
+        if crate::secrets::sealed_set::decides() {
+            // The app seals what the person said just now, and keeps every other seal in step
+            // with the list: a never taken out loses its seal, and one the app did not write
+            // stays unsealed and still refuses (ticket T1.1-73).
+            let adds: Vec<String> = pairs
+                .iter()
+                .map(Entry::text)
+                .filter(|text| !before.contains(text))
+                .collect();
+            seal_in_step(&mut whole, &mut pairs, &anchor, &adds)?;
+        }
         whole.insert(KEY.to_owned(), pairs.iter().map(Entry::json).collect());
         serde_json::to_string_pretty(&whole)
             .map(|text| Some(format!("{text}\n")))
             .map_err(io::Error::other)
     })?;
-    // The app keeps the seal of what it wrote (the review of #6992, S4).
-    sealed_as_written(root);
     Ok(())
 }
 
-/// The kind the nevers file's presence marker is sealed as.
-const SEAL_KIND: &str = "dispatch-nevers";
+/// The store the nevers' sealed set is anchored as: its keyring anchor is the presence marker.
+const STORE: &str = "dispatch-nevers";
 
-/// The file's text as it stands, or none where it is not there.
-fn text_on_disk(root: &Path) -> String {
-    std::fs::read_to_string(path(root)).unwrap_or_default()
+/// The kind of every entry of the set.
+const NEVER: &str = "never";
+
+/// The kind the file's whole-text seal was kept as by the build before the set (#6992): read
+/// once, at the import, so a file a chat changed since then is not imported as it stands.
+const WHOLE_KIND: &str = "dispatch-nevers";
+
+/// The sealed set the file holds: its counter and live list, and each entry the app sealed.
+fn set_of(whole: &Whole, entries: &[Entry]) -> crate::secrets::sealed_set::Set {
+    crate::secrets::sealed_set::Set {
+        generation: whole
+            .get("generation")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        live: whole
+            .get("live")
+            .and_then(serde_json::Value::as_array)
+            .map(|live| {
+                live.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        entries: entries
+            .iter()
+            .filter_map(|entry| {
+                let (mac, generation) = entry.seal.clone()?;
+                Some(crate::secrets::sealed_set::Entry {
+                    kind: NEVER.to_owned(),
+                    text: entry.text(),
+                    generation,
+                    mac,
+                })
+            })
+            .collect(),
+    }
 }
 
-/// Keeps the seal of the file as it stands now, where this process is the app.
-fn sealed_as_written(root: &Path) {
-    let clone = crate::sandbox::local::anchor_key(root);
-    crate::secrets::seal::keep(SEAL_KIND, &clone, &text_on_disk(root));
+/// Rewrites the file's set from what verifies, sealing `adds`, and puts each seal on its entry:
+/// [`crate::secrets::sealed_set::Set::rewrite`].
+fn seal_in_step(
+    whole: &mut Whole,
+    entries: &mut [Entry],
+    anchor: &str,
+    adds: &[String],
+) -> io::Result<()> {
+    let mut set = set_of(whole, entries);
+    let texts: Vec<String> = entries.iter().map(Entry::text).collect();
+    let adds: Vec<(&str, &str)> = adds.iter().map(|text| (NEVER, text.as_str())).collect();
+    set.rewrite(
+        STORE,
+        anchor,
+        |_, text| texts.iter().any(|t| t == text),
+        &adds,
+    )?;
+    for entry in entries.iter_mut() {
+        entry.seal = set
+            .entries
+            .iter()
+            .find(|sealed| sealed.text == entry.text())
+            .map(|sealed| (sealed.mac.clone(), sealed.generation));
+    }
+    whole.insert("generation".to_owned(), set.generation.into());
+    whole.insert(
+        "live".to_owned(),
+        set.live
+            .iter()
+            .map(|mac| serde_json::Value::from(mac.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    Ok(())
 }
 
-/// **Whether the file is as the app last wrote it** (the review of #6992, S4): a presence
-/// marker the app seals in the keyring, so a nevers file deleted or edited by anything else —
-/// a chat that runs without a sandbox, say — is told from one nobody ever wrote, and reads as
-/// [`Nevers::Unread`], which refuses every dispatch across personas until the person fixes it.
-/// Only the app verifies it; the first read in the app of a file it never sealed seals it as
-/// it stands.
-fn as_the_app_left_it(root: &Path) -> bool {
-    if !crate::enforcement::in_the_app() {
-        return true;
+/// What [`sealed_standing`] found of the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sealed {
+    /// Every never the app sealed is here, or the seals do not decide in this process.
+    Holds,
+    /// The app never sealed a set here: the nevers there are imported once (Q320).
+    Import,
+    /// A sealed never is gone, the file is an older copy or deleted, or the key cannot be read
+    /// while nevers are present: what the person refused is unknown.
+    Unread,
+}
+
+/// **Whether the file holds every never the app sealed** (the review of #6992, S4; ticket
+/// T1.1-73): its sealed set's anchor in the keyring is the presence marker, so a nevers file
+/// deleted, emptied, put back from before, or with a sealed never taken out — by a chat that
+/// runs without a sandbox, say — reads as [`Nevers::Unread`], which refuses every dispatch
+/// across personas until the person mends it. A never something else added has no seal and
+/// still refuses. Only the app verifies it.
+fn sealed_standing(root: &Path) -> Sealed {
+    use crate::secrets::sealed_set::{Set, Standing};
+    if !crate::secrets::sealed_set::decides() {
+        return Sealed::Holds;
     }
     // An acceptance of the project's `[policy]` that was kept and is not here now (the M75
     // review): the nevers it may have carried are unknown, so every dispatch across personas is
     // refused until the person presses again.
     if crate::enforcement::broken(root) {
-        return false;
+        return Sealed::Unread;
     }
-    let clone = crate::sandbox::local::anchor_key(root);
-    let text = text_on_disk(root);
-    match crate::secrets::seal::kept_holds(SEAL_KIND, &clone, &text) {
-        Some(holds) => holds,
-        None => {
-            crate::secrets::seal::keep(SEAL_KIND, &clone, &text);
-            true
+    let Some((whole, entries)) = whole_on_disk(root) else {
+        return Sealed::Unread;
+    };
+    let anchor = crate::sandbox::local::anchor_key(root);
+    let verified = set_of(&whole, &entries).verify(STORE, &anchor);
+    match verified.standing {
+        Standing::Holds if verified.missing == 0 => Sealed::Holds,
+        Standing::Holds | Standing::Broken | Standing::Unanchored => Sealed::Unread,
+        // The key does not read: nevers present, by the file or by a marker the keyring keeps,
+        // are unknown; none at all is none.
+        Standing::Unverifiable => {
+            if entries.is_empty()
+                && !Set::anchored(STORE, &anchor)
+                && !crate::secrets::seal::kept_exists(WHOLE_KIND, &anchor)
+            {
+                Sealed::Holds
+            } else {
+                Sealed::Unread
+            }
+        }
+        // Never sealed as a set: the file a build before it sealed whole must be as it left it.
+        Standing::Fresh => {
+            let text = std::fs::read_to_string(path(root)).unwrap_or_default();
+            match crate::secrets::seal::kept_holds(WHOLE_KIND, &anchor, &text) {
+                Some(false) => Sealed::Unread,
+                _ if entries.is_empty() => Sealed::Holds,
+                _ => Sealed::Import,
+            }
         }
     }
+}
+
+/// **The person's nevers from before the set, sealed once as they stand** (Q320): they only
+/// tighten, so they are carried over. Refused where it cannot seal, which leaves them unread.
+fn import(root: &Path) -> io::Result<()> {
+    let path = path(root);
+    let anchor = crate::sandbox::local::anchor_key(root);
+    crate::rewrite::update(root, &path, |now| {
+        let Some((mut whole, mut entries)) = now.and_then(parsed) else {
+            return Ok(None);
+        };
+        let adds: Vec<String> = entries.iter().map(Entry::text).collect();
+        seal_in_step(&mut whole, &mut entries, &anchor, &adds)?;
+        whole.insert(KEY.to_owned(), entries.iter().map(Entry::json).collect());
+        serde_json::to_string_pretty(&whole)
+            .map(|text| Some(format!("{text}\n")))
+            .map_err(io::Error::other)
+    })
+    .map(|_| ())
 }
 
 /// **The pairs the person said never to in the project at `root`**, or that the record does
 /// not read. What an earlier build left in `app/sandbox.json` is moved here first, and is
 /// counted either way.
 pub fn read(root: &Path) -> Nevers {
-    if !as_the_app_left_it(root) {
-        return Nevers::Unread;
+    match sealed_standing(root) {
+        Sealed::Holds => {}
+        Sealed::Unread => return Nevers::Unread,
+        Sealed::Import => {
+            if let Err(why) = import(root) {
+                tracing::warn!("purlis: the nevers were not sealed ({why})");
+                return Nevers::Unread;
+            }
+        }
     }
     let Some(left) = crate::sandbox::local::legacy_dispatch_nevers(root) else {
         return Nevers::Unread;

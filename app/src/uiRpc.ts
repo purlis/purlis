@@ -6190,6 +6190,35 @@ export type DispatchStanding = {
 	 *  name. **It grants nothing, and nothing here is in force by it.**
 	 */
 	wants: DispatchWants[],
+	/**
+	 *  The grants and acceptances kept here whose seal does not hold (ticket T1.1-73): none of
+	 *  them counts, and the table lists them read-only.
+	 */
+	unsealed: DispatchUnsealed[],
+	/**
+	 *  Where purlis's app cannot read the key it seals answers with, the sentence saying so and
+	 *  what to do: no grant of yours and no acceptance counts until it reads.
+	 */
+	seals_unread: string | null,
+};
+
+/**
+ *  **A dispatch answer kept here that does not count** (ticket T1.1-73): written by something
+ *  other than purlis's app, edited, copied from another clone or put back after it was taken
+ *  away, so its seal does not hold. Shown read-only; the pair is granted again only through its
+ *  ordinary ask.
+ */
+export type DispatchUnsealed = {
+	/**
+	 *  Which list it is in: `mine`, `any`, `mine-in`, `seen`, `any-seen`, `seen-in`, `dormant`
+	 *  or `aside`.
+	 */
+	kind: string,
+	/**
+	 *  The answer as the list spells it: `asking -> target`, `asking -> *`, either `in
+	 *  <workspace>`.
+	 */
+	text: string,
 };
 
 /**

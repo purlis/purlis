@@ -94,6 +94,8 @@ const stands = (over: Partial<DispatchStanding> = {}): DispatchStanding => ({
   wants: [],
   back: [],
   workspaces: [],
+  unsealed: [],
+  seals_unread: null,
   ...over,
 });
 
@@ -2094,5 +2096,42 @@ describe("the grants table's look (DS-9, #1841)", () => {
     expect(drawnWith(group.querySelector("span") as HTMLElement, "font-weight")).toBe(
       "var(--font-weight-strong)",
     );
+  });
+});
+
+describe("grants whose seal does not hold (#6968)", () => {
+  it("lists them read-only, with no button, and says they allow nothing", async () => {
+    core({
+      grants: [MINE],
+      standing: {
+        unsealed: [
+          { kind: "mine", text: "steward -> prod" },
+          { kind: "any", text: "qa -> *" },
+        ],
+      },
+    });
+    render(<Table />);
+    const list = await screen.findByRole("list", { name: "Not sealed" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["steward to prod", "qa to any persona"]);
+    expect(within(list).queryAllByRole("button")).toEqual([]);
+    expect(
+      screen.getByText(/^These grants and acceptances were not made in this window/),
+    ).toHaveTextContent("so they allow nothing. To allow a pair, answer its ask");
+  });
+
+  it("says at the top when the seal's key does not read, with a way to read again", async () => {
+    const said =
+      "purlis could not read the key it seals your dispatch grants with, in your login keychain, so no grant you made and no project grant you accepted counts on this machine just now. Quit and open purlis again, and allow it to use its key when macOS asks.";
+    const fake = core({ grants: [MINE], standing: { seals_unread: said } });
+    render(<Table />);
+    const alert = (await screen.findByText(said)).closest("[data-cause]") as HTMLElement;
+    expect(alert).toHaveAttribute("data-cause", "dispatch-seals-unread");
+    fake.held.standing = stands();
+    await userEvent.setup().click(within(alert).getByRole("button", { name: "Read again" }));
+    await waitFor(() => expect(screen.queryByText(said)).toBeNull());
   });
 });

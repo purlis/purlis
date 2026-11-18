@@ -538,6 +538,13 @@ pub struct HandedFrom {
     /// its last message ([`crate::dispatched::owes_at_turn_end`]). Written by the app from the
     /// dispatch it decided, never from anything the task sends.
     pub long: bool,
+    /// **The strictest `[policy]` along its chain** (Q308a "a dispatched chat inherits the
+    /// strictest setting along its chain"; Q308b): what the asking chat ran under when it
+    /// dispatched this one, as [`crate::enforcement::Resolved::spelled`] spells it. **A
+    /// dispatched chat is judged under its own project's policy and never looser than its
+    /// asker** ([`crate::enforcement::Resolved::for_chat`]). Written by the app from its record
+    /// of the asking chat; `None` for a record written before it, which is the project's alone.
+    pub policy: Option<String>,
 }
 
 /// How one chat started another (the spec's two modes of a dispatch, #1434).
@@ -1988,6 +1995,10 @@ struct FromOnDisk {
     /// `true` for a long-running task (#3905), or absent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     long: bool,
+    /// The strictest `[policy]` along its chain (Q308a, Q308b), as `PURLIS_POLICY` spells it, or
+    /// absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    policy: String,
 }
 
 /// The personas above a chat as its record keeps them, held to what the app writes: one per
@@ -2037,6 +2048,7 @@ impl From<&HandedFrom> for FromOnDisk {
                 String::new()
             },
             long: from.long,
+            policy: from.policy.clone().unwrap_or_default(),
         }
     }
 }
@@ -2100,6 +2112,9 @@ impl FromOnDisk {
             by_person: self.by == BY_PERSON,
             // Only a task is long-running: a handoff's work moved, and owes nothing.
             long: self.long && !older && Mode::of(&self.mode) == Mode::Task,
+            // Read as the chain wrote it; a family it does not name is enforced.
+            policy: (!self.policy.is_empty())
+                .then(|| crate::enforcement::Resolved::parse(&self.policy).spelled()),
         })
     }
 }

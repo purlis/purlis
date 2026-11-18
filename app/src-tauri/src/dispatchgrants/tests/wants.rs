@@ -178,6 +178,7 @@ fn a_persona_the_person_said_never_to_for_a_chat_above_is_not_a_box() {
     let (store, _) = store();
     let below_lead = Asking {
         above: dispatchchain::Above::Known(vec![Some("lead".to_owned())]),
+        policy: None,
         ..chat(3, Some("steward"))
     };
     let id = pending_of(&world.request(&store, below_lead, "devops", BRIEF));

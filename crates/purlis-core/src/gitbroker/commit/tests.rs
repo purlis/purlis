@@ -149,6 +149,7 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         roots_git_held: false,
+        policy: None,
         unreadable: Vec::new(),
         config: None,
         id: None,
@@ -482,7 +483,9 @@ impl Tree {
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
-        git::isolated(&plain, || made(&self.root, 4, None, &ask, &here, &identity))
+        git::isolated(&plain, || {
+            made(&self.root, 4, (None, None), &ask, &here, &identity)
+        })
     }
 
     fn asked(&self, stage: Stage) -> Result<Vec<Say>, String> {
@@ -1289,9 +1292,11 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
         common: t.here.common.clone(),
         clone: t.here.clone.clone(),
     };
-    git::isolated(&plain, || made(&held.1, 4, None, &ask, &here, &identity))
-        .map_err(|refused| refused.why)
-        .expect("the held project's `open` lets the scan's finding through");
+    git::isolated(&plain, || {
+        made(&held.1, 4, (None, None), &ask, &here, &identity)
+    })
+    .map_err(|refused| refused.why)
+    .expect("the held project's `open` lets the scan's finding through");
 }
 
 /// #7073: a finding the project's `[policy]` logs is recorded in the log of the chat that asked
@@ -1331,7 +1336,7 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
         clone: t.here.clone.clone(),
     };
     git::isolated(&plain, || {
-        made(&held.1, 4, Some(ID), &ask, &here, &identity)
+        made(&held.1, 4, (Some(ID), None), &ask, &here, &identity)
     })
     .map_err(|refused| refused.why)
     .expect("a logged finding is let through");
