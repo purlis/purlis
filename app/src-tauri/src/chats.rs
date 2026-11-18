@@ -4328,18 +4328,28 @@ impl Chats {
     /// Marks the closed chat `record` keeps as being reopened, by its ULID, or refuses: one
     /// Reopen at a time per chat (#7145).
     fn claim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) -> Result<(), String> {
-        if lock(&self.reopening).insert(record.id.clone()) {
+        self.claim_id(&record.id, record.number)
+    }
+
+    fn unclaim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) {
+        self.unclaim_id(&record.id);
+    }
+
+    /// Marks the chat whose ULID is `id`, numbered `number`, as starting again on its
+    /// conversation, or refuses: Reopen and Resume both hold it so, so the two pressed at once
+    /// start it once (#7149's review).
+    fn claim_id(&self, id: &str, number: u32) -> Result<(), String> {
+        if lock(&self.reopening).insert(id.to_owned()) {
             Ok(())
         } else {
             Err(format!(
-                "purlis is already reopening chat {}, so it was not started twice.",
-                record.number
+                "purlis is already starting chat {number} again, so it was not started twice."
             ))
         }
     }
 
-    fn unclaim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) {
-        lock(&self.reopening).remove(&record.id);
+    fn unclaim_id(&self, id: &str) {
+        lock(&self.reopening).remove(id);
     }
 
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
@@ -4386,7 +4396,25 @@ impl Chats {
         }
         self.claim(session)?;
         let was = lock(&self.let_go).get(&session).cloned();
+        // Held by its ULID too, as Reopen on its card holds it (#7149's review): the two pressed
+        // at once start it once, and the one that comes second is refused.
+        let id = was.as_ref().and_then(|was| was.identity.id.clone());
+        if let Some(id) = &id
+            && let Err(why) = self.claim_id(id, session)
+        {
+            self.unclaim(session);
+            return Err(why);
+        }
+        let open_again = id.as_deref().is_some_and(|id| {
+            lock(&self.open)
+                .values()
+                .any(|one| one.chat.identity.id.as_deref() == Some(id))
+        });
         let started = match was {
+            // Reopened from its card already: it runs again, under another number.
+            Some(_) if open_again => Err(format!(
+                "purlis did not resume chat {session}: it is open again under another number."
+            )),
             None => Err(format!(
                 "purlis did not resume chat {session}: there is nothing to resume, as it is not \
                  a chat purlis ended here."
@@ -4404,6 +4432,9 @@ impl Chats {
         };
         if started.is_ok() {
             lock(&self.let_go).remove(&session);
+        }
+        if let Some(id) = &id {
+            self.unclaim_id(id);
         }
         self.unclaim(session);
         started
