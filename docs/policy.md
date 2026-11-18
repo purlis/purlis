@@ -55,6 +55,8 @@ sockets and pool forwards (`purlis-serve`, `engine-links`), so a socket moved wh
 enforced is not reached after a `ports = "off"` you press. The same rule stops a chat **creating
 any file with one of those names anywhere** (a file called `hooks.sock`, `slots.sock` or
 `purlisd*.sock`): purlis's own test suite, run inside a chat, cannot make them either.
+**Any folder named `purlis-serve` or `engine-links`, wherever it is, becomes unwritable to chats**
+(nothing in it can be made, moved or removed), your own among them: name yours otherwise.
 
 **A profile or harness declaration nobody approved still asks** under every template but `open`
 (Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start

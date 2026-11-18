@@ -2947,6 +2947,59 @@ fn a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pre
         "no",
         "a symlinked parent"
     );
+    // A direct symlink to a held socket, made by the chat at the plain floor, is held by the
+    // real name it points at, once ports are off.
+    for (index, socket) in held.iter().enumerate() {
+        let other = at.join(format!("symlinked-{index}.sock"));
+        apply(
+            &plain,
+            &format!(
+                "/bin/ln -s {} {} 2>/dev/null",
+                socket.display(),
+                other.display()
+            ),
+        );
+        assert_eq!(
+            apply(&off, &connect(&other)),
+            "no",
+            "{} symlinked directly, then ports off",
+            socket.display()
+        );
+    }
+    // The full profile, where the chat's own folder is written (the allow block comes first, the
+    // names' deny after it): a socket of purlis's made in the chat's own folder is neither moved
+    // nor linked there.
+    let (_own_dir, own) = project();
+    let in_own = real(&own).join("purlisd.sock");
+    let _held_in_own = std::os::unix::net::UnixListener::bind(&in_own).expect("a socket");
+    let Form::Codex(wrap) = compiler(Harness::Codex).expect("a compiler")(&Compiled {
+        level: Level::Full,
+        ..Compiled::floor(&own, &machine, &grant::Grants::default())
+    })
+    .expect("ok") else {
+        panic!("not codex");
+    };
+    let full = codex::profile(&wrap, &own, Path::new("/tmp"), &[], None).expect("a profile");
+    assert!(full.contains("(allow file-write*"), "the full profile");
+    for (how, verb) in [("linked", "/bin/ln"), ("moved", "/bin/mv")] {
+        let other = real(&own).join(format!("{how}.sock"));
+        crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &full, "/bin/sh", "-c"])
+                .arg(format!(
+                    "{verb} {} {} 2>/dev/null",
+                    in_own.display(),
+                    other.display()
+                ))
+                .current_dir(&own),
+        )
+        .expect("it runs");
+        assert!(
+            !other.exists(),
+            "{how} in the chat's own folder, full profile"
+        );
+    }
+    assert!(in_own.exists(), "still where it was in the full profile");
     drop(listening);
     crate::secrets::test_really_ran("a-moved-purlis-socket-stays-held");
 }
@@ -3049,11 +3102,34 @@ fn the_names_of_purlis_sockets_are_held_from_being_moved_or_linked_with_ports_en
         panic!("not codex");
     };
     let floor = codex::floor_profile(&wrap, &[], None).expect("a profile");
-    let full = codex::profile(&wrap, &root, Path::new("/tmp"), &[], None).expect("a profile");
+    let Form::Codex(full_wrap) = compiler(Harness::Codex).expect("a compiler")(&Compiled {
+        level: Level::Full,
+        ..compiled
+    })
+    .expect("ok") else {
+        panic!("not codex");
+    };
+    let full = codex::profile(&full_wrap, &root, Path::new("/tmp"), &[], None).expect("a profile");
     for (what, profile) in [("floor", floor), ("full", full)] {
         assert!(
             !profile.contains(super::seatbelt::EVERY_LOCAL.lines().next().expect("a rule")),
             "{what} has ports enforced"
+        );
+        // Last wins in a profile: the names' deny comes after every `(allow file-write* …)`, or
+        // a folder the chat may write would give the names back.
+        // The plain floor allows by default and has none; the full profile's has them.
+        let last_allow = profile.rfind("(allow file-write*");
+        assert!(
+            what == "floor" || last_allow.is_some(),
+            "{what} allows writes"
+        );
+        let last_allow = last_allow.unwrap_or(0);
+        let first_deny = profile
+            .find("(deny file-write* file-link (regex #\"")
+            .expect("the names' deny");
+        assert!(
+            first_deny > last_allow,
+            "the names' deny follows the writes allowed in {what}"
         );
         let unwritten: Vec<regex::Regex> = profile
             .lines()

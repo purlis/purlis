@@ -470,6 +470,31 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                 deny_write.push(rule);
             }
         }
+        // The names of purlis's sockets and the folders holding them, at any depth, whatever
+        // `ports` says (round 6 of #7105): no wrap covers a Claude Code chat on macOS, so a
+        // `mv` or `ln` of a socket to a name nothing holds would be reached once `ports = "off"`
+        // is pressed, or from a socket path the person allowed. The same set the wraps hold
+        // by regex ([`super::seatbelt::held_socket_names_unwritten`]), each in both cases. A
+        // Claude Code chat's own server never makes a socket here: it dials in through its hook
+        // socket (#3316), so there is nothing to give back.
+        let (socket_names, socket_folders) = super::seatbelt::held_socket_globs();
+        for name in socket_names {
+            for rule in [format!("/**/{name}"), format!("/**/{}", either_case(&name))] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
+        for name in socket_folders {
+            for rule in [
+                format!("/**/{name}"),
+                format!("/**/{}", either_case(&name)),
+                format!("/**/{name}/**"),
+                format!("/**/{}/**", either_case(&name)),
+            ] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
         for path in &compiled.held {
             for name in names_for(path) {
                 let name = name.display().to_string();

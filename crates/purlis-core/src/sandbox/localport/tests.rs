@@ -565,6 +565,79 @@ while (accept(my $c, $s)) {
             assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
         }
     }
+    /// **A chat serves from the folder purlis made for it, `purlis-serve/<id>/`** (round 6 of
+    /// #7105): the folder every chat's sockets are held in is denied to being written, moved or
+    /// linked at every floor, and the chat's own socket is given back after it. Its own socket
+    /// binds; another name beside it, and the folder moved aside, do not.
+    #[test]
+    fn a_chat_serving_from_the_purlis_serve_folder_binds_its_own_socket_alone() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let port = free_port();
+        let base = tempfile::tempdir().expect("a folder");
+        let root = base
+            .path()
+            .canonicalize()
+            .expect("real")
+            .join("purlis-serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .expect("the serve folder");
+        let folder = root.join("0123456789abcdef");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, port);
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        seatbelt::widen(
+            &mut own,
+            &Widened {
+                ports: vec![port],
+                listens: vec![port],
+                listen_only: vec![port],
+                ..Widened::default()
+            },
+        )
+        .expect("widens");
+        seatbelt::served(&mut own, &folder, &[port]).expect("served");
+        let profile =
+            seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+        let tried = |script: &str, words: &[&str]| -> String {
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", script])
+                    .args(words)
+                    .current_dir(cwd.path()),
+            )
+            .expect("it runs");
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        assert_eq!(tried(UNIX, &[&socket.display().to_string(), "once"]), "yes");
+        assert_eq!(
+            tried(
+                UNIX,
+                &[&folder.join("other.sock").display().to_string(), "once"]
+            ),
+            "bind"
+        );
+        let moved = base.path().join("moved");
+        let renamed = tried(
+            "print rename($ARGV[0], $ARGV[1]) ? qq(yes) : qq(no)",
+            &[&root.display().to_string(), &moved.display().to_string()],
+        );
+        assert_eq!(renamed, "no", "the serve folder is never moved aside");
+        assert!(root.exists() && !moved.exists());
+    }
+
     /// **Claude Code's rules for a socket it is allowed let a server listen there** (#3316): as
     /// its macOS profile builder writes each `network.allowUnixSockets` path (read out of Claude
     /// Code 2.1.312), the socket domain, `network-bind` and `network-outbound` on the path as a

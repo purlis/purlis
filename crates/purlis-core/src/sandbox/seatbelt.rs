@@ -538,6 +538,32 @@ pub fn held_socket_names_unwritten() -> Vec<String> {
         .collect()
 }
 
+/// **The same held names as globs, for a harness whose own sandbox holds paths by glob** (round
+/// 6 of #7105: Claude Code, which no wrap covers on macOS): `(names, folders)`, as
+/// [`held_socket_names_unwritten`] holds them by regex. A name is a glob of a file name, a
+/// folder is a folder's name; the caller writes each at any depth and in either case.
+pub fn held_socket_globs() -> (Vec<String>, Vec<String>) {
+    let hooks = "hooks.sock".to_owned();
+    let slots = crate::hookwire::serve::SLOTS_SOCKET.to_owned();
+    let mut names = vec![
+        hooks,
+        slots,
+        "purlisd*.sock".to_owned(),
+        "purlis-crash-*.sock".to_owned(),
+    ];
+    for id in crate::names::BUNDLE_ID.spellings() {
+        let glob = format!("{}*_si.sock", crate::names::single_instance_stem(id));
+        if !names.contains(&glob) {
+            names.push(glob);
+        }
+    }
+    let folders = vec![
+        super::door::FOLDER.to_owned(),
+        crate::sshroute::DIR.to_owned(),
+    ];
+    (names, folders)
+}
+
 /// `word` as a regex that matches it in any case: macOS's volumes fold names, so the kernel may
 /// name a socket by any case it was reached by.
 fn folded(word: &str) -> String {
