@@ -729,3 +729,45 @@ fn inline_settings_whose_default_mode_switches_the_prompts_off_lose_only_that_ke
         assert_eq!(without_bypass(&command), command, "{value}");
     }
 }
+
+#[test]
+fn inline_settings_purlis_cannot_read_are_refused_and_dropped_whole() {
+    // #7155: JSON Claude Code accepts and `serde_json` rejects keeps no bypass unseen.
+    for value in [
+        "{\"permissions\":{\"defaultMode\":\"bypassPermissions\",}}",
+        "{/* c */\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}",
+        "\u{feff}{\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}",
+        "{not json",
+    ] {
+        for command in [
+            words(&["claude", "--settings", value, "-v"]),
+            words(&["claude", &format!("--settings={value}"), "-v"]),
+        ] {
+            assert!(bypass_in(&command).is_some(), "{command:?}");
+            let without = without_bypass(&command);
+            assert_eq!(without, words(&["claude", "-v"]), "{command:?}");
+            assert_eq!(bypass_in(&without), None, "{command:?}");
+        }
+    }
+}
+
+#[test]
+fn inline_settings_are_read_through_whitespace_escaped_keys_and_repeated_flags() {
+    let mode = "bypassPermissions";
+    let spaced = format!(" \n {{\"permissions\" : {{ \"defaultMode\" : \"{mode}\" }} }}");
+    // `defaultMode` spelt with an escape is the same key.
+    let escaped = format!("{{\"permissions\":{{\"default\\u004dode\":\"{mode}\"}}}}");
+    for value in [&spaced, &escaped] {
+        let command = words(&["claude", "--settings", value]);
+        assert!(bypass_in(&command).is_some(), "{value:?}");
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{value:?}");
+    }
+    // The second of two `--settings` is the one that carries it, and the first is kept.
+    let kept = r#"{"model":"x"}"#;
+    let off = format!("{{\"permissions\":{{\"defaultMode\":\"{mode}\"}}}}");
+    let command = words(&["claude", "--settings", kept, "--settings", &off]);
+    assert!(bypass_in(&command).is_some());
+    let without = without_bypass(&command);
+    assert_eq!(bypass_in(&without), None);
+    assert!(without.contains(&kept.to_owned()));
+}

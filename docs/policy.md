@@ -44,6 +44,12 @@ sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in 
 `open` included: a dispatch never, a host you kept blocked, and your harness's ask and deny rules
 for a program, behind which a Bash guard that fails to answer refuses the call.
 
+That call is decided **when the chat starts**, from the rules its harness will read (the
+project's, and yours in the `CLAUDE_CONFIG_DIR` its profile sets). A deny rule you add mid-chat
+holds a dead Bash guard closed from the next start, not before, and a settings layer reached
+only through a folder the chat `cd`s into later is not counted at the start: under `open` or
+`log` that window is accepted, so that `open` stays open (Q327, #7155).
+
 **A profile or harness declaration nobody approved still asks** under every template but `open`
 (Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start
 unapproved, and then its chat's tab says so as it starts.
