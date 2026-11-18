@@ -85,9 +85,11 @@ export const keyOf = (r) =>
   [r.kind, r.row, r.test ?? "", r.dialect ?? "", r.protection ?? "", r.os, r.leg, r.timings ?? "scaled"].join("|");
 
 const describe = (r) =>
-  [r.row, r.test, r.dialect, r.protection, r.os, `${r.leg} leg`, r.timings ? `${r.timings} timings` : undefined]
-    .filter(Boolean)
-    .join(", ");
+  r.kind === "test"
+    ? r.row
+    : [r.row, r.test, r.dialect, r.protection, r.os, `${r.leg} leg`, r.timings ? `${r.timings} timings` : undefined]
+        .filter(Boolean)
+        .join(", ");
 
 /**
  * The cell ids that are escapes in the cells under `folder`: a cell that says `"escape": true`,

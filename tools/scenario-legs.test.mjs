@@ -182,7 +182,7 @@ test("a_test_nextest_passed_in_one_run_and_failed_in_another_is_flaky_with_no_ce
     }
     const found = flaky(dir, { source: "stress-x20" });
     assert.equal(found.differences.length, 1);
-    assert.match(found.issues[0].title, /scenarios::odd/);
+    assert.equal(found.issues[0].title, "Flaky scenario: purlis-app scenarios::odd");
     assert.match(found.issues[0].body, /stress-x20/);
   } finally {
     rmSync(dir, { recursive: true });
