@@ -1,0 +1,12 @@
+{
+  "name": "purlis-ci-opencode",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The OpenCode build CI runs, at the version tests/fixtures/harness-versions/opencode.txt names. Installed with npm ci, so every tarball is checked against package-lock.json's integrity; npm installs only the optional dependency that matches the runner's os and cpu.",
+  "optionalDependencies": {
+    "opencode-darwin-arm64": "1.19.5",
+    "opencode-darwin-x64": "1.19.5",
+    "opencode-linux-arm64": "1.19.5",
+    "opencode-linux-x64": "1.19.5"
+  }
+}

@@ -12,7 +12,7 @@ ARG RUNNER
 FROM ${RUNNER}
 
 # The Claude Code version purlis supports, as `claude --version` answers it
-# (`tests/fixtures/harness-versions/claude.txt`): `2.1.300 (Claude Code)`.
+# (`tests/fixtures/harness-versions/claude.txt`): `2.1.325 (Claude Code)`.
 ARG VERSION
 
 # The Claude Code the profile pins, where a runner keeps a pinned harness it has installed

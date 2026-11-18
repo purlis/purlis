@@ -501,6 +501,7 @@ test("no file that holds the repository's root reads an agent's steering file by
 const WALK_ONLY_CODE = {
   "app/src-tauri/src/savefix/tests.rs":
     "crates/ and app/src-tauri/ sources; its app/src walk is in WINDOW_WALK_MISSES (#3609)",
+  "app/src-tauri/src/scenarios/switches.rs": "crates/*/src and app/src-tauri/src Rust (T1.1-06)",
   "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
   "app/src/community.test.ts": "root files and .github/, which run everything",
   "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
@@ -511,6 +512,8 @@ const WALK_ONLY_CODE = {
   "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
     "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/five_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/it/no_sandbox_duration_lives_outside_timings.rs":
+    "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
   "crates/purlis-core/tests/it/only_the_updater_and_report_name_charters_own_address.rs":
     "shipped Rust",

@@ -46,6 +46,7 @@ export const SHIPPING_WORKFLOWS = ["release.yml", "runner-image.yml", "operator-
  */
 export const NOT_SHIPPING = {
   "ci.yml": "checks every pull request and main: its builds are tested, linted and measured, never handed on",
+  "fake-harness-wrap.yml": "runs the fake harness under purlis's wrap in tests: its builds are only ever tested",
   "forge-live.yml": "runs the forge contract tests against a real forge: it compiles tests only",
   "mutants.yml": "mutation testing of the core crate: its builds are only ever tested",
   "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster; its push to main calls operator-image.yml, which ships",
@@ -53,6 +54,7 @@ export const NOT_SHIPPING = {
   "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
   "artifact-isolation.yml": "ADR 0122 §3's isolation tests on each platform (#5949): it builds the probe app to run them and hands nothing on",
   "skill-grades.yml": "the CI grader of the built-in skills (spec #5714): it builds the grader to run trigger tests and proposes pins, never hands a build on",
+  "sandbox-scenarios.yml": "runs the sandbox scenario matrix and its coverage gate (#6855): its builds are only ever tested",
 };
 
 /** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */

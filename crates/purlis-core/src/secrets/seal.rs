@@ -58,6 +58,34 @@ pub(crate) fn set_foreign_for_this_test(foreign: bool) {
     TEST_FOREIGN.with(|held| held.set(foreign));
 }
 
+/// **The scenario host's seal** (T1.1-06): a key made for this process alone and the seals it
+/// keeps, in memory, so a scenario's window can make the person's press of a project's
+/// `[policy]` as the app does, in a fenced build that never reads the keyring. Unset, a fenced
+/// build seals nothing, as before. Absent from every build without `test-support`.
+#[cfg(all(not(test), feature = "test-support"))]
+struct InMemory {
+    key: Vec<u8>,
+    kept: std::sync::Mutex<std::collections::BTreeMap<String, String>>,
+}
+
+#[cfg(all(not(test), feature = "test-support"))]
+static IN_MEMORY: std::sync::OnceLock<InMemory> = std::sync::OnceLock::new();
+
+/// **This process seals in memory** (the scenario host, T1.1-06): its own random key, its kept
+/// seals in a map, for as long as it runs. Only the app seals at all
+/// ([`super::keyhold::is_the_app`]). Only a build with `test-support` has it.
+#[cfg(all(not(test), feature = "test-support"))]
+pub fn in_memory_for_this_process() {
+    IN_MEMORY.get_or_init(|| {
+        let mut key = vec![0u8; KEY_BYTES];
+        getrandom::fill(&mut key).expect("the system's random source");
+        InMemory {
+            key,
+            kept: std::sync::Mutex::default(),
+        }
+    });
+}
+
 /// What the app found where it keeps the seal's key.
 #[derive(Clone)]
 pub(crate) enum Found {
@@ -170,6 +198,10 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     }
     #[cfg(not(test))]
     {
+        #[cfg(feature = "test-support")]
+        if let Some(held) = IN_MEMORY.get() {
+            return super::keyhold::is_the_app().then(|| zeroize::Zeroizing::new(held.key.clone()));
+        }
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return None;
         }
@@ -419,6 +451,14 @@ pub fn keep(kind: &str, clone: &str, text: &str) -> bool {
     }
     #[cfg(not(test))]
     {
+        #[cfg(feature = "test-support")]
+        if let Some(held) = IN_MEMORY.get() {
+            return held
+                .kept
+                .lock()
+                .map(|mut kept| kept.insert(account, seal))
+                .is_ok();
+        }
         super::keyhold::make_own(SERVICE, &account, &seal).is_ok()
     }
 }
@@ -467,6 +507,11 @@ pub fn kept_holds(kind: &str, clone: &str, text: &str) -> Option<bool> {
     let account = kept_account(kind, clone);
     #[cfg(test)]
     let seal = TEST_KEPT.with(|kept| kept.borrow().get(&account).cloned())?;
+    #[cfg(all(not(test), feature = "test-support"))]
+    if let Some(held) = IN_MEMORY.get() {
+        let seal = held.kept.lock().ok()?.get(&account).cloned()?;
+        return Some(holds(&seal, kind, clone, text));
+    }
     #[cfg(not(test))]
     let seal = match ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()) {
         Ok(seal) => seal,

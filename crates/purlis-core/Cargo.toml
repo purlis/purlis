@@ -269,6 +269,9 @@ fenced = []
 # What a test playing a chat's hook inside the host's own process needs and nothing else may
 # call (`hookwire::permission::ask_permission_of_an_admitted_host`, HP-6). Only tests turn it on.
 test-support = []
+# The parsers the fuzz targets reach (`src/sandbox/fuzzing.rs`, `fuzz/`, T1.1-47). Only the fuzz
+# crate turns it on.
+fuzzing = []
 
 [dev-dependencies]
 # The heap of a design-tokens import, counted, so its memory bound is a measured one (#2926).

@@ -1,0 +1,13 @@
+diff --git a/crates/purlis-core/src/sandbox/egress.rs b/crates/purlis-core/src/sandbox/egress.rs
+index d7c48733c..5b142099f 100644
+--- a/crates/purlis-core/src/sandbox/egress.rs
++++ b/crates/purlis-core/src/sandbox/egress.rs
+@@ -148,7 +148,7 @@ pub fn allows(listed: &[String], host: &str) -> bool {
+             Some(_) if host.parse::<std::net::IpAddr>().is_ok() => false,
+             Some(suffix) => host
+                 .strip_suffix(suffix)
+-                .is_some_and(|head| head.len() > 1 && head.ends_with('.')),
++                .is_some(),
+             None => host == listed,
+         }
+     })
