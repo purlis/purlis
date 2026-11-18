@@ -204,6 +204,8 @@ mod sandboxchoose;
 mod sandboxing;
 mod savefix;
 mod saving;
+#[cfg(test)]
+mod scenarios;
 mod screenfit;
 mod searchfiles;
 mod secretasks;

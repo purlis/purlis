@@ -1148,9 +1148,10 @@ fn a_read_a_forget_overtook_is_answered_but_not_kept() {
 
 /// A board of live asks, as a chat's proxy started in the window holds one.
 fn a_live_board() -> Arc<purlis_core::sandbox::asks::Asks> {
-    Arc::new(purlis_core::sandbox::asks::Asks::new(Arc::new(
-        |_: purlis_core::sandbox::asks::Heard| {},
-    )))
+    Arc::new(purlis_core::sandbox::asks::Asks::new(
+        Arc::new(|_: purlis_core::sandbox::asks::Heard| {}),
+        &purlis_core::sandbox::timings::Timings::production(),
+    ))
 }
 
 /// Chat 1 open in `project`, by the id `chat-1`, its proxy asking live on `board`, or asking

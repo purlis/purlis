@@ -743,7 +743,11 @@ fn proxy_for(
         return Ok(std::sync::Arc::clone(proxy));
     }
     let proxy = std::sync::Arc::new(crate::sandbox::egress::Proxy::serving(
-        crate::sandbox::egress::Serving::confined(hosts.clone(), std::sync::Arc::clone(&PROVIDERS)),
+        crate::sandbox::egress::Serving::confined(
+            hosts.clone(),
+            std::sync::Arc::clone(&PROVIDERS),
+            &crate::sandbox::timings::Timings::production(),
+        ),
     )?);
     held.insert(id.to_owned(), (hosts, std::sync::Arc::clone(&proxy)));
     Ok(proxy)

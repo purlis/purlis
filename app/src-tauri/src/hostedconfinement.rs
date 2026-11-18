@@ -75,6 +75,8 @@ impl purlis_host::Confine for ConfinesHere {
             confining.alone,
             tell,
             askable,
+            // The session host's confinements wait by production's timings (T1.1-01).
+            &purlis_core::sandbox::timings::Timings::production(),
         )
         .map(|hosted| Box::new(HeldHere(hosted)) as Box<dyn purlis_host::Confining>)
     }
@@ -82,6 +84,15 @@ impl purlis_host::Confine for ConfinesHere {
 
 /// A confinement the host holds: its proxy and folders end as this is dropped.
 struct HeldHere(purlis_core::sandbox::hosted::Hosted);
+
+/// **`hosted`, held as [`ConfinesHere`] holds a confinement**: for the scenario host's own
+/// `Confine`, which starts it with its own timings and resolver seam (T1.1-06).
+#[cfg(test)]
+pub(crate) fn held_here(
+    hosted: purlis_core::sandbox::hosted::Hosted,
+) -> Box<dyn purlis_host::Confining> {
+    Box::new(HeldHere(hosted))
+}
 
 impl purlis_host::Confining for HeldHere {
     fn confined(&self) -> Confined {

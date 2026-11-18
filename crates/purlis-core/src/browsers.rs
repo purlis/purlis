@@ -434,7 +434,9 @@ impl Browsers for EngineBrowsers {
         let bound = sites
             .as_ref()
             .map_or_else(Bound::default, |sites| sites.bound().clone());
-        let proxy = ReachProxy::bound_by(Lane::of(listed), new_sites, bound)
+        // Where a chat's browser is confined, so production's timings (T1.1-01).
+        let timings = crate::sandbox::timings::Timings::production();
+        let proxy = ReachProxy::bound_by(Lane::of(listed), new_sites, bound, &timings)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {

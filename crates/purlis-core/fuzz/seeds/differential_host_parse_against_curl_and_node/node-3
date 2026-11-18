@@ -1,0 +1,7 @@
+http://user:pw@example.com/
+GET http://example.com/ HTTP/1.1
+Host: example.com
+Authorization: Basic dXNlcjpwdw==
+proxy-connection: close
+Connection: close
+
