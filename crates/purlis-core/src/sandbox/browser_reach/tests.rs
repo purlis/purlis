@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::{
     Bound, Lane, LoginSites, NewSites, Refusal, Route, Site, Verdict, lookup_bounded,
-    lookup_within, public_address, route,
+    lookup_within, public_address, route, route_exempting,
 };
 use crate::sandbox::reach::{By, Decision, Reach};
 
@@ -944,4 +944,39 @@ fn the_site_a_sign_in_is_open_on_is_said_while_it_is_open_alone() {
     bound.sign_in_over(number).expect("it was open");
     assert_eq!(bound.signing_in_at("auth.example.test", 443), None);
     assert_eq!(bound.kept_off("auth.example.test", 443), auth);
+}
+
+/// **A scenario's origin goes through [`route`] like any name** (T1.1-06), its own address alone
+/// exempt from the filter to public addresses: another of this machine's addresses in the same
+/// answer is still refused, and a name that answers nothing is still not found.
+#[test]
+fn an_origin_is_routed_with_its_own_address_alone_exempt() {
+    let origin = at("127.0.0.1:18443");
+    let exempt = |to: SocketAddr| to == origin;
+    assert_eq!(
+        route_exempting(
+            "site.test",
+            443,
+            None,
+            &[],
+            &|_, _| vec![at("127.0.0.1:5173"), origin],
+            &exempt
+        ),
+        Route::To(vec![origin])
+    );
+    assert_eq!(
+        route_exempting(
+            "site.test",
+            443,
+            None,
+            &[],
+            &|_, _| vec![at("127.0.0.1:5173")],
+            &exempt
+        ),
+        Route::NotPublic
+    );
+    assert_eq!(
+        route_exempting("site.test", 443, None, &[], &|_, _| Vec::new(), &exempt),
+        Route::NotFound
+    );
 }

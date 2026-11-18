@@ -731,3 +731,55 @@ fn a_confined_proxy_refuses_an_origin_at_a_providers_address() {
     assert_eq!(names.dials(), Vec::<SocketAddr>::new(), "never dialled");
     assert!(origin.requests().is_empty(), "{:?}", origin.requests());
 }
+
+/// **A `purlis secret exec` tunnel looks its target up and dials it through the scenario's seam**
+/// (T1.1-06, carried from T1.1-02's security re-review): the tunnel a brokered run opens for a
+/// value pointing at a host (`sandbox::tunnel`) records its lookup, its dial and the origin it
+/// reached, and never asks the system's resolver, so "saw nothing" cannot pass while a tunnel
+/// dialled behind it.
+#[test]
+fn a_secret_exec_tunnel_cell_records_its_lookup_and_dial() {
+    use purlis_core::sandbox::reach::{By, Decision};
+    use purlis_core::sandbox::tunnel::{Tunnel, pointed};
+
+    let origin = Origin::http().expect("an origin");
+    let names = Names::new();
+    let name = format!("db-{}.test", std::process::id());
+    names.origin(&name, 5432, origin.addr());
+    let _held = names.carry_tunnels();
+    let tunnel = Tunnel::open(
+        &pointed(&format!("{name}:5432")).expect("a target"),
+        &Decision::Allowed(By::Chat),
+        Reach::open(vec![format!("{name}:5432")]),
+        None,
+    )
+    .expect("the tunnel opens");
+
+    let mut stream = connected(tunnel.port());
+    write!(
+        stream,
+        "GET /through-the-tunnel HTTP/1.1\r\nHost: {name}\r\nConnection: close\r\n\r\n"
+    )
+    .expect("the request is sent");
+    let mut answer = String::new();
+    let _ = stream.read_to_string(&mut answer);
+    assert!(status(&answer).contains(" 200"), "{answer}");
+
+    assert_eq!(
+        names.lookups(),
+        vec![Lookup {
+            name: name.clone(),
+            port: 5432,
+            found: Found::Origin(origin.addr()),
+        }],
+        "the tunnel's lookup is recorded"
+    );
+    assert_eq!(names.dials(), vec![origin.addr()], "and its dial");
+    assert_eq!(names.origin_hits(), vec![(name.clone(), 5432)]);
+    assert!(!names.saw_nothing());
+    assert!(
+        !names::asked_the_system(&name),
+        "the tunnel never asked the system's resolver"
+    );
+    assert_eq!(origin.requests().len(), 1, "{:?}", origin.requests());
+}

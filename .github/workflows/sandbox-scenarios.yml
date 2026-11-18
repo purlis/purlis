@@ -93,7 +93,14 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # The test build, and the scenario kit's `purlis` and `purlis-app` built apart (T1.1-06).
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      # The issues a pull request closes, and the marks' issues and the change's merge base read
+      # from GitHub, for the coverage gate.
+      pull-requests: read
+      issues: read
     steps:
       - name: What this run runs, and why
         env:
@@ -102,6 +109,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.plan.outputs.linux != 'false'
         with:
+          # The change and its base, whose cells the coverage gate's ratchet reads.
+          fetch-depth: 2
           persist-credentials: false
       - name: The sandbox scenarios
         if: needs.plan.outputs.linux != 'false'
@@ -109,6 +118,66 @@ jobs:
         with:
           production-timings: ${{ needs.plan.outputs.production-timings }}
           stress: ${{ needs.plan.outputs.stress }}
+      # The matrix coverage gate (T1.1-08): the list, its caps and reasons, the expected-fail
+      # ratchet against the change's base, and no mark on a closed issue or one this pull
+      # request closes. Built by the step above (`--workspace`), so it builds nothing more.
+      - name: The commit this change is measured against
+        id: base
+        if: needs.plan.outputs.linux != 'false'
+        uses: ./.github/actions/change-base
+      - name: The issues this pull request closes
+        id: closes
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # A merge group closes nothing of its own: its pull requests were judged on their runs.
+        run: |
+          issues=""
+          if [ -n "$PR" ]; then
+            issues=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json closingIssuesReferences -q '[.closingIssuesReferences[].number] | map(tostring) | join(",")')
+          fi
+          echo "issues=$issues" >> "$GITHUB_OUTPUT"
+      # A mark added on an existing cell names an issue opened after the change began: its merge
+      # base's commit time, from GitHub (the checkout is too shallow to find it), for a pull
+      # request's head or, in a merge group, the head of the pull request the group's ref names.
+      - name: When this change began
+        id: since
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.base.outputs.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          set -euo pipefail
+          head="$PR_HEAD"
+          if [ -z "$head" ]; then
+            pr=$(sed -nE 's#.*/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<<"$QUEUE_REF")
+            head=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
+          fi
+          since=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$head" -q .merge_base_commit.commit.committer.date)
+          if [ -z "$since" ]; then
+            echo "::error title=coverage gate::the merge base of $BASE and $head can't be read from GitHub"
+            exit 1
+          fi
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+      # Whether each mark's issue is open, and when it was opened, from GitHub at check time, never
+      # from the issues.json the change itself could edit.
+      - name: The marks' issues, from GitHub
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/scenario-coverage.mjs issues
+      - name: The matrix coverage gate
+        if: needs.plan.outputs.linux != 'false'
+        env:
+          SCENARIOS_BASE: ${{ steps.base.outputs.sha }}
+          SCENARIOS_SINCE: ${{ steps.since.outputs.since }}
+          SCENARIOS_PR_CLOSES: ${{ steps.closes.outputs.issues }}
+        run: |
+          cargo nextest run --workspace --locked --profile ci --retries 0 --no-capture --run-ignored all \
+            -E 'binary_id(purlis-scenarios::coverage) & not test(=at_m74_1_s_gate_nothing_is_pending_and_every_mark_is_approved)'
       - name: What a red run leaves
         if: failure() && needs.plan.outputs.linux != 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -116,6 +185,17 @@ jobs:
           name: sandbox-scenarios-linux
           path: |
             target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      # Every run's leg report and each scenario's run time (T1.1-06), red or green: ticket 54
+      # sets its budgets from the times, and ticket 8 judges the report.
+      - name: The leg report and the scenarios' times
+        if: always() && needs.plan.outputs.linux != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-report-linux
+          path: |
+            target/sandbox-scenarios/*.jsonl
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
 
@@ -151,6 +231,15 @@ jobs:
           name: sandbox-scenarios-${{ matrix.os }}
           path: |
             target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      - name: The leg report and the scenarios' times
+        if: always() && needs.plan.outputs.macos != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-report-${{ matrix.os }}
+          path: |
+            target/sandbox-scenarios/*.jsonl
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
 

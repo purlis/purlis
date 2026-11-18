@@ -235,6 +235,20 @@ pub fn route(
     own: &[IpAddr],
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
 ) -> Route {
+    route_exempting(host, port, at, own, resolve, &|_| false)
+}
+
+/// [`route`], keeping too an address `exempt` names past the filter to public addresses: a
+/// scenario's origin, for its exact name and port (T1.1-06); none in production. Every other
+/// check of [`route`] holds for it.
+fn route_exempting(
+    host: &str,
+    port: u16,
+    at: Option<SocketAddr>,
+    own: &[IpAddr],
+    resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+    exempt: &dyn Fn(SocketAddr) -> bool,
+) -> Route {
     if let Some(at) = at {
         return Route::To(vec![at]);
     }
@@ -244,7 +258,7 @@ pub fn route(
     }
     let public: Vec<SocketAddr> = resolved
         .into_iter()
-        .filter(|addr| public_address(addr.ip(), own))
+        .filter(|addr| exempt(*addr) || public_address(addr.ip(), own))
         .collect();
     if public.is_empty() {
         Route::NotPublic
@@ -1220,10 +1234,15 @@ fn routed<'a>(
         // An address literal is never looked up.
         let answer = match at.map_or_else(|| names.look_up(host, port), |_| Found::Unmapped) {
             Found::Origin(origin) => {
+                // Through `route` as any name is, its address alone exempt from the filter to
+                // public addresses, so a check `route` gains holds for an origin too (T1.1-06).
+                let routed = route_exempting(host, port, at, own, &|_, _| vec![origin], &|to| {
+                    to == origin
+                });
                 let host = host.to_owned();
                 let dial: Dial<'a> =
                     Box::new(move |to, patience| names.dial_origin(&host, port, to, patience));
-                return (Route::To(vec![origin]), dial);
+                return (routed, dial);
             }
             Found::Scripted(answer) => answer,
             Found::Unmapped => Vec::new(),

@@ -796,6 +796,12 @@ pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox
     if applied.wrap_program().is_none() {
         return;
     }
+    // The scenario host's own wrap: the `purlis` built apart from this test build, neither
+    // `fenced` nor `test-support` (T1.1-06), as a person's chat is wrapped by a release build.
+    if let Some(binary) = SCENARIO_WRAP.get() {
+        applied.wrap_with(binary.clone());
+        return;
+    }
     // The app program is where Cargo copies this build's binaries, which is the target
     // directory even where the test binary is under a build directory set apart from it
     // (`purlis_core::testrun::bin_dir`).
@@ -809,6 +815,26 @@ pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox
         env!("CARGO_PKG_NAME")
     );
     applied.wrap_with(app);
+}
+
+/// **The program the scenario host wraps every chat with** (T1.1-06): set once, by the scenario
+/// fixture, to the `purlis` CI built apart from this test build. Unset in every other test.
+#[cfg(test)]
+static SCENARIO_WRAP: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// **The scenario host wraps every chat of this test process with `binary`** (T1.1-06), in place
+/// of this build's app program: what forces `the_app_program_wraps_for_tests` to the wrap a
+/// release build has. The first call sets it; a later one with another binary fails the test.
+#[cfg(test)]
+pub(crate) fn scenarios_wrap_with(binary: &std::path::Path) {
+    let set = SCENARIO_WRAP.get_or_init(|| binary.to_path_buf());
+    assert_eq!(set, binary, "the scenario host wraps with one binary");
+}
+
+/// The program the scenario host wraps with, once it set one.
+#[cfg(test)]
+pub(crate) fn scenario_wrap() -> Option<&'static std::path::Path> {
+    SCENARIO_WRAP.get().map(std::path::PathBuf::as_path)
 }
 
 /// **In a test of something else, where purlis wraps a Claude Code chat**: `planes`, taking

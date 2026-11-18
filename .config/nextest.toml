@@ -69,5 +69,14 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 filter = "package(purlis-scenarios) & binary(resolver_seam) & test(=the_resolver_seam_does_not_compile_without_test_support)"
 slow-timeout = { period = "60s", terminate-after = 15 }
 
+# The scenario host's scenarios (T1.1-06): each plays a chat's turn script in the session host
+# under purlis's wrap, some waiting out a scaled hold (30 s) for each dialect. Given fifteen
+# minutes before they are called hung. Never retried: `tools/sandbox-scenarios.sh` runs them
+# with `--retries 0` too.
+[[profile.ci.overrides]]
+filter = "package(purlis-app) & test(/^scenarios::/)"
+slow-timeout = { period = "60s", terminate-after = 15 }
+retries = 0
+
 [profile.ci.junit]
 path = "junit.xml"

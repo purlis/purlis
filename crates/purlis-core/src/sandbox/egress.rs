@@ -1229,30 +1229,16 @@ impl Allowed {
     ) -> Connected {
         #[cfg(any(test, feature = "test-support"))]
         if let Some(names) = &self.names {
-            // The seam is only the resolver and the dial: looked up where production would look
-            // up, in its order (never a pinned name, a name of this Mac or an address literal).
-            let origin = std::cell::Cell::new(None);
-            let resolve = |name: &str, port: u16| -> Vec<SocketAddr> {
-                if let Some(literal) = literal_address(name, port) {
-                    return vec![literal];
-                }
-                match names.look_up(name, port) {
-                    super::names::Found::Origin(at) => {
-                        origin.set(Some(at));
-                        vec![at]
-                    }
-                    super::names::Found::Scripted(answer) => answer,
-                    super::names::Found::Unmapped => Vec::new(),
-                }
-            };
-            let dial = |at: &SocketAddr, patience| match origin.get() {
-                Some(to) if to == *at => names.dial_origin(host, port, at, patience),
-                _ => names.dial(at, patience),
-            };
-            // An origin's address, for this exact name and port, is exempt from the filter that
-            // keeps a chat off this machine and special-use addresses, and from nothing else.
-            let exempt = |at: SocketAddr| origin.get() == Some(at);
-            return self.connect_by(host, port, own, read, Some(&resolve), &dial, &exempt);
+            let seam = ThroughNames::new(names, host, port);
+            return self.connect_by(
+                host,
+                port,
+                own,
+                read,
+                Some(&|name, port| seam.resolve(name, port)),
+                &|at, patience| seam.dial(at, patience),
+                &|at| seam.exempt(at),
+            );
         }
         self.connect_by(
             host,
@@ -2082,6 +2068,86 @@ pub(crate) fn system_resolve(host: &str, port: u16) -> Vec<SocketAddr> {
         .to_socket_addrs()
         .map(Iterator::collect)
         .unwrap_or_default()
+}
+
+/// **One connection's lookup and dial through a scenario's resolver seam** (T1.1-02,
+/// [`super::names`]), a test build's alone. The seam is only the resolver and the dial: a name is
+/// looked up where production would look it up, in its order (never a pinned name, a name of this
+/// Mac or an address literal), and an origin's address, for its exact name and port, is exempt
+/// from the filter that keeps a chat off this machine and special-use addresses, and from nothing
+/// else.
+#[cfg(any(test, feature = "test-support"))]
+struct ThroughNames<'a> {
+    names: &'a super::names::Names,
+    host: &'a str,
+    port: u16,
+    /// The origin the lookup found, once it found one.
+    origin: std::cell::Cell<Option<SocketAddr>>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl<'a> ThroughNames<'a> {
+    fn new(names: &'a super::names::Names, host: &'a str, port: u16) -> Self {
+        Self {
+            names,
+            host,
+            port,
+            origin: std::cell::Cell::new(None),
+        }
+    }
+
+    fn resolve(&self, name: &str, port: u16) -> Vec<SocketAddr> {
+        if let Some(literal) = literal_address(name, port) {
+            return vec![literal];
+        }
+        match self.names.look_up(name, port) {
+            super::names::Found::Origin(at) => {
+                self.origin.set(Some(at));
+                vec![at]
+            }
+            super::names::Found::Scripted(answer) => answer,
+            super::names::Found::Unmapped => Vec::new(),
+        }
+    }
+
+    fn dial(&self, at: &SocketAddr, patience: Duration) -> io::Result<TcpStream> {
+        match self.origin.get() {
+            Some(to) if to == *at => self.names.dial_origin(self.host, self.port, at, patience),
+            _ => self.names.dial(at, patience),
+        }
+    }
+
+    fn exempt(&self, at: SocketAddr) -> bool {
+        self.origin.get() == Some(at)
+    }
+}
+
+/// **[`connect`], in a scenario, through its resolver seam** (T1.1-06): what a `purlis secret
+/// exec` tunnel dials by ([`super::tunnel`]), so a tunnel's lookup and dial are recorded as a
+/// chat proxy's are, and "saw nothing" cannot pass while a tunnel dialled behind it. It decides
+/// nothing: it runs only for what the tunnel already carries.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn connect_through(
+    names: &super::names::Names,
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    patience: Duration,
+) -> Connected {
+    let seam = ThroughNames::new(names, host, port);
+    match held_addresses(
+        host,
+        port,
+        reach,
+        own,
+        &|_| true,
+        &|name, port| seam.resolve(name, port),
+        &|at| seam.exempt(at),
+    ) {
+        Ok(reached) => connect_first_by(reached, patience, &|at, patience| seam.dial(at, patience)),
+        Err(refused) => refused,
+    }
 }
 
 /// How a name is looked up on a port: its addresses.

@@ -235,7 +235,7 @@ impl Target {
 }
 
 /// A project, its manifest written, and where it is.
-fn a_project() -> (tempfile::TempDir, PathBuf) {
+pub(crate) fn a_project() -> (tempfile::TempDir, PathBuf) {
     let project = tempfile::tempdir().expect("a project");
     let root = std::fs::canonicalize(project.path()).expect("a resolved project");
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
@@ -275,13 +275,13 @@ fn hooks_of(root: &Path, relayed: bool) -> (Hooks, Arc<Mutex<Vec<Moved>>>) {
 }
 
 /// The device's event log in `dir`, as the app opens one.
-fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> {
+pub(crate) fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> {
     use purlis_core::eventlog::{ArgsKey, Log, Recorder};
     Ok(Recorder::new(Log::open(dir, DEVICE)?, ArgsKey::open(dir)?))
 }
 
 /// The device every target's event log is written for.
-const DEVICE: &str = "01J9ZZDEVICE0000000000000";
+pub(crate) const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
 /// A chat in the window's own process: the switch set to `0`, the way back until #2005.
 pub(crate) fn in_the_window() -> Target {
@@ -1419,16 +1419,33 @@ fn a_repository(root: &Path) {
 /// their project's channel, each confined here, and the device's event log kept in `data`,
 /// opened as it first holds a project (#2003).
 pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
+    a_host_with(
+        folder,
+        data,
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        crate::hostedconfinement::ConfinesHere,
+    )
+}
+
+/// [`a_host`], composing each start with `composes` and confining each chat with `confines`:
+/// the scenario host's, which hands it the shipped kit and its own timings and resolver seam
+/// (T1.1-06).
+pub(crate) fn a_host_with(
+    folder: &Path,
+    data: &Path,
+    composes: crate::sessionhost::Composes,
+    confines: impl purlis_host::Confine,
+) -> purlis_host::Hosting {
     let kept = {
         let data = data.to_path_buf();
         purlis_core::hookchannel::EventLog::opening(move || an_event_log(&data))
     };
     purlis_host::Hosting::kept(
         folder,
-        crate::sessionhost::Composes::as_the_tests_ship(),
+        composes,
         purlis_host::Terminals,
         crate::sessionhost::hook_channels(&kept),
-        crate::hostedconfinement::ConfinesHere,
+        confines,
     )
     .recording_with(kept)
     .saving_with(crate::hostsaving::InTheHost)
@@ -1569,7 +1586,14 @@ fn a_window_over(
 /// which a test cannot move aside, and a window running there would already hold it. It is
 /// built everywhere, so a change that breaks it is seen on every machine.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn in_a_host_process_at(home: &Path) -> Target {
+pub(crate) fn in_a_host_process_at(home: &Path) -> Target {
+    in_a_host_process_running(home, purlis_app())
+}
+
+/// [`in_a_host_process_at`], the host's process `app`: the scenario host's, a `purlis-app` built
+/// apart from the test build, with neither `fenced` nor `test-support` (T1.1-06).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn in_a_host_process_running(home: &Path, app: PathBuf) -> Target {
     let HostHome {
         place,
         inherited,
@@ -1581,7 +1605,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     host.0.start_at(place, {
         let inherited = inherited.clone();
         move || {
-            let mut command = crate::sessionhost::command(&purlis_app());
+            let mut command = crate::sessionhost::command(&app);
             command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
@@ -1715,7 +1739,7 @@ pub(crate) fn built_beside(name: &str, package: &str) -> PathBuf {
 }
 
 /// The repo's fake harness, built once beside this test's binary when it is not there yet.
-fn fake_harness() -> PathBuf {
+pub(crate) fn fake_harness() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
         .get_or_init(|| built_beside("fake-harness", "fake-harness"))
@@ -1730,7 +1754,7 @@ fn a_harness(args: &[&str]) -> Opening {
     opening
 }
 
-fn a_shell(script: &str) -> Opening {
+pub(crate) fn a_shell(script: &str) -> Opening {
     a_program("/bin/sh", &["-c", script])
 }
 
@@ -1744,7 +1768,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
 }
 
 /// A pane: what its view is sent, as it is sent, and the terminal of its own that draws it.
-struct Pane {
+pub(crate) struct Pane {
     seen: Arc<Mutex<Seen>>,
 }
 
@@ -1784,7 +1808,7 @@ impl Pane {
     }
 
     /// A pane of chat `id`, which `sessions` runs.
-    fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
+    pub(crate) fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
         // A pane sized as the window's first is: the view says the size its screen was
         // drawn for only once it opens, after its first bytes may have been sent.
         let seen = Arc::new(Mutex::new(Seen::new(SIZE)));
@@ -1794,6 +1818,11 @@ impl Pane {
         };
         sessions.watch(id, sink).expect("a view opens");
         Pane { seen }
+    }
+
+    /// Everything the pane was sent, as text: what a red scenario's reader needs (T1.1-06).
+    pub(crate) fn text(&self) -> String {
+        drawn(&self.seen.lock().expect("the pane").sent)
     }
 
     /// A pane that was sent `bytes`, on a screen of [`SIZE`].
@@ -1961,7 +1990,7 @@ fn a_number_a_chat_says_is_read_from_its_pane() {
 }
 
 /// How each chat ended, as the window is told.
-fn told_of_ends(target: &Target) -> Arc<Mutex<Vec<(u32, Exit)>>> {
+pub(crate) fn told_of_ends(target: &Target) -> Arc<Mutex<Vec<(u32, Exit)>>> {
     let ends = Arc::new(Mutex::new(Vec::new()));
     target.sessions.when_one_ends({
         let ends = Arc::clone(&ends);
@@ -1970,7 +1999,7 @@ fn told_of_ends(target: &Target) -> Arc<Mutex<Vec<(u32, Exit)>>> {
     ends
 }
 
-fn until(what: &str, done: impl Fn() -> bool) {
+pub(crate) fn until(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + PATIENCE;
     while !done() {
         assert!(Instant::now() < deadline, "{what} never happened");
