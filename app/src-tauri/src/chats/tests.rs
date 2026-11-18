@@ -864,6 +864,7 @@ fn a_task_started_from_a_session_holding_a_grant_compiles_its_sandbox_without_it
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..plain.clone()
     };
@@ -1146,6 +1147,7 @@ fn a_start_is_made_as_the_record_says_and_a_dispatched_chat_names_its_asker() {
         above,
         by_person,
         long: false,
+        policy: None,
     };
     let chat = |from| Chat {
         from,
@@ -5142,6 +5144,7 @@ fn one_dispatched_on_work(root: &std::path::Path) -> Record {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..record.chats[0].clone()
         }],
@@ -6292,6 +6295,7 @@ fn a_pane_shows_a_chat_that_is_not_its_tab_s_own_beside_an_empty_pane_and_the_co
                     above: None,
                     by_person: false,
                     long: false,
+                    policy: None,
                 }),
                 ..chat(&a_claude(dir.path()), "talk", None)
             },
@@ -6456,6 +6460,7 @@ fn started_by(dir: &std::path::Path, name: &str, mode: purlis_core::reopen::Mode
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..chat(&a_claude(dir), name, None)
     }
@@ -7176,6 +7181,7 @@ fn a_dispatched_chat_started_again_in_its_own_place_keeps_its_lineage_and_its_ta
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     };
     let task = Chat {
         from: Some(lineage.clone()),
@@ -11322,6 +11328,7 @@ fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     });
     let window = Chat {
         runs_on: on_builds.clone(),
@@ -11377,6 +11384,7 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
                     above: None,
                     by_person: false,
                     long: false,
+                    policy: None,
                 }),
                 ..chat(&a_claude(dir.path()), "talk", None)
             },

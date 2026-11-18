@@ -54,6 +54,7 @@ fn older_in(by: u32, depth: u32, persona: Option<&str>, id: &str) -> Chat {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..named(persona, id)
     }

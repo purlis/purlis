@@ -53,6 +53,7 @@ export const commands = {
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
 	paneLinkFile: __WINDOW_ONLY_RESULT,
+	paneLinkRunnerFile: __WINDOW_ONLY_RESULT,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -6215,6 +6216,35 @@ export type DispatchStanding = {
 	 *  name. **It grants nothing, and nothing here is in force by it.**
 	 */
 	wants: DispatchWants[],
+	/**
+	 *  The grants and acceptances kept here whose seal does not hold (ticket T1.1-73): none of
+	 *  them counts, and the table lists them read-only.
+	 */
+	unsealed: DispatchUnsealed[],
+	/**
+	 *  Where purlis's app cannot read the key it seals answers with, the sentence saying so and
+	 *  what to do: no grant of yours and no acceptance counts until it reads.
+	 */
+	seals_unread: string | null,
+};
+
+/**
+ *  **A dispatch answer kept here that does not count** (ticket T1.1-73): written by something
+ *  other than purlis's app, edited, copied from another clone or put back after it was taken
+ *  away, so its seal does not hold. Shown read-only; the pair is granted again only through its
+ *  ordinary ask.
+ */
+export type DispatchUnsealed = {
+	/**
+	 *  Which list it is in: `mine`, `any`, `mine-in`, `seen`, `any-seen`, `seen-in`, `dormant`
+	 *  or `aside`.
+	 */
+	kind: string,
+	/**
+	 *  The answer as the list spells it: `asking -> target`, `asking -> *`, either `in
+	 *  <workspace>`.
+	 */
+	text: string,
 };
 
 /**
@@ -8567,6 +8597,11 @@ export type LinkAsk =
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
 { about: "file-outside"; home: LinkHome | null } | 
 /**
+ *  A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+ *  that home there, as the runner said it.
+ */
+{ about: "file-on-runner"; runner: string; home: LinkHome | null } | 
+/**
  *  A link a program marked whose words read as another address or path (the prototype's
  *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
  */
@@ -8610,7 +8645,12 @@ export type LinkFileAt =
 /**  The project's own files. */
 { in: "project"; path: string } | 
 /**  Not in the project. */
-{ in: "outside"; path: string };
+{ in: "outside"; path: string } | 
+/**
+ *  On the runner the chat runs on, by its path there, read from there and read-only
+ *  ([`pane_link_runner_file`], #6387).
+ */
+{ in: "runner"; runner: string; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
@@ -11044,7 +11084,7 @@ export type PolicyState = {
 	locked: string[],
 };
 
-/**  One family the project now runs looser than you accepted. */
+/**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,

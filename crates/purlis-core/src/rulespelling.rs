@@ -175,7 +175,7 @@ impl Rules {
     }
 
     /// Whether any rule names a program to read every spelling of.
-    fn names_a_program(&self) -> bool {
+    pub(crate) fn names_a_program(&self) -> bool {
         self.files
             .iter()
             .any(|f| f.rules.iter().any(|r| r.program.is_some()))

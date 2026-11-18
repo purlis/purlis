@@ -142,7 +142,12 @@ pub fn unattended(
     target: &str,
     works_in: Option<&str>,
 ) -> Requested {
-    match answered(root, locks, asking, runs, target, works_in) {
+    // As the policy runs `dispatch` for this chat, and under `log` one line in its own log
+    // naming the rule that would have refused (the review of #7113).
+    let answer = answered(root, locks, asking, runs, target, works_in).map(|(answer, mode)| {
+        dispatchunattended::as_the_policy_runs_for(root, asking.id.as_deref(), answer, mode)
+    });
+    match answer {
         Err(said) => Requested::Refused(said),
         Ok(Answer::Covered) => Requested::Covered(Box::new(
             dispatchgrant::grants_for_a_dispatched_chat(target),
@@ -165,14 +170,19 @@ pub fn refusal_of(
     target: &str,
     works_in: Option<&str>,
 ) -> Option<dispatchunattended::Refusal> {
-    match answered(root, locks, asking, runs, target, works_in) {
+    // It decides nothing, so it logs nothing.
+    match answered(root, locks, asking, runs, target, works_in)
+        .map(|(answer, mode)| dispatchunattended::as_the_policy_runs(answer, mode))
+    {
         Ok(Answer::Refused(why)) => Some(why),
         _ => None,
     }
 }
 
-/// [`unattended`]'s answer before it is said: the grants' own, or the sentence of a refusal
-/// that is not theirs to give.
+/// [`unattended`]'s answer before it is said: the grants' own, before the project's `[policy]`
+/// runs it, with how that policy runs the `dispatch` family **for this chat**, never looser than
+/// the chain that dispatched it (Q308a, Q308b; the review of #7113); or the sentence of a
+/// refusal that is not theirs to give.
 fn answered(
     root: &Path,
     locks: &Locks,
@@ -180,7 +190,7 @@ fn answered(
     runs: Runs,
     target: &str,
     works_in: Option<&str>,
-) -> Result<Answer, String> {
+) -> Result<(Answer, purlis_core::enforcement::Mode), String> {
     if !purlis_core::personas::valid_name(target) {
         return Err(format!(
             "{} is not a persona's name, so there is nothing to dispatch to.",
@@ -216,10 +226,10 @@ fn answered(
                         && Some(one.workspace.as_str()) == works_in
                 })
     });
-    // The core's own answer, so the window's and the command's cannot drift (#1586).
-    // As the project's `[policy]` runs `dispatch` (Q308): off or log covers what only a grant
-    // or a sandbox stood in the way of.
-    Ok(dispatchunattended::as_the_policy_runs(
+    // The core's own answer, so the window's and the command's cannot drift (#1586). The
+    // caller runs it as the project's `[policy]` runs `dispatch` (Q308): off or log covers what
+    // only a grant or a sandbox stood in the way of.
+    Ok((
         dispatchunattended::covers(
             persona,
             target,
@@ -228,7 +238,9 @@ fn answered(
             named_by_the_project,
             runs.sandboxed,
         ),
-        purlis_core::enforcement::mode(root, purlis_core::enforcement::Family::Dispatch),
+        purlis_core::enforcement::in_force(root)
+            .for_chat(asking.policy.as_deref())
+            .mode(purlis_core::enforcement::Family::Dispatch),
     ))
 }
 

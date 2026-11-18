@@ -32,6 +32,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
         for family in Family::ALL {
             let want = match family {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
+                // An unapproved profile or declaration still asks (Q329).
+                Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
                 // The floor is a wrap, and `ports` takes no log (Q328).
@@ -58,13 +60,15 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold =
-            if secret.contains(&family) || family == Family::GuardsMerge || family == Family::Ports
-            {
-                Mode::Enforce
-            } else {
-                Mode::Log
-            };
+        let hold = if secret.contains(&family)
+            || family == Family::GuardsMerge
+            || family == Family::Ports
+            || family == Family::Trust
+        {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
             || family == Family::Ports
@@ -533,7 +537,7 @@ fn secrets_under_watch_still_mask() {
     ] {
         let root = plane(text, None);
         at_start(root.path());
-        let masked = crate::secrets::masked_of(root.path(), Some(CHAT), &values);
+        let masked = crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values);
         assert_eq!(masked, values.as_slice(), "{text:?}");
         assert_eq!(
             crate::secrets::redact(b"token s3cr3t-value", masked),
@@ -551,11 +555,11 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
         // Not pressed: still masked, and nothing logged.
         at_start(root.path());
         assert_eq!(
-            crate::secrets::masked_of(root.path(), Some(CHAT), &values),
+            crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values),
             values.as_slice()
         );
         press(root.path(), &digest_of(root.path())).expect("the press is kept");
-        assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
+        assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
 }
@@ -1075,6 +1079,207 @@ fn a_broken_acceptance_runs_the_full_sandbox_never_the_floor() {
     assert_eq!(accepted(root.path()), broken_accepted());
 }
 
+/// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
+/// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
+/// `strict`, `watch`, `hold` and `team` keep a vault to the personas it is tagged for.
+#[test]
+fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced() {
+    use crate::secrets::{Ctx, Env, brokered};
+    let _home = OwnConfigHome::new();
+    for (text, opened) in [
+        ("[policy]\ntemplate = \"strict\"\n", false),
+        ("[policy]\ntemplate = \"watch\"\n", false),
+        ("[policy]\ntemplate = \"hold\"\n", false),
+        ("[policy]\ntemplate = \"team\"\n", false),
+        ("[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n", true),
+        ("[policy]\ntemplate = \"open\"\n", true),
+    ] {
+        let root = plane(text, None);
+        std::fs::write(
+            root.path().join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "prod": {"provider": "plain-file", "config": {"file": "prod.json"}, "persona": "devops"},
+            }})
+            .to_string(),
+        )
+        .expect("the registry");
+        at_start(root.path());
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
+        assert_eq!(
+            mode(root.path(), Family::Vaults) == Mode::Off,
+            opened,
+            "{text}"
+        );
+        let ctx = Ctx::new(root.path(), Env::of(&[]));
+        assert_eq!(
+            brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
+            opened,
+            "{text}"
+        );
+        // Its own persona, always; a vault the project does not register, never.
+        assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
+        assert!(
+            brokered::authorise(&ctx, Some("devops"), "nope").is_err(),
+            "{text}"
+        );
+    }
+}
+
+/// A plane whose project lets masking and the vaults check go, pressed: and the chain that
+/// dispatched a chat enforced both (the review of #7113).
+fn loosened_plane() -> tempfile::TempDir {
+    let root = plane("[policy]\nsecrets = \"off\"\nvaults = \"off\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
+    root
+}
+
+const STRICT_CHAIN: &str = "secrets=enforce,vaults=enforce";
+
+#[test]
+fn a_dispatched_chat_s_output_is_masked_where_its_chain_masked_it() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    let root = loosened_plane();
+    assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
+    assert_eq!(
+        crate::secrets::masked_of(root.path(), (Some(CHAT), Some(STRICT_CHAIN)), &values),
+        values.as_slice()
+    );
+}
+
+#[test]
+fn a_dispatched_chat_s_vaults_are_checked_where_its_chain_checked_them() {
+    let _home = OwnConfigHome::new();
+    let root = loosened_plane();
+    let ctx = crate::secrets::Ctx::new(root.path(), crate::secrets::Env::of(&[]));
+    assert!(crate::secrets::brokered::vaults_off(&ctx));
+    assert!(!crate::secrets::brokered::vaults_off(
+        &ctx.under_chain(Some(STRICT_CHAIN))
+    ));
+}
+
+#[test]
+fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults() {
+    // Q308b, item 7 of the follow-up: the nine families switch, each at its template's mode.
+    let nine = Family::ALL
+        .into_iter()
+        .filter(|family| family.added_by_q308b())
+        .collect::<Vec<_>>();
+    assert_eq!(nine.len(), 9);
+    for family in nine {
+        assert!(family.switchable(), "{}", family.key());
+        // Q329: `trust` is enforced under every template but `open`.
+        let floor = if family == Family::Trust {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
+        for (template, want) in [
+            ("open", Mode::Off),
+            ("watch", floor),
+            ("hold", floor),
+            ("team", Mode::Enforce),
+            ("strict", Mode::Enforce),
+        ] {
+            let settings = said(&format!("[policy]\ntemplate = \"{template}\"\n"));
+            assert_eq!(
+                under(&settings, &Locks::none(), family),
+                want,
+                "{template} {}",
+                family.key()
+            );
+        }
+        let off = said(&format!(
+            "[policy]\ntemplate = \"strict\"\n{} = \"off\"\n",
+            family.key()
+        ));
+        assert_eq!(
+            under(&off, &Locks::none(), family),
+            Mode::Off,
+            "{}",
+            family.key()
+        );
+        // An administrator's lock still wins.
+        assert_eq!(
+            under(&off, &Locks::locking_enforcement(family), family),
+            Mode::Enforce,
+            "{}",
+            family.key()
+        );
+    }
+}
+
+#[test]
+fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
+    // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
+    for (family, rule) in [
+        (Family::GuardsForge, RULE_FORGE_WORKSPACE),
+        (Family::HarnessMode, RULE_ASKS_NOBODY),
+        (Family::Tools, RULE_DENY_LIST),
+        (Family::Trust, RULE_PROFILE_APPROVAL),
+        (Family::Trust, RULE_DECLARATION_APPROVAL),
+        (Family::Runners, RULE_RUNNER_DISPATCH),
+        (Family::Runners, RULE_RUNNER_WRITE),
+        (Family::Consents, RULE_WINDOW_ONLY_ASK),
+        (Family::Limits, RULE_COMMIT_RATE),
+        (Family::Limits, "dispatch.depth"),
+        (Family::Limits, "dispatch.running-per-chat"),
+        (Family::GuardsPlane, "A3"),
+        (Family::GuardsShape, "caps"),
+    ] {
+        assert!(known_rule(family, rule), "{} {rule}", family.key());
+        assert!(!known_rule(Family::Dispatch, rule), "{rule}");
+    }
+    assert!(!known_rule(Family::Limits, "dispatch.anything"));
+    assert!(!known_rule(Family::GuardsGit, "A3"));
+}
+
+#[test]
+fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_their_move() {
+    // #7104: A3 and A3b moved from `guards.git` to `guards.plane` (Q308b). A project on `watch`
+    // that enforced `guards.git` keeps them enforced; one that names `guards.plane` decides.
+    for (text, want) in [
+        ("[policy]\nguards.git = \"enforce\"\n", Mode::Enforce),
+        (
+            "[policy]\ntemplate = \"hold\"\nguards.git = \"enforce\"\n",
+            Mode::Enforce,
+        ),
+        ("[policy]\n", Mode::Log),
+        (
+            "[policy]\ntemplate = \"strict\"\nguards.git = \"off\"\n",
+            Mode::Enforce,
+        ),
+        (
+            "[policy]\nguards.git = \"enforce\"\nguards.plane = \"log\"\n",
+            Mode::Log,
+        ),
+    ] {
+        assert_eq!(
+            under(&said(text), &Locks::none(), Family::GuardsPlane),
+            want,
+            "{text}"
+        );
+    }
+    // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
+    // still does, whatever the project says of either family (the re-review of #7104).
+    let git_locked = Locks::parse(
+        r#"{"enforcement": ["guards.git"]}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    for text in [
+        "[policy]\n",
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+    ] {
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsPlane),
+            Mode::Enforce,
+            "{text}"
+        );
+    }
+}
+
 /// `git <args>` in `root`, with no configuration but the repository's.
 fn git_in(root: &Path, args: &[&str]) -> std::process::Output {
     let mut git = std::process::Command::new("git");
@@ -1178,7 +1383,7 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let branch = String::from_utf8(branch.stdout).expect("utf-8");
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), Resolved::strict());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);

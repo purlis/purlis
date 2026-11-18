@@ -12,7 +12,7 @@ use purlis_core::enforcement;
 
 use crate::planes::{PlaneId, Planes};
 
-/// One family the project now runs looser than you accepted.
+/// One family the project now runs looser than you accepted, or one dispatch deny it lifted.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyWaiting {
     /// The family's key, as `[policy]` spells it.
@@ -92,6 +92,13 @@ fn state_of(root: &std::path::Path) -> PolicyState {
                 family: enforcement::Family::Sandbox.key().to_owned(),
                 accepted: accepted.word().to_owned(),
                 committed: committed.word().to_owned(),
+            }))
+            // A deny you accepted that the project's file took away waits for the same press
+            // (the review of #7113): `dispatch.denies steward -> devops from denied to lifted`.
+            .chain(standing.lifted.into_iter().map(|deny| PolicyWaiting {
+                family: format!("{} {deny}", purlis_core::dispatchgrant::DENY_RULE),
+                accepted: "denied".to_owned(),
+                committed: "lifted".to_owned(),
             }))
             .collect(),
         refused: standing.refused,

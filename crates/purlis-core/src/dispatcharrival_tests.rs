@@ -1023,17 +1023,25 @@ fn a_stored_commit_that_is_no_commit_id_is_never_handed_to_git() {
 }
 
 #[test]
-fn reading_the_grants_in_force_runs_no_git() {
+fn reading_the_grants_in_force_runs_no_git_but_the_policy_s_own_read_of_head() {
     let (dir, _kept) = accepted_in_a_repository();
     let root = dir.path();
     settle(root);
+    // The project's denies are read with `[policy]`, from `HEAD` (the review of #7113): that
+    // read, and nothing for the grants.
+    let before = crate::worktree::git::tally(root).spawned;
+    let _ = crate::enforcement::Settings::read(root);
+    let policy = crate::worktree::git::tally(root).spawned - before;
     let before = crate::worktree::git::tally(root).spawned;
 
     for _ in 0..3 {
         assert_eq!(in_force(root), [pair("steward", "devops")]);
     }
 
-    assert_eq!(crate::worktree::git::tally(root).spawned, before);
+    assert_eq!(
+        crate::worktree::git::tally(root).spawned - before,
+        3 * policy
+    );
 }
 
 #[test]

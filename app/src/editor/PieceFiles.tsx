@@ -47,6 +47,7 @@ import {
   type PlaneId,
 } from "../bindings";
 import {
+  inRunnerSaid,
   pieceDiffTitle,
   pieceDiffView,
   isPlaneRoot,
@@ -729,33 +730,43 @@ function useRootLanding(plane: PlaneId, cut: Place, path: string) {
  * ask was answered, read only, at the line and column the link named. The core reads it only for
  * the chat whose pane opened it, within the hour, and while it is still the file it was then
  * (`pane_link_file`); otherwise the tab says to open it from its link again.
+ *
+ * With a `runner`, the file is on the runner a runner chat runs on (#6387): read there, for that
+ * chat, held to its workspace there unless its ask was answered (`pane_link_runner_file`), and
+ * the tab says so: in that runner, read-only.
  */
 export function OutsideFileTab({
   plane,
   session,
+  runner,
   path,
 }: {
   plane: PlaneId;
   session: number | null;
+  runner?: string;
   path: string;
 }) {
-  const [landing] = useState(() => outsideLanding(path));
+  const [landing] = useState(() => outsideLanding(path, runner));
   const read =
     useFileRead(
       path,
       (path) =>
-        commands.paneLinkFile({ plane, session }, path).then((said) => {
+        (runner === undefined
+          ? commands.paneLinkFile({ plane, session }, path)
+          : commands.paneLinkRunnerFile({ plane, session }, runner, path)
+        ).then((said) => {
           if (said.status === "error") return said;
           if (said.data.read === "not-opened")
             return { status: "error" as const, error: notOpenedSaid(onAMac()) };
           return { status: "ok" as const, data: said.data.file };
         }),
-      [plane, session],
+      [plane, session, runner],
     ) ?? READING;
   return (
     <div className="piece-file">
       <header {...editorToolbar("piece-files-head")}>
         <ToolbarFile path={path} named={false} />
+        {runner !== undefined && <span className="ui-text-secondary">{inRunnerSaid(runner)}</span>}
       </header>
       <Shown
         path={path}

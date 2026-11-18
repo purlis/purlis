@@ -1785,6 +1785,28 @@ impl purlis_host::Code for Moves {
         origins_in(project, workspace, repos)
     }
 
+    /// A file a chat here printed, read for the window (1.90, #6387): the core's
+    /// [`crate::panelinks::onrunner`], with the path as data.
+    fn read_file(
+        &self,
+        project: &Path,
+        cwd: Option<&Path>,
+        path: &str,
+        reach: purlis_host::protocol::session::FileReach,
+        at: Option<u64>,
+    ) -> Result<purlis_host::protocol::session::FileRead, purlis_host::protocol::session::Refusal>
+    {
+        Ok(crate::panelinks::onrunner::read_for_window(
+            &crate::panelinks::onrunner::Asked {
+                project,
+                cwd,
+                path,
+                reach,
+                at,
+            },
+        ))
+    }
+
     fn program_starting(
         &self,
         projects: &Path,

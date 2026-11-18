@@ -1986,6 +1986,14 @@ const STATES: State[] = [
     drawn: /127\.0\.0\.1 localhost/,
   },
   {
+    name: "a file on a runner chat's runner a pane's link opened (#6387)",
+    view: { from: null, view: "runner-file", key: "7/docker%2Frunner-1//w/src/main.rs" },
+    answers: {
+      pane_link_runner_file: { read: "file", file: { kind: "text", text: "fn main() {}\n" } },
+    },
+    drawn: /fn main\(\) \{\}/,
+  },
+  {
     name: "what changed in one of a branch's files",
     view: { from: null, view: "piece-diff", key: "alpha/svc/fix-it/notes.txt" },
     answers: {

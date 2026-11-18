@@ -31,13 +31,19 @@
 //! they may make the standing grant for that pair. It is no Notice on the chat and holds no
 //! dispatch: the answer here is still a refusal, given at once.
 //!
-//! # Only from inside the sandbox
+//! # With no sandbox: only a sealed grant (ticket T1.1-73, ruling Q306)
 //!
-//! A standing grant is a file, and what keeps a chat from writing it is the sandbox. A chat
-//! with its prompts off and no sandbox has neither a person nor a wall between it and who it
-//! may dispatch to, so it dispatches to no other persona at all ([`Refusal::Unsandboxed`]),
-//! whatever the grants say. Its own persona is still its own. Whether a chat is sandboxed is
-//! the app's record of how it started the chat, never a line the chat sends.
+//! A standing grant is a file, and a chat with no sandbox runs as the person and can write it.
+//! **So a grant counts only where the app sealed it** ([`crate::secrets::sealed_set`]): one a
+//! chat wrote or edited breaks its seal and counts as no grant. Where the seal's key is the
+//! app's alone — on macOS, in the app — a chat with its prompts off and no sandbox dispatches
+//! under a sealed grant, and under a policy allow the person accepted, as a sandboxed one does.
+//! **Elsewhere** (Linux and Windows, where any of the person's programs can read the keyring,
+//! or a process that cannot verify a seal) such a chat dispatches to no other persona but under
+//! the `dispatch` family's `off` or `log` ([`Refusal::NotSealedHere`]). Its own persona is still
+//! its own. **Where the policy asks and no sealed grant covers the pair**, it is refused at once
+//! ([`Refusal::Unsandboxed`]) and kept for the person's needs-you list. Whether a chat is
+//! sandboxed is the app's record of how it started the chat, never a line the chat sends.
 //!
 //! # What it starts
 //!
@@ -85,8 +91,9 @@ pub enum Answer {
 /// Why an unattended chat's dispatch is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
-    /// The chat was started without a sandbox, and asked for another persona: the target.
-    Unsandboxed(String),
+    /// The chat was started without a sandbox, the policy asks, and no sealed grant covers the
+    /// pair: what is missing. Kept for the needs-you list.
+    Unsandboxed(Missing),
     /// No grant that counts covers the pair.
     Missing(Missing),
     /// The person said never to the pair on this machine (#1503): the asking persona and the
@@ -97,6 +104,11 @@ pub enum Refusal {
     NeverAbove(String, String),
     /// This machine's record of nevers does not read, so no grant counts.
     NeversUnread,
+    /// The project's policy denies the pair (`[dispatch.denies]`): the target.
+    Denied(String),
+    /// A grant covers the pair, and on this system its seal does not keep it out of reach of
+    /// a chat with no sandbox: the target.
+    NotSealedHere(String),
 }
 
 impl Refusal {
@@ -107,18 +119,39 @@ impl Refusal {
             Self::Never(asking, target) => dispatchgrant::never_said(asking, target),
             Self::NeverAbove(above, target) => dispatchgrant::never_above_said(above, target),
             Self::NeversUnread => dispatchgrant::NEVERS_UNREAD.to_owned(),
-            Self::Unsandboxed(target) => {
+            Self::Denied(target) => dispatchgrant::denied_said(target),
+            Self::Unsandboxed(missing) => {
+                let target = crate::shown::short(&missing.target);
+                format!(
+                    "this chat runs with its harness's permission prompts off and with no \
+                     sandbox, so nobody is here to answer for a dispatch, and no grant the \
+                     person made covers this chat's persona dispatching to {target}. The \
+                     person will see this pair in their needs-you list, where one press \
+                     grants it; until then, do this work without {target}, or \
+                     say in what you leave behind that it is waiting."
+                )
+            }
+            Self::NotSealedHere(target) => {
                 let target = crate::shown::short(target);
                 format!(
                     "this chat runs with its harness's permission prompts off and with no \
-                     sandbox. A chat with neither can change who it may dispatch to, so \
-                     purlis starts nobody for it but a chat of its own persona, and {target} \
-                     is another. Run this work in a sandboxed chat, or in one a person \
-                     answers."
+                     sandbox. A grant covers {target}, and on this system purlis cannot keep a \
+                     grant out of reach of a chat with no sandbox (only the macOS Keychain \
+                     keeps purlis's seal to its app), so a chat with neither a person nor a \
+                     sandbox dispatches to no persona but its own here. Run this work in a \
+                     sandboxed chat, or in one a person answers."
                 )
             }
         }
     }
+}
+
+/// **Whether a sealed grant keeps out of reach of a chat with no sandbox here** (ticket
+/// T1.1-73): on macOS, in the app, where the Keychain gives the seal's key to the app's binary
+/// alone. Not on Linux or Windows, where any of the person's programs can read the keyring, and
+/// not in a process that cannot verify a seal.
+pub fn sealed_here() -> bool {
+    cfg!(target_os = "macos") && crate::secrets::sealed_set::decides()
 }
 
 /// The grant an unattended chat lacks.
@@ -192,13 +225,26 @@ pub fn covers(
 ) -> Answer {
     let mut standing = grants.clone();
     standing.chat.clear();
-    answer_of(
+    answer_on(
         dispatchgrant::covers(asking, target, &standing, policy),
         asking,
         target,
         named_by_the_project,
-        sandboxed,
+        Reach {
+            sandboxed,
+            sealed_here: sealed_here(),
+        },
     )
+}
+
+/// What keeps a grant from an unattended chat: its sandbox, and the seal where the seal keeps
+/// out of its reach ([`sealed_here`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reach {
+    /// The app started the chat inside a sandbox.
+    pub sandboxed: bool,
+    /// A sealed grant is out of the chat's reach on this system ([`sealed_here`]).
+    pub sealed_here: bool,
 }
 
 /// What `answer`, the grant's own for the pair with no chat's grants counted, means for an
@@ -213,6 +259,29 @@ pub fn answer_of(
     named_by_the_project: bool,
     sandboxed: bool,
 ) -> Answer {
+    answer_on(
+        answer,
+        asking,
+        target,
+        named_by_the_project,
+        Reach {
+            sandboxed,
+            sealed_here: sealed_here(),
+        },
+    )
+}
+
+/// [`answer_of`], with what keeps a grant from the chat said: a covered pair of two personas
+/// stands for a chat with no sandbox only where a sealed grant is out of its reach; an ask with
+/// no sealed grant is [`Refusal::Unsandboxed`], kept for the needs-you list.
+pub fn answer_on(
+    answer: Covers,
+    asking: Option<&str>,
+    target: &str,
+    named_by_the_project: bool,
+    reach: Reach,
+) -> Answer {
+    let sandboxed = reach.sandboxed;
     match answer {
         Covers::Locked(why) => Answer::Locked(why),
         // The person's never, whatever stands beside it: said as it is said to any chat.
@@ -223,10 +292,16 @@ pub fn answer_of(
         Covers::NeverAbove(above) => Answer::Refused(Refusal::NeverAbove(above, target.to_owned())),
         // A chat's own persona never reads as this; for any other, nobody is here to ask.
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
+        Covers::Denied(_) => Answer::Refused(Refusal::Denied(target.to_owned())),
         Covers::Covered if asking == Some(target) => Answer::Covered,
-        Covers::Covered | Covers::NeedsGrant if !sandboxed => {
-            Answer::Refused(Refusal::Unsandboxed(target.to_owned()))
+        Covers::Covered if !sandboxed && !reach.sealed_here => {
+            Answer::Refused(Refusal::NotSealedHere(target.to_owned()))
         }
+        Covers::NeedsGrant if !sandboxed => Answer::Refused(Refusal::Unsandboxed(Missing {
+            asking: asking.map(str::to_owned),
+            target: target.to_owned(),
+            unreviewed: asking.is_some() && named_by_the_project,
+        })),
         Covers::Covered => Answer::Covered,
         Covers::NeedsGrant => Answer::Refused(Refusal::Missing(Missing {
             asking: asking.map(str::to_owned),
@@ -236,19 +311,49 @@ pub fn answer_of(
     }
 }
 
-/// **`answer` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50):
-/// under `off` or `log`, a pair nothing covers, and one refused only because the asking chat has
-/// no sandbox ([`Refusal::Unsandboxed`]), is covered. A lock, the person's nevers, a never above
-/// and a nevers record that does not read stand in every mode.
+/// **`answer` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50;
+/// ticket T1.1-73): under `off` or `log`, a pair nothing covers, one the policy denies, and one
+/// refused only because the asking chat has no sandbox ([`Refusal::Unsandboxed`],
+/// [`Refusal::NotSealedHere`]), is covered. A lock, the person's nevers, a never above and a
+/// nevers record that does not read stand in every mode.
 pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Answer {
     match answer {
-        Answer::Refused(Refusal::Unsandboxed(_) | Refusal::Missing(_))
-            if mode != crate::enforcement::Mode::Enforce =>
-        {
-            Answer::Covered
-        }
+        Answer::Refused(
+            Refusal::Unsandboxed(_)
+            | Refusal::Missing(_)
+            | Refusal::Denied(_)
+            | Refusal::NotSealedHere(_),
+        ) if mode != crate::enforcement::Mode::Enforce => Answer::Covered,
         other => other,
     }
+}
+
+/// [`as_the_policy_runs`], and under `log` one quiet line in chat `chat`'s enforcement log
+/// naming the rule that would have refused (item 8 of the Q308 follow-up). `chat` is the asking
+/// chat's id, as the app holds it.
+pub fn as_the_policy_runs_for(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    answer: Answer,
+    mode: crate::enforcement::Mode,
+) -> Answer {
+    let rule = match &answer {
+        Answer::Refused(Refusal::Denied(_)) => dispatchgrant::DENY_RULE,
+        Answer::Refused(
+            Refusal::Unsandboxed(_) | Refusal::Missing(_) | Refusal::NotSealedHere(_),
+        ) => dispatchgrant::ASK_RULE,
+        _ => return answer,
+    };
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::Dispatch,
+        mode,
+        rule,
+        None,
+        answer,
+    )
+    .unwrap_or(Answer::Covered)
 }
 
 /// The words of a harness's command line that start it with its permission prompts off, as a
@@ -275,6 +380,22 @@ const MODE_FLAGS: [(&str, &str); 4] = [
 /// The flag Claude Code starts a chat in a permission mode by.
 const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 
+/// The flag Claude Code reads settings by: a file's path, or the settings inline as JSON.
+const CLAUDE_CODE_SETTINGS_FLAG: &str = "--settings";
+
+/// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
+/// prompts off, or `None` where it is no JSON or carries no such mode.
+fn settings_without_bypass(value: &str) -> Option<String> {
+    let mut settings: serde_json::Value = serde_json::from_str(value).ok()?;
+    let permissions = settings.get_mut("permissions")?.as_object_mut()?;
+    let mode = permissions.get("defaultMode")?.as_str()?;
+    if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
+        return None;
+    }
+    permissions.remove("defaultMode");
+    Some(settings.to_string())
+}
+
 /// **The words of `command` that start a harness with its permission prompts off**, if any
 /// do, as they are shown to a person: the flag, with its value where the value is what
 /// switches them off (`-c approval_policy=never`). `command` is a profile's own, as this
@@ -291,30 +412,90 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
+    (0..command.len()).find_map(|at| bypass_at(command, at).map(|bypass| bypass.shown))
+}
+
+/// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
+/// chat another chat asked for is started on where `[policy] mode` let such a profile through
+/// (Q308b), so it still runs at its task's level, capped at auto (#3787, #7104). A flag's value
+/// goes with it where it is the next word; inline `--settings` keep every key but the
+/// permission mode.
+pub fn without_bypass(command: &[String]) -> Vec<String> {
+    let mut kept = Vec::with_capacity(command.len());
+    let mut at = 0;
+    while at < command.len() {
+        match bypass_at(command, at) {
+            Some(bypass) => {
+                kept.extend(bypass.kept);
+                at += bypass.words;
+            }
+            None => {
+                kept.push(command[at].clone());
+                at += 1;
+            }
+        }
+    }
+    kept
+}
+
+/// Words of a command line that switch the prompts off ([`bypass_at`]).
+struct Bypass {
+    /// As shown to a person.
+    shown: String,
+    /// How many words they are: one, or two where the value is the next word.
+    words: usize,
+    /// What stands in their place once the prompts are back on: nothing, or the same inline
+    /// `--settings` without the permission mode.
+    kept: Vec<String>,
+}
+
+/// The words at `at` of `command` that switch the prompts off, if they do.
+fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     use crate::sandbox::codex::{is_flag, split};
-    command.iter().enumerate().find_map(|(at, word)| {
-        if BYPASS_FLAGS.contains(&word.as_str()) {
-            return Some(word.clone());
-        }
-        if !is_flag(word) {
-            return None;
-        }
-        let (flag, attached) = split(word);
-        let next = || command.get(at + 1).map(String::as_str);
-        let value = attached.or_else(next)?;
-        // A value may be written quoted and spaced (`approval_policy = "never"`).
-        let plain = value.replace(['"', '\'', ' '], "");
-        let off = if flag == CLAUDE_CODE_MODE_FLAG {
-            ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
-        } else {
-            MODE_FLAGS
-                .iter()
-                .any(|(known, never)| flag == *known && plain == *never)
-        };
-        off.then(|| match attached {
+    let word = command.get(at)?;
+    if BYPASS_FLAGS.contains(&word.as_str()) {
+        return Some(Bypass {
+            shown: word.clone(),
+            words: 1,
+            kept: Vec::new(),
+        });
+    }
+    if !is_flag(word) {
+        return None;
+    }
+    let (flag, attached) = split(word);
+    let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
+    let words = if attached.is_some() { 1 } else { 2 };
+    // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
+    // `permissions.defaultMode`. A settings file's path is not read here.
+    if flag == CLAUDE_CODE_SETTINGS_FLAG {
+        let rewritten = settings_without_bypass(value)?;
+        return Some(Bypass {
+            // The mode's own word is the attendance fact's alone to spell.
+            shown: format!("{flag} (its permissions.defaultMode)"),
+            words,
+            kept: match attached {
+                Some(_) => vec![format!("{flag}={rewritten}")],
+                None => vec![flag.to_owned(), rewritten],
+            },
+        });
+    }
+    // A value may be written quoted and spaced (`approval_policy = "never"`).
+    let plain = value.replace(['"', '\'', ' '], "");
+    let off = if flag == CLAUDE_CODE_MODE_FLAG {
+        ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
+    } else {
+        MODE_FLAGS
+            .iter()
+            .any(|(known, never)| flag == *known && plain == *never)
+    };
+    off.then(|| Bypass {
+        shown: match attached {
             Some(_) => word.clone(),
             None => format!("{flag} {value}"),
-        })
+        },
+        words,
+        kept: Vec::new(),
     })
 }
 
@@ -365,6 +546,46 @@ pub fn bypass_refusal(profile: &str, command: &[String], by: NamedBy<'_>) -> Opt
             crate::shown::short(persona)
         ),
     })
+}
+
+/// **[`bypass_refusal`], as `[policy] mode` runs for the project at `root`** (Q308b): under
+/// `off` no chat is refused for its profile switching the prompts off, and under `log` it starts
+/// and one line for chat `chat` says it would have been refused.
+pub fn bypass_refusal_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    profile: &str,
+    command: &[String],
+    by: NamedBy<'_>,
+) -> Option<String> {
+    let refused = bypass_refusal(profile, command, by)?;
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::HarnessMode,
+        crate::enforcement::mode(root, crate::enforcement::Family::HarnessMode),
+        crate::enforcement::RULE_ASKS_NOBODY,
+        None,
+        refused,
+    )
+}
+
+/// [`start_of_a_persona_chat`], with its refusal of a profile that switches the prompts off
+/// asked as `[policy] mode` runs for the project at `root` ([`bypass_refusal_in`]).
+pub fn start_of_a_persona_chat_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    start: Start,
+    target: &str,
+    on: Option<Inherited<'_>>,
+) -> Result<Start, String> {
+    if let Some(Inherited { profile, command }) = on
+        && let Some(refused) =
+            bypass_refusal_in(root, chat, profile, command, NamedBy::TheAskingChat)
+    {
+        return Err(refused);
+    }
+    start_of_a_persona_chat(start, target, None)
 }
 
 /// The profile a persona chat starts on, by its name and its command as this machine declares

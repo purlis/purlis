@@ -3994,6 +3994,20 @@ impl Chats {
         self.sessions.pool_of(session)
     }
 
+    /// **The runner chat `session` runs on, as its pane's file links read it there** (#6387):
+    /// none for a chat here, or on a runner the window can't read files on now.
+    pub(crate) fn runner_files_of(
+        &self,
+        session: u32,
+    ) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        self.sessions.runner_files_of(session)
+    }
+
+    /// Whether the window can read chat `session`'s files on its runner now (#6387).
+    pub fn reads_files_on_runner(&self, session: u32) -> bool {
+        self.sessions.reads_files_on_runner(session)
+    }
+
     /// Whether Move here brings back a clone the runner chat `session` runs on made (#3811).
     pub fn clones_come_back(&self, session: u32) -> bool {
         self.sessions.clones_come_back(session)
@@ -6022,7 +6036,12 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
-            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
+            // Never looser than the chain that dispatched it (Q308a, Q308b).
+            Some(
+                &purlis_core::enforcement::at_start(&self.project)
+                    .for_chat(chat.from.as_ref().and_then(|from| from.policy.as_deref()))
+                    .spelled(),
+            ),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -8120,6 +8139,13 @@ impl Chats {
                 confines,
                 harness: running.harness,
                 ends_seen: None,
+                chat_id: running.chat.identity.id.clone(),
+                // Never looser than the chain that dispatched it (the review of #7113).
+                policy: running
+                    .chat
+                    .from
+                    .as_ref()
+                    .and_then(|from| from.policy.clone()),
             },
             unconfined,
         ))

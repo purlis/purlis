@@ -216,6 +216,7 @@ fn task_of(chat: u32) -> HandedFrom {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     }
 }
 

@@ -7,6 +7,8 @@ import {
   outsideFileOf,
   outsideFileTitle,
   outsideFileView,
+  runnerFileTitle,
+  runnerFileView,
   PLANE_ROOT,
   isPlaneRoot,
   pieceDiffOf,
@@ -111,5 +113,39 @@ describe("a file outside the project, as a view (#6216)", () => {
     expect(
       outsideFileOf({ from: null, view: "outside-file", key: "x//etc/hosts" }),
     ).toBeUndefined();
+  });
+});
+
+describe("a file on a runner chat's runner, as a view (#6387)", () => {
+  it("is keyed by its chat, its runner and its path there, is a file tab, and is no piece's", () => {
+    const view = runnerFileView(7, "docker/runner-1", "/home/purlis/projects/p/a b.rs");
+    expect(outsideFileOf(view)).toEqual({
+      session: 7,
+      runner: "docker/runner-1",
+      path: "/home/purlis/projects/p/a b.rs",
+    });
+    expect(outsideFileOf(runnerFileView(null, "r", "/etc/hosts"))).toEqual({
+      session: null,
+      runner: "r",
+      path: "/etc/hosts",
+    });
+    expect(isFileView(view)).toBe(true);
+    expect(pieceOf(view)).toBeUndefined();
+    // Not the same tab as the same path on this machine, or on another runner.
+    expect(view.key).not.toBe(outsideFileView(7, "/home/purlis/projects/p/a b.rs").key);
+    expect(view.key).not.toBe(
+      runnerFileView(7, "docker/runner-2", "/home/purlis/projects/p/a b.rs").key,
+    );
+  });
+
+  it("is titled by its name and says it is in the runner, read-only", () => {
+    expect(runnerFileTitle("docker/runner-1", "/w/src/main.rs")).toBe(
+      "main.rs · In runner docker/runner-1, read-only",
+    );
+  });
+
+  it("is no such view for a key whose runner or path is missing", () => {
+    for (const key of ["7/r/etc/hosts", "7//etc/hosts", "x/r//etc/hosts", "7/r"])
+      expect(outsideFileOf({ from: null, view: "runner-file", key })).toBeUndefined();
   });
 });
