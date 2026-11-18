@@ -8314,8 +8314,8 @@ fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_n
         purlis_core::secrets::handedto::masked_for(
             &root,
             session,
-            "id the-aws-id-for-this-test",
-            &|_| None
+            &chats.id_of(session).expect("an id"),
+            "id the-aws-id-for-this-test"
         )
         .as_deref(),
         Some("id ‹secret: id›"),

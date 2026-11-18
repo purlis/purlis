@@ -235,6 +235,7 @@ pub(crate) fn run_brokered(
         root: held.root().to_path_buf(),
         env: Env::from_process(),
         chat: ask.chat,
+        id: held.chats().id_of(ask.chat),
         persona: open.persona,
         folder: open.cwd,
         // Recorded as the chat started, so the run is held to what the chat itself is held to
@@ -400,6 +401,7 @@ pub(crate) fn keys_for_chat(
         root: held.root().to_path_buf(),
         env: Env::from_process(),
         chat,
+        id: held.chats().id_of(chat),
         persona: open.persona,
         folder: open.cwd,
         confines: held.chats().confines_now(chat),

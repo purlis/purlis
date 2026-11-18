@@ -28,6 +28,7 @@ fn asker(root: &std::path::Path, persona: Option<&str>) -> brokered::Asker {
         root: root.to_path_buf(),
         env: Env::of(&[]),
         chat: 3,
+        id: Some("01K6ASKINGCHAT00000000000A".to_owned()),
         persona: persona.map(str::to_owned),
         folder: None,
         confines: Some(sandbox::Confines::default()),
