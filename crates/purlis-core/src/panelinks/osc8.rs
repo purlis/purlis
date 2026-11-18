@@ -19,8 +19,10 @@
 //!   (#6367, ADR 0126): after a `cd`, a relative path as a marked link's words, which leads to the
 //!   target only from the new folder, asks first. That is the safe side.
 //! - **An issue's words name a target** (`owner/repo#6223`): over any page but that issue's or
-//!   pull request's, the link asks, and the same words with any letter outside ASCII ask over
-//!   any page, as a look-alike domain does. A bare `#6223` names none.
+//!   pull request's (over https, a trailing `.git` on the repo read as the repo), the link asks.
+//!   The words are read by their UTS #39 skeleton, as a domain is, and any character outside
+//!   ASCII in words of that shape (a look-alike slash, hyphen or digit, a letter) asks over any
+//!   page. A bare `#6223` names none.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -150,12 +152,27 @@ fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
 /// is not the page `target` is: the word itself. It names a place on a forge, as a domain does.
 /// A bare `#6223` names none.
 fn names_another_issue(word: &str, target: &Target, pane: &Pane) -> Option<String> {
-    // A repo's words with a letter outside ASCII may only look like the repo the page is, so
-    // they name a target whatever page it is.
-    if super::issue::reads_as_an_issue_beyond_ascii(word) {
+    // The words as they look, the same way a domain's are: a look-alike slash, hyphen or digit is
+    // the character it looks like, so words that read as `owner/repo#N` only so are caught.
+    // A digit of another script is a digit (not the letter UTS #39 says `١` resembles); only that
+    // it is one matters, as any such word asks.
+    let digits: String = word
+        .chars()
+        .map(|c| {
+            if !c.is_ascii() && c.is_numeric() {
+                '1'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let looked = seen(&digits);
+    let (repo, number) = super::issue::issue_words(&looked)?;
+    // A character outside ASCII anywhere in them may only look like the repo the page is: they
+    // name a target whatever page it is.
+    if !word.is_ascii() {
         return Some(word.to_owned());
     }
-    let (repo, number) = super::issue::names_an_issue(word)?;
     match target {
         Target::Url(url)
             if super::issue::is_page_of(url, repo, number, pane.project.as_deref()) =>

@@ -606,3 +606,116 @@ fn a_file_that_shares_a_repo_s_name_wins_only_where_it_exists() {
         Resolved::Link(Target::File(_))
     ));
 }
+
+/// The origin of `#9` where the config at `<app>/.git` is the one `write` leaves.
+#[cfg(unix)]
+fn read_with_config(here: &Fixture, write: impl FnOnce(&Path)) -> Resolved {
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    write(&git);
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    links.resolve(&issue("#9"), &here.pane_in(&here.app()))
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_link_out_of_the_project_reads_nothing() {
+    let here = fixture();
+    let outside = here.outside.join("config");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("a config");
+    let read = read_with_config(&here, |git| {
+        std::fs::remove_file(git.join("config")).expect("removed");
+        std::os::unix::fs::symlink(&outside, git.join("config")).expect("a link");
+    });
+    assert_eq!(read, Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_link_to_a_file_in_the_project_is_read() {
+    let here = fixture();
+    let real = here.project.join("real-config");
+    let read = read_with_config(&here, |git| {
+        std::fs::rename(git.join("config"), &real).expect("moved");
+        std::os::unix::fs::symlink(&real, git.join("config")).expect("a link");
+    });
+    assert_eq!(read, page("https://github.com/purlis/purlis/issues/9"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_whose_config_is_a_link_out_of_the_project_reads_nothing() {
+    let here = fixture();
+    let common = here.app().join(".git");
+    git_folder(&common, "git@github.com:purlis/purlis.git");
+    let outside = here.outside.join("config");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("a config");
+    std::fs::remove_file(common.join("config")).expect("removed");
+    std::os::unix::fs::symlink(&outside, common.join("config")).expect("a link");
+    let named = common.join("worktrees/feature");
+    std::fs::create_dir_all(&named).expect("a folder");
+    std::fs::write(named.join("HEAD"), "ref: refs/heads/feature\n").expect("HEAD");
+    std::fs::write(named.join("commondir"), "../..\n").expect("commondir");
+    let branch = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    std::fs::write(
+        branch.join(".git"),
+        format!("gitdir: {}\n", named.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&branch)),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn an_include_in_the_config_is_never_read() {
+    // `include.path` names a file outside the project: its remote is not the folder's.
+    let here = fixture();
+    let outside = here.outside.join("extra");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("an include");
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    std::fs::write(
+        git.join("config"),
+        format!(
+            "[remote \"origin\"]\n\turl = git@github.com:purlis/purlis.git\n[include]\n\tpath = {}\n",
+            outside.display()
+        ),
+    )
+    .expect("config");
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    // Read with includes, the outside file would be the last word and `origin` someone else's.
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+
+    // A remote only an include names is none.
+    std::fs::write(
+        git.join("config"),
+        format!("[include]\n\tpath = {}\n", outside.display()),
+    )
+    .expect("config");
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}

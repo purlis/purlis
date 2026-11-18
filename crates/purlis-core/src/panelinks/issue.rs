@@ -20,10 +20,11 @@
 //!   otherwise (`vercel/next.js#123`), which asks unless the repo is a remote
 //!   ([`super::Resolver`] decides, on the disk).
 //! - **Only folders in the chat's project are read**: a folder the chat moved to outside it
-//!   (#6367) has no remote purlis reads, so its numbers are no link. The remotes are read by
-//!   gitoxide from the repository's own config, isolated from the system's and the person's, and
-//!   no git runs; a `.git` file, or its git folder's `commondir`, naming a folder outside the
-//!   project is never followed ([`git_dir_of`]).
+//!   (#6367) has no remote purlis reads, so its numbers are no link. The remotes are read from the
+//!   repository's `config` files as bytes, parsed by gitoxide's config reader with includes off:
+//!   no repository is opened, no git runs, and a `config` (or a `commondir`'s) that is not a
+//!   regular file in the project once resolved reads nothing. A `.git` file, or its git folder's
+//!   `commondir`, naming a folder outside the project is never followed ([`git_dir_of`]).
 
 use std::path::{Path, PathBuf};
 
@@ -170,33 +171,30 @@ impl IssueRef {
     }
 }
 
-/// **The repo and number `word` names**, when it is `owner/repo#N` ([`said`] with a repo): what
-/// a marked link's words say when they read as an issue ([`super::osc8::misleading`]).
-pub(super) fn names_an_issue(word: &str) -> Option<(&str, u64)> {
-    let said = said(word)?;
-    Some((said.repo?, said.number))
-}
-
-/// Whether `word` has the shape of `owner/repo#N` but for a letter outside ASCII in its repo's
-/// words (each part of letters and digits of any script, `.`, `_` and `-`): such words may only
-/// look like a repo a forge names, so a marked link's words that read so name a target.
-pub(super) fn reads_as_an_issue_beyond_ascii(word: &str) -> bool {
-    let Some((repo, number)) = word.rsplit_once('#') else {
-        return false;
-    };
+/// **The repo and number `looked` says**, when it reads as `owner/repo#N` ([`super::osc8`] hands
+/// it a word as it looks: each character outside ASCII as its UTS #39 skeleton). A part of the
+/// repo is letters and digits of any script, `.`, `_` and `-`; a trailing `.git` is taken off the
+/// repo; the number is one to [`MOST_DIGITS`] ASCII digits with no leading zero.
+pub(super) fn issue_words(looked: &str) -> Option<(&str, u64)> {
+    let (repo, number) = looked.rsplit_once('#')?;
+    if number.is_empty()
+        || number.len() > MOST_DIGITS
+        || number.starts_with('0')
+        || !number.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let repo = repo.strip_suffix(".git").unwrap_or(repo);
     let parts: Vec<&str> = repo.split('/').collect();
-    !repo.is_ascii()
-        && !number.is_empty()
-        && number.len() <= MOST_DIGITS
-        && !number.starts_with('0')
-        && number.bytes().all(|b| b.is_ascii_digit())
+    let shaped = repo.len() <= MOST_REPO
         && parts.len() >= 2
         && parts.iter().all(|part| {
             part.chars().next().is_some_and(char::is_alphanumeric)
                 && part
                     .chars()
                     .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        })
+        });
+    shaped.then(|| number.parse().ok().map(|number| (repo, number)))?
 }
 
 /// `url`'s host, with its port where it has one, as a forge's host is kept.
@@ -208,9 +206,12 @@ fn host_of(url: &url::Url) -> Option<String> {
     })
 }
 
-/// Whether `url` is the page of issue or pull request `number` of `repo`, on a forge the project
-/// knows, as GitHub's `/issues/N` and `/pull/N` and GitLab's `/-/issues/N` are.
+/// Whether `url` is the page, over https, of issue or pull request `number` of `repo`, on a forge
+/// the project knows, as GitHub's `/issues/N` and `/pull/N` and GitLab's `/-/issues/N` are.
 pub(super) fn is_page_of(url: &url::Url, repo: &str, number: u64, project: Option<&Path>) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
     let known = project.map_or_else(Default::default, |project| {
         crate::forge::known(&std::fs::canonicalize(project).unwrap_or_else(|_| project.to_owned()))
     });
@@ -263,37 +264,78 @@ impl LinkKind for IssueRef {
     }
 }
 
-/// **The remotes of the repository `folder` is in**, read by gitoxide from its config alone
-/// (isolated: not the system's or the person's), as `(name, fetch url)`. None where no repository
-/// holds it in `project`, or its config cannot be read.
+/// **The remotes of the repository `folder` is in**, as `(name, fetch url)`, read from its config
+/// files alone: no git runs and gitoxide opens no repository. The git folder is resolved by
+/// [`git_dir_of`]; its `config` and its `commondir`'s are each resolved as the system resolves
+/// them, must be regular files in `project`, and are read here as bytes and parsed with includes
+/// off, so a config that links out, or includes a file, reads nothing from outside. None where no
+/// repository holds the folder in `project`.
 fn read_remotes(folder: &Path, project: &Path) -> Vec<(String, String)> {
     let Some(git) = git_dir_of(folder, project) else {
         return Vec::new();
     };
-    // The path is a git folder as it stands (`open_path_as_is`): gitoxide looks for no `.git`
-    // inside it, which a link or a `gitdir:` file there could point anywhere.
-    let Ok(repo) = gix::open_opts(&git, gix::open::Options::isolated().open_path_as_is(true))
-    else {
+    let mut remotes: Vec<(String, String)> = Vec::new();
+    for dir in config_dirs(&git) {
+        for (name, url) in remotes_in(&dir.join("config"), project) {
+            match remotes.iter_mut().find(|(known, _)| *known == name) {
+                Some(one) => one.1 = url,
+                None => remotes.push((name, url)),
+            }
+        }
+    }
+    remotes
+}
+
+/// The folders whose `config` holds the repository's remotes: its `commondir` (where a linked
+/// worktree's git folder names one), then the git folder itself.
+fn config_dirs(git: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(said) = std::fs::read_to_string(git.join("commondir")) {
+        dirs.push(git.join(said.trim()));
+    }
+    dirs.push(git.to_path_buf());
+    dirs
+}
+
+/// The `(remote name, fetch url)` pairs in `config`, a regular file in `project` once resolved.
+fn remotes_in(config: &Path, project: &Path) -> Vec<(String, String)> {
+    let Some(real) = within(config, project) else {
         return Vec::new();
     };
-    repo.remote_names()
-        .into_iter()
-        .filter_map(|name| {
-            let remote = repo.find_remote(&**name).ok()?;
-            let url = remote.url(gix::remote::Direction::Fetch)?;
-            Some((name.to_string(), url.to_bstring().to_string()))
-        })
-        .collect()
+    if !std::fs::metadata(&real).is_ok_and(|meta| meta.is_file()) {
+        return Vec::new();
+    }
+    let Ok(bytes) = std::fs::read(&real) else {
+        return Vec::new();
+    };
+    let meta = gix::config::file::Metadata::from(gix::config::Source::Local);
+    let Ok(file) = gix::config::File::from_bytes_no_includes(
+        &bytes,
+        meta,
+        gix::config::file::init::Options::default(),
+    ) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, String)> = Vec::new();
+    for section in file.sections_by_name("remote").into_iter().flatten() {
+        let Some(name) = section.header().subsection_name() else {
+            continue;
+        };
+        let Some(url) = section.values("url").into_iter().next() else {
+            continue;
+        };
+        found.push((name.to_string(), url.to_string()));
+    }
+    found
 }
 
 /// **The git folder of the repository `folder` (resolved) is in**, found as git finds it, but
 /// never outside `project` (resolved): the nearest folder from `folder` up to `project` holding a
 /// `.git`, whose git folder, read from a `.git` file's `gitdir:` where it is one, and that git
 /// folder's `commondir`, are both in `project`. Each is resolved as the system resolves it, links
-/// before `..`, and the resolved path is the one returned and read, so what was checked is what
-/// is opened, as it stands: it must hold a `HEAD`, and gitoxide looks for no `.git` in it. A
-/// `.git` file anything wrote can name any folder, a guarded one too, and nothing outside the
-/// project is opened. `None` otherwise.
+/// before `..`, and the resolved path is the one returned. It must hold a `HEAD`. A `.git` file
+/// anything wrote can name any folder, a guarded one too, and nothing outside the project is
+/// read. `None` otherwise.
 fn git_dir_of(folder: &Path, project: &Path) -> Option<PathBuf> {
     let work = folder
         .ancestors()
@@ -307,7 +349,7 @@ fn git_dir_of(folder: &Path, project: &Path) -> Option<PathBuf> {
         let named = said.lines().next()?.strip_prefix("gitdir:")?.trim();
         within(&work.join(named), project)?
     };
-    // What is opened is a git folder itself: a folder with no `HEAD` is none.
+    // What is read is a git folder itself: a folder with no `HEAD` is none.
     if !std::fs::metadata(git.join("HEAD")).is_ok_and(|meta| meta.is_file()) {
         return None;
     }

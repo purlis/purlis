@@ -1256,3 +1256,58 @@ fn an_issue_ref_with_a_letter_outside_ascii_names_a_target_so_it_asks() {
     assert!(opens("#6223", "https://example.com/unrelated"));
     assert!(opens("café#6223x", "https://example.com/unrelated"));
 }
+
+#[test]
+fn an_issue_ref_with_a_look_alike_slash_hyphen_or_digit_asks_over_any_page() {
+    // U+2215 (division slash), U+2010 (hyphen) and U+0661 (Arabic-Indic one) each draw as the
+    // ASCII character, so the words may only look like the page they sit over.
+    for words in [
+        "purlis\u{2215}purlis#6223",
+        "purlis/purlis\u{2010}x#6223",
+        "purlis/purlis#\u{0661}223",
+        "purlis/purlis#622\u{0663}",
+    ] {
+        for target in [
+            "https://example.com/unrelated",
+            "https://github.com/purlis/purlis/issues/6223",
+            "https://github.com/purlis/purlis-x/issues/6223",
+        ] {
+            assert_eq!(
+                asks_saying(words, target),
+                format!("its text says {words}"),
+                "{words} over {target}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_issue_ref_with_a_git_suffix_is_read_without_it() {
+    // The page the words name, once `.git` is off the repo, is the link's own; any other asks.
+    assert!(opens(
+        "purlis/purlis.git#6223",
+        "https://github.com/purlis/purlis/issues/6223"
+    ));
+    assert_eq!(
+        asks_saying("purlis/purlis.git#6223", "https://example.com/unrelated"),
+        "its text says purlis/purlis.git#6223"
+    );
+    assert_eq!(
+        asks_saying(
+            "purlis/purlis.git#6223",
+            "https://github.com/someone/else/issues/6223"
+        ),
+        "its text says purlis/purlis.git#6223"
+    );
+}
+
+#[test]
+fn an_issue_s_words_over_an_http_page_ask() {
+    assert_eq!(
+        asks_saying(
+            "purlis/purlis#6223",
+            "http://github.com/purlis/purlis/issues/6223"
+        ),
+        "its text says purlis/purlis#6223"
+    );
+}
