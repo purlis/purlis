@@ -33,8 +33,8 @@ mod osc8;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
 mod chat;
-pub mod onrunner;
 mod ondesktop;
+pub mod onrunner;
 pub use chat::{ChatAt, ChatNumber, Goes};
 pub use ondesktop::{RunnerFile, RunnerFiles};
 
