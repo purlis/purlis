@@ -33,8 +33,9 @@ use std::time::{Duration, Instant};
 
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
-    Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, LocalFile,
-    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE, WebAddress,
+    Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
+    LocalFile, NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE,
+    WebAddress,
 };
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +51,8 @@ pub enum KindHint {
     Url,
     File,
     Chat,
+    // A link a program marked itself (OSC 8, #6218): its words, and the target it named.
+    Osc8,
 }
 
 impl From<KindHint> for Kind {
@@ -58,6 +61,7 @@ impl From<KindHint> for Kind {
             KindHint::Url => Kind::Url,
             KindHint::File => Kind::File,
             KindHint::Chat => Kind::Chat,
+            KindHint::Osc8 => Kind::Osc8,
         }
     }
 }
@@ -68,15 +72,21 @@ impl From<Kind> for KindHint {
             Kind::Url => KindHint::Url,
             Kind::File => KindHint::File,
             Kind::Chat => KindHint::Chat,
+            Kind::Osc8 => KindHint::Osc8,
         }
     }
 }
 
-/// **Text a pane found that may be a link**: the words as printed, and the pattern's hint.
+/// **Text a pane found that may be a link**: the words as printed, and the pattern's hint. A
+/// link a program marked (`osc8`) also carries `target`, the address the program named, as the
+/// pane was handed it: the core reads it again, and a target the pane resolved is never sent.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, specta::Type)]
 pub struct LinkCandidate {
     pub kind: KindHint,
     pub text: String,
+    #[serde(default)]
+    #[specta(optional)]
+    pub target: Option<String>,
 }
 
 impl From<LinkCandidate> for Candidate {
@@ -84,6 +94,7 @@ impl From<LinkCandidate> for Candidate {
         Candidate {
             kind: candidate.kind.into(),
             text: candidate.text,
+            target: candidate.target,
         }
     }
 }
@@ -186,6 +197,9 @@ pub struct LinkSeen {
     pub target: String,
     pub shown: String,
     pub does: LinkDoes,
+    /// The words of a link a program marked, where they name another target than it goes to.
+    #[specta(optional)]
+    pub its_text: Option<String>,
     /// What the chat a chat link names is: none for every other kind.
     pub chat: Option<ChatSeen>,
 }
@@ -358,6 +372,12 @@ pub enum LinkAsk {
         runner: String,
         home: Option<LinkHome>,
     },
+    /// A link a program marked whose words read as another address or path (the prototype's
+    /// S8, #6218): what its target is, and a web address's host, which the ask draws apart.
+    Misleading {
+        kind: KindHint,
+        host: Option<String>,
+    },
 }
 
 /// **The open command's answer.**
@@ -419,9 +439,18 @@ pub(crate) fn seen_in(
                     into: OpensIn::Window,
                 },
                 chat: Some(chat),
+                its_text: None,
             }
         }
         Hover::Link { target, opening } => LinkSeen {
+            its_text: match &*opening {
+                Opening::Ask {
+                    about: Asking::Misleading,
+                    shown,
+                    ..
+                } => Some(shown.clone()),
+                _ => None,
+            },
             kind: target.kind().into(),
             target: target.shown().to_owned(),
             shown: match &target {
@@ -438,13 +467,18 @@ pub(crate) fn seen_in(
             },
             chat: None,
         },
-        Hover::NotALink(reason) => LinkSeen {
-            kind: candidate.kind.into(),
-            target: candidate.text.clone(),
-            shown: candidate.text.clone(),
-            does: LinkDoes::Refused { reason },
-            chat: None,
-        },
+        // A marked link that is none says the target the program named, which is what it hides.
+        Hover::NotALink(reason) => {
+            let named = candidate.target.as_ref().unwrap_or(&candidate.text);
+            LinkSeen {
+                kind: candidate.kind.into(),
+                target: named.clone(),
+                shown: named.clone(),
+                does: LinkDoes::Refused { reason },
+                its_text: None,
+                chat: None,
+            }
+        }
         Hover::Quiet => return None,
     })
 }
@@ -478,19 +512,32 @@ fn file_at(file: &FileAt) -> LinkFileAt {
     }
 }
 
-/// What an ask for `target` in `pane` is about.
-fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
-    match target {
-        Target::File(file) => match &file.read_from {
-            ReadFrom::Runner { runner, home, .. } => LinkAsk::FileOnRunner {
-                runner: runner.clone(),
-                home: home.clone().map(LinkHome::from),
-            },
-            _ => LinkAsk::FileOutside {
-                home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+/// What an ask for `target` in `pane`, about `about`, is about in the window's words: a file
+/// outside a runner chat's home names its runner and that home there (#6387).
+fn ask_about(about: Asking, target: &Target, pane: &Pane) -> LinkAsk {
+    match about {
+        Asking::Link => LinkAsk::Link,
+        Asking::FileOutside => {
+            if let Target::File(file) = target
+                && let ReadFrom::Runner { runner, home, .. } = &file.read_from
+            {
+                LinkAsk::FileOnRunner {
+                    runner: runner.clone(),
+                    home: home.clone().map(LinkHome::from),
+                }
+            } else {
+                LinkAsk::FileOutside {
+                    home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+                }
+            }
+        }
+        Asking::Misleading => LinkAsk::Misleading {
+            kind: target.kind().into(),
+            host: match target {
+                Target::Url(url) => url.host_str().map(str::to_owned),
+                Target::File(_) | Target::Chat(_) => None,
             },
         },
-        Target::Url(_) | Target::Chat(_) => LinkAsk::Link,
     }
 }
 
@@ -552,8 +599,9 @@ pub(crate) fn answer_in(
             shown,
             target,
             token: Some(token),
+            about,
         } => LinkOpened::Ask {
-            about: ask_about(&target, pane),
+            about: ask_about(about, &target, pane),
             reason,
             shown,
             target: target.shown().to_owned(),
@@ -691,7 +739,7 @@ fn for_project(held: Option<&Held>, session: Option<u32>) -> (Resolver, ChatsHer
             Goes::Ended(record) => crate::chatcard::card_of(held, number, record, &open),
             Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
                 held.root(),
-                Some(number),
+                crate::chatcard::Asked::Number(number),
                 chat,
             )),
             Goes::ThisChat | Goes::Open => None,
@@ -820,7 +868,9 @@ pub async fn pane_link_open(
     let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
-    if candidate.kind == Kind::Url {
+    // A web address opens here, in the browser; a file, or a marked link purlis refuses, is
+    // answered on a thread of its own.
+    if candidate.read_by() == Some(Kind::Url) {
         let asks = app.state::<PaneLinkAsks>();
         return answer(
             &resolver(),

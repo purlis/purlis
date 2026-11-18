@@ -119,6 +119,8 @@ import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { BlockedMarker } from "./BlockedMarker";
 import { SandboxMark } from "./SandboxMark";
+import { PolicyMark } from "./PolicyMark";
+import { useHeldPolicy } from "./projectPolicy";
 import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { WrappingUp } from "./NeedsYou";
 import { NEW_CHAT } from "./tabFace";
@@ -386,6 +388,8 @@ export function PaneFrame({
   const width = usePaneWidth(frame);
   const skillsWarn = useChatSkillsWarn(session);
   const startedByStudio = useStudioChats().chats.some((one) => one.session === session);
+  // The project's policy, as its Notice last read it (Q308a): said on a live chat's head.
+  const heldPolicy = useHeldPolicy(plane);
   // **Its two lines** (#5202, `paneHead.paneLinesOf`): the head's chips, and the foot's parts,
   // or no foot for a pane whose program has no harness or gauge to say.
   const kind = paneKindOf({
@@ -403,6 +407,7 @@ export function PaneFrame({
     workItem: Boolean(workItem),
     sandbox: lastHead?.sandbox?.level != null,
     using: usingOn !== undefined,
+    policy: heldPolicy !== undefined,
     closes,
     alone,
   });
@@ -575,6 +580,9 @@ export function PaneFrame({
               {head && usingOn !== undefined && line.has("using") && (
                 <span className="pane-using">{usingOn(session)}</span>
               )}
+              {/* **The project's policy** (Q308a, instruction 45): its template and the families
+              it sets apart, said whole on its title; a narrow pane drops it first. */}
+              {line.has("policy") && <PolicyMark plane={plane} />}
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
               one-job program's keep their heads. */}
               {line.has("where") && saysWhere(head, harness) && (

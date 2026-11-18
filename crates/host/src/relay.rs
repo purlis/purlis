@@ -120,6 +120,9 @@ trait Taken: Send {
 
     /// The relay has moved to the last link it was told is up.
     fn moved(&self);
+
+    /// The window asked to link now (#7134): a pause between tries ends. One dial has none.
+    fn try_now(&self) {}
 }
 
 impl Taken for Links {
@@ -129,6 +132,10 @@ impl Taken for Links {
 
     fn moved(&self) {
         Links::moved(self);
+    }
+
+    fn try_now(&self) {
+        Links::try_now(self);
     }
 }
 
@@ -439,6 +446,8 @@ struct Relayed {
     standing: watch::Receiver<Standing>,
     /// A command found the links over: take links anew.
     again: Arc<Notify>,
+    /// The window asked to link now (`link_now`, #7134): the links being taken try at once.
+    try_now: Arc<Notify>,
     keeper: AbortHandle,
 }
 
@@ -470,14 +479,31 @@ impl Relayed {
             parked: AtomicU64::new(0),
         });
         let (tell, standing) = watch::channel(Standing::Linking);
-        let again = Arc::new(Notify::new());
-        let keeper = tokio::spawn(keep(source, Arc::clone(&client), tell, Arc::clone(&again)))
-            .abort_handle();
+        let (again, try_now) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let keeper = tokio::spawn(keep(
+            source,
+            Arc::clone(&client),
+            tell,
+            Arc::clone(&again),
+            Arc::clone(&try_now),
+        ))
+        .abort_handle();
         Relayed {
             client,
             standing,
             again,
+            try_now,
             keeper,
+        }
+    }
+
+    /// **Try now** (`link_now`, #7134): links being taken try again at once, and links that
+    /// are over are taken anew, as a command that finds them over takes them.
+    fn link_now(&self) {
+        if matches!(*self.standing.borrow(), Standing::Over(_)) {
+            self.again.notify_one();
+        } else {
+            self.try_now.notify_one();
         }
     }
 
@@ -555,13 +581,14 @@ fn not_linked(down: &Down) -> Refusal {
 
 /// Take `source`'s links for a client link, one after another, and carry what the client's
 /// link stands on over to each that comes up. When no more come, wait for a command to ask for
-/// links again. The client is told once each time no link is up, and once one is back
-/// ([`LinkTold`]); a link renewed ahead of its limit is neither.
+/// links again. The client is told once each time no link is up, again each time why changes,
+/// and once one is back ([`LinkTold`]); a link renewed ahead of its limit is neither.
 async fn keep(
     source: Source,
     client: Arc<ClientLink>,
     tell: watch::Sender<Standing>,
     again: Arc<Notify>,
+    try_now: Arc<Notify>,
 ) {
     let mut told = LinkTold::default();
     loop {
@@ -640,6 +667,7 @@ async fn keep(
                     retiring = None;
                     links.moved();
                 }
+                () = try_now.notified() => links.try_now(),
                 () = link_ended => {
                     up = None;
                     let why = "the link to it ended";
@@ -655,27 +683,29 @@ async fn keep(
 }
 
 /// What the client was last told of the link to the other host (#2496).
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 enum LinkTold {
     /// Nothing since the link was last up: it is up, as far as the client knows.
     #[default]
     Up,
-    /// That no link is up, and whether the other host is gone for good (#4149).
-    Down { gone: bool },
+    /// That no link is up, why, and whether the other host is gone for good (#4149).
+    Down { gone: bool, why: String },
 }
 
 impl LinkTold {
     /// No link is up, for `why`: the client is told, unless it was told already. A link that
     /// went down and then finds the other host gone for good is told again, gone (#4149): the
-    /// container removed while a link was up first ends that link.
+    /// container removed while a link was up first ends that link. A link that stays down for
+    /// another reason than the one told is told again, with it (#7134): what the window says
+    /// of an outage is what the last try found, not what ended the link.
     fn down(&mut self, client: &ClientLink, down: &Down) {
-        let tell = match *self {
-            LinkTold::Up => true,
-            LinkTold::Down { gone } => down.gone && !gone,
+        let (tell, was_gone) = match &*self {
+            LinkTold::Up => (true, false),
+            LinkTold::Down { gone, why } => ((down.gone && !gone) || *why != down.why, *gone),
         };
-        let was_gone = matches!(*self, LinkTold::Down { gone: true });
         *self = LinkTold::Down {
             gone: down.gone || was_gone,
+            why: down.why.clone(),
         };
         if tell {
             client.tell_now(Pushed::LinkDown {
@@ -1556,6 +1586,11 @@ impl session::Host for Relay {
         }
         if let Command::NameWindow { name } = &command {
             return self.name(name, peer);
+        }
+        // Try now (#7134): answered at once; whether it links is said as ever.
+        if command == Command::LinkNow {
+            self.relayed(peer)?.link_now();
+            return Ok(Answer::Done);
         }
         if let Command::TakeBack { .. } = command {
             return Err(Refusal {

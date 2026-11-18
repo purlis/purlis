@@ -31,7 +31,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
+use super::{Asking, Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
 use crate::files::Branch;
 
 /// **A file a path names**, as the core resolved it.
@@ -348,15 +348,17 @@ impl LinkKind for LocalFile {
             return Resolved::Quiet;
         }
         let (words, line, column) = at_line(text);
-        let named = match words.strip_prefix("file:") {
-            Some(_) => match on_this_machine(words) {
+        // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
+        let named = if addressed(words) {
+            match on_this_machine(words) {
                 Ok(path) => path,
                 Err(why) => return why,
-            },
-            None => match self.joined(words, pane) {
+            }
+        } else {
+            match self.joined(words, pane) {
                 Some(path) => path,
                 None => return Resolved::Quiet,
-            },
+            }
         };
         // A chat on a runner, or one purlis cannot place, names its own machine's files: mapped
         // through its mounts (#6221), never read as this one's.
@@ -418,6 +420,7 @@ impl LinkKind for LocalFile {
             shown: text.to_owned(),
             target,
             token: None,
+            about: Asking::FileOutside,
         }
     }
 
@@ -569,6 +572,13 @@ fn slashed(path: &Path) -> Option<String> {
         .collect();
     let parts = parts?;
     (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// Whether `words` is a `file:` address. `FILE:` is the same scheme as `file:`.
+pub(super) fn addressed(words: &str) -> bool {
+    words
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
 }
 
 #[cfg(test)]
