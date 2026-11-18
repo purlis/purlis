@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_session_protocol::session::{FileRead, MOST_FILE_READ};
 
-use super::file::{at_line, at_suffix, on_this_machine};
+use super::file::{Written, at_suffix, written};
 use super::{
     Asking, Asks, FileAt, Home, HomeIs, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs,
     Target,
@@ -73,22 +73,19 @@ impl LinkKind for RunnerFile {
     }
 
     fn resolve(&self, text: &str, pane: &Pane) -> Resolved {
-        if pane.runs != Runs::OnRunner
-            || text.is_empty()
-            || text.chars().any(|c| c.is_whitespace() || c.is_control())
-        {
+        if pane.runs != Runs::OnRunner {
             return Resolved::Quiet;
         }
-        let (words, line, column) = at_line(text);
-        let named = match words.strip_prefix("file:") {
-            Some(_) => match on_this_machine(words) {
-                Ok(path) => match path.to_str() {
-                    Some(path) => path.to_owned(),
-                    None => return Resolved::Quiet,
-                },
-                Err(why) => return why,
+        let (written, line, column) = match written(text) {
+            Ok(read) => read,
+            Err(why) => return why,
+        };
+        let named = match written {
+            Written::Address(path) => match path.into_os_string().into_string() {
+                Ok(path) => path,
+                Err(_) => return Resolved::Quiet,
             },
-            None => words.to_owned(),
+            Written::Words(words) => words.to_owned(),
         };
         if named.starts_with('~') {
             return Resolved::Quiet;
