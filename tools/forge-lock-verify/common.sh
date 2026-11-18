@@ -51,6 +51,15 @@ need_repo() {
 # it. Every other token (the person's own, or a NARROW_TOKEN) is sent with curl.
 GH_TOKEN_VIA_SHIM="@gh"
 
+# shim_parse: set STATUS and BODY from the `gh api --include` reply in $WORK/raw.
+shim_parse() {
+  STATUS=$(awk 'NR==1 && /^HTTP/ {print $2}' "$WORK/raw")
+  [[ -n "$STATUS" ]] || STATUS=000
+  # The reply's body is what follows the header block's blank line.
+  BODY=$(awk 'f {print; next} {sub(/\r$/, "")} $0 == "" {f=1}' "$WORK/raw")
+  [[ "$STATUS" != 000 || -n "$BODY" ]] || BODY=$(head -c 200 "$WORK/gherr" | tr '\n' ' ')
+}
+
 # send TOKEN METHOD API_PATH [JSON]: one call to api.github.com (API_PATH starts with /). Sets
 # STATUS and BODY, whichever transport the token selects.
 send() {
@@ -61,11 +70,7 @@ send() {
     # gh exits non-zero on a 4xx/5xx but still prints the reply with --include, so its exit is ignored.
     if [[ -n "$d" ]]; then gh "${args[@]}" "${p#/}" <<<"$d" >"$WORK/raw" 2>"$WORK/gherr" || true
     else gh "${args[@]}" "${p#/}" >"$WORK/raw" 2>"$WORK/gherr" </dev/null || true; fi
-    STATUS=$(awk 'NR==1 && /^HTTP/ {print $2}' "$WORK/raw")
-    [[ -n "$STATUS" ]] || STATUS=000
-    # The reply's body is what follows the header block's blank line.
-    BODY=$(awk 'f {print; next} {sub(/\r$/, "")} $0 == "" {f=1}' "$WORK/raw")
-    [[ "$STATUS" != 000 || -n "$BODY" ]] || BODY=$(head -c 200 "$WORK/gherr" | tr '\n' ' ')
+    shim_parse
     return 0
   fi
   local args=(-sS -o "$WORK/body" -w '%{http_code}' -X "$m"
@@ -97,11 +102,15 @@ req_unscoped() {
   send "$tok" "$m" "$p" "$d"
 }
 
-# gql TOKEN QUERY VARS_JSON: a GraphQL call; the variables name the repo.
+# gql TOKEN QUERY: a GraphQL call; the query carries its values as literals. Under the shim the
+# query goes as a `-f query=` field: purlis's `gh` refuses `--input` (file or stdin) on `graphql`.
 gql() {
-  local payload
-  payload=$(jq -n --arg q "$2" --argjson v "$3" '{query:$q,variables:$v}')
-  req_unscoped "$1" POST /graphql "$payload"
+  if [[ "$1" == "$GH_TOKEN_VIA_SHIM" ]]; then
+    gh api --include graphql -f query="$2" >"$WORK/raw" 2>"$WORK/gherr" </dev/null || true
+    shim_parse
+  else
+    req_unscoped "$1" POST /graphql "$(jq -n --arg q "$2" '{query:$q}')"
+  fi
 }
 
 # msg: the first message in BODY, one line, 160 characters.
@@ -169,15 +178,16 @@ row_info() {
   record "$2" "$3" "$(observed)" info
 }
 
-# row_gql_refused TOKEN ROW EXPECTED QUERY VARS: pass if GraphQL errored or returned null data, and no ref moved.
+# row_gql_refused TOKEN ROW EXPECTED QUERY: pass if GraphQL errored or returned null data, and no ref moved.
 row_gql_refused() {
   local tok=$1 id=$2 exp=$3 before after res=fail obs
   before=$(refs_state "$tok")
-  gql "$tok" "$4" "$5"
+  gql "$tok" "$4"
   local st=$STATUS bo=$BODY
   after=$(refs_state "$tok")
   STATUS=$st; BODY=$bo   # refs_state overwrote them
-  if [[ "$STATUS" != 200 ]] || jq -e '(.errors | length > 0) or (.data == null) or ([.data[]?] | all(. == null))' <<<"$BODY" >/dev/null 2>&1; then res=pass; fi
+  if [[ "$STATUS" == 000 ]]; then res=inconclusive
+  elif [[ "$STATUS" != 200 ]] || jq -e '(.errors | length > 0) or (.data == null) or ([.data[]?] | all(. == null))' <<<"$BODY" >/dev/null 2>&1; then res=pass; fi
   obs="HTTP $STATUS $(msg)"
   if [[ "$before" != "$after" ]]; then res=fail; obs="$obs [a ref moved]"; fi
   [[ "$res" == fail && "$obs" == "HTTP 200 " ]] && obs="HTTP 200 $(head -c 120 <<<"$BODY" | tr '\n' ' ')"
