@@ -381,7 +381,9 @@ jobs:
       # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
       - name: Run the tests
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
+        # Not the sandbox scenarios (`purlis-app`'s `scenarios::`, T1.1-06): they need the kit built
+        # apart from this build and run in `sandbox-scenarios.yml`'s jobs alone.
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/) & not (package(purlis-app) & test(/^scenarios::/))'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -1569,7 +1571,7 @@ jobs:
           cargo build --locked -p purlis-cli --bin purlis
           cargo build --locked -p fake-harness --bin fake-harness
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^(behaviour|scenarios)::/))'
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}

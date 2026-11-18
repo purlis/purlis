@@ -93,7 +93,8 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # The test build, and the scenario kit's `purlis` and `purlis-app` built apart (T1.1-06).
+    timeout-minutes: 75
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -186,6 +187,17 @@ jobs:
             target/sandbox-scenarios/
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
+      # Every run's leg report and each scenario's run time (T1.1-06), red or green: ticket 54
+      # sets its budgets from the times, and ticket 8 judges the report.
+      - name: The leg report and the scenarios' times
+        if: always() && needs.plan.outputs.linux != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-report-linux
+          path: |
+            target/sandbox-scenarios/*.jsonl
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   sandbox-scenarios-macos:
     name: sandbox-scenarios-macos (${{ matrix.os }})
@@ -219,6 +231,15 @@ jobs:
           name: sandbox-scenarios-${{ matrix.os }}
           path: |
             target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      - name: The leg report and the scenarios' times
+        if: always() && needs.plan.outputs.macos != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-scenarios-report-${{ matrix.os }}
+          path: |
+            target/sandbox-scenarios/*.jsonl
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
 

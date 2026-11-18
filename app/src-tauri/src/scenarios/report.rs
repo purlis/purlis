@@ -1,0 +1,282 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **A leg's report, in ticket 5's schema** (`tests/scenarios/schema/leg-report.schema.json`):
+//! one record per entry a leg ran or did not run, written by the scenario host as JSON lines
+//! under `target/sandbox-scenarios/`, which the workflow uploads with a red run and ticket 8
+//! judges. A cell a scaled run does not run for its timings (a hand `production_only` pair, or a
+//! `restart: host_killed`) is reported `not_run`, skipped-for-timing, never as passed.
+//!
+//! And which `[policy]` template a cell's chats start under (Q308): `strict` unless it names
+//! another.
+
+use std::path::PathBuf;
+
+use purlis_scenarios::model::{
+    Batch, Cell, EntryKind, LegRecord, Os, ReportLeg, ReportVerdict, TimingsMode,
+};
+use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
+use purlis_scenarios::timings::CoreTimings;
+
+use super::host::{DEFAULT_TEMPLATE, Template};
+
+/// The reason a record gives for a cell a run skipped for its timings.
+pub(crate) const SKIPPED_FOR_TIMING: &str = "skipped-for-timing";
+
+/// This machine's OS, as a report names it.
+pub(crate) fn this_os() -> Os {
+    if cfg!(target_os = "macos") {
+        Os::Macos
+    } else {
+        Os::Linux
+    }
+}
+
+/// **The records of `batch`'s cells a run at `timings`, started by `trigger`, skips for their
+/// timings**: one per cell and dialect, `not_run` and skipped-for-timing.
+pub(crate) fn skipped_for_timing(
+    batch: &Batch,
+    timings: TimingsMode,
+    trigger: Trigger,
+) -> Vec<LegRecord> {
+    batch
+        .cells
+        .iter()
+        .filter(|cell| {
+            schedule(cell, &CoreTimings, timings, trigger) == Scheduled::SkippedForTiming
+        })
+        .flat_map(|cell| {
+            cell.dialects.iter().map(move |dialect| LegRecord {
+                kind: if cell.escape {
+                    EntryKind::Escape
+                } else {
+                    EntryKind::Cell
+                },
+                row: cell.id.clone(),
+                test: None,
+                dialect: Some(*dialect),
+                protection: Some(batch.protection),
+                os: this_os(),
+                leg: ReportLeg::Fake,
+                timings: Some(timings),
+                verdict: ReportVerdict::NotRun,
+                reason: Some(SKIPPED_FOR_TIMING.to_owned()),
+            })
+        })
+        .collect()
+}
+
+/// This machine's OS, as a file name says it.
+pub(crate) fn os_word() -> &'static str {
+    match this_os() {
+        Os::Linux => "linux",
+        Os::Macos => "macos",
+    }
+}
+
+/// `target/sandbox-scenarios/<name>`, what a red run uploads.
+fn under_target(name: &str) -> PathBuf {
+    std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| super::host::repo().join("target"))
+        .join("sandbox-scenarios")
+        .join(name)
+}
+
+/// Where this leg's report is written: `target/sandbox-scenarios/<os>-fake.jsonl`.
+pub(crate) fn report_path() -> PathBuf {
+    under_target(&format!("{}-fake.jsonl", os_word()))
+}
+
+/// Appends each of `lines` to the file at `at`, one a line.
+fn append(at: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    if let Some(folder) = at.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(at)?;
+    for line in lines {
+        writeln!(file, "{line}")?;
+    }
+    Ok(())
+}
+
+/// **Appends `records` to this leg's report**, one JSON object a line.
+pub(crate) fn write(records: &[LegRecord]) -> std::io::Result<PathBuf> {
+    write_to(&report_path(), records)
+}
+
+/// [`write`], to the report at `at`.
+fn write_to(at: &std::path::Path, records: &[LegRecord]) -> std::io::Result<PathBuf> {
+    let lines = records
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<_>, _>>()?;
+    append(at, &lines)?;
+    Ok(at.to_path_buf())
+}
+
+/// **A scenario's run time** (T1.1-06), appended to `target/sandbox-scenarios/<os>-timings.jsonl`:
+/// the per-scenario time on each OS that ticket 54 sets its budgets from.
+pub(crate) fn time_of(record: &serde_json::Value) -> std::io::Result<()> {
+    append(
+        &under_target(&format!("{}-timings.jsonl", os_word())),
+        &[record.to_string()],
+    )
+}
+
+/// **The template `cell`'s chats start under** (Q308): the one it names, else `strict`.
+pub(crate) fn template_of(cell: &Cell) -> Template {
+    match cell.template.as_deref() {
+        Some(word) => {
+            Template::parse(word).unwrap_or_else(|| panic!("{}: {word:?} is no template", cell.id))
+        }
+        None => DEFAULT_TEMPLATE,
+    }
+}
+
+/// Every batch in `tests/scenarios/cells`.
+pub(crate) fn every_batch() -> Vec<Batch> {
+    let folder = purlis_scenarios::root().join("cells");
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&folder)
+        .expect("the cells")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "json"))
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|path| {
+            let text = std::fs::read_to_string(path).expect("a batch");
+            Batch::from_value(serde_json::from_str(&text).expect("JSON"))
+                .unwrap_or_else(|why| panic!("{}: {why}", path.display()))
+        })
+        .collect()
+}
+
+/// A batch of `cells` (JSON values), at Full, for a test of the report.
+#[cfg(test)]
+pub(crate) fn a_batch(cells: serde_json::Value) -> Batch {
+    Batch::from_value(serde_json::json!({
+        "batch": "T", "protection": "full", "persona": "steward", "hosts": {}, "cells": cells,
+    }))
+    .expect("a batch")
+}
+
+/// **Production-only cells are skipped and reported on scaled runs** (T1.1-06): a scaled run
+/// reports a cell with a hand `production_only` pair, and one that restarts with `host_killed`,
+/// as `not_run`, skipped-for-timing, for each dialect, and never as passed; a cell without either
+/// runs; a production run skips neither.
+#[test]
+fn production_only_cells_are_skipped_and_reported_on_scaled_runs() {
+    let step = serde_json::json!({"calls": [{"tool": "bash", "input": {"command": "true"}}]});
+    let batch = a_batch(serde_json::json!([
+        {"id": "M-PLAIN", "steps": [step]},
+        {"id": "M-PAIR", "production_only": ["hold", "hook_timeout"], "steps": [step]},
+        {"id": "M-KILLED", "dialects": ["codex"],
+         "steps": [{"restart": "host_killed", "calls": [{"tool": "bash", "input": {"command": "true"}}]}]},
+    ]));
+
+    let records = skipped_for_timing(&batch, TimingsMode::Scaled, Trigger::PullRequest);
+    let mut rows: Vec<(String, String)> = records
+        .iter()
+        .map(|r| {
+            (
+                r.row.clone(),
+                r.dialect.expect("a dialect").word().to_owned(),
+            )
+        })
+        .collect();
+    rows.sort();
+    assert_eq!(
+        rows,
+        [
+            ("M-KILLED".to_owned(), "codex".to_owned()),
+            ("M-PAIR".to_owned(), "claude".to_owned()),
+            ("M-PAIR".to_owned(), "codex".to_owned()),
+            ("M-PAIR".to_owned(), "opencode".to_owned()),
+        ]
+    );
+    for record in &records {
+        assert_eq!(record.verdict, ReportVerdict::NotRun, "{record:?}");
+        assert_eq!(record.reason.as_deref(), Some(SKIPPED_FOR_TIMING));
+        assert_eq!(record.timings, Some(TimingsMode::Scaled));
+    }
+    assert!(
+        skipped_for_timing(&batch, TimingsMode::Production, Trigger::Nightly).is_empty(),
+        "a production run skips neither"
+    );
+
+    // Written as a leg's report, one record a line, each read back in ticket 5's shape: to a
+    // file of this test's own, never the leg's report a run uploads.
+    let folder = tempfile::tempdir().expect("a folder");
+    let at =
+        write_to(&folder.path().join("linux-fake.jsonl"), &records).expect("the report is written");
+    assert_ne!(at, report_path());
+    let written: Vec<LegRecord> = std::fs::read_to_string(&at)
+        .expect("the report")
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    for record in &records {
+        assert!(
+            written.contains(record),
+            "{record:?} is in {}",
+            at.display()
+        );
+    }
+}
+
+/// **Every cell runs under `strict` unless it names a template** (T1.1-06, Q308): every cell in
+/// `tests/scenarios/cells` that names none starts under `strict`, never the product's default
+/// `watch`, a cell that names one starts under it, and each template's `[policy]` is written in
+/// the project's manifest, `strict`'s too, and reads back as that template. That a chat's start
+/// resolves it is `every_template_is_what_a_chat_starts_under`.
+#[test]
+fn every_cell_runs_under_strict_unless_it_names_a_template() {
+    for batch in every_batch() {
+        for cell in &batch.cells {
+            let expected = cell
+                .template
+                .as_deref()
+                .and_then(Template::parse)
+                .unwrap_or(Template::Strict);
+            assert_eq!(template_of(cell), expected, "{}", cell.id);
+        }
+    }
+    let step = serde_json::json!({"calls": [{"tool": "bash", "input": {"command": "true"}}]});
+    let batch = a_batch(serde_json::json!([
+        {"id": "M-NONE", "steps": [step]},
+        {"id": "M-WATCH", "template": "watch", "steps": [step]},
+        {"id": "M-HOLD", "template": "hold", "steps": [step]},
+        {"id": "M-OPEN", "template": "open", "steps": [step]},
+    ]));
+    assert_eq!(template_of(&batch.cells[0]), Template::Strict);
+    assert_eq!(template_of(&batch.cells[1]), Template::Watch);
+    assert_eq!(template_of(&batch.cells[2]), Template::Hold);
+    assert_eq!(template_of(&batch.cells[3]), Template::Open);
+    assert_eq!(
+        DEFAULT_TEMPLATE,
+        Template::Strict,
+        "a scenario's own default"
+    );
+    assert_ne!(
+        DEFAULT_TEMPLATE,
+        Template::default(),
+        "the product's default is not a scenario's"
+    );
+    for template in Template::ALL {
+        let written =
+            purlis_core::enforcement::Settings::from_text(Some(&super::host::policy_of(template)));
+        assert_eq!(written.template, template, "{}", template.word());
+        assert!(
+            written.template_said,
+            "{}: the template is said",
+            template.word()
+        );
+    }
+}

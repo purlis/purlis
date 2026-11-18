@@ -35,6 +35,9 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   red, and so is a mark that pins nothing.
 - Each mark's `note` cites the observation it pins from its run record. A mark scoped to
   timings the cell never runs at is refused.
+- `template` names the `[policy]` template (Q308) a cell's chats start under: `open`, `watch`,
+  `team` or `strict`. Every cell runs under `strict`, today's purlis, unless it names another
+  (T1.1-06's scenario host; `every_cell_runs_under_strict_unless_it_names_a_template`).
 - `"escape": true` marks an escape cell, which carries no `expected_fail`: a failing escape is
   a public `area:security`, `priority:p0` issue, fixed first (Q301). An escape's leg-report
   record is never `expected_fail`.
