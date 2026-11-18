@@ -198,3 +198,20 @@ fn a_lone_one_character_glob_is_no_forge_command() {
     purlis_core::unsteered!();
     assert_passes(&["echo a; ?"]);
 }
+
+/// A GitHub pull request's own endpoint sets nothing that merges it (its title, body, state,
+/// base and `maintainer_can_modify`), so a body or a key purlis does not see there is no merge.
+/// Merging is `PUT pulls/N/merge`, which stays held however its body comes.
+#[test]
+fn editing_a_pull_request_through_the_api_is_no_merge() {
+    purlis_core::unsteered!();
+    assert_passes(&[
+        "gh api -X PATCH repos/purlis/purlis/pulls/7002 --input -",
+        "gh api -X PATCH repos/o/r/pulls/12 --input body.json",
+        "gh api -X PATCH repos/o/r/pulls/12 -F \"$K=x\"",
+    ]);
+    assert_held(&[
+        "gh api -X PUT repos/o/r/pulls/12/merge --input -",
+        "gh api -X PATCH repos/o/r --input settings.json",
+    ]);
+}

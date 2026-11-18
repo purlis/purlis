@@ -499,12 +499,11 @@ fn is_merge_path(segs: &[String]) -> bool {
     }
 }
 
-/// True when a path is a pull or merge request itself, where a body could set auto-merge. Its
-/// reviews, notes and other sub-paths cannot.
-fn is_request_path(segs: &[String]) -> bool {
-    under_repository(segs).is_some_and(|rest| {
-        rest.len() == 2 && matches!(rest[0].as_str(), "pulls" | "merge_requests")
-    })
+/// True when a path is a GitLab merge request itself, where a body purlis does not see is read as
+/// one that could merge it. Its notes and other sub-paths cannot, nor can a GitHub pull
+/// request's own path (#7131).
+fn is_merge_request_path(segs: &[String]) -> bool {
+    under_repository(segs).is_some_and(|rest| rest.len() == 2 && rest[0] == "merge_requests")
 }
 
 /// True when a path is a repository or project itself, whose settings include auto-merge.
@@ -568,7 +567,10 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         {
             return Some(why.to_owned());
         }
-        let settable = is_request_path(&segs) || is_repository(&segs);
+        // Where a field the call does not show could set a merge: a repository's settings, and a
+        // GitLab merge request's own path. GitHub's `pulls/N` sets its title, body, state, base
+        // and `maintainer_can_modify`, none of which merges; merging is `pulls/N/merge`.
+        let settable = is_merge_request_path(&segs) || is_repository(&segs);
         for field in &call.fields {
             // A key the shell fills in could be an auto-merge setting where one can be set.
             if opaque(&field.key) && settable {
