@@ -482,7 +482,9 @@ export type Does =
   /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
    *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
   | { verb: "reopenTask"; id: string }
-  | { verb: "reopenClosedChat"; number: number }
+  /** **Reopen** on a closed chat's card drawn from its chat's record (#6485): that chat, by its
+   *  ULID `chat`, never its number, which another closed chat's record may answer to (#7123). */
+  | { verb: "reopenClosedChat"; chat: string }
   /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
@@ -1242,8 +1244,8 @@ export type Doing = {
   focusChat: (session: number) => void;
   /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
   reopenTask: (id: string) => Promise<Ran>;
-  /** *Reopen* on a closed chat's card drawn from its chat's record (#6485), by its number. */
-  reopenClosedChat: (number: number) => Promise<Ran>;
+  /** *Reopen* on a closed chat's card drawn from its chat's record (#6485), by its ULID (#7123). */
+  reopenClosedChat: (chat: string) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
@@ -3858,7 +3860,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "reopenTask":
       return doing.reopenTask(does.id);
     case "reopenClosedChat":
-      return doing.reopenClosedChat(does.number);
+      return doing.reopenClosedChat(does.chat);
     case "paneBack":
       doing.paneBack();
       return DID;
@@ -6756,9 +6758,6 @@ export function reopenOffer(card: ChatCard): Offer {
   const why = cannotReopen(card);
   if (why !== undefined) return cannot(`chat.reopen:${card.chat}`, title, why);
   if (card.task === null)
-    return can(`chat.reopen:${card.chat}`, title, {
-      verb: "reopenClosedChat",
-      number: card.number,
-    });
+    return can(`chat.reopen:${card.chat}`, title, { verb: "reopenClosedChat", chat: card.chat });
   return can(`chat.reopen:${card.task.id}`, title, { verb: "reopenTask", id: card.task.id });
 }

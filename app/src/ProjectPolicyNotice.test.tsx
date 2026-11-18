@@ -21,13 +21,20 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-const QUIET: PolicyState = { waiting: [], refused: [], unsealed: false, digest: "d1" };
-
-const LOOSENED: PolicyState = {
-  waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
+const QUIET: PolicyState = {
+  waiting: [],
   refused: [],
   unsealed: false,
   digest: "d1",
+  template: "watch",
+  template_default: true,
+  overrides: [],
+  locked: [],
+};
+
+const LOOSENED: PolicyState = {
+  ...QUIET,
+  waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
 };
 
 function core(state: PolicyState, after: PolicyState = QUIET) {
