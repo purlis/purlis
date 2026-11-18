@@ -586,3 +586,108 @@ fn a_later_chat_dealt_a_crashed_chat_s_number_names_its_own_and_its_screen_is_ma
     let written = std::fs::read_to_string(file(&root, 59)).expect("named");
     assert_eq!(written.lines().count(), 1, "{written}");
 }
+
+/// The plane key of the project at `root`, as a launch finds it.
+fn plane_of(root: &Path) -> super::super::Ctx {
+    super::super::Ctx::new(root, super::super::Env::from_process())
+}
+
+#[test]
+fn a_line_of_the_earlier_shape_beside_a_new_hand_out_leaves_the_screen_unmaskable() {
+    // A line as #6847 wrote it: the entry and one seal of its value, no chat and no prints. A
+    // live chat reattached after a crash is handed another value: the old line is not one it
+    // can find its value by, nor one it can prove another chat's, so the screen is not kept.
+    let (_dir, root) = a_project();
+    let ctx = plane_of(&root);
+    let old = super::super::fingerprint::seal(
+        &ctx,
+        "a value handed to a chat",
+        &["team", "old-key", "FAKE-HANDED-VALUE-0038"],
+    )
+    .expect("a plane key");
+    named_lines_by_a_crashed_window(
+        &root,
+        60,
+        &format!("{{\"vault\":\"team\",\"key\":\"old-key\",\"seal\":\"{old}\"}}\n"),
+    );
+
+    remember(
+        &root,
+        60,
+        Some(&id(60)),
+        &Entry::new("team", "new-key"),
+        "FAKE-HANDED-VALUE-0039",
+    )
+    .expect("named");
+
+    assert_eq!(
+        masked_for(&root, 60, &id(60), "x FAKE-HANDED-VALUE-0038"),
+        None
+    );
+    let written = std::fs::read_to_string(file(&root, 60)).expect("named");
+    assert!(written.contains("\"old-key\""), "kept: {written}");
+}
+
+#[test]
+fn a_line_sealed_under_a_key_made_again_beside_a_new_hand_out_leaves_the_screen_unmaskable() {
+    let (_dir, root) = a_project();
+    named_by_a_crashed_window(
+        &root,
+        61,
+        Entry::new("team", "old-key"),
+        "FAKE-HANDED-VALUE-0040",
+    );
+    std::fs::remove_file(super::super::fingerprint::key_path(&plane_of(&root)))
+        .expect("the plane key gone");
+
+    remember(
+        &root,
+        61,
+        Some(&id(61)),
+        &Entry::new("team", "new-key"),
+        "FAKE-HANDED-VALUE-0041",
+    )
+    .expect("named under a new key");
+
+    assert_eq!(
+        masked_for(&root, 61, &id(61), "x FAKE-HANDED-VALUE-0040"),
+        None
+    );
+    let written = std::fs::read_to_string(file(&root, 61)).expect("named");
+    assert!(written.contains("\"old-key\""), "kept: {written}");
+}
+
+#[test]
+fn two_forms_of_one_value_handed_as_one_entry_are_printed_by_bases_of_their_own() {
+    // One entry handed as read and escaped for a dotenv file: two lines whose values are
+    // related, so under one base their prints would give it away.
+    let (_dir, root) = a_project();
+    let value = "FAKE-CERT-0042\nFAKE-CERT-0043";
+    let entry = Entry::new("team", "cert");
+    let as_read = Named::of(&root, &id(62), entry.clone(), value).expect("sealed");
+    let escaped = Named::of(
+        &root,
+        &id(62),
+        entry.in_form(Form::DotenvEscaped),
+        &super::super::dotenv::escaped(value),
+    )
+    .expect("sealed");
+
+    let ctx = plane_of(&root);
+    let as_read = as_read.sought(&ctx, &id(62)).expect("sealed by purlis");
+    let escaped = escaped.sought(&ctx, &id(62)).expect("sealed by purlis");
+    assert_ne!(as_read[0].base.base, escaped[0].base.base);
+}
+
+#[test]
+fn one_value_handed_twice_as_one_entry_is_printed_by_bases_of_their_own() {
+    let (_dir, root) = a_project();
+    let entry = Entry::new("team", "k");
+    let first = Named::of(&root, &id(63), entry.clone(), "FAKE-HANDED-VALUE-0044").expect("sealed");
+    let again = Named::of(&root, &id(63), entry, "FAKE-HANDED-VALUE-0044").expect("sealed");
+
+    let ctx = plane_of(&root);
+    let first = first.sought(&ctx, &id(63)).expect("sealed by purlis");
+    let again = again.sought(&ctx, &id(63)).expect("sealed by purlis");
+    assert_ne!(first[0].base.base, again[0].base.base);
+}
