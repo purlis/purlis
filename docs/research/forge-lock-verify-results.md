@@ -20,3 +20,11 @@ Account plan, date and API version header of the run: _to fill by the person aft
 | P5-ctl | allowed 201 (control: create refs/heads/release/ctl) | HTTP 422 Reference update failed  | fail |
 
 Note on P5-ctl: the 422 is not the lock. A branch named `release` exists, and git cannot hold `release` and `release/ctl` together (a directory/file ref conflict), so no actor can create `refs/heads/release/*` while `release` exists. The same holds for P5 and P6 (`release/new`, `release/x`) in phase B: their refusals would prove nothing. The kit's P5 and P6 need a different protected namespace (or the control a different ref) before B runs.
+
+## 2026-11-18T16:33Z · chat.sh · A2 · as chat · purlis/purlis-forge-lock-verify-1
+
+| row | expected | observed | result |
+|---|---|---|---|
+| P5-ctl | allowed 201 (control: create refs/heads/rel/ctl) | HTTP 422 Reference update failed  | fail |
+
+Note on P5-ctl (A2): the 422 is not the directory/file clash. No `rel` branch exists in the repo (branches: main, nightly, release, vf-*), and main's sha reads fine, so the `POST /git/refs` body was valid. With no ruleset, a 422 "Reference update failed" on ref creation points at the installation token (no permission to create refs) rather than a lock. Not resolved here; B's P5 and P6 would prove nothing until the control passes.
