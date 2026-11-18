@@ -498,7 +498,7 @@ function fits(frame: HTMLElement): boolean {
 const POLICY_BELOW = HEAD_DROPS.find((drop) => drop.part === "policy")?.below ?? 0;
 
 /** The widths measured: 2 px apart, from 20 px above the policy's width to past the most it may
- *  spare under it, few enough that the picture stays inside a baseline's 4096 px. */
+ *  spare under it. */
 const POLICY_MEASURED = Array.from({ length: 40 }, (_, n) => POLICY_BELOW + 20 - n * 2);
 
 /**
@@ -507,10 +507,12 @@ const POLICY_MEASURED = Array.from({ length: 40 }, (_, n) => POLICY_BELOW + 20 -
  * +12`), drawn at each width; the narrowest it fits at, in a tab beside others, is what
  * `HEAD_DROPS` drops the policy under, with at most 48 px to spare in any cell of the matrix: the
  * compact density's head is some 30 px narrower than the comfortable one's, which the width is
- * measured on.
+ * measured on. Not pictured: a measure, taller than the frame paints, and `HeadAtEveryWidth`
+ * pictures the policy at the width it goes under and the next.
  */
 export const PolicyGoesWhereItNoLongerFits: Story = {
   args: { width: 900 },
+  parameters: { screenshot: false },
   render: () => (
     <Lent>
       <div style={{ display: "grid", gap: "var(--space-2)" }}>
