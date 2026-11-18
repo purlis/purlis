@@ -264,6 +264,34 @@ pub struct Block {
     pub target: Option<Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
+    /// What the project policy decided, where it decided this block (Q313.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Decided>,
+}
+
+/// **What the project policy decided, as an event carries it** (M75 slice 04, Q313.3): the
+/// deciding rules' `@id`s, the first one's level, the action's family, Cedar's outcome and the
+/// outcome after the mode. Ids and closed words alone: never a command, a path or a URL.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Decided {
+    pub rules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    pub family: String,
+    pub outcome: crate::policy::decide::Outcome,
+    pub after_mode: crate::policy::decide::Outcome,
+}
+
+impl From<&crate::policy::decide::Decision> for Decided {
+    fn from(decision: &crate::policy::decide::Decision) -> Self {
+        Decided {
+            rules: decision.ids().into_iter().map(str::to_owned).collect(),
+            level: decision.deciding.first().map(|rule| rule.level.clone()),
+            family: decision.family.clone(),
+            outcome: decision.outcome,
+            after_mode: decision.after_mode,
+        }
+    }
 }
 
 /// **A hold**: the tool purlis refused to the chat and raised as an ask, what it was aimed at,
@@ -275,6 +303,9 @@ pub struct Hold {
     pub target: Option<Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
+    /// What the project policy decided, where it held this (Q313.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Decided>,
 }
 
 /// Which loop rule paused a chat.
@@ -395,9 +426,12 @@ impl AskAnswered {
 
 /// **An ask raised** (R-229): its group, a closed word alone. What it asks is the chat's and
 /// the window's words, and is never written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AskRaised {
     pub ask: AskGroup,
+    /// What the project policy decided, where it raised this ask (Q313.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Decided>,
 }
 
 /// **One stop, as the log writes it.**
@@ -446,6 +480,7 @@ impl Recorder {
                 tool: tool(&hold.tool),
                 target: hold.target.as_ref().map(Target::shortened),
                 args: hold.args.as_deref().map(|hash| self.key.digest(hash)),
+                policy: hold.policy.clone(),
             }),
             Stop::LoopPause(pause) => serde_json::to_value(pause),
             Stop::AskAnswered(answered) => serde_json::to_value(answered),
@@ -508,6 +543,9 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
             .is_some_and(crate::toolhooks::hands_the_write_over)
         // A held merge is a hold, which the app writes once it raises the ask (R-114).
         || call.rule.as_deref() == Some(crate::mergehold::REASON)
+        // A merge the project policy denied: the session host wrote its block as it decided,
+        // with the deciding rules (M75 slice 04), and a line the chat can reach adds none.
+        || call.rule.as_deref() == Some(crate::mergehold::REASON_DENIED)
     {
         return None;
     }
@@ -521,6 +559,7 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
             .and_then(crate::toolgate::Arm::of_id)
             .and_then(|arm| Target::guard_arm(arm.id()).ok()),
         args: call.args.clone(),
+        policy: None,
     })
 }
 
@@ -538,6 +577,7 @@ fn harness_check_block(call: &crate::hookwire::ToolCall, verified: bool) -> Opti
         qualifier: (!verified).then_some(Qualifier::Unverified),
         target: None,
         args: call.args.clone(),
+        policy: None,
     })
 }
 

@@ -151,18 +151,18 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = judged.refused {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
-    // The merge hold (R-114, R-115): in a chat the app started, a merge is refused to the chat
-    // in any mode, and its request is handed to the app, which asks the person. After the
-    // refusals, and ahead of A4, which leaves a merge the hold stands for to it, attended or not
-    // (R-145). `guards.merge` (Q308): not asked where off, and logged where it logs.
-    let merges = policy.mode(Family::GuardsMerge);
-    if merges != Mode::Off
-        && let Some(verdict) = held_merge(&command, &cwd, merges == Mode::Enforce)
-    {
-        if merges == Mode::Enforce {
+    // The merge hold (R-114, R-115), judged by the project policy (M75 slice 04): in a chat the
+    // app started, the session host decides a merge, and an ask hands its request to the app,
+    // which asks the person. After the refusals, and ahead of A4, which leaves a merge the hold
+    // stands for to it, attended or not (R-145).
+    match judged_merge(&command, &cwd) {
+        Some(MergeJudged::Refused(verdict)) => {
             return crate::hooks::Answered::of(Answer::Deny(verdict));
         }
-        log_verdict(&root, chat.as_deref(), Family::GuardsMerge, &verdict);
+        Some(MergeJudged::Logged(verdict)) => {
+            log_verdict(&root, chat.as_deref(), Family::GuardsMerge, &verdict)
+        }
+        None => {}
     }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
     // git itself (#3931). After every refusal, because it is the one that asks the app.
@@ -237,28 +237,132 @@ pub(crate) fn attendance_of_this_chat(
     }
 }
 
+/// How long the guard waits for the session host to decide a merge: it loads the plane's
+/// committed policy and decides, inside the hook's [`BUDGET`].
+const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(1_000);
+
+/// What the policy left of a merge.
+enum MergeJudged {
+    /// Refused to the chat: held for the person, denied, or not decided.
+    Refused(toolgate::Verdict),
+    /// Let through under a mode that logs what it would have refused.
+    Logged(toolgate::Verdict),
+}
+
+/// **A merge, judged by the project policy** (M75 slice 04, spec §6): the session host decides
+/// it ([`purlis_core::hookwire::Ask::Decide`]) and the outcome after the mode is enforced: an
+/// ask holds it for the person ([`held_merge`]), a deny refuses it naming the rules, an allow
+/// lets it run, and one the mode let through is logged. `None` for a command that merges
+/// nothing, and one the policy lets run.
+///
+/// **No host is a refusal**: a chat inside a plane whose host cannot be asked, or does not
+/// answer, is refused, and never decides here (§6). Asked only of a chat the app started, as
+/// before: a process the app did not start keeps today's guards until slice 07b says which
+/// processes are outside any plane (Q327; the shipped `strict` such a process gets is
+/// [`purlis_core::policy::decide::decide_locally`]).
+fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
+    use purlis_core::hookwire::{Answer, Ask, DecideAsk, UNKNOWN_LINE};
+    use purlis_core::mergehold;
+    use purlis_core::policy::decide::Outcome;
+    let held = mergehold::held(command)?;
+    crate::session::chat_number()?;
+    let (action, kind, id) = mergehold::policy_request(&held);
+    let asked = crate::brokered::asked(
+        |chat| {
+            Ask::Decide(DecideAsk {
+                chat,
+                action: action.to_owned(),
+                kind: kind.to_owned(),
+                id,
+                tool: "Bash".to_owned(),
+            })
+        },
+        A_MERGE_IS_DECIDED_WITHIN,
+    );
+    let refused = |reason: &str, denial: String| {
+        MergeJudged::Refused(toolgate::Verdict {
+            arm: None,
+            reason: reason.to_owned(),
+            shape: None,
+            denial,
+        })
+    };
+    let decision = match asked {
+        Ok(Ok(Answer::Decided(decision))) => decision,
+        // An app of another build could not read the ask: refused in the words that say so and
+        // name what to do (#6960), never decided here.
+        Ok(Ok(Answer::No { why })) if why == UNKNOWN_LINE => {
+            let app = mergehold::AppSaid::OtherBuild;
+            return Some(refused(
+                mergehold::reason(&held, &app),
+                mergehold::refusal(&held, &app),
+            ));
+        }
+        Ok(Ok(Answer::No { why })) => {
+            return Some(refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided(&why),
+            ));
+        }
+        Ok(Ok(_)) => {
+            return Some(refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided("the app answered something else"),
+            ));
+        }
+        Ok(Err(e)) => {
+            return Some(refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided(&format!("no answer: {e}")),
+            ));
+        }
+        Err(_) => {
+            return Some(refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided("no session host answered"),
+            ));
+        }
+    };
+    match decision.after_mode {
+        Outcome::Allow if decision.would_have_blocked() => {
+            Some(MergeJudged::Logged(toolgate::Verdict {
+                arm: None,
+                reason: mergehold::REASON.to_owned(),
+                shape: None,
+                denial: mergehold::held_by(&decision),
+            }))
+        }
+        Outcome::Allow => None,
+        Outcome::Deny => Some(refused(
+            mergehold::REASON_DENIED,
+            mergehold::denied(&decision),
+        )),
+        Outcome::Ask => Some(MergeJudged::Refused(held_merge(&held, cwd, &decision))),
+    }
+}
+
 /// How long the guard waits for the app to take a held merge: the app reads the request from
 /// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
 /// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
 /// [`BUDGET`].
 const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 
-/// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
-/// run in `cwd` by a chat the app started, where it merges a request; or `None`.
+/// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `held`, run in
+/// `cwd` by a chat the app started, which the project policy's `decision` holds for the person.
+/// The refusal ends naming the rule that holds it, with its level and owner.
 ///
-/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
-/// no hook, and a harness they start themselves is theirs. **No answer lets the merge through**:
-/// where no app takes the hand-over, the chat is refused all the same. **It is a hold only where
-/// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
-/// is refused with a block's reason, which the event log records.
-fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::Verdict> {
+/// **No answer lets the merge through**: where no app takes the hand-over, the chat is refused
+/// all the same. **It is a hold only where the app confirms it holds the ask**
+/// ([`Answer::MergeHeld`], Q239); any other answer, or none, is refused with a block's reason,
+/// which the event log records.
+fn held_merge(
+    held: &purlis_core::mergehold::Held,
+    cwd: &str,
+    decision: &purlis_core::policy::decide::Decision,
+) -> toolgate::Verdict {
     use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS, UNKNOWN_LINE};
     use purlis_core::mergehold::{self, AppSaid, Held};
-    crate::session::chat_number()?;
-    let held = mergehold::held(command)?;
-    let answer = match &held {
-        // Under `guards.merge = "log"` nobody is asked (Q308): the hold is only recorded.
-        Held::Request(_) if !asks_the_app => None,
+    let answer = match held {
         Held::Request(request) => crate::brokered::asked(
             |chat| {
                 Ask::Merge(MergeAsk {
@@ -280,13 +384,17 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
     };
-    Some(toolgate::Verdict {
+    toolgate::Verdict {
         // No arm of the gate: the hold is its own rule, after the gate's.
         arm: None,
-        reason: mergehold::reason(&held, &app).to_owned(),
+        reason: mergehold::reason(held, &app).to_owned(),
         shape: None,
-        denial: mergehold::refusal(&held, &app),
-    })
+        denial: format!(
+            "{} {}",
+            mergehold::refusal(held, &app),
+            mergehold::held_by(decision)
+        ),
+    }
 }
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims

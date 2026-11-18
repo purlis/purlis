@@ -50,7 +50,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError, Weak};
 
-use purlis_core::eventlog::stops::{AskGroup, AskRaised, Hold, Stop, Target};
+use purlis_core::eventlog::stops::{AskGroup, AskRaised, Decided, Hold, Stop, Target};
+use purlis_core::policy::decide::{Decision, Outcome};
 use purlis_core::forge::backend::{Caller, ForgeBackend};
 use purlis_core::forge::pr::{Changes, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
@@ -158,6 +159,9 @@ pub(crate) trait Project {
     fn read(&self, on: &OnForge, number: u64) -> Result<mergehold::Read, String>;
     /// Writes one stop of chat `chat` into the event log.
     fn record(&self, chat: u32, stop: Stop);
+    /// What the project's policy decides of chat `chat` doing `action` to `resource` (M75 slice
+    /// 04): none for a chat this app does not have open.
+    fn decide(&self, chat: u32, action: &str, resource: (&str, &str)) -> Option<Decision>;
     /// The asks may have moved.
     fn moved(&self);
     /// The changes of a request into `base` at `head` of the repo `on` names, as the forge gives
@@ -210,6 +214,10 @@ impl Project for Held {
 
     fn moved(&self) {
         self.chats().asks_may_have_moved();
+    }
+
+    fn decide(&self, chat: u32, action: &str, resource: (&str, &str)) -> Option<Decision> {
+        crate::decisions::decision(self, chat, action, resource)
     }
 
     fn changes(&self, on: &OnForge, base: &str, head: &str) -> Result<Changes, String> {
@@ -450,6 +458,20 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         return Err(format!("chat {chat} is not one this app has open."));
     }
     project.allow(chat)?;
+    // The host decides the merge itself (M75 slice 04): it never raises an ask its own policy
+    // does not hold, whatever the hook said, and the hold's events carry what it decided.
+    let (action, kind, id) = mergehold::policy_request(&mergehold::Held::Request(ask.request.clone()));
+    let decision = project
+        .decide(chat, action, (kind, &id))
+        .ok_or_else(|| format!("chat {chat} is not one this app has open."))?;
+    if decision.after_mode != Outcome::Ask {
+        return Err(format!(
+            "the project policy does not hold this merge for the person ({} decides {}).",
+            decision.rules_said(),
+            decision.after_mode.word()
+        ));
+    }
+    let policy = Decided::from(&decision);
     let (on, repo) = found(project.root(), ask)?;
     let request = Request {
         repo: Some(repo.clone()),
@@ -493,6 +515,7 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                     tool: "Bash".to_owned(),
                     target: Target::guard_arm(mergehold::REASON).ok(),
                     args: None,
+                    policy: Some(policy.clone()),
                 }),
             );
             // R-229: the ask the hold waits on, raised in the chat's Chat log.
@@ -500,6 +523,7 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                 chat,
                 Stop::AskRaised(AskRaised {
                     ask: AskGroup::Hold,
+                    policy: Some(policy),
                 }),
             );
             tracing::info!(

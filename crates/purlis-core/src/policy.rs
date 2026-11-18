@@ -314,6 +314,33 @@ pub fn family_of(action: &str) -> Option<&'static str> {
     families_of_actions().get(action).copied()
 }
 
+/// **The fields `action`'s context record declares**, read from the embedded schema once: what
+/// a host fills before it asks (§3.2). Empty for a word the schema has no action for.
+pub fn context_fields(action: &str) -> &'static [String] {
+    static READ: OnceLock<BTreeMap<String, Vec<String>>> = OnceLock::new();
+    let read = READ.get_or_init(|| {
+        let mut fields = BTreeMap::new();
+        let Ok(json) = schema_json(SCHEMA) else {
+            return fields;
+        };
+        for (name, action) in json["actions"].as_object().into_iter().flatten() {
+            let context = &action["appliesTo"]["context"];
+            // A named common type, or a record written in place.
+            let record = match context["type"].as_str() {
+                Some("Record") | None => context,
+                Some(named) => &json["commonTypes"][named],
+            };
+            let names: Vec<String> = record["attributes"]
+                .as_object()
+                .map(|attributes| attributes.keys().cloned().collect())
+                .unwrap_or_default();
+            fields.insert(name.clone(), names);
+        }
+        fields
+    });
+    read.get(action).map(Vec::as_slice).unwrap_or(&[])
+}
+
 /// Each action's family, read from the embedded schema once.
 fn families_of_actions() -> &'static BTreeMap<String, &'static str> {
     static READ: OnceLock<BTreeMap<String, &'static str>> = OnceLock::new();

@@ -12575,7 +12575,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
         .collect();
     assert_eq!(
         blocks,
-        [Block {
+        [Block { policy: None,
             tool: "Bash".to_owned(),
             source: Source::Sandbox,
             qualifier: None,

@@ -56,6 +56,8 @@ mod clipath;
 mod clonevouch;
 mod createproject;
 mod curation;
+// The session host's decisions over the project policy (M75 slice 04).
+mod decisions;
 // Each chat's finishes, for its finish rows (R-241, R-178, T1-31).
 mod finishedturns;
 // A block's Tell the chat… (T1-33, Q267): purlis's own line, typed through T1-36's way in.

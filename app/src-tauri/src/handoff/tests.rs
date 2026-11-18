@@ -3306,6 +3306,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Attendance(_) => 25,
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
+            Ask::Decide(_) => 28,
         }
     }
     let asks = vec![
@@ -3484,10 +3485,18 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             rule: "A3".to_owned(),
             host: None,
         }),
+        // One decision of the session host's (M75 slice 04): moves nothing.
+        Ask::Decide(purlis_core::hookwire::DecideAsk {
+            chat,
+            action: "merge".to_owned(),
+            kind: "Branch".to_owned(),
+            id: "acme/web#12".to_owned(),
+            tool: "Bash".to_owned(),
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

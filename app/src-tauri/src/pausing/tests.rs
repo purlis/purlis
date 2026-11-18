@@ -219,7 +219,7 @@ fn a_time_limit_and_the_one_above_it_are_the_same_limit_and_tokens_are_another()
 /// A sandbox block of a `Bash` call whose arguments hash to `aa`, reported plainly.
 fn sandbox_block() -> purlis_core::eventlog::stops::Stop {
     use purlis_core::eventlog::stops::{Block, Source, Stop};
-    Stop::Block(Block {
+    Stop::Block(Block { policy: None,
         tool: "Bash".to_owned(),
         source: Source::Sandbox,
         qualifier: None,

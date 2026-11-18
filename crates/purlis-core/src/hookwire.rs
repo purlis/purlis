@@ -1642,6 +1642,32 @@ pub enum Ask {
     /// cannot. The rule, the family and the host alone. The app answers [`Answer::Policy`]. No
     /// ticket, for a record's reason.
     PolicyLog(PolicyLogAsk),
+    /// **One action for the session host to decide** (M75 slice 04, #7012; spec §6, §13.1): what
+    /// a hook asks before it lets an action run, since the session host alone loads, verifies and
+    /// evaluates the policy and a hook never reads it. The host answers [`Answer::Decided`] with
+    /// [`crate::policy::decide::decide`]'s decision under the policy of the project it holds the
+    /// chat in, as committed at the plane root's `HEAD`, never one the line names. **The context
+    /// is the host's**: the line names the action and its resource only, and every field a rule
+    /// reads is host-supplied or sealed (§3.2). **No answer is a refusal**: a chat inside a plane
+    /// whose host cannot be asked never runs the action, nor decides it itself (§6). No ticket,
+    /// for a record's reason: it names only the chat whose token it carries, and moves nothing.
+    Decide(DecideAsk),
+}
+
+/// **A hook's ask for one decision** ([`Ask::Decide`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecideAsk {
+    /// The chat asking: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The action, a verb of the policy's schema (`merge`).
+    pub action: String,
+    /// The resource's entity type (`Branch`).
+    pub kind: String,
+    /// The resource's id (`acme/web#12`).
+    pub id: String,    /// The harness tool the action came through (`Bash`): what a block it decides is written
+    /// under, and nothing a rule reads.
+    pub tool: String,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
@@ -2503,6 +2529,10 @@ pub enum Answer {
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
     /// as [`crate::enforcement::Resolved::spelled`] writes them.
     Policy { spelled: String },
+    /// **What the session host decided** ([`Ask::Decide`], M75 slice 04): the outcome, the
+    /// deciding rules with their level and owner, the family, the mode and the outcome after it.
+    /// Boxed: it carries the rules.
+    Decided(Box<crate::policy::decide::Decision>),
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2839,6 +2869,7 @@ impl Ask {
             Self::Attendance(asked) => asked.chat,
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
+            Self::Decide(asked) => asked.chat,
         }
     }
 }

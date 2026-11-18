@@ -13,7 +13,7 @@ fn recorder(dir: &Path) -> Recorder {
 }
 
 fn block(source: Source, qualifier: Option<Qualifier>) -> Block {
-    Block {
+    Block { policy: None,
         tool: "Bash".to_owned(),
         source,
         qualifier,
@@ -132,7 +132,7 @@ fn stop_kinds_are_written_to_the_existing_event_log_and_no_new_store_appears() {
     let before = files_in(dir.path());
     let stops = [
         Stop::Block(block(Source::Sandbox, None)),
-        Stop::Hold(Hold {
+        Stop::Hold(Hold { policy: None,
             tool: "Bash".to_owned(),
             target: Some(Target::service("github.com").unwrap()),
             args: Some(crate::eventlog::args_hash(&serde_json::json!({"pr": 1}))),
@@ -204,7 +204,7 @@ fn a_serialised_block_event_keeps_the_tool_source_target_summary_and_digest_and_
         .stop(
             plane,
             Some(5),
-            &Stop::Block(Block {
+            &Stop::Block(Block { policy: None,
                 tool: "Bash".to_owned(),
                 source: Source::Sandbox,
                 qualifier: None,
@@ -251,7 +251,7 @@ fn a_block_events_target_summary_is_clipped_short() {
         .stop(
             Path::new("/planes/one"),
             None,
-            &Stop::Block(Block {
+            &Stop::Block(Block { policy: None,
                 tool: "Write".to_owned(),
                 source: Source::Sandbox,
                 qualifier: None,
@@ -432,7 +432,7 @@ fn a_stops_tool_name_is_written_as_one_short_line() {
         .stop(
             Path::new("/planes/one"),
             None,
-            &Stop::Hold(Hold {
+            &Stop::Hold(Hold { policy: None,
                 tool,
                 target: None,
                 args: None,

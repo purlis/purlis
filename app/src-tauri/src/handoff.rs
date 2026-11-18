@@ -377,6 +377,10 @@ pub fn answer(
             },
             Err(why) => no(why),
         },
+        // One decision of the session host's (M75 slice 04): no ticket, for the record's reason.
+        // The chat is the one whose token the line carries, and what the policy reads of it is
+        // this app's record; the line names only the action and its resource.
+        Ask::Decide(asked) => crate::decisions::asked(held, &asked),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.

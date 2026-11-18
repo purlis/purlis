@@ -29,6 +29,34 @@ use purlis_core::hookwire::{
 };
 use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 
+/// git, with no global or system config, in `dir`.
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let ran = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs");
+    assert!(ran.status.success(), "git {args:?}: {ran:?}");
+}
+
+/// Commits `files` at the plane `root`, a repository from its first commit.
+fn commit(root: &std::path::Path, files: &[(&str, &str)]) {
+    if !root.join(".git").exists() {
+        git(root, &["init", "-q"]);
+    }
+    for (file, text) in files {
+        std::fs::write(root.join(file), text).expect("a file");
+    }
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "c"]);
+}
+
 const CHAT: u32 = 4;
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -59,12 +87,9 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        // Today's blocking, explicitly (Q308: the default is `watch`).
-        std::fs::write(
-            root.join("charter.toml"),
-            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
-        )
-        .expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`), committed at the plane
+        // root's HEAD, where the session host reads it (M75 slice 04).
+        commit(&root, &[("charter.toml", "schema = 1\n[policy]\ntemplate = \"strict\"\n")]);
         let socket = base.join("app").join("hooks.sock");
         let listener = Listener::bind(&base, &socket).unwrap_or_else(|e| panic!("a socket: {e}"));
         let token = listener
@@ -74,6 +99,7 @@ impl Chat {
         let holds = Arc::new(Holds::default());
         let asked = Arc::new(Mutex::new(Vec::new()));
         let (held, was_asked) = (Arc::clone(&holds), Arc::clone(&asked));
+        let plane = root.clone();
         let (tool, tools) = mpsc::channel();
         let tool = Mutex::new(tool);
         let reading = listener.hear(Hearing {
@@ -96,16 +122,20 @@ impl Chat {
             permission: Box::new(|_| None),
             answer: Box::new(move |_, ask| {
                 was_asked.lock().unwrap().push(ask.clone());
-                let Ask::Merge(merge) = ask else {
-                    return Answer::No {
-                        why: "not asked here".to_owned(),
-                    };
-                };
                 if !of_this_build {
                     return Answer::No {
                         why: hookwire::UNKNOWN_LINE.to_owned(),
                     };
                 }
+                // The session host decides from the plane's committed HEAD (M75 slice 04).
+                if let Ask::Decide(decide) = ask {
+                    return purlis_core::policy::decide::replays_host(&plane, &decide);
+                }
+                let Ask::Merge(merge) = ask else {
+                    return Answer::No {
+                        why: "not asked here".to_owned(),
+                    };
+                };
                 let found = |request: &mergehold::Request| {
                     let key = MergeKey {
                         repo: request
@@ -176,12 +206,9 @@ impl Chat {
         let home = base.join("home");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::create_dir_all(&home).expect("the home");
-        // Today's blocking, explicitly (Q308: the default is `watch`).
-        std::fs::write(
-            root.join("charter.toml"),
-            "schema = 1\n[policy]\ntemplate = \"strict\"\n",
-        )
-        .expect("the marker");
+        // Today's blocking, explicitly (Q308: the default is `watch`), committed at the plane
+        // root's HEAD, where the session host reads it (M75 slice 04).
+        commit(&root, &[("charter.toml", "schema = 1\n[policy]\ntemplate = \"strict\"\n")]);
         Self {
             _tmp: tmp,
             _reading: None,
@@ -345,7 +372,8 @@ fn a_held_merge_is_refused_where_no_app_answers() {
         .denial("gh pr merge 12", "default")
         .expect("refused with no app");
     assert!(reason.contains("Nothing was merged"), "{reason}");
-    assert!(reason.contains("The app was not heard from"), "{reason}");
+    // M75 slice 04: the session host decides a merge first, and could not be asked.
+    assert!(reason.contains("could not be asked"), "{reason}");
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert!(!reason.contains("the person is asked in Asks"), "{reason}");
     // Outside a chat the app started, an attended merge is the person's own: A4's ground.
@@ -447,4 +475,77 @@ fn every_named_way_out_leads_to_an_ask_or_a_run() {
             }
         }
     }
+}
+
+/// M75 slice 04: the session host decides a chat's merge from the plane's committed policy, and
+/// under `strict` it is today's ask, now naming the rule that holds it, its level and its owner.
+#[test]
+fn a_merge_under_strict_asks_and_names_guards_merge_hold() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial("gh pr merge 12", "default")
+        .expect("held for the person");
+    assert!(
+        reason.contains("asked in Asks to merge request 12"),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("`guards-merge-hold` (project, purlis default"),
+        "{reason}"
+    );
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON));
+    let asked = chat.asked.lock().unwrap().clone();
+    assert!(
+        matches!(&asked[0], Ask::Decide(decide) if decide.action == "merge" && decide.chat == CHAT),
+        "the host is asked to decide first: {asked:?}"
+    );
+    assert_eq!(chat.merges_asked(), 1);
+}
+
+/// M75 slice 04, spec §6: with no session host to ask, a chat's merge is refused, and the
+/// refusal says the host could not be asked; nothing decides it here.
+#[test]
+fn a_decision_with_the_session_host_unreachable_is_refused() {
+    let chat = Chat::without_an_app();
+    let reason = chat
+        .denial("gh pr merge 12", "default")
+        .expect("refused with no host");
+    assert!(reason.contains("session host could not be asked"), "{reason}");
+    assert!(!reason.contains("asked in Asks"), "{reason}");
+}
+
+/// M75 slice 04: a merge the committed policy denies is refused naming the rule, and nobody is
+/// asked; the host records the block, and the chat's own line adds none.
+#[test]
+fn a_merge_the_committed_policy_denies_is_refused_naming_the_rule_and_asks_nobody() {
+    let chat = Chat::new();
+    commit(
+        &chat.root,
+        &[(
+            "policy.cedar",
+            "// purlis-policy 1\n@id(\"guards-merge-never\")\n\
+             forbid (principal, action == Action::\"merge\", resource);\n",
+        )],
+    );
+    let reason = chat.denial("gh pr merge 12", "default").expect("denied");
+    assert!(reason.contains("`guards-merge-never` (project, this project)"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_DENIED));
+    assert_eq!(chat.merges_asked(), 0);
+}
+
+/// M75 slice 04: under `guards.merge = "log"` the policy's mode lets the merge run, and nobody is
+/// asked.
+#[test]
+fn a_merge_under_a_logged_family_runs_and_asks_nobody() {
+    let chat = Chat::new();
+    commit(
+        &chat.root,
+        &[(
+            "charter.toml",
+            "schema = 1\n[policy]\ntemplate = \"strict\"\n\"guards.merge\" = \"log\"\n",
+        )],
+    );
+    assert_eq!(chat.denial("gh pr merge 12", "default"), None);
+    assert_eq!(chat.merges_asked(), 0);
 }

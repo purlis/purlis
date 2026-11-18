@@ -13,6 +13,7 @@ use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::forge::pr::{Changes, HeadAt, Repo as OnForge};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{self, HeadSha, Request, Reread, Seen};
+use purlis_core::policy::decide::{Decision, Outcome};
 
 use super::{MergeHolds, Project, answer};
 
@@ -35,6 +36,9 @@ struct Fake {
     redrawn: Mutex<usize>,
     /// Every count of commits asked of the forge: from, to.
     counted: Mutex<Vec<(String, String)>>,
+    /// What the project's policy decides of a merge, where a case sets it: otherwise the shipped
+    /// default under `strict`, which holds it for the person.
+    decision: Mutex<Option<Decision>>,
 }
 
 /// What the forge says of request 12 at `sha`: a title, an author, passed checks and a ruleset
@@ -97,6 +101,7 @@ impl Fake {
             })),
             redrawn: Mutex::new(0),
             counted: Mutex::new(Vec::new()),
+            decision: Mutex::new(None),
         };
         fake.lists("o/r", "https://github.com/o/r");
         fake
@@ -155,6 +160,29 @@ impl Project for Fake {
     }
     fn moved(&self) {
         *self.redrawn.lock().unwrap() += 1;
+    }
+    fn decide(&self, chat: u32, action: &str, resource: (&str, &str)) -> Option<Decision> {
+        if !self.is_open(chat) {
+            return None;
+        }
+        if let Some(decision) = self.decision.lock().unwrap().clone() {
+            return Some(decision);
+        }
+        Some(purlis_core::policy::decide::decide_locally(
+            &purlis_core::policy::decide::Request {
+                chat: "4",
+                of: purlis_core::policy::levels::Chat {
+                    workspace: None,
+                    persona: None,
+                },
+                action,
+                resource,
+                context: serde_json::json!({
+                    "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
+                    "via": "hook"
+                }),
+            },
+        ))
     }
     fn changes(&self, on: &OnForge, base: &str, head: &str) -> Result<Changes, String> {
         assert_eq!(
@@ -263,7 +291,7 @@ fn a_held_merges_ask_is_written_raised_and_the_press_as_its_answer() {
     assert_eq!(
         asks,
         [
-            Stop::AskRaised(AskRaised {
+            Stop::AskRaised(AskRaised { policy: None,
                 ask: AskGroup::Hold
             }),
             by(Said::Allowed),
@@ -1006,4 +1034,61 @@ fn a_held_merges_refusals_end_with_a_period() {
     ] {
         assert!(said.ends_with('.'), "{said}");
     }
+}
+
+#[test]
+fn the_hold_and_its_ask_name_the_rule_the_policy_held_the_merge_by() {
+    // M75 slice 04 (Q313.3): the host decided the merge itself, and both events it writes carry
+    // the deciding rule, its level, the family and the outcome before and after the mode.
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    let recorded = project.recorded.lock().unwrap().clone();
+    let policies: Vec<_> = recorded
+        .iter()
+        .filter_map(|(_, stop)| match stop {
+            Stop::Hold(hold) => hold.policy.clone(),
+            Stop::AskRaised(raised) => raised.policy.clone(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(policies.len(), 2, "{recorded:?}");
+    for policy in policies {
+        assert_eq!(policy.rules, ["guards-merge-hold"]);
+        assert_eq!(policy.level.as_deref(), Some("project"));
+        assert_eq!(policy.family, "guards.merge");
+        assert_eq!(
+            (policy.outcome, policy.after_mode),
+            (Outcome::Ask, Outcome::Ask)
+        );
+    }
+}
+
+#[test]
+fn the_host_raises_no_ask_its_own_policy_does_not_hold() {
+    // Whatever the hook said, an ask is raised only where the host's own decision is an ask.
+    let project = Fake::new();
+    let mut allowed = purlis_core::policy::decide::decide_locally(
+        &purlis_core::policy::decide::Request {
+            chat: "4",
+            of: purlis_core::policy::levels::Chat {
+                workspace: None,
+                persona: None,
+            },
+            action: "merge",
+            resource: ("Branch", "o/r#12"),
+            context: serde_json::json!({
+                "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
+                "via": "hook"
+            }),
+        },
+    );
+    allowed.after_mode = Outcome::Allow;
+    *project.decision.lock().unwrap() = Some(allowed);
+    let why = refused(answer(&project, &project.ask(12)));
+    assert!(why.contains("does not hold this merge"), "{why}");
+    assert!(project.holds.every().is_empty());
+    assert_eq!(project.holds_recorded(), 0);
 }

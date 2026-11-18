@@ -72,7 +72,7 @@ fn no_block_is_ever_the_source_of_an_ask() {
             held.hooks()
                 .write_stop(
                     chat,
-                    Stop::Block(Block {
+                    Stop::Block(Block { policy: None,
                         tool: "Bash".to_owned(),
                         source,
                         qualifier,

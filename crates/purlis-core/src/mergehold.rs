@@ -72,6 +72,14 @@ pub const REASON_UNREADABLE: &str = "merge-unreadable";
 /// it may, or no app answered. The event log records it as a block.
 pub const REASON_NOT_ASKED: &str = "merge-not-asked";
 
+/// The trace reason a merge is refused with where the project policy denies it (M75 slice 04):
+/// nobody is asked, and the session host records the block itself, with the deciding rules.
+pub const REASON_DENIED: &str = "merge-denied";
+
+/// The trace reason a merge is refused with where the session host could not be asked to
+/// decide it (M75 slice 04, spec §6): nothing runs, and the event log records it as a block.
+pub const REASON_UNDECIDED: &str = "merge-undecided";
+
 /// How long the app waits for the forge to say where a held request stands before it answers
 /// the hook: past it, nobody is asked, and the chat is told so. Inside the hook's own wait.
 pub const THE_FORGE_IS_READ_WITHIN: std::time::Duration = std::time::Duration::from_millis(1_200);
@@ -518,6 +526,54 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
              to merge it in Asks. {NO_YES}"
         ),
     }
+}
+
+/// **What a held merge asks the project policy** (M75 slice 04): the action, the resource's
+/// entity type and its id. A request's merge is `merge` on the request, by its repo where the
+/// command names one and its number; the base it merges into is the forge's, read only once an
+/// ask is raised. A merge whose request cannot be read, and a change's landing, are asked too,
+/// so the policy turns them off or on as it does the hold.
+pub fn policy_request(held: &Held) -> (&'static str, &'static str, String) {
+    match held {
+        Held::Request(request) => (
+            "merge",
+            "Branch",
+            format!(
+                "{}#{}",
+                request.repo.as_ref().map_or("", Repo::as_str),
+                request.number
+            ),
+        ),
+        Held::Unreadable => ("merge", "Branch", "unknown".to_owned()),
+        Held::Land => ("land", "Repo", "unknown".to_owned()),
+    }
+}
+
+/// **What the chat is told when the project policy denies its merge** (M75 slice 04): the rules
+/// that deny it, by `@id`, level and owner, and that nobody was asked.
+pub fn denied(decision: &crate::policy::decide::Decision) -> String {
+    format!(
+        "purlis's project policy refuses this merge: {} denies it, so nobody was asked and \
+         nothing was merged. Do not merge it another way; ask the person if it should be merged.",
+        decision.rules_said()
+    )
+}
+
+/// **What the chat is told when the session host could not be asked about its merge** (M75
+/// slice 04, spec §6): refused, never run here and never decided here, and why.
+pub fn undecided(why: &str) -> String {
+    format!(
+        "purlis holds merges: a chat never merges, the app does, on the person's press. Nothing \
+         was merged. The session host could not be asked to decide this merge ({why}), so it is \
+         refused and nobody was asked. Ask the person to merge it in the window. Do not merge it \
+         another way."
+    )
+}
+
+/// **The sentence a held merge's refusal ends with, naming the rule that holds it** (M75 slice
+/// 04): its `@id`, level and owner.
+pub fn held_by(decision: &crate::policy::decide::Decision) -> String {
+    format!("The project policy's rule {} holds it.", decision.rules_said())
 }
 
 impl Request {

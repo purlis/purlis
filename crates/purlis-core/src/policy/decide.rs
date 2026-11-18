@@ -33,7 +33,7 @@ use std::sync::OnceLock;
 
 use crate::enforcement::Mode;
 
-use super::levels::{Chat, Loaded, Named};
+use super::levels::{self, Chat, Loaded, Named};
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
 
 /// **What a request decides**: allow, ask the person, or deny.
@@ -283,15 +283,129 @@ fn mode_of(loaded: &Loaded, request: &Request<'_>, family: &str, rules: &[Decidi
         .unwrap_or_else(|| loaded.mode_for(family, request.of))
 }
 
+/// **What the session host knows of the asking chat**, for one decision: every field a rule
+/// reads of the context is the host's own (§3.2), never a word of the asking line.
+#[derive(Debug, Clone)]
+pub struct Asker<'a> {
+    /// The chat's number on the host's board, whose token the line carried.
+    pub chat: u32,
+    /// Its workspace and persona, as the host started it.
+    pub of: Chat<'a>,
+    /// The sandbox level it runs under: `off`, `floor` or `full`.
+    pub sandbox: &'a str,
+    /// Whether the person is at it, by the fact the host holds.
+    pub attended: bool,
+    /// Its harness's mode, from the host's start record (Q320e R6-1); slice 36 fills it.
+    pub harness_mode: &'a str,
+    /// How deep in a dispatch chain it is: 0 for a chat the person started.
+    pub depth: i64,
+    /// What the action came through: `hook` for a hook's ask.
+    pub via: &'a str,
+}
+
+impl Asker<'_> {
+    /// The context of `action` as the host makes it: each field the action's context declares
+    /// that the host knows. A field it does not know is left out, so the request does not fit
+    /// the schema and is denied, never guessed (§6.3).
+    fn context(&self, action: &str) -> serde_json::Value {
+        let mut context = serde_json::Map::new();
+        for field in super::context_fields(action) {
+            let value: serde_json::Value = match field.as_str() {
+                "sandbox" => self.sandbox.into(),
+                "attended" => self.attended.into(),
+                "harness_mode" => self.harness_mode.into(),
+                "depth" => self.depth.into(),
+                "via" => self.via.into(),
+                // `machine` is sealed and unset until the person confirms it (07b), and the
+                // narrowing fields come with each family's slice.
+                _ => continue,
+            };
+            context.insert(field.clone(), value);
+        }
+        serde_json::Value::Object(context)
+    }
+}
+
+/// **The session host's decision for a chat in the plane at `root`** ([`crate::hookwire::Ask::Decide`]):
+/// the policy every level wrote, the project's as committed at the plane root's `HEAD`
+/// ([`levels::load`]), judges `action` on `resource` for `asker`. The Organisation's files are
+/// slice 06's and the accepted copy slice 14's; the world is empty until slice 14 reads entity
+/// attributes at `HEAD`, so a rule that reads one errs, and denies.
+pub fn in_plane(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+) -> Decision {
+    let plane = crate::workspaces::Plane::open(root);
+    let workspaces = plane.workspaces().unwrap_or_default();
+    let personas = plane.personas().unwrap_or_default();
+    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
+    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    let loaded = levels::load(&levels::Sources {
+        root,
+        workspaces: &workspaces,
+        personas: &personas,
+        organisation: None,
+        accepted: None,
+    });
+    let chat = asker.chat.to_string();
+    decide(
+        &loaded,
+        &Request {
+            chat: &chat,
+            of: asker.of,
+            action,
+            resource,
+            context: asker.context(action),
+        },
+        empty_world(),
+    )
+}
+
+/// The empty world: no entity is known, so a rule that reads an attribute errs, and denies.
+fn empty_world() -> &'static World {
+    static EMPTY: OnceLock<World> = OnceLock::new();
+    EMPTY.get_or_init(|| {
+        World::from_json(serde_json::json!([])).expect("an empty world fits any schema")
+    })
+}
+
+/// **The replay's test policy host** (spec §14.1; review round 3, C3-B1): what the recorded
+/// behaviour's stand-in app answers a hook's [`crate::hookwire::Ask::Decide`] with, from the
+/// replayed plane at `root` as committed at its `HEAD`, through the real loader and [`decide`],
+/// for an attended chat with no sandbox at the plane root. **Compiled into test builds only**
+/// (the `test-support` feature) and switched on by nothing in the environment: the stand-in calls
+/// it, behind the listener-identity check every app passes (review round 4, SEC4 nit).
+#[cfg(any(test, feature = "test-support"))]
+pub fn replays_host(
+    root: &std::path::Path,
+    ask: &crate::hookwire::DecideAsk,
+) -> crate::hookwire::Answer {
+    let asker = Asker {
+        chat: ask.chat,
+        of: Chat {
+            workspace: None,
+            persona: None,
+        },
+        sandbox: "off",
+        attended: true,
+        harness_mode: "default",
+        depth: 0,
+        via: "hook",
+    };
+    crate::hookwire::Answer::Decided(Box::new(in_plane(
+        root,
+        &asker,
+        &ask.action,
+        (&ask.kind, &ask.id),
+    )))
+}
+
 /// **Decides one request where no host can be asked, outside any plane** (spec §6, review round
 /// 3, SEC3-SF3): by the shipped default under `strict`, in the process that asks, with an empty
 /// world. Nothing a project or the person loosened applies.
 pub fn decide_locally(request: &Request<'_>) -> Decision {
     static STRICT: OnceLock<Loaded> = OnceLock::new();
-    static EMPTY: OnceLock<World> = OnceLock::new();
-    let loaded = STRICT.get_or_init(Loaded::shipped_strict);
-    let world = EMPTY.get_or_init(|| {
-        World::from_json(serde_json::json!([])).expect("an empty world fits any schema")
-    });
-    decide(loaded, request, world)
+    decide(STRICT.get_or_init(Loaded::shipped_strict), request, empty_world())
 }

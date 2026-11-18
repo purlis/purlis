@@ -355,3 +355,35 @@ fn a_decision_crosses_the_wire_whole() {
     let read: Decision = serde_json::from_str(&wire).expect("it is read");
     assert_eq!(read, decision);
 }
+
+#[test]
+fn the_replays_test_policy_host_answers_from_the_planes_committed_head() {
+    purlis_core::unsteered!();
+    use purlis_core::hookwire::{Answer, DecideAsk};
+    let ask = DecideAsk {
+        chat: 3,
+        action: "merge".to_owned(),
+        kind: "Branch".to_owned(),
+        id: "acme/web#12".to_owned(),
+    tool: "Bash".to_owned(),
+    };
+    let decided = |root: &Path| match decide::replays_host(root, &ask) {
+        Answer::Decided(decision) => *decision,
+        other => panic!("{other:?}"),
+    };
+    let dir = plane(STRICT, None);
+    assert_eq!(decided(dir.path()).after_mode, Outcome::Ask);
+
+    // A working file the chat wrote is never read: only what HEAD holds decides.
+    let refusing = "// purlis-policy 1\n\
+         @id(\"guards-merge-never\")\n\
+         forbid (principal, action == Action::\"merge\", resource);\n";
+    std::fs::write(dir.path().join("policy.cedar"), refusing).expect("the working file");
+    assert_eq!(decided(dir.path()).after_mode, Outcome::Ask, "HEAD, not the working file");
+
+    git(dir.path(), &["add", "-A"]);
+    git(dir.path(), &["commit", "-q", "-m", "refuse merges"]);
+    let decision = decided(dir.path());
+    assert_eq!(decision.after_mode, Outcome::Deny);
+    assert_eq!(ids(&decision), ["guards-merge-never"]);
+}

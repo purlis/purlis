@@ -67,6 +67,7 @@ fn block(target: Option<Target>, tool: Option<&str>, reported: Reported) -> Stop
         qualifier: (reported == Reported::ByItsHook).then_some(Qualifier::Unverified),
         target,
         args: None,
+        policy: None,
     })
 }
 

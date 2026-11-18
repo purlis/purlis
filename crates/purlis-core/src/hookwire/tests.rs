@@ -2886,7 +2886,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Merge(_)
                 | Ask::Attendance(_)
                 | Ask::Policy(_)
-                | Ask::PolicyLog(_) => Answer::No {
+                | Ask::PolicyLog(_)
+                | Ask::Decide(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }
@@ -5512,4 +5513,55 @@ fn a_peer_that_closed_before_it_was_named_is_counted_and_logs_nothing_above_trac
         .contains("TRACE"),
         "it is still there to be read at trace"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unidentified_peer_is_refused_and_never_treated_as_the_person() {
+    // M75 slice 04 keeps D-1407-10 for the session host's decision: a Decide carrying the chat's
+    // token from a process outside the chat is told so, and the host never decides for it, nor
+    // takes it for the person.
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let (token, mut elsewhere) = a_chat_elsewhere(&listener.tokens(), 5);
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&asked);
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Answer::No {
+                why: "decided".to_owned(),
+            }
+        }),
+    );
+    let decide = Ask::Decide(DecideAsk {
+        chat: 5,
+        action: "merge".to_owned(),
+        kind: "Branch".to_owned(),
+        id: "o/r#12".to_owned(),
+        tool: "Bash".to_owned(),
+    });
+
+    let with_its_token = Asking::on(&path, Some(token))
+        .expect("connected")
+        .ask(&decide, std::time::Duration::from_secs(5));
+    let with_none = Asking::on(&path, None)
+        .expect("connected")
+        .ask(&decide, std::time::Duration::from_secs(5));
+
+    let _ = elsewhere.kill();
+    let _ = elsewhere.wait();
+    assert_eq!(
+        with_its_token.ok(),
+        Some(Answer::No {
+            why: OUTSIDE_THE_CHAT.to_owned()
+        })
+    );
+    assert!(
+        !matches!(with_none, Ok(Answer::No { ref why }) if why == "decided"),
+        "{with_none:?}"
+    );
+    assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
 }

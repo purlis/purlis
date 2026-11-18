@@ -249,7 +249,7 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                 actor: word("actor"),
             }),
             stops::ASK_RAISED => {
-                read::<AskRaised>(event).map(|AskRaised { ask }| Row::AskRaised { at_ms, ask })
+                read::<AskRaised>(event).map(|AskRaised { ask, .. }| Row::AskRaised { at_ms, ask })
             }
             stops::ASK_ANSWERED => read(event).map(|answered| Row::AskAnswered { at_ms, answered }),
             stops::HOLD => read(event).map(|hold| Row::Held {
