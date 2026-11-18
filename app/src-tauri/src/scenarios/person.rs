@@ -190,7 +190,7 @@ pub(crate) enum Press {
 /// among its options, or the label it carries is not the one the window says
 /// ([`crate::asking::allow_said`], [`crate::asking::KEEP_SAID`]).
 ///
-/// A press on a label the ask does not offer is the scenario's failure ([`Person::press`]
+/// A press on a label the ask does not offer is the scenario's failure ([`Person::presses_on`]
 /// panics on it): the person in a scenario presses only what a window draws.
 pub(crate) fn chosen<'a>(ask: &'a Shown, press: &Press) -> Result<&'a Offered, String> {
     let sandbox = matches!(ask.answer, AnswerPath::SandboxBlock { .. });
@@ -289,17 +289,15 @@ impl Person<'_> {
     /// **Presses `press` on `ask`, as the window's person does** and fails the scenario on a
     /// press the ask does not offer, by the label the window says. Answers what the command
     /// answered.
-    pub(crate) fn press(&self, ask: &Shown, press: &Press) -> Result<Pressed, String> {
+    pub(crate) fn presses_on(&self, ask: &Shown, press: &Press) -> Result<Pressed, String> {
         let offered = chosen(ask, press)
             .unwrap_or_else(|why| panic!("{why}\n{}", self.scenario.said()))
             .clone();
         let session = ask.session;
         match (&ask.answer, press) {
-            (AnswerPath::SandboxBlock { shown }, Press::Allow(level)) => {
-                let said = self.allow_block(session, shown.clone(), *level)?;
-                self.scenario.ledger.granted(shown, *level);
-                Ok(Pressed::Said(said))
-            }
+            (AnswerPath::SandboxBlock { shown }, Press::Allow(level)) => self
+                .allow_block(session, shown.clone(), *level)
+                .map(Pressed::Said),
             (AnswerPath::SandboxBlock { shown }, Press::Keep(reason)) => {
                 if shown.what == crate::sandboxing::GrantWhat::Host {
                     self.keep_block(session, shown.clone(), reason.clone())
@@ -369,7 +367,7 @@ impl Person<'_> {
             std::thread::sleep(Duration::from_millis(25));
         };
         std::thread::sleep(after);
-        let pressed = self.press(&ask, press);
+        let pressed = self.presses_on(&ask, press);
         (ask, pressed)
     }
 
@@ -380,7 +378,8 @@ impl Person<'_> {
         shown: BlockShown,
         level: GrantLevel,
     ) -> Result<String, String> {
-        tauri::async_runtime::block_on(through!(
+        let asked = shown.clone();
+        let allowed = tauri::async_runtime::block_on(through!(
             self,
             crate::sandboxing::allow_sandbox_block(
                 self.planes(),
@@ -389,8 +388,11 @@ impl Person<'_> {
                 shown,
                 level
             )
-        ))
-        .map(|allowed| allowed.said)
+        ))?;
+        // What the person allowed is theirs to keep, and the ask is answered.
+        self.scenario.ledger.granted(&asked, level);
+        self.scenario.ledger.answered(session, &blocked_key(&asked));
+        Ok(allowed.said)
     }
 
     /// **Keep blocked** on a block's Notice (`keep_sandbox_block`).
@@ -400,6 +402,7 @@ impl Person<'_> {
         shown: BlockShown,
         reason: Option<String>,
     ) -> Result<(), String> {
+        let asked = shown.clone();
         through!(
             self,
             crate::sandboxing::keep_sandbox_block(
@@ -409,15 +412,20 @@ impl Person<'_> {
                 shown,
                 reason
             )
-        )
+        )?;
+        self.scenario.ledger.answered(session, &blocked_key(&asked));
+        Ok(())
     }
 
     /// **Keep blocked on a folder** (`forget_sandbox_block`): the block is put away.
     pub(crate) fn forget_block(&self, session: u32, shown: BlockShown) -> Result<bool, String> {
-        through!(
+        let asked = shown.clone();
+        let forgotten = through!(
             self,
             crate::asking::forget_sandbox_block(self.planes(), self.plane(), session, shown)
-        )
+        )?;
+        self.scenario.ledger.answered(session, &blocked_key(&asked));
+        Ok(forgotten)
     }
 
     /// **Allow on the one question for several tasks** (`allow_sandbox_block_for_tasks`).
@@ -427,7 +435,8 @@ impl Person<'_> {
         seen: Vec<SeenBlock>,
         level: GrantLevel,
     ) -> Result<Vec<u32>, String> {
-        tauri::async_runtime::block_on(through!(
+        let asked = seen.clone();
+        let done = tauri::async_runtime::block_on(through!(
             self,
             crate::taskblocks::allow_sandbox_block_for_tasks(
                 self.planes(),
@@ -436,8 +445,20 @@ impl Person<'_> {
                 seen,
                 level
             )
-        ))
-        .map(|done| done.answered)
+        ))?;
+        for one in &asked {
+            let shown = BlockShown {
+                operation: one.operation.clone(),
+                kind: one.kind.clone(),
+                what: one.what,
+                target: one.target.clone(),
+            };
+            self.scenario.ledger.granted(&shown, level);
+            self.scenario
+                .ledger
+                .answered(one.task, &blocked_key(&shown));
+        }
+        Ok(done.answered)
     }
 
     /// **Keep blocked on the one question for several tasks** (`keep_sandbox_block_for_tasks`).
@@ -447,7 +468,8 @@ impl Person<'_> {
         seen: Vec<SeenBlock>,
         reason: Option<String>,
     ) -> Result<Vec<u32>, String> {
-        through!(
+        let asked = seen.clone();
+        let kept = through!(
             self,
             crate::taskblocks::keep_sandbox_block_for_tasks(
                 self.planes(),
@@ -456,7 +478,13 @@ impl Person<'_> {
                 seen,
                 reason
             )
-        )
+        )?;
+        for one in &asked {
+            self.scenario
+                .ledger
+                .answered(one.task, &format!("block:{}", one.target));
+        }
+        Ok(kept)
     }
 
     /// **Answers chat `session`'s permission ask `ask` with `option`** (`answer_ask`).
@@ -470,7 +498,9 @@ impl Person<'_> {
                 ask.to_owned(),
                 option.to_owned()
             )
-        )
+        )?;
+        self.scenario.ledger.answered(session, ask);
+        Ok(())
     }
 
     /// **Answers chat `session`'s pause** (`answer_pause`).
@@ -739,6 +769,11 @@ impl Person<'_> {
             Err(format!("/bin/kill -KILL {pid}: {status}"))
         }
     }
+}
+
+/// The key a sandbox block's ask is known by ([`super::checks::ask_key`]).
+fn blocked_key(shown: &BlockShown) -> String {
+    format!("block:{}", shown.target)
 }
 
 /// The target an ask names, where it is a sandbox block's: what Allow would grant.

@@ -69,6 +69,15 @@ impl Check {
     }
 }
 
+/// **The key an ask is known by**, however it is read: a sandbox block by its target, any other
+/// ask by its own key.
+pub(crate) fn ask_key(ask: &crate::asking::Shown) -> String {
+    match &ask.answer {
+        crate::asking::AnswerPath::SandboxBlock { shown } => format!("block:{}", shown.target),
+        _ => ask.ask.clone(),
+    }
+}
+
 /// A refusal a scenario knows its chat was given, whose ask, block or hold must be written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Refusal {
@@ -384,6 +393,11 @@ pub(crate) struct Ledger {
     marks: Mutex<Vec<Mark>>,
     /// What Settings listed when the scenario began: the project's own declarations.
     baseline: Mutex<Vec<(String, String)>>,
+    /// The asks the person pressed on, by chat and key: answered, whatever the window lists.
+    answered: Mutex<BTreeSet<(u32, String)>>,
+    /// Every block a chat was seen held on (chat, target), as Notices raise them, kept after the
+    /// block is answered and so retracted.
+    standing: Mutex<BTreeSet<(u32, String)>>,
 }
 
 impl Ledger {
@@ -397,6 +411,39 @@ impl Ledger {
                 .or_default()
                 .insert(key.to_owned());
         }
+    }
+
+    /// The person answered chat `session`'s ask `key` ([`ask_key`]).
+    pub(crate) fn answered(&self, session: u32, key: &str) {
+        self.answered
+            .lock()
+            .expect("answered")
+            .insert((session, key.to_owned()));
+    }
+
+    fn was_answered(&self, session: u32, key: &str) -> bool {
+        self.answered
+            .lock()
+            .expect("answered")
+            .contains(&(session, key.to_owned()))
+    }
+
+    /// A chat was seen held on the block for `target`.
+    pub(crate) fn stood(&self, session: u32, target: &str) {
+        self.standing
+            .lock()
+            .expect("standing")
+            .insert((session, target.to_owned()));
+    }
+
+    /// Every block a chat was seen held on: (chat, target).
+    pub(crate) fn ever_standing(&self) -> Vec<(u32, String)> {
+        self.standing
+            .lock()
+            .expect("standing")
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// The person granted `shown` at `level`.
@@ -505,9 +552,13 @@ pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
     quiesce(scenario)?;
     let queries = scenario.queries();
     let asks = queries.counted();
+    // The asks nobody answered: a chat's own wait for the person's reply is no ask raised, and an
+    // ask the person pressed on was answered, whatever the window lists of it afterwards.
     let asks_left: Vec<String> = asks
         .asks
         .iter()
+        .filter(|ask| !crate::asknotify::own_wait(ask))
+        .filter(|ask| !scenario.ledger.was_answered(ask.session, &ask_key(ask)))
         .map(|ask| format!("chat {} `{}` ({:?})", ask.session, ask.ask, ask.says))
         .collect();
     let _ = queries.notices();
@@ -688,7 +739,9 @@ impl Scenario {
         let _ = quiesce(self);
         for ask in self.queries().counted().asks {
             if ask.options.iter().any(|one| one.id == crate::asking::KEEP) {
-                let _ = self.person().press(&ask, &super::person::Press::Keep(None));
+                let _ = self
+                    .person()
+                    .presses_on(&ask, &super::person::Press::Keep(None));
             }
         }
     }

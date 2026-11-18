@@ -854,13 +854,6 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         else {
             return;
         };
-        // #6674: every held network ask writes `ask.raised` twice (T1.1-07's one-ask,
-        // one-raise check finds it).
-        scenario.expected_fail(
-            checks::Check::OneAskOneRaise,
-            6674,
-            "a held network ask writes ask.raised twice",
-        );
         let held = format!("held-{}.example.test", dialect.word());
         let asked_before = scenario.count_of(purlis_core::eventlog::stops::ASK_RAISED);
         let chat = scenario.starts(&serde_json::json!({
@@ -877,9 +870,6 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             || held_on(&scenario, chat, &held).is_some(),
         );
         scenario.until_played(chat, &["held"]);
-        // The hold ended with a refusal: its ask (R-004) is written, which the global checks
-        // hold the scenario to.
-        scenario.refused(chat, "held", None);
         // The call's own time, as curl measured it: nothing of the chat's start-up.
         let took = took_of(&scenario, chat, "held");
         // Today's behaviour (B0, #6672, #6673): `ask.raised` can reach the event log well after
@@ -914,6 +904,9 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             scenario.names.lookups()
         );
         assert!(scenario.names.origin_hits().is_empty());
+        // Nobody answered, so the ask is still listed, as a timed-out ask is: the person now
+        // keeps it blocked, which the global checks need of a scenario that raised one.
+        scenario.keeps_listed_asks_blocked();
     }
 }
 
@@ -975,12 +968,6 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     else {
         return;
     };
-    // #6674: a held network ask writes `ask.raised` twice.
-    scenario.expected_fail(
-        checks::Check::OneAskOneRaise,
-        6674,
-        "a held network ask writes ask.raised twice",
-    );
     let host = "granted-to-one.example.test";
     let script = |step: &str| {
         serde_json::json!({
@@ -1001,14 +988,10 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
         held_on(&scenario, one, host).is_some()
     });
     let shown = held_on(&scenario, one, host).expect("held");
-    tauri::async_runtime::block_on(crate::sandboxing::allow_sandbox_block(
-        tauri::Manager::state(scenario.app()),
-        scenario.plane.clone(),
-        one,
-        shown,
-        crate::sandboxing::GrantLevel::Chat,
-    ))
-    .expect("the person allows it for this chat");
+    scenario
+        .person()
+        .allow_block(one, shown, crate::sandboxing::GrantLevel::Chat)
+        .expect("the person allows it for this chat");
     scenario.until_played(one, &["reaches-one"]);
     until(&scenario, "the first chat's proxy carries it", || {
         lookups() > 0
@@ -1031,6 +1014,8 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
         carried,
         "the other chat's proxy looked the host up: the first chat's grant reached it"
     );
+    // The other chat's ask is still listed, as a timed-out ask is: the person keeps it blocked.
+    scenario.keeps_listed_asks_blocked();
 }
 
 /// **Where a chat's command runs**, as it says itself: its folder, whether it is held by

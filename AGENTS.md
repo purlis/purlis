@@ -168,6 +168,15 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   `CARGO_LOG=cargo::core::compiler::fingerprint=info cargo test --no-run` after the test; see
   `docs/sandbox-scenarios-ci.md`.
 
+- A scenario test (`app/src-tauri/src/scenarios/`) returns early in a sandboxed chat, because the
+  OS wrap does not nest: its red and green are CI's. The planted-fault tests of
+  `scenarios/window_person.rs` need no wrap and run here:
+  `cargo test -p purlis-app --lib --locked -- scenarios::window_person::<name>` (a cold build is
+  about 8 minutes; `cargo clippy -p purlis-app --tests --locked -- -D warnings` about 5).
+- To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
+  out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
+  what the chat may write.
+
 ## Agent skills
 
 ### Issue tracker

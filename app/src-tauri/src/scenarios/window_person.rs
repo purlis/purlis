@@ -371,7 +371,7 @@ fn a_press_on_a_label_the_ask_does_not_offer_fails_the_scenario() {
         return;
     };
     let pressed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        scenario.person().press(
+        scenario.person().presses_on(
             &a_sandbox_ask(1, &OFFERED),
             &Press::Allow(GrantLevel::Machine),
         )
@@ -579,8 +579,18 @@ fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
     // through, so its judgment is red. This is what a scenario whose wrap did not apply sees.
     let outside = std::env::temp_dir().join(format!("canary-unwrapped-{}", std::process::id()));
     std::fs::create_dir_all(&outside).expect("a folder");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a listener");
-    listener.set_nonblocking(false).expect("blocking");
+    // Where this machine lets no test listen (a sandboxed task), the unwrapped run is CI's.
+    let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(why) if !super::host::on_ci() => {
+            let _ = std::io::Write::write_fmt(
+                &mut std::io::stderr(),
+                format_args!("the unwrapped canary ran nowhere: no listener here ({why})\n"),
+            );
+            return;
+        }
+        Err(why) => panic!("the canary's listener: {why}"),
+    };
     let port = listener.local_addr().expect("address").port();
     let file = outside.join("written");
     let script = checks::canary_script(&file, port);
@@ -702,12 +712,6 @@ fn the_ask_shows_exactly_the_decided_target_and_grants_that_string() {
     else {
         return;
     };
-    // #6674: each held network ask writes `ask.raised` twice.
-    scenario.expected_fail(
-        Check::OneAskOneRaise,
-        6674,
-        "a held network ask writes ask.raised twice",
-    );
     for (n, name) in [long, "xn--bcher-kva.example.test".to_owned()]
         .iter()
         .enumerate()
@@ -765,11 +769,6 @@ fn the_window_queries_read_what_the_window_reads() {
     else {
         return;
     };
-    scenario.expected_fail(
-        Check::OneAskOneRaise,
-        6674,
-        "a held network ask writes ask.raised twice",
-    );
     let host = "queried.example.test";
     let chat = scenario.starts(&serde_json::json!({
         "turns": [{"prompt": "go", "calls": [
@@ -783,7 +782,6 @@ fn the_window_queries_read_what_the_window_reads() {
             .when_listed(host, &Press::Keep(None), Duration::from_millis(50));
     pressed.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
     scenario.until_played(chat, &["reaches"]);
-    scenario.refused(chat, "reaches", None);
 
     let queries = scenario.queries();
     assert!(
@@ -796,16 +794,14 @@ fn the_window_queries_read_what_the_window_reads() {
     );
     let notices = queries.notices();
     assert!(
+        notices.was_raised(chat, host),
+        "no Notice was raised for the host: told {:?}, held on {:?}",
         notices
-            .raised
-            .iter()
-            .any(|told| told.session == chat && told.target.as_deref() == Some(host)),
-        "the block teller was never told the host: {:?}",
-        notices
-            .raised
+            .told
             .iter()
             .map(|one| &one.target)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>(),
+        notices.raised
     );
     assert_eq!(
         notices.retracted(host),
@@ -856,4 +852,46 @@ fn the_window_queries_read_what_the_window_reads() {
     ] {
         assert!(said.contains(wanted), "{wanted:?} is not in\n{said}");
     }
+}
+
+/// **A refusal the log never wrote is a black hole, in a scenario** (R-004, #6673): a held
+/// connection nobody answered is refused at its hold, and what writes it (the ask, the block) is
+/// written only at the chat's next prompt, which never comes. Pinned on Linux with Claude Code,
+/// where it was seen; the person then keeps the ask blocked, as a scenario that raised one must.
+#[test]
+fn a_held_refusal_the_log_has_not_written_is_a_black_hole_today() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    if !cfg!(target_os = "linux") {
+        super::report::write(&[super::a_fixture_record(
+            "a_held_refusal_the_log_has_not_written_is_a_black_hole_today",
+            Some(purlis_scenarios::model::Dialect::Claude),
+            Some(purlis_scenarios::model::Protection::Full),
+            purlis_scenarios::model::ReportVerdict::NotRun,
+            "pinned on Linux: macOS's wrap writes its refusals another way (ticket 51)",
+        )])
+        .expect("the leg's report");
+        homes.ran_no_scenario();
+        return;
+    }
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Claude)
+    else {
+        return;
+    };
+    let host = "blackhole.example.test";
+    let chat = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "go", "calls": [
+            {"step": "reaches", "tool": "bash", "run": super::reaches(host)}
+        ]}]
+    }));
+    scenario.until_played(chat, &["reaches"]);
+    scenario.refused(chat, "reaches", Some(host));
+    // Today: nothing names the host in the log by the end of the scenario (#6673).
+    scenario.expected_fail(
+        Check::NoBlackHole,
+        6673,
+        "the held ask's block is written only at the chat's next prompt",
+    );
+    scenario.keeps_listed_asks_blocked();
 }

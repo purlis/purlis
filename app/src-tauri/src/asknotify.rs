@@ -1176,7 +1176,7 @@ fn kind_said(ask: &Shown) -> &'static str {
 
 /// Whether `ask` is a chat's own wait, keyed by the chat: a reply it waits on, or a prompt in
 /// its terminal.
-fn own_wait(ask: &Shown) -> bool {
+pub(crate) fn own_wait(ask: &Shown) -> bool {
     matches!(ask.source, AskSource::Question | AskSource::Terminal)
 }
 

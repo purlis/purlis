@@ -37,35 +37,56 @@ impl Scenario {
     }
 }
 
-/// **The Notices of a scenario**: every block the block teller was told, in order, and the
-/// blocks a chat is held on now, which a Notice draws and retracts when they are answered.
+/// **The Notices of a scenario**: every block the block teller was told, every block a chat was
+/// seen held on (a held connection's Notice is raised by the asks the window lists, and
+/// retracted when its chat is no longer held on it), and the blocks that stand now.
 #[derive(Debug, Clone)]
 pub(crate) struct Notices {
-    /// Each block the window was told, raised in this order.
-    pub raised: Vec<crate::hooks::ChatBlocked>,
+    /// Each block the block teller was told, in this order.
+    pub told: Vec<crate::hooks::ChatBlocked>,
+    /// Each block a chat was seen held on: (chat, target), as a Notice drew it.
+    pub raised: Vec<(u32, String)>,
     /// The blocks chats are held on now: (chat, block).
     pub standing: Vec<(u32, crate::taskblocks::BlockShown)>,
 }
 
+/// `target` without its port: a block told for `host:443` and one held on `host` name one host.
+fn host_of(target: &str) -> &str {
+    target.strip_suffix(":443").unwrap_or(target)
+}
+
 impl Notices {
-    /// The sessions that were told a block for `target` and are held on none now: a Notice
+    /// The sessions that were raised a Notice for `target` and are held on none now: a Notice
     /// that was raised and retracted.
     pub(crate) fn retracted(&self, target: &str) -> Vec<u32> {
         let mut gone: Vec<u32> = self
             .raised
             .iter()
-            .filter(|told| told.target.as_deref() == Some(target))
-            .map(|told| told.session)
+            .filter(|(_, shown)| host_of(shown) == host_of(target))
+            .map(|(session, _)| *session)
             .filter(|session| {
-                !self
-                    .standing
-                    .iter()
-                    .any(|(held, block)| held == session && block.target == target)
+                !self.standing.iter().any(|(held, block)| {
+                    held == session && host_of(&block.target) == host_of(target)
+                })
             })
             .collect();
         gone.sort_unstable();
         gone.dedup();
         gone
+    }
+
+    /// Whether a Notice for `target` was raised for chat `session`, told or held.
+    pub(crate) fn was_raised(&self, session: u32, target: &str) -> bool {
+        self.raised
+            .iter()
+            .any(|(chat, shown)| *chat == session && host_of(shown) == host_of(target))
+            || self.told.iter().any(|told| {
+                told.session == session
+                    && told
+                        .target
+                        .as_deref()
+                        .is_some_and(|one| host_of(one) == host_of(target))
+            })
     }
 }
 
@@ -135,16 +156,11 @@ impl Queries<'_> {
     pub(crate) fn counted(&self) -> crate::asking::Asking {
         let held = self.scenario.held();
         let counted = crate::asking::counted(&held);
+        self.note_standing();
         for ask in &counted.asks {
-            // A sandbox block is one ask however it is read: by its target here, and as a
-            // Notice's block below.
-            let key = match &ask.answer {
-                crate::asking::AnswerPath::SandboxBlock { shown } => {
-                    format!("block:{}", shown.target)
-                }
-                _ => ask.ask.clone(),
-            };
-            self.scenario.ledger.saw(&self.chat_id(ask.session), &key);
+            self.scenario
+                .ledger
+                .saw(&self.chat_id(ask.session), &super::checks::ask_key(ask));
         }
         self.scenario
             .ledger
@@ -153,16 +169,16 @@ impl Queries<'_> {
         counted
     }
 
-    /// **The Notices** the block teller raised, and the blocks that stand now.
-    pub(crate) fn notices(&self) -> Notices {
-        let standing: Vec<(u32, crate::taskblocks::BlockShown)> = self
-            .scenario
+    /// Notes every block a chat is held on now, as a Notice raised for it.
+    fn note_standing(&self) -> Vec<(u32, crate::taskblocks::BlockShown)> {
+        self.scenario
             .held()
             .chats()
             .blocks()
             .every()
             .into_iter()
             .map(|(session, block)| {
+                self.scenario.ledger.stood(session, &block.target);
                 self.scenario
                     .ledger
                     .saw(&self.chat_id(session), &format!("block:{}", block.target));
@@ -176,9 +192,16 @@ impl Queries<'_> {
                     },
                 )
             })
-            .collect();
+            .collect()
+    }
+
+    /// **The Notices** the window draws: those the block teller was told, those a chat was seen
+    /// held on, and those that stand now.
+    pub(crate) fn notices(&self) -> Notices {
+        let standing = self.note_standing();
         Notices {
-            raised: self.scenario.window().told_blocks(),
+            told: self.scenario.window().told_blocks(),
+            raised: self.scenario.ledger.ever_standing(),
             standing,
         }
     }
@@ -255,9 +278,15 @@ impl Queries<'_> {
                 .map(|ask| format!("chat {} `{}` {:?}", ask.session, ask.ask, ask.says))
                 .collect::<Vec<_>>(),
             notices
-                .raised
+                .told
                 .iter()
                 .map(|told| format!("chat {} {} {:?}", told.session, told.operation, told.target))
+                .chain(
+                    notices
+                        .raised
+                        .iter()
+                        .map(|(session, target)| format!("chat {session} held on {target}")),
+                )
                 .collect::<Vec<_>>(),
             notices.standing,
             self.needs_you(),
