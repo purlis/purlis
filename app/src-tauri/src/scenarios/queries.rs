@@ -17,8 +17,9 @@
 //! | [`Queries::settings`] | `sandbox_grants`, the Granted list |
 //! | [`Queries::merge_row`] | `MergeHolds::every`, the merge ask's row |
 //!
-//! Each query that sees an ask records it ([`super::checks::Ledger::saw`]), which the one-ask,
-//! one-raise check counts against what the log says was raised.
+//! A query that lists the blocks chats are held on records each one
+//! ([`super::checks::Ledger::stood`]): a held connection's Notice is raised by what holds it, and
+//! is retracted when its chat is held on it no more.
 
 use purlis_core::eventlog::chatlog::{self, Marker, Row, Summary};
 use purlis_core::eventlog::{blockedlog, finishes};
@@ -157,11 +158,6 @@ impl Queries<'_> {
         let held = self.scenario.held();
         let counted = crate::asking::counted(&held);
         self.note_standing();
-        for ask in &counted.asks {
-            self.scenario
-                .ledger
-                .saw(&self.chat_id(ask.session), &super::checks::ask_key(ask));
-        }
         self.scenario
             .ledger
             .quiet
@@ -179,9 +175,6 @@ impl Queries<'_> {
             .into_iter()
             .map(|(session, block)| {
                 self.scenario.ledger.stood(session, &block.target);
-                self.scenario
-                    .ledger
-                    .saw(&self.chat_id(session), &format!("block:{}", block.target));
                 (
                     session,
                     crate::taskblocks::BlockShown {

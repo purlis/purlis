@@ -14,7 +14,7 @@
 //! | [`Check::NoLeftoverGrant`] | Settings lists a grant nobody made, or a once-grant that outlived its use |
 //! | [`Check::HookWithinBudget`] | a hook event's `hook_ms` is over `hold` + `patience` of the scenario's timings |
 //! | [`Check::EveryBlockHasASource`] | a `stop.block` does not say who refused it |
-//! | [`Check::OneAskOneRaise`] | more `ask.raised` were written for a chat than asks it was seen to have (Q262) |
+//! | [`Check::OneAskOneRaise`] | a chat's `ask.raised` is written twice with no new call, prompt or answer between (Q262) |
 //!
 //! **"At the end" is quiesced** ([`quiesce`]): the log has had no event for the scenario's
 //! `group` and `tally_tick` together, judged by the events' own times, never by a sleep. What
@@ -87,6 +87,9 @@ pub(crate) struct Refusal {
     pub step: String,
     /// What it was aimed at (a host or a folder), where the scenario says.
     pub target: Option<String>,
+    /// The ask, block or hold must be an event after this one's number: the log's latest when
+    /// the scenario declared the refusal before the call that is refused, 0 for any.
+    pub after: u64,
 }
 
 /// **What a scenario observed at its end**: [`judge`]'s whole input.
@@ -96,8 +99,6 @@ pub(crate) struct Observed<'a> {
     pub refusals: &'a [Refusal],
     /// The asks the window lists at the end: "chat N `key` says".
     pub asks_left: &'a [String],
-    /// Each chat's distinct asks the scenario saw, by the chat's logged id.
-    pub asks_seen: &'a BTreeMap<String, usize>,
     /// What Settings lists beyond what it listed before the scenario began: (kind, target, level).
     pub grants_listed: &'a [(String, String, String)],
     /// What the person granted in the scenario and has not revoked: (kind, target, level).
@@ -149,12 +150,14 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                 chat,
                 step: format!("a hook's deny, event {}", event.seq),
                 target: None,
+                after: event.seq,
             });
         }
     }
     for refusal in &refusals {
         let written = observed.events.iter().any(|event| {
             kind_is_a_stop(&event.kind)
+                && event.seq > refusal.after
                 && event.chat.as_deref() == Some(refusal.chat.as_str())
                 && match (&refusal.target, event.kind.as_str()) {
                     // An ask names no target in the log: it answers any refusal of its chat.
@@ -247,32 +250,34 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
         }
     }
 
-    // One ask, one raise (Q262): a chat's raises are no more than the asks it was seen to
-    // have, or the answers the log holds, whichever is more.
-    let mut raised: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut answered: BTreeMap<&str, usize> = BTreeMap::new();
+    // One ask, one raise (Q262): a chat's `ask.raised` is written once for an ask. Two of its raises
+    // with no new call (`hook.pretooluse`), prompt or answer between them are one ask raised twice,
+    // by two writers (#6674); a second call that is refused raises an ask of its own.
+    let mut open: BTreeMap<&str, usize> = BTreeMap::new();
     for event in observed.events {
         let Some(chat) = event.chat.as_deref() else {
             continue;
         };
-        match event.kind.as_str() {
-            stops::ASK_RAISED => *raised.entry(chat).or_default() += 1,
-            stops::ASK_ANSWERED => *answered.entry(chat).or_default() += 1,
-            _ => {}
-        }
-    }
-    for (chat, raises) in raised {
-        let asks = observed
-            .asks_seen
-            .get(chat)
-            .copied()
-            .unwrap_or(0)
-            .max(answered.get(chat).copied().unwrap_or(0));
-        if raises > asks {
-            fail(
-                Check::OneAskOneRaise,
-                format!("chat {chat}: {raises} ask.raised written for {asks} ask(s) seen"),
-            );
+        let kind = event.kind.as_str();
+        if kind == stops::ASK_RAISED {
+            let raised = open.entry(chat).or_default();
+            *raised += 1;
+            if *raised == 2 {
+                fail(
+                    Check::OneAskOneRaise,
+                    format!(
+                        "chat {chat}: event {} is a second ask.raised with no new call, prompt or \
+                         answer since the first",
+                        event.seq
+                    ),
+                );
+            }
+        } else if kind.starts_with("hook.pretool")
+            || kind == "hook.userpromptsubmit"
+            || kind == stops::ASK_ANSWERED
+            || kind == "run.started"
+        {
+            open.remove(chat);
         }
     }
     found
@@ -388,7 +393,6 @@ impl QuietState {
 pub(crate) struct Ledger {
     pub reached: super::person::Reached,
     pub quiet: QuietState,
-    seen: Mutex<BTreeMap<String, BTreeSet<String>>>,
     refusals: Mutex<Vec<Refusal>>,
     marks: Mutex<Vec<Mark>>,
     /// What Settings listed when the scenario began: the project's own declarations.
@@ -401,18 +405,6 @@ pub(crate) struct Ledger {
 }
 
 impl Ledger {
-    /// A chat was seen to have ask `key`.
-    pub(crate) fn saw(&self, chat: &Option<String>, key: &str) {
-        if let Some(chat) = chat {
-            self.seen
-                .lock()
-                .expect("seen")
-                .entry(chat.clone())
-                .or_default()
-                .insert(key.to_owned());
-        }
-    }
-
     /// The person answered chat `session`'s ask `key` ([`ask_key`]).
     pub(crate) fn answered(&self, session: u32, key: &str) {
         self.answered
@@ -488,6 +480,17 @@ impl Scenario {
     /// **Declares a refusal** a scenario's chat was given at `step`, aimed at `target`: its
     /// ask, block or hold must be written ([`Check::NoBlackHole`]).
     pub(crate) fn refused(&self, session: u32, step: &str, target: Option<&str>) {
+        self.declares(session, step, target, 0);
+    }
+
+    /// **[`Self::refused`], for a refusal that has not happened yet**: what answers it must be
+    /// written after the log's latest event now, so an ask an earlier call raised answers nothing.
+    pub(crate) fn refused_after_now(&self, session: u32, step: &str, target: Option<&str>) {
+        let after = self.events().last().map_or(0, |event| event.seq);
+        self.declares(session, step, target, after);
+    }
+
+    fn declares(&self, session: u32, step: &str, target: Option<&str>, after: u64) {
         let chat = self
             .queries()
             .chat_id(session)
@@ -500,6 +503,7 @@ impl Scenario {
                 chat,
                 step: step.to_owned(),
                 target: target.map(str::to_owned),
+                after,
             });
     }
 
@@ -569,21 +573,12 @@ pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
         .filter(|(k, t, _)| !baseline.iter().any(|(bk, bt)| bk == k && bt == t))
         .collect();
     let grants_made = MADE.lock().expect("made").clone();
-    let asks_seen: BTreeMap<String, usize> = scenario
-        .ledger
-        .seen
-        .lock()
-        .expect("seen")
-        .iter()
-        .map(|(chat, keys)| (chat.clone(), keys.len()))
-        .collect();
     let events = scenario.events();
     let refusals = scenario.ledger.refusals.lock().expect("refusals").clone();
     let found = judge(&Observed {
         events: &events,
         refusals: &refusals,
         asks_left: &asks_left,
-        asks_seen: &asks_seen,
         grants_listed: &grants_listed,
         grants_made: &grants_made,
         hook_budget: scenario.timings.hold() + scenario.timings.patience(),
@@ -665,7 +660,7 @@ pub(crate) fn judge_canary(seen: Canary) -> Result<(), String> {
         through.push("a write outside the project".to_owned());
     }
     if seen.dialled > 0 {
-        through.push(format!("{} direct dial(s)", seen.dialled));
+        through.push(format!("direct dials ({})", seen.dialled));
     }
     if through.is_empty() {
         Ok(())

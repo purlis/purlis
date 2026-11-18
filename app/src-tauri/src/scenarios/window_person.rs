@@ -8,7 +8,6 @@
 //! ones that start a scenario need the OS wrap, so their red and green are CI's (a scenario that
 //! cannot apply its wrap panics there, and elsewhere says why it did not run).
 
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use purlis_core::eventlog::Event;
@@ -59,7 +58,6 @@ struct Clean {
     events: Vec<Event>,
     refusals: Vec<Refusal>,
     asks_left: Vec<String>,
-    asks_seen: BTreeMap<String, usize>,
     grants_listed: Vec<(String, String, String)>,
     grants_made: Vec<(String, String, String)>,
     budget: Duration,
@@ -71,7 +69,6 @@ impl Clean {
             events: Vec::new(),
             refusals: Vec::new(),
             asks_left: Vec::new(),
-            asks_seen: BTreeMap::new(),
             grants_listed: Vec::new(),
             grants_made: Vec::new(),
             budget: Duration::from_secs(40),
@@ -83,7 +80,6 @@ impl Clean {
             events: &self.events,
             refusals: &self.refusals,
             asks_left: &self.asks_left,
-            asks_seen: &self.asks_seen,
             grants_listed: &self.grants_listed,
             grants_made: &self.grants_made,
             hook_budget: self.budget,
@@ -107,6 +103,7 @@ fn planted(check: Check) -> Clean {
             chat: "c1".to_owned(),
             step: "urllib".to_owned(),
             target: Some("urllib.example.test".to_owned()),
+            after: 0,
         }),
         Check::NoUnansweredAsk => observed
             .asks_left
@@ -130,11 +127,10 @@ fn planted(check: Check) -> Clean {
             "stop.block",
             serde_json::json!({"stop": "block", "tool": "Bash"}),
         )),
-        // #6674: two `ask.raised` for the one ask the chat was seen to have.
+        // #6674: two `ask.raised` for one ask, written together, with no new call between.
         Check::OneAskOneRaise => {
             observed.events.push(raised(1, "c1"));
             observed.events.push(raised(2, "c1"));
-            observed.asks_seen.insert("c1".to_owned(), 1);
         }
     }
     observed
@@ -217,7 +213,6 @@ fn a_refusal_with_nothing_written_is_reported_as_a_black_hole() {
     // A hold or an ask for the chat is.
     let mut asked = planted(Check::NoBlackHole);
     asked.events.push(raised(1, "c1"));
-    asked.asks_seen.insert("c1".to_owned(), 1);
     assert!(asked.judged().is_empty(), "{:?}", asked.judged());
 
     // A hook's deny with nothing written is a black hole too, with no step declared.
@@ -573,7 +568,7 @@ fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
         dialled: 2,
     })
     .expect_err("dialled");
-    assert!(dialled.contains("2 direct dial"), "{dialled}");
+    assert!(dialled.contains("direct dials (2)"), "{dialled}");
 
     // The canary's own commands, run with no wrap at all (this process is not wrapped): both get
     // through, so its judgment is red. This is what a scenario whose wrap did not apply sees.
@@ -854,19 +849,46 @@ fn the_window_queries_read_what_the_window_reads() {
     }
 }
 
-/// **A refusal the log never wrote is a black hole, in a scenario** (R-004, #6673): a held
-/// connection nobody answered is refused at its hold, and what writes it (the ask, the block) is
-/// written only at the chat's next prompt, which never comes. Pinned on Linux with Claude Code,
-/// where it was seen; the person then keeps the ask blocked, as a scenario that raised one must.
+/// **A held refusal has its ask written by the end** (R-004), in a scenario: a held connection
+/// nobody answers is refused at its hold, and by the time the scenario is quiet the log holds an
+/// ask or a block for that chat, so the no-black-hole check passes on a real chat, with its
+/// refusal declared. (Its block is written only at the chat's next prompt, #6673; the ask is
+/// written by then.) The person then keeps it blocked, as a scenario that raised one must.
 #[test]
-fn a_held_refusal_the_log_has_not_written_is_a_black_hole_today() {
+fn a_held_refusal_has_its_ask_written_by_the_end_of_the_scenario() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
+    else {
+        return;
+    };
+    let host = "refused-held.example.test";
+    let chat = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "go", "calls": [
+            {"step": "reaches", "tool": "bash", "run": super::reaches(host)}
+        ]}]
+    }));
+    scenario.until_played(chat, &["reaches"]);
+    scenario.refused(chat, "reaches", Some(host));
+    scenario.keeps_listed_asks_blocked();
+}
+
+/// **A Python client's refusal leaves nothing in the log** (R-004, #6675), in a scenario: a host
+/// the person kept blocked is refused at once to `urllib` through the proxy, and nothing is
+/// written for the second call: no ask, no block, no hold. The scenario declares the refusal
+/// before the call, so the ask the first call (curl) raised answers nothing, and the no-black-hole
+/// check fires, which the scenario pins to the issue. Linux alone: where it was seen on macOS,
+/// the wrap writes its refusals another way.
+#[test]
+fn a_python_urllib_refusal_in_a_scenario_is_a_black_hole_until_6675_is_fixed() {
     let Some(homes) = Homes::of_this_scenario() else {
         return;
     };
     if !cfg!(target_os = "linux") {
         super::report::write(&[super::a_fixture_record(
-            "a_held_refusal_the_log_has_not_written_is_a_black_hole_today",
-            Some(purlis_scenarios::model::Dialect::Claude),
+            "a_python_urllib_refusal_in_a_scenario_is_a_black_hole_until_6675_is_fixed",
+            Some(purlis_scenarios::model::Dialect::Codex),
             Some(purlis_scenarios::model::Protection::Full),
             purlis_scenarios::model::ReportVerdict::NotRun,
             "pinned on Linux: macOS's wrap writes its refusals another way (ticket 51)",
@@ -875,23 +897,38 @@ fn a_held_refusal_the_log_has_not_written_is_a_black_hole_today() {
         homes.ran_no_scenario();
         return;
     }
-    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Claude)
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
     else {
         return;
     };
-    let host = "blackhole.example.test";
+    let host = "urllib-kept.example.test";
     let chat = scenario.starts(&serde_json::json!({
-        "turns": [{"prompt": "go", "calls": [
-            {"step": "reaches", "tool": "bash", "run": super::reaches(host)}
-        ]}]
+        "turns": [
+            {"prompt": "first", "calls": [
+                {"step": "curl", "tool": "bash", "run": super::reaches(host)}
+            ]},
+            {"prompt": "second", "calls": [
+                {"step": "urllib", "tool": "bash", "run": format!(
+                    "python3 -c \"import urllib.request; urllib.request.urlopen('https://{host}/', timeout=20)\""
+                )}
+            ]}
+        ]
     }));
-    scenario.until_played(chat, &["reaches"]);
-    scenario.refused(chat, "reaches", Some(host));
-    // Today: nothing names the host in the log by the end of the scenario (#6673).
+    // The person keeps the host blocked, as in the issue; curl's refusal is the ask's.
+    let (_, kept) =
+        scenario
+            .person()
+            .when_listed(host, &Press::Keep(None), Duration::from_millis(50));
+    kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
+    scenario.until_played(chat, &["curl"]);
+    // The next call is the one the issue is about.
+    scenario.refused_after_now(chat, "urllib", Some(host));
+    scenario.types(chat, "second");
+    scenario.until_played(chat, &["urllib"]);
     scenario.expected_fail(
         Check::NoBlackHole,
-        6673,
-        "the held ask's block is written only at the chat's next prompt",
+        6675,
+        "a refusal seen by Python urllib writes nothing: no ask, no block",
     );
     scenario.keeps_listed_asks_blocked();
 }
