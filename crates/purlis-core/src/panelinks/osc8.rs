@@ -232,7 +232,7 @@ fn trimmed(word: &str) -> &str {
         if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) || ipv6(word) {
             word
         } else {
-            word.trim_start_matches(|c| lookalike::wraps_a_word(c))
+            word.trim_start_matches(lookalike::wraps_a_word)
         };
     let ip = bracketed_ip(start)
         || ipv6(start)
