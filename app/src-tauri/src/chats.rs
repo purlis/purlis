@@ -6011,7 +6011,12 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
-            Some(&purlis_core::enforcement::at_start(&self.project).spelled()),
+            // Never looser than the chain that dispatched it (Q308a, Q308b).
+            Some(
+                &purlis_core::enforcement::at_start(&self.project)
+                    .for_chat(chat.from.as_ref().and_then(|from| from.policy.as_deref()))
+                    .spelled(),
+            ),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -8109,6 +8114,13 @@ impl Chats {
                 confines,
                 harness: running.harness,
                 ends_seen: None,
+                chat_id: running.chat.identity.id.clone(),
+                // Never looser than the chain that dispatched it (the review of #7113).
+                policy: running
+                    .chat
+                    .from
+                    .as_ref()
+                    .and_then(|from| from.policy.clone()),
             },
             unconfined,
         ))

@@ -134,6 +134,7 @@ fn chat(session: u32, persona: Option<&str>) -> Asking {
         persona: persona.map(str::to_owned),
         held: false,
         above: purlis_core::dispatchchain::Above::Known(Vec::new()),
+        policy: None,
     }
 }
 
@@ -1363,12 +1364,10 @@ fn a_chat_nobody_is_at_and_outside_a_sandbox_is_refused_another_persona_whatever
 
     assert_eq!(
         asked,
+        // Granted, and no seal keeps the grant out of its reach in this test build (ticket
+        // T1.1-73): refused, saying why.
         Requested::Refused(
-            "this chat runs with its harness's permission prompts off and with no sandbox. A \
-             chat with neither can change who it may dispatch to, so purlis starts nobody for \
-             it but a chat of its own persona, and devops is another. Run this work in a \
-             sandboxed chat, or in one a person answers."
-                .to_owned()
+            purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say()
         )
     );
     assert_eq!(raised, None);

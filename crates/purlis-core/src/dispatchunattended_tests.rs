@@ -302,32 +302,50 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
         Answer::Covered
     );
 
-    for grants in [granted.clone(), InForce::default()] {
-        let answer = super::covers(
+    // Granted (ticket T1.1-73): only where the seal keeps the grant out of its reach.
+    assert_eq!(
+        super::covers(
             Some("steward"),
             "devops",
-            &grants,
+            &granted,
             &Locks::none(),
             false,
             false,
-        );
-
-        assert_eq!(
-            answer,
-            Answer::Refused(Refusal::Unsandboxed("devops".to_owned())),
-            "{grants:?}"
-        );
-        let Answer::Refused(why) = answer else {
-            unreachable!()
-        };
-        assert_eq!(
-            why.say(),
-            "this chat runs with its harness's permission prompts off and with no sandbox. A \
-             chat with neither can change who it may dispatch to, so purlis starts nobody for \
-             it but a chat of its own persona, and devops is another. Run this work in a \
-             sandboxed chat, or in one a person answers."
-        );
-    }
+        ),
+        if super::sealed_here() {
+            Answer::Covered
+        } else {
+            Answer::Refused(Refusal::NotSealedHere("devops".to_owned()))
+        }
+    );
+    // Not granted, where the policy asks: refused at once and kept for the needs-you list.
+    let answer = super::covers(
+        Some("steward"),
+        "devops",
+        &InForce::default(),
+        &Locks::none(),
+        false,
+        false,
+    );
+    let Answer::Refused(why) = answer else {
+        panic!("refused: {answer:?}")
+    };
+    assert_eq!(
+        why,
+        Refusal::Unsandboxed(Missing {
+            asking: Some("steward".to_owned()),
+            target: "devops".to_owned(),
+            unreviewed: false,
+        })
+    );
+    assert_eq!(
+        why.say(),
+        "this chat runs with its harness's permission prompts off and with no sandbox, so \
+         nobody is here to answer for a dispatch, and no grant the person made covers this \
+         chat's persona dispatching to devops. The person will see this pair in their \
+         needs-you list, where one press grants it; until then, do this work \
+         without devops, or say in what you leave behind that it is waiting."
+    );
     // Its own persona is still its own, and a policy lock is still the policy's to say.
     assert_eq!(
         super::covers(
@@ -355,7 +373,11 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
             false,
             false
         ),
-        Answer::Refused(Refusal::Unsandboxed("devops".to_owned()))
+        Answer::Refused(Refusal::Unsandboxed(Missing {
+            asking: None,
+            target: "devops".to_owned(),
+            unreviewed: false,
+        }))
     );
 }
 

@@ -221,11 +221,14 @@ impl Family {
     /// **Whether `[policy]` switches the family yet.** Not where its wiring waits on a later
     /// ruling; those stay enforced, as before Q308, whatever `[policy]` says:
     ///
-    /// - `vaults` and `browser`, and the sandbox's level: each holds grants or remembered
-    ///   answers (sandbox grants, browser reach, the team's sandbox accept) whose fit with
-    ///   `[policy]` the follow-up settles. `dispatch` and `asks` switch their simple half now
-    ///   (instruction of 2026-11-16): a pair nothing covers starts with no grant, and a host ask
-    ///   is answered Allow; a lock and the person's nevers and Keep blocked hold in every mode;
+    /// - `browser`, and the sandbox's level: each holds grants or remembered answers (browser
+    ///   reach, the team's sandbox accept) whose fit with `[policy]` the follow-up settles.
+    ///   `dispatch` switches whole (ticket T1.1-73): a policy ask or deny goes ahead under `off`
+    ///   and `log`, and a lock and the person's nevers hold in every mode. `asks` switches its
+    ///   simple half: a host ask is answered Allow, and Keep blocked holds in every mode.
+    ///   `vaults` switches off or enforce only, at a vault's check against its persona and the
+    ///   in-chat refusal of a keyring read (item 4 of the follow-up); the declared-tool gate of
+    ///   a brokered run is the `tools` family's;
     /// - `network` and `ports`: the egress proxy's refusal is its live ask, and a port or socket
     ///   is a sandbox grant, both held with the above;
     /// - `processes`: the wrap's refusal of programs that would run outside it (`launchctl`,
@@ -241,6 +244,7 @@ impl Family {
         matches!(
             self,
             Family::Dispatch
+                | Family::Vaults
                 | Family::Asks
                 | Family::GuardsGit
                 | Family::GuardsMerge
@@ -413,6 +417,11 @@ pub struct Settings {
     /// read as `strict` meanwhile, and that is never kept as what the person accepted, since it
     /// is no tightening the project made (#7073).
     pub unread: bool,
+    /// **The project's dispatch denies** (`[dispatch.denies]`, ticket T1.1-73, and the review
+    /// of #7113): read with `[policy]`, from the same committed text, so a deny is accepted,
+    /// and lifted, the way a family is. A file that does not read denies every dispatch across
+    /// personas ([`crate::dispatchgrant::Denied::all`]).
+    pub denies: crate::dispatchgrant::Denied,
 }
 
 impl Settings {
@@ -420,6 +429,7 @@ impl Settings {
     /// or is not TOML (that file's own reader says why).
     pub fn from_text(text: Option<&str>) -> Self {
         let mut said = Self::read_text(text);
+        said.denies = crate::dispatchgrant::Denied::of_text(text);
         // **Any value purlis cannot read means `strict`**, with the sentence for the Notice (the
         // review of #6992, S6): a file that is not TOML, a key that is no family, a mode or a
         // template that is none.
@@ -548,9 +558,12 @@ impl Settings {
                 overrides: BTreeMap::new(),
                 refused: vec![why],
                 unread: true,
+                denies: crate::dispatchgrant::Denied::all(),
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
+        // The local file can add a deny, never take one away.
+        project.denies = project.denies.with(&local.denies);
         for family in Family::ALL {
             // Only what the local file says: a family it is silent on is the project's.
             let mine = local
@@ -586,7 +599,7 @@ const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// reads as `strict`, where the plane is a repository whose `HEAD` git could not read or did not
 /// read in time: never the working tree's file then (the re-review of #6992).
 pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
-    use crate::settings::{Which, layer_text};
+    use crate::settings::Which;
     let unread =
         || "git could not read the project's last commit, so its [policy] is enforced".to_owned();
     match crate::worktree::git::run(
@@ -603,7 +616,17 @@ pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
                 && run.err.contains("not a git repository")
                 && root.join(".git").symlink_metadata().is_err() =>
         {
-            return Ok(layer_text(root, Which::Shared).text().map(str::to_owned));
+            // A file that is there and does not read (a folder, a file this process may not
+            // read) is not "no file" (the review of #7113): strict.
+            let path = Which::Shared.path(root);
+            return match std::fs::metadata(&path) {
+                Err(none) if none.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                _ => std::fs::read_to_string(&path).map(Some).map_err(|_| {
+                    "purlis could not read the project's settings file, so its [policy] is \
+                     enforced"
+                        .to_owned()
+                }),
+            };
         }
         // Timed out, failed, or no commit yet: never the working tree's file.
         _ => return Err(unread()),
@@ -635,21 +658,36 @@ pub fn digest_of(root: &Path) -> String {
 /// The digest of `resolved`, as [`digest_of`] names it.
 fn digest(resolved: &Resolved) -> String {
     use sha2::Digest;
-    crate::extension::hex(&sha2::Sha256::digest(resolved.spelled().as_bytes()))
+    // The denies are part of what is accepted, so of what is digested (the review of #7113).
+    let text = format!("{}\n{}", resolved.spelled(), resolved.1.spelled());
+    crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
 }
+
+/// The key an acceptance keeps the denies it accepted under: no family's key.
+const DENIES_KEPT: &str = "dispatch.denies";
 
 /// How every family runs for one chat: what [`at_start`] resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Resolved(BTreeMap<Family, Mode>);
+pub struct Resolved(BTreeMap<Family, Mode>, crate::dispatchgrant::Denied);
 
 impl Resolved {
-    /// Every family at `mode`.
+    /// Every family at `mode`, and no dispatch denied.
     pub fn all(mode: Mode) -> Self {
         Self(
             Family::ALL
                 .into_iter()
                 .map(|family| (family, mode))
                 .collect(),
+            crate::dispatchgrant::Denied::default(),
+        )
+    }
+
+    /// **`strict`**: every family enforced, and every dispatch across personas denied. What an
+    /// acceptance that does not hold reads as.
+    pub fn strict() -> Self {
+        Self(
+            Self::all(Mode::Enforce).0,
+            crate::dispatchgrant::Denied::all(),
         )
     }
 
@@ -661,7 +699,20 @@ impl Resolved {
                 .into_iter()
                 .map(|family| (family, under(settings, locks, family)))
                 .collect(),
+            settings.denies.clone(),
         )
+    }
+
+    /// **How a chat runs, with `chain` the strictest policy along the chain that dispatched it**
+    /// ([`crate::reopen::HandedFrom::policy`]): the stricter of the two, family by family, so a
+    /// dispatched chat is never looser than its asker (Q308a, Q308b). `None` for a chat nobody
+    /// dispatched, which runs as `self`.
+    #[must_use]
+    pub fn for_chat(self, chain: Option<&str>) -> Self {
+        match chain {
+            Some(chain) => self.stricter(&Self::parse(chain)),
+            None => self,
+        }
     }
 
     /// How `family` runs.
@@ -669,13 +720,20 @@ impl Resolved {
         self.0.get(&family).copied().unwrap_or(Mode::Enforce)
     }
 
-    /// The stricter of `self` and `other`, family by family.
+    /// **The dispatch denies resolved** (`[dispatch.denies]`, ticket T1.1-73): what the
+    /// project's committed file says and what this person accepted, whichever denies more.
+    pub fn denies(&self) -> &crate::dispatchgrant::Denied {
+        &self.1
+    }
+
+    /// The stricter of `self` and `other`, family by family, and every deny of either.
     pub fn stricter(&self, other: &Self) -> Self {
         Self(
             Family::ALL
                 .into_iter()
                 .map(|family| (family, self.mode(family).max(other.mode(family))))
                 .collect(),
+            self.1.with(&other.1),
         )
     }
 
@@ -689,7 +747,14 @@ impl Resolved {
             .collect()
     }
 
-    /// As [`ENV`] carries it: `family=mode` pairs, comma-separated.
+    /// The denies `accepted` holds and `self` does not, each as it is spelled: what a press
+    /// would lift (the review of #7113).
+    pub fn lifts(&self, accepted: &Self) -> Vec<String> {
+        accepted.1.without(&self.1)
+    }
+
+    /// As [`ENV`] carries it: `family=mode` pairs, comma-separated. The denies are not carried:
+    /// only the app judges a dispatch.
     pub fn spelled(&self) -> String {
         self.0
             .iter()
@@ -711,24 +776,37 @@ impl Resolved {
                 .into_iter()
                 .map(|family| (family, said.get(&family).copied().unwrap_or(Mode::Enforce)))
                 .collect(),
+            crate::dispatchgrant::Denied::default(),
         )
     }
 
+    /// As the acceptance keeps it: each family's mode, and the denies under [`DENIES_KEPT`]
+    /// where there are any, so an acceptance with none is kept as before.
     fn as_kept(&self) -> BTreeMap<String, String> {
-        self.0
+        let mut kept: BTreeMap<String, String> = self
+            .0
             .iter()
             .map(|(family, mode)| (family.key().to_owned(), mode.word().to_owned()))
-            .collect()
+            .collect();
+        if !self.1.is_empty() {
+            kept.insert(DENIES_KEPT.to_owned(), self.1.spelled());
+        }
+        kept
     }
 
     fn of_kept(kept: &BTreeMap<String, String>) -> Self {
-        Self::parse(
+        let mut resolved = Self::parse(
             &kept
                 .iter()
+                .filter(|(key, _)| key.as_str() != DENIES_KEPT)
                 .map(|(family, mode)| format!("{family}={mode}"))
                 .collect::<Vec<_>>()
                 .join(","),
-        )
+        );
+        if let Some(denies) = kept.get(DENIES_KEPT) {
+            resolved.1 = crate::dispatchgrant::Denied::parse(denies);
+        }
+        resolved
     }
 }
 
@@ -764,7 +842,7 @@ pub fn accepted(root: &Path) -> Resolved {
         PolicyAccepted::Never => {
             Resolved::of(&Settings::default(), &crate::sandbox::policy::Locks::none())
         }
-        PolicyAccepted::Broken => Resolved::all(Mode::Enforce),
+        PolicyAccepted::Broken => Resolved::strict(),
     }
 }
 
@@ -834,6 +912,10 @@ pub struct Standing {
     /// Each family the project now runs looser than this person accepted: the family, the
     /// accepted mode and the project's. What the press would accept.
     pub waiting: Vec<(Family, Mode, Mode)>,
+    /// Each dispatch deny this person accepted that the project's committed file no longer
+    /// holds, as [`crate::dispatchgrant::Denied::spelled`] spells one: still denied until the
+    /// press, which would lift it (the review of #7113).
+    pub lifted: Vec<String>,
     /// What the project's `[policy]` holds that purlis could not read, each enforced.
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
@@ -860,6 +942,7 @@ pub fn standing(root: &Path) -> Standing {
     let accepted = accepted(root);
     Standing {
         waiting: now.looser_than(&accepted),
+        lifted: now.lifts(&accepted),
         refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
         digest: digest(&now),
@@ -959,6 +1042,23 @@ pub fn in_force(root: &Path) -> Resolved {
     match crate::envvar::var(ENV).filter(|said| !said.is_empty()) {
         Some(started) => asked.stricter(&Resolved::parse(&started)),
         None => asked,
+    }
+}
+
+/// **The dispatch denies in force for the project at `root`** (`[dispatch.denies]`, ticket
+/// T1.1-73, and the review of #7113), read with `[policy]`:
+///
+/// - **In the app**: the denies of [`in_force`], so from the committed file at `HEAD`, never the
+///   working tree's, and never fewer than this person accepted. A deny the project takes away is
+///   a loosening that waits for the press ([`press`]); one it adds holds at once. A file that
+///   does not read, or a `HEAD` git cannot read, denies every dispatch across personas.
+/// - **Anywhere else**: the committed file's at `HEAD`, as unreadable as strictly. No other
+///   process judges a dispatch for a chat.
+pub fn denies_in_force(root: &Path) -> crate::dispatchgrant::Denied {
+    if in_the_app() {
+        resolved_in_the_app(root).1
+    } else {
+        Settings::read(root).denies
     }
 }
 

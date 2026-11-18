@@ -31,13 +31,19 @@
 //! they may make the standing grant for that pair. It is no Notice on the chat and holds no
 //! dispatch: the answer here is still a refusal, given at once.
 //!
-//! # Only from inside the sandbox
+//! # With no sandbox: only a sealed grant (ticket T1.1-73, ruling Q306)
 //!
-//! A standing grant is a file, and what keeps a chat from writing it is the sandbox. A chat
-//! with its prompts off and no sandbox has neither a person nor a wall between it and who it
-//! may dispatch to, so it dispatches to no other persona at all ([`Refusal::Unsandboxed`]),
-//! whatever the grants say. Its own persona is still its own. Whether a chat is sandboxed is
-//! the app's record of how it started the chat, never a line the chat sends.
+//! A standing grant is a file, and a chat with no sandbox runs as the person and can write it.
+//! **So a grant counts only where the app sealed it** ([`crate::secrets::sealed_set`]): one a
+//! chat wrote or edited breaks its seal and counts as no grant. Where the seal's key is the
+//! app's alone — on macOS, in the app — a chat with its prompts off and no sandbox dispatches
+//! under a sealed grant, and under a policy allow the person accepted, as a sandboxed one does.
+//! **Elsewhere** (Linux and Windows, where any of the person's programs can read the keyring,
+//! or a process that cannot verify a seal) such a chat dispatches to no other persona but under
+//! the `dispatch` family's `off` or `log` ([`Refusal::NotSealedHere`]). Its own persona is still
+//! its own. **Where the policy asks and no sealed grant covers the pair**, it is refused at once
+//! ([`Refusal::Unsandboxed`]) and kept for the person's needs-you list. Whether a chat is
+//! sandboxed is the app's record of how it started the chat, never a line the chat sends.
 //!
 //! # What it starts
 //!
@@ -85,8 +91,9 @@ pub enum Answer {
 /// Why an unattended chat's dispatch is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
-    /// The chat was started without a sandbox, and asked for another persona: the target.
-    Unsandboxed(String),
+    /// The chat was started without a sandbox, the policy asks, and no sealed grant covers the
+    /// pair: what is missing. Kept for the needs-you list.
+    Unsandboxed(Missing),
     /// No grant that counts covers the pair.
     Missing(Missing),
     /// The person said never to the pair on this machine (#1503): the asking persona and the
@@ -97,6 +104,11 @@ pub enum Refusal {
     NeverAbove(String, String),
     /// This machine's record of nevers does not read, so no grant counts.
     NeversUnread,
+    /// The project's policy denies the pair (`[dispatch.denies]`): the target.
+    Denied(String),
+    /// A grant covers the pair, and on this system its seal does not keep it out of reach of
+    /// a chat with no sandbox: the target.
+    NotSealedHere(String),
 }
 
 impl Refusal {
@@ -107,18 +119,39 @@ impl Refusal {
             Self::Never(asking, target) => dispatchgrant::never_said(asking, target),
             Self::NeverAbove(above, target) => dispatchgrant::never_above_said(above, target),
             Self::NeversUnread => dispatchgrant::NEVERS_UNREAD.to_owned(),
-            Self::Unsandboxed(target) => {
+            Self::Denied(target) => dispatchgrant::denied_said(target),
+            Self::Unsandboxed(missing) => {
+                let target = crate::shown::short(&missing.target);
+                format!(
+                    "this chat runs with its harness's permission prompts off and with no \
+                     sandbox, so nobody is here to answer for a dispatch, and no grant the \
+                     person made covers this chat's persona dispatching to {target}. The \
+                     person will see this pair in their needs-you list, where one press \
+                     grants it; until then, do this work without {target}, or \
+                     say in what you leave behind that it is waiting."
+                )
+            }
+            Self::NotSealedHere(target) => {
                 let target = crate::shown::short(target);
                 format!(
                     "this chat runs with its harness's permission prompts off and with no \
-                     sandbox. A chat with neither can change who it may dispatch to, so \
-                     purlis starts nobody for it but a chat of its own persona, and {target} \
-                     is another. Run this work in a sandboxed chat, or in one a person \
-                     answers."
+                     sandbox. A grant covers {target}, and on this system purlis cannot keep a \
+                     grant out of reach of a chat with no sandbox (only the macOS Keychain \
+                     keeps purlis's seal to its app), so a chat with neither a person nor a \
+                     sandbox dispatches to no persona but its own here. Run this work in a \
+                     sandboxed chat, or in one a person answers."
                 )
             }
         }
     }
+}
+
+/// **Whether a sealed grant keeps out of reach of a chat with no sandbox here** (ticket
+/// T1.1-73): on macOS, in the app, where the Keychain gives the seal's key to the app's binary
+/// alone. Not on Linux or Windows, where any of the person's programs can read the keyring, and
+/// not in a process that cannot verify a seal.
+pub fn sealed_here() -> bool {
+    cfg!(target_os = "macos") && crate::secrets::sealed_set::decides()
 }
 
 /// The grant an unattended chat lacks.
@@ -192,13 +225,26 @@ pub fn covers(
 ) -> Answer {
     let mut standing = grants.clone();
     standing.chat.clear();
-    answer_of(
+    answer_on(
         dispatchgrant::covers(asking, target, &standing, policy),
         asking,
         target,
         named_by_the_project,
-        sandboxed,
+        Reach {
+            sandboxed,
+            sealed_here: sealed_here(),
+        },
     )
+}
+
+/// What keeps a grant from an unattended chat: its sandbox, and the seal where the seal keeps
+/// out of its reach ([`sealed_here`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reach {
+    /// The app started the chat inside a sandbox.
+    pub sandboxed: bool,
+    /// A sealed grant is out of the chat's reach on this system ([`sealed_here`]).
+    pub sealed_here: bool,
 }
 
 /// What `answer`, the grant's own for the pair with no chat's grants counted, means for an
@@ -213,6 +259,29 @@ pub fn answer_of(
     named_by_the_project: bool,
     sandboxed: bool,
 ) -> Answer {
+    answer_on(
+        answer,
+        asking,
+        target,
+        named_by_the_project,
+        Reach {
+            sandboxed,
+            sealed_here: sealed_here(),
+        },
+    )
+}
+
+/// [`answer_of`], with what keeps a grant from the chat said: a covered pair of two personas
+/// stands for a chat with no sandbox only where a sealed grant is out of its reach; an ask with
+/// no sealed grant is [`Refusal::Unsandboxed`], kept for the needs-you list.
+pub fn answer_on(
+    answer: Covers,
+    asking: Option<&str>,
+    target: &str,
+    named_by_the_project: bool,
+    reach: Reach,
+) -> Answer {
+    let sandboxed = reach.sandboxed;
     match answer {
         Covers::Locked(why) => Answer::Locked(why),
         // The person's never, whatever stands beside it: said as it is said to any chat.
@@ -223,10 +292,16 @@ pub fn answer_of(
         Covers::NeverAbove(above) => Answer::Refused(Refusal::NeverAbove(above, target.to_owned())),
         // A chat's own persona never reads as this; for any other, nobody is here to ask.
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
+        Covers::Denied(_) => Answer::Refused(Refusal::Denied(target.to_owned())),
         Covers::Covered if asking == Some(target) => Answer::Covered,
-        Covers::Covered | Covers::NeedsGrant if !sandboxed => {
-            Answer::Refused(Refusal::Unsandboxed(target.to_owned()))
+        Covers::Covered if !sandboxed && !reach.sealed_here => {
+            Answer::Refused(Refusal::NotSealedHere(target.to_owned()))
         }
+        Covers::NeedsGrant if !sandboxed => Answer::Refused(Refusal::Unsandboxed(Missing {
+            asking: asking.map(str::to_owned),
+            target: target.to_owned(),
+            unreviewed: asking.is_some() && named_by_the_project,
+        })),
         Covers::Covered => Answer::Covered,
         Covers::NeedsGrant => Answer::Refused(Refusal::Missing(Missing {
             asking: asking.map(str::to_owned),
@@ -236,19 +311,49 @@ pub fn answer_of(
     }
 }
 
-/// **`answer` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50):
-/// under `off` or `log`, a pair nothing covers, and one refused only because the asking chat has
-/// no sandbox ([`Refusal::Unsandboxed`]), is covered. A lock, the person's nevers, a never above
-/// and a nevers record that does not read stand in every mode.
+/// **`answer` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50;
+/// ticket T1.1-73): under `off` or `log`, a pair nothing covers, one the policy denies, and one
+/// refused only because the asking chat has no sandbox ([`Refusal::Unsandboxed`],
+/// [`Refusal::NotSealedHere`]), is covered. A lock, the person's nevers, a never above and a
+/// nevers record that does not read stand in every mode.
 pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Answer {
     match answer {
-        Answer::Refused(Refusal::Unsandboxed(_) | Refusal::Missing(_))
-            if mode != crate::enforcement::Mode::Enforce =>
-        {
-            Answer::Covered
-        }
+        Answer::Refused(
+            Refusal::Unsandboxed(_)
+            | Refusal::Missing(_)
+            | Refusal::Denied(_)
+            | Refusal::NotSealedHere(_),
+        ) if mode != crate::enforcement::Mode::Enforce => Answer::Covered,
         other => other,
     }
+}
+
+/// [`as_the_policy_runs`], and under `log` one quiet line in chat `chat`'s enforcement log
+/// naming the rule that would have refused (item 8 of the Q308 follow-up). `chat` is the asking
+/// chat's id, as the app holds it.
+pub fn as_the_policy_runs_for(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    answer: Answer,
+    mode: crate::enforcement::Mode,
+) -> Answer {
+    let rule = match &answer {
+        Answer::Refused(Refusal::Denied(_)) => dispatchgrant::DENY_RULE,
+        Answer::Refused(
+            Refusal::Unsandboxed(_) | Refusal::Missing(_) | Refusal::NotSealedHere(_),
+        ) => dispatchgrant::ASK_RULE,
+        _ => return answer,
+    };
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::Dispatch,
+        mode,
+        rule,
+        None,
+        answer,
+    )
+    .unwrap_or(Answer::Covered)
 }
 
 /// The words of a harness's command line that start it with its permission prompts off, as a

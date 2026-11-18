@@ -530,7 +530,7 @@ fn secrets_under_watch_still_mask() {
     ] {
         let root = plane(text, None);
         at_start(root.path());
-        let masked = crate::secrets::masked_of(root.path(), Some(CHAT), &values);
+        let masked = crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values);
         assert_eq!(masked, values.as_slice(), "{text:?}");
         assert_eq!(
             crate::secrets::redact(b"token s3cr3t-value", masked),
@@ -548,11 +548,11 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
         // Not pressed: still masked, and nothing logged.
         at_start(root.path());
         assert_eq!(
-            crate::secrets::masked_of(root.path(), Some(CHAT), &values),
+            crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values),
             values.as_slice()
         );
         press(root.path(), &digest_of(root.path())).expect("the press is kept");
-        assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
+        assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
 }
@@ -606,7 +606,7 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -630,7 +630,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -696,7 +696,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -787,7 +787,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
         crate::dispatchgrant::Covers::Unread
@@ -862,7 +862,8 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), strict());
+    // Every family enforced, and every dispatch across personas denied.
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -874,7 +875,87 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, strict());
+    assert_eq!(found.1, Resolved::strict());
+}
+
+/// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
+/// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
+/// `strict`, `watch`, `hold` and `team` keep a vault to the personas it is tagged for.
+#[test]
+fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced() {
+    use crate::secrets::{Ctx, Env, brokered};
+    let _home = OwnConfigHome::new();
+    for (text, opened) in [
+        ("[policy]\ntemplate = \"strict\"\n", false),
+        ("[policy]\ntemplate = \"watch\"\n", false),
+        ("[policy]\ntemplate = \"hold\"\n", false),
+        ("[policy]\ntemplate = \"team\"\n", false),
+        ("[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n", true),
+        ("[policy]\ntemplate = \"open\"\n", true),
+    ] {
+        let root = plane(text, None);
+        std::fs::write(
+            root.path().join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "prod": {"provider": "plain-file", "config": {"file": "prod.json"}, "persona": "devops"},
+            }})
+            .to_string(),
+        )
+        .expect("the registry");
+        at_start(root.path());
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
+        assert_eq!(
+            mode(root.path(), Family::Vaults) == Mode::Off,
+            opened,
+            "{text}"
+        );
+        let ctx = Ctx::new(root.path(), Env::of(&[]));
+        assert_eq!(
+            brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
+            opened,
+            "{text}"
+        );
+        // Its own persona, always; a vault the project does not register, never.
+        assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
+        assert!(
+            brokered::authorise(&ctx, Some("devops"), "nope").is_err(),
+            "{text}"
+        );
+    }
+}
+
+/// A plane whose project lets masking and the vaults check go, pressed: and the chain that
+/// dispatched a chat enforced both (the review of #7113).
+fn loosened_plane() -> tempfile::TempDir {
+    let root = plane("[policy]\nsecrets = \"off\"\nvaults = \"off\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
+    root
+}
+
+const STRICT_CHAIN: &str = "secrets=enforce,vaults=enforce";
+
+#[test]
+fn a_dispatched_chat_s_output_is_masked_where_its_chain_masked_it() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    let root = loosened_plane();
+    assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
+    assert_eq!(
+        crate::secrets::masked_of(root.path(), (Some(CHAT), Some(STRICT_CHAIN)), &values),
+        values.as_slice()
+    );
+}
+
+#[test]
+fn a_dispatched_chat_s_vaults_are_checked_where_its_chain_checked_them() {
+    let _home = OwnConfigHome::new();
+    let root = loosened_plane();
+    let ctx = crate::secrets::Ctx::new(root.path(), crate::secrets::Env::of(&[]));
+    assert!(crate::secrets::brokered::vaults_off(&ctx));
+    assert!(!crate::secrets::brokered::vaults_off(
+        &ctx.under_chain(Some(STRICT_CHAIN))
+    ));
 }
 
 /// `git <args>` in `root`, with no configuration but the repository's.
@@ -980,7 +1061,7 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let branch = String::from_utf8(branch.stdout).expect("utf-8");
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), Resolved::strict());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);

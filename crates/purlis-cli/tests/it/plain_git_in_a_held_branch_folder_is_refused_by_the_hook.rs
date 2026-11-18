@@ -169,6 +169,7 @@ impl Project {
                         harnessed: true,
                         unsandboxed: true,
                         roots_git_held: false,
+                        policy: None,
                         unreadable: Vec::new(),
                         config: None,
                         id: Some(ME.to_owned()),
