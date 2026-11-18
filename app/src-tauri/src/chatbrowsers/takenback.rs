@@ -37,7 +37,7 @@ use purlis_session_protocol::session::HeldProgram;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, browser_number,
+    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, answer_of, browser_number,
 };
 
 /// **Whose a browser is, as its window note says** (#2025).
@@ -158,7 +158,38 @@ impl ChatBrowsers {
     /// **Chat `session` is `id`** (ADR 0066), as the app's record of it says: what its browsers'
     /// notes name it by (#2025).
     pub fn identify(&self, session: u32, id: Option<String>) {
-        self.lock().entry(session).or_default().id = id;
+        let found = {
+            let mut chats = self.lock();
+            let chat = chats.entry(session).or_default();
+            chat.id = id.clone();
+            // The answer the person gave this chat before a restart stands (#7190): found by its
+            // identity alone, so only this chat's, and only where it has not been asked since.
+            let kept = id.as_deref().zip(self.answers_in.as_deref()).and_then(
+                |(id, root)| purlis_core::browserposture::kept(root, id),
+            );
+            match (chat.posture, kept) {
+                (Posture::Unasked, Some(answer)) => {
+                    chat.posture = match answer {
+                        purlis_core::browserposture::Answer::Allowed { open_web } => {
+                            Posture::Allowed { open_web }
+                        }
+                        purlis_core::browserposture::Answer::Off => Posture::Off,
+                    };
+                    false
+                }
+                // Answered before its identity was known: kept now it is.
+                (posture @ (Posture::Allowed { .. } | Posture::Off), None) => {
+                    chat.rests_on.is_none() && answer_of(posture).is_some()
+                }
+                _ => false,
+            }
+        };
+        if let (true, Some(id)) = (found, id) {
+            let posture = self.lock().get(&session).map(|chat| chat.posture);
+            if let Some(posture) = posture {
+                self.keep_answer(&id, posture);
+            }
+        }
     }
 
     /// **The person opened browser `program` in a view tab of its own** (#2176): theirs, noted

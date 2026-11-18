@@ -27,9 +27,15 @@
 //!   and link key, and the engine the Ask names ([`Bound::of_cluster`]). A pool on another
 //!   machine's engine is the machine and engine as pinned (host key or CA, and engine id), in place
 //!   of a local socket, so an opt-in is bound to the runner that actually receives the values.
-//! - **It is kept in memory, for this run of the app**: a restart asks again. Nothing of it is
-//!   written, so no new store is made, and nothing of it reaches a runner. A lasting answer is
-//!   #3299.
+//! - **It survives a restart, on this machine only** (#7190 item 2, the person's ruling of
+//!   2026-11-18): an opt-in ([`OptIns::stored_in`]) is written to `pool-login-optins.json` in
+//!   this machine's config folder (Machine, device-bound: never in a plane, never synced,
+//!   never committed), 0600, with the [`Bound`] it was given for. It has no time limit, and
+//!   is read as it stands: any change to what it is bound to (the persona, the pool, the
+//!   pool's definition and image, the runner, and the pin with the person's mark) is
+//!   [`Standing::Changed`] and asks again. It is listed ([`OptIns::granted`]) for the Granted
+//!   list, and the person removes it ([`OptIns::remove`]). A person who keeps a login off is not
+//!   kept: that refusal holds for this run alone, as before. Nothing of it reaches a runner.
 //!
 //! No vault value is ever stored on a runner: the login's values go to its browser for the one
 //! login, and the runner keeps none.
@@ -42,7 +48,7 @@ use crate::runners::{ClusterKept, ClusterPool, Kept, Pool};
 
 /// **What an opt-in is bound to**: the pool, the digest of how it is defined, its image's digest,
 /// the runner that receives the values, and the engine that runner runs on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Bound {
     pub pool: String,
     pub definition: String,
@@ -514,13 +520,47 @@ pub enum Standing {
 /// Which opt-in: a persona's login, by its identity, on a pool.
 type Key = (String, String, String);
 
-/// The opt-ins the person gave in this run of the app, by persona, login and pool.
+/// The file of the opt-ins the person gave, relative to this machine's config folder.
+pub const IN_CONFIG: &str = "pool-login-optins.json";
+
+/// **One opt-in as the Granted list shows it** (#7190 item 2): the persona, the login by its
+/// identity and the pool. Never a value of the login.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Granted {
+    pub persona: String,
+    pub login: String,
+    pub pool: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Stored {
+    persona: String,
+    login: String,
+    bound: Bound,
+}
+
+/// The most opt-ins kept: a bound on a damaged file.
+const MOST_KEPT: usize = 1024;
+
+/// The opt-ins the person gave, by persona, login and pool. Held in memory for this run, and,
+/// where made by [`OptIns::stored_in`], the allowed ones are kept in this machine's store too.
 #[derive(Debug, Default)]
 pub struct OptIns {
     held: Mutex<HashMap<Key, (Bound, bool)>>,
+    /// The config folder the allowed opt-ins are kept in, where they are.
+    stored: Option<std::path::PathBuf>,
 }
 
 impl OptIns {
+    /// Opt-ins kept in the config folder `config_root`, read afresh at each use so every holder
+    /// of it, one per project, agrees.
+    pub fn stored_in(config_root: &Path) -> OptIns {
+        OptIns {
+            held: Mutex::default(),
+            stored: Some(config_root.to_path_buf()),
+        }
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, HashMap<Key, (Bound, bool)>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -529,30 +569,158 @@ impl OptIns {
         (persona.to_owned(), login.to_owned(), bound.pool.clone())
     }
 
+    /// The file, where opt-ins are kept.
+    fn file(&self) -> Option<std::path::PathBuf> {
+        self.stored.as_ref().map(|root| root.join(IN_CONFIG))
+    }
+
+    /// The opt-ins kept, as the file says now: none where it does not read, or is a link.
+    fn read(&self) -> Vec<Stored> {
+        let Some(file) = self.file() else {
+            return Vec::new();
+        };
+        match std::fs::symlink_metadata(&file) {
+            Ok(there) if there.is_file() => {}
+            _ => return Vec::new(),
+        }
+        std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Vec<Stored>>(&text).ok())
+            .unwrap_or_default()
+    }
+
+    /// Keeps `all` as the opt-ins, or no file where there are none.
+    fn write(&self, all: &[Stored]) {
+        let (Some(root), Some(file)) = (self.stored.as_ref(), self.file()) else {
+            return;
+        };
+        let done = if all.is_empty() {
+            match std::fs::remove_file(&file) {
+                Err(none) if none.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                done => done,
+            }
+        } else {
+            serde_json::to_string_pretty(all)
+                .map_err(std::io::Error::other)
+                .and_then(|text| {
+                    crate::rewrite::replace(
+                        root,
+                        &file,
+                        format!("{text}\n").as_bytes(),
+                        crate::rewrite::Mode::Private,
+                    )
+                })
+        };
+        if let Err(why) = done {
+            tracing::warn!("purlis: the pool login opt-ins were not kept ({why})");
+        }
+    }
+
+    fn unkept(&self, matching: impl Fn(&Stored) -> bool) {
+        if self.stored.is_none() {
+            return;
+        }
+        let mut all = self.read();
+        let before = all.len();
+        all.retain(|one| !matching(one));
+        if all.len() != before {
+            self.write(&all);
+        }
+    }
+
     /// The person opts `persona`'s login `login` (its identity) in for the pool as `bound` says.
     pub fn allow(&self, persona: &str, login: &str, bound: Bound) {
+        self.held().remove(&Self::key(persona, login, &bound));
+        if self.stored.is_some() {
+            let mut all = self.read();
+            all.retain(|one| {
+                !(one.persona == persona && one.login == login && one.bound.pool == bound.pool)
+            });
+            if all.len() < MOST_KEPT {
+                all.push(Stored {
+                    persona: persona.to_owned(),
+                    login: login.to_owned(),
+                    bound,
+                });
+                self.write(&all);
+            }
+            return;
+        }
         self.held()
             .insert(Self::key(persona, login, &bound), (bound, true));
     }
 
-    /// The person keeps `persona`'s login `login` off on the pool as `bound` says it is.
+    /// The person keeps `persona`'s login `login` off on the pool as `bound` says it is, for
+    /// this run alone: it takes the opt-in kept for it away.
     pub fn keep_off(&self, persona: &str, login: &str, bound: Bound) {
+        self.unkept(|one| {
+            one.persona == persona && one.login == login && one.bound.pool == bound.pool
+        });
         self.held()
             .insert(Self::key(persona, login, &bound), (bound, false));
     }
 
-    /// Every answer given about pool `pool`: its mark was taken back (#4071).
+    /// Every answer given about pool `pool`: its mark was taken back (#4071), or it was
+    /// forgotten.
     pub fn forget_pool(&self, pool: &str) {
         self.held().retain(|(_, _, of), _| of != pool);
+        self.unkept(|one| one.bound.pool == pool);
+    }
+
+    /// **The person removes the opt-in** of `persona`'s login `login` on pool `pool` (the
+    /// Granted list's Remove): the next login asks. Whether one was there.
+    pub fn remove(&self, persona: &str, login: &str, pool: &str) -> bool {
+        let was = self.granted().iter().any(|one| {
+            one.persona == persona && one.login == login && one.pool == pool
+        });
+        self.held()
+            .remove(&(persona.to_owned(), login.to_owned(), pool.to_owned()));
+        self.unkept(|one| {
+            one.persona == persona && one.login == login && one.bound.pool == pool
+        });
+        was
+    }
+
+    /// **The opt-ins in force**, for the Granted list: kept ones and this run's, never a
+    /// refusal.
+    pub fn granted(&self) -> Vec<Granted> {
+        let mut all: Vec<Granted> = self
+            .held()
+            .iter()
+            .filter(|(_, (_, allowed))| *allowed)
+            .map(|((persona, login, pool), _)| Granted {
+                persona: persona.clone(),
+                login: login.clone(),
+                pool: pool.clone(),
+            })
+            .chain(self.read().into_iter().map(|one| Granted {
+                persona: one.persona,
+                login: one.login,
+                pool: one.bound.pool,
+            }))
+            .collect();
+        all.sort_by(|a, b| {
+            (&a.pool, &a.persona, &a.login).cmp(&(&b.pool, &b.persona, &b.login))
+        });
+        all.dedup();
+        all
     }
 
     /// Where `persona`'s login `login` stands on the pool as `now` says it is.
     pub fn standing(&self, persona: &str, login: &str, now: &Bound) -> Standing {
-        match self.held().get(&Self::key(persona, login, now)) {
+        if let Some((then, allowed)) = self.held().get(&Self::key(persona, login, now)) {
+            return match (then != now, allowed) {
+                (true, _) => Standing::Changed,
+                (false, true) => Standing::Allowed,
+                (false, false) => Standing::KeptOff,
+            };
+        }
+        match self.read().into_iter().find(|one| {
+            one.persona == persona && one.login == login && one.bound.pool == now.pool
+        }) {
             None => Standing::Unasked,
-            Some((then, _)) if then != now => Standing::Changed,
-            Some((_, true)) => Standing::Allowed,
-            Some((_, false)) => Standing::KeptOff,
+            Some(one) if one.bound != *now => Standing::Changed,
+            Some(_) => Standing::Allowed,
         }
     }
 }

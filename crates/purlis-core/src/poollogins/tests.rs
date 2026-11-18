@@ -622,3 +622,177 @@ fn a_local_pool_on_an_engine_elsewhere_is_refused_though_a_pool_on_another_machi
         );
     }
 }
+
+// An opt-in that survives a restart (#7190 item 2).
+
+fn after_a_restart(config: &Path) -> OptIns {
+    OptIns::stored_in(config)
+}
+
+#[test]
+fn an_opt_in_survives_a_restart_on_this_machine() {
+    let config = tempfile::tempdir().unwrap();
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).standing(
+            "steward",
+            "id-shop",
+            &bound("builds", "d1", "i1")
+        ),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
+    let config = tempfile::tempdir().unwrap();
+    let then = bound("builds", "d1", "i1");
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", then.clone());
+    let restarted = after_a_restart(config.path());
+
+    let changed: [(&str, Bound); 7] = [
+        ("the pool's definition", Bound { definition: "d2".into(), ..then.clone() }),
+        ("the pool's image", Bound { image: "i2".into(), ..then.clone() }),
+        ("the runner's device", Bound { runner: "01JB0OTHERRUNNER00000000000".into(), ..then.clone() }),
+        ("the runner's pinned key", Bound { runner_key: "cd".repeat(32), ..then.clone() }),
+        ("the runner's image", Bound { runner_image: "i9".into(), ..then.clone() }),
+        ("the engine, which is the pin with the person's mark", Bound { engine: "ssh://other, host key 99".into(), ..then.clone() }),
+        ("the cluster pod", Bound { pod: "uid-2".into(), ..then.clone() }),
+    ];
+    for (what, now) in changed {
+        assert_eq!(
+            restarted.standing("steward", "id-shop", &now),
+            Standing::Changed,
+            "{what} changed: ask again"
+        );
+    }
+    // The persona, the login and the pool are the key: another is asked apart.
+    assert_eq!(restarted.standing("reviewer", "id-shop", &then), Standing::Unasked);
+    assert_eq!(restarted.standing("steward", "id-bank", &then), Standing::Unasked);
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(restarted.standing("steward", "id-shop", &then), Standing::Allowed);
+}
+
+#[test]
+fn taking_back_the_mark_or_forgetting_the_pool_takes_the_kept_opt_in_away() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
+
+    opt_ins.forget_pool("builds");
+
+    let restarted = after_a_restart(config.path());
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).granted(),
+        [Granted {
+            persona: "steward".into(),
+            login: "id-shop".into(),
+            pool: "builds".into()
+        }]
+    );
+    assert!(opt_ins.remove("steward", "id-shop", "builds"));
+    assert!(!opt_ins.remove("steward", "id-shop", "builds"), "once");
+
+    let restarted = after_a_restart(config.path());
+    assert!(restarted.granted().is_empty());
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "the next login asks"
+    );
+    assert!(!config.path().join(IN_CONFIG).exists(), "nothing left to keep");
+}
+
+#[test]
+fn keeping_a_login_off_is_for_this_run_and_it_supersedes_a_kept_opt_in() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+
+    opt_ins.keep_off("steward", "id-shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::KeptOff
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing(
+            "steward",
+            "id-shop",
+            &bound("builds", "d1", "i1")
+        ),
+        Standing::Unasked,
+        "a refusal is not kept, and the opt-in it replaced is gone: the person is asked"
+    );
+}
+
+#[test]
+fn the_kept_file_is_this_machines_private_and_holds_no_value() {
+    let config = tempfile::tempdir().unwrap();
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+
+    let file = config.path().join(IN_CONFIG);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let text = std::fs::read_to_string(&file).unwrap();
+    for field in ["persona", "login", "pool", "definition", "image", "engine"] {
+        assert!(text.contains(field), "{field} is bound: {text}");
+    }
+    for never in ["password", "secret", "token", "value"] {
+        assert!(!text.to_lowercase().contains(never), "{never} in {text}");
+    }
+    assert!(
+        !config.path().join("plane").exists() && file.starts_with(config.path()),
+        "this machine's config folder, never a plane"
+    );
+}
+
+#[test]
+fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
+    let config = tempfile::tempdir().unwrap();
+    std::fs::write(config.path().join(IN_CONFIG), "not json").unwrap();
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+
+    #[cfg(unix)]
+    {
+        let elsewhere = tempfile::tempdir().unwrap();
+        OptIns::stored_in(elsewhere.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+        let link = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(
+            elsewhere.path().join(IN_CONFIG),
+            link.path().join(IN_CONFIG),
+        )
+        .unwrap();
+        assert_eq!(
+            after_a_restart(link.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+            Standing::Unasked
+        );
+    }
+}

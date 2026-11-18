@@ -98,6 +98,7 @@ pub mod browserlogins;
 pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
+pub mod browserposture;
 pub mod browsertimeline;
 pub mod enforcement;
 pub mod envvar;

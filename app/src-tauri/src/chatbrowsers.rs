@@ -57,7 +57,8 @@
 //!   for the chat's persona on that pool, bound to the pool's definition and image
 //!   (`purlis_core::poollogins`): the first login asks, as one Ask in the registry
 //!   ([`PoolLoginWaits`]); a pool whose definition or image changed since asks again; Keep off
-//!   refuses its logins there until the pool changes. The opt-in lasts while the app runs. Its
+//!   refuses its logins there until the pool changes. The opt-in survives a restart on this
+//!   machine alone, listed in the Granted list with Remove (#7190). Its
 //!   values are read here, as the persona declares the login and this machine allowed it (the
 //!   runner armed its tools, of which this window holds no record), and go to the runner's
 //!   browser for that one login; a runner keeps no value, and no kept login (#2021).
@@ -66,8 +67,11 @@
 //!   here, read at each call, never the floor's reach (D-2011-10); its sites ask as any chat's
 //!   do, and its posture Ask says what each answer gives it.
 //!
-//! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
-//! chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
+//! **The person's answer to the posture Ask is kept for that chat's life** (#7190): in this
+//! machine's state folder, never the plane, by the chat's identity, so a restart or a resumed
+//! chat keeps it, a new chat asks, and it ends with the chat. A reach narrowed since still ends
+//! the chat's browsers. The other Asks a chat raises are in memory only: a relaunch starts with
+//! none, and the chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
 //! whose token the line carries, its reach is the app's record of its sandbox, and only the
 //! person's press in the window answers the Ask (`ui::WINDOW_ONLY`).
 
@@ -502,8 +506,12 @@ pub struct ChatBrowsers {
     /// The browsers a window before this one showed in a view tab, taken back after its crash,
     /// until the window opens a view tab of each (#2025).
     theirs_back: Mutex<Vec<String>>,
-    /// The person's opt-ins of a persona's browser logins on a pool (#2050), for this run.
+    /// The person's opt-ins of a persona's browser logins on a pool (#2050): kept in this
+    /// machine's config folder where it has one (#7190), and for this run where it has none.
     pool_logins: purlis_core::poollogins::OptIns,
+    /// The project whose state folder keeps each chat's posture answer for the chat's life
+    /// (#7190), where it has one.
+    answers_in: Option<std::path::PathBuf>,
     /// The runner chats whose browser login waits on that opt-in, by chat (#2050).
     pool_asks: Mutex<HashMap<u32, PoolLoginWaits>>,
     /// The pool each browser started on a pool's runner runs on, by program (#2050).
@@ -638,6 +646,7 @@ impl Default for ChatBrowsers {
             viewed: Mutex::default(),
             theirs_back: Mutex::default(),
             pool_logins: purlis_core::poollogins::OptIns::default(),
+            answers_in: None,
             pool_asks: Mutex::default(),
             on_pools: Mutex::default(),
             says: std::sync::OnceLock::new(),
@@ -864,6 +873,17 @@ impl std::fmt::Display for EndWhy {
     }
 }
 
+/// What of `posture` the person answered that is kept across a restart (#7190): their press,
+/// never the asking.
+fn answer_of(posture: Posture) -> Option<purlis_core::browserposture::Answer> {
+    use purlis_core::browserposture::Answer;
+    match posture {
+        Posture::Allowed { open_web } => Some(Answer::Allowed { open_web }),
+        Posture::Off => Some(Answer::Off),
+        Posture::Unasked | Posture::Asked => None,
+    }
+}
+
 /// **The person is about to take `program` over** (#5296): from before the host hands it to them,
 /// it is no browser a kept login closes as never used.
 pub fn person_will_drive(projects: &[Arc<crate::planes::Held>], program: &str) {
@@ -1019,6 +1039,32 @@ impl ChatBrowsers {
         if let Some(says) = self.says.get() {
             says(session, said);
         }
+    }
+
+    /// **These browsers, keeping what the person answers across a restart** (#7190): each chat's
+    /// posture answer in the project `root`'s state folder, for that chat's life, and the pool
+    /// login opt-ins in this machine's config folder `config`. Neither is the plane, and neither
+    /// is synced.
+    pub fn keeping_answers(self, root: &Path, config: Option<&Path>) -> Self {
+        ChatBrowsers {
+            answers_in: Some(root.to_path_buf()),
+            pool_logins: config.map_or_else(
+                purlis_core::poollogins::OptIns::default,
+                purlis_core::poollogins::OptIns::stored_in,
+            ),
+            ..self
+        }
+    }
+
+    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list.
+    pub fn pool_login_grants(&self) -> Vec<purlis_core::poollogins::Granted> {
+        self.pool_logins.granted()
+    }
+
+    /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
+    /// next login there asks. Whether one was there.
+    pub fn remove_pool_login_grant(&self, persona: &str, login: &str, pool: &str) -> bool {
+        self.pool_logins.remove(persona, login, pool)
     }
 
     /// These browsers, telling `listed` when a retry off every call's path ends one (#2283).
@@ -1180,7 +1226,7 @@ impl ChatBrowsers {
             .collect()
     }
 
-    /// **Where each open browser's page is** (#2022), as its last act answered, in the
+    /// **Where each open browser's page is on this machine** (#2022), as its last act answered, in the
     /// listing's order: the chats' browsers, then those pinned past their chat. One that has
     /// answered no act yet, or is not ended yet, is left out.
     pub fn open_addresses(&self) -> Vec<String> {
@@ -1194,10 +1240,18 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
+        // A runner's browser is none of these: it outlives the quit and is taken back at the
+        // next start (#7187 item 7), so there is nothing to offer as a button.
+        let on_runners = self
+            .on_pools
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         // None of a browser that holds a login or what the person typed.
         self.listed()
             .into_iter()
             .filter(|one| !one.unended && one.login.is_none() && !typed.contains(&one.program))
+            .filter(|one| !on_runners.contains_key(&one.program))
             .filter_map(|one| addresses.get(&one.program).cloned())
             .collect()
     }
@@ -2637,12 +2691,28 @@ impl ChatBrowsers {
     }
 
     fn answered(&self, session: u32, posture: Posture) -> bool {
-        match self.lock().get_mut(&session) {
+        let id = match self.lock().get_mut(&session) {
             Some(chat) if chat.posture == Posture::Asked => {
                 chat.posture = posture;
-                true
+                chat.id.clone()
             }
-            _ => false,
+            _ => return false,
+        };
+        // The person's press is kept for this chat's life (#7190). A chat whose identity is not
+        // known yet is kept once it is ([`Self::identify`]).
+        if let Some(id) = id {
+            self.keep_answer(&id, posture);
+        }
+        true
+    }
+
+    /// Keeps the person's `posture` answer for chat `id`, where this holds a place for it.
+    fn keep_answer(&self, id: &str, posture: Posture) {
+        let (Some(root), Some(answer)) = (&self.answers_in, answer_of(posture)) else {
+            return;
+        };
+        if let Err(why) = purlis_core::browserposture::keep(root, id, answer) {
+            tracing::warn!("purlis: a chat's browser answer was not kept across a restart ({why})");
         }
     }
 
@@ -3135,6 +3205,14 @@ impl ChatBrowsers {
             .remove(&session);
         let (programs, kept) = {
             let mut chats = self.lock();
+            // Its answer ends with it (#7190): a closed chat is never asked after.
+            if let (Some(root), Some(id)) = (
+                &self.answers_in,
+                chats.get(&session).and_then(|chat| chat.id.clone()),
+            ) && let Err(why) = purlis_core::browserposture::remove(root, &id)
+            {
+                tracing::warn!("purlis: a closed chat's browser answer stays on disk ({why})");
+            }
             let (kept, programs): (Vec<ChatBrowser>, Vec<ChatBrowser>) = chats
                 .remove(&session)
                 .map(|chat| {
