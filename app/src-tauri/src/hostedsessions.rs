@@ -1605,10 +1605,11 @@ fn read_on_from(shared: &Shared, device: &str) -> Option<u64> {
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reconnect {
-    /// The host says the link to the runner is down.
-    Started,
+    /// The host says the link to the runner is down, and why: what ended it, or what the last
+    /// try to link again found, said again each time that changes (#7134).
+    Started(Arc<str>),
     /// The host says it is back; or the window cannot tell any more, because it fell behind and
     /// subscribed again from now, or its link to the host ended.
     Over,
@@ -2837,7 +2838,7 @@ impl HostLink {
 fn reconnect(shared: &Shared, heard: Reconnect) {
     let tell: Vec<Reconnects> = lock(&shared.reconnects).clone();
     for tell in tell {
-        tell(heard);
+        tell(heard.clone());
     }
 }
 
@@ -3337,7 +3338,9 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 device, resumes_at, ..
             }) => lock(&shared.runner_log).missed(&device, resumes_at),
             Told::Pushed(Pushed::LinkDown {
-                key_changed, gone, ..
+                why,
+                key_changed,
+                gone,
             }) => {
                 // The runner let go of every line it handed on over the link that went: each
                 // command of its that waits here has gone, its Ask with it (#3408).
@@ -3346,7 +3349,7 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     relayed.lost_its_host(lines.link);
                 }
                 lock(&shared.runner_log).link(true);
-                reconnect(&shared, Reconnect::Started);
+                reconnect(&shared, Reconnect::Started(why.into()));
                 if key_changed {
                     reconnect(&shared, Reconnect::KeyChanged);
                 }
@@ -3485,6 +3488,9 @@ pub struct HostedSessions {
 struct Dimmed {
     chats: std::collections::BTreeSet<u32>,
     tell: Option<Reconnecting>,
+    /// Why the link to the runner is down, while it is, and since when (#7134): none once it
+    /// is back, or once a changed key or a runner gone says it in a Notice of its own.
+    down: Option<crate::reconnecting::LinkDown>,
 }
 
 /// A project held on a link: its stable id, and which link.
@@ -3794,17 +3800,28 @@ fn reconnects_of(
     let (running, dimmed) = (Arc::clone(running), Arc::clone(dimmed));
     Arc::new(move |heard| {
         let (chats, reconnection) = match heard {
-            Reconnect::Started => {
+            Reconnect::Started(why) => {
                 let chats: Vec<u32> = lock(&running).keys().copied().collect();
-                lock(&dimmed).chats.extend(chats.iter().copied());
+                let mut dimmed = lock(&dimmed);
+                dimmed.chats.extend(chats.iter().copied());
+                let since = dimmed
+                    .down
+                    .as_ref()
+                    .map_or_else(crate::reconnecting::now_secs, |was| was.since);
+                dimmed.down = Some(crate::reconnecting::LinkDown {
+                    why: why.to_string(),
+                    since,
+                });
                 (chats, Reconnection::Reconnecting)
             }
             Reconnect::Over => {
+                lock(&dimmed).down = None;
                 let chats = std::mem::take(&mut lock(&dimmed).chats);
                 (chats.into_iter().collect(), Reconnection::Reconnected)
             }
             // Said whatever chats there are: the window says it once for the project.
             Reconnect::KeyChanged | Reconnect::Gone => {
+                lock(&dimmed).down = None;
                 let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
                 let said = if heard == Reconnect::Gone {
                     Reconnection::RunnerGone
@@ -4775,6 +4792,18 @@ impl HostedSessions {
         })
     }
 
+    /// **Whether this project's chats run on a Docker pool's runner** (#6387): a pool this
+    /// machine keeps among its Docker pools, on this machine's engine or another's. A cluster
+    /// pool's runner has no adapter to read its files yet.
+    fn on_a_docker_pool(&self) -> bool {
+        let (Some(pool), Some(config)) = (self.connection.pool(), self.connection.runners_config())
+        else {
+            return false;
+        };
+        purlis_core::runners::pools(&config)
+            .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+    }
+
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
     /// on a link to this machine's host.
     fn runner_named(&self, link: &HostLink) -> Option<String> {
@@ -5222,6 +5251,21 @@ impl SessionHost for HostedSessions {
         lock(&self.reconnecting).chats.iter().copied().collect()
     }
 
+    fn link_down(&self) -> Option<crate::reconnecting::LinkDown> {
+        lock(&self.reconnecting).down.clone()
+    }
+
+    /// Asked on the project's own link, which its host relays: a host before 1.92 is asked
+    /// nothing, and tries again after its pause as ever.
+    fn link_now(&self) {
+        let Ok(link) = self.own_link(Duration::ZERO) else {
+            return;
+        };
+        if link.version() >= session::KNOWS_LINK_NOW {
+            link.send(Command::LinkNow);
+        }
+    }
+
     /// What the link the project is held on holds of its runner's log (#3393): none where the
     /// project's chats run here, or no link to the runner is open.
     fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
@@ -5423,6 +5467,28 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
+    /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
+    /// never opens one to the runner.
+    fn reads_files_on_runner(&self, id: u32) -> bool {
+        self.runner_files_of(id).is_some()
+    }
+
+    fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        if !self.kept_on_the_runner || !self.on_a_docker_pool() {
+            return None;
+        }
+        let link = self.own_link(Duration::ZERO).ok()?;
+        if link.version() < session::KNOWS_READ_FILE {
+            return None;
+        }
+        let program = lock(&self.running).get(&id)?.id.clone();
+        let runner = self.runner_named(&link)?;
+        Some(crate::runnerfiles::ReadsOnRunner::new(
+            runner,
+            Box::new(crate::runnerfiles::OnLink { link, program }),
+        ))
+    }
+
     /// Only of a link already open: a tab drawn never opens one to the runner.
     fn clones_come_back(&self, _id: u32) -> bool {
         self.kept_on_the_runner
@@ -5521,6 +5587,7 @@ impl SessionHost for HostedSessions {
         let (link, project) = self.link_with_the_code()?;
         let id = purlis_core::reopen::mint();
         let asks = hearing.asks.is_some();
+        let lifted = Hears::lifted(&hearing);
         // Heard before it is asked for, so nothing its proxy does is missed.
         link.hear(&id, Hears::of(hearing));
         let answered = link.call_heard_in_a_start(Command::Confine(Box::new(session::Confine {
@@ -5528,6 +5595,7 @@ impl SessionHost for HostedSessions {
             project,
             plan: wire(plan),
             asks,
+            lifted,
         })));
         let confined = match answered {
             Ok(Answer::Confined(confined)) => confined,
@@ -5690,6 +5758,16 @@ impl SessionHost for HostedSessions {
         lock(&self.browsers_left)
             .replace(Vec::new())
             .unwrap_or_default()
+    }
+
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        if self.link().is_err() {
+            return Vec::new();
+        }
+        lock(&self.left)
+            .values()
+            .filter_map(|left| Some((left.number, left.run.clone()?)))
+            .collect()
     }
 
     fn close_what_was_not_reattached(&self) {

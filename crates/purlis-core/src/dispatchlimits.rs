@@ -486,6 +486,10 @@ pub struct Limits {
     pub target: Option<String>,
     /// Which level decided each limit.
     set_by: [Source; Limit::ALL.len()],
+    /// **An administrator's ceiling on each limit**, whichever level's value won: a value at or
+    /// below the ceiling keeps its own level in `set_by`, and the ceiling still binds what
+    /// [`Limits::lifted`] leaves (Q308a: a lock wins over every mode).
+    ceilings: [Option<u32>; Limit::ALL.len()],
     /// Each limit of this machine's own that is above the project's, and was not applied.
     pub ignored: Vec<Ignored>,
 }
@@ -626,6 +630,7 @@ pub fn in_force(
         asking: asking.map(str::to_owned),
         target: target.map(str::to_owned),
         set_by: resolved.map(|(_, from)| from),
+        ceilings: Limit::ALL.map(|limit| policy.get(limit)),
         ignored,
     }
 }
@@ -879,7 +884,65 @@ impl Decision {
     }
 }
 
+impl Refused {
+    /// **The limit a counted refusal reached**, which `[policy] limits` switches (Q308b): depth,
+    /// the counts per chat, lineage and persona, messages a minute and the session's tokens.
+    /// `None` for what is no count: a 0 that switches dispatch off (the project's own word) and
+    /// the loop rule (the `dispatch` family's).
+    pub fn counted(&self) -> Option<Limit> {
+        Some(match self {
+            Self::TooDeep { .. } => Limit::Depth,
+            Self::TooManyRunning { .. } => Limit::RunningPerChat,
+            Self::LineageFull { .. } => Limit::LivePerLineage,
+            Self::PersonaDispatches { .. } => Limit::MayDispatch,
+            Self::PersonaFull { .. } => Limit::MayRunAtOnce,
+            Self::TooManyMessages { .. } => Limit::MessagesPerMinute,
+            Self::SessionTokens { .. } => Limit::TokensPerSession,
+            Self::Off { .. } | Self::Loop(_) | Self::ChainUnread(_) => return None,
+        })
+    }
+}
+
 impl Limits {
+    /// **What `[policy] limits` may lift `limit` to here** (Q308b), as `Some(bound)`, where
+    /// `None` is no bound: an administrator's ceiling on it, whichever level's value won, since a
+    /// lock wins over every mode (Q308a). `None` of the whole answer is that nothing lifts it: a
+    /// refused policy file.
+    fn lift_to(&self, limit: Limit) -> Option<Option<u32>> {
+        if matches!(self.set_by(limit), Source::PolicyRefused) {
+            return None;
+        }
+        Some(self.ceilings[limit.at()])
+    }
+
+    /// **These limits as `[policy] limits = "off"` or `"log"` leaves them** (Q308b: a limit is
+    /// counted, not applied): every count goes up to an administrator's ceiling on it, where
+    /// there is one, and is unbounded where there is none. Depth goes no deeper than [`DEEPEST`],
+    /// the bound no level raises, so a chain of dispatches still ends. A 0 that switches dispatch
+    /// off, and the loop rule, are kept.
+    pub fn lifted(&self) -> Self {
+        let mut lifted = self.clone();
+        if self.off().is_some() {
+            return lifted;
+        }
+        let bounded = |limit: Limit, now: u32| match self.lift_to(limit) {
+            None => now,
+            Some(ceiling) => ceiling.unwrap_or(u32::MAX).max(now),
+        };
+        let optional = |limit: Limit, now: Option<u32>| match self.lift_to(limit) {
+            None => now,
+            Some(ceiling) => ceiling,
+        };
+        lifted.running = bounded(Limit::RunningPerChat, self.running);
+        lifted.lineage = bounded(Limit::LivePerLineage, self.lineage);
+        lifted.messages_per_minute = bounded(Limit::MessagesPerMinute, self.messages_per_minute);
+        lifted.depth = bounded(Limit::Depth, self.depth).min(DEEPEST);
+        lifted.may_dispatch = optional(Limit::MayDispatch, self.may_dispatch);
+        lifted.may_run_at_once = optional(Limit::MayRunAtOnce, self.may_run_at_once);
+        lifted.tokens_per_session = optional(Limit::TokensPerSession, self.tokens_per_session);
+        lifted
+    }
+
     /// The refusal a limit of 0 gives, where one is 0.
     fn switched_off(&self) -> Option<Refused> {
         self.off().map(|(limit, by)| Refused::Off {
@@ -1270,12 +1333,14 @@ fn read_keyed(text: Option<&str>, file: &str) -> (Table, Vec<Refusal>) {
     // And `profiles` is the profiles the project lists for a persona's dispatched chats
     // (#1509), read by `dispatchprofiles`: the same, and the committed file's alone.
     let profiles = crate::dispatchprofiles::KEY;
+    // And `denies` is the project's dispatch denies (#6968), read by `dispatchgrant` too.
+    let denies = crate::dispatchgrant::DENIES;
     out.project = level_of(
         table,
         &[TABLE],
         file,
         false,
-        &[WORKSPACES, PERSONAS, grants, profiles],
+        &[WORKSPACES, PERSONAS, grants, profiles, denies],
         refused,
     );
     if table.contains_key(profiles) {

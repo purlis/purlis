@@ -78,6 +78,8 @@ export const ON_THIS_MACHINE = "on this machine";
 export const ONCE_ON_THIS_MACHINE: ReadonlySet<string> = new Set([
   "chip-explained",
   "theme-folder-offered",
+  // The upgrade to the `watch` policy, announced once (Q308a, `PolicyWatchAnnounced.tsx`).
+  "policy-watch-announced",
 ]);
 
 const kept = (cause: unknown): cause is string =>

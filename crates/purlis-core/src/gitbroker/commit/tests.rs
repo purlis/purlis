@@ -149,6 +149,7 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         roots_git_held: false,
+        policy: None,
         unreadable: Vec::new(),
         config: None,
         id: None,
@@ -347,6 +348,32 @@ fn a_chat_is_held_to_a_number_of_commits_in_a_while() {
 }
 
 #[test]
+fn the_commit_cap_is_counted_not_applied_where_policy_limits_logs() {
+    // Q308b: under `limits = "log"` a commit past the cap goes ahead and one line says so;
+    // under `strict` the cap refuses as it always has.
+    let now = std::time::Instant::now();
+    for (policy, refused, lines) in [("", true, 0), ("limits = \"log\"\n", false, 1)] {
+        let root = tempfile::tempdir().expect("a project");
+        std::fs::write(
+            crate::names::manifest(root.path()),
+            format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+        )
+        .expect("the manifest");
+        for _ in 0..COMMITS_A_WHILE {
+            assert!(paced(root.path(), 7, now).is_ok());
+        }
+        assert_eq!(paced(root.path(), 7, now).is_err(), refused, "{policy:?}");
+        let logged = crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+        assert_eq!(logged.len(), lines, "{policy:?}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.rule == "commit.rate" && line.family == "limits")
+        );
+    }
+}
+
+#[test]
 fn a_message_carrying_purlis_s_own_provenance_is_refused() {
     // #1476: purlis writes these; one a chat wrote would claim what purlis did not check.
     for message in [
@@ -482,7 +509,9 @@ impl Tree {
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
-        git::isolated(&plain, || made(&self.root, 4, None, &ask, &here, &identity))
+        git::isolated(&plain, || {
+            made(&self.root, 4, (None, None), &ask, &here, &identity)
+        })
     }
 
     fn asked(&self, stage: Stage) -> Result<Vec<Say>, String> {
@@ -1289,9 +1318,11 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
         common: t.here.common.clone(),
         clone: t.here.clone.clone(),
     };
-    git::isolated(&plain, || made(&held.1, 4, None, &ask, &here, &identity))
-        .map_err(|refused| refused.why)
-        .expect("the held project's `open` lets the scan's finding through");
+    git::isolated(&plain, || {
+        made(&held.1, 4, (None, None), &ask, &here, &identity)
+    })
+    .map_err(|refused| refused.why)
+    .expect("the held project's `open` lets the scan's finding through");
 }
 
 /// #7073: a finding the project's `[policy]` logs is recorded in the log of the chat that asked
@@ -1331,7 +1362,7 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
         clone: t.here.clone.clone(),
     };
     git::isolated(&plain, || {
-        made(&held.1, 4, Some(ID), &ask, &here, &identity)
+        made(&held.1, 4, (Some(ID), None), &ask, &here, &identity)
     })
     .map_err(|refused| refused.why)
     .expect("a logged finding is let through");

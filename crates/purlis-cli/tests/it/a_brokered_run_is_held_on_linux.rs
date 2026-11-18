@@ -164,11 +164,14 @@ fn a_declared_tool_s_run_is_held_by_the_chat_s_own_profile_on_linux() {
             root: root.clone(),
             env: Env::of(&[("PATH", "/usr/bin:/bin")]),
             chat: 7,
+            id: Some("01K6LINUXCHAT0000000000007".into()),
             persona: Some("devops".into()),
             folder: Some(root.join("work")),
             confines: Some(confines),
             harness: Some(Harness::Codex),
             ends_seen: None,
+            chat_id: None,
+            policy: None,
         };
         let script = [
             r#"head -c 10 "$KUBECONFIG"; echo"#.to_owned(),
@@ -265,11 +268,14 @@ fn a_tool_declared_under_another_name_runs_under_it_inside_the_wrap() {
         root: root.clone(),
         env: Env::of(&[("PATH", "/usr/bin:/bin")]),
         chat: 7,
+        id: Some("01K6LINUXCHAT0000000000007".into()),
         persona: Some("devops".into()),
         folder: Some(root.join("work")),
         confines: Some(confines),
         harness: Some(Harness::Codex),
         ends_seen: None,
+        chat_id: None,
+        policy: None,
     };
     let wanted = Wanted {
         vault: "team".into(),

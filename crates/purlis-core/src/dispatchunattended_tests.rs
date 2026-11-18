@@ -302,32 +302,50 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
         Answer::Covered
     );
 
-    for grants in [granted.clone(), InForce::default()] {
-        let answer = super::covers(
+    // Granted (ticket T1.1-73): only where the seal keeps the grant out of its reach.
+    assert_eq!(
+        super::covers(
             Some("steward"),
             "devops",
-            &grants,
+            &granted,
             &Locks::none(),
             false,
             false,
-        );
-
-        assert_eq!(
-            answer,
-            Answer::Refused(Refusal::Unsandboxed("devops".to_owned())),
-            "{grants:?}"
-        );
-        let Answer::Refused(why) = answer else {
-            unreachable!()
-        };
-        assert_eq!(
-            why.say(),
-            "this chat runs with its harness's permission prompts off and with no sandbox. A \
-             chat with neither can change who it may dispatch to, so purlis starts nobody for \
-             it but a chat of its own persona, and devops is another. Run this work in a \
-             sandboxed chat, or in one a person answers."
-        );
-    }
+        ),
+        if super::sealed_here() {
+            Answer::Covered
+        } else {
+            Answer::Refused(Refusal::NotSealedHere("devops".to_owned()))
+        }
+    );
+    // Not granted, where the policy asks: refused at once and kept for the needs-you list.
+    let answer = super::covers(
+        Some("steward"),
+        "devops",
+        &InForce::default(),
+        &Locks::none(),
+        false,
+        false,
+    );
+    let Answer::Refused(why) = answer else {
+        panic!("refused: {answer:?}")
+    };
+    assert_eq!(
+        why,
+        Refusal::Unsandboxed(Missing {
+            asking: Some("steward".to_owned()),
+            target: "devops".to_owned(),
+            unreviewed: false,
+        })
+    );
+    assert_eq!(
+        why.say(),
+        "this chat runs with its harness's permission prompts off and with no sandbox, so \
+         nobody is here to answer for a dispatch, and no grant the person made covers this \
+         chat's persona dispatching to devops. The person will see this pair in their \
+         needs-you list, where one press grants it; until then, do this work \
+         without devops, or say in what you leave behind that it is waiting."
+    );
     // Its own persona is still its own, and a policy lock is still the policy's to say.
     assert_eq!(
         super::covers(
@@ -355,7 +373,11 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
             false,
             false
         ),
-        Answer::Refused(Refusal::Unsandboxed("devops".to_owned()))
+        Answer::Refused(Refusal::Unsandboxed(Missing {
+            asking: None,
+            target: "devops".to_owned(),
+            unreviewed: false,
+        }))
     );
 }
 
@@ -587,5 +609,404 @@ fn an_unsandboxed_or_ungranted_dispatch_is_covered_only_where_the_policy_does_no
     }
     for mode in [Mode::Off, Mode::Log, Mode::Enforce] {
         assert_eq!(as_the_policy_runs(never.clone(), mode), never.clone());
+    }
+}
+
+/// A project at a fresh folder whose committed file holds `[policy]` `text`.
+fn a_project_whose_policy_is(text: &str) -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        crate::names::manifest(root.path()),
+        format!("[policy]\n{text}"),
+    )
+    .expect("the manifest");
+    root
+}
+
+#[test]
+fn a_profile_with_its_prompts_off_is_refused_a_dispatched_chat_as_policy_mode_runs() {
+    // Q308b: the refusal is `mode`'s. Enforced, it refuses as it always has; logged, the chat
+    // starts and one line says it would have been refused; off, nothing is said.
+    let yolo = words(&["claude", "--dangerously-skip-permissions"]);
+    let chat = "01J9ZQ3V5N8X4T2K7M6P0R1S2C";
+    for (text, refused, lines) in [
+        ("template = \"strict\"\n", true, 0),
+        ("template = \"strict\"\nmode = \"log\"\n", false, 1),
+        ("template = \"team\"\n", true, 0),
+    ] {
+        let root = a_project_whose_policy_is(text);
+        let said = bypass_refusal_in(root.path(), Some(chat), "yolo", &yolo, NamedBy::TheDispatch);
+        assert_eq!(said.is_some(), refused, "{text}");
+        let started = start_of_a_persona_chat_in(
+            root.path(),
+            Some(chat),
+            the_asking_chats_own(),
+            "devops",
+            Some(Inherited {
+                profile: "yolo",
+                command: &yolo,
+            }),
+        );
+        assert_eq!(started.is_err(), refused, "{text}");
+        let logged = crate::enforcement::read_log(root.path(), chat);
+        assert_eq!(logged.len(), lines * 2, "{text}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.family == "mode" && line.rule == "dispatch.prompts-off")
+        );
+    }
+    // A profile that asks is never refused, whatever the mode.
+    let root = a_project_whose_policy_is("template = \"strict\"\n");
+    assert_eq!(
+        bypass_refusal_in(
+            root.path(),
+            None,
+            "work",
+            &words(&["claude"]),
+            NamedBy::TheDispatch
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_command_without_its_prompts_off_words_keeps_every_other_word() {
+    // #7104: what a chat another chat asked for is started on, capped at auto.
+    for (command, kept) in [
+        (
+            vec!["claude", "--dangerously-skip-permissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "bypassPermissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (vec!["codex", "-a", "never", "--yolo"], vec!["codex"]),
+        (
+            vec!["codex", "-capproval_policy=never", "exec"],
+            vec!["codex", "exec"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "auto"],
+            vec!["claude", "--permission-mode", "auto"],
+        ),
+    ] {
+        let without = without_bypass(&words(&command));
+        assert_eq!(without, words(&kept), "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+}
+
+#[test]
+fn inline_settings_whose_default_mode_switches_the_prompts_off_lose_only_that_key() {
+    // The re-review of #7104: Claude Code's `--settings` may carry its permission mode as
+    // `permissions.defaultMode`; the cap at auto takes that key out and keeps the rest.
+    let off = r#"{"permissions":{"defaultMode":"bypassPermissions","allow":["Read"]},"model":"x"}"#;
+    let kept = r#"{"permissions":{"allow":["Read"]},"model":"x"}"#;
+    for (command, want) in [
+        (
+            words(&["claude", "--settings", off, "-v"]),
+            words(&["claude", "--settings", kept, "-v"]),
+        ),
+        (
+            words(&["claude", &format!("--settings={off}")]),
+            words(&["claude", &format!("--settings={kept}")]),
+        ),
+    ] {
+        assert!(bypass_in(&command).is_some(), "{command:?}");
+        let without = without_bypass(&command);
+        assert_eq!(without, want, "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+    // Settings that ask, and a settings file's path, are left as they are.
+    for value in [
+        r#"{"permissions":{"defaultMode":"auto"}}"#,
+        "/etc/claude.json",
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        assert_eq!(bypass_in(&command), None, "{value}");
+        assert_eq!(without_bypass(&command), command, "{value}");
+    }
+}
+
+#[test]
+fn inline_settings_purlis_cannot_read_are_refused_and_dropped_whole() {
+    // #7155: JSON Claude Code accepts and `serde_json` rejects keeps no bypass unseen.
+    for value in [
+        "{\"permissions\":{\"defaultMode\":\"bypassPermissions\",}}",
+        "{/* c */\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}",
+        "\u{feff}{\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}",
+        "{not json",
+    ] {
+        for command in [
+            words(&["claude", "--settings", value, "-v"]),
+            words(&["claude", &format!("--settings={value}"), "-v"]),
+        ] {
+            assert!(bypass_in(&command).is_some(), "{command:?}");
+            let without = without_bypass(&command);
+            assert_eq!(without, words(&["claude", "-v"]), "{command:?}");
+            assert_eq!(bypass_in(&without), None, "{command:?}");
+        }
+    }
+}
+
+#[test]
+fn inline_settings_are_read_through_whitespace_escaped_keys_and_repeated_flags() {
+    let mode = "bypassPermissions";
+    let spaced = format!(" \n {{\"permissions\" : {{ \"defaultMode\" : \"{mode}\" }} }}");
+    // `defaultMode` spelt with an escape is the same key.
+    let escaped = format!("{{\"permissions\":{{\"default\\u004dode\":\"{mode}\"}}}}");
+    for value in [&spaced, &escaped] {
+        let command = words(&["claude", "--settings", value]);
+        assert!(bypass_in(&command).is_some(), "{value:?}");
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{value:?}");
+    }
+    // The second of two `--settings` is the one that carries it, and the first is kept.
+    let kept = r#"{"model":"x"}"#;
+    let off = format!("{{\"permissions\":{{\"defaultMode\":\"{mode}\"}}}}");
+    let command = words(&["claude", "--settings", kept, "--settings", &off]);
+    assert!(bypass_in(&command).is_some());
+    let without = without_bypass(&command);
+    assert_eq!(bypass_in(&without), None);
+    assert!(without.contains(&kept.to_owned()));
+}
+
+#[test]
+fn inline_settings_that_allow_all_of_bash_or_silence_hooks_are_refused_and_lose_only_those_keys() {
+    // #7165: no `defaultMode`, and still no prompts for Bash, or no guards.
+    for (value, kept, shown) in [
+        (
+            r#"{"permissions":{"allow":["Bash","Read"]},"model":"x"}"#,
+            r#"{"permissions":{"allow":["Read"]},"model":"x"}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"permissions":{"allow":["Bash(*)","Bash(:*)","Bash( ** )"]}}"#,
+            r#"{"permissions":{"allow":[]}}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"hooks":{"PreToolUse":[]},"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "hooks",
+        ),
+        (
+            r#"{"disableAllHooks":true,"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "disableAllHooks",
+        ),
+        (r#"{"disableAllHooks":"yes"}"#, "{}", "disableAllHooks"),
+    ] {
+        for (command, want) in [
+            (
+                words(&["claude", "--settings", value, "-v"]),
+                words(&["claude", "--settings", kept, "-v"]),
+            ),
+            (
+                words(&["claude", &format!("--settings={value}")]),
+                words(&["claude", &format!("--settings={kept}")]),
+            ),
+        ] {
+            let said = bypass_in(&command).unwrap_or_default();
+            assert!(said.contains(shown), "{value}: {said}");
+            let without = without_bypass(&command);
+            assert_eq!(without, want, "{value}");
+            assert_eq!(bypass_in(&without), None, "{value}");
+        }
+    }
+    // A narrow allow of Bash asks for everything else, so it stays.
+    let narrow = words(&[
+        "claude",
+        "--settings",
+        r#"{"permissions":{"allow":["Bash(git status)","Bash(npm run *)"]}}"#,
+    ]);
+    assert_eq!(bypass_in(&narrow), None);
+    assert_eq!(without_bypass(&narrow), narrow);
+}
+
+#[test]
+fn an_unreadable_inline_settings_value_does_not_say_it_switches_the_prompts_off() {
+    // #7165, item 6: it is refused because nothing can be ruled out, and says so.
+    let command = words(&["claude", "--settings", "{not json"]);
+    let said = bypass_refusal("work", &command, NamedBy::TheDispatch).expect("refused");
+    assert!(said.contains("cannot tell whether"), "{said}");
+    assert!(!said.contains("with the permission prompts off"), "{said}");
+}
+
+#[test]
+fn the_settings_purlis_armed_keep_their_hooks_through_without_bypass() {
+    // The round-2 blocker of #7168: purlis's own `--settings` always carry `hooks`, and the line
+    // a chat starts on holds them beside the profile's words.
+    let own = r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/bin/purlis hook bash-guard","onFailure":"block"}]}]},"env":{"X":"1"}}"#;
+    let armed = words(&["--plugin-dir", "/p", "--settings", own]);
+    let mut line = words(&["claude", "--model", "x"]);
+    line.extend(armed.clone());
+    assert_eq!(bypass_found_beside(&line, &armed), None);
+    assert_eq!(without_bypass_beside(&line, &armed), line);
+    // Attached, the same.
+    let attached = words(&[&format!("--settings={own}")]);
+    assert_eq!(
+        bypass_found_beside(&attached, &[]).map(|f| f.what),
+        Some(What::GuardsOff)
+    );
+    // Read as a profile's, the same words are flagged and lose their hooks: only the exact
+    // words purlis armed are exempt, and a copy that differs in a byte is not.
+    assert!(bypass_in(&line).is_some());
+    assert!(
+        !without_bypass(&line)
+            .iter()
+            .any(|w| w.contains("bash-guard"))
+    );
+    let spoof = words(&["--settings", &format!("{own} ")]);
+    assert!(bypass_found_beside(&spoof, &armed).is_some());
+    // And a profile's own hooks beside purlis's are still taken out.
+    let mut both = armed.clone();
+    both.extend(words(&["--settings", r#"{"hooks":{"PreToolUse":[]}}"#]));
+    let without = without_bypass_beside(&both, &armed);
+    assert!(without.contains(&own.to_owned()));
+    assert!(without.contains(&"{}".to_owned()));
+}
+
+#[test]
+fn a_profile_that_only_adds_a_hook_is_refused_in_words_that_are_true_of_it() {
+    // Round 2, item 6: the refusal said the prompts were off, and clipped "cannot tell".
+    let hook = words(&["claude", "--settings", r#"{"hooks":{"PreToolUse":[]}}"#]);
+    let long = words(&[
+        "claude",
+        "--settings",
+        r#"{"hooks":{},"disableAllHooks":true,"allowManagedHooksOnly":true}"#,
+    ]);
+    let unreadable = words(&["claude", "--settings", "{not json"]);
+    for (command, must) in [
+        (&hook, "purlis's guards off (--settings (its hooks))"),
+        (&long, "purlis's guards off (--settings (its hooks"),
+        (
+            &unreadable,
+            "cannot tell whether they switch the permission prompts or its guards off (--settings (unreadable))",
+        ),
+    ] {
+        for by in [
+            NamedBy::TheAskingChat,
+            NamedBy::TheDispatch,
+            NamedBy::ThePersona("p"),
+        ] {
+            let said = bypass_refusal("work", command, by).expect("refused");
+            assert!(said.contains(must), "{said}");
+        }
+    }
+    let said = bypass_refusal("work", &hook, NamedBy::TheDispatch).expect("refused");
+    assert!(!said.contains("with the permission prompts off"), "{said}");
+    // A flag that does switch them off reads as it always did.
+    let yolo = words(&["claude", "--dangerously-skip-permissions"]);
+    let said = bypass_refusal("work", &yolo, NamedBy::TheDispatch).expect("refused");
+    assert!(
+        said.contains("with the permission prompts off (--dangerously-skip-permissions)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn inline_settings_that_move_a_guard_or_the_sandbox_gate_lose_only_those_keys() {
+    // Round 2, item 3.
+    for (value, kept, shown) in [
+        (
+            r#"{"allowManagedHooksOnly":true,"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "allowManagedHooksOnly",
+        ),
+        // Round 3: the key is written `false`, never removed (removing it restores Claude Code's
+        // default, which is on), and an enabled sandbox with no key is the same finding.
+        (
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":true,"enabled":true}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false,"enabled":true}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"sandbox":{"enabled":true}}"#,
+            r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":"yes"}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"env":{"HOME":"/x","KEEP":"1"}}"#,
+            r#"{"env":{"KEEP":"1"}}"#,
+            "env that moves its guards",
+        ),
+        (
+            r#"{"env":{"claude_config_dir":"/x","PURLIS_SOCK":"/y","CHARTER_APP":"1"}}"#,
+            r#"{"env":{}}"#,
+            "env that moves its guards",
+        ),
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        let said = bypass_in(&command).unwrap_or_default();
+        assert!(said.contains(shown), "{value}: {said}");
+        assert_eq!(
+            without_bypass(&command),
+            words(&["claude", "--settings", kept]),
+            "{value}"
+        );
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{value}");
+    }
+    // An ordinary env and a sandbox that does not auto-allow stay.
+    for value in [
+        r#"{"env":{"FOO":"1"}}"#,
+        r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
+        r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
+        // A sandbox this does not enable is not read as one that allows.
+        r#"{"sandbox":{"enabled":false}}"#,
+        r#"{"sandbox":{}}"#,
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        assert_eq!(bypass_in(&command), None, "{value}");
+        assert_eq!(without_bypass(&command), command, "{value}");
+    }
+    // `--safe-mode` is a flag of its own, and goes alone.
+    let command = words(&["claude", "--safe-mode", "-v"]);
+    assert_eq!(bypass_in(&command).as_deref(), Some("--safe-mode"));
+    // It narrows hooks, so it is a guard, not a prompt.
+    assert_eq!(
+        bypass_found(&command).map(|found| found.what),
+        Some(What::GuardsOff)
+    );
+    assert_eq!(without_bypass(&command), words(&["claude", "-v"]));
+}
+
+#[test]
+fn a_broad_bash_allow_is_read_without_regard_to_case_or_whitespace() {
+    for rule in [
+        "bash",
+        "BASH",
+        " Bash ",
+        "Bash (*)",
+        "bash(*)",
+        "Bash(\t*\t)",
+        "Bash( : * )",
+        "Bash(**)",
+        "Bash(\u{a0}*)",
+    ] {
+        let value = format!(
+            r#"{{"permissions":{{"allow":[{}]}}}}"#,
+            serde_json::json!(rule)
+        );
+        let command = words(&["claude", "--settings", &value]);
+        assert!(bypass_in(&command).is_some(), "{rule:?}");
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{rule:?}");
+    }
+    for rule in ["Bash(git status)", "Bash(npm run *)", "Bashful", "Read(*)"] {
+        let value = format!(
+            r#"{{"permissions":{{"allow":[{}]}}}}"#,
+            serde_json::json!(rule)
+        );
+        assert_eq!(
+            bypass_in(&words(&["claude", "--settings", &value])),
+            None,
+            "{rule:?}"
+        );
     }
 }

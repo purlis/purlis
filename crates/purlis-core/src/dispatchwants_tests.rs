@@ -489,6 +489,7 @@ fn a_question_leaves_out_a_persona_the_person_said_never_to_for_a_chat_above() {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     });
     assert_eq!(Above::of(&task), Above::Unread);
     if let Some(from) = task.from.as_mut() {

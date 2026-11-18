@@ -243,10 +243,11 @@ impl Instances {
             if places.macos {
                 // tauri-plugin-single-instance names it for the identifier with `.` and `-`
                 // made `_`: `/tmp/dev_charter_app_si.sock`.
-                let name = id.replace(['.', '-'], "_");
-                found
-                    .sockets
-                    .push(places.socket_dir.join(format!("{name}_si.sock")));
+                found.sockets.push(
+                    places
+                        .socket_dir
+                        .join(crate::names::single_instance_socket(id)),
+                );
             }
             if places.linux {
                 if let Some(dir) = &places.runtime {

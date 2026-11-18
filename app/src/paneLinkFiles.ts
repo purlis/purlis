@@ -18,6 +18,8 @@ import { PLANE_ROOT, workspaceFiles, type Place } from "./pieceViews";
  *   asked of the project's view ({@link useOutsideFileAsks}), for the chat whose pane opened it:
  *   the core reads it only for that pane. Its line and column wait here for the tab to land on
  *   ({@link outsideLanding}).
+ * - **A file on a runner chat's runner** (#6387) is asked the same way, naming its runner: its
+ *   tab reads it there, read-only (`pieceViews.runnerFileView`).
  */
 
 /** The open command's answer for a file. */
@@ -27,6 +29,8 @@ export type FileOpened = Extract<LinkOpened, { answer: "file" }>;
 export type OutsideAsk = {
   plane: PlaneId;
   session: number | null;
+  /** The runner the file is on, for a runner chat's; none for one on this machine. */
+  runner?: string;
   path: string;
   line?: number;
   column?: number;
@@ -36,7 +40,7 @@ const projects = new Set<(ask: OutsideAsk) => void>();
 const landings = new Map<string, { line?: number; column?: number }>();
 
 /** Where a file of the project is read from: the place and the path in it. */
-type InTheProject = Exclude<FileOpened["at"], { in: "outside" }>;
+type InTheProject = Exclude<FileOpened["at"], { in: "outside" } | { in: "runner" }>;
 
 /** The place a file of the project is read by, and its path there. */
 export function readPlaceOf(at: InTheProject): { place: Place; path: string } {
@@ -55,9 +59,17 @@ export function openFileLink(plane: PlaneId, session: number | null, opened: Fil
   const line = opened.line ?? undefined;
   const column = opened.column ?? undefined;
   const { at } = opened;
-  if (at.in === "outside") {
-    const ask = { plane, session, path: at.path, line, column };
-    landings.set(at.path, { line, column });
+  if (at.in === "outside" || at.in === "runner") {
+    const runner = at.in === "runner" ? at.runner : undefined;
+    const ask = {
+      plane,
+      session,
+      ...(runner === undefined ? {} : { runner }),
+      path: at.path,
+      line,
+      column,
+    };
+    landings.set(landingKey(runner, at.path), { line, column });
     for (const told of projects) told(ask);
     return;
   }
@@ -78,9 +90,16 @@ export function useOutsideFileAsks(plane: PlaneId, heard: (ask: OutsideAsk) => v
   }, [plane, heard]);
 }
 
-/** Where a file outside the project's tab lands, asked once: the line and column it opened at. */
-export function outsideLanding(path: string): { line?: number; column?: number } {
-  const landing = landings.get(path) ?? {};
-  landings.delete(path);
+/** A landing's key: the path, and the runner it is on, if any. */
+function landingKey(runner: string | undefined, path: string): string {
+  return runner === undefined ? path : `${runner}\n${path}`;
+}
+
+/** Where a file outside the project's tab lands, asked once: the line and column it opened at.
+ *  `runner` for a file on a runner chat's runner (#6387). */
+export function outsideLanding(path: string, runner?: string): { line?: number; column?: number } {
+  const key = landingKey(runner, path);
+  const landing = landings.get(key) ?? {};
+  landings.delete(key);
   return landing;
 }

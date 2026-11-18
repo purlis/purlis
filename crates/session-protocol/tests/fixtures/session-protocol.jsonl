@@ -269,3 +269,8 @@
 {"reply":{"re":215,"ok":{"reach":{"next":["api.example.com:443"]}}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"used_next","target":"api.example.com:443"}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"dropped_next","target":"old.example.com:443"}}}
+{"call":{"id":216,"command":"link_now"}}
+{"call":{"id":217,"command":"read_file","program":"01J9ZQ8000000000000000000D","path":"src/main.rs","reach":"workspace"}}
+{"reply":{"re":217,"ok":{"file":{"found":"plain","path":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app/src/main.rs","from_workspace":"src/main.rs","home":{"workspace":"app","folder":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app"},"size":12,"version":"2049:131074:12:1731751200000000000"}}}}
+{"call":{"id":218,"command":"read_file","program":"01J9ZQ8000000000000000000D","path":"/etc/hosts","reach":"anywhere","at":0}}
+{"reply":{"re":218,"ok":{"file":{"found":"plain","path":"/etc/hosts","home":{"folder":"/home/purlis/projects/01J9PRJCT00000000000000000"},"size":10,"version":"2049:12:10:1731751200000000000","piece":{"at":0,"bytes":"MTI3LjAuMC4xCg=="}}}}}

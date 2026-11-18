@@ -115,3 +115,45 @@ fn a_text_drawn_otherwise_is_known_and_the_subject_carries_none_of_the_chats_wor
         .contains("secret-plan")
     );
 }
+
+#[test]
+fn a_runner_chats_dispatch_and_write_wait_for_the_person_as_policy_runners_runs() {
+    // Q308b: the hold is `runners`'. Enforced, both wait; logged, neither does, and one line
+    // each says it would have.
+    for (policy, held, lines) in [("", true, 0), ("runners = \"log\"\n", false, 2)] {
+        let root = tempfile::tempdir().expect("a project");
+        std::fs::write(
+            crate::names::manifest(root.path()),
+            format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+        )
+        .expect("the manifest");
+        for ask in [RunnerAsk::Dispatch, RunnerAsk::Write] {
+            assert_eq!(
+                held_for_the_person(root.path(), ask),
+                held,
+                "{policy:?} {ask:?}"
+            );
+        }
+        let logged = crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+        assert_eq!(
+            logged
+                .iter()
+                .map(|line| (line.family.as_str(), line.rule.as_str()))
+                .collect::<Vec<_>>(),
+            if lines == 0 {
+                vec![]
+            } else {
+                vec![("runners", "runner.dispatch"), ("runners", "runner.write")]
+            },
+            "{policy:?}"
+        );
+    }
+    // `team` holds both.
+    let root = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        crate::names::manifest(root.path()),
+        "[policy]\ntemplate = \"team\"\n",
+    )
+    .expect("the manifest");
+    assert!(held_for_the_person(root.path(), RunnerAsk::Write));
+}

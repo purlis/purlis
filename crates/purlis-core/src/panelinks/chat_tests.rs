@@ -104,6 +104,7 @@ fn chat(text: &str) -> Candidate {
     Candidate {
         kind: Kind::Chat,
         text: text.to_owned(),
+        target: None,
     }
 }
 
@@ -165,10 +166,10 @@ fn an_ended_chat_links_to_its_record_and_opening_it_shows_its_card() {
 
     let (number, ended) = goes(links.resolve(&chat("chat 641"), &pane_of_652(&root)));
     assert_eq!(number, 641);
-    let Goes::Ended(record) = ended else {
+    let Goes::Ended(ended) = ended else {
         panic!("not ended: {ended:?}");
     };
-    assert_eq!(record.id, id);
+    assert_eq!(ended.record.id, id);
     assert!(matches!(
         links.open(&chat("chat 641"), &pane_of_652(&root), &Asks::default(), None),
         Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Ended(_))

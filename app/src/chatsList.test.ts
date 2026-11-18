@@ -249,6 +249,7 @@ describe("the filter (V100-49)", () => {
       reopens: false,
       not_reopened: null,
       chat: null,
+      chat_id: null,
       did_not_start: false,
       attempts: 0,
       waits: null,
@@ -289,6 +290,7 @@ describe("a closed chat found by the filter (#6484)", () => {
       number: 731,
       id: "01K6CHATS0000000000000000C",
       earlier: [702],
+      found_by: null,
       title: "Tidy the changelog",
       place: "smart-ide",
       ended: "2026-11-12T11:00:00Z",
@@ -297,12 +299,14 @@ describe("a closed chat found by the filter (#6484)", () => {
       number: 650,
       id: "01K6CHATS0000000000000000D",
       earlier: [],
+      found_by: null,
       title: "Sign commits",
       place: "docs",
       ended: "2026-11-12T09:00:00Z",
     },
   ];
-  const words = (text: string) => closedFound(CLOSED, { text, ranks: [] }, new Set());
+  const NONE_DRAWN = new Set<string>();
+  const words = (text: string) => closedFound(CLOSED, { text, ranks: [] }, null, NONE_DRAWN);
 
   it("is found by its title and where it ran, every word", () => {
     expect(words("changelog").map((one) => one.number)).toEqual([731]);
@@ -311,26 +315,25 @@ describe("a closed chat found by the filter (#6484)", () => {
     expect(words("tidy docs")).toEqual([]);
   });
 
-  it("is found by its number, or one it had before a restart, and by nothing else then", () => {
-    // Bare here: `#` and three digits would read as a colour to the theme's guard.
-    expect(words("731").map((one) => one.number)).toEqual([731]);
-    expect(words("702").map((one) => one.number)).toEqual([731]);
-    expect(words("70")).toEqual([]);
-  });
-
-  it("says the number it was found by only where that is one it had before a restart (#6685)", () => {
-    const foundBy = (text: string) => words(text).map((one) => [one.number, one.foundBy]);
-    expect(foundBy("702")).toEqual([[731, 702]]);
-    expect(foundBy("731")).toEqual([[731, null]]);
-    expect(foundBy("changelog")).toEqual([[731, null]]);
+  it("for a number typed, is what the core answered for it, never matched by words (#7125)", () => {
+    // The core answers `closed_chats` for the number typed with the chats that had it, each
+    // saying the number it was found by (`chatcard::closed_chats_of`): the window decides
+    // neither. Bare here: `#` and three digits would read as a colour to the theme's guard.
+    const answered = [{ ...CLOSED[0], found_by: 702 }];
+    const typed = { text: "702", ranks: [] };
+    expect(closedFound(answered, typed, 702, NONE_DRAWN)).toEqual(answered);
+    expect(closedFound(answered, typed, 702, new Set([CLOSED[0].id]))).toEqual([]);
   });
 
   it("is never found by a chip, nor with nothing typed: both ask about running chats", () => {
-    expect(closedFound(CLOSED, { text: "", ranks: [] }, new Set())).toEqual([]);
-    expect(closedFound(CLOSED, { text: "tidy", ranks: [0] }, new Set())).toEqual([]);
+    expect(closedFound(CLOSED, { text: "", ranks: [] }, null, NONE_DRAWN)).toEqual([]);
+    expect(closedFound(CLOSED, { text: "tidy", ranks: [0] }, null, NONE_DRAWN)).toEqual([]);
   });
 
-  it("is not found twice where the list draws it already as a finished task", () => {
-    expect(closedFound(CLOSED, { text: "tidy", ranks: [] }, new Set([731]))).toEqual([]);
+  it("is not found twice where the list draws it already as a finished task, matched by its ULID (#7145)", () => {
+    const tidy = { text: "tidy", ranks: [] };
+    expect(closedFound(CLOSED, tidy, null, new Set([CLOSED[0].id]))).toEqual([]);
+    // Another chat's task, whatever number it had, leaves this one found.
+    expect(closedFound(CLOSED, tidy, null, new Set([CLOSED[1].id]))).toEqual([CLOSED[0]]);
   });
 });

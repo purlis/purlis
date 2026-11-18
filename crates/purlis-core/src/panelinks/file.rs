@@ -31,7 +31,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
+use super::{Asking, Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
 use crate::files::Branch;
 
 /// **A file a path names**, as the core resolved it.
@@ -48,10 +48,10 @@ pub struct FileAt {
     /// Whether it is in the chat's home ([`Home`]): one that is not asks first.
     pub in_home: bool,
     /// The path in full with its `:line:col`, as an ask shows it and *Copy link* copies it.
-    shown: String,
+    pub(super) shown: String,
     /// The path from the chat's home with its `:line:col`, for a file in it: what a hover's
     /// first line says (D2). The path in full for a file outside it.
-    short: String,
+    pub(super) short: String,
 }
 
 impl FileAt {
@@ -84,6 +84,14 @@ pub enum ReadFrom {
     Project { path: String },
     /// Not in the project: read only once an ask for it was answered.
     Outside,
+    /// On the runner the chat runs on, read from there (#6387): by its path there. `home` is
+    /// what the chat counts as its own there, as the runner said it, for an ask to name, and
+    /// `identity` which file it was when the runner found it (`onrunner::identity_of`).
+    Runner {
+        runner: String,
+        home: Option<Home>,
+        identity: Option<String>,
+    },
 }
 
 /// **What a chat counts as its own**: its workspace, or the project for a chat at the project's
@@ -330,20 +338,27 @@ impl LinkKind for LocalFile {
         Kind::File
     }
 
+    /// Every pane but a runner chat's, whose files [`super::RunnerFile`] reads on its runner.
+    fn serves(&self, pane: &Pane) -> bool {
+        pane.runs != Runs::OnRunner
+    }
+
     fn resolve(&self, text: &str, pane: &Pane) -> Resolved {
         if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Resolved::Quiet;
         }
         let (words, line, column) = at_line(text);
-        let named = match words.strip_prefix("file:") {
-            Some(_) => match on_this_machine(words) {
+        // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
+        let named = if addressed(words) {
+            match on_this_machine(words) {
                 Ok(path) => path,
                 Err(why) => return why,
-            },
-            None => match self.joined(words, pane) {
+            }
+        } else {
+            match self.joined(words, pane) {
                 Some(path) => path,
                 None => return Resolved::Quiet,
-            },
+            }
         };
         // A chat on a runner, or one purlis cannot place, names its own machine's files: mapped
         // through its mounts (#6221), never read as this one's.
@@ -405,6 +420,7 @@ impl LinkKind for LocalFile {
             shown: text.to_owned(),
             target,
             token: None,
+            about: Asking::FileOutside,
         }
     }
 
@@ -443,7 +459,7 @@ impl LocalFile {
 }
 
 /// A path's `:line[:col]`, as it is written after it.
-fn at_suffix(line: Option<u32>, column: Option<u32>) -> String {
+pub(super) fn at_suffix(line: Option<u32>, column: Option<u32>) -> String {
     match (line, column) {
         (Some(line), Some(column)) => format!(":{line}:{column}"),
         (Some(line), None) => format!(":{line}"),
@@ -453,7 +469,7 @@ fn at_suffix(line: Option<u32>, column: Option<u32>) -> String {
 
 /// `text` without its `:line[:col]`, and the line and column it named. A line of 0 is none, and
 /// so is a column without one.
-fn at_line(text: &str) -> (&str, Option<u32>, Option<u32>) {
+pub(super) fn at_line(text: &str) -> (&str, Option<u32>, Option<u32>) {
     let number = |part: &str| {
         (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
             .then(|| part.parse::<u32>().ok())
@@ -480,7 +496,7 @@ fn at_line(text: &str) -> (&str, Option<u32>, Option<u32>) {
 
 /// A `file:` address as the path it names on this machine (spec Q2): `file:///…` and
 /// `file://localhost/…`. One naming another host is no link, and says so.
-fn on_this_machine(words: &str) -> Result<PathBuf, Resolved> {
+pub(super) fn on_this_machine(words: &str) -> Result<PathBuf, Resolved> {
     let Ok(url) = url::Url::parse(words) else {
         return Err(Resolved::Quiet);
     };
@@ -556,6 +572,13 @@ fn slashed(path: &Path) -> Option<String> {
         .collect();
     let parts = parts?;
     (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// Whether `words` is a `file:` address. `FILE:` is the same scheme as `file:`.
+pub(super) fn addressed(words: &str) -> bool {
+    words
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
 }
 
 #[cfg(test)]

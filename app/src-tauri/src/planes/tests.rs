@@ -2231,17 +2231,7 @@ fn a_launch_never_deals_again_a_number_a_closed_chat_answers_to() {
     // chats' records still answer to 731, and to 702, the number it had before a restart.
     let dir = tempfile::tempdir().expect("a directory");
     let (planes, root, _held) = launched_with_one_chat(dir.path());
-    let closed = purlis_core::chatrecords::ChatRecord {
-        number: 731,
-        id: "01K6CHATS0000000000000000C".to_owned(),
-        title: "Tidy the changelog".to_owned(),
-        started: "2026-11-12T09:00:00Z".to_owned(),
-        ended: "2026-11-12T11:00:00Z".to_owned(),
-        started_by: purlis_core::chatrecords::StartedBy::Person,
-        place: "project root".to_owned(),
-        earlier: vec![702],
-        chat: None,
-    };
+    let closed = crate::chatcard::fixtures::tidy_the_changelog(vec![702]);
     let older = purlis_core::chatrecords::ChatRecord {
         number: 9,
         id: "01K6CHATS0000000000000000D".to_owned(),
@@ -2267,17 +2257,7 @@ fn the_number_dealt_after(lose: impl FnOnce(&Path)) -> u32 {
     let dir = tempfile::tempdir().expect("a directory");
     let root = a_plane(&dir.path().join("plane"));
     a_record_naming(&root, "/bin/echo");
-    let closed = purlis_core::chatrecords::ChatRecord {
-        number: 731,
-        id: "01K6CHATS0000000000000000C".to_owned(),
-        title: "Tidy the changelog".to_owned(),
-        started: "2026-11-12T09:00:00Z".to_owned(),
-        ended: "2026-11-12T11:00:00Z".to_owned(),
-        started_by: purlis_core::chatrecords::StartedBy::Person,
-        place: "project root".to_owned(),
-        earlier: vec![760],
-        chat: None,
-    };
+    let closed = crate::chatcard::fixtures::tidy_the_changelog(vec![760]);
     purlis_core::chatrecords::keep(&root, &closed).expect("the close is kept");
     lose(&reopen::path(&root));
 
@@ -4237,6 +4217,7 @@ fn a_claude_stand_in(held: &Held, dir: &Path, sub: &str, asker: Option<u32>) -> 
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     });
     a_claude_stand_in_from(held, dir, sub, from)
 }

@@ -165,12 +165,13 @@ fn a_codex_chat_a_person_started_is_attended_to_dispatch_whatever_it_reports() {
     assert_eq!(attendance::of_held(Some(fact)), Attendance::Attended);
 }
 
-/// **R-113, a pin** (Q208): at No sandbox, an unattended task can't dispatch to another
-/// persona, whatever the grants say, as shipped. Its own persona is still its own.
+/// **R-113, a pin** (Q208), as ticket T1.1-73 moves it (Q306): at No sandbox, an unattended
+/// task dispatches to another persona only under a grant the app sealed, where the seal is out
+/// of its reach. A process that cannot verify a seal (this test's, which is not the app) is
+/// refused, and says why. Its own persona is still its own.
 ///
-/// Shipped behaviour, so it is shown red by a mutation, not first: delete the
-/// `Covers::Covered | Covers::NeedsGrant if !sandboxed` arm of
-/// `purlis_core::dispatchunattended::answer_of`, and the standing grant answers
+/// Shown red by a mutation: delete the `Covers::Covered if !sandboxed && !reach.sealed_here`
+/// arm of `purlis_core::dispatchunattended::answer_on`, and the standing grant answers
 /// `Answer::Covered`. A second mutation, `Begun::Task` read as attended in
 /// `attendance::Begun::unattended`, makes the task attended and the first assertion fails.
 #[test]
@@ -194,7 +195,7 @@ fn an_unattended_no_sandbox_task_cannot_dispatch_to_another_persona() {
             false,
             unsandboxed
         ),
-        Answer::Refused(Refusal::Unsandboxed("devops".to_owned()))
+        Answer::Refused(Refusal::NotSealedHere("devops".to_owned()))
     );
     assert_eq!(
         dispatchunattended::covers(

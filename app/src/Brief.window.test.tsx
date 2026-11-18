@@ -88,6 +88,7 @@ const FINISHED: FinishedTask = {
   id: "01K6FAILED",
   asker: 4,
   chat: null,
+  chat_id: null,
   did_not_start: false,
   attempts: 0,
   waits: null,

@@ -111,11 +111,14 @@ const LOCAL_READS: &[&str] = &[
     "hosts_changed",
     "made",
     "made_everywhere",
+    "no_keyring_at",
     "offer_due",
     "presets_changed",
     "services_everywhere",
     "sockets_everywhere",
     "tally",
+    "dispatch_seals_unread",
+    "dispatch_unsealed",
 ];
 
 fn is_ident(c: char) -> bool {

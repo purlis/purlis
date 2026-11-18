@@ -3604,3 +3604,243 @@ fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_bo
     assert!(revoke(root, &chats, &listed[0].id, &audit).is_err());
     assert_eq!(seen.lock().unwrap().len(), 1, "nothing more audited");
 }
+
+/// **Which asks the project's `[policy]` answers itself** (the Q308 follow-up, item 3; ruling
+/// Q328): a folder under `asks` off or log, a socket under off alone, and nothing else.
+#[test]
+fn the_policy_answers_a_folder_under_off_or_log_and_a_socket_under_off_alone() {
+    use purlis_core::enforcement::Mode;
+    for (what, off, log) in [
+        (GrantWhat::Write, true, true),
+        (GrantWhat::Socket, true, false),
+        (GrantWhat::Host, false, false),
+        (GrantWhat::Port, false, false),
+        (GrantWhat::Service, false, false),
+    ] {
+        assert_eq!(super::answers(what, Mode::Off), off, "{what:?}");
+        assert_eq!(super::answers(what, Mode::Log), log, "{what:?}");
+        assert!(!super::answers(what, Mode::Enforce), "{what:?}");
+    }
+}
+
+/// **A folder a later program loads code from still asks under `watch`** (the review of #7105,
+/// blocker 1): `asks` logs there, so a folder of the project is answered Allow for the chat with
+/// nobody asked, but a held folder the Notice would lift for this chat (fish's
+/// `vendor_conf.d`, here) is never answered by the policy, and its Notice is raised.
+#[test]
+fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_code_still_asks() {
+    use crate::hooks::{BlockOffer, HeardBlock, blocked};
+    use purlis_core::enforcement::{Family, Mode, Template};
+    use purlis_core::engine::Size;
+    use purlis_core::hookwire::SandboxBlocked;
+    use purlis_core::reopen::Chat;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    // What `watch`, the shipped default, runs `asks` at.
+    assert_eq!(Template::Watch.mode(Family::Asks), Mode::Log);
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("its manifest");
+    // Every grant is audited before it is kept: an event log to write it in.
+    let events = tempfile::tempdir().expect("an event log's folder");
+    let planes = keeping_events_for_tests(
+        crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        ),
+        &events.path().join("events"),
+    );
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("it is open");
+    let session = held
+        .chats()
+        .start(
+            &Chat {
+                program: "/bin/sleep".to_owned(),
+                args: vec!["5".to_owned()],
+                name: "steward 1".to_owned(),
+                cwd: Some(root.clone()),
+                ..Default::default()
+            },
+            Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("started");
+    let told = |target: &str| crate::hooks::ChatBlocked {
+        offer: BlockOffer::Write,
+        target: Some(target.to_owned()),
+        session,
+        ours: false,
+        quiet: None,
+        ..blocked(
+            &plane,
+            &HeardBlock::from(SandboxBlocked {
+                chat: session,
+                sandbox_blocked: Block {
+                    operation: Operation::Write,
+                    kind: Kind::Home,
+                    ours: false,
+                },
+                harness: Some("claude".to_owned()),
+                target: Some(target.to_owned()),
+                read_back: false,
+                suggested: None,
+            }),
+        )
+    };
+    let answered = |target: &str, mode: Mode| {
+        answered_at(&held, &told(target), (GrantWhat::Write, target), None, mode)
+    };
+    let home = sandbox::Machine::this().home.expect("a home folder");
+    for later in [
+        ".local/share/fish/vendor_conf.d",
+        ".local/share/nvim/site/plugin",
+        ".config/gh",
+    ] {
+        let later = home.join(later).display().to_string();
+        assert!(!answered(&later, Mode::Log), "{later} still asks");
+        assert!(!answered(&later, Mode::Off), "{later} still asks");
+    }
+    let out = root.join("out");
+    std::fs::create_dir_all(&out).expect("a folder of the project");
+    let out = out.display().to_string();
+    assert!(!answered(&out, Mode::Enforce), "enforced, it asks");
+    assert!(
+        answered(&out, Mode::Log),
+        "a folder of the project is allowed"
+    );
+    assert!(held.chats().holds_for(
+        session,
+        &sandbox::grant::What::Write(std::path::PathBuf::from(&out))
+    ));
+    // Nothing of later code was kept for the chat.
+    assert!(!held.chats().holds_for(
+        session,
+        &sandbox::grant::What::Write(home.join(".config/gh"))
+    ));
+
+    // **The folder kept is the folder judged unasked** (the re-review of #7105, blocker 2): a
+    // chat that swaps what a path leads to between the two resolutions has nothing kept.
+    let swapped = root.join("swapped");
+    let elsewhere = root.join("elsewhere");
+    std::fs::create_dir_all(&swapped).expect("a folder");
+    std::fs::create_dir_all(&elsewhere).expect("another");
+    super::BETWEEN_RESOLUTIONS.with(|seam| {
+        let (swapped, elsewhere) = (swapped.clone(), elsewhere.clone());
+        *seam.borrow_mut() = Some(Box::new(move || {
+            std::fs::remove_dir(&swapped).expect("the folder goes");
+            std::os::unix::fs::symlink(&elsewhere, &swapped).expect("a link in its place");
+        }));
+    });
+    assert!(
+        !answered(&swapped.display().to_string(), Mode::Off),
+        "a folder that resolved to another between the two is not answered"
+    );
+    for folder in [&swapped, &elsewhere] {
+        assert!(
+            !held
+                .chats()
+                .holds_for(session, &sandbox::grant::What::Write(folder.clone())),
+            "{} kept",
+            folder.display()
+        );
+    }
+
+    // **A socket is resolved once, and kept only as its ask drew it** (the fourth review of
+    // #7105, [`super::socket_as_drawn`]): under `asks` off a socket is answered and kept by the
+    // name it was drawn by; one whose path leads to another socket by the time it is judged is
+    // not answered, and neither socket is kept.
+    // In a folder of yours no chat writes, as a socket in the project or the temp folder is
+    // refused by design; it fails on CI where it cannot be made.
+    if let Some(mine) = a_folder_of_yours_no_chat_writes() {
+        let real = mine.path().canonicalize().expect("real");
+        let (engine, drawn, other) = (
+            real.join("e.sock"),
+            real.join("d.sock"),
+            real.join("o.sock"),
+        );
+        let _listening = [&engine, &drawn, &other]
+            .map(|one| std::os::unix::net::UnixListener::bind(one).expect("a socket"));
+        let socket = |target: &std::path::Path, mode: Mode| {
+            let target = target.display().to_string();
+            answered_at(
+                &held,
+                &told(&target),
+                (GrantWhat::Socket, &target),
+                None,
+                mode,
+            )
+        };
+        assert!(socket(&engine, Mode::Off), "a socket is answered under off");
+        assert!(
+            held.chats()
+                .holds_for(session, &sandbox::grant::What::Socket(engine.clone())),
+            "kept as drawn"
+        );
+        super::BETWEEN_RESOLUTIONS.with(|seam| {
+            let (drawn, other) = (drawn.clone(), other.clone());
+            *seam.borrow_mut() = Some(Box::new(move || {
+                std::fs::remove_file(&drawn).expect("the socket goes");
+                std::os::unix::fs::symlink(&other, &drawn).expect("a link in its place");
+            }));
+        });
+        assert!(
+            !socket(&drawn, Mode::Off),
+            "a socket whose path leads to another when judged is not answered"
+        );
+        for one in [&drawn, &other] {
+            assert!(
+                !held
+                    .chats()
+                    .holds_for(session, &sandbox::grant::What::Socket(one.clone())),
+                "{} kept",
+                one.display()
+            );
+        }
+    }
+
+    // **A folder the floor holds is never answered, though a folder above it is listed** (the
+    // re-review of #7105): a `PATH` folder under the home (`~/.cargo/bin`, most often), with
+    // its parent listed in Settings, still raises the Notice, and so does the listed folder.
+    // Built here, so the case never depends on this machine's own `PATH`.
+    let built = tempfile::tempdir().expect("a home");
+    let built_home = built.path().canonicalize().expect("real");
+    let bin = built_home.join(".cargo/bin");
+    std::fs::create_dir_all(&bin).expect("a PATH folder under the home");
+    super::MACHINE.with(|seam| {
+        *seam.borrow_mut() = Some(sandbox::Machine {
+            env: purlis_core::secrets::Env::of(&[
+                ("PATH", &format!("{}:/usr/bin:/bin", bin.display())),
+                ("HOME", &built_home.display().to_string()),
+            ]),
+            home: Some(built_home.clone()),
+            os: sandbox::Os::this(),
+        });
+    });
+    let above = bin.parent().expect("a folder above").to_path_buf();
+    sandbox::local::list_grantable(&root, &above).expect("listed");
+    for folder in [&bin, &above] {
+        assert!(
+            !answered(&folder.display().to_string(), Mode::Off),
+            "{} still asks",
+            folder.display()
+        );
+    }
+    sandbox::local::unlist_grantable(&root, &above).expect("unlisted");
+    super::MACHINE.with(|seam| seam.borrow_mut().take());
+
+    // **Under `log`, the line names the folder granted**, not the path the chat was blocked at.
+    // Only the app writes the log; this test's process is the app.
+    purlis_core::secrets::keyhold::this_process_is_the_app();
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&elsewhere, &link).expect("a link");
+    assert!(answered(&link.display().to_string(), Mode::Log));
+    let logged =
+        purlis_core::enforcement::read_log(&root, &held.chats().id_of(session).expect("its id"));
+    assert_eq!(
+        logged.last().and_then(|line| line.host.clone()),
+        Some(elsewhere.display().to_string())
+    );
+}

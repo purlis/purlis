@@ -6847,6 +6847,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "unicode-properties",
+ "unicode-security",
  "unicode-segmentation",
  "unicode-width 0.2.3",
  "ureq",

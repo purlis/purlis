@@ -122,6 +122,17 @@ pub const TABLE: &str = crate::dispatchlimits::TABLE;
 /// The key in [`TABLE`] that holds the project's grants: asking persona to target personas.
 pub const KEY: &str = "grants";
 
+/// The key in [`TABLE`] that holds the project's denies (ticket T1.1-73, #6968): asking persona
+/// to the target personas it may not dispatch to, `"*"` for every other. **A policy deny**, which
+/// no grant lifts.
+pub const DENIES: &str = "denies";
+
+/// The rule a policy deny is logged and said by.
+pub const DENY_RULE: &str = "dispatch.denies";
+
+/// The rule a policy ask that nothing answered is logged by, where `log` lets it through.
+pub const ASK_RULE: &str = "dispatch.ask";
+
 /// **Any persona**, as a target is spelled where a grant covers every persona (#1503): in
 /// `[dispatch.grants]` (`steward = ["*"]`), and in the audit. Not a persona's name, so no pair
 /// is ever made of it.
@@ -204,6 +215,13 @@ pub struct InForce {
     /// project's root, **and none until it is said**, so a limited grant covers nothing for a
     /// reader that never says where the task works.
     pub works_in: Option<String>,
+    /// The project's denies (`[dispatch.denies]`, ticket T1.1-73): pairs no grant covers.
+    pub denied: Vec<Pair>,
+    /// The personas the project's denies keep from every other persona (`"*"`).
+    pub denied_any: Vec<String>,
+    /// Whether the project's denies keep every persona from every other: they do not read
+    /// (the review of #7113).
+    pub denied_all: bool,
 }
 
 impl InForce {
@@ -219,17 +237,23 @@ impl InForce {
     /// **A grant of the project's limited to one workspace goes by the same verdict** (#1505):
     /// accepted here, it is in force only while the last settling answered.
     ///
-    /// **This runs no git**: it goes by the verdict of the last settling, which the app runs
-    /// before a dispatch is decided, and it is safe under the lock a decision is made under.
-    /// Where nothing has been settled yet for the project, what was accepted of its grants is
-    /// not in force until a settling started off this thread lands. It writes only what a
-    /// look writes: the count of a workspace seen gone ([`crate::dispatchwithin::noticed`]),
-    /// and a record of nevers an earlier build kept is moved to its own file.
+    /// **Its grants run no git**: they go by the verdict of the last settling, which the app
+    /// runs before a dispatch is decided. Where nothing has been settled yet for the project,
+    /// what was accepted of its grants is not in force until a settling started off this
+    /// thread lands. **Its denies are read as `[policy]` is** (the review of #7113,
+    /// [`crate::enforcement::denies_in_force`]): one git read of the committed file at `HEAD`,
+    /// bounded as that read is, as the `dispatch` family's mode is read for the same decision.
+    /// It writes only what a look writes: the count of a workspace seen gone
+    /// ([`crate::dispatchwithin::noticed`]), a record of nevers an earlier build kept moved to
+    /// its own file, and a tightening of `[policy]` kept as accepted.
     pub fn read(root: &Path, chat: Vec<ChatPair>) -> Self {
         let settled = crate::dispatcharrival::for_read(root).read;
         let seen = crate::sandbox::local::dispatch_seen(root)
             .filter(|_| settled)
             .unwrap_or_default();
+        // With `[policy]`, from the committed file at `HEAD` and never fewer than this person
+        // accepted; unreadable, every dispatch across personas (the review of #7113).
+        let denies = crate::enforcement::denies_in_force(root);
         let (never, never_unread) = match crate::dispatchnever::read(root) {
             crate::dispatchnever::Nevers::Read(pairs) => (pairs, false),
             crate::dispatchnever::Nevers::Unread => (Vec::new(), true),
@@ -254,6 +278,9 @@ impl InForce {
                 .filter(|(level, _)| settled || *level != Level::Project)
                 .collect(),
             works_in: None,
+            denied: denies.pairs(),
+            denied_any: denies.any(),
+            denied_all: denies.is_all(),
         }
     }
 
@@ -293,6 +320,33 @@ impl InForce {
         } else {
             None
         }
+    }
+
+    /// **Whether the project's policy denies `asking` dispatching to `target`**
+    /// (`[dispatch.denies]`): a pair it names, or "every other persona" for `asking`. Never a
+    /// chat's own persona. **A chat on no persona only where the policy does not read**
+    /// ([`InForce::denied_all`], #7153): it is not the target's persona either, and a deny the
+    /// policy names names personas.
+    pub fn denies(&self, asking: Option<&str>, target: &str) -> bool {
+        self.denied_by(asking, target).is_some()
+    }
+
+    /// Why the project's policy denies `asking` dispatching to `target`, where it does
+    /// ([`InForce::denies`]).
+    pub fn denied_by(&self, asking: Option<&str>, target: &str) -> Option<Deny> {
+        if asking == Some(target) {
+            return None;
+        }
+        if self.denied_all {
+            return Some(Deny::Unread);
+        }
+        let asking = asking?;
+        (self
+            .denied
+            .iter()
+            .any(|pair| pair.asking == asking && pair.target == target)
+            || self.denied_any.iter().any(|one| one == asking))
+        .then_some(Deny::Named)
     }
 
     /// Whether you said never to `asking` dispatching to `target`.
@@ -411,16 +465,60 @@ pub enum Covers {
     /// ([`InForce::never_unread`]): no grant covers the pair, since it may be one the person
     /// refused. The person is asked, and told why; a chat nobody is at is refused.
     Unread,
+    /// **The project's policy denies the pair** (`[dispatch.denies]`, ticket T1.1-73): nothing
+    /// starts, nobody is asked, and no grant covers it, the project's and yours included. Why:
+    /// a deny it names, or a policy that does not read.
+    Denied(Deny),
 }
 
-/// **`covers` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50):
-/// under `off` or `log` a pair nothing covers is covered, with no grant and no ask; every other
-/// answer stands, so a lock and the person's nevers hold in every mode.
+/// **Why the project's policy denies a dispatch** (#7153): what the chat is told differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deny {
+    /// A deny `[dispatch.denies]` names, or one this person accepted: only a change to the
+    /// project's committed policy lifts it.
+    Named,
+    /// The project's `[policy]` did not read (a file that is not TOML, or a `HEAD` git could not
+    /// read just now): every dispatch across personas is denied until it reads.
+    Unread,
+}
+
+/// **`covers` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50;
+/// ticket T1.1-73): under `off` or `log` a policy ask nothing answered, and a policy deny, are
+/// covered, with no grant and no ask; every other answer stands, so a lock and the person's
+/// nevers hold in every mode.
 pub fn as_the_policy_runs(covers: Covers, mode: crate::enforcement::Mode) -> Covers {
     match covers {
-        Covers::NeedsGrant if mode != crate::enforcement::Mode::Enforce => Covers::Covered,
+        Covers::NeedsGrant | Covers::Denied(_) if mode != crate::enforcement::Mode::Enforce => {
+            Covers::Covered
+        }
         other => other,
     }
+}
+
+/// [`as_the_policy_runs`], and under `log` **one quiet line in chat `chat`'s enforcement log**
+/// naming the rule that would have refused (Q308; item 8 of the follow-up): `dispatch.denies`
+/// or `dispatch.ask`. `chat` is the asking chat's id, as the app holds it.
+pub fn as_the_policy_runs_for(
+    root: &Path,
+    chat: Option<&str>,
+    covers: Covers,
+    mode: crate::enforcement::Mode,
+) -> Covers {
+    let rule = match &covers {
+        Covers::Denied(_) => DENY_RULE,
+        Covers::NeedsGrant => ASK_RULE,
+        _ => return covers,
+    };
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::Dispatch,
+        mode,
+        rule,
+        None,
+        covers,
+    )
+    .unwrap_or(Covers::Covered)
 }
 
 /// **[`covers`], for a chat with `chain` above it**: the personas of the chats above the
@@ -448,11 +546,22 @@ pub fn covers_in_chain(
 
 /// **Whether a chat running as `asking` may dispatch to `target`** under `grants` and `policy`.
 ///
-/// In order: a policy that locks all dispatch, which holds a chat's own persona too; a policy
-/// lock on the pair, a persona's own included where the policy names it twice; the person's
-/// never for the pair, which no grant lifts; the same persona, which needs no grant; a record
-/// of nevers that does not read, under which no grant counts; then a grant at any level, a
-/// named pair or "any persona".
+/// **The precedence** (ruling Q308b; ticket T1.1-73): lock > the person's never > policy deny >
+/// same persona > policy allow > sealed grant > policy ask.
+///
+/// 1. **A lock**: a policy that locks all dispatch, which holds a chat's own persona too; a
+///    policy lock on the pair, a persona's own included where the policy names it twice.
+/// 2. **The person's never** for the pair, which no grant lifts; and, for a pair of two
+///    personas, a record of nevers that does not read, under which nothing is allowed.
+/// 3. **A policy deny** (`[dispatch.denies]`), which no grant lifts.
+/// 4. **The same persona**, which needs no grant.
+/// 5. **A policy allow**: the project's `[dispatch.grants]`, in force here once this machine's
+///    sealed acceptance holds.
+/// 6. **A sealed grant**: yours on this machine, or one made for this chat.
+/// 7. **A policy ask**: [`Covers::NeedsGrant`].
+///
+/// Under the `dispatch` family's `log` or `off`, a deny and an ask let the dispatch go ahead
+/// ([`as_the_policy_runs`]); a lock and a never hold in every mode.
 /// `asking` is `None` for a chat on no persona, which only a grant for that chat covers.
 pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Locks) -> Covers {
     if policy.forbids_dispatch() {
@@ -473,13 +582,16 @@ pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Loc
     if grants.refuses(asking, target) {
         return Covers::Never;
     }
+    // What the person refused is unknown, so nothing answers for a pair of two personas: not
+    // the policy, not a standing grant, and not one made for this chat.
+    if grants.never_unread && asking != Some(target) {
+        return Covers::Unread;
+    }
+    if let Some(deny) = grants.denied_by(asking, target) {
+        return Covers::Denied(deny);
+    }
     if asking == Some(target) {
         return Covers::Covered;
-    }
-    // What the person refused is unknown, so no grant answers for a pair of two personas: not
-    // a standing one, and not one made for this chat.
-    if grants.never_unread {
-        return Covers::Unread;
     }
     match grants.level_of(asking, target) {
         Some(_) => Covers::Covered,
@@ -564,6 +676,220 @@ pub fn committed(text: Option<&str>) -> Committed {
         }
     }
     out
+}
+
+/// What `[dispatch.denies]` of a project file holds (ticket T1.1-73).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Denies {
+    /// Each pair it denies, once.
+    pub pairs: Vec<Pair>,
+    /// Each asking persona it keeps from every other persona (`"*"`), once: and each whose
+    /// list holds something that does not read (the review of #7113), since what it meant to
+    /// deny is unknown.
+    pub any: Vec<String>,
+    /// Whether it denies every dispatch across personas: the table is not one, or names an
+    /// asking persona purlis cannot read, so what it meant to deny is unknown.
+    pub all: bool,
+    /// Each thing in it that does not read, as one sentence.
+    pub refused: Vec<String>,
+}
+
+/// **The project's dispatch denies as `text`, the whole project file, writes them** (`None`:
+/// no file): `[dispatch.denies]`, an asking persona's name to a list of target personas' names,
+/// or `"*"`. **Anything else fails closed** (the review of #7113), and is said: a list that does
+/// not read denies its asking persona every other, and a table that does not read, or an asking
+/// persona's name that is none, denies every dispatch across personas.
+pub fn committed_denies(text: Option<&str>) -> Denies {
+    let mut out = Denies::default();
+    let Some(text) = text else {
+        return out;
+    };
+    let Ok(top) = text.parse::<toml::Table>() else {
+        out.all = true;
+        return out;
+    };
+    let Some(value) = top.get(TABLE).and_then(|table| table.get(DENIES)) else {
+        return out;
+    };
+    let at = format!("{TABLE}.{DENIES}");
+    let Some(table) = value.as_table() else {
+        out.all = true;
+        out.refused.push(format!(
+            "{at} is not a table, so it denies every dispatch across personas: write the asking \
+             persona, then the personas it may not dispatch to, as steward = [\"devops\"]"
+        ));
+        return out;
+    };
+    for (asking, targets) in table {
+        let every_other = |out: &mut Denies, why: String| {
+            out.refused.push(why);
+            if !crate::personas::valid_name(asking) {
+                out.all = true;
+            } else if !out.any.contains(asking) {
+                out.any.push(asking.clone());
+            }
+        };
+        let shown = crate::shown::short(asking);
+        let Some(targets) = targets.as_array() else {
+            every_other(
+                &mut out,
+                format!("{at}.{shown} is not a list of personas, so it denies them all"),
+            );
+            continue;
+        };
+        for target in targets {
+            match target.as_str() {
+                Some(ANY) if crate::personas::valid_name(asking) => {
+                    if !out.any.contains(asking) {
+                        out.any.push(asking.clone());
+                    }
+                }
+                // A persona's own name in its list: dispatching to itself needs no grant, and
+                // no deny holds it.
+                Some(target) if target == asking && crate::personas::valid_name(asking) => out
+                    .refused
+                    .push(format!("{at}.{shown} names itself, which denies nothing")),
+                Some(target) => match Pair::new(asking, target) {
+                    Ok(pair) => {
+                        if !out.pairs.contains(&pair) {
+                            out.pairs.push(pair);
+                        }
+                    }
+                    Err(why) => every_other(&mut out, why),
+                },
+                None => every_other(
+                    &mut out,
+                    format!(
+                        "{at}.{shown} holds something that is not a persona's name, so it \
+                         denies them all"
+                    ),
+                ),
+            }
+        }
+    }
+    out
+}
+
+/// What [`Denied`] spells "every dispatch across personas" as.
+const ALL_DENIED: &str = "* -> *";
+
+/// **The project's dispatch denies as `[policy]` resolves and accepts them** (the review of
+/// #7113): each deny spelled `steward -> devops`, `steward -> *` for every other persona, or
+/// `* -> *` for every dispatch across personas. Kept in the sealed acceptance of the project's
+/// `[policy]` ([`crate::enforcement::press`]), so a deny the project's file takes away still
+/// holds until the person presses to accept that.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Denied(std::collections::BTreeSet<String>);
+
+impl Denied {
+    /// Every dispatch across personas denied.
+    pub fn all() -> Self {
+        Self(std::iter::once(ALL_DENIED.to_owned()).collect())
+    }
+
+    /// The denies `text`, a whole project file, says ([`committed_denies`]): every dispatch
+    /// across personas where it is not TOML.
+    pub fn of_text(text: Option<&str>) -> Self {
+        let denies = committed_denies(text);
+        if denies.all {
+            return Self::all();
+        }
+        Self(
+            denies
+                .pairs
+                .iter()
+                .map(Pair::to_string)
+                .chain(denies.any.iter().map(|asking| format!("{asking} -> {ANY}")))
+                .collect(),
+        )
+    }
+
+    /// Whether it denies every dispatch across personas.
+    pub fn is_all(&self) -> bool {
+        self.0.contains(ALL_DENIED)
+    }
+
+    /// Whether it denies nothing.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Every deny of `self` and of `other`.
+    #[must_use]
+    pub fn with(&self, other: &Self) -> Self {
+        if self.is_all() || other.is_all() {
+            return Self::all();
+        }
+        Self(self.0.union(&other.0).cloned().collect())
+    }
+
+    /// The denies of `self` that `other` does not hold, each spelled: what accepting `other`
+    /// would lift.
+    pub fn without(&self, other: &Self) -> Vec<String> {
+        if other.is_all() {
+            return Vec::new();
+        }
+        self.0.difference(&other.0).cloned().collect()
+    }
+
+    /// As an acceptance keeps it: each deny, `|` between.
+    pub fn spelled(&self) -> String {
+        self.0.iter().cloned().collect::<Vec<_>>().join("|")
+    }
+
+    /// What [`Denied::spelled`] spelled. A deny it cannot read denies every dispatch across
+    /// personas.
+    pub fn parse(text: &str) -> Self {
+        let mut out = std::collections::BTreeSet::new();
+        for one in text.split('|').filter(|one| !one.is_empty()) {
+            let reads = one == ALL_DENIED
+                || one.split_once(" -> ").is_some_and(|(asking, target)| {
+                    crate::personas::valid_name(asking)
+                        && (target == ANY || crate::personas::valid_name(target))
+                });
+            if !reads || one == ALL_DENIED {
+                return Self::all();
+            }
+            out.insert(one.to_owned());
+        }
+        Self(out)
+    }
+
+    /// The pairs it names.
+    pub fn pairs(&self) -> Vec<Pair> {
+        self.0.iter().filter_map(|one| Pair::parse(one)).collect()
+    }
+
+    /// The asking personas it keeps from every other.
+    pub fn any(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|one| one.strip_suffix(" -> *"))
+            .filter(|asking| *asking != ANY)
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+/// What a chat is told when the project's policy denies its dispatch to `target`, by `deny`.
+pub fn denied_said(target: &str, deny: Deny) -> String {
+    let target = crate::shown::short(target);
+    match deny {
+        Deny::Named => format!(
+            "the project's policy does not let this chat's persona dispatch to {target} \
+             ([{TABLE}.{DENIES}] in its committed settings), so nothing was started and nobody \
+             was asked. No grant lifts it. Do this work without {target}; only a change to the \
+             project's committed policy, made by a person, allows it."
+        ),
+        // A git that timed out once reads as this too (#7153): it is not the policy's word.
+        Deny::Unread => format!(
+            "purlis could not read the project's committed policy just now, so it lets no chat \
+             dispatch to another persona until it can, and nothing was started and nobody was \
+             asked. No grant lifts it. Try again in a while, or do this work without {target}; \
+             if it goes on, the project's committed settings may not read, and a person has to \
+             mend them."
+        ),
+    }
 }
 
 /// The project's dispatch grants in the project at `root`, read as the sandbox reads the
@@ -1068,3 +1394,7 @@ mod never_tests;
 #[cfg(test)]
 #[path = "dispatchgrant_declined_tests.rs"]
 mod declined_tests;
+
+#[cfg(test)]
+#[path = "dispatchprecedence_tests.rs"]
+mod precedence_tests;

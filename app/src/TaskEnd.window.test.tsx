@@ -1009,6 +1009,7 @@ describe("what its row says afterwards", () => {
     reopens: true,
     not_reopened: null,
     chat: null,
+    chat_id: null,
     did_not_start: false,
     attempts: 0,
     waits: null,

@@ -442,6 +442,13 @@ pub fn of_number(chats: &[ChatRecord], number: u32) -> Option<&ChatRecord> {
     chats.iter().find(|chat| chat.answers_to(number))
 }
 
+/// **The chat whose ULID is `id`**, in `chats` as [`every`] read them (#7125, #7123): its own
+/// record, where more than one may answer to a number it had (#6740). What a card found by its
+/// ULID is numbered by, and what its *Reopen* starts again.
+pub fn of_id<'c>(chats: &'c [ChatRecord], id: &str) -> Option<&'c ChatRecord> {
+    chats.iter().find(|chat| chat.id == id)
+}
+
 /// Writes `chats`, newest first, whole, under the folder's lock already held: at most
 /// [`MOST_KEPT`] of them and [`MOST_FILE_BYTES`] in all, the oldest close going first, so the
 /// file is never larger than it is read.

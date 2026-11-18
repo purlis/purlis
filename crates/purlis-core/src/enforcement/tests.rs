@@ -32,12 +32,14 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
         for family in Family::ALL {
             let want = match family {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
+                // An unapproved profile or declaration still asks (Q329).
+                Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
                 // The record is never off or log (Q313.4).
                 Family::Audit => Mode::Enforce,
-                // The floor is a wrap.
-                Family::Sandbox => Mode::Enforce,
+                // The floor is a wrap, and `ports` takes no log (Q328).
+                Family::Sandbox | Family::Ports => Mode::Enforce,
                 _ => Mode::Log,
             };
             assert_eq!(settings.mode(family), want, "{}", family.key());
@@ -60,13 +62,18 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold = if secret.contains(&family) || family == Family::GuardsMerge {
+        let hold = if secret.contains(&family)
+            || family == Family::GuardsMerge
+            || family == Family::Ports
+            || family == Family::Trust
+        {
             Mode::Enforce
         } else {
             Mode::Log
         };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
+            || family == Family::Ports
             || family.added_by_q308b()
             || matches!(
                 family,
@@ -532,7 +539,7 @@ fn secrets_under_watch_still_mask() {
     ] {
         let root = plane(text, None);
         at_start(root.path());
-        let masked = crate::secrets::masked_of(root.path(), Some(CHAT), &values);
+        let masked = crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values);
         assert_eq!(masked, values.as_slice(), "{text:?}");
         assert_eq!(
             crate::secrets::redact(b"token s3cr3t-value", masked),
@@ -550,11 +557,11 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
         // Not pressed: still masked, and nothing logged.
         at_start(root.path());
         assert_eq!(
-            crate::secrets::masked_of(root.path(), Some(CHAT), &values),
+            crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values),
             values.as_slice()
         );
         press(root.path(), &digest_of(root.path())).expect("the press is kept");
-        assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
+        assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
 }
@@ -608,7 +615,21 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
+}
+
+#[test]
+fn an_acceptance_removed_while_the_seal_key_does_not_read_is_broken_never_none() {
+    // #7153: with no key nothing verifies, but the keyring's marker still says one was kept, so
+    // a record taken away is broken, never the shipped default, and no accepted deny is dropped.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    std::fs::remove_file(machine_file(root.path())).expect("the record gone");
+    crate::secrets::seal::set_for_this_test(None);
+    let record = crate::sandbox::local::policy_accepted_record(root.path());
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(record, crate::sandbox::local::PolicyAccepted::Broken);
 }
 
 #[test]
@@ -632,7 +653,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -698,7 +719,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -789,7 +810,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), broken_accepted());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
         crate::dispatchgrant::Covers::Unread
@@ -864,7 +885,7 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -876,7 +897,423 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, strict());
+    assert_eq!(found.1, broken_accepted());
+}
+
+// ---- The Q308 follow-up, item 1: the sandbox level ------------------------------------------
+
+#[test]
+fn the_sandbox_level_is_the_sandbox_mode_else_the_templates() {
+    for (text, level) in [
+        ("", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"open\"\n", SandboxLevel::Off),
+        ("[policy]\ntemplate = \"hold\"\n", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"team\"\n", SandboxLevel::Full),
+        // Strict leaves it to `[sandbox]`, as before Q308: the floor where it names no mode.
+        ("[policy]\ntemplate = \"strict\"\n", SandboxLevel::Floor),
+        (
+            "[policy]\ntemplate = \"strict\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"team\"\n[sandbox]\nmode = \"off\"\n",
+            SandboxLevel::Off,
+        ),
+        // `never` refuses the team's off, and a mode purlis cannot read is `on`.
+        (
+            "[sandbox]\nmode = \"off\"\npolicy = \"never\"\n",
+            SandboxLevel::Full,
+        ),
+        ("[sandbox]\nmode = \"maybe\"\n", SandboxLevel::Full),
+        // A bad `[policy]` value is strict, and `[sandbox]` still decides.
+        ("[policy]\ntemplate = \"lenient\"\n", SandboxLevel::Floor),
+    ] {
+        let settings = said(text);
+        assert_eq!(settings.level(), level, "{text:?}");
+        assert_eq!(
+            settings.mode(Family::Sandbox),
+            mode_of_level(level),
+            "{text:?}"
+        );
+        assert_eq!(
+            Resolved::of(&settings, &Locks::none()).level(),
+            level,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn the_local_file_can_raise_the_level_but_never_lower_it() {
+    let raised = plane(
+        "[policy]\ntemplate = \"watch\"\n",
+        Some("[policy]\ntemplate = \"team\"\n"),
+    );
+    assert_eq!(Settings::read(raised.path()).level(), SandboxLevel::Full);
+    let lowered = plane(
+        "[policy]\ntemplate = \"team\"\n",
+        Some("[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"off\"\n"),
+    );
+    assert_eq!(Settings::read(lowered.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_lock_on_the_sandbox_keeps_a_wrap_whatever_the_template() {
+    let open = said("[policy]\ntemplate = \"open\"\n");
+    let locks = Locks::locking_enforcement(Family::Sandbox);
+    let resolved = Resolved::of(&open, &locks);
+    assert_eq!(resolved.level(), SandboxLevel::Floor);
+    assert_eq!(resolved.mode(Family::Sandbox), Mode::Enforce);
+}
+
+#[test]
+fn the_level_reads_back_as_spelled_and_an_acceptance_from_before_it_is_the_floor() {
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    assert!(
+        team.spelled().contains("sandbox=full"),
+        "{}",
+        team.spelled()
+    );
+    assert_eq!(Resolved::parse(&team.spelled()), team);
+    // #6992 kept the sandbox as a mode: `enforce` was a wrap, at least the floor.
+    assert_eq!(
+        Resolved::parse("sandbox=enforce").level(),
+        SandboxLevel::Floor
+    );
+    assert_eq!(Resolved::parse("sandbox=off").level(), SandboxLevel::Off);
+    // A level it cannot read is the strictest.
+    assert_eq!(Resolved::parse("network=off").level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_process_that_is_not_the_app_never_runs_a_level_looser_than_the_file_says() {
+    let _home = OwnConfigHome::new();
+    let named = plane("[policy]\ntemplate = \"open\"\n", None);
+    let open = Resolved::of(&said("[policy]\ntemplate = \"open\"\n"), &Locks::none());
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    crate::secrets::seal::set_for_this_test(None);
+    set_in_the_app_for_this_test(false);
+    answered_by_the_app(Some(open));
+    let under_open = sandbox_level(named.path(), || SandboxLevel::Full);
+    answered_by_the_app(Some(team));
+    let under_team = sandbox_level(named.path(), || SandboxLevel::Floor);
+    answered_by_the_app(None);
+    let unanswered = sandbox_level(named.path(), || SandboxLevel::Off);
+    set_in_the_app_for_this_test(true);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(under_open, SandboxLevel::Full);
+    assert_eq!(under_team, SandboxLevel::Full);
+    // No answer is strict: never below the floor, whatever the file says.
+    assert_eq!(unanswered, SandboxLevel::Floor);
+}
+
+#[test]
+fn a_loosened_level_waits_for_the_press_and_the_window_is_told_it_by_its_words() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"watch\"\n",
+    )
+    .expect("loosened");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    let standing = standing(root.path());
+    assert_eq!(
+        standing.level,
+        Some((SandboxLevel::Full, SandboxLevel::Floor))
+    );
+    assert!(
+        standing
+            .waiting
+            .iter()
+            .all(|(family, _, _)| *family != Family::Sandbox)
+    );
+    press(root.path(), &standing.digest).expect("pressed");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Floor);
+    assert_eq!(level_waiting(root.path()), None);
+}
+
+#[test]
+fn ports_are_never_logged_the_kernel_tells_nothing_it_let_through() {
+    // Ruling Q328: `ports` is off or enforce; `log` is enforced, and said.
+    let settings = said("[policy]\ntemplate = \"open\"\nports = \"log\"\n");
+    assert_eq!(settings.mode(Family::Ports), Mode::Enforce);
+    assert!(!settings.refused.is_empty());
+    // Only `ports` is enforced: the rest of the project's policy stands (the review of #7105).
+    assert_eq!(settings.template, Template::Open);
+    assert_eq!(settings.mode(Family::Network), Mode::Off);
+    assert_eq!(settings.mode(Family::GuardsGit), Mode::Off);
+    // A value purlis cannot read still makes the whole policy strict.
+    let unread = said("[policy]\ntemplate = \"open\"\nports = \"loud\"\n");
+    assert_eq!(unread.template, Template::Strict);
+    for template in Template::ALL {
+        assert_ne!(
+            template.mode(Family::Ports),
+            Mode::Log,
+            "{}",
+            template.word()
+        );
+    }
+    assert_eq!(
+        said("[policy]\nports = \"off\"\n").mode(Family::Ports),
+        Mode::Off
+    );
+}
+
+#[test]
+fn a_team_off_answer_the_project_never_committed_never_lowers_the_accepted_level() {
+    // The review of #7105: the team's-off answer is kept unsealed, so it lowers the sealed level
+    // only for an off the project committed and still says, which this person accepted.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    crate::sandbox::local::answer_team_off(
+        root.path(),
+        crate::sandbox::local::TeamOffAnswer { accepted: true },
+    )
+    .expect("an answer written beside the seal");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_broken_acceptance_runs_the_full_sandbox_never_the_floor() {
+    // The review of #7105: a broken acceptance is never looser than the full sandbox it may have
+    // kept.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert!(broken(root.path()));
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(accepted(root.path()), broken_accepted());
+}
+
+/// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
+/// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
+/// `strict`, `watch`, `hold` and `team` keep a vault to the personas it is tagged for.
+#[test]
+fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced() {
+    use crate::secrets::{Ctx, Env, brokered};
+    let _home = OwnConfigHome::new();
+    for (text, opened) in [
+        ("[policy]\ntemplate = \"strict\"\n", false),
+        ("[policy]\ntemplate = \"watch\"\n", false),
+        ("[policy]\ntemplate = \"hold\"\n", false),
+        ("[policy]\ntemplate = \"team\"\n", false),
+        ("[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n", true),
+        ("[policy]\ntemplate = \"open\"\n", true),
+    ] {
+        let root = plane(text, None);
+        std::fs::write(
+            root.path().join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "prod": {"provider": "plain-file", "config": {"file": "prod.json"}, "persona": "devops"},
+            }})
+            .to_string(),
+        )
+        .expect("the registry");
+        at_start(root.path());
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
+        assert_eq!(
+            mode(root.path(), Family::Vaults) == Mode::Off,
+            opened,
+            "{text}"
+        );
+        let ctx = Ctx::new(root.path(), Env::of(&[]));
+        assert_eq!(
+            brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
+            opened,
+            "{text}"
+        );
+        // Its own persona, always; a vault the project does not register, never.
+        assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
+        assert!(
+            brokered::authorise(&ctx, Some("devops"), "nope").is_err(),
+            "{text}"
+        );
+    }
+}
+
+/// A plane whose project lets masking and the vaults check go, pressed: and the chain that
+/// dispatched a chat enforced both (the review of #7113).
+fn loosened_plane() -> tempfile::TempDir {
+    let root = plane("[policy]\nsecrets = \"off\"\nvaults = \"off\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
+    root
+}
+
+const STRICT_CHAIN: &str = "secrets=enforce,vaults=enforce";
+
+#[test]
+fn a_dispatched_chat_s_output_is_masked_where_its_chain_masked_it() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    let root = loosened_plane();
+    assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
+    assert_eq!(
+        crate::secrets::masked_of(root.path(), (Some(CHAT), Some(STRICT_CHAIN)), &values),
+        values.as_slice()
+    );
+}
+
+#[test]
+fn a_dispatched_chat_s_vaults_are_checked_where_its_chain_checked_them() {
+    let _home = OwnConfigHome::new();
+    let root = loosened_plane();
+    let ctx = crate::secrets::Ctx::new(root.path(), crate::secrets::Env::of(&[]));
+    assert!(crate::secrets::brokered::vaults_off(&ctx));
+    assert!(!crate::secrets::brokered::vaults_off(
+        &ctx.under_chain(Some(STRICT_CHAIN))
+    ));
+}
+
+#[test]
+fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults() {
+    // Q308b, item 7 of the follow-up: the nine families switch, each at its template's mode.
+    let nine = Family::ALL
+        .into_iter()
+        .filter(|family| family.added_by_q308b())
+        .collect::<Vec<_>>();
+    assert_eq!(nine.len(), 9);
+    for family in nine {
+        assert!(family.switchable(), "{}", family.key());
+        // Q329: `trust` is enforced under every template but `open`.
+        let floor = if family == Family::Trust {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
+        for (template, want) in [
+            ("open", Mode::Off),
+            ("watch", floor),
+            ("hold", floor),
+            ("team", Mode::Enforce),
+            ("strict", Mode::Enforce),
+        ] {
+            let settings = said(&format!("[policy]\ntemplate = \"{template}\"\n"));
+            assert_eq!(
+                under(&settings, &Locks::none(), family),
+                want,
+                "{template} {}",
+                family.key()
+            );
+        }
+        let off = said(&format!(
+            "[policy]\ntemplate = \"strict\"\n{} = \"off\"\n",
+            family.key()
+        ));
+        assert_eq!(
+            under(&off, &Locks::none(), family),
+            Mode::Off,
+            "{}",
+            family.key()
+        );
+        // An administrator's lock still wins.
+        assert_eq!(
+            under(&off, &Locks::locking_enforcement(family), family),
+            Mode::Enforce,
+            "{}",
+            family.key()
+        );
+    }
+}
+
+#[test]
+fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
+    // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
+    for (family, rule) in [
+        (Family::GuardsForge, RULE_FORGE_WORKSPACE),
+        (Family::HarnessMode, RULE_ASKS_NOBODY),
+        (Family::Tools, RULE_DENY_LIST),
+        (Family::Trust, RULE_PROFILE_APPROVAL),
+        (Family::Trust, RULE_DECLARATION_APPROVAL),
+        (Family::Runners, RULE_RUNNER_DISPATCH),
+        (Family::Runners, RULE_RUNNER_WRITE),
+        (Family::Consents, RULE_WINDOW_ONLY_ASK),
+        (Family::Limits, RULE_COMMIT_RATE),
+        (Family::Limits, "dispatch.depth"),
+        (Family::Limits, "dispatch.running-per-chat"),
+        (Family::GuardsPlane, "A3"),
+        (Family::GuardsShape, "caps"),
+    ] {
+        assert!(known_rule(family, rule), "{} {rule}", family.key());
+        assert!(!known_rule(Family::Dispatch, rule), "{rule}");
+    }
+    assert!(!known_rule(Family::Limits, "dispatch.anything"));
+    assert!(!known_rule(Family::GuardsGit, "A3"));
+}
+
+#[test]
+fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_their_move() {
+    // #7104: A3 and A3b moved from `guards.git` to `guards.plane` (Q308b). A project on `watch`
+    // that enforced `guards.git` keeps them enforced; one that names `guards.plane` decides.
+    for (text, want) in [
+        ("[policy]\nguards.git = \"enforce\"\n", Mode::Enforce),
+        (
+            "[policy]\ntemplate = \"hold\"\nguards.git = \"enforce\"\n",
+            Mode::Enforce,
+        ),
+        ("[policy]\n", Mode::Log),
+        (
+            "[policy]\ntemplate = \"strict\"\nguards.git = \"off\"\n",
+            Mode::Enforce,
+        ),
+        (
+            "[policy]\nguards.git = \"enforce\"\nguards.plane = \"log\"\n",
+            Mode::Log,
+        ),
+    ] {
+        assert_eq!(
+            under(&said(text), &Locks::none(), Family::GuardsPlane),
+            want,
+            "{text}"
+        );
+    }
+    // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
+    // still does, whatever the project says of either family (the re-review of #7104).
+    assert_eq!(
+        under(
+            &said("[policy]\nguards.shape = \"off\"\n"),
+            &Locks::parse(
+                r#"{"enforcement": ["guards.git"]}"#,
+                Path::new("/etc/purlis/policy.json")
+            ),
+            Family::GuardsShape
+        ),
+        Mode::Off,
+        "a lock on guards.git leaves guards.shape the project's"
+    );
+    let git_locked = Locks::parse(
+        r#"{"enforcement": ["guards.git"]}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    for text in [
+        "[policy]\n",
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+        "[policy]\nguards.shape = \"off\"\n",
+    ] {
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsPlane),
+            Mode::Enforce,
+            "{text}"
+        );
+        // Only `guards.plane` moves with it: `guards.shape` stays the project's to switch, so a
+        // refused lock file (which locks everything) cannot pass this test (#7155).
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsShape),
+            under(&said(text), &Locks::none(), Family::GuardsShape),
+            "{text}"
+        );
+    }
 }
 
 /// `git <args>` in `root`, with no configuration but the repository's.
@@ -982,9 +1419,14 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let branch = String::from_utf8(branch.stdout).expect("utf-8");
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
-    assert_eq!(in_force(root.path()), strict());
+    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert!(in_force(root.path()).denies().is_all());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
+    // Every dispatch across personas was denied while it could not read, and that deny is no
+    // more kept than the modes are (#7153): nothing is denied, and no deny waits to be lifted.
+    assert!(in_force(root.path()).denies().is_empty());
+    assert!(standing(root.path()).lifted.is_empty());
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     assert!(waiting(root.path()).is_empty());
 }

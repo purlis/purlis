@@ -21,13 +21,21 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-const QUIET: PolicyState = { waiting: [], refused: [], unsealed: false, digest: "d1" };
-
-const LOOSENED: PolicyState = {
-  waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
+const QUIET: PolicyState = {
+  waiting: [],
   refused: [],
+  not_in_force: [],
   unsealed: false,
   digest: "d1",
+  template: "watch",
+  template_default: true,
+  overrides: [],
+  locked: [],
+};
+
+const LOOSENED: PolicyState = {
+  ...QUIET,
+  waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
 };
 
 function core(state: PolicyState, after: PolicyState = QUIET) {
@@ -103,5 +111,18 @@ describe("the project's policy (Q308a)", () => {
     await waitFor(() =>
       expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d2" }]),
     );
+  });
+
+  it("names the sandbox's level that waits, and says what runs without a sandbox leaves out", async () => {
+    core({
+      ...QUIET,
+      waiting: [{ family: "sandbox", accepted: "floor", committed: "off" }],
+      not_in_force: ["network", "ports", "processes"],
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/sandbox from floor to off/)).toBeTruthy());
+    expect(
+      screen.getByText(/Without a sandbox, network, ports and processes are not in force\./),
+    ).toBeTruthy();
   });
 });

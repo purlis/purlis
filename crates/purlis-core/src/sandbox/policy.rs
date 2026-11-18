@@ -842,8 +842,9 @@ impl Locks {
     /// **Whether `family` is locked enforced on this machine** (Q308a): `Some(Mode::Enforce)`
     /// where a lock holds it, whatever a project's `[policy]` says. The policy's own
     /// `enforcement` list names families outright; every other lock of a family, set on purpose,
-    /// keeps that family enforced; and a policy file that is refused locks every family, as it
-    /// sets every lock.
+    /// keeps that family enforced; a lock on a family whose rows another family took over holds
+    /// that family too (`guards.git`'s A3 and A3b, now `guards.plane`'s); and a policy file that
+    /// is refused locks every family, as it sets every lock.
     pub fn enforcement_floor(
         &self,
         family: crate::enforcement::Family,
@@ -862,6 +863,14 @@ impl Locks {
                         || !self.never_hosts.is_empty()
                 }
                 Family::Ports => self.no_socket_grants,
+                // **A3 and A3b moved from `guards.git` to `guards.plane`** (Q308b): a lock on
+                // `guards.git` held them before the move, so it holds `guards.plane` too
+                // (the re-review of #7104).
+                Family::GuardsPlane => self.enforcement_floor(Family::GuardsGit).is_some(),
+                // **A lock on `dispatch` does not lock `limits`** (#7155): with
+                // `enforcement = ["dispatch"]` and no `dispatch` ceilings, a project's own
+                // counts are still lifted under `limits = "log"`. A ceiling is what binds them
+                // (`dispatch_locked`, `dispatch`): the ruling keeps the two families apart.
                 Family::Dispatch => {
                     self.no_dispatch
                         || !self.dispatch_locked.is_empty()

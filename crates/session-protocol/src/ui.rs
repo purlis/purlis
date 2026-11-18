@@ -1261,6 +1261,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A file outside the project a pane link opened (#6216): read only after the person answered
     // the window's ask, which a link has no way to show.
     "pane_link_file",
+    // A runner chat's file a pane link opened (#6387): read on the runner for the window's tab,
+    // outside the workspace only after the window's ask, which a link has no way to show.
+    "pane_link_runner_file",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",
@@ -1492,6 +1495,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
     // The project's `[policy]` as it stands for you (Q308): a read; Accept stays the window's.
     "project_policy_state",
+    // What the project's `[policy]` let through and logged (Q308a): a read of rule ids,
+    // families, chat numbers and the host:port a rule was about, never a command, a path or a
+    // value.
+    "policy_log",
     "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",
@@ -1651,6 +1658,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "repos_changed",
     "resize_session",
     "reveal_branch_path",
+    // Try now of a pool's runner whose link is down (#7134): the window's act.
+    "runner_link_now",
+    // Which pools' runners' links are down, and why (#7134): what the window says past a blip.
+    "runner_links_down",
     // Where the chats the away summary counts run, and their runners' branches (#2051): a read.
     "runners_away",
     "running_sessions",

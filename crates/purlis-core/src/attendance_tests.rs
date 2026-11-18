@@ -58,3 +58,27 @@ fn a_start_asks_each_harness_s_adapter_whether_its_mode_is_read() {
     assert_eq!(on_none.mode_differs(), None);
     assert!(!on_none.unattended());
 }
+
+/// Round 2 of #7168, item 2: a person's own chat on a profile whose inline `--settings` carry
+/// `hooks` or `disableAllHooks` starts `Unattended`. It fails closed: a hook of the profile's own
+/// may answer allow ahead of purlis's guard, so nobody can be said to be asked.
+#[test]
+fn a_persons_chat_on_a_profile_with_inline_hooks_is_unattended() {
+    let on = |value: &str| {
+        let command = [
+            "claude".to_owned(),
+            "--settings".to_owned(),
+            value.to_owned(),
+        ];
+        Fact::at_start(Begun::Person, Some(Harness::ClaudeCode), &command).attendance
+    };
+    for value in [
+        r#"{"hooks":{"PreToolUse":[]}}"#,
+        r#"{"disableAllHooks":true}"#,
+        r#"{"allowManagedHooksOnly":true}"#,
+        "{not json",
+    ] {
+        assert_eq!(on(value), Attendance::Unattended, "{value}");
+    }
+    assert_eq!(on(r#"{"model":"x"}"#), Attendance::Attended);
+}

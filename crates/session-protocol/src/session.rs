@@ -596,9 +596,28 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::PageShown::downloads`]: each one's id, name, state and how far it came,
 /// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
 /// pick.
+///
+/// 1.92 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
+/// now while the link to a runner is down; and say `link_down` again while it is down each time
+/// why changes, so the window says what the last try found. A host before 1.92 is sent no
+/// `link_now`.
+///
+/// 1.93 has a host read a file for its window ([`Command::ReadFile`], #6387): a path a chat on
+/// it printed, as data, never a shell line, resolved there from the chat's own folder with every
+/// link followed on the host's side, and held to the chat's workspace unless the person
+/// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
+/// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
+/// is not asked, and its chat's paths stay no link.
+///
+/// 1.94 has a window name the families its resolution of the project's policy does not enforce
+/// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
+/// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
+/// before 1.94 reads no families, and enforces both, as before; a runner applies its own locks over
+/// them.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 91,
+    minor: 94,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -608,12 +627,33 @@ pub const KNOWS_PAGES_LISTED: Version = Version {
     minor: 91,
 };
 
+/// The version that first links again when the window asks (`link_now`, #7134): none is sent
+/// to a host before.
+pub const KNOWS_LINK_NOW: Version = Version {
+    major: 1,
+    minor: 92,
+};
+
 /// The version that first tells a browser's views what its page is and takes the person's
 /// steps through its history (#6938): none is sent to a host before.
 pub const KNOWS_PAGES_SHOWN: Version = Version {
     major: 1,
     minor: 90,
 };
+
+/// The version that first reads a file for its window ([`Command::ReadFile`], #6387): none is
+/// asked of a host before.
+pub const KNOWS_READ_FILE: Version = Version {
+    major: 1,
+    minor: 93,
+};
+
+/// The largest file [`Command::ReadFile`] reads (1.93): what the light editor draws.
+pub const MOST_FILE_READ: u64 = 2 * 1024 * 1024;
+
+/// The most bytes one [`Answer::File`] carries (1.93), so its frame, base64 and all, stays well
+/// inside [`crate::link::MOST_CONTROL_FRAME_BYTES`].
+pub const MOST_FILE_PIECE: u64 = 512 * 1024;
 
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
 /// T1-34): none is sent to a host before.
@@ -1332,6 +1372,12 @@ pub enum Command {
     /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
+    /// The window asks the host that relays its link to link to the other host again now (1.92,
+    /// #7134): its Try now, while that link is down, rather than once the pause between tries
+    /// has passed. Answered [`Answer::Done`] at once, before the try: whether it links is said
+    /// as ever, `link_back` or `link_down` again. A host that relays nothing has nothing to
+    /// link. The window's alone ([`crate::grants::Power::LinkNow`]), never sent on.
+    LinkNow,
     /// The window asks the desktop's host to relay this link to `runner` (1.33, #2679, ADR 0078
     /// §4): the runner this machine keeps under that name, reached through its connector and
     /// linked with the key pinned at its pairing. Sent only as a link's first command but its
@@ -1457,6 +1503,21 @@ pub enum Command {
         piece: Option<String>,
         chat: String,
         number: u32,
+    },
+    /// **Read a file a chat on this host printed, for the window** (1.93, #6387): `path` as the
+    /// chat printed it, data and never a shell line, from chat `program`'s own folder where it
+    /// is relative, with every link followed on this host's side. With `reach` of
+    /// [`FileReach::Workspace`], a file whose resolved path is outside the chat's workspace is
+    /// answered [`FileRead::Outside`] and not read. With no `at`, only looked at; with `at`, its
+    /// bytes from there, at most [`MOST_FILE_PIECE`]. Answered [`Answer::File`]; refused
+    /// [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    ReadFile {
+        program: String,
+        path: String,
+        reach: FileReach,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<u64>,
     },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
@@ -1612,6 +1673,14 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+    /// **The families the window's resolution of the project's policy does not enforce for this
+    /// chat** (1.94, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
+    /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.94 reads it:
+    /// both enforced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<String>,
 }
 
 /// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
@@ -1776,6 +1845,10 @@ pub enum SandboxTold {
     /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
+    /// It let `target`, a host and port, through only because `family` (one of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.94): the window writes the line of
+    /// the chat's enforcement log where the family logs. Told only where the window named it.
+    Lifted { family: String, target: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -2514,6 +2587,65 @@ impl std::fmt::Debug for Reporting {
     }
 }
 
+/// **How far a [`Command::ReadFile`] may reach** (1.93): the chat's workspace alone, or anywhere
+/// on the host, once the person answered an ask for that file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileReach {
+    Workspace,
+    Anywhere,
+}
+
+/// **A file a chat printed, as the host found it** (1.93, [`Command::ReadFile`]). `path` is
+/// where it is on the host, every link resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "found", rename_all = "snake_case")]
+pub enum FileRead {
+    /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
+    /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
+    /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
+    /// `at`, the piece from there.
+    Plain {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_workspace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        home: Option<FileHome>,
+        size: u64,
+        version: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        piece: Option<FilePiece>,
+    },
+    /// Nothing is there, or the path cannot be read as one: no link.
+    NotThere,
+    /// Something is there that is not a plain file: a folder, a device, a pipe, a socket, or a
+    /// file of the host's own system (`/proc`, `/sys`, `/dev`).
+    NotPlain { path: String },
+    /// A file that is not text, `size` bytes long.
+    Binary { path: String, size: u64 },
+    /// A file past [`MOST_FILE_READ`], `size` bytes long.
+    TooLarge { path: String, size: u64 },
+    /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
+    Outside { path: String },
+}
+
+/// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,
+/// named, or the project for a chat at the project's root; and its folder there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileHome {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub folder: String,
+}
+
+/// **A piece of a file** (1.93): its bytes from `at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePiece {
+    pub at: u64,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
 /// What kind of program a session host holds. A later minor adds one (a browser, spec 2); a
 /// host that does not know a kind refuses the command it came in as `malformed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2655,6 +2787,9 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unmarked: Option<String>,
     },
+    /// A file a chat on the host printed, as [`Command::ReadFile`] found it (1.93). Boxed: a
+    /// piece of it is up to [`MOST_FILE_PIECE`].
+    File(Box<FileRead>),
     /// Nothing was written: these chats working there are not idle (1.78), each by its number on
     /// the host and how a sentence says what it is doing.
     UndoWaits { chats: Vec<UndoWaitsOn> },
@@ -3017,7 +3152,9 @@ pub enum Pushed {
     /// what the client has there, its chats and browsers among them, is on that other host,
     /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
     /// send on is refused; nothing is sent later in its place. Pushed once for each time the
-    /// link goes down, to every subscriber of the relaying host.
+    /// link goes down, to every subscriber of the relaying host, and again while it is down
+    /// each time `why` changes (#7134): a try to link again that failed for another reason
+    /// than the one told. A client before that takes the second as the first.
     LinkDown {
         why: String,
         /// The other host answered with another key than the one pinned at its pairing (1.33,
@@ -3243,6 +3380,7 @@ wire_words!(Command {
     FillSecret => "fill_secret",
     TakeBack => "take_back",
     NameWindow => "name_window",
+    LinkNow => "link_now",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
@@ -3262,6 +3400,7 @@ wire_words!(Command {
     ClonesOf => "clones_of",
     ReposHeld => "repos_held",
     UndoTurn => "undo_turn",
+    ReadFile => "read_file",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     NoteStrays => "note_strays",
@@ -3321,6 +3460,7 @@ impl Command {
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
+            Command::LinkNow => Power::LinkNow,
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
@@ -3339,7 +3479,8 @@ impl Command {
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
             | Command::ReposHeld
-            | Command::UndoTurn { .. } => Power::Code,
+            | Command::UndoTurn { .. }
+            | Command::ReadFile { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
@@ -3415,6 +3556,7 @@ wire_words!(Answer {
     Clones => "clones",
     ReposHeld => "repos_held",
     TurnUndone => "turn_undone",
+    File => "file",
     UndoWaits => "undo_waits",
     ProfileKept => "profile_kept",
     Profiles => "profiles",
@@ -3878,6 +4020,7 @@ impl Lane {
             | Command::Quit
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
+            | Command::LinkNow
             | Command::Unpair
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
@@ -3896,6 +4039,8 @@ impl Lane {
             | Command::ClonesOf { .. }
             | Command::ReposHeld
             | Command::UndoTurn { .. }
+            // A read, which holds up nothing else.
+            | Command::ReadFile { .. }
             // Waits on the window, which may be asked more meanwhile.
             | Command::AskGrade { .. }
             // A durable write, which holds up nothing else.
@@ -4899,6 +5044,29 @@ impl Client {
             .await?
         {
             Answer::Clones { repos, origins } => Ok((repos, origins)),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **A file chat `program` printed, as its host finds it** (1.93, #6387): only looked at,
+    /// with no `at`; its bytes from `at` otherwise.
+    pub async fn read_file(
+        &self,
+        program: &str,
+        path: &str,
+        reach: FileReach,
+        at: Option<u64>,
+    ) -> Result<FileRead, CallError> {
+        match self
+            .call(Command::ReadFile {
+                program: program.to_owned(),
+                path: path.to_owned(),
+                reach,
+                at,
+            })
+            .await?
+        {
+            Answer::File(read) => Ok(*read),
             other => Err(unexpected(&other)),
         }
     }

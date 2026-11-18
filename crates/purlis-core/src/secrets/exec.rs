@@ -638,7 +638,8 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let secret_values = prepared.secret_values();
     let masked = super::masked_of(
         &ctx.root,
-        crate::enforcement::this_chat().as_deref(),
+        // Outside the app the policy is the app's answer, which carries the chain already.
+        (crate::enforcement::this_chat().as_deref(), None),
         &secret_values,
     );
     let out = super::redact(&out, masked);

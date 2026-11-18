@@ -24,6 +24,8 @@ import {
 import { catalogued, type Offer } from "./actions";
 import { Bot, GripVertical, Square } from "lucide-react";
 import { Button, IconButton } from "./ui/button/Button";
+import { PolicyMarkOf } from "./PolicyMark";
+import { WATCH } from "./projectPolicy.fixture";
 import type { ChatHead } from "./paneHead";
 import {
   FOOT_ROWS,
@@ -129,20 +131,37 @@ const LIST = catalogued([
   },
 ]);
 
+/** **The policy's mark at its widest** (Q308a): `strict +12`, the longest template and a project
+ *  that sets twelve families apart, what `HEAD_DROPS`' `policy` width is measured with. */
+const WIDEST_POLICY = {
+  ...WATCH,
+  template: "strict",
+  template_default: false,
+  overrides: Array.from({ length: 12 }, (_, n) => ({
+    family: `family-${n}`,
+    said: "log",
+    runs: "enforce",
+  })),
+};
+
 /** The head the pane's model answers at its width: the chat's name and mark, then its actions. */
 function Head({
   kind,
   width,
   longest = false,
   alone = false,
+  model,
 }: {
   kind: PaneKind;
   width: number;
+  /** The width the head's model is asked at, where it is not the pane's: what a measure holds
+   *  the parts with. */
+  model?: number;
   /** The most a chat's head holds: its grip, persona and the longest state button. */
   longest?: boolean;
   alone?: boolean;
 }) {
-  const lines = paneLinesOf(kind, width, { alone });
+  const lines = paneLinesOf(kind, model ?? width, { alone, policy: longest });
   const worded = lines.actions.includes("stateWord");
   const state = !longest ? (
     worded ? (
@@ -196,6 +215,7 @@ function Head({
           {lines.head.includes("mark") && (
             <span className="pane-state-mark">{lines.head.includes("markWord") && "working"}</span>
           )}
+          {lines.head.includes("policy") && <PolicyMarkOf state={WIDEST_POLICY} />}
         </div>
       </PaneHead>
     </PaneActionsOf.Provider>
@@ -376,7 +396,8 @@ export const AnEndedChat: Story = {
 const HEAD_WIDTHS = [...HEAD_DROPS.map((drop) => drop.below), 299];
 
 /**
- * **The head at rest fits at every width in its drop rule** (#5318), with its longest state button:
+ * **The head at rest fits at every width in its drop rule** (#5318), with its longest state button
+ * and the policy's widest mark:
  * nothing is cut sideways, the name keeps its least room, the actions stay inside the head, and no
  * pointer or keyboard is what draws the pane's controls. The band below each is the same head alone
  * in its tab, which holds one control less.
@@ -454,5 +475,69 @@ export const At300: Story = {
     await expect(canvas.queryByText(/↳ from/)).toBeNull();
     await expect(canvas.getByText(/ctx/)).toBeInTheDocument();
     await walked(context);
+  },
+};
+
+/** Whether a measured head fits: nothing cut sideways, the name keeps its least room, and the
+ *  actions stay inside the head. */
+function fits(frame: HTMLElement): boolean {
+  const head = frame.querySelector<HTMLElement>(".pane-head") as HTMLElement;
+  const chips = frame.querySelector<HTMLElement>(".pane-chips") as HTMLElement;
+  const name = frame.querySelector<HTMLElement>(".pane-name") as HTMLElement;
+  const actions = frame.querySelector<HTMLElement>(".pane-actions") as HTMLElement;
+  return (
+    head.scrollWidth <= head.clientWidth &&
+    chips.scrollWidth <= chips.clientWidth &&
+    name.getBoundingClientRect().width >= 16 &&
+    actions.getBoundingClientRect().right <= head.getBoundingClientRect().right &&
+    chips.getBoundingClientRect().right <= actions.getBoundingClientRect().left
+  );
+}
+
+/** The policy's width in `HEAD_DROPS`, which this measure holds. */
+const POLICY_BELOW = HEAD_DROPS.find((drop) => drop.part === "policy")?.below ?? 0;
+
+/** The widths measured: 2 px apart, from 20 px above the policy's width to past the most it may
+ *  spare under it. */
+const POLICY_MEASURED = Array.from({ length: 40 }, (_, n) => POLICY_BELOW + 20 - n * 2);
+
+/**
+ * **The policy goes where the longest head no longer has room for it** (Q308a): the longest head,
+ * with every part a pane at the policy's width keeps and the policy's widest mark (`strict
+ * +12`), drawn at each width; the narrowest it fits at, in a tab beside others, is what
+ * `HEAD_DROPS` drops the policy under, with at most 48 px to spare in any cell of the matrix: the
+ * compact density's head is some 30 px narrower than the comfortable one's, which the width is
+ * measured on. Not pictured: a measure, taller than the frame paints, and `HeadAtEveryWidth`
+ * pictures the policy at the width it goes under and the next.
+ */
+export const PolicyGoesWhereItNoLongerFits: Story = {
+  args: { width: 900 },
+  parameters: { screenshot: false },
+  render: () => (
+    <Lent>
+      <div style={{ display: "grid", gap: "var(--space-2)" }}>
+        {POLICY_MEASURED.map((width) => (
+          <div
+            key={width}
+            className="pane-frame pane-headed"
+            data-testid="policy-measured"
+            data-width={width}
+            style={{ inlineSize: width, blockSize: 48 }}
+          >
+            <Head kind="chat" width={width} model={POLICY_BELOW} longest />
+          </div>
+        ))}
+      </div>
+    </Lent>
+  ),
+  play: async ({ canvas }) => {
+    const fitting = canvas
+      .getAllByTestId("policy-measured")
+      .filter((frame) => fits(frame))
+      .map((frame) => Number(frame.dataset.width));
+    const narrowest = Math.min(...fitting);
+    const says = `the longest head with the policy fits from ${narrowest}px`;
+    await expect(narrowest, says).toBeLessThanOrEqual(POLICY_BELOW);
+    await expect(narrowest, says).toBeGreaterThan(POLICY_BELOW - 48);
   },
 };

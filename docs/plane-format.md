@@ -958,6 +958,7 @@ Paths derived from the root (all in `derive`, `charter/config.py:661`) that land
 | `[dispatch.workspaces.<workspace>].<limit>` | int | optional | **purlis only** (#1440). A workspace's own value for any of the four limits above, for chats working in it. **The most specific level wins** (a persona's over a workspace's over the project's) and a level that does not set a limit inherits it. Kept here and not in the workspace's `workspace.json`. Changed in Settings › Project › Dispatch (Add an override) and on the workspace's settings. A name that is not a workspace's is refused with a sentence. | stable | same |
 | `[dispatch.personas.<persona>].<limit>`, `.may-dispatch`, `.may-run-at-once` | int | optional; the two caps absent = no cap | **purlis only** (#1440). A persona's own value for any of the four limits, for chats that ask as it, and its two own: `may-dispatch`, the persona chats the chats running as it may have running between them in the whole project, and `may-run-at-once`, the chats that may run as it at once in the whole project. Each count is of chats that still owe work: not yet reported, and their program not ended. `0` for either stops it dispatching, or being dispatched to. **Kept here, in the committed file, and never in the persona's `persona.md`**, which a chat may edit: nothing reads a limit from a persona's own file. Changed in Settings › Project › Dispatch and on the persona's view. The two caps under `[dispatch]` or a workspace are refused with a sentence. | stable | same |
 | `[dispatch.grants].<persona>` | array of str, or of `{ to, in }` tables | optional; absent = `[]` | **purlis only** (#1437, spec #1434; ADR 0090). **The project's dispatch grants**: the personas a chat running as `<persona>` may dispatch to with no prompt, for everyone who opens the project (`steward = ["devops"]`). Written by the grant Notice's **Allow for everyone in this project**, and by **Add a grant** for everyone in Settings › Project › Dispatch (#1465), which makes one with no dispatch waiting, held to every rule an Allow is held to and audited as the person's; taken out by Settings' Revoke. **A pair is in force on a machine only once someone there allowed it** (`app/sandbox.json` `dispatch_seen`): one a pull brought in covers no chat until the person there accepts it, on the Notice the window shows when it arrives (#1506: **Accept** for the pairs it lists, **Not on my machine** for all it lists), in Settings, or on the tab of a chat that asks; a chat nobody is at is refused meanwhile. A pair allowed in a machine's own window is in force there as it is written. Accepting never writes this file. **A machine's yes is bound to what it accepted** (#1506): a grant a commit takes out of this file is no longer accepted there, so one taken out and put back waits for a new yes, also when both commits arrive in one pull, and whichever of this file's names each commit used (`app/sandbox.json` `dispatch_seen_at`). A grant the file on disk does not hold is not in force, and nothing is dropped for that alone. A grant naming a persona the checkout does not define is told as covering nothing and is not accepted. **`"*"` in a persona's list is "any persona"** (#1503, `steward = ["*"]`): chats running as that persona may dispatch to every persona of the project, one added later included, with no prompt. Only Settings › Project › Dispatch writes it, never an answer to the grant Notice, which keeps the one pair it asked about. It is in force on a machine only once someone there accepted it in Settings (`app/sandbox.json` `dispatch_any_seen`, a record of its own: nothing that accepts a pair accepts it). **No Notice accepts it**: the Notice that says a teammate's grant arrived tells of it in its own sentence and may decline it, and the command behind that Notice refuses to accept one. It is one-way like any grant, a policy lock and your own never for a pair (`app/dispatch-never.json`) both hold under it, and the loop rule is as it was. **For a chat nobody is at it counts in that chat's own workspace only**: such a chat starts a chat as another persona in another workspace only under a grant that names the pair (`dispatchplace::nobody_to_ask`). Only the exact string `"*"` means it: a `"*"` where the asking persona goes, or a pattern such as `"dev*"`, is refused with a sentence and grants nothing. **A grant may be limited to one workspace** (#1505; ADR 0090 as amended): an entry of the list that is a table of exactly two keys, `steward = ["qa", { to = "devops", in = "runners" }]`, lets chats running as `steward` dispatch to `devops` only for a task that **works in** the workspace `runners`, whichever chat asks and wherever that chat is: the workspace a dispatch names with `--in workspace:<name>`, the one whose repo a worktree is cut from, the one a handoff moves into, else the asking chat's own. A task at the project's root works in no workspace, so no limited grant covers it. `to` is a persona's name or `"*"`, and `in` is a workspace's name as its folder under `workspaces/` spells it, compared exactly. **A string entry holds in any workspace, as it always did; the table is the only spelling of a limit, so a build that knows only names reads a limited grant as no grant, never as one that holds everywhere.** A table with a key missing, a key more, or a value that is not such a name is refused with a sentence and grants nothing: a missing `in` is never read as "any workspace", and a condition a later build adds is not dropped to widen the grant. Written by **Allow for everyone in this project** on a question about a task that works in a workspace (the narrower grant is what that answer means; *in any workspace* is the person's explicit other choice there), and changed or taken out in Settings › Project › Dispatch. A limited grant is in force on a machine only once someone there allowed it, as its own acceptance (`app/sandbox.json` `dispatch_seen_in`): accepting the pair for one workspace never accepts it for every workspace, or the reverse, and a teammate's limited grant waits in Settings with **Accept**; the project's one-time Notice does not name it. It counts only while its workspace is there (`app/sandbox.json` `dispatch_workspaces`). For a chat nobody is at, crossing into another workspace needs a grant that names the pair and holds in any workspace or is limited to **the workspace it crosses into**. **Nothing in this file says never, or lifts one**: a never is the person's, on their machine. A dispatch to a chat's own persona needs no grant, so a persona listed under itself is refused with a sentence, as is a name that is not a persona's, a value that is not a list, or a `grants` that is not a table: each grants nothing. Read whether or not the project's chats are sandboxed, never through a link, and none from a file that cannot be read. A sandboxed chat never writes it: the manifest is a later-code name a sandboxed chat is denied writing, and a brokered write refuses any change under `[dispatch]` (`brokered::guard`). **That denial is the sandbox's and nothing else's**: in a project with the sandbox off, or for a chat a person started without it, the chat runs as the person and can write this file and `app/sandbox.json`, so there a dispatch grant is not protected from a chat. An administrator's policy can lock a pair or all dispatch, a persona's dispatch to itself included where the pair names it twice (`/etc/purlis/policy.json` `dispatch`). The other two levels of a dispatch grant are not in this file: one chat's is the app's, in memory, and yours is `app/sandbox.json` `dispatch_mine`. | stable | `crates/purlis-core/src/dispatchgrant.rs` `committed`, `covers`; `crates/purlis-core/src/settings/dispatch.rs` |
+| `[dispatch.denies].<persona>` | array of str | optional; absent = `[]` | **purlis only** (ticket T1.1-73, #6968; ruling Q308b). **The project's dispatch denies**: the personas a chat running as `<persona>` may not dispatch to (`steward = ["devops"]`, or `["*"]` for every other persona). **A policy deny**, third in dispatch's precedence (lock > the person's never > policy deny > same persona > policy allow > sealed grant > policy ask): no grant lifts it, the project's `[dispatch.grants]` and a sealed grant of yours included, and a chat's own persona is never denied by it. **Read as `[policy]` is** (the review of #7113): from this file as it stands at the plane root's `HEAD`, never the working tree's, and never fewer than this machine accepted (`policy_accepted` keeps the denies it accepted, under `dispatch.denies`). A deny the project adds is a tightening, which holds as soon as it is committed, with no press; **one it takes away is a loosening, which still holds until the person presses Accept** on the window's policy Notice (`dispatch.denies steward -> devops from denied to lifted`). The local file can add a deny, never take one away. Under the `dispatch` family's `log` the dispatch goes ahead and the chat's enforcement log names the rule (`dispatch.denies`); under `off` it goes ahead. **What does not read fails closed**, and is said: a list that holds what is not a persona's name, or is not a list, denies its asking persona every other persona; an asking persona's name that is none, a `denies` that is not a table, a file that is not TOML, a file that is there and cannot be read (a folder, say), or a `HEAD` git cannot read denies every dispatch across personas. A persona listed under itself denies nothing. | stable | `crates/purlis-core/src/dispatchgrant.rs` `committed_denies`, `Denied`; `crates/purlis-core/src/enforcement.rs` `denies_in_force` |
 | `[dispatch.profiles].<persona>` | array of str | optional; absent = no list | **purlis only** (#1509, spec #1483; ruling V100-60). **The harness profiles a chat dispatched to `<persona>` may start on** (`devops = ["work", "codex"]`). A dispatch chooses a profile three ways: the asking chat names one (`purlis dispatch --profile`), else the persona's own definition does (`profile:`), else it is the asking chat's own. Where a persona is held to a list, **the profile chosen is one of those listed, whoever chose it**, or nothing starts, and the refusal names the profiles listed and says what its reader can do. **Every dispatch is held to it**: a task, a handoff, a dispatch the person allowed later, and the person's own "Ask a persona" on a chat. **So is a dispatched chat each time it is started again** (when purlis is opened again, Restart chat, the restart a grant owes, Start fresh): one whose recorded profile the project has since stopped listing is not started, and its row says why. The same start refuses a dispatched chat whose profile's command has come to carry a flag purlis knows for switching the harness's permission prompts off. **A persona with no list of its own is held to the list of the persona it `extends:`**, the nearest one up its chain that has a list. There is no list for every persona at once: a persona nobody listed, whose chain lists none, may be dispatched to on any profile the project offers on this machine, as before this key existed. Names are exact and case-sensitive, with blanks around an entry trimmed. **A list only ever narrows**: a name in it is still looked up among the profiles the project offers on this machine, still needs its approval there, and is still refused where its command carries one of those flags; a listed name this machine does not offer starts nothing. So a list a pull brought in lets a chat start on nothing it could not start on without it, and nobody acknowledges it. **What cannot be read narrows too**: an empty list, or a value that is not a list, lists nothing, so no chat is dispatched to that persona until a person fixes it; an entry that is not a profile's name is dropped; a `profiles` that is not a table, or a project file that is there and cannot be read (not TOML, reached through a link, too large), lists nothing for every persona; a name that is not a persona's lists nothing. Each is said in a sentence. **Kept here, in the committed file, and never in the persona's `persona.md`**, which a chat may edit. A sandboxed chat never writes it: the manifest is a later-code name a sandboxed chat is denied writing, and a brokered write refuses any change under `[dispatch]` (`brokered::guard`). That denial is the sandbox's: in a project with the sandbox off, a chat runs as the person and can write this file. It is not read from this machine's own file (`[dispatch.profiles]` there is refused with a sentence). The person's own start of a chat from the new-chat picker is not a dispatch and is not held to it. | stable | `crates/purlis-core/src/dispatchprofiles.rs` `listed`, `listed_at`, `may_start_again`; `crates/purlis-core/src/personaprofile.rs` `for_dispatch` |
 | `[theme].use` | str | optional; absent = the levels below (the person's machine default, else their `theme.json`, else the first theme from an extension the project has on, else `purlis-dark`) | **purlis only** (purlis#273, ADR 0048; spec #2313). **The project's committed default theme** (level 4 of the theme levels, #2323): the person's own choice for the workspace or the project beats it, and a LIVE workspace's committed default does too. `purlis-dark`, `purlis-light`, `purlis-classic` (an id either had before the rename is read as it, purlis#1838), `system` (the built-in matching the operating system's appearance, followed live), a theme folder's name — the project's `themes/<name>/`, else the person's own — or `<extension-id>/<theme name>`, split at the first `/`. An extension's theme is drawn only while the extension is on in this project and approved on this machine, and contributes that theme; otherwise the built-in `purlis-dark` is drawn and the Settings tab says why. A folder's name that no reachable level has, and a value of none of those shapes, is passed over with a sentence and the next level down is used. A chat's change to it is a proposed change (ADR 0098 §4). | stable | `crates/purlis-core/src/theme/levels.rs` `resolve_levels`; `crates/purlis-core/src/extension/project/theme.rs` `resolve` |
 | `[theme].appearance` | str | optional; absent = the theme's first appearance | **purlis only** (spec #2313, #2323). Which of the default theme's appearances is drawn: `system`, which follows the operating system with any theme that has a dark and a light appearance, or an appearance's id (`dark`, `light`, `day`). An appearance the theme does not have draws its first, and says so. Read with `use`, at the same layer. | stable | `crates/purlis-core/src/theme/levels.rs` `Levels` |
@@ -1848,23 +1849,23 @@ of that name at that level replaces it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. The sandbox level each template names is decided and wired in a later release; today `[sandbox]` decides it. |
-| `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. **Not switchable yet**: enforced. |
-| `ports` | as `network` | the template's | local sockets, listening and connect ports. **Not switchable yet**: enforced. |
-| `processes` | as `network` | the template's | **Not switchable yet**: enforced. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
-| `guards.git` | as `network` | the template's | the Bash guard's git arms: a branch move and a destroying reset in the plane root (A3, A3b), and git in a branch folder another chat holds (A11). The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
+| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults`, `guards.credential` and `trust` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308, the level as `[sandbox]` says it (the floor where it names no mode). **The template sets the sandbox level**; a committed `[sandbox] mode` overrides it (`on` full, `off` none under `policy = "local"`). The level in force is the stricter of the committed one and what you accepted: a looser level, the team's off included, waits for Accept ([ADR 0125, amended 2026-11-17](adr/0125/2026-11-17-the-sandbox-level-network-ports-and-asks-switch.md)). |
+| `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. Under `off` or `log` a host nothing lists is carried with nobody asked, each host and port logged once under `log`; this machine, a link-local or metadata address, a host policy pins as never allowed and your Keep blocked stay refused; a runner's own locks hold over what a desktop relays. Means nothing without a sandbox. |
+| `ports` | `"off"` or `"enforce"` | the template's: enforced but under `open` | local sockets and this Mac's loopback ports. `log` is enforced, and said, and the rest of `[policy]` stands: the kernel tells nothing of a connection it let through (Q328). Under a pressed `off` a wrapped harness reaches every local socket and port but purlis's own: its ports as the chat started (one purlis opens later is a declared residual) and its sockets wherever they are (every project's state folder, every hook socket, the session host's, every chat's server sockets, the forwards to a pool's engine), none of which a chat may move or hard link to another name, nor the folders of the last two; a container engine's socket is reached. Claude Code is unchanged: its `allowAllUnixSockets` and `allowLocalBinding` stay `false`. Linux is unchanged. Means nothing without a sandbox. |
+| `processes` | as `network` | the template's | **Not switchable yet**: enforced. Means nothing without a sandbox. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
+| `guards.git` | as `network` | the template's | the Bash guard's git arms: git in a branch folder another chat holds (A11). A branch move and a destroying reset in the plane root (A3, A3b) are `guards.plane`'s (Q308b); where the file names `guards.git` and not `guards.plane`, they run at least as strictly as `guards.git` says, so the move loosens nothing a project set. The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
 | `guards.merge` | as `network` | the template's | the merge hold: a chat's merge is refused and handed to the person. Under `log` nobody is asked. |
 | `guards.release` | as `network` | the template's | the release floor (A4), and a live substitution in a forge's prose (A5). |
 | `guards.save` | as `network` | the template's | personal data in what a chat commits and pushes, a commit that skips the hooks (A8), and a live substitution in purlis's own text (A6). |
 | `guards.credential` | as `network` | the template's | one credential per forge (A2), and the token scan on commit and push. |
-| `asks` | as `network` | the template's | host, folder and socket asks. Under `off` or `log` a host nothing lists is answered Allow for the chat, nobody asked, and logged; the person's Keep blocked still holds. Folder and socket asks stay enforced for now. |
+| `asks` | as `network` | the template's | host, folder and socket asks. Under `off` or `log` a host nothing lists is answered Allow for the chat, nobody asked, and logged; the person's Keep blocked still holds. A folder ask of the project, or of a folder you listed, is answered Allow for the chat under `off` or `log`, judged as the Notice's Allow is, and logged with its path; what no grant may give, a held folder a later program loads code from (`~/.config/gh`, fish's `vendor_conf.d`, …) and a folder the floor holds on `PATH` still raise the Notice in every mode; a socket ask only under `off` (Q328). Each takes effect at the chat's restart. |
 | `dispatch` | as `network` | the template's | who may dispatch to whom. Under `off` or `log` a pair nothing covers starts with no grant, from an unsandboxed or unattended chat too; a lock, the person's nevers (a never above, and a nevers record that does not read, included) hold in every mode. The guards on a dispatch's or a handoff's call are `guards.shape`'s. |
 | `vaults` | `"off"` or `"enforce"` | the template's | a chat's reach to a vault: reads across personas, a vault's Allow. `log` is enforced. **Not switchable yet**: enforced. |
 | `browser` | as `network` | the template's | the browser's reach to a site. **Not switchable yet**: enforced. |
 | `skills` | as `network` | the template's | a skill's install or load. **Not switchable yet**: enforced. |
 | `secrets` | as `network` | the template's | a vault's value kept out of a chat: masking of `secret exec`'s output, the leak guard (A), and the vault-file guard on Read and Grep. |
 | `secrets.credential_files` | `"off"` or `"enforce"` | `"off"` under `open`, `watch` and `hold`; `"enforce"` under `team` and `strict` | whether the floor (Basic) holds the person's own credential files from a chat: `~/.ssh` but its `config`, `known_hosts*` and public keys, and the forge and cloud credential files (ADR 0067 §5 class 6, Q325). The full sandbox holds them whatever this says. `log` is enforced. A dotted key, so `secrets` becomes a table; beside `secrets = …` write it as the quoted key `"secrets.credential_files"`. |
-| `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open` | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps and the backstops on the consent rules' spelling, A7b and A7c, are `guards.shape`'s); the plane itself; the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions; runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). **Keys now, not switchable yet**: enforced. |
+| `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open`; `trust` is enforced by every template but `open` (Q329) | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps, run at the strictest family the gate asks, the consent rules' spelling backstop A7b, and the handoff and dispatch call arms A7, A7d, A7e and A10, are `guards.shape`'s; A7c, behind the person's own rules, holds in every mode); the plane itself (A3 and A3b); the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions (a profile or declaration that starts unapproved, under `open` or a pressed `trust = "off"` or `"log"`, says so on its chat's tab); runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). Each switches at the choke points [`docs/policy-inventory-families.md`](policy-inventory-families.md) names; a decision of theirs no choke point asks yet stays enforced. |
 
 **What `log` writes:** one line per refusal that would have been made, in the chat's
 [enforcement log](#appenforcementchatjsonl--what-a-chat-would-have-been-refused). Nothing is
@@ -1873,7 +1874,10 @@ shown to the chat or the person: no Notice, no ask, no denial.
 **What stays outside the policy** (Q308b): a chat changing its own policy (the scan's
 runs-under check, the brokered write's, the sandbox's hold on the file), the kill switch, and a
 grader's lock bundles. **The person's own denies hold in every mode**, `open` included: dispatch
-nevers and "Keep blocked" hosts.
+nevers and "Keep blocked" hosts. **Nor does `limits` lift an administrator's ceiling**: a
+limit it lifts goes up to the ceiling, where there is one. A chat another chat asked for never
+runs on its profile's words that switch the prompts off, whatever `mode` says: they are dropped
+and its tab says so (#3787).
 
 ### `[policy]`'s project-policy tables — rule modes, sets, locks, and the Workspace and Persona defaults
 
@@ -4918,13 +4922,30 @@ write into this folder cannot make its own text arrive as the person's.
 
 ### The seal's key — the keyring item `purlis-seal`
 - **What:** the random key purlis's app seals the answers this machine keeps with (rulings Q308b
-  and Q309): an HMAC-SHA256 over the answer's kind, the plane's anchor (a digest of its real
-  path) and its text. And, beside it, each answer's **anchor**: the newest seal the app made of
+  and Q309): an HMAC-SHA256 over the answer's kind, the plane's anchor and its text. **The
+  anchor is a digest of the plane's path as it is reached**: the folders above it resolved, its
+  own last folder never followed (the review of #7113), so a plane moved away with a link left
+  at its old path keeps the old path's anchor, and every answer sealed there is still asked for.
+  A set the app wrote once (its `generation` past nought) with no anchor now reads as broken,
+  never as a fresh install. And, beside it, each answer's **anchor**: the newest seal the app made of
   it, so an answer removed or put back from before reads as broken. The answers are
-  `policy_accepted` ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)) and the
+  `policy_accepted` ([below](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)), the
+  dispatch grants and acceptances (`dispatch_sealed`, same file) and the
   [nevers file](#appdispatch-neverjson).
+- **A sealed set** (ticket T1.1-73, #6968; rulings Q306, Q308b): where an answer is a list (the
+  dispatch grants, the acceptances, the nevers), **each entry carries its own seal**, over its
+  kind, the anchor, its text and its `generation` (the set's counter when it was made). Beside
+  the entries, the set's `generation`, one past the last on every write, a removal included,
+  and `live`, the seals of the entries in force. **The anchor of the set is the seal of
+  `<generation>` and the sorted `live` list**, so the counter and a digest of the live set are
+  kept here, out of every chat's reach. An entry counts only where its own seal holds **and** it
+  is in a `live` list whose anchor holds: one edited, copied from another clone, or revoked and
+  put back from a copy counts as nothing. An older copy of the whole set reads as broken. The app
+  writes a set only from what verifies, so nothing that does not is ever sealed again, and there
+  is no re-seal of entries on disk in bulk.
 - **Format:** generic passwords under the service `purlis-seal`: the key at account `answers`,
   32 random bytes as 64 hex digits; each anchor at account `<kind>:<anchor>`, the seal in hex.
+  The sets' kinds are `dispatch-answers` and `dispatch-nevers-live`.
 - **Status:** **internal** — **purlis only**.
 - **Tier:** Keyring — device-bound; never synced, never backed up. Lost, every sealed answer
   counts as none, and the shipped default stands until the person accepts again.
@@ -4972,7 +4993,8 @@ write into this folder cannot make its own text arrive as the person's.
   and is dropped at the next answer.
   `policy_accepted` is what you last accepted of the project's
   [`[policy]`](#policy--which-of-purliss-refusals-run) (rulings Q308a, Q308b): family key to
-  mode, the least each family runs at here until you press to loosen it; a chat start keeps a
+  mode, and `sandbox` to the level (`off`, `floor` or `full`; `enforce`, as an older build kept
+  it, reads as `floor`), the least each family runs at here until you press to loosen it; a chat start keeps a
   tightening in it, and only the window's Accept keeps a loosening. `policy_seal` is its
   [seal](#the-seals-key--the-keyring-item-purlis-seal), over `policy_counter` (one past the last
   on every acceptance) and the pairs. **The app anchors the newest seal in the keyring before it
@@ -4982,6 +5004,31 @@ write into this folder cannot make its own text arrive as the person's.
   key that has none is broken**, and so is a sealed record with no anchor: every family is enforced, every dispatch across personas is
   refused, and the window offers Accept on the committed file as it stands. It is never re-sealed
   in bulk.
+  `dispatch_sealed` (ticket T1.1-73, #6968) is the [sealed set](#the-seals-key--the-keyring-item-purlis-seal)
+  of this machine's dispatch answers: `generation` (int), `live` (the seals in force, hex) and
+  `entries`, each `{kind, text, generation, mac}`. The kinds are `mine` (a pair of `dispatch_mine`,
+  `asking -> target`), `any` (a name of `dispatch_any`), `mine-in` (an entry of `dispatch_mine_in`,
+  `asking -> target in workspace #seen`, its count of the workspace seen gone sealed with it),
+  `seen`, `any-seen` and `seen-in` (the same of the acceptances `dispatch_seen`,
+  `dispatch_any_seen` and `dispatch_seen_in`), `dormant` and `aside` (a grant and an acceptance
+  set aside). **A seal follows an answer the app moves between lists of one side only where the
+  new answer is no wider**: never from a grant limited to one workspace to one that holds in
+  every workspace or another, which is the person's answer of just now or no sealed one. **A
+  write while the key does not read takes the seal of each answer it takes out** with it, so a
+  row put back is sealed by nothing, and the set then reads as broken until the person answers
+  again. **On a machine with no keyring purlis can use** (a Linux with no Secret Service, say),
+  nothing is sealed, so no grant of yours and no acceptance is kept and none counts, and no never
+  can be added; the window says so. That is a declared gap, never read as a keyring that fails,
+  which holds what it cannot show. **purlis looks for the keyring once, as it starts** (keyring
+  4 latches what it found, #7153), and a Secret Service that had not answered yet reads the same
+  as none: so where this file or the nevers file carries a seal the app made, no keyring now is
+  read as one that failed, and the nevers are unknown until purlis is opened again. **Declared
+  gap:** every sealed record taken away while the keyring's start-up failed reads as a machine
+  that never had one. **Those six lists
+  grant and accept only what this set seals**: a name in one of them with no entry here that
+  verifies is dropped, and shown read-only in Settings › Project › Dispatch. A pair is granted
+  again only through the ordinary per-pair ask. Absent before the first grant or acceptance
+  this build made; the lists an older build wrote are then all unsealed.
 - **`every-project.json`**, in the same folder: what you allowed **for every project on this
   machine** (the operator's ruling of 2026-10-13): `sockets` (local sockets, each as the kernel
   names it), `services` (system services, each by its whole name) and `granted` (when each was
@@ -6900,14 +6947,30 @@ down rather than read off the code.
   write never replaces what it could not read**: Never for this pair and Lift are refused with
   a sentence, and the bytes stay as they are. Mending it is the person's: restore the file
   as purlis last wrote it.
-- **Presence marker** (the review of #6992, S4): each time the app writes the file it keeps
-  the [seal](#the-seals-key--the-keyring-item-purlis-seal) of its text in the keyring, under
-  the seal's service, account `dispatch-nevers:<anchor>`, a Keyring item. **A file
-  deleted or edited by anything but the app reads as unread**, as above, so a chat that runs
-  without a sandbox cannot say "no nevers" by removing them, under any `[policy]`. A file the
-  app never wrote is no nevers, and the first read in the app of one it never sealed seals it as
-  it stands. Only the app verifies it.
-- **Keys:** `never` — a list of `{"asking": persona, "target": persona}`. Each is matched
+- **Sealed, with a presence marker** (the review of #6992, S4; ticket T1.1-73, #6968): each
+  entry carries `mac` and `generation`, and the file holds `generation` and `live`, a
+  [sealed set](#the-seals-key--the-keyring-item-purlis-seal) whose anchor the app keeps in the
+  keyring under account `dispatch-nevers-live:<anchor>`, a Keyring item. That anchor is the
+  presence marker: **a file deleted, emptied, put back from before, or with a sealed never taken
+  out reads as unread**, as above, so a chat that runs without a sandbox cannot say "no nevers"
+  by removing them, under any `[policy]`, `open` included. A never added by anything but the
+  app has no seal and still refuses: a never only tightens. **The person's nevers from before
+  this build are imported once** (Q320): the first read in the app of a file it never sealed as
+  a set seals each entry as it stands, where the whole-file seal an earlier build kept
+  (`dispatch-nevers:<anchor>`) holds for it or none was kept. **Where the app cannot read the
+  key and nevers are present** (entries in the file, or an anchor in the keyring), every
+  dispatch across personas is refused. Only the app verifies it; on Linux and Windows, where
+  any of the person's programs can read the keyring, the nevers are not sealed against a chat
+  without a sandbox, and still hold. **What this does not catch** (the review of #7113, a gap
+  declared until a stable plane id and a machine-level sealed registry of anchored planes land,
+  spec §8.10, slice 07a, #7015): a plane moved to another path **with no link left at the old
+  one** and its nevers file deleted, and anchors deleted from the keyring by a program of the
+  person's (`security delete-generic-password`) together with the file. Each needs a process
+  that runs as the person outside a sandbox: a sandboxed chat writes neither the plane's parent
+  folder nor the keyring.
+- **Keys:** `generation` and `live`, the sealed set's (above); `never` — a list of
+  `{"asking": persona, "target": persona}`, each with its `mac` and `generation` where the app
+  sealed it. Each is matched
   exactly as it is spelled and is never dropped for its spelling: one whose names are no
   persona's refuses nothing real, and a `"*"` in one is not a pattern. An entry that is not two
   strings makes the whole file unread, since what it meant to refuse is unknown. Any other key,
@@ -7907,8 +7970,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   after a launch could not start it (#6487). A workspace's removal ends none: it is refused
   while a chat runs there. Not at a restart, not at a
   quit, never from anything a chat sent. Read by a closed chat's
-  card (`chat_by_number`, a pane's chat links), by the Chats list's filter (`closed_chats`), and
-  by the card's *Reopen* (`reopen_closed_chat`, #6485), which **starts the program its entry
+  card (`chat_by_number`, a pane's chat links, and `chat_by_id`, by its ULID), by the Chats
+  list's filter (`closed_chats`), and by the card's *Reopen* (`reopen_closed_chat`, #6485, by
+  the entry's ULID, never its number, #7123), which **starts the program its entry
   keeps**, on the person's press in the window alone: both commands are the window's, which no
   chat may ask for. So it is opened as [`app/reopen.json`](#appreopenjson) is, from the
   project's root following no link, and asked what it is of the descriptor the read uses. Denied a sandboxed chat's reading and writing
@@ -7970,21 +8034,37 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 ### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
 - **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
   brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in, a browser fill or
-  a browser login (#6309, parent #5820), named before the value is handed. A launch after a window crashed reads these entries again to mask
-  the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
-  process took what it knew of the values with it. **Never a value**: the values themselves
-  are known only in memory, as a keyed digest (`secrets::handedto`), and here only as a seal.
-- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>", "seal": "<64 hex>"}`,
-  and `"form"`
-  where the value was handed in another form than as read: `"dotenv-escaped"`, as a dotenv file
-  holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>,
-  "escaped": <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or
-  `"unrepeatable"`, a one-time code or a minted token, made once. `seal` is `HMAC-SHA256` of the
-  vault, the key and the value as handed (in its form), each ended by a NUL, under a key derived
-  from `fingerprint.key` for this purpose alone (`fingerprint::seal`, purpose `a value handed
-  to a chat`): no use without the plane's key, which no sandboxed chat reads. Each entry, form
-  and seal once, written whole through a temp file (mode 0600, its folder 0700) and read through
-  no link.
+  a browser login (#6309, parent #5820), named before the value is handed, with what finds that
+  value on a screen again. A launch after a window crashed masks the kept screen of a task the
+  crash left (`app/chat-screens/`, above) by these lines alone, since the crashed process took
+  what it knew of the values with it, and **reads no vault** to do it (#6907, ADR 0126).
+  **Never a value**: the values themselves are known only in memory, as a keyed digest
+  (`secrets::handedto`), and here only as prints and seals under the plane's key.
+- **Format:** one JSON object per line, `{"chat": "<ULID>", "vault": "<vault>", "key": "<key>",
+  "nonce": "<32 hex>", "shown": [...], "seal": "<64 hex>"}`, and `"form"` where the value was
+  handed in another form than as read: `"dotenv-escaped"`, as a dotenv file holds it;
+  `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>, "escaped":
+  <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or `"unrepeatable"`, a one-time code or a minted token, made once. `form`
+  is a record of how the chat was handed it; nothing reads it to mask. `shown` holds, for each
+  way the value as handed may be shown (as handed; trimmed; and for a value of several lines,
+  whole with CRLF line ends and each line alone, trimmed; each once, none under 4 bytes),
+  `{"bytes": <n>, "print": "<16 hex>", "seal": "<64 hex>"}`: its length; its Rabin–Karp print
+  modulo 2⁶¹−1 under a base of its own, the first 64 bits of the seal (purpose `the base a value
+  handed to a chat is printed by`) of the chat's id, the vault, the key, the line's nonce and its
+  place in `shown`, so no two prints share a base, of one line or of two lines of one entry; and
+  the seal (purpose `a value handed to a chat, v2`) of the chat's id, the vault, the key, the
+  nonce and the form. `nonce` is 16 bytes drawn at random as the line is written. The line's
+  `seal` (purpose `a line naming what a chat was handed`) covers the chat's id, the vault, the
+  key, the nonce and `[<entry>, <shown>]` as JSON. **`chat` is the id (ULID) of the chat the line
+  was written for, in clear, and every seal covers it** (#7129): a line masks the screen of the
+  chat it names alone, and a line purlis sealed for another chat, left under the same number by
+  a crash, is dropped as this chat names its own. Every seal is `HMAC-SHA256` of its parts,
+  each ended by a NUL, under a key derived from `fingerprint.key` for its purpose alone
+  (`fingerprint::seal`): no use without the plane's key, which no sandboxed chat reads. A value
+  handed again in the same form is not named again by the process that named it, though the
+  window and the session host, or a launch after a crash, each name it once more. Written whole
+  through a temp file (mode 0600, its folder 0700) under an `flock` of the folder, since the
+  window and the session host both write it, and read through no link.
 - **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
   value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
   named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
@@ -7992,13 +8072,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   and writing under every harness: a chat that rewrote its own would choose what its kept
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
-  will bring back. A file that does not read, a line in it that does not, a line with no seal
-  or one that is not the seal of its entry's value read again and made again in its form (an
-  entry changed since it was handed, or a line purlis did not write), a form that cannot be
-  made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
-  vault whose value is read through a program that may ask the person, as a 1Password vault's
-  is and a reference vault's `op read` or `vault kv get` is, or an entry linked into one; an
-  entry gone; a GitHub App's token) leave that task's screen not kept.
+  will bring back. A file that does not read, a line in it that does not, and a line whose own
+  seal is not purlis's as it stands and for that chat (edited, written for another chat, of an
+  earlier shape, sealed under a key since made again, or one purlis did not write), or that the
+  plane has no key to check, leave that task's screen not kept. A write keeps every line but one
+  purlis provably sealed for another chat: one it cannot check stays, and keeps the screen not
+  kept. A chat with no id is handed nothing. A window of a screen is masked only where
+  its print matches and it seals the same.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
   screen with what was handed before the crash unmasked, and nothing else is lost.
 - **Git:** gitignored (under `/.charter/`).
