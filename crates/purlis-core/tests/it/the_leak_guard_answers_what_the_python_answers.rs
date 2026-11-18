@@ -149,6 +149,10 @@ fn strings(v: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The one recorded line whose `lacr` reading differs from the Python's on purpose (round 7d of
+/// #7131, after round 7's B7): the recording is not redone.
+const ROUND_SEVEN_HELD: &str = "${RUNNER} <<'EOF'\ncharter handoff w\nEOF";
+
 #[test]
 fn the_recorded_python_answer_is_the_answer_this_guard_gives() {
     purlis_core::unsteered!();
@@ -181,7 +185,10 @@ fn the_recorded_python_answer_is_the_answer_this_guard_gives() {
     for (at, row) in ats.iter().zip(&rows) {
         let cmd = row["cmd"].as_str().expect("every row names its command");
         let mut check = |what: &str, want: &Value, got: Value| {
-            if want != &got {
+            // A `$`-built program fed a heredoc is read as a shell (round 7, B7), so its body's
+            // lines are segments it runs: the `lacr` reading of this one line moves on purpose.
+            let on_purpose = cmd == ROUND_SEVEN_HELD && what == "lacr";
+            if want != &got && !on_purpose {
                 wrong.push(format!(
                     "{at} {cmd:?}\n    {what} python={want}\n    {what}   rust={got}"
                 ));
