@@ -291,7 +291,24 @@ fn a_chat_runs_under_the_template_its_scenario_names() {
         let saves = scenario
             .result_of(chat, "saves-a-substitution")
             .expect("played");
-        let refused = !saves["refused_by"].is_null();
+        // A refusal is the fake's `hook` and `reason` (`transcript::tool_result`); the guard's
+        // A6 names the command it reads as persisting prose.
+        let refused = saves["hook"] == "pretooluse";
+        if refused {
+            assert!(
+                saves["reason"]
+                    .as_str()
+                    .is_some_and(|why| why.contains("persona remember") && why.contains("$(…)")),
+                "{}: the hook refused the line for another reason than A6: {saves}",
+                template.word()
+            );
+        } else {
+            assert!(
+                stdout_of(&scenario, chat, "saves-a-substitution").contains("let-through"),
+                "{}: the line was neither refused nor run: {saves}",
+                template.word()
+            );
+        }
         let mode = resolved.mode(Family::GuardsSave);
         assert_eq!(
             refused,
