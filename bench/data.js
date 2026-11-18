@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794962282393,
+  "lastUpdate": 1794966157289,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51030,6 +51030,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5578505,
             "unit": "ms",
             "extra": "median of 5 runs: 100.667, 101.101, 101.558, 102.606, 102.972 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "09c6e8ba13881257e77f92a1ea61b1dd336d5851",
+          "message": "A closed chat's card and its Reopen go by its own ULID: the card has its row's number, and Reopen starts the chat clicked (#7125, #7123) (#7140)\n\n* A closed chat's card found by its ULID has its row's number, and the core alone decides the number it was found by (#7125)\n\nA task dispatched as 702, renumbered 731 by a restart and then finished opened from its\n'#731' row in the Chats list's filter as '#702': chat_by_id drew a task's card by the\nworker's number at dispatch. Found by its ULID, a task's card is now numbered by the record\nits chat closed under (chatrecords::of_id), and by the dispatch number only where none was\nkept.\n\nThe found-by rule now lives once, in ChatRecord::found_by. closed_chats and chat_by_id take\nthe number typed in the filter: the core answers only the closed chats that had it, each with\nfound_by, and the card says what the core says. The window's copy (closedFound's foundBy) and\nits patch of the card's found_by are gone.\n\nasked: Option<u32>, whose None meant 'by ULID', is now chatcard::Asked { Number, Id { typed } }.\nThe 731 ChatRecord repeated in planes, pane_links and chatcard tests is one fixture,\nchatcard::fixtures::tidy_the_changelog.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NNNJCB50PETGTJEDQP59R0\nPurlis-Persona: steward\n\n* Reopen on a closed chat's card reopens that chat, by its ULID, never its number (#7123)\n\nWhere a number was dealt twice (#6740), Reopen on the older chat's card looked the chat up by\nits number (chatrecords::of_number) and reached the newer record. reopen_closed_chat now takes\nthe card's ULID and chatcard::reopen_closed finds the record by it (chatrecords::of_id). The\nwindow's reopenClosedChat verb carries card.chat instead of card.number.\n\nTested with two records under 702 whose Reopen is refused for different reasons, so the\nrefusal names the record each press reached; and in the window, Reopen on each of two cards\nfound by 702 sends that card's own ULID. The chatcard tests share one held-project setup,\nfixtures::a_project.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NNNJCB50PETGTJEDQP59R0\nPurlis-Persona: steward\n\n* The closed chats' filter asks no number past a u32, and draws two records of one number as two rows (#7125's review)\n\nchatNumberIn takes no number past the largest a chat is dealt (u32), which the core refuses as\nan argument: typing 99999999999 showed 'could not read the closed chats' where it now finds\nnone (and the palette's chat_by_number is no longer asked it either). The Closed chats rows are\nkeyed by their ULID, not their number, which two records may share (#6740): two under 702\nthrew React Aria's 'Duplicate key closed:702'.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NNNJCB50PETGTJEDQP59R0\nPurlis-Persona: steward\n\n* found_by_id_tests take their time from jiff, as main's crates now do (#7119)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NNNJCB50PETGTJEDQP59R0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T00:54:28Z",
+          "tree_id": "cccdb58cbb48c3e82c04efd5bbf7b16f2e7fcc28",
+          "url": "https://github.com/purlis/purlis/commit/09c6e8ba13881257e77f92a1ea61b1dd336d5851"
+        },
+        "date": 1794966150779,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6856365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.674, 0.686, 0.686, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6389895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.474, 16.541, 16.639, 16.693, 16.727 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.986489,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.397, 101.700, 101.986, 102.043, 105.015 ms"
           }
         ]
       }
