@@ -61,6 +61,7 @@ impl Fixture {
             session: Some(7),
             folder: Some(self.ws()),
             runs: Runs::Here,
+            now_in: None,
         }
     }
 
@@ -1177,4 +1178,60 @@ fn a_word_holding_a_colon_that_is_no_scheme_or_port_is_read_part_by_part() {
         "https://good.com/"
     ));
     assert!(asks_about_its_words("fe80::1%25eth0", "https://good.com/"));
+}
+
+#[test]
+fn a_folder_the_program_said_it_moved_to_never_quiets_a_marked_link_s_ask() {
+    // #6367: OSC 7 is the program's own word, as OSC 8 is. Words that name another file from
+    // where the chat started still ask, wherever it says it is now.
+    let here = fixture();
+    let links = links();
+    let main = here.url_of(&here.ws().join("src/main.rs"));
+    let moved = Pane {
+        now_in: Some(here.ws().join("src")),
+        ..here.chat()
+    };
+    let Opening::Ask { about, .. } =
+        ask(&links, &marked("main.rs", &main), &moved, &Asks::default())
+    else {
+        unreachable!()
+    };
+    assert_eq!(about, Asking::Misleading);
+}
+
+#[test]
+fn an_issue_ref_as_the_words_names_a_target_so_another_page_asks() {
+    assert_eq!(
+        asks_saying("purlis/purlis#6223", "https://example.com/unrelated"),
+        "its text says purlis/purlis#6223"
+    );
+    assert_eq!(
+        asks_saying(
+            "purlis/purlis#6223",
+            "https://github.com/someone/else/issues/6223"
+        ),
+        "its text says purlis/purlis#6223"
+    );
+    // The same words over the page they name are the link's own.
+    assert!(opens(
+        "purlis/purlis#6223",
+        "https://github.com/purlis/purlis/issues/6223"
+    ));
+    assert!(opens(
+        "purlis/purlis#6223",
+        "https://github.com/purlis/purlis/pull/6223"
+    ));
+    // A bare number names no place.
+    assert!(opens("#6223", "https://example.com/unrelated"));
+}
+
+#[test]
+fn an_issue_s_words_over_its_path_on_another_host_ask() {
+    assert_eq!(
+        asks_saying(
+            "purlis/purlis#6223",
+            "https://evil.example/purlis/purlis/issues/6223"
+        ),
+        "its text says purlis/purlis#6223"
+    );
 }

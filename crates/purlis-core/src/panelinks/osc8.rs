@@ -15,6 +15,11 @@
 //!   letter; UTS #39). Every other word is plain, in any script: "Click here", "v1.2.3",
 //!   "#6384", "café", an emoji. `github.com/purlis` over `https://github.com/purlis/purlis`
 //!   opens; `github.com/someone-else` over it asks, showing both.
+//! - **A relative word is read from where the chat started**, never where it says it is now
+//!   (#6367, ADR 0126): after a `cd`, a relative path as a marked link's words, which leads to the
+//!   target only from the new folder, asks first. That is the safe side.
+//! - **An issue's words name a target** (`owner/repo#6223`): over any page but that issue's or
+//!   pull request's, the link asks. A bare `#6223` names none.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -130,11 +135,29 @@ fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
     // letter it looks like (`lоcalhost`, `evil.cоm`); a host in its own script stays as written
     // (`βόλος.gr`), and [`reads_as_written`] judges its letters.
     let looks = (!word.is_ascii()).then(|| [seen(trimmed), seen(&word)]);
-    let read = [trimmed.to_owned(), word.clone()]
+    let Some(read) = [trimmed.to_owned(), word.clone()]
         .into_iter()
         .chain(looks.into_iter().flatten())
-        .find(|read| names(read))?;
+        .find(|read| names(read))
+    else {
+        return names_another_issue(trimmed, target, pane);
+    };
     differs(&read).or_else(|| (!reads_as_written(original)).then_some(read))
+}
+
+/// What `word` says when it reads as an issue or pull request of a repo (`owner/repo#6223`) that
+/// is not the page `target` is: the word itself. It names a place on a forge, as a domain does.
+/// A bare `#6223` names none.
+fn names_another_issue(word: &str, target: &Target, pane: &Pane) -> Option<String> {
+    let (repo, number) = super::issue::names_an_issue(word)?;
+    match target {
+        Target::Url(url)
+            if super::issue::is_page_of(url, repo, number, pane.project.as_deref()) =>
+        {
+            None
+        }
+        _ => Some(word.to_owned()),
+    }
 }
 
 /// **`word` as it looks**: each character outside ASCII replaced by its UTS #39 skeleton (a
@@ -561,7 +584,9 @@ fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
     } else if Path::new(words).is_absolute() {
         PathBuf::from(words)
     } else {
-        let Some(base) = pane.folder.as_ref().or(pane.project.as_ref()) else {
+        // From where the chat started, never where it says it is now (#6367): a program that
+        // marks a link could say it moved, and quiet the ask its words raise (ADR 0126).
+        let Some(base) = pane.folder.as_deref().or(pane.project.as_deref()) else {
             return false;
         };
         base.join(words)

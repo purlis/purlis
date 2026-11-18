@@ -165,7 +165,37 @@ describe("a pane's link candidates", () => {
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
-    expect(candidatesIn("no links here, nor #5820")).toEqual([]);
+    expect(candidatesIn("no links here")).toEqual([]);
+  });
+
+  it("are issue and pull request numbers, bare or with their repo (#6223)", () => {
+    const found = candidatesIn("Fixes #6223 and purlis/purlis-plane#12, see team/sub/app#5.");
+    expect(found.map(({ kind, start, end }) => [kind, start, end])).toEqual([
+      ["issue", 6, 11],
+      ["issue", 16, 38],
+      ["issue", 44, 58],
+    ]);
+    expect(found.map((one) => one.text).join(" ")).toBe(
+      "#6223 purlis/purlis-plane#12 team/sub/app#5",
+    );
+    // An address's fragment is the address's, and a word, an entity or a leading zero is none.
+    expect(candidatesIn("https://x.example/a#12").map((one) => one.kind)).toEqual(["url"]);
+    for (const line of ["a#12", "&#123;", "##12", "see #012", "see #12a", "#1234567890", "v1.2#3x"])
+      expect(
+        candidatesIn(line).filter((one) => one.kind === "issue"),
+        line,
+      ).toEqual([]);
+  });
+});
+
+describe("a word that reads as a path", () => {
+  it("stays a file's link, never an issue's, when a number follows it", () => {
+    for (const line of ["see docs/guide.md#12", "src/lib.rs#7", "./notes.txt#3"]) {
+      const kinds = candidatesIn(line).map((one) => one.kind);
+      expect(kinds, line).toContain("file");
+      expect(kinds, line).not.toContain("issue");
+    }
+    expect(candidatesIn("docs/guide.md#12")[0].text).toBe("docs/guide.md");
   });
 });
 
@@ -349,6 +379,44 @@ describe("a link in a chat's pane", () => {
 
     expect(asked("pane_link_open")).toHaveLength(0);
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
+
+describe("the folder a pane's program says it is in (OSC 7, #6367)", () => {
+  const SAID = "file:///work/app";
+
+  it("is handed to the core as said with each hover and open, for its relative paths", async () => {
+    const pane = await opened();
+    await write(pane.term, `\x1b]7;${SAID}\x07see ${ADDRESS} now`);
+    hover(pane.drawn, 8, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    expect(asked("pane_link_resolve")[0].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
+
+    click(pane.drawn, 8, 0, { ctrlKey: true });
+    await waitFor(() => expect(asked("pane_link_open")).toHaveLength(1));
+    expect(asked("pane_link_open")[0].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
+  });
+
+  it("asks a line again once the program says it moved, and keeps only the last it said", async () => {
+    const pane = await hovered();
+    await write(pane.term, `\x1b]7;file:///one\x07\x1b]7;${SAID}\x07`);
+    hover(pane.drawn, 40, 3);
+    hover(pane.drawn, 8, 0);
+
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(2));
+    expect(asked("pane_link_resolve")[1].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
   });
 });
 

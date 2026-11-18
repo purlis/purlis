@@ -13533,3 +13533,28 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
 }
+
+#[test]
+fn the_folder_a_chats_own_harness_reports_is_where_its_relative_paths_start() {
+    // #6367: kept from the chat's own harness's report, never a nested one's. Forgotten as the
+    // chat starts again or closes, beside its model.
+    let (chats, _wrote) = recorded();
+    let session = 7;
+    let report = |conversation: &str, folder: &str| purlis_core::hookwire::Report {
+        event: purlis_core::state::Event::Stop,
+        detail: purlis_core::state::Detail {
+            folder: Some(PathBuf::from(folder)),
+            ..purlis_core::state::Detail::default()
+        },
+        ..session_start(session, conversation, "claude-opus-4-1")
+    };
+    assert_eq!(chats.folder_now(session), None, "nothing said yet");
+
+    chats.heard_folder(&report(ID, "/work/app"), Some(ID));
+    assert_eq!(chats.folder_now(session), Some(PathBuf::from("/work/app")));
+    chats.heard_folder(&report(OTHER, "/elsewhere"), Some(ID));
+    assert_eq!(chats.folder_now(session), Some(PathBuf::from("/work/app")));
+    chats.heard_folder(&report(ID, "/work/app/src"), None);
+    assert_eq!(chats.folder_now(session), Some(PathBuf::from("/work/app")));
+    assert_eq!(chats.folder_now(8), None, "another chat's");
+}

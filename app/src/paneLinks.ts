@@ -54,6 +54,16 @@ const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu
  */
 const CHAT = /(?<![\p{L}\p{N}_#/.-])[Cc]hat [1-9]\d{0,8}(?![\p{L}\p{N}_])/gu;
 
+/**
+ * **An issue or pull request's number** (#6223): `#6223`, or `owner/repo#6223` (a GitLab group may
+ * have subgroups), as a word of its own. Not after a letter, a digit, `&` (an HTML entity), `/`,
+ * `#` or a word's own characters, and at most nine digits with no leading zero, as the core reads
+ * one (`panelinks/issue.rs`). The core finds the forge from the chat's folder's remote; with none,
+ * it is no link and says nothing.
+ */
+const ISSUE =
+  /(?<![\p{L}\p{N}_.&#/-])(?:[A-Za-z0-9][\w.-]*(?:\/[A-Za-z0-9][\w.-]*)+)?#[1-9]\d{0,8}(?![\p{L}\p{N}_#])/gu;
+
 /** What a sentence, or Markdown's emphasis, puts after an address, which is not the address's. */
 const TRAILING = /[.,;:!?*_]+$/u;
 
@@ -98,13 +108,21 @@ function readsAsAPath(text: string): boolean {
   return words.includes("/") ? /[\p{L}\p{N}]/u.test(words) : EXTENSION.test(words);
 }
 
+/** Whether `words`, what comes before an issue's `#`, is a file's path: its last part is a name
+ *  with an extension (`guide.md`), which a repo's name does not usually have. Bare `#12` and
+ *  `owner/repo` are not. */
+function readsAsAFilesPath(words: string): boolean {
+  return EXTENSION.test(words.slice(words.lastIndexOf("/") + 1));
+}
+
 /** A `file:` address, in any case: `FILE:` is the same scheme. */
 const FILE_ADDRESS = /^file:/iu;
 
 /**
  * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
- * then file paths outside them, with the punctuation a sentence puts after one left out, then
- * chats' numbers (`chat 641`, #6217) outside both.
+ * then issue and pull request numbers outside them (`#6223`, `owner/repo#6223`, #6223), then file
+ * paths outside both, with the punctuation a sentence puts after one left out, then chats'
+ * numbers (`chat 641`, #6217) outside all of them.
  */
 export function candidatesIn(line: string): Found[] {
   const found: Found[] = [];
@@ -114,6 +132,14 @@ export function candidatesIn(line: string): Found[] {
     // A `file:` address names a file, under a file's rules (#6216, spec Q2).
     const kind = FILE_ADDRESS.test(text) ? "file" : "url";
     found.push({ kind, text, start: match.index, end: match.index + text.length });
+  }
+  for (const match of line.matchAll(ISSUE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (found.some((one) => start < one.end && end > one.start)) continue;
+    // A word that reads as a path stays a file's (`docs/guide.md#12`), as it was before numbers.
+    if (readsAsAFilesPath(match[0].slice(0, match[0].indexOf("#")))) continue;
+    found.push({ kind: "issue", text: match[0], start, end });
   }
   const addresses = [...found];
   let paths = 0;
@@ -165,9 +191,12 @@ type Kept = Map<string, Promise<LinkSeen | null>>;
 const lives = new WeakMap<Promise<LinkSeen | null>, number>();
 
 /** Whether `link`'s answer looks at the disk, and so is kept only {@link FILE_ANSWER_LIFE}: a
- *  path, or a link a program marked whose target is a `file:` address. */
+ *  path, a link a program marked whose target is a `file:` address, or an issue's number, read
+ *  from the git remote of the folder the chat is in now (#6223). */
 const namesAFile = (link: LinkCandidate) =>
-  link.kind === "file" || (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
+  link.kind === "file" ||
+  link.kind === "issue" ||
+  (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
 
 /** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
 function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
@@ -379,7 +408,16 @@ export type LinkedPane = IDisposable & {
   /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
    *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
   under: () => ScreenLink | undefined;
+  /** **The folder the pane's program last said it is in** (OSC 7, #6367), as it said it, or
+   *  `null`: handed to the core with each ask ({@link withFolder}), which reads it as
+   *  untrusted and only ever as where a relative path starts. */
+  folder: () => string | null;
 };
+
+/** **`from` with the folder a pane's program said it is in** (OSC 7, #6367), where it said one:
+ *  a pane whose program said none is handed on as it was. */
+export const withFolder = (from: LinkFrom, folder: string | null | undefined): LinkFrom =>
+  folder === null || folder === undefined ? from : { ...from, folder };
 
 /**
  * **A link a program marked on the screen** (OSC 8): the target it named, and the cells from
@@ -676,6 +714,20 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   const marked: Marked[] = [];
   const markings = marking(pane, marked);
 
+  /** **The folder the program last said it is in** (OSC 7, `file://host/path`), cut as a
+   *  marked link's target is: the core reads it, never the window. A line's answers may name
+   *  files from the folder before, so they are let go of when it moves. */
+  let folder: string | null = null;
+  const saidFolder = pane.parser.registerOscHandler(7, (data) => {
+    const said = cutTarget(data);
+    if (said !== folder) {
+      folder = said;
+      kept.clear();
+    }
+    // Nothing else of the terminal's reads it.
+    return false;
+  });
+
   /** The colour drawn over the link under the pointer, let go of as it leaves. */
   let drawn: IDisposable[] = [];
   const undraw = () => {
@@ -881,11 +933,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   });
   return {
     under: () => current,
+    folder: () => folder,
     dispose() {
       clearTimeout(leaving);
       undraw();
       provider.dispose();
       markings.dispose();
+      saidFolder.dispose();
       if (pane.options.linkHandler === handler) pane.options.linkHandler = INERT_LINKS;
       kept.clear();
     },
