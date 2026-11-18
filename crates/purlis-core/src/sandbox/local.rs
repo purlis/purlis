@@ -1282,22 +1282,11 @@ pub enum PolicyAccepted {
     Broken,
 }
 
-/// **The acceptance is read and written one thread at a time**: its anchor is kept before its
-/// record is written ([`accept_policy`]), so a read between the two, or a second write that read
-/// the same counter, would find an acceptance that does not hold and read it as `strict`. Held
-/// for the one read or write, never across another.
-fn accepting() -> std::sync::MutexGuard<'static, ()> {
-    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    ONE.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// **This person's acceptance of the project's `[policy]` at `root`.** The file's own seal must
 /// hold, and so must the copy of that seal the app keeps in the keyring
 /// ([`crate::secrets::seal::keep`]): an older sealed record put back (its counter is behind) or
 /// one removed reads as [`PolicyAccepted::Broken`] wherever the keyring remembers one was kept.
 pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
-    let _one_at_a_time = accepting();
     // A seal key another program made seals nothing (the re-review of #6992, S4).
     if crate::secrets::seal::key_is_foreign() {
         return PolicyAccepted::Broken;
@@ -1354,7 +1343,6 @@ pub fn accept_policy(
     // the person has deleted since, or a keyring that answers now. Where it is still another
     // program's, the sentence says how to recover.
     crate::secrets::seal::ready_to_seal().map_err(io::Error::other)?;
-    let _one_at_a_time = accepting();
     let clone = anchor_key(root);
     let counter = read(root).policy_counter + 1;
     let text = policy_text(counter, &accepted);

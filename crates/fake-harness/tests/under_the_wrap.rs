@@ -401,7 +401,11 @@ fn play(given: &Given) -> Played {
     root_of("purlis", purlis.parent().expect("purlis's folder"));
     root_of("recorder", recorder_bin.parent().expect("its folder"));
     root_of("plugin", &plugin);
-    root_of("harness", fake.parent().expect("its folder"));
+    // Where the fake and `purlis` are built into one folder, the hook command's path is masked as
+    // `purlis`'s, as in a recording, where Claude Code's own folder is another.
+    if fake.parent() != purlis.parent() {
+        root_of("harness", fake.parent().expect("its folder"));
+    }
     root_of("repo", &repo());
     if let Some(tmp) = &chat_tmp {
         root_of("chat-tmp", tmp);
