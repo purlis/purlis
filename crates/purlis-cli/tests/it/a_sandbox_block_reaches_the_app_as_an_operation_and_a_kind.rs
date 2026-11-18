@@ -214,7 +214,8 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 target: None,
                 read_back: false,
                 suggested: None,
-                purlis_command: None,
+                // The report names the purlis command it was met by (#7178).
+                purlis_command: Some("purlis session record".to_owned()),
             },
             SandboxBlocked {
                 chat: 7,
