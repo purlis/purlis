@@ -154,6 +154,20 @@ never touches it. Five consecutive red nights went unread in September
 2026 while fifty PRs merged past them; that is what the issue is for. Which issue, and what it
 is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.test.mjs`.
 
+## Notes from sandboxed agent runs
+
+- `purlis worktree commit` takes `--all` (tracked files only) or named paths (a new file must be
+  named), never both; it, `push`, `update` and `dispatch` each run alone in their Bash call.
+- A bare `sleep` is refused. Wait on CI with `timeout 585 bash -c 'until <check>; do sleep 30; done'`
+  or `timeout 580 gh run watch <id>`.
+- `gh pr edit --add-label` fails on the classic-projects deprecation; use
+  `gh api -X POST repos/purlis/purlis/issues/<n>/labels -f 'labels[]=<label>'`.
+- A test that runs `cargo` gets a `CARGO_TARGET_DIR` of its own: one that builds in the
+  workspace's folder (the resolver seam's compile check did) leaves the test build stale, and the
+  next cargo run builds it all again (14 minutes on Linux, 21 on macOS). Check it with
+  `CARGO_LOG=cargo::core::compiler::fingerprint=info cargo test --no-run` after the test; see
+  `docs/sandbox-scenarios-ci.md`.
+
 ## Agent skills
 
 ### Issue tracker
