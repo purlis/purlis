@@ -342,3 +342,74 @@ fn an_unreadable_refusal_names_what_it_took_for_a_merge() {
         );
     }
 }
+
+// #7195 round 4: the shell blanks only space, tab and newline, so a line that opens with any
+// other blank is a command word `\vJ=1`, not an assignment, and `$J` is empty.
+#[test]
+fn a_line_that_only_looks_like_a_digit_binding_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "\u{b}J=1; gh api -X PATCH repos/o/r/git/refs/heads/${J}\"main\" -f sha=abc -F force=true",
+        "\u{b}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "\u{b}M=1; gh api -X PATCH repos/o/r/git/refs/$M/heads/main -f sha=abc",
+        "\u{c}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "\u{a0}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "\u{2028}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "\u{85}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "\u{3000}M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge",
+        "M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge\u{b}",
+        "M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge\u{c}",
+        "M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge\u{a0}",
+        "M=1; glab api -X PUT projects/p/merge_requests/5/$M/merge\u{2028}",
+    ]);
+}
+
+// A reference stands for a segment of its own: no quote after it, and the path is judged with
+// the variable empty as well as a number.
+#[test]
+fn a_reference_that_can_vanish_or_join_a_quote_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "J=1; gh api -X PATCH repos/o/r/git/refs/heads/${J}\"main\" -f sha=abc -F force=true",
+        "J=1; gh api -X PATCH repos/o/r/git/refs/heads/$J\"main\" -f sha=abc",
+        "J=1; gh api -X PUT repos/o/r/pulls/5/${J}\"%2Fmerge\"",
+        "M=1; glab api -X PUT projects/p/$M/merge_requests/5/merge",
+        "M=1; gh api -X PUT repos/o/r/pulls/5/$M/merge",
+        "M=1; gh api -X POST repos/o/r/$M/merges -f base=main -f head=x",
+        "M=1; glab api -X POST projects/p/repository/$M/commits -f branch=main",
+        "M=1; glab api -X DELETE projects/p/repository/$M/branches/main",
+        "M=1; gh api -X PATCH repos/o/r/git/refs/$M/heads/main -f sha=abc",
+        "for m in 1 2; do glab api -X PUT projects/p/$m/merge_requests/5/merge; done",
+    ]);
+}
+
+// `ApiCall` reads a braced word as one positional, but the shell makes several words of it.
+#[test]
+fn a_brace_expansion_that_builds_the_method_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh api {-XPUT,repos/o/r/pulls/5/merge}",
+        "gh api {--method=PUT,repos/o/r/pulls/5/merge}",
+        "gh api {-XPATCH,repos/o/r/git/refs/heads/main,-fsha=abc}",
+        "glab api {-XPUT,projects/p/merge_requests/5/merge}",
+        "gh api -X{PUT,GET} repos/o/r/pulls/5/merge",
+    ]);
+}
+
+#[test]
+fn glab_api_has_no_dash_r_so_the_word_after_it_is_a_path() {
+    purlis_core::unsteered!();
+    held(&["glab api -X PUT -R projects/p/merge_requests/5/merge"]);
+    passes(&["gh api -R o/r repos/o/r/pulls/5"]);
+}
+
+#[test]
+fn the_two_legitimate_shapes_still_pass() {
+    purlis_core::unsteered!();
+    passes(&[
+        "J=101; glab api -X POST projects/p/jobs/$J/play",
+        "J=101\nglab api -X POST projects/p/jobs/$J/play\n",
+        " J=101;\tglab api -X POST \"projects/p/jobs/${J}/play\" ",
+        "for j in 101 102; do glab api -X POST projects/p/jobs/$j/play; done",
+    ]);
+}

@@ -177,7 +177,7 @@ pub(super) fn forge_reason(
     let first = words.first().map(|w| w.1);
     let second = words.get(1).map(|w| w.1);
     match (first, second) {
-        (Some("api"), _) => api_reason(&args[words[0].0 + 1..], cmd),
+        (Some("api"), _) => api_reason(&args[words[0].0 + 1..], cmd, name == "glab"),
         (Some("alias"), Some("import")) => unreadable(),
         (Some("alias"), Some("set")) => {
             alias_reason(name, &args[words[1].0 + 1..], unattended, depth)
@@ -342,7 +342,9 @@ struct ApiCall {
 }
 
 impl ApiCall {
-    fn parse(args: &[String]) -> Self {
+    /// `glab_api` is true for `glab api`, which takes no `-R` (it fails on one): there the word
+    /// after it is a positional, read as a path (`gh api -R` names a repository).
+    fn parse(args: &[String], glab_api: bool) -> Self {
         let mut call = ApiCall::default();
         let mut i = 0;
         while i < args.len() {
@@ -373,6 +375,10 @@ impl ApiCall {
                 for (k, c) in chars.iter().enumerate() {
                     if API_SHORT_BOOL.contains(c) {
                         continue;
+                    }
+                    if glab_api && *c == 'R' {
+                        // glab refuses the flag outright, so the word after it is a path.
+                        break;
                     }
                     if API_SHORT_VALUE.contains(c) {
                         let rest: String = chars[k + 1..].iter().collect();
@@ -534,6 +540,9 @@ const SHELL_OWN_NAMES: &[&str] = &[
     "shlvl",
     "uid",
     "euid",
+    "gid",
+    "egid",
+    "username",
     "ppid",
     "term",
     "user",
@@ -590,9 +599,13 @@ fn is_shell_own_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     SHELL_OWN_NAMES.contains(&lower.as_str())
         || SHELL_KEYWORDS.contains(&lower.as_str())
-        || ["bash", "lc_", "ld_", "dyld_", "comp_", "hist", "xdg_"]
-            .iter()
-            .any(|p| lower.starts_with(p))
+        || [
+            "bash", "zsh", "lc_", "ld_", "dyld_", "comp_", "hist", "xdg_", "gh_", "glab_",
+            "gitlab_", "git_",
+        ]
+        .iter()
+        .any(|p| lower.starts_with(p))
+        || lower.ends_with("_proxy")
 }
 
 /// **A variable in a writing call's path is read only on a line of exactly one of two shapes**
@@ -631,7 +644,15 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
         && (name.chars().all(|c| !c.is_ascii_lowercase())
             || name.chars().all(|c| !c.is_ascii_uppercase()))
         && !is_shell_own_name(name);
-    if !name_ok || cmd.contains("IFS") {
+    // Bash and zsh blank only space, tab and newline. Any other control character or any
+    // non-ASCII character (U+00A0, U+0085, U+2028, `\v`, `\f`...) could make the first word
+    // something other than the assignment the shapes show.
+    if !name_ok
+        || cmd.contains("IFS")
+        || cmd
+            .chars()
+            .any(|c| !c.is_ascii() || (c.is_control() && c != '\t' && c != '\n'))
+    {
         return false;
     }
     let esc = regex::escape(name);
@@ -643,7 +664,7 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
         r"^for[ \t]+{esc}[ \t]+in(?:[ \t]+[0-9]+)+[ \t]*(?:;|\n)[ \t\n]*do[ \t\n]+([^;\n]+?)[ \t]*(?:;|\n)[ \t\n]*done$"
     ))
     .expect("compiles");
-    let cmd = cmd.trim();
+    let cmd = cmd.trim_matches([' ', '\t', '\n']);
     one.captures(cmd)
         .or_else(|| looped.captures(cmd))
         .and_then(|c| c.get(1))
@@ -653,7 +674,7 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
 /// True when `call` is one `gh api` or `glab api` call whose only variable is `name`, as plain
 /// whole-segment references (see [`digit_bound`]).
 fn lone_api_call(call: &str, name: &str) -> bool {
-    let call = call.trim();
+    let call = call.trim_matches([' ', '\t']);
     let mut words = call.split_whitespace();
     if !matches!(
         (words.next(), words.next()),
@@ -705,7 +726,7 @@ fn lone_api_call(call: &str, name: &str) -> bool {
         };
         let before = call[..dollar].chars().next_back();
         let after = tail[len..].chars().next();
-        if before != Some('/') || !matches!(after, None | Some('/' | '"' | '\'' | ' ' | '\t')) {
+        if before != Some('/') || !matches!(after, None | Some('/' | ' ' | '\t')) {
             return false;
         }
         rest.push(' ');
@@ -719,7 +740,7 @@ fn lone_api_call(call: &str, name: &str) -> bool {
 /// `endpoint` with each `$name` or `${name}` that [`digit_bound`] says holds only digits written
 /// as `0`, so the rest of the reader sees the path the shell will make. A reference left in it is
 /// one the line does not bind to digits.
-fn with_digit_variables(endpoint: &str, cmd: &str) -> String {
+fn with_digit_variables(endpoint: &str, cmd: &str, fill: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         Regex::new(r"\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})")
@@ -731,7 +752,7 @@ fn with_digit_variables(endpoint: &str, cmd: &str) -> String {
             .or_else(|| caps.get(2))
             .map_or("", |m| m.as_str());
         if digit_bound(cmd, name) {
-            "0".to_owned()
+            fill.to_owned()
         } else {
             caps[0].to_owned()
         }
@@ -746,8 +767,19 @@ fn is_repository(segs: &[String]) -> bool {
 
 /// The refusal for one `gh api` / `glab api` call, or `None` when it can neither merge nor
 /// publish.
-fn api_reason(args: &[String], cmd: &str) -> Option<String> {
-    let call = ApiCall::parse(args);
+fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {
+    let call = ApiCall::parse(args, glab_api);
+    // A word that opens with a brace expansion (or a flag with one) can make a flag or a method
+    // out of one word (`{-XPUT,repos/o/r/pulls/5/merge}`), which `ApiCall::parse` reads as one
+    // positional. A brace inside a path (`pulls/{1,2}`) only makes more paths, judged as written.
+    if args
+        .iter()
+        .any(|a| brace_expansion(a) && a.starts_with(['-', '{']))
+    {
+        return Some(format!(
+            "{UNREADABLE} An argument opens with a brace expansion, which the shell splits into words purlis does not see. {SPLIT}"
+        ));
+    }
     let read = call.is_read();
     if !read && call.positionals.is_empty() {
         return unreadable();
@@ -770,61 +802,66 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         }
         // Every part of a writing call's path is written out, or a variable the line binds to
         // digits (#7176; Q331).
-        let resolved = with_digit_variables(endpoint, cmd);
-        if opaque(&resolved) {
-            let way_out = if resolved.contains('$') {
-                format!(" {VARIABLE_WAY_OUT}")
-            } else {
-                String::new()
-            };
-            return Some(format!(
-                "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}.{way_out} {SPLIT}",
-                call.why_not_a_read()
-            ));
-        }
-        let segs = segments(&resolved);
-        if segs.iter().any(|s| s == "." || s == "..") {
-            return Some(format!(
-                "{UNREADABLE} The endpoint `{endpoint}` climbs with `.` or `..`. {SPLIT}"
-            ));
-        }
-        if is_merge_path(&segs) {
-            return Some(MERGES.to_owned());
-        }
-        // An organisation's ruleset guards its repositories' default branches as a
-        // repository's does (Q330, #7131).
-        if segs
-            .windows(3)
-            .any(|w| w[0] == "orgs" && w[2] == "rulesets")
-        {
-            return Some(REPLACES_THE_DEFAULT_BRANCH.to_owned());
-        }
-        // Moving the default branch's ref lands code as a merge does (Q330).
-        if let Some(why) = default_branch_ref_reason(&segs, &call) {
-            return Some(why.to_owned());
-        }
-        // A release or a tag is no merge: the merge hold leaves it to the floor (#6962).
-        if !super::only_merges()
-            && let Some(why) = publish_reason(&segs, &call)
-        {
-            return Some(why.to_owned());
-        }
-        // Where a field the call does not show could set a merge: a repository's settings. A
-        // request's own path, GitLab's `merge_requests/N` or GitHub's `pulls/N`, edits its title,
-        // description, labels, state and target and has no field that merges: merging is
-        // `.../merge`, held above (#7176; Q331).
-        let settable = is_repository(&segs);
-        for field in &call.fields {
-            // A key the shell fills in could be an auto-merge setting where one can be set.
-            if opaque(&field.key) && settable {
-                return unreadable();
+        // The path is judged with each bound reference as `0` and as nothing: an empty value
+        // moves a segment next to its neighbour, and the line's own shape does not show which the
+        // shell will make of a line it did not read (#7195).
+        for fill in ["0", ""] {
+            let resolved = with_digit_variables(endpoint, cmd, fill);
+            if opaque(&resolved) {
+                let way_out = if resolved.contains('$') {
+                    format!(" {VARIABLE_WAY_OUT}")
+                } else {
+                    String::new()
+                };
+                return Some(format!(
+                    "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}.{way_out} {SPLIT}",
+                    call.why_not_a_read()
+                ));
             }
-            if speaks_of_merging(&field.key) {
+            let segs = segments(&resolved);
+            if segs.iter().any(|s| s == "." || s == "..") {
+                return Some(format!(
+                    "{UNREADABLE} The endpoint `{endpoint}` climbs with `.` or `..`. {SPLIT}"
+                ));
+            }
+            if is_merge_path(&segs) {
                 return Some(MERGES.to_owned());
             }
-        }
-        if call.opaque_body && settable {
-            return unreadable();
+            // An organisation's ruleset guards its repositories' default branches as a
+            // repository's does (Q330, #7131).
+            if segs
+                .windows(3)
+                .any(|w| w[0] == "orgs" && w[2] == "rulesets")
+            {
+                return Some(REPLACES_THE_DEFAULT_BRANCH.to_owned());
+            }
+            // Moving the default branch's ref lands code as a merge does (Q330).
+            if let Some(why) = default_branch_ref_reason(&segs, &call) {
+                return Some(why.to_owned());
+            }
+            // A release or a tag is no merge: the merge hold leaves it to the floor (#6962).
+            if !super::only_merges()
+                && let Some(why) = publish_reason(&segs, &call)
+            {
+                return Some(why.to_owned());
+            }
+            // Where a field the call does not show could set a merge: a repository's settings. A
+            // request's own path, GitLab's `merge_requests/N` or GitHub's `pulls/N`, edits its title,
+            // description, labels, state and target and has no field that merges: merging is
+            // `.../merge`, held above (#7176; Q331).
+            let settable = is_repository(&segs);
+            for field in &call.fields {
+                // A key the shell fills in could be an auto-merge setting where one can be set.
+                if opaque(&field.key) && settable {
+                    return unreadable();
+                }
+                if speaks_of_merging(&field.key) {
+                    return Some(MERGES.to_owned());
+                }
+            }
+            if call.opaque_body && settable {
+                return unreadable();
+            }
         }
     }
     None
@@ -976,7 +1013,7 @@ pub(super) fn default_branch_push(args: &[String]) -> Option<String> {
     let (at, "api") = *words.first()? else {
         return None;
     };
-    let call = ApiCall::parse(&args[at + 1..]);
+    let call = ApiCall::parse(&args[at + 1..], false);
     let writes = call
         .method
         .as_deref()
