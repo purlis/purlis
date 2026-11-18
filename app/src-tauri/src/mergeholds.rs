@@ -459,9 +459,15 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     }
     project.allow(chat)?;
     // The host decides the merge itself (M75 slice 04): it never raises an ask its own policy
-    // does not hold, whatever the hook said, and the hold's events carry what it decided.
-    let (action, kind, id) =
-        mergehold::policy_request(&mergehold::Held::Request(ask.request.clone()));
+    // does not hold, whatever the hook said, and the hold's events carry what it decided. Of the
+    // repo it found, as the hook's own decision is (`decisions::asked`), so both decide on the
+    // one entity; a merge in no repo of the project is refused here, before it is decided.
+    let (on, repo) = found(project.root(), ask)?;
+    let request = Request {
+        repo: Some(repo.clone()),
+        number: ask.request.number,
+    };
+    let (action, kind, id) = mergehold::policy_request(&mergehold::Held::Request(request.clone()));
     let decision = project
         .decide(chat, action, (kind, &id))
         .ok_or_else(|| format!("chat {chat} is not one this app has open."))?;
@@ -473,11 +479,6 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         ));
     }
     let policy = Decided::from(&decision);
-    let (on, repo) = found(project.root(), ask)?;
-    let request = Request {
-        repo: Some(repo.clone()),
-        number: ask.request.number,
-    };
     let holds = project.holds();
     let resolve = |request: &Request| -> Result<(MergeKey, mergehold::Facts), String> {
         let read = project

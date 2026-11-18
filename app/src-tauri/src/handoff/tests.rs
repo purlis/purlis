@@ -3492,6 +3492,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             kind: "Branch".to_owned(),
             id: "acme/web#12".to_owned(),
             tool: "Bash".to_owned(),
+            cwd: None,
         }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();

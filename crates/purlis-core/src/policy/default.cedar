@@ -7,7 +7,7 @@
 
 // ── guards ────────────────────────────────────────────────────────────────────────────────
 @id("guards-merge-hold") @level("project") @ask("you") @keep("once")
-forbid (principal, action == Action::"merge", resource);
+forbid (principal, action in [Action::"merge", Action::"land"], resource);
 
 @id("guards-release-hold") @level("project") @ask("you") @keep("once")
 forbid (principal, action == Action::"release", resource);

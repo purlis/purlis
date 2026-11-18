@@ -140,6 +140,23 @@ fn a_merge_under_strict_asks_and_names_guards_merge_hold() {
     );
 }
 
+/// M75-04 round 2: `purlis change land` merges a change's requests, so the shipped default holds
+/// it as it holds `gh pr merge`, never lets it through by the catch-all.
+#[test]
+fn a_land_under_strict_asks_and_names_guards_merge_hold() {
+    purlis_core::unsteered!();
+    let land = Request {
+        action: "land",
+        resource: ("Repo", "unknown"),
+        ..merge()
+    };
+    let decision = decide::decide(&loaded(STRICT, None), &land, &empty_world());
+    assert_eq!(decision.outcome, Outcome::Ask, "{decision:?}");
+    assert_eq!(decision.after_mode, Outcome::Ask);
+    assert_eq!(decision.family, "guards.merge");
+    assert_eq!(ids(&decision), ["guards-merge-hold"]);
+}
+
 #[test]
 fn a_merge_under_a_logged_family_is_allowed_and_would_have_blocked() {
     purlis_core::unsteered!();
@@ -366,6 +383,7 @@ fn the_replays_test_policy_host_answers_from_the_planes_committed_head() {
         kind: "Branch".to_owned(),
         id: "acme/web#12".to_owned(),
         tool: "Bash".to_owned(),
+        cwd: None,
     };
     let decided = |root: &Path| match decide::replays_host(root, &ask) {
         Answer::Decided(decision) => *decision,
@@ -390,4 +408,126 @@ fn the_replays_test_policy_host_answers_from_the_planes_committed_head() {
     let decision = decided(dir.path());
     assert_eq!(decision.after_mode, Outcome::Deny);
     assert_eq!(ids(&decision), ["guards-merge-never"]);
+}
+
+// ── the session host's decision for a chat (M75-04 round 2) ───────────────────────────────
+
+mod for_a_chat {
+    use super::*;
+    use purlis_core::enforcement::Resolved;
+    use purlis_core::policy::decide::ChatFacts;
+
+    const OPEN: &str = "[policy]\ntemplate = \"open\"\n";
+
+    fn facts(workspace: Option<&str>) -> ChatFacts {
+        ChatFacts {
+            workspace: workspace.map(str::to_owned),
+            persona: None,
+            sandboxed: false,
+            attended: true,
+        }
+    }
+
+    /// What the person accepted, or the machine locks, for `guards.merge` alone.
+    fn floor(mode: &str) -> Resolved {
+        Resolved::parse(&format!("guards.merge={mode}"))
+    }
+
+    fn merge_of(root: &Path, facts: Option<&ChatFacts>, floor: &Resolved) -> Option<Decision> {
+        decide::for_chat(root, 4, facts, floor, "merge", ("Branch", "o/r#12"))
+    }
+
+    #[test]
+    fn only_what_an_enforcement_point_is_wired_for_is_asked_about() {
+        assert!(decide::is_asked_by_an_enforcement_point("merge", "Branch"));
+        assert!(decide::is_asked_by_an_enforcement_point("land", "Repo"));
+        for (action, kind) in [
+            ("read", "File"),
+            ("merge", "Repo"),
+            ("land", "Branch"),
+            ("push", "Branch"),
+            ("", ""),
+        ] {
+            assert!(
+                !decide::is_asked_by_an_enforcement_point(action, kind),
+                "{action} on {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_chat_the_host_has_not_open_is_decided_nothing_for() {
+        purlis_core::unsteered!();
+        let dir = plane(STRICT, None);
+        assert_eq!(merge_of(dir.path(), None, &floor("enforce")), None);
+    }
+
+    #[test]
+    fn the_asking_chats_workspace_chooses_the_mode() {
+        purlis_core::unsteered!();
+        let dir = plane(
+            "[policy]\ntemplate = \"open\"\n\n[policy.workspace.web]\ntemplate = \"strict\"\n",
+            None,
+        );
+        std::fs::create_dir_all(dir.path().join("workspaces/web")).expect("a workspace");
+        let loose = floor("off");
+        let in_web = merge_of(dir.path(), Some(&facts(Some("web"))), &loose).expect("decided");
+        assert_eq!(in_web.after_mode, Outcome::Ask, "{in_web:?}");
+        let elsewhere = merge_of(dir.path(), Some(&facts(None)), &loose).expect("decided");
+        assert_eq!(elsewhere.after_mode, Outcome::Allow, "{elsewhere:?}");
+        assert!(elsewhere.would_have_blocked(), "{elsewhere:?}");
+    }
+
+    #[test]
+    fn a_head_that_loosens_the_merge_hold_does_not_loosen_what_the_person_accepted() {
+        purlis_core::unsteered!();
+        // Each way a commit reaching `HEAD` can switch the hold off.
+        for settings in [
+            OPEN,
+            "[policy]\ntemplate = \"strict\"\n\"guards.merge\" = \"off\"\n",
+            "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"guards-merge-hold\" = \"off\"\n",
+        ] {
+            let dir = plane(settings, None);
+            let facts = facts(None);
+            let loosened = merge_of(dir.path(), Some(&facts), &floor("log")).expect("decided");
+            assert_eq!(
+                loosened.after_mode,
+                Outcome::Allow,
+                "{settings}: {loosened:?}"
+            );
+            let held = merge_of(dir.path(), Some(&facts), &floor("enforce")).expect("decided");
+            assert_eq!(held.after_mode, Outcome::Ask, "{settings}: {held:?}");
+            assert_eq!(held.mode, Mode::Enforce, "{settings}: {held:?}");
+            assert_eq!(held.ids(), ["guards-merge-hold"], "{settings}");
+        }
+    }
+
+    #[test]
+    fn a_land_is_held_to_the_floor_as_a_merge_is() {
+        purlis_core::unsteered!();
+        let dir = plane(OPEN, None);
+        let land = decide::for_chat(
+            dir.path(),
+            4,
+            Some(&facts(None)),
+            &floor("enforce"),
+            "land",
+            ("Repo", "unknown"),
+        )
+        .expect("decided");
+        assert_eq!(land.after_mode, Outcome::Ask, "{land:?}");
+    }
+
+    #[test]
+    fn a_family_the_project_locks_is_enforced_whatever_its_template_says() {
+        purlis_core::unsteered!();
+        let dir = plane(
+            "[policy]\ntemplate = \"open\"\n\n[policy.locks]\nfamilies = [\"guards.merge\"]\n",
+            None,
+        );
+        let locked = merge_of(dir.path(), Some(&facts(None)), &floor("off")).expect("decided");
+        assert_eq!(locked.after_mode, Outcome::Ask, "{locked:?}");
+        assert_eq!(locked.mode, Mode::Enforce);
+        assert_eq!(locked.lock.as_deref(), Some("this project"), "{locked:?}");
+    }
 }

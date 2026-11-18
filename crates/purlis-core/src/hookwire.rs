@@ -1724,6 +1724,11 @@ pub struct DecideAsk {
     /// The harness tool the action came through (`Bash`): what a block it decides is written
     /// under, and nothing a rule reads.
     pub tool: String,
+    /// The hook's working folder, where the resource names no repo (`#12`): the host finds the
+    /// repo there, as it does for the merge it then raises, so both decide on the same entity.
+    /// Nothing a rule reads, and a host that cannot find it decides on the id as it came.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).

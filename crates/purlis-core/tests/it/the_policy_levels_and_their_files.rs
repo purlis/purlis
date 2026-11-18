@@ -504,7 +504,7 @@ fn a_rule_with_a_shipped_id_replaces_it_and_an_identical_one_restates() {
     // Restated: the same rule, word for word, is reported as such and changes nothing.
     let root = with_rules(
         "@id(\"guards-merge-hold\") @level(\"project\") @ask(\"you\") @keep(\"once\")\n\
-         forbid (principal, action == Action::\"merge\", resource);\n",
+         forbid (principal, action in [Action::\"merge\", Action::\"land\"], resource);\n",
     );
     let loaded = levels::load(&sources(root.path()));
     assert_eq!(

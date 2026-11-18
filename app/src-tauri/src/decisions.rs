@@ -12,8 +12,7 @@
 //! file the line names.
 
 use purlis_core::hookwire::{Answer, DecideAsk};
-use purlis_core::policy::decide::{self, Asker};
-use purlis_core::policy::levels::Chat;
+use purlis_core::policy::decide;
 
 use crate::planes::Held;
 
@@ -22,7 +21,19 @@ use crate::planes::Held;
 /// as the host decided it.
 pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
     let chat = asked.chat;
-    let Some(decision) = decision(held, chat, &asked.action, (&asked.kind, &asked.id)) else {
+    // Only what an enforcement point is wired for: a chat names nothing else for the host to
+    // decide, record as a block or pause itself on (M75-04 round 2).
+    if !decide::is_asked_by_an_enforcement_point(&asked.action, &asked.kind) {
+        return Answer::No {
+            why: format!(
+                "nothing asks the host to decide {} on a {}.",
+                purlis_core::shown::readable(&asked.action, 40),
+                purlis_core::shown::readable(&asked.kind, 40)
+            ),
+        };
+    }
+    let id = with_its_repo(held, asked);
+    let Some(decision) = decision(held, chat, &asked.action, (&asked.kind, &id)) else {
         return Answer::No {
             why: format!("chat {chat} is not one this app has open, so nothing was decided."),
         };
@@ -31,6 +42,30 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
         blocked(held, chat, &asked.tool, &decision);
     }
     Answer::Decided(Box::new(decision))
+}
+
+/// **The resource's id with its repo found**, as the merge the host then raises decides it: a
+/// merge the command gave no repo (`#12`) is of the repo of the clone the hook ran in
+/// ([`crate::mergeholds::found`]). The id as it came where it cannot be found: the merge is
+/// refused later all the same, and nothing here decides on a guess.
+fn with_its_repo(held: &Held, asked: &DecideAsk) -> String {
+    use purlis_core::hookwire::MergeAsk;
+    let number = asked
+        .id
+        .strip_prefix('#')
+        .and_then(|n| n.parse::<u64>().ok());
+    let (Some(number), Some(cwd), "merge") = (number, &asked.cwd, asked.action.as_str()) else {
+        return asked.id.clone();
+    };
+    let ask = MergeAsk {
+        chat: asked.chat,
+        request: purlis_core::mergehold::Request { repo: None, number },
+        cwd: cwd.clone(),
+    };
+    match crate::mergeholds::found(held.root(), &ask) {
+        Ok((_, repo)) => format!("{}#{number}", repo.as_str()),
+        Err(_) => asked.id.clone(),
+    }
 }
 
 /// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
@@ -42,33 +77,19 @@ pub fn decision(
     resource: (&str, &str),
 ) -> Option<decide::Decision> {
     let chats = held.chats();
-    let workspace = chats.workspace_of(chat)?;
-    let persona = chats
-        .persona_of(chat)
-        .and_then(|persona| persona.started_as);
-    let attended = chats.attendance_of(chat).is_some_and(|fact| {
-        fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
+    let facts = chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
+        workspace,
+        persona: chats
+            .persona_of(chat)
+            .and_then(|persona| persona.started_as),
+        sandboxed: chats.runs_sandboxed(chat),
+        attended: chats.attendance_of(chat).is_some_and(|fact| {
+            fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
+        }),
     });
-    // Which of the two levels a sandboxed chat runs at is slice 11's to say: `floor` never
-    // claims more confinement than the chat has.
-    let sandbox = if chats.runs_sandboxed(chat) {
-        "floor"
-    } else {
-        "off"
-    };
-    let asker = Asker {
-        chat,
-        of: Chat {
-            workspace: workspace.as_deref(),
-            persona: persona.as_deref(),
-        },
-        sandbox,
-        attended,
-        harness_mode: "default",
-        depth: 0,
-        via: "hook",
-    };
-    Some(decide::in_plane(held.root(), &asker, action, resource))
+    // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
+    let floor = purlis_core::enforcement::in_force(held.root());
+    decide::for_chat(held.root(), chat, facts.as_ref(), &floor, action, resource)
 }
 
 /// **Writes the block a deny is**, as the host decided it (Q313.3): source `policy`, aimed at

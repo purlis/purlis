@@ -238,8 +238,9 @@ pub(crate) fn attendance_of_this_chat(
 }
 
 /// How long the guard waits for the session host to decide a merge: it loads the plane's
-/// committed policy and decides, inside the hook's [`BUDGET`].
-const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(1_000);
+/// committed policy and decides, which is a few git reads. With [`A_MERGE_IS_TAKEN_WITHIN`] after
+/// it, inside the hook's [`BUDGET`] (`a_merge_decided_and_then_taken_fits_the_budget`).
+const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(300);
 
 /// What the policy left of a merge.
 enum MergeJudged {
@@ -274,6 +275,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
                 kind: kind.to_owned(),
                 id,
                 tool: "Bash".to_owned(),
+                cwd: Some(cwd.to_owned()),
             })
         },
         A_MERGE_IS_DECIDED_WITHIN,
@@ -347,7 +349,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
 /// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
 /// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
 /// [`BUDGET`].
-const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
+const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_400);
 
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `held`, run in
 /// `cwd` by a chat the app started, which the project policy's `decision` holds for the person.
@@ -707,5 +709,22 @@ mod budget_tests {
                 purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN
             );
         }
+    }
+
+    /// M75-04 round 2: a merge asks the app twice, to decide it and then to take it, and both waits
+    /// end inside the hook's [`BUDGET`] with room left for the arms before them. The second outlasts
+    /// the app's read of the forge, or a hold it raised would be reported as unheard.
+    #[test]
+    fn a_merge_decided_and_then_taken_fits_the_budget() {
+        let slack = Duration::from_millis(250);
+        assert!(
+            A_MERGE_IS_DECIDED_WITHIN + A_MERGE_IS_TAKEN_WITHIN + slack <= BUDGET,
+            "{A_MERGE_IS_DECIDED_WITHIN:?} and {A_MERGE_IS_TAKEN_WITHIN:?} of {BUDGET:?}"
+        );
+        assert!(
+            A_MERGE_IS_TAKEN_WITHIN > purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN,
+            "the app reads the forge for {:?}",
+            purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN
+        );
     }
 }

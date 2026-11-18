@@ -6,3 +6,6 @@
   owner. A rule that denies merges refuses them by name and asks nobody. Where the session host
   can't be asked, the merge is refused and the chat is told so. The event log's blocks, holds and
   raised asks carry the deciding rules (M75 slice 04, #7012).
+  `purlis change land` in a chat is held by the same rule, and a commit that switches the merge
+  hold off in the project's file does not loosen what you accepted or what the machine locks,
+  until the policy's own levels read them.

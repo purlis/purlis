@@ -5542,6 +5542,7 @@ fn an_unidentified_peer_is_refused_and_never_treated_as_the_person() {
         kind: "Branch".to_owned(),
         id: "o/r#12".to_owned(),
         tool: "Bash".to_owned(),
+        cwd: None,
     });
 
     let with_its_token = Asking::on(&path, Some(token))

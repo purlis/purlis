@@ -646,3 +646,17 @@ fn a_fake_socket_in_the_environment_is_never_asked() {
     assert!(!reason.contains("asked in Asks"), "{reason}");
     assert!(chat.holds.every().is_empty());
 }
+
+/// M75-04 round 2 (blocker 1): `purlis change land` merges every request of a change, so it is
+/// held in a chat as `gh pr merge` is, under the shipped policy: refused, and nobody asked.
+#[test]
+fn purlis_change_land_is_held_in_a_chat_under_the_shipped_policy() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial("purlis change land api-2 --repo svc", "default")
+        .expect("a chat's `change land` is refused to it");
+    assert!(reason.contains("Nothing was merged"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert!(reason.contains("`guards-merge-hold`"), "{reason}");
+    assert_eq!(chat.merges_asked(), 0);
+}

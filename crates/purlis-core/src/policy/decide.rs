@@ -152,6 +152,21 @@ impl Decision {
         self.outcome != Outcome::Allow && self.after_mode == Outcome::Allow
     }
 
+    /// **This decision, held to what the person accepted and the machine locks** (M75-04 round 2):
+    /// where `floor` enforces this decision's family and the project's own mode loosened it, it is
+    /// enforced all the same, as the merge hold has always run: the stricter of the project's `HEAD`
+    /// and what was accepted, with a lock on top. Until the accepted copy and the Organisation's
+    /// files are read by [`levels::load`] (slices 06 and 14), a commit reaching `HEAD` that sets
+    /// the family `off` must not make the next merge run unasked.
+    #[must_use]
+    pub fn held_to(mut self, floor: &crate::enforcement::Resolved) -> Self {
+        if floor_enforces(floor, &self.family) && self.would_have_blocked() {
+            self.mode = Mode::Enforce;
+            self.after_mode = self.outcome;
+        }
+        self
+    }
+
     /// **The deciding rules as one sentence names them**, `` `a` (project, this project) `` and
     /// the like, joined by commas; `nothing` for a request that decided by no rule.
     pub fn rules_said(&self) -> String {
@@ -361,6 +376,91 @@ pub fn in_plane(
         },
         empty_world(),
     )
+}
+
+/// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
+/// what a hook is wired for (today the merge hold: `merge` on a branch, `land` on a repo). Any
+/// other ask is not an enforcement point's, so the host decides nothing and writes nothing for it
+/// (M75-04 round 2): a chat cannot fill its log, or pause itself, with targets of its own.
+pub fn is_asked_by_an_enforcement_point(action: &str, kind: &str) -> bool {
+    matches!((action, kind), ("merge", "Branch") | ("land", "Repo"))
+}
+
+/// **What a session host knows of one open chat**, as it records it: the facts a decision about
+/// the chat is made from, never a word of the chat's own line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatFacts {
+    /// The workspace the chat works in, where it works in one.
+    pub workspace: Option<String>,
+    /// The persona it was started as, where it was.
+    pub persona: Option<String>,
+    /// Whether it runs under a sandbox.
+    pub sandboxed: bool,
+    /// Whether the person is at it.
+    pub attended: bool,
+}
+
+/// **The session host's decision for chat `chat`, by what it records of it** (`facts`, `None` for
+/// a chat it does not have open, which nothing is decided for), held to `floor`
+/// ([`Decision::held_to`]): the stricter of the project's `HEAD` and what the person accepted,
+/// and the machine's locks.
+pub fn for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<Decision> {
+    let facts = facts?;
+    let asker = Asker {
+        chat,
+        of: Chat {
+            workspace: facts.workspace.as_deref(),
+            persona: facts.persona.as_deref(),
+        },
+        // Which of the two levels a sandboxed chat runs at is slice 11's to say: `floor` never
+        // claims more confinement than the chat has.
+        sandbox: if facts.sandboxed { "floor" } else { "off" },
+        attended: facts.attended,
+        harness_mode: "default",
+        depth: 0,
+        via: "hook",
+    };
+    let decision = in_plane(root, &asker, action, resource).held_to(floor);
+    // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
+    // the floor enforces the merge hold and the project's rules let the merge through, the
+    // shipped default under `strict`, which is the hold as it always ran, answers instead.
+    if decision.family != MERGE_FAMILY
+        || decision.after_mode != Outcome::Allow
+        || !floor_enforces(floor, &decision.family)
+    {
+        return Some(decision);
+    }
+    let chat = chat.to_string();
+    let shipped = decide_locally(&Request {
+        chat: &chat,
+        of: asker.of,
+        action,
+        resource,
+        context: asker.context(action),
+    });
+    Some(if shipped.after_mode == Outcome::Allow {
+        decision
+    } else {
+        shipped
+    })
+}
+
+/// The family whose hold a floor keeps whatever the project's rules say, until slices 06 and 14.
+const MERGE_FAMILY: &str = "guards.merge";
+
+/// Whether `floor` enforces the family keyed `key`.
+fn floor_enforces(floor: &crate::enforcement::Resolved, key: &str) -> bool {
+    crate::enforcement::Family::ALL
+        .into_iter()
+        .find(|family| family.key() == key)
+        .is_some_and(|family| floor.mode(family) == Mode::Enforce)
 }
 
 /// The empty world: no entity is known, so a rule that reads an attribute errs, and denies.
