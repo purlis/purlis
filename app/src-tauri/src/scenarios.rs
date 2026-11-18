@@ -728,6 +728,10 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
         "it runs while the scenario does"
     );
     scenario.left_in_the_background(sleeper);
+    // PROBE P2 (#7152, reverted next): the sleeper ends before the quit, as #7103 fixed would.
+    let _ = std::process::Command::new("/bin/kill")
+        .args(["-KILL", &sleeper.to_string()])
+        .status();
     assert!(!scenario.pids().is_empty(), "the chat runs");
     drop(scenario);
     // #7103 is the sleeper outliving the quit on macOS. When it stops doing so the expected
@@ -1245,13 +1249,15 @@ fn the_maximal_chat_holds_every_grant_kind() {
         &serde_json::json!({
             "turns": [{"prompt": "go", "calls": [
                 {"step": "maximal", "tool": "bash", "run": "echo held"},
-                {"step": "reaches-granted", "tool": "bash", "run": reaches(granted_host)}
+                {"step": "reaches-granted", "tool": "bash", "run": reaches(granted_host)},
+                // PROBE P1 (#7152, reverted next): a tool leaves a sleeper nobody registered.
+                {"step": "probe-sleeps", "tool": "bash", "run": "sleep 600 >/dev/null 2>&1 &"}
             ]}]
         }),
         grants,
     );
     let began = std::time::Instant::now();
-    scenario.until_played(chat, &["reaches-granted"]);
+    scenario.until_played(chat, &["reaches-granted", "probe-sleeps"]);
     let said = scenario.said();
 
     // On the chat itself: its sandbox, as the window composed it at its start.
