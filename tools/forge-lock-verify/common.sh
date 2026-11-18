@@ -87,7 +87,8 @@ req() {
 # req_unscoped TOKEN METHOD PATH [JSON]: only the calls that cannot live under /repos/$REPO.
 # The owner-specific routes are exactly the ones for $REPO's owner.
 req_unscoped() {
-  local tok=$1 m=$2 p=$3 d=${4-} owner=${REPO%%/*}
+  local tok=$1 m=$2 p=$3 d=${4-} owner=${REPO-}
+  owner=${owner%%/*}   # GET /user runs before REPO is set
   case "$m $p" in
     "GET /user" | "POST /user/repos" | "GET /apps/"* | "POST /graphql") ;;
     "POST /orgs/$owner/repos" | "GET /user/memberships/orgs/$owner") [[ -n "$owner" ]] || die "REPO not set" ;;
