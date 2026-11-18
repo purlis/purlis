@@ -624,18 +624,43 @@ while (accept(my $c, $s)) {
         // What Seatbelt was given, shown when the first answer is wrong (round 7 of #7105).
         let seen = profile
             .lines()
-            .filter(|line| {
-                line.contains("purlis-serve")
-                    || line.contains("file-link")
-                    || line.contains("(literal") && line.contains(".sock")
-            })
+            .filter(|line| line.contains("deny") || line.contains(".sock"))
             .collect::<Vec<_>>()
             .join("\n");
+        let own_answer = tried(UNIX, &[&socket.display().to_string(), "once"]);
+        if own_answer != "yes" {
+            // Round 8: the kernel's errno for the bind, the path's length (a socket path holds
+            // 103 bytes at most on macOS) and what Seatbelt logged as refused.
+            let errno = tried(
+                r#"use Socket qw(:all); socket(my $s, AF_UNIX, SOCK_STREAM, 0); print(bind($s, pack_sockaddr_un($ARGV[0])) ? qq(bound) : qq(errno: $!))"#,
+                &[&socket.display().to_string()],
+            );
+            let log = std::process::Command::new("/usr/bin/log")
+                .args([
+                    "show",
+                    "--last",
+                    "2m",
+                    "--style",
+                    "compact",
+                    "--predicate",
+                    "eventMessage CONTAINS[c] \"deny\" AND (eventMessage CONTAINS[c] \"perl\" OR eventMessage CONTAINS[c] \"purlis-serve\")",
+                ])
+                .output()
+                .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+                .unwrap_or_else(|why| format!("log show did not run: {why}"));
+            let _ = writeln!(
+                std::io::stderr(),
+                "ROUND 8 DIAGNOSTIC\nsocket {} ({} bytes)\nbind again: {errno}\nsandbox log:\n{log}",
+                socket.display(),
+                socket.as_os_str().len()
+            );
+        }
         assert_eq!(
-            tried(UNIX, &[&socket.display().to_string(), "once"]),
+            own_answer,
             "yes",
-            "the chat's own socket {}; the profile's lines that name it or a serve folder:\n{seen}",
-            socket.display()
+            "the chat's own socket {} ({} bytes); every deny and socket line of the profile:\n{seen}",
+            socket.display(),
+            socket.as_os_str().len()
         );
         assert_eq!(
             tried(
