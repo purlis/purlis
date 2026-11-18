@@ -2830,6 +2830,123 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
     crate::secrets::test_really_ran("ports-off-holds-purlis-own-sockets");
 }
 
+/// **A socket moved while ports are enforced is still held once `ports = "off"` is pressed**
+/// (round 5 of #7105): at the plain floor `/tmp` and the app's temp folder are writable, so a
+/// chat could `mv` or `ln` a purlis socket to a name nothing held, and the restarted chat under
+/// `ports = "off"` would connect to it. The names are held at every floor, whatever `ports`
+/// says. Two profiles applied for real: the plain floor first, then the pressed one. Also a
+/// pool's `engine-links` folder moved whole, and a connect through a symlinked parent.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pressed() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let _home = super::local::OwnConfigHome::new();
+    // The plain floor: ports enforced, the project's policy not pressed to off.
+    let (_plain_dir, plain) = project();
+    let (_off_dir, off) = project();
+    std::fs::write(
+        off.join("charter.toml"),
+        "schema = 1\n[policy]\nports = \"off\"\n",
+    )
+    .expect("charter.toml");
+    crate::enforcement::press(&off, &crate::enforcement::digest_of(&off)).expect("pressed");
+    let sockets = tempfile::tempdir().expect("a folder for sockets");
+    let at = real(sockets.path());
+    std::fs::create_dir_all(at.join("engine-links")).expect("a folder");
+    std::fs::create_dir_all(at.join("real")).expect("a folder");
+    let held = [
+        at.join("dev_purlis_app_si.sock"),
+        at.join("purlis-crash-0123abcd.sock"),
+        at.join("hooks.sock"),
+        at.join("engine-links/pool.sock"),
+    ];
+    let listening: Vec<_> = held
+        .iter()
+        .map(|socket| std::os::unix::net::UnixListener::bind(socket).expect("a socket"))
+        .collect();
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    let apply = |root: &Path, script: &str| -> String {
+        let profile = wrapped_floor(Harness::Codex, root, &machine, &[], None);
+        let out = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/bin/sh", "-c", script])
+                .current_dir(root),
+        )
+        .expect("it runs");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let connect = |socket: &Path| {
+        format!(
+            "/bin/zsh -c 'zmodload zsh/net/socket && zsocket {}' >/dev/null 2>&1 && echo yes || echo no",
+            socket.display()
+        )
+    };
+    // At the plain floor: each socket moved, and linked, to a name nothing holds.
+    for (index, socket) in held.iter().enumerate() {
+        for (how, verb) in [("linked", "/bin/ln"), ("moved", "/bin/mv")] {
+            let other = at.join(format!("{how}-{index}.sock"));
+            apply(
+                &plain,
+                &format!("{verb} {} {} 2>/dev/null", socket.display(), other.display()),
+            );
+            // Then ports = "off", pressed: whatever is at the new name must not be reached.
+            assert_eq!(
+                apply(&off, &connect(&other)),
+                "no",
+                "{} {how} at the plain floor, then ports off",
+                socket.display()
+            );
+            assert!(
+                !other.exists(),
+                "{} {how} to {} at the plain floor",
+                socket.display(),
+                other.display()
+            );
+        }
+        assert!(socket.exists(), "{} still in place", socket.display());
+    }
+    // The pool's folder of engine forwards moved whole at the plain floor.
+    let moved = at.join("moved-links");
+    apply(
+        &plain,
+        &format!(
+            "/bin/mv {} {} 2>/dev/null",
+            at.join("engine-links").display(),
+            moved.display()
+        ),
+    );
+    assert_eq!(
+        apply(&off, &connect(&moved.join("pool.sock"))),
+        "no",
+        "engine-links moved at the plain floor, then ports off"
+    );
+    assert!(!moved.exists(), "engine-links moved at the plain floor");
+    // A connect through a symlinked parent, made by the chat, is held by the real name.
+    let link = at.join("via");
+    std::os::unix::fs::symlink(&at, &link).expect("a symlink");
+    assert_eq!(
+        apply(&off, &connect(&link.join("dev_purlis_app_si.sock"))),
+        "no",
+        "a symlinked parent"
+    );
+    drop(listening);
+    crate::secrets::test_really_ran("a-moved-purlis-socket-stays-held");
+}
+
 /// **What `ports = "off"` still holds names the sockets purlis makes, by the names it makes
 /// them** (the re-review of #7105): the app's single-instance socket is
 /// `/tmp/dev_purlis_app_si.sock`, the identifier's `.` made `_` by Tauri's plugin, never
@@ -2909,5 +3026,50 @@ fn the_sockets_ports_off_still_holds_are_named_as_purlis_makes_them() {
         "/tmp/dev_other_app_si.sock",
     ] {
         assert!(!is_held(socket), "{socket}");
+    }
+}
+
+/// **The names of purlis's sockets are held from being written or linked at every floor, whatever
+/// `ports` says** (round 5 of #7105): a socket moved while ports are enforced is still reached
+/// once `ports = "off"` is pressed, so the plain floor's profile and the full profile hold the
+/// names too, without the lift.
+#[test]
+fn the_names_of_purlis_sockets_are_held_from_being_moved_or_linked_with_ports_enforced() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    let compiled = Compiled::floor(&root, &machine, &grant::Grants::default());
+    let Form::Codex(wrap) = compiler(Harness::Codex).expect("a compiler")(&compiled).expect("ok")
+    else {
+        panic!("not codex");
+    };
+    let floor = codex::floor_profile(&wrap, &[], None).expect("a profile");
+    let full = codex::profile(&wrap, &root, Path::new("/tmp"), &[], None).expect("a profile");
+    for (what, profile) in [("floor", floor), ("full", full)] {
+        assert!(
+            !profile.contains(super::seatbelt::EVERY_LOCAL.lines().next().expect("a rule")),
+            "{what} has ports enforced"
+        );
+        let unwritten: Vec<regex::Regex> = profile
+            .lines()
+            .filter(|line| line.starts_with("(deny file-write* file-link (regex #\""))
+            .filter_map(|line| {
+                let (_, rest) = line.split_once("(regex #\"")?;
+                regex::Regex::new(rest.split_once("\")")?.0).ok()
+            })
+            .collect();
+        for path in [
+            "/tmp/dev_purlis_app_si.sock",
+            "/var/folders/x/purlis-crash-0123abcd.sock",
+            "/a/b/hooks.sock",
+            "/tmp/purlis-501/slots.sock",
+            "/tmp/purlisd.sock",
+            "/var/folders/x/engine-links",
+        ] {
+            assert!(
+                unwritten.iter().any(|regex| regex.is_match(path)),
+                "{path} not held from a move or link in {what}"
+            );
+        }
     }
 }
