@@ -48,7 +48,10 @@ fn a_plugin_in_a_known_folder_under_the_home_is_found_there() {
 fn a_plugin_in_no_known_folder_is_missing_until_its_folder_is_named() {
     let home = tempfile::tempdir().unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
-    plugin_in(elsewhere.path(), "gke-gcloud-auth-plugin-not-installed-anywhere");
+    plugin_in(
+        elsewhere.path(),
+        "gke-gcloud-auth-plugin-not-installed-anywhere",
+    );
     let command = "gke-gcloud-auth-plugin-not-installed-anywhere";
     assert_eq!(find(command, None, Some(home.path())), Where::Missing);
     assert_eq!(
@@ -59,7 +62,10 @@ fn a_plugin_in_no_known_folder_is_missing_until_its_folder_is_named() {
 
 #[test]
 fn the_folder_is_never_searched_with_a_relative_one() {
-    assert_eq!(find("x-plugin-xyz", Some(Path::new("relative/bin")), None), Where::Missing);
+    assert_eq!(
+        find("x-plugin-xyz", Some(Path::new("relative/bin")), None),
+        Where::Missing
+    );
 }
 
 #[test]

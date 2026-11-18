@@ -794,10 +794,16 @@ fn a_kubeconfig_that_merges_files_or_isnt_a_file_is_refused() {
     // `KUBECONFIG=a:b` merges; setup never does (#7192).
     let merged = PathBuf::from(format!("{}:{}", one.display(), one.display()));
     assert!(choose_cluster_in(config.path(), Some(&merged), "kind-team").is_err());
-    assert!(choose_cluster_in(config.path(), Some(Path::new("relative.yaml")), "kind-team").is_err());
     assert!(
-        choose_cluster_in(config.path(), Some(&config.path().join("missing.yaml")), "kind-team")
-            .is_err()
+        choose_cluster_in(config.path(), Some(Path::new("relative.yaml")), "kind-team").is_err()
+    );
+    assert!(
+        choose_cluster_in(
+            config.path(),
+            Some(&config.path().join("missing.yaml")),
+            "kind-team"
+        )
+        .is_err()
     );
     assert_eq!(read_choices(config.path()).unwrap(), Choices::default());
 }

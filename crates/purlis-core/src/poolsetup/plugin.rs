@@ -85,10 +85,12 @@ pub fn find(command: &str, named: Option<&Path>, home: Option<&Path>) -> Where {
     if command.contains('/') {
         return Where::Missing;
     }
-    let known = KNOWN.iter().filter_map(|folder| match folder.strip_prefix("~/") {
-        Some(under) => home.map(|home| home.join(under)),
-        None => Some(PathBuf::from(folder)),
-    });
+    let known = KNOWN
+        .iter()
+        .filter_map(|folder| match folder.strip_prefix("~/") {
+            Some(under) => home.map(|home| home.join(under)),
+            None => Some(PathBuf::from(folder)),
+        });
     named
         .map(Path::to_path_buf)
         .into_iter()

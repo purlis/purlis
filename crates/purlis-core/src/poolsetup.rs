@@ -1619,7 +1619,9 @@ pub fn read_pressed(
         .map(crate::forge::agentidentity::hosts_of_the_project)
         .unwrap_or_default();
     // Contexts are read from the kubeconfig alone; the cluster itself only on a cluster's setup.
-    let kubectl_named = here.kubectl.map(|kubectl| cluster::pointed(kubectl, &choices));
+    let kubectl_named = here
+        .kubectl
+        .map(|kubectl| cluster::pointed(kubectl, &choices));
     let kubeconfig = cluster::kubeconfig_shown(
         &choices,
         crate::envvar::var_os("HOME").map(PathBuf::from).as_deref(),
@@ -1646,7 +1648,7 @@ pub fn read_pressed(
         // runs' `PATH`; missing, Check the cluster says so instead of kubectl's own error.
         let home = crate::envvar::var_os("HOME").map(PathBuf::from);
         let plugin = match (&kubectl_named, context) {
-            (Ok(kubectl), Some(context)) if contexts.names.iter().any(|one| one == context) => {
+            (Ok(kubectl), Some(context)) if contexts.contexts.iter().any(|one| one == context) => {
                 cluster::plugin_facts(
                     kubectl,
                     context,
@@ -1664,9 +1666,17 @@ pub fn read_pressed(
         });
         let mut deep = if plugin.as_ref().is_some_and(|plugin| plugin.found.is_none()) {
             // Nothing is asked of a cluster that can't be signed in to.
-            cluster::read(with_plugin.as_ref().map_err(|why| (*why).to_owned()), context, false)
+            cluster::read(
+                with_plugin.as_ref().map_err(|why| (**why).to_owned()),
+                context,
+                false,
+            )
         } else {
-            cluster::read(with_plugin.as_ref().map_err(|why| (*why).to_owned()), context, true)
+            cluster::read(
+                with_plugin.as_ref().map_err(|why| (**why).to_owned()),
+                context,
+                true,
+            )
         };
         deep.plugin = plugin;
         deep.kubeconfig.clone_from(&contexts.kubeconfig);

@@ -549,7 +549,10 @@ pub fn pointed(kubectl: &Kubectl, choices: &Choices) -> Kubectl {
 /// **The kubeconfig file Where shows** (#7192): the one chosen, else `.kube/config` in the home
 /// where it exists, which is the file kubectl reads when none is named.
 #[must_use]
-pub fn kubeconfig_shown(choices: &Choices, home: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+pub fn kubeconfig_shown(
+    choices: &Choices,
+    home: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
     choices.kubeconfig.clone().or_else(|| {
         let default = home?.join(".kube").join("config");
         default.is_file().then_some(default)
