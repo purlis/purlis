@@ -665,6 +665,20 @@ the bits, so a policy file or folder whose ACL lets someone else write passes th
 root can set one there: `ls -le /etc/purlis` shows it, and `chmod -N` removes it. The folders
 above `/etc/purlis` are not checked either; they are root's on a stock system, as for `sudoers`.
 
+### `/etc/purlis/policy.cedar` and `/etc/purlis/policy.toml` — the Organisation's policy
+
+- **Format:** `policy.cedar` holds the Organisation's Cedar rules only, as a project's
+  `policy.cedar` does, at `@level("organisation")`. `policy.toml` takes the project file's full
+  `[policy]` syntax, `[policy.rules]` and `[policy.sets]` included, read by the same reader, so
+  the Organisation can go deny-by-default with `[policy.rules] "policy-everything-else" = "off"`
+  (M75 spec §4.5; Q319 C5, Q319a O1).
+- **Status:** **purlis only**, experimental (M75 slice 05, #7013). Finding the folder on each OS
+  and judging its owner and ACL are slice 06's.
+- **Tier:** Machine, device-bound — an administrator's files on this machine, never synced.
+- **A broken file** (one that does not load, or a bad value in `policy.toml`) reads as `strict`
+  with every lock, under the full sandbox, with a Notice naming the file and line; it is never
+  skipped.
+
 ## Finding the plane, and the plane root
 
 Covered here: `charter.toml`, `charter.local.toml`, `.charter/harness-profiles-launched.json`,
@@ -1799,6 +1813,73 @@ shown to the chat or the person: no Notice, no ask, no denial.
 runs-under check, the brokered write's, the sandbox's hold on the file), the kill switch, and a
 grader's lock bundles. **The person's own denies hold in every mode**, `open` included: dispatch
 nevers and "Keep blocked" hosts.
+
+### `[policy]`'s project-policy tables — rule modes, sets, locks, and the Workspace and Persona defaults
+
+- **Format:** tables under `[policy]` in the committed settings file (M75 spec §5.1; map #6969,
+  slice 05, #7013): `[policy.rules]` (a rule's mode by its `@id`, `"off"`, `"log"` or
+  `"enforce"`; a permit takes `off` or `enforce` only, and `log` on one reads as `enforce`),
+  `[policy.sets]` (named lists of strings, `production-hosts = ["api.acme.com"]`),
+  `[policy.locks]` (`families`, a list of families; `actions`, a list of actions; `keep`, the
+  widest grant scope for everything or a table of it per family; `timed`, `"15m"`, `"1h"` or
+  `"off"`), and `[policy.workspace.<w>]` and `[policy.persona.<p>]`, each taking `[policy]`'s
+  `template` and family keys for that workspace's or persona's chats. `[policy.limits]` (slice 12)
+  and `[policy] sandbox` (slice 11) are read by later slices.
+- **Status:** **purlis only**, experimental (M75; ADR 0126 on its branch). Read by
+  `purlis_core::policy::levels::load`, which nothing in the app calls yet.
+- **Tier:** Plane — committed, in the file whose tier it is; the local settings file is its You
+  level, below.
+- **Read at the plane root's `HEAD`, as history was written** (`enforcement::committed_files`):
+  `HEAD` is resolved once and both files are read from that one commit; no replace ref, graft or
+  key of the repository's config changes what is read, a branch folder's copy is never read,
+  and **there is no working-file fallback**: a plane with no commit (or no repository) has no
+  committed policy, so the copy the person last accepted runs, or else the shipped default, with
+  a Notice. The read is **verified**: the commit, its tree and each file are hashed and compared
+  with the names git gives them, so an object that is gone or was rewritten in place is unread
+  (the copy the person last accepted, or else `strict`, under the full sandbox), never another
+  text and never "no such file". A `.git` that git does not read as a repository is unread too,
+  never "no repository". `HEAD` itself is a ref a writer of `.git` can move: sealing it is slice
+  14's (a sandboxed chat cannot write `.git`).
+- **A file that does not read is broken, never skipped:** a value of the wrong kind, a key no
+  table has, or a table naming a workspace or persona the plane does not have. The project then
+  runs the copy the person last accepted, or else `strict`, and the sandbox is `full` either way.
+  Each problem is a Notice naming the file and line. **A word that is none of its key's breaks
+  nothing** (spec §5.1, Q308a): an unknown template reads as `strict` and an unknown mode as
+  `enforce`, with a Notice, and the level keeps the rest of what it says.
+- **The levels:** for a default the nearest level wins, the stricter where a chat's workspace and
+  persona both set one; **a family a level locks runs `enforce`** (a locked family never runs
+  below it), and a lower level's Cedar permit on a locked family or action is dropped with a
+  Notice. `[policy.locks]` and `[policy.sets]` are the Organisation's and the Project's only. A
+  `[policy.rules]` entry reaches only rules at its own level or below, and below the
+  Organisation only tightens: it never loosens a mode the Organisation set, nor a rule (a
+  shipped one included) on a family or action the Organisation locked. The project adds to an
+  Organisation's named set only where adding tightens (`protected-branches`,
+  `production-hosts`, `secret-stores`); anything else it adds is left out, with a Notice.
+  Where the policy can't be assembled, the project reads as `strict` and the Organisation's
+  rules still run with the shipped default, under the full sandbox.
+- **In the local settings file (the You level)** only `[policy]`'s defaults and
+  `[policy.rules]` are read, and only where they tighten: a loosening is ignored with a Notice,
+  and each tightening is handed on to be sealed into the accepted floor (Q322; slice 14). A
+  local file git would carry is read all the same, with a Notice, since it can only tighten; one
+  that can't be read is said in a Notice, never passed over in silence.
+
+### `policy.cedar` — the project's rules
+
+- **Format:** Cedar rules over purlis's schema (M75 spec §3), the first line naming the schema
+  version, `// purlis-policy 1`. Every rule has an `@id` that starts with its family's prefix.
+  Project rules, and Workspace and Persona rules (`@level("workspace")` or
+  `@level("persona")`, each with `principal in Workspace::"<w>"` or `principal in
+  Persona::"<p>"` naming one of the plane's own); an `@level` above the project, or
+  `@level("you")`, is refused. A rule with a shipped rule's `@id` replaces it, and one that is
+  word for word the shipped rule is reported as restating it; a rule can't take the `@id` of an
+  Organisation rule.
+- **Status:** **purlis only**, experimental (M75 slice 05, #7013; ADR 0126 on its branch).
+- **Tier:** Plane — committed at the plane root; it travels with every clone.
+- **Written by:** a person, by hand. purlis never rewrites it.
+- **Read by:** `purlis_core::policy::levels::load`, at the plane root's `HEAD` only, as the
+  settings file's `[policy]` tables are (above): a working change not committed, and a branch
+  folder's copy, change no decision. A file that fails to load is broken, as above.
+- **Git:** committed.
 
 ### `[skill_policy]` — the org's controls over skill sources
 
@@ -8009,7 +8090,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `app/src-tauri/src/sessionhost.rs`'s `HookChannels`). When
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
-  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
+  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`, which a
+  hook's report is sent to. **An ask is not** (#6995, `hookwire::reach`): it finds the socket
+  from the app process the chat runs under, which must be the one listening, and the app names
+  the asking chat by its ancestry (`{"whoami": true}`, answered `{"you_are": <n>, "token":
+  "<the chat's token>"}` or a `no`). Inside a sandbox, where that process cannot be read, the
+  variable and the plane above the working directory say where to knock, and a socket is
+  believed only in a folder the asker may not write; it tries, with a file
+  `.purlis-may-write-<pid>-<16 hex>` beside the socket that is removed at once where it was
+  made. Where no app runs above the asker, the same momentary file is tried in the account's
+  home folder (as the user database names it): refused there, a sandbox holds the asker, which
+  is then a chat's. The app answers a `whoami` it cannot answer either way (the asker cannot be
+  read, two chats' programs are above it, or a chat's program is not recorded yet) with its own
+  `no`, never with the one for a process in none of its chats.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/slots.sock`

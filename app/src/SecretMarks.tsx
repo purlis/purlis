@@ -8,8 +8,8 @@ import { Button } from "./ui/button/Button";
 import { PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
-/** A site as a mark says it: its host, and the scheme where it isn't https. */
-function siteOf(origin: string): string {
+/** A site as a mark or a page's row says it: its host, and the scheme where it isn't https. */
+export function siteOf(origin: string): string {
   return origin.startsWith("https://") ? origin.slice("https://".length) : origin;
 }
 
@@ -71,8 +71,12 @@ export function SecretMarks({ secrets }: { secrets: readonly SecretFilled[] }) {
             icon={<KeyRound />}
             tooltip="Names only: purlis never shows a value."
             data-testid="secret-marks"
+            // Named whole, while a narrow head shows its number alone (#6990,
+            // `browser-count-word`).
+            aria-label={secretsCounted(secrets.length)}
           >
-            {secretsCounted(secrets.length)}
+            {secrets.length}
+            <span className="browser-count-word"> secrets</span>
           </Button>
           <PopoverDialog aria-label="Secrets purlis filled on this site">
             <ul className="browser-secrets-list">
