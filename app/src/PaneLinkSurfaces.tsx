@@ -19,6 +19,7 @@ import { onAMac } from "./mac";
 import {
   UNASKED,
   openLink,
+  withFolder,
   type HoveredLink,
   type LinkCore,
   type LinkHands,
@@ -142,8 +143,11 @@ export function usePaneLinks({
   colour,
   onScreen,
   onChat,
+  folder,
 }: {
   from: LinkFrom;
+  /** The folder the pane's program last said it is in (OSC 7, `LinkedPane.folder`, #6367). */
+  folder?: () => string | null;
   /** The chat whose pane this is, as its asks name it (#6355): none for a shell's pane. */
   chat?: AskingChat;
   core: LinkCore | undefined;
@@ -158,9 +162,9 @@ export function usePaneLinks({
   list: (() => void) | undefined;
 } {
   const mac = onAMac();
-  const now = useRef({ from, colour, onScreen, onChat });
+  const now = useRef({ from, folder, colour, onScreen, onChat });
   useEffect(() => {
-    now.current = { from, colour, onScreen, onChat };
+    now.current = { from, folder, colour, onScreen, onChat };
   });
   /** The list while it is up: the links read, or `undefined` while they are read. */
   const [listing, setListing] = useState<{ links: ScreenLink[] | undefined } | null>(null);
@@ -230,7 +234,7 @@ export function usePaneLinks({
         ? undefined
         : {
             core,
-            from: () => now.current.from,
+            from: () => withFolder(now.current.from, now.current.folder?.()),
             hovered,
             answered,
             colour: () => now.current.colour(),

@@ -432,6 +432,13 @@ impl HarnessAdapter for ClaudeCode {
         crate::dispatchmode::Reported::of_claude_code(permission_mode)
     }
 
+    /// Claude Code's `cwd`, on every hook's payload: the folder its session works in now, which a
+    /// `cd` in its Bash tool moves (#6367). Only a plain absolute folder
+    /// ([`crate::panelinks::folder::reported`]).
+    fn reported_folder(&self, cwd: Option<&str>) -> Option<std::path::PathBuf> {
+        crate::panelinks::folder::reported(cwd)
+    }
+
     /// Claude Code's own `permission_mode`, by the strings T1-16 measured
     /// ([`crate::attendance::ClaudeCodeMode::of`]): any other string is unknown. Believed from
     /// its armed hook alone, as [`Self::reported_mode`] is.

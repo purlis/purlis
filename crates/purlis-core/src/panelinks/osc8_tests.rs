@@ -61,6 +61,7 @@ impl Fixture {
             session: Some(7),
             folder: Some(self.ws()),
             runs: Runs::Here,
+            now_in: None,
         }
     }
 

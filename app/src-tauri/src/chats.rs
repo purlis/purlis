@@ -1089,6 +1089,11 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **The folder each chat's own harness said it works in now** (#6367), by the chat's number
+    /// ([`Self::heard_folder`]): where a relative path in its pane starts, and nothing else.
+    /// Live only, never written down, and forgotten as each start is announced and as the chat
+    /// closes, as [`Self::models`] is.
+    folders: Mutex<HashMap<u32, PathBuf>>,
     /// **Each chat's attendance fact** (T1-18, #6409; [`purlis_core::attendance::Fact`]), by
     /// the chat's number: set by how purlis started it, never more attended than the fact it
     /// had ([`purlis_core::attendance::Fact::resumed`]), and lowered by the reports the board
@@ -1922,6 +1927,7 @@ impl Chats {
             restarting: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
+            folders: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
             own_work: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
@@ -6096,6 +6102,7 @@ impl Chats {
             // A new program knows no model until its harness says (#1021), and has nothing of
             // its own running yet (#5747).
             lock(&self.models).remove(&session);
+            lock(&self.folders).remove(&session);
             lock(&self.own_work).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
                 starting(session, harness, conversation.clone(), chat.graded);
@@ -6543,6 +6550,7 @@ impl Chats {
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
+        lock(&self.folders).remove(&session);
         lock(&self.attendance).remove(&session);
         lock(&self.own_work).remove(&session);
         lock(&self.told).remove(&session);
@@ -7821,6 +7829,22 @@ impl Chats {
     pub(crate) fn holds_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
         let now = now.and_then(purlis_core::ownwork::OwnWork::in_flight);
         self.own_changed(session, |own| own.work = now);
+    }
+
+    /// **What a chat's own harness said, in `report`, of the folder it works in now** (#6367):
+    /// kept as where a relative path in its pane starts. Only its own harness's
+    /// ([`purlis_core::panelinks::folder::of_its_own_harness`]): `now` is the conversation the
+    /// board holds for the chat after it took `report`.
+    pub fn heard_folder(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
+        if let Some(folder) = purlis_core::panelinks::folder::of_its_own_harness(report, now) {
+            lock(&self.folders).insert(report.chat, folder);
+        }
+    }
+
+    /// **The folder chat `session`'s own harness last said it works in** (#6367), where it said
+    /// one ([`Self::heard_folder`]).
+    pub fn folder_now(&self, session: u32) -> Option<PathBuf> {
+        lock(&self.folders).get(&session).cloned()
     }
 
     /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it

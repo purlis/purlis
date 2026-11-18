@@ -561,7 +561,7 @@ fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
     } else if Path::new(words).is_absolute() {
         PathBuf::from(words)
     } else {
-        let Some(base) = pane.folder.as_ref().or(pane.project.as_ref()) else {
+        let Some(base) = pane.starts_from().or(pane.project.as_deref()) else {
             return false;
         };
         base.join(words)

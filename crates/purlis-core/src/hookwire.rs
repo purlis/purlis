@@ -312,6 +312,12 @@ impl Report {
                 // Which kind of error ended the turn, by the harness's own category (#5718).
                 failed: (event == Event::StopFailure)
                     .then(|| crate::state::Failed::of(field("error").as_deref())),
+                // The folder it works in now (#6367), read by its own harness's adapter alone:
+                // where a relative path in its pane starts, and nothing more.
+                folder: chat_harness(env)
+                    .as_deref()
+                    .and_then(crate::harness::Harness::of_registry_or_kind)
+                    .and_then(|harness| harness.adapter().reported_folder(field("cwd").as_deref())),
             },
         })
     }
@@ -321,6 +327,8 @@ impl Report {
     pub(crate) fn at_rest(&self) -> Report {
         let mut kept = self.clone();
         kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();
+        // Where the chat is now matters only live, and a folder's name is the person's.
+        kept.detail.folder = None;
         kept
     }
 }

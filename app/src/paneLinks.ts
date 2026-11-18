@@ -379,7 +379,16 @@ export type LinkedPane = IDisposable & {
   /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
    *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
   under: () => ScreenLink | undefined;
+  /** **The folder the pane's program last said it is in** (OSC 7, #6367), as it said it, or
+   *  `null`: handed to the core with each ask ({@link withFolder}), which reads it as
+   *  untrusted and only ever as where a relative path starts. */
+  folder: () => string | null;
 };
+
+/** **`from` with the folder a pane's program said it is in** (OSC 7, #6367), where it said one:
+ *  a pane whose program said none is handed on as it was. */
+export const withFolder = (from: LinkFrom, folder: string | null | undefined): LinkFrom =>
+  folder === null || folder === undefined ? from : { ...from, folder };
 
 /**
  * **A link a program marked on the screen** (OSC 8): the target it named, and the cells from
@@ -676,6 +685,20 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   const marked: Marked[] = [];
   const markings = marking(pane, marked);
 
+  /** **The folder the program last said it is in** (OSC 7, `file://host/path`), cut as a
+   *  marked link's target is: the core reads it, never the window. A line's answers may name
+   *  files from the folder before, so they are let go of when it moves. */
+  let folder: string | null = null;
+  const saidFolder = pane.parser.registerOscHandler(7, (data) => {
+    const said = cutTarget(data);
+    if (said !== folder) {
+      folder = said;
+      kept.clear();
+    }
+    // Nothing else of the terminal's reads it.
+    return false;
+  });
+
   /** The colour drawn over the link under the pointer, let go of as it leaves. */
   let drawn: IDisposable[] = [];
   const undraw = () => {
@@ -881,11 +904,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   });
   return {
     under: () => current,
+    folder: () => folder,
     dispose() {
       clearTimeout(leaving);
       undraw();
       provider.dispose();
       markings.dispose();
+      saidFolder.dispose();
       if (pane.options.linkHandler === handler) pane.options.linkHandler = INERT_LINKS;
       kept.clear();
     },

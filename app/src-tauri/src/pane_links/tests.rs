@@ -207,6 +207,7 @@ fn here() -> Here {
             session: Some(3),
             folder: Some(ws),
             runs: Runs::Here,
+            now_in: None,
         },
         _held: held,
         notes,

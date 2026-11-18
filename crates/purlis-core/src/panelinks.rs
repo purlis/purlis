@@ -29,6 +29,7 @@ use std::path::PathBuf;
 
 mod asks;
 mod file;
+pub mod folder;
 mod osc8;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
@@ -89,10 +90,23 @@ impl Candidate {
 pub struct Pane {
     pub project: Option<PathBuf>,
     pub session: Option<u32>,
-    /// The folder the chat works in, which a relative path starts from.
+    /// The folder the chat started in: what its home is judged from ([`home_of`]), and where a
+    /// relative path starts while nothing says it moved.
     pub folder: Option<PathBuf>,
+    /// The folder the chat is in now, where its harness's hook or its program's OSC 7 said one
+    /// ([`folder::now_in`], #6367): where a relative path starts, and nothing else. Never what
+    /// its home is judged from, nor a folder a hover may look in for being the chat's.
+    pub now_in: Option<PathBuf>,
     /// Whose filesystem the chat's paths name.
     pub runs: Runs,
+}
+
+impl Pane {
+    /// **Where a relative path starts**: the folder the chat is in now, where something said
+    /// one, else the folder it started in.
+    pub fn starts_from(&self) -> Option<&std::path::Path> {
+        self.now_in.as_deref().or(self.folder.as_deref())
+    }
 }
 
 /// **Whose filesystem a pane's paths name**: this machine's; a runner's that purlis can read

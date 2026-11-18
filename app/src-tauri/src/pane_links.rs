@@ -35,7 +35,7 @@ use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
     Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
     LocalFile, NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE,
-    WebAddress,
+    WebAddress, folder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -105,6 +105,12 @@ impl From<LinkCandidate> for Candidate {
 pub struct LinkFrom {
     pub plane: Option<PlaneId>,
     pub session: Option<u32>,
+    /// What the pane's program last said its folder is by OSC 7 (#6367), as it said it
+    /// (`file://host/path`): untrusted, read by the core ([`folder::said_by_osc7`]), and only
+    /// ever where a relative path starts.
+    #[serde(default)]
+    #[specta(optional)]
+    pub folder: Option<String>,
 }
 
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
@@ -113,7 +119,8 @@ pub struct LinkFrom {
 /// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`]. A
 /// project the window does not hold is no project: nothing of it is read. Handed back with the
 /// pane, the project the window holds, which a chat's number is looked up in.
-// The folder is the one the chat started in: no hook reports the folder a chat has moved to.
+// A relative path starts where the chat is now ([`folder::now_in`], #6367): its own harness's
+// last report, else its program's last OSC 7, else where it started. Its home stays the start's.
 fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
     let held = from
         .plane
@@ -125,6 +132,7 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
             session: from.session,
             folder: None,
             runs: Runs::Elsewhere,
+            now_in: None,
         };
         return (pane, None);
     };
@@ -148,6 +156,14 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
         } else {
             Runs::Elsewhere
         },
+        now_in: here.as_ref().and_then(|_| {
+            let reported = from.session.and_then(|session| chats.folder_now(session));
+            let said = from
+                .folder
+                .as_deref()
+                .and_then(|said| folder::said_by_osc7(said, &folder::this_host()));
+            folder::now_in(reported, said)
+        }),
         folder: here.and_then(|at| at.cwd),
     };
     (pane, Some(held))

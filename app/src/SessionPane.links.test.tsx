@@ -352,6 +352,44 @@ describe("a link in a chat's pane", () => {
   });
 });
 
+describe("the folder a pane's program says it is in (OSC 7, #6367)", () => {
+  const SAID = "file:///work/app";
+
+  it("is handed to the core as said with each hover and open, for its relative paths", async () => {
+    const pane = await opened();
+    await write(pane.term, `\x1b]7;${SAID}\x07see ${ADDRESS} now`);
+    hover(pane.drawn, 8, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    expect(asked("pane_link_resolve")[0].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
+
+    click(pane.drawn, 8, 0, { ctrlKey: true });
+    await waitFor(() => expect(asked("pane_link_open")).toHaveLength(1));
+    expect(asked("pane_link_open")[0].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
+  });
+
+  it("asks a line again once the program says it moved, and keeps only the last it said", async () => {
+    const pane = await hovered();
+    await write(pane.term, `\x1b]7;file:///one\x07\x1b]7;${SAID}\x07`);
+    hover(pane.drawn, 40, 3);
+    hover(pane.drawn, 8, 0);
+
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(2));
+    expect(asked("pane_link_resolve")[1].args.from).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      folder: SAID,
+    });
+  });
+});
+
 describe("links while output streams", () => {
   /** `lines` lines of output, each naming an address of its own, in `writes` writes. */
   async function stream(term: Terminal, lines: number, writes: number) {

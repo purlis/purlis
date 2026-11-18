@@ -11987,6 +11987,7 @@ export type LinkFileAt =
 export type LinkFrom = {
 	plane: PlaneId | null,
 	session: number | null,
+	folder?: string | null,
 };
 
 /**  **What a chat counts as its own**, for the ask that says a file is not in it, with its folder. */
