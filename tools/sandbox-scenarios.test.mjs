@@ -343,7 +343,7 @@ test("the_merge_queue_runs_the_production_timing_entries: both OSes, as the queu
 test("each budget is a job's timeout, and the doc names the runs that measured it", () => {
   const doc = read("docs/sandbox-scenarios-ci.md");
   for (const id of ["sandbox-scenarios-linux", "sandbox-scenarios-macos", "macos-sandbox-tests", "linux-release-profile"]) {
-    const minutes = /timeout-minutes: (\d+)/.exec(job(id).text)?.[1];
+    const minutes = /timeout-minutes: (?:\$\{\{.*\|\| )?(\d+)/.exec(job(id).text)?.[1];
     assert.ok(minutes, `${id} has a budget`);
     assert.match(doc, new RegExp("\\| `" + id + "` \\| " + minutes + " \\|"), `${id}: the doc's table says ${minutes}`);
   }

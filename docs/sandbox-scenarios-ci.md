@@ -52,6 +52,9 @@ before a single scenario runs, so the budget is the build, the kit and the suite
 | `macos-sandbox-tests` | 100 | 77 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
 | `linux-release-profile` | 60 | 37 on a cold cache (build 30 or so, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
 
+A `stress-x20` run is the same suite twenty times over under load, so it has a budget of its own
+(Linux 150, macOS 180); a change that touches no batch a test is named for stresses the whole suite.
+
 The nightly's entries run only from main's scheduler, after a merge, so their budgets are the
 pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 90), the
 production-timing run (Linux 75, macOS 90: a build, the kit, and M-NET-25's 15 real minutes), and

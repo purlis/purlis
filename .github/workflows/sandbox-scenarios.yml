@@ -109,8 +109,9 @@ jobs:
     runs-on: ubuntu-24.04
     # **Budget: 45 minutes**, from runs 44267476720 (the test build 14 min, the kit 10, the suite
     # 2.5, 27 min to the coverage gate) and 44239993521 (the whole job, 36 min, its coverage gate
-    # 12 min of a second build): `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
-    timeout-minutes: 45
+    # 12 min of a second build): `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job. A
+    # `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 45 }}
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -231,7 +232,8 @@ jobs:
     # **Budget: 55 minutes**, from run 44267476720, where the test build took 30 min (macos-15) and
     # 28 (macos-26), the kit 5 and 6, the suite 2.5 and 4: 38 and 40 minutes in all. A macOS
     # runner's cold build is the job; `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
-    timeout-minutes: 55
+    # `stress-x20`'s budget is its own: 180.
+    timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 180 || 55 }}
     permissions:
       contents: read
       issues: write

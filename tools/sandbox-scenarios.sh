@@ -55,9 +55,19 @@ if [ "${STRESS-}" = true ]; then
   # M-NET-25 never runs under the multiplier (Q300): its 15 minutes would be twenty times that.
   filter="($filter) & not test(/m_net_25/)"
   # The batches this change touched, when it touched any.
+  # Only when they pick a test: a batch's tests are found by its name, and a change to cells no
+  # test is named for stresses the whole suite rather than nothing.
   if [ -n "${BASE-}" ]; then
     changed=$(node tools/scenario-legs.mjs changed-batches "$BASE")
-    [ -z "$changed" ] || filter="($filter) & $changed"
+    if [ -n "$changed" ]; then
+      # shellcheck disable=SC2086
+      if cargo nextest list ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci -E "($filter) & $changed" --message-format oneline 2>/dev/null | grep -q .; then
+        filter="($filter) & $changed"
+        echo "the batches this change touched: $changed"
+      else
+        echo "::notice title=stress-x20::this change touches cells no test is named for: the whole suite runs"
+      fi
+    fi
   fi
 fi
 
