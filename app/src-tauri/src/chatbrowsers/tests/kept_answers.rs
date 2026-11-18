@@ -46,8 +46,15 @@ fn a_chats_answer_survives_a_restart_and_the_chat_is_not_asked_again() {
     let restarted = window(root.path(), config.path(), CHAT);
 
     assert_eq!(restarted.posture(3), Posture::Allowed { open_web: true });
-    assert!(!asked(&restarted, &hosted), "no Ask: the chat's answer stands");
-    assert_eq!(hosted.started.lock().unwrap().len(), 1, "its browser starts");
+    assert!(
+        !asked(&restarted, &hosted),
+        "no Ask: the chat's answer stands"
+    );
+    assert_eq!(
+        hosted.started.lock().unwrap().len(),
+        1,
+        "its browser starts"
+    );
 }
 
 #[test]
@@ -58,7 +65,10 @@ fn a_kept_off_answer_survives_too() {
     asked(&first, &hosted);
     assert!(first.keep_off(3));
 
-    assert_eq!(window(root.path(), config.path(), CHAT).posture(3), Posture::Off);
+    assert_eq!(
+        window(root.path(), config.path(), CHAT).posture(3),
+        Posture::Off
+    );
 }
 
 #[test]
@@ -103,7 +113,10 @@ fn the_answer_ends_with_the_chat() {
 
     first.forget(Some(&driver), 3, "Chat 3");
 
-    assert_eq!(window(root.path(), config.path(), CHAT).posture(3), Posture::Unasked);
+    assert_eq!(
+        window(root.path(), config.path(), CHAT).posture(3),
+        Posture::Unasked
+    );
     assert!(
         !purlis_core::browserposture::path(root.path()).exists(),
         "nothing of it is left"
@@ -156,7 +169,15 @@ fn what_is_kept_is_written_under_this_machines_state_and_config_never_the_plane(
     let first = window(root.path(), config.path(), CHAT);
     asked(&first, &hosted);
     first.allow(3, true);
-    let _ = first.pool_login(3, "steward", &bound("d1", "i1"), "shop", "id-shop", false, 1);
+    let _ = first.pool_login(
+        3,
+        "steward",
+        &bound("d1", "i1"),
+        "shop",
+        "id-shop",
+        false,
+        1,
+    );
     first.answer_pool_login(3, true);
 
     let mut written = Vec::new();
@@ -188,23 +209,55 @@ fn a_pool_login_opt_in_survives_a_restart_and_a_changed_pool_asks_again() {
     let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let first = window(root.path(), config.path(), CHAT);
     first
-        .pool_login(3, "steward", &bound("d1", "i1"), "shop", "id-shop", false, 1)
+        .pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            1,
+        )
         .unwrap_err();
     first.answer_pool_login(3, true);
 
     let restarted = window(root.path(), config.path(), CHAT);
 
     assert_eq!(
-        restarted.pool_login(3, "steward", &bound("d1", "i1"), "shop", "id-shop", false, 2),
+        restarted.pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            2
+        ),
         Ok(()),
         "no Ask"
     );
     let (why, raised) = restarted
-        .pool_login(3, "steward", &bound("d2", "i1"), "shop", "id-shop", false, 3)
+        .pool_login(
+            3,
+            "steward",
+            &bound("d2", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            3,
+        )
         .unwrap_err();
     assert!(raised, "a changed definition asks again: {why}");
     let (_, raised) = restarted
-        .pool_login(4, "steward", &bound("d1", "i2"), "shop", "id-shop", false, 4)
+        .pool_login(
+            4,
+            "steward",
+            &bound("d1", "i2"),
+            "shop",
+            "id-shop",
+            false,
+            4,
+        )
         .unwrap_err();
     assert!(raised, "a changed image asks again");
 }
@@ -214,7 +267,15 @@ fn the_granted_list_names_an_opt_in_and_remove_makes_the_next_login_ask() {
     let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let first = window(root.path(), config.path(), CHAT);
     first
-        .pool_login(3, "steward", &bound("d1", "i1"), "shop", "id-shop", false, 1)
+        .pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            1,
+        )
         .unwrap_err();
     first.answer_pool_login(3, true);
 
@@ -225,7 +286,15 @@ fn the_granted_list_names_an_opt_in_and_remove_makes_the_next_login_ask() {
     assert!(restarted.pool_login_grants().is_empty());
     let after = window(root.path(), config.path(), CHAT);
     let (_, raised) = after
-        .pool_login(3, "steward", &bound("d1", "i1"), "shop", "id-shop", false, 5)
+        .pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            5,
+        )
         .unwrap_err();
     assert!(raised, "removed: the next login asks");
 }

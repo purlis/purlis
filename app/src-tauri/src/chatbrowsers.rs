@@ -1056,13 +1056,16 @@ impl ChatBrowsers {
         }
     }
 
-    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list.
+    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list: its row is
+    /// the window's to draw, and until it does only tests call this.
+    #[cfg(test)]
     pub fn pool_login_grants(&self) -> Vec<purlis_core::poollogins::Granted> {
         self.pool_logins.granted()
     }
 
     /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
     /// next login there asks. Whether one was there.
+    #[cfg(test)]
     pub fn remove_pool_login_grant(&self, persona: &str, login: &str, pool: &str) -> bool {
         self.pool_logins.remove(persona, login, pool)
     }

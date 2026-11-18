@@ -1851,9 +1851,15 @@ fn a_forgotten_pools_browsers_are_stopped_there_and_said_closed_by_the_person_ne
 fn browsers_left_on_a_forgotten_pools_machine_are_listed_as_left() {
     assert_eq!(crate::browsers::left_on_the_machine(0), None);
     let one = crate::browsers::left_on_the_machine(1).unwrap();
-    assert!(one.contains("1 browser ") && one.contains("keeps running"), "{one}");
+    assert!(
+        one.contains("1 browser ") && one.contains("keeps running"),
+        "{one}"
+    );
     let two = crate::browsers::left_on_the_machine(2).unwrap();
-    assert!(two.contains("2 browsers ") && two.contains("keep running"), "{two}");
+    assert!(
+        two.contains("2 browsers ") && two.contains("keep running"),
+        "{two}"
+    );
 }
 
 /// **Starts on different runners are not one queue** (#7187 item 8): the window-wide mutex is

@@ -95,10 +95,10 @@ pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
+pub mod browserposture;
 pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
-pub mod browserposture;
 pub mod browsertimeline;
 pub mod enforcement;
 pub mod envvar;

@@ -56,7 +56,11 @@ fn it_is_kept_in_the_state_folder_never_the_plane_and_privately() {
         "the clone's state folder, which is never committed or synced"
     );
     let written: Vec<_> = walk(dir.path());
-    assert_eq!(written, [path.clone()], "nothing else is written, the plane's files least");
+    assert_eq!(
+        written,
+        std::slice::from_ref(&path),
+        "nothing else is written, the plane's files least"
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

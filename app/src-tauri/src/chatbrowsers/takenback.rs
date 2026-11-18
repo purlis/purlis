@@ -37,7 +37,8 @@ use purlis_session_protocol::session::HeldProgram;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, answer_of, browser_number,
+    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, answer_of,
+    browser_number,
 };
 
 /// **Whose a browser is, as its window note says** (#2025).
@@ -164,9 +165,10 @@ impl ChatBrowsers {
             chat.id = id.clone();
             // The answer the person gave this chat before a restart stands (#7190): found by its
             // identity alone, so only this chat's, and only where it has not been asked since.
-            let kept = id.as_deref().zip(self.answers_in.as_deref()).and_then(
-                |(id, root)| purlis_core::browserposture::kept(root, id),
-            );
+            let kept = id
+                .as_deref()
+                .zip(self.answers_in.as_deref())
+                .and_then(|(id, root)| purlis_core::browserposture::kept(root, id));
             match (chat.posture, kept) {
                 (Posture::Unasked, Some(answer)) => {
                     chat.posture = match answer {

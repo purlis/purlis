@@ -71,6 +71,9 @@ fn is_an_id(chat: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// One writer at a time in this process: every project's holder rewrites the whole file.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn read(root: &Path) -> BTreeMap<String, String> {
     let path = path(root);
     // Never through a link, and never a folder or a device.
@@ -122,6 +125,9 @@ pub fn keep(root: &Path, chat: &str, answer: Answer) -> io::Result<()> {
             "a chat's identity is letters, digits, - and _",
         ));
     }
+    let _one = WRITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut all = read(root);
     if all.len() >= MOST && !all.contains_key(chat) {
         return Err(io::Error::other("too many chats' answers are kept"));
@@ -132,6 +138,9 @@ pub fn keep(root: &Path, chat: &str, answer: Answer) -> io::Result<()> {
 
 /// **The chat closed: its answer goes with it.** Nothing to remove is no failure.
 pub fn remove(root: &Path, chat: &str) -> io::Result<()> {
+    let _one = WRITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut all = read(root);
     if all.remove(chat).is_none() {
         return Ok(());

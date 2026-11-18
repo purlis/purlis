@@ -635,11 +635,7 @@ fn an_opt_in_survives_a_restart_on_this_machine() {
     OptIns::stored_in(config.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
 
     assert_eq!(
-        after_a_restart(config.path()).standing(
-            "steward",
-            "id-shop",
-            &bound("builds", "d1", "i1")
-        ),
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::Allowed
     );
 }
@@ -652,13 +648,55 @@ fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
     let restarted = after_a_restart(config.path());
 
     let changed: [(&str, Bound); 7] = [
-        ("the pool's definition", Bound { definition: "d2".into(), ..then.clone() }),
-        ("the pool's image", Bound { image: "i2".into(), ..then.clone() }),
-        ("the runner's device", Bound { runner: "01JB0OTHERRUNNER00000000000".into(), ..then.clone() }),
-        ("the runner's pinned key", Bound { runner_key: "cd".repeat(32), ..then.clone() }),
-        ("the runner's image", Bound { runner_image: "i9".into(), ..then.clone() }),
-        ("the engine, which is the pin with the person's mark", Bound { engine: "ssh://other, host key 99".into(), ..then.clone() }),
-        ("the cluster pod", Bound { pod: "uid-2".into(), ..then.clone() }),
+        (
+            "the pool's definition",
+            Bound {
+                definition: "d2".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the pool's image",
+            Bound {
+                image: "i2".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's device",
+            Bound {
+                runner: "01JB0OTHERRUNNER00000000000".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's pinned key",
+            Bound {
+                runner_key: "cd".repeat(32),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's image",
+            Bound {
+                runner_image: "i9".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the engine, which is the pin with the person's mark",
+            Bound {
+                engine: "ssh://other, host key 99".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the cluster pod",
+            Bound {
+                pod: "uid-2".into(),
+                ..then.clone()
+            },
+        ),
     ];
     for (what, now) in changed {
         assert_eq!(
@@ -668,13 +706,22 @@ fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
         );
     }
     // The persona, the login and the pool are the key: another is asked apart.
-    assert_eq!(restarted.standing("reviewer", "id-shop", &then), Standing::Unasked);
-    assert_eq!(restarted.standing("steward", "id-bank", &then), Standing::Unasked);
+    assert_eq!(
+        restarted.standing("reviewer", "id-shop", &then),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-bank", &then),
+        Standing::Unasked
+    );
     assert_eq!(
         restarted.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
         Standing::Unasked
     );
-    assert_eq!(restarted.standing("steward", "id-shop", &then), Standing::Allowed);
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &then),
+        Standing::Allowed
+    );
 }
 
 #[test]
@@ -721,7 +768,10 @@ fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
         Standing::Unasked,
         "the next login asks"
     );
-    assert!(!config.path().join(IN_CONFIG).exists(), "nothing left to keep");
+    assert!(
+        !config.path().join(IN_CONFIG).exists(),
+        "nothing left to keep"
+    );
 }
 
 #[test]
@@ -737,11 +787,7 @@ fn keeping_a_login_off_is_for_this_run_and_it_supersedes_a_kept_opt_in() {
         Standing::KeptOff
     );
     assert_eq!(
-        after_a_restart(config.path()).standing(
-            "steward",
-            "id-shop",
-            &bound("builds", "d1", "i1")
-        ),
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::Unasked,
         "a refusal is not kept, and the opt-in it replaced is gone: the person is asked"
     );
@@ -756,7 +802,10 @@ fn the_kept_file_is_this_machines_private_and_holds_no_value() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
     let text = std::fs::read_to_string(&file).unwrap();
     for field in ["persona", "login", "pool", "definition", "image", "engine"] {
@@ -783,7 +832,11 @@ fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
     #[cfg(unix)]
     {
         let elsewhere = tempfile::tempdir().unwrap();
-        OptIns::stored_in(elsewhere.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+        OptIns::stored_in(elsewhere.path()).allow(
+            "steward",
+            "id-shop",
+            bound("builds", "d1", "i1"),
+        );
         let link = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(
             elsewhere.path().join(IN_CONFIG),
@@ -791,7 +844,11 @@ fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
         )
         .unwrap();
         assert_eq!(
-            after_a_restart(link.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+            after_a_restart(link.path()).standing(
+                "steward",
+                "id-shop",
+                &bound("builds", "d1", "i1")
+            ),
             Standing::Unasked
         );
     }

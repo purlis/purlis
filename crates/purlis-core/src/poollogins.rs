@@ -539,6 +539,9 @@ struct Stored {
     bound: Bound,
 }
 
+/// One writer at a time in this process: every project's holder rewrites the whole file.
+static WRITING: Mutex<()> = Mutex::new(());
+
 /// The most opt-ins kept: a bound on a damaged file.
 const MOST_KEPT: usize = 1024;
 
@@ -620,6 +623,7 @@ impl OptIns {
         if self.stored.is_none() {
             return;
         }
+        let _one = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
         let mut all = self.read();
         let before = all.len();
         all.retain(|one| !matching(one));
@@ -632,6 +636,7 @@ impl OptIns {
     pub fn allow(&self, persona: &str, login: &str, bound: Bound) {
         self.held().remove(&Self::key(persona, login, &bound));
         if self.stored.is_some() {
+            let _one = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
             let mut all = self.read();
             all.retain(|one| {
                 !(one.persona == persona && one.login == login && one.bound.pool == bound.pool)
@@ -643,8 +648,10 @@ impl OptIns {
                     bound,
                 });
                 self.write(&all);
+                return;
             }
-            return;
+            // A full file keeps no more: the answer stands for this run, as it always did.
+            drop(_one);
         }
         self.held()
             .insert(Self::key(persona, login, &bound), (bound, true));
@@ -670,14 +677,13 @@ impl OptIns {
     /// **The person removes the opt-in** of `persona`'s login `login` on pool `pool` (the
     /// Granted list's Remove): the next login asks. Whether one was there.
     pub fn remove(&self, persona: &str, login: &str, pool: &str) -> bool {
-        let was = self.granted().iter().any(|one| {
-            one.persona == persona && one.login == login && one.pool == pool
-        });
+        let was = self
+            .granted()
+            .iter()
+            .any(|one| one.persona == persona && one.login == login && one.pool == pool);
         self.held()
             .remove(&(persona.to_owned(), login.to_owned(), pool.to_owned()));
-        self.unkept(|one| {
-            one.persona == persona && one.login == login && one.bound.pool == pool
-        });
+        self.unkept(|one| one.persona == persona && one.login == login && one.bound.pool == pool);
         was
     }
 
@@ -699,9 +705,7 @@ impl OptIns {
                 pool: one.bound.pool,
             }))
             .collect();
-        all.sort_by(|a, b| {
-            (&a.pool, &a.persona, &a.login).cmp(&(&b.pool, &b.persona, &b.login))
-        });
+        all.sort_by(|a, b| (&a.pool, &a.persona, &a.login).cmp(&(&b.pool, &b.persona, &b.login)));
         all.dedup();
         all
     }
@@ -715,9 +719,11 @@ impl OptIns {
                 (false, false) => Standing::KeptOff,
             };
         }
-        match self.read().into_iter().find(|one| {
-            one.persona == persona && one.login == login && one.bound.pool == now.pool
-        }) {
+        match self
+            .read()
+            .into_iter()
+            .find(|one| one.persona == persona && one.login == login && one.bound.pool == now.pool)
+        {
             None => Standing::Unasked,
             Some(one) if one.bound != *now => Standing::Changed,
             Some(_) => Standing::Allowed,
