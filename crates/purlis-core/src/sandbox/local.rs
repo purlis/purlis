@@ -1321,8 +1321,11 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         |text| crate::secrets::seal::kept_holds(POLICY_KIND, &clone, text),
     );
     trace(&format!(
-        "read root={} key={} anchor={} file_there={} sealed={} kept={:?} accepted={}",
+        "read root={} real={} id={} thread={:?} key={} anchor={} file_there={} sealed={} kept={:?} accepted={}",
         root.display(),
+        super::real(root).display(),
+        identity_of(&super::real(root)),
+        std::thread::current().name(),
         clone_key(root),
         clone,
         path(root).exists(),
