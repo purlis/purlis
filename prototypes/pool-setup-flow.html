@@ -1,0 +1,1041 @@
+<title>Pool Setup Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Tokens: purlis's built-in theme "Purlis" (crates/purlis-core/src/theme/built-in/purlis/theme.json), light and dark. */
+:root{
+  --base:#f7f7fd; --sunken:#f7f7fd; --raised:#eeeef5; --overlay:#e4e4ec; --hover:#dbdce5;
+  --control:#e4e4ec; --control-hover:#dbdce5;
+  --text:#252329; --text-2:#3b3942; --muted:#5d5b67; --faint:#7c7a87;
+  --border:#d5d5df; --border-strong:#a9a7b5; --input:#82808d;
+  --accent:#554691; --accent-surface:#dedcef; --accent-text:#403667; --fill:#6d58bb; --fill-hover:#745fc3; --fill-text:#fff;
+  --selected:#dbdbec; --focus:#554691;
+  --danger:#682e30; --danger-surface:#e1d4d9; --attention-surface:#e2ded7; --attention-text:#372501;
+  --ok:#20562f; --failed:#682f2a; --waiting:#523601; --running:#25426e; --gone:#493769;
+  --news-surface:#dedcef; --code:#e9e9f2;
+  --proto:#6b4f00; --proto-bg:#fff8dc; --proto-border:#d9bf62;
+  --behind:#ececf4; --shadow:0 4px 18px rgba(20,20,40,.14);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --base:#17171b; --sunken:#17171b; --raised:#1d1d22; --overlay:#24242a; --hover:#2a2a31;
+  --control:#24242a; --control-hover:#2a2a31;
+  --text:#e6e4ec; --text-2:#c9c7d2; --muted:#a09eab; --faint:#74727f;
+  --border:#2f2f37; --border-strong:#55535f; --input:#74727f;
+  --accent:#a99cf0; --accent-surface:#292735; --accent-text:#c3baf5; --fill:#6d58bb; --fill-hover:#745fc3; --fill-text:#fff;
+  --selected:#2a2936; --focus:#a99cf0;
+  --danger:#f0a9a8; --danger-surface:#352b2f; --attention-surface:#2c2924; --attention-text:#f3dcb4;
+  --ok:#8fc79a; --failed:#f0aaa2; --waiting:#e5c08a; --running:#9ec1f5; --gone:#c6b3ee;
+  --news-surface:#292735; --code:#202026;
+  --proto:#e8c95a; --proto-bg:#2a2410; --proto-border:#5c4d1c;
+  --behind:#121215; --shadow:0 4px 18px rgba(0,0,0,.5); color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --base:#17171b; --sunken:#17171b; --raised:#1d1d22; --overlay:#24242a; --hover:#2a2a31;
+  --control:#24242a; --control-hover:#2a2a31;
+  --text:#e6e4ec; --text-2:#c9c7d2; --muted:#a09eab; --faint:#74727f;
+  --border:#2f2f37; --border-strong:#55535f; --input:#74727f;
+  --accent:#a99cf0; --accent-surface:#292735; --accent-text:#c3baf5; --fill:#6d58bb; --fill-hover:#745fc3; --fill-text:#fff;
+  --selected:#2a2936; --focus:#a99cf0;
+  --danger:#f0a9a8; --danger-surface:#352b2f; --attention-surface:#2c2924; --attention-text:#f3dcb4;
+  --ok:#8fc79a; --failed:#f0aaa2; --waiting:#e5c08a; --running:#9ec1f5; --gone:#c6b3ee;
+  --news-surface:#292735; --code:#202026;
+  --proto:#e8c95a; --proto-bg:#2a2410; --proto-border:#5c4d1c;
+  --behind:#121215; --shadow:0 4px 18px rgba(0,0,0,.5); color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--behind);color:var(--text);font:13px/1.55 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+code,.mono,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.num{font-variant-numeric:tabular-nums}
+.outer{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));padding-block:12px 96px;max-width:1320px;margin:0 auto}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+/* ---- purlis kit look ---- */
+.btn{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 12px;border-radius:8px;border:1px solid transparent;background:var(--control);cursor:pointer;line-height:1.3}
+.btn:hover{background:var(--control-hover)}
+.btn.lg{min-height:32px;padding:5px 14px}
+.btn.primary{background:var(--fill);color:var(--fill-text)}
+.btn.primary:hover{background:var(--fill-hover)}
+.btn.ghost{background:transparent;border-color:var(--border-strong)}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+.btn.link{background:none;border:0;padding:0 2px;color:var(--accent);min-height:0}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.field{display:grid;gap:4px}
+.field>span.l{font-weight:600;color:var(--text)}
+.field small{color:var(--muted);font-size:12px}
+input[type=text],select{background:var(--base);border:1px solid var(--input);border-radius:7px;padding:4px 8px;min-height:28px;width:100%;max-width:100%;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:1px 7px;border-radius:5px;background:var(--overlay);color:var(--text-2);white-space:nowrap}
+.badge.ok{color:var(--ok);background:transparent;padding-left:0}
+.badge.accent{background:var(--accent-surface);color:var(--accent-text)}
+.st{font-weight:600}
+.st .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.st-Ready{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.st-Setting{color:var(--running);background:color-mix(in srgb,var(--running) 14%,transparent)}
+.st-Unreachable{color:var(--waiting);background:color-mix(in srgb,var(--waiting) 16%,transparent)}
+.st-Refused,.st-Host{color:var(--failed);background:color-mix(in srgb,var(--failed) 14%,transparent)}
+.st-Runner{color:var(--gone);background:color-mix(in srgb,var(--gone) 14%,transparent)}
+.st-Pool{color:var(--muted);background:var(--overlay)}
+/* window frame */
+.win{background:var(--base);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--raised);border-bottom:1px solid var(--border);overflow:hidden}
+.tab{padding:5px 12px;border-radius:8px 8px 0 0;font-size:12px;color:var(--muted);white-space:nowrap}
+.tab.on{background:var(--base);color:var(--text)}
+.notices{display:grid;gap:6px;padding:8px 12px 0}
+.notice{display:grid;grid-template-columns:18px minmax(0,1fr);gap:4px 10px;padding:10px 12px;border-radius:10px;background:var(--danger-surface)}
+.notice.attention{background:var(--attention-surface)}
+.notice.news{background:var(--news-surface)}
+.notice .mk{width:16px;height:16px;border:1.5px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;margin-top:2px}
+.notice h3{margin:0;font-size:13px;font-weight:600}
+.notice .body{grid-column:2;color:var(--text-2);font-size:12px;overflow-wrap:anywhere}
+.notice .body p{margin:2px 0 6px}
+.notice .btnrow{grid-column:2;margin-top:6px}
+.ps{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:560px}
+@media (max-width:720px){.ps{grid-template-columns:minmax(0,1fr)}}
+.rail{padding:20px 12px;border-right:1px solid var(--border);background:var(--sunken);display:flex;flex-direction:column}
+@media (max-width:720px){.rail{border-right:0;border-bottom:1px solid var(--border);padding:12px}}
+.rail-count{margin:0 8px 10px;font-size:12px;color:var(--muted)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.steps button{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:7px;padding:6px;cursor:pointer;align-items:start}
+.steps button:hover{background:var(--hover)}
+.steps button[aria-current=step]{background:var(--selected)}
+.circ{width:22px;height:22px;border-radius:50%;border:1px solid var(--border-strong);display:grid;place-items:center;font-size:11px;color:var(--muted)}
+.s-done .circ{border-color:var(--ok);color:var(--ok)}
+.s-now .circ{background:var(--fill);border-color:var(--fill);color:#fff}
+.s-attention .circ{background:var(--danger-surface);border-color:var(--failed);color:var(--failed);font-weight:700}
+.s-waiting .circ{border-color:var(--waiting);color:var(--waiting)}
+.sname{display:block;color:var(--text)}
+.s-later .sname{color:var(--muted)}
+.s-now .sname,.steps button[aria-current=step] .sname{font-weight:600}
+.sline{display:block;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.saved{margin:auto 8px 0;padding-top:24px;color:var(--muted);font-size:12px}
+.railcard{margin:0 0 12px;padding:10px;border-radius:10px;background:var(--raised);display:grid;gap:6px}
+.railcard p{margin:0;font-size:12px;color:var(--text-2)}
+.page{display:flex;flex-direction:column;gap:18px;max-width:660px;width:100%;margin:0 auto;padding:28px 24px 32px;min-width:0}
+@media (max-width:720px){.page{padding:18px 4px 24px}}
+.head{display:grid;gap:6px}
+.title-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.head h1{margin:0;font-size:15px;font-weight:600;line-height:1.3;outline:none}
+.lead{margin:0;color:var(--text-2);font-size:13px}
+.p{margin:0;color:var(--text-2)}
+.h2{margin:4px 0 0;font-size:13px;font-weight:600}
+.does{margin:0;color:var(--text-2);font-size:12px}
+.action{display:grid;gap:10px}
+.busy{display:flex;gap:8px;align-items:center;margin:0;color:var(--text-2)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;flex:none}
+@media (prefers-reduced-motion:no-preference){.spin{animation:rot .9s linear infinite}.bar>i{transition:width .1s linear}}
+@keyframes rot{to{transform:rotate(360deg)}}
+.terms{display:grid;gap:6px;padding-left:12px;border-left:2px solid var(--border-strong)}
+.terms p{margin:0;font-size:12px;color:var(--text-2)}
+.cards{display:grid;gap:8px}
+.ocard{display:grid;grid-template-columns:20px minmax(0,1fr);gap:4px 10px;padding:12px;border-radius:10px;background:var(--raised);border:1px solid transparent;cursor:pointer}
+.ocard:has(input:checked){border-color:var(--accent);background:var(--accent-surface)}
+.ocard small{grid-column:2;color:var(--muted);font-size:12px}
+.radios{display:grid;gap:6px}
+.radio{display:grid;grid-template-columns:18px minmax(0,1fr);gap:0 8px;align-items:start;cursor:pointer}
+.radio input{margin:3px 0 0;accent-color:var(--fill)}
+.radio small{grid-column:2;color:var(--muted);font-size:12px}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 24px;margin:0;padding:10px 12px;border-radius:10px;background:var(--raised);font-size:12px}
+.facts dt{color:var(--muted)} .facts dd{margin:0;overflow-wrap:anywhere}
+.code{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.code .ch{display:flex;justify-content:space-between;gap:8px;padding:4px 8px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2)}
+.code pre{margin:0;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--code)}
+details.fold>summary{cursor:pointer;color:var(--text-2);list-style:none;padding:2px 0}
+details.fold>summary::before{content:"›";display:inline-block;width:14px;transition:transform .15s}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold>.fb{display:grid;gap:10px;padding:10px 0 4px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 14px}
+/* check list */
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.chk{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:baseline}
+.chk .ic{font-family:"JetBrains Mono",monospace;font-size:12px;text-align:center}
+.c-ok .ic{color:var(--ok)} .c-fail .ic{color:var(--failed);font-weight:700} .c-run .ic{color:var(--running)} .c-todo .ic{color:var(--faint)} .c-ask .ic{color:var(--waiting);font-weight:700}
+.c-todo .t{color:var(--text-2)}
+.chk .note{color:var(--muted);font-size:12px}
+.chk .tm{color:var(--muted);font-size:12px}
+.phase{margin:8px 0 2px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.slow{grid-column:2/4;margin:2px 0 4px;padding:6px 8px;border-left:3px solid var(--waiting);background:var(--attention-surface);border-radius:0 7px 7px 0;font-size:12px;color:var(--attention-text)}
+.bar{height:6px;background:var(--overlay);border-radius:3px;overflow:hidden;margin-top:4px}
+.bar>i{display:block;height:100%;background:var(--fill)}
+.prog{grid-column:2/4;font-size:12px;color:var(--muted)}
+/* Say card */
+.say{display:grid;grid-template-columns:18px minmax(0,1fr);gap:2px 10px;padding:12px 14px;border-radius:10px;background:var(--danger-surface)}
+.say.attention{background:var(--attention-surface)} .say.news{background:var(--news-surface)}
+.say .mk{width:16px;height:16px;border:1.5px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;margin-top:2px}
+.say h3{margin:0;font-size:13px;font-weight:600;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.say .sb{grid-column:2;color:var(--text-2);font-size:12px;display:grid;gap:6px;overflow-wrap:anywhere}
+.say .sb p{margin:0}
+.say .btnrow{grid-column:2;margin-top:8px}
+.help{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--border)}
+.help p{margin:0;color:var(--text-2);font-size:12px;flex:1 1 260px}
+.statusbar{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:var(--raised);border-left:3px solid var(--border-strong)}
+.statusbar.k-Ready{border-left-color:var(--ok)} .statusbar.k-Unreachable{border-left-color:var(--waiting)} .statusbar.k-Refused,.statusbar.k-Host{border-left-color:var(--failed)} .statusbar.k-Runner{border-left-color:var(--gone)} .statusbar.k-Setting{border-left-color:var(--running)}
+.statusbar p{margin:0;font-size:12px;color:var(--text-2)}
+.box{display:grid;gap:8px;padding:12px;border-radius:10px;border:1px solid var(--border-strong)}
+.box h3{margin:0;font-size:13px}
+.box ul{margin:0;padding-left:18px;font-size:12px;color:var(--text-2)}
+.box label.chkl{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.profiles{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.profiles li{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:7px}
+.settings{margin-top:12px;background:var(--base);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.settings h2{margin:0 0 2px;font-size:13px}
+.settings .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border)}
+.settings .grow{flex:1 1 160px;min-width:0}
+.pointer{margin:8px 12px 0;padding:6px 10px;border-radius:8px;background:var(--raised);font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* prototype chrome */
+.proto{border:1px dashed var(--proto-border);background:var(--proto-bg);border-radius:8px;padding:10px;color:var(--text)}
+.proto .tag{font:600 10px/1 "JetBrains Mono",monospace;letter-spacing:.06em;color:var(--proto);text-transform:uppercase;margin-bottom:6px;display:block}
+.proto p{margin:6px 0;font-size:12px}
+.proto label{font-size:12px;color:var(--muted);display:block;margin:6px 0 3px}
+.proto section+section{margin-top:10px;padding-top:10px;border-top:1px dashed var(--proto-border)}
+.vhead{margin-bottom:10px}
+.vhead h1{margin:0;font-size:14px}
+.vhead p{margin:2px 0 0;font-size:12px}
+#readout{margin:0;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;background:var(--base);border:1px solid var(--proto-border);border-radius:6px;padding:6px}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:4px;background:var(--proto-bg);border:1px dashed var(--proto-border);border-radius:8px;padding:4px;box-shadow:var(--shadow);z-index:10;max-width:calc(100vw - 32px)}
+.switcher button{border:0;background:none;padding:4px 10px;font-size:16px;line-height:1;cursor:pointer;border-radius:6px}
+.switcher button:hover{background:var(--overlay)}
+.switcher .sw-l{font-size:12px;font-weight:600;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<div class="outer">
+  <div class="layout">
+    <div>
+      <header class="proto vhead" id="vhead" aria-live="polite"></header>
+      <main id="app"></main>
+    </div>
+    <aside class="proto" id="chrome" aria-label="Prototype controls"></aside>
+  </div>
+</div>
+<nav class="switcher" aria-label="Variant (prototype control)">
+  <button type="button" id="sw-prev" aria-label="Previous variant">‹</button>
+  <span class="sw-l" id="sw-label"></span>
+  <button type="button" id="sw-next" aria-label="Next variant">›</button>
+</nav>
+
+<script>
+"use strict";
+/* ===================== variants ===================== */
+const VARIANTS=[
+  {id:"t", name:"Today (as built)", what:"The Pool setup tab as origin/main draws it, with its dead ends where the audit names them (A2, A3, A6, A7, A12, B.4). Window notices and Settings › Pools are drawn as they are today."},
+  {id:"r1", name:"Refined 1 · Minimal", what:"Changed from Today: same steps, screens and words; Kubernetes is a third choice on Where, always there; the dead ends are fixed, every check line shows its time once done, a line past 30 s names itself and says why, a 3-minute limit, the five named pool states, and Forget pool… in the tab."},
+  {id:"r2", name:"Refined 2 · Merged", what:"Changed from Today: Refined 1, plus the Pool step folds into Connect (one Trust and create), the rail shows each step's time, and the pool's state has one place, a bar at the top of the tab that the window points to."},
+  {id:"r3", name:"Refined 3 · Furthest", what:"Changed from Today: Refined 2, plus three steps (Where, Machine, Use it) on one live check list from first contact to a linked runner, and the pool's state and actions live at the top of the step rail."},
+];
+const FL={t:{}, r1:{dur:1,fix:1}, r2:{dur:1,fix:1,merge:1,bar:1,raildur:1}, r3:{dur:1,fix:1,merge:1,railstat:1,raildur:1,three:1}};
+const fl=k=>!!FL[S.variant][k];
+const SSH_HOSTS=["build-box","gpu-1","ci-runner-3"];
+const CONTEXTS=["gke_acme-dev_us-central1_dev","gke_acme-prod_europe-west4_prod","kind-purlis"];
+const SCEN=[
+  {id:"ok",g:"Setup",label:"All good (key already in known_hosts)",tip:"Every check passes. SSH already knows build-box's key, so Trust says so."},
+  {id:"host_key_unknown",g:"Setup",label:"Host key unknown (first contact)",tip:"build-box isn't in known_hosts: setup waits on Trust this machine. Nothing times out there."},
+  {id:"other_desktops",g:"Setup",label:"2 runners of another desktop on the engine",tip:"Another desktop already made purlis-runner-build-box there. Today the add collides (A7)."},
+  {id:"wrong_name",g:"Doctor findings",label:"wrong_name (no such machine)",typed:"dev@biuld-box",fault:"wrong_name"},
+  {id:"port_closed",g:"Doctor findings",label:"port_closed (no answer on 22)",fault:"port_closed",tip:"Unreachable. Use Bring the machine back, then Try now or wait for the retry."},
+  {id:"no_agent_key",g:"Doctor findings",label:"no_agent_key (sign-in refused)",fault:"no_agent_key"},
+  {id:"forwarding",g:"Doctor findings",label:"forwarding refused by sshd",fault:"forwarding"},
+  {id:"no_socket",g:"Doctor findings",label:"no_socket (no Docker running)",fault:"no_socket"},
+  {id:"no_docker_group",g:"Doctor findings",label:"no_docker_group",fault:"no_docker_group"},
+  {id:"plain_tcp",g:"Doctor findings",label:"plain_tcp (tcp:// without TLS)",typed:"tcp://10.0.4.12:2375",fault:"plain_tcp"},
+  {id:"bad_tls",g:"Doctor findings",label:"bad_tls (certificate from another CA)",route:"tls",typed:"10.0.4.12:2376",fault:"bad_tls"},
+  {id:"unsupported_architecture",g:"Doctor findings",label:"unsupported_architecture (riscv64)",typed:"dev@10.0.4.12",fault:"unsupported_architecture"},
+  {id:"kernel_short",g:"Doctor findings",label:"Kernel too old (needs 6.12, Landlock 6)",fault:"kernel_short"},
+  {id:"full_disk",g:"Doctor findings",label:"full_disk",fault:"full_disk",tip:"Today checks the disk only when the pool is made, so Connect says Connected and Create fails."},
+  {id:"image_unreachable",g:"Doctor findings",label:"image_unreachable",fault:"image_unreachable"},
+  {id:"slow",g:"Timing",label:"Slow step: Docker answers after 48 s",tip:"Past 30 s a refined step names itself and says why. Today's probe is bounded at 30 s (RUN_WITHIN) and fails."},
+  {id:"stuck",g:"Timing",label:"Step never ends (3-minute limit)",fault:"stuck",tip:"Set Speed to 30× to reach the limit sooner."},
+  {id:"pull",g:"Timing",label:"Runner image pull, 530 MB",tip:"The image is missing on build-box. A refined pull shows progress and has no time limit. Today shows one busy line."},
+  {id:"host_key_changed",g:"After setup",label:"Host key changed",post:"host_key_changed"},
+  {id:"engine_id_changed",g:"After setup",label:"engine_id_changed",post:"engine_id_changed"},
+  {id:"context_drift",g:"After setup",label:"context_drift",post:"context_drift",pick:"context:build"},
+  {id:"went_offline",g:"After setup",label:"Machine goes off (Unreachable)",post:"port_closed"},
+  {id:"refused_after",g:"After setup",label:"Sign-in refused later (key left the agent)",post:"no_agent_key",tip:"Today a Remove from Settings › Pools is a dead end for this finding (A6)."},
+  {id:"runner_gone",g:"After setup",label:"Runner removed on the machine",post:"runner_gone"},
+  {id:"cluster_ok",g:"Cluster",label:"Cluster: all good",cluster:1},
+  {id:"cluster_plugin",g:"Cluster",label:"Cluster: credential plugin not found",cluster:1,cfault:"plugin"},
+  {id:"cluster_slow",g:"Cluster",label:"Cluster: slow node, the wait runs out",cluster:1,slowVouch:1},
+  {id:"cluster_failed",g:"Cluster",label:"Cluster: the add fails",cluster:1,cfault:"claimrefused"},
+];
+const FP_OLD="SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA";
+const FP_NEW="SHA256:7nC2pR0aVxK4wQ9bT1mE6fY3hJ8sL5dZ0uG2iN7oPqA";
+const KUBE_ERR="kubectl said: getting credentials: exec: executable gke-gcloud-auth-plugin not found. It looks like you are trying to use a client-go credential plugin that is not installed.";
+
+/* ===================== findings: the core's words (connecting.rs said_with_next) ===================== */
+const F={
+  wrong_name:{at:"resolve",state:"Unreachable",title:"purlis couldn't find that machine",said:h=>`purlis couldn't find a machine called ${h}. Check the name, or pick it from your SSH hosts.`,next:"change",short:"no such name"},
+  port_closed:{at:"port",state:"Unreachable",title:"The machine didn't answer",said:h=>`${h} didn't answer on port 22. Check that it's on and on this network, and connect your VPN if you use one.`,see:h=>[`This asks whether anything answers on port 22 of ${h}, from this machine. It only reads.`,`nc -vz ${h} 22`],short:"no answer"},
+  no_agent_key:{at:"signin",state:"Refused",title:"The machine didn't accept your sign-in",said:h=>`${h} didn't accept your sign-in. purlis signs in with your SSH agent and never asks for a password. Add your key to the agent with ssh-add, then check again.`,see:()=>["Run this on this machine, then check again.","ssh-add ~/.ssh/id_ed25519"],short:"sign-in refused"},
+  forwarding:{at:"engine",state:"Refused",title:"SSH there doesn't allow forwarding",said:h=>`The SSH server on ${h} doesn't allow forwarding, and purlis reaches Docker there by forwarding its socket. Ask its admin to allow it for your account (AllowTcpForwarding, AllowStreamLocalForwarding and DisableForwarding in sshd_config, or restrict and no-port-forwarding on your key), then check again.`,admin:1,short:"forwarding refused"},
+  no_socket:{at:"engine",state:"Refused",title:"No Docker there that you can use",said:h=>`${h} has no Docker running that dev can use. Start Docker there, or name its socket in the address, then check again.`,see:h=>[`Run this on ${h}.`,"sudo systemctl start docker"],short:"no Docker running"},
+  no_docker_group:{at:"group",state:"Refused",title:"Your account can't use Docker there",said:h=>`dev on ${h} isn't allowed to use Docker. On ${h}, add dev to the docker group, or use rootless Docker or Podman, then check again.`,see:h=>[`Run this on ${h}, then sign in to it again.`,"sudo usermod -aG docker dev"],admin:1,short:"not in the docker group"},
+  plain_tcp:{at:"parse",state:"Refused",title:h=>`purlis won't use ${h}'s Docker without TLS`,said:()=>"purlis doesn't connect to Docker over plain tcp://: anyone who can reach that port can run anything on that machine. Use ssh:// instead, or turn on TLS for Docker there.",short:"plain tcp://"},
+  bad_tls:{at:"cert",state:"Refused",title:"Its certificate is from another authority",said:h=>`${h}'s certificate isn't signed by the CA you chose. Check ~/.docker/build/ca.pem: it must be the CA Docker's certificates on ${h} are signed with.`,short:"certificate from another CA"},
+  unsupported_architecture:{at:"arch",state:"Refused",title:"There's no runner image for that machine",said:h=>`${h} is linux/riscv64, and the runner image is built for linux/amd64 and linux/arm64. Pick a machine that is one of those.`,next:"change",short:"platform linux/riscv64"},
+  kernel_short:{at:"kernel",state:"Refused",title:"Its kernel can't run purlis's sandbox",said:h=>`${h} runs Linux 6.8.0-49-generic, and its kernel doesn't have Landlock version 6 (Linux 6.12 or later), which purlis's sandbox needs, so no chat on this pool will start. A container runs on its host's kernel. On ${h}, run sudo apt install --install-recommends linux-generic-hwe-24.04 for a newer kernel, then restart ${h} and check again.`,short:"kernel 6.8, needs 6.12"},
+  full_disk:{at:"disk",state:"Refused",title:"Docker's disk there is full",said:h=>`Docker on ${h} has 1.4 GB free, and a runner needs 6 GB, so purlis makes no runner there. To make room, run docker system df on ${h} to see what takes it, then docker image prune there to remove images nothing uses, or give Docker there a bigger disk. Then check again.`,see:h=>[`Run these on ${h}.`,"docker system df\ndocker image prune"],short:"disk full"},
+  image_unreachable:{at:"image",state:"Refused",title:"The machine couldn't download the runner image",said:h=>`${h} couldn't download the runner image. Check that ${h} can reach ghcr.io, then check again.`,short:"image download"},
+  engine_silent:{at:"engine",state:"Refused",title:"Docker didn't answer there",said:h=>`Docker on ${h} didn't answer through SSH (it said: timed out after 30 s). Check that Docker is running there, then check again.`,short:"Docker silent"},
+  stuck:{at:"engine",state:"Refused",title:"Docker didn't answer there",said:h=>`Docker on ${h} didn't answer within 3 min, so purlis stopped waiting. Check that Docker is running there, then check again.`,see:h=>[`Run this on ${h}.`,"systemctl status docker"],short:"Docker silent for 3 min"},
+  host_key_changed:{at:"hostkey",state:"Host key changed",title:"The machine shows a different key",said:h=>`${h} shows a different key than the one you trusted (${FP_NEW} now, ${FP_OLD} trusted). This happens when the machine is reinstalled, and can mean something else is answering in its place, so purlis connects to nothing there until you check it and trust it again.`,next:"trustagain",short:"host key changed"},
+  engine_id_changed:{at:"engineid",state:"Refused",title:"Docker there isn't the one you trusted",said:h=>`The Docker engine on ${h} isn't the one you trusted: it was reset or reinstalled. purlis makes and links no runner there until you check it and trust it again. Runners made on the old engine aren't on this one.`,next:"trustagain",short:"engine reset"},
+  cancelled:{at:"",state:"Refused",title:"You stopped the check",said:()=>"You stopped this check. Nothing else changed.",short:"you stopped a check"},
+  runner_gone:{at:"runner",state:"Runner gone",title:"Runner removed",said:()=>`The runner of pool ${S.name} was removed outside purlis.`,next:"remake",short:"runner removed"},
+  collision:{at:"runner",state:"Refused",title:"The pool wasn't made",said:()=>`a container named purlis-runner-${S.name} is already there; remove it, or name the runner otherwise`,short:"name taken"},
+  plugin:{at:"plugin",state:"Refused",title:"A credential plugin is missing",said:()=>"Needs gke-gcloud-auth-plugin, not found. Your kubeconfig signs in with it, and purlis looks only in kubectl's folder and the system folders. Name the folder it is in.",short:"credential plugin missing"},
+  vouch:{at:"claim",state:"Refused",title:"The cluster didn't vouch in time",said:()=>`The cluster operator didn't vouch for your runner within ${S.cl.wait} min, the pool's wait, so purlis deleted the claim. Pool ${S.cl.name} stays. A new node and its image download can take longer: raise the wait and claim again.`,short:"wait ran out"},
+  claimrefused:{at:"claim",state:"Refused",title:"Your claim was refused",said:()=>`Your account can't create SandboxClaims in namespace purlis-dev, so purlis can't claim a runner there. Pool ${S.cl.name} stays. Ask your cluster's admin for the purlis-user role there, then check the pool.`,admin:1,short:"no rights in purlis-dev"},
+};
+const WHY={engine:h=>`Docker on ${h} hasn't answered yet. A busy disk or a daemon still starting does this.`,signin:h=>`${h} hasn't finished the sign-in. A slow DNS lookup on its side does this.`,claim:()=>"The cluster operator hasn't vouched for your runner yet: a new node is starting in node pool default-pool.",runner:h=>`Docker on ${h} is still creating the container.`};
+const WHERE_LEAD="Right now your chats run directly on this machine. A pool gives each chat a separate machine, so it can work on its own.";
+const GET_HELP="Get help opens a chat that explains this step. It changes nothing itself: every fix is made here.";
+
+/* ===================== state ===================== */
+const S={variant:"t",scenario:"ok",speed:10,lastAction:"loaded"};
+function resetAll(){
+  const sc=scn();
+  Object.assign(S,{kind:sc.cluster?"cluster":"remote",whereOpt:sc.cluster?"cluster":"remote",where:false,route:sc.route||"ssh",pick:sc.typed?"typed":(sc.pick||"build-box"),typed:sc.typed||"",
+    name:"build-box",owned:"not",fault:sc.fault||null,back:false,run:null,retry:null,pool:null,trusted:false,connected:false,keyOk:false,
+    signins:false,identity:false,tried:false,tryRun:null,view:null,forgetOpen:false,forgetRemove:true,removing:null,notices:[],memoryUntil:0,clock:0,
+    drift:false,tlsOpen:true,trouble:null,
+    cl:{where:false,kubeconfig:"~/.kube/config",context:CONTEXTS[0],pluginDir:"~/google-cloud-sdk/bin",wait:5,name:"acme-dev",fault:sc.cfault||null,run:null,pool:null,checked:false,installed:false,key:"",trouble:null}});
+  if(/^\d|10\.0/.test(H())) S.name="build-10";
+}
+const scn=()=>SCEN.find(s=>s.id===S.scenario);
+const H=()=>S.route==="tls"?hostOf(S.typed||"10.0.4.12"):S.pick==="typed"?hostOf(S.typed):S.pick.startsWith("context:")?"build-box":S.pick;
+function hostOf(a){let x=String(a||"").trim().replace(/^[a-z]+:\/\//,"").replace(/^[^@]*@/,"").replace(/[:/].*$/,"");return x||"the machine";}
+const addr=()=>S.route==="tls"?"tcp://"+(S.typed||"10.0.4.12:2376"):S.pick==="typed"?(S.typed.includes("://")?S.typed:"ssh://"+S.typed):"ssh://dev@"+H();
+const plainTcp=()=>S.route==="ssh"&&/^tcp:\/\//.test(S.typed)&&S.pick==="typed";
+const runnerName=()=>"purlis-runner-"+S.name+(fl("fix")?"-7f3a":"");
+
+/* ===================== helpers ===================== */
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function dur(s){if(s==null||!isFinite(s))return"";if(s<10)return(Math.round(s*10)/10).toFixed(1)+" s";if(s<60)return Math.floor(s)+" s";const m=Math.floor(s/60),r=Math.floor(s%60);return m+" min"+(r?" "+r+" s":"");}
+function btn(act,label,cls,arg,extra){return `<button type="button" class="btn ${cls||""}" id="${act}${arg?"-"+String(arg).replace(/[^a-z0-9]/gi,""):""}" data-act="${act}"${arg!=null?` data-arg="${esc(arg)}"`:""}${extra||""}>${esc(label)}</button>`;}
+const stKey=st=>(st||"").split(" ")[0];
+const stBadge=st=>`<span class="badge st st-${stKey(st)}"><span class="dot" aria-hidden="true"></span>${esc(st)}</span>`;
+function say(tone,title,body,actions,tag){return `<div class="say ${tone}" role="${tone==="trouble"?"alert":"status"}"><span class="mk" aria-hidden="true">${tone==="news"?"i":"!"}</span><h3>${esc(title)}${tag||""}</h3><div class="sb">${body}</div>${actions?`<div class="btnrow">${actions}</div>`:""}</div>`;}
+function head(title,lead,tag){return `<header class="head"><div class="title-row"><h1 tabindex="-1" id="step-title">${esc(title)}</h1>${tag||""}</div>${lead?`<p class="lead">${lead}</p>`:""}</header>`;}
+function action(does,main,extra){return `<section class="action" aria-label="What to do next">${does?`<p class="does">${esc(does)}</p>`:""}${main||extra?`<div class="btnrow">${main||""}${extra||""}</div>`:""}</section>`;}
+function seeWhat(note,text,open){return `<details class="fold"${open?" open":""}><summary>See what this does</summary><div class="fb"><p class="does">${esc(note)}</p>${text?codeBlock("Commands",text,"Copy"):""}</div></details>`;}
+function codeBlock(label,text,copy){return `<div class="code"><div class="ch"><span>${esc(label)}</span><span>${esc(copy||"Copy")}</span></div><pre>${esc(text)}</pre></div>`;}
+function radios(name,opts,val,bind){return `<div class="radios" role="radiogroup">${opts.map(o=>`<label class="radio"><input type="radio" name="${name}" id="${name}-${String(o.v).replace(/[^a-z0-9]/gi,"")}" value="${esc(o.v)}" data-bind="${bind}" ${o.v===val?"checked":""}><span>${o.l}</span>${o.d?`<small>${esc(o.d)}</small>`:""}</label>`).join("")}</div>`;}
+function getHelp(){return `<div class="help"><p>${GET_HELP}</p>${btn("gethelp","Get help","")}</div>`;}
+function log(a){S.lastAction=a;}
+
+/* ===================== check engine ===================== */
+function dockerChecks(doctor){
+  const h=H(),tls=S.route==="tls",sc=scn(),L=[];
+  const a=(id,stage,title,d,note)=>L.push({id,stage,title,d,note,status:"todo",el:0,took:null});
+  a("resolve","meet",`${h} is found`,0.04,"10.0.4.12");
+  a("port","meet",`${h} answers`,0.09,tls?"port 2376":"port 22");
+  a("hostkey","meet",tls?"Its authority is the one you trusted":"Its key is the one you trusted",0.3,(tls?"CA ":"ED25519 ")+FP_OLD.slice(0,20)+"…");
+  if(tls) a("cert","trust","Its certificate checks out",0.15,"CN=10.0.4.12");
+  else a("signin","trust","It accepts your sign-in",0.8,"key dev@laptop, ED25519");
+  a("engine","trust","Docker answers there",0.3,"Docker 27.3.1");
+  if(!tls) a("group","trust","Your account may use Docker",0.05,"dev is in group docker");
+  a("engineid","trust","Its Docker is the one you trusted",0.05,"engine 4f1c…9a2e");
+  a("confines","trust","Docker confines runners there",0.1,"its default seccomp profile");
+  a("arch","trust","Its platform has a runner image",0.05,"linux/amd64");
+  a("kernel","trust","It runs Linux 6.12 or later",0.1,"Linux 6.14, Landlock 6");
+  a("image","create","It can download the runner image",0.4,"already there");
+  a("disk","create","It has room for a runner",0.2,"212 GB free");
+  if(doctor) a("runner","create","Its runner is there",0.2,runnerName());
+  else a("runner","create","Make the runner",1.4,runnerName());
+  a("link","create","Link to the runner",0.6,"round trip 38 ms");
+  for(const c of L){
+    if(S.fault&&F[S.fault]&&F[S.fault].at===c.id) c.fail=S.fault;
+    if(c.id==="engine"&&(sc.id==="slow")&&!doctor){c.d=48;c.note="Docker 27.3.1, after a slow start";}
+    if(c.id==="engine"&&S.fault==="stuck") c.d=Infinity;
+    if(c.id==="image"&&sc.id==="pull"&&!doctor){c.d=41;c.pull=530;c.note="downloaded, 530 MB";}
+    if(c.id==="hostkey"&&doctor) c.note+=", trusted";
+    if(c.id==="runner"&&sc.id==="other_desktops"&&!doctor){ if(fl("fix")) c.note+=". 2 runners belong to another desktop: left alone"; else c.fail="collision"; }
+    if(c.id==="runner"&&sc.id==="pull"&&!doctor) c.d=3.2;
+    // Today: each ssh run is bounded at 30 s (RUN_WITHIN), and the image pull has no limit.
+    c.limit = c.pull?Infinity : fl("fix")?180 : (c.stage==="create"?Infinity:30);
+  }
+  return L;
+}
+function clusterChecks(){
+  const c=S.cl,sc=scn(),L=[];
+  const a=(id,stage,title,d,note)=>L.push({id,stage,title,d,note,status:"todo",el:0,took:null});
+  a("kubeconfig","check","Read the kubeconfig",0.1,`${c.kubeconfig}, context ${c.context}`);
+  if(fl("fix")) a("plugin","check","Its credential plugin is there",0.05,"gke-gcloud-auth-plugin in "+c.pluginDir);
+  a("reach","check","Kubernetes 1.36 or later",0.7,"1.36.2");
+  a("defs","check","The agent sandbox definitions",0.4,"installed");
+  a("rights","check","Your rights in purlis-dev",0.9,"can create SandboxClaims");
+  for(const p of ["Upstream","Definitions","Signing key","Operator"]) a("inst-"+p,"install",p,0.2,"installed by your admin");
+  a("key","pool","Read the pool's key",0.4,"matches the key you pasted");
+  a("claim","pool","Claim a runner",sc.slowVouch?382:24,"vouched for by the operator");
+  a("link","pool","Link to the runner",0.5,"round trip 61 ms");
+  for(const x of L){
+    if(c.fault==="plugin"&&x.id===(fl("fix")?"plugin":"reach")) x.fail=fl("fix")?"plugin":"kube";
+    if(c.fault==="claimrefused"&&x.id==="claim"){x.fail="claimrefused";x.d=3;}
+    x.limit = x.id==="claim"?c.wait*60 : fl("fix")?180:Infinity;
+  }
+  return L;
+}
+function newRun(kind,until,doctor){return {kind,until,doctor:!!doctor,checks:kind==="cluster"?clusterChecks():dockerChecks(doctor),i:0,status:"running",finding:null};}
+const ORDER={meet:0,trust:1,create:2,check:0,install:1,pool:2};
+const cur=r=>r&&r.checks[r.i];
+const total=(r,stages)=>r?r.checks.filter(c=>!stages||stages.includes(c.stage)).reduce((s,c)=>s+(c.took||0),0):0;
+function step(run,dt){
+  if(!run||run.status!=="running") return false;
+  const c=run.checks[run.i]; c.status="run"; c.el+=dt;
+  if(c.el>=c.limit&&c.d>c.limit){c.el=c.limit;c.took=c.limit;c.status="fail";run.status="failed";
+    run.finding = c.id==="claim"?"vouch" : fl("fix")?(c.fail&&c.fail!=="stuck"?c.fail:"stuck") : "engine_silent"; failed(run); return true;}
+  if(c.el<c.d) return true;
+  c.el=c.d;c.took=c.d;
+  if(c.fail){c.status="fail";run.status="failed";run.finding=c.fail;failed(run);return true;}
+  c.status="ok"; run.i++;
+  if(run.i>=run.checks.length){run.status="done";done(run);return true;}
+  if(ORDER[run.checks[run.i].stage]>ORDER[run.until]){run.status="paused";paused(run);}
+  return true;
+}
+function failed(run){
+  const f=F[run.finding]||{state:"Refused"};
+  if(run.kind==="cluster"){
+    if(fl("fix")){ if(S.cl.pool) S.cl.pool.state=f.state,S.cl.pool.reason=run.finding; }
+    else if(run.until==="pool"){ S.cl.pool=null; } // A3: any failed add forgets the pool
+    return;
+  }
+  if(S.pool&&S.pool.state!=="Pool forgotten"){ S.pool.state=f.state; S.pool.reason=run.finding; }
+  if(!fl("fix")&&run.until==="create"&&!run.doctor){ S.pool=null; } // today: a failed add removes the runner and forgets the pool
+  if(f.state==="Unreachable"&&(fl("fix")||run.doctor)){
+    const a=(S.retry?S.retry.attempt:0)+1;
+    const waits=fl("fix")?[5,10,20,30,30]:[5,10,20,40,80,120];
+    const w=waits[Math.min(a-1,waits.length-1)];
+    S.retry={attempt:a,left:w,wait:w};
+    if(!fl("fix")) S.memoryUntil=S.clock+w; // Try now in the window notice can't beat this
+  } else S.retry=null;
+  if(run.doctor) notice(run.finding);
+}
+function paused(run){
+  if(run.kind==="cluster"){ if(run.until==="check") S.cl.checked=true; if(run.until==="install") S.cl.installed=true; return; }
+  if(run.until==="trust"){ S.connected=true; }
+}
+function done(run){
+  if(run.kind==="try") return;
+  S.retry=null;
+  if(run.kind==="cluster"){ S.cl.checked=S.cl.installed=true; if(!S.cl.pool) S.cl.pool={}; Object.assign(S.cl.pool,{state:"Ready",reason:null}); return; }
+  S.connected=true;
+  if(!S.pool) S.pool={};
+  Object.assign(S.pool,{name:S.name,state:"Ready",reason:null,made:true});
+  S.notices=S.notices.filter(n=>n!=="linkdown"&&n!=="pinchanged"&&n!=="gone");
+}
+function notice(fid){
+  const k=fid==="port_closed"?"linkdown":fid==="host_key_changed"?"pinchanged":fid==="runner_gone"?"gone":null;
+  if(k&&!S.notices.includes(k)) S.notices.push(k);
+}
+function retryNow(){ S.retry=null; if(S.back&&F[S.fault]&&F[S.fault].state==="Unreachable") S.fault=null; rerun(); }
+function rerun(){
+  const r=S.run; if(!r) return;
+  const keep=S.pool&&(S.pool.state==="Unreachable"||S.pool.state==="Pool forgotten");
+  if(S.pool&&S.pool.made){ S.run=newRun("docker","create",true); if(fl("fix")&&!keep) S.pool.state="Setting up"; return; }
+  const stg=cur(r)?cur(r).stage:"meet", n=newRun("docker",r.until,false);
+  for(const c of n.checks){ if(ORDER[c.stage]<ORDER[stg]){ c.status="ok"; c.took=(r.checks.find(x=>x.id===c.id)||c).took||c.d; n.i++; } }
+  S.run=n; if(S.pool&&fl("fix")&&!keep) S.pool.state="Setting up";
+}
+
+/* ===================== ticking ===================== */
+setInterval(()=>{
+  const dt=0.1*S.speed; let ch=false; S.clock+=dt;
+  ch=step(S.run,dt)||ch; ch=step(S.cl.run,dt)||ch; ch=step(S.tryRun,dt)||ch;
+  if(S.tryRun&&S.tryRun.status==="done"&&!S.tried){S.tried=true;ch=true;}
+  if(S.retry&&S.run&&S.run.status==="failed"){S.retry.left-=dt;ch=true;if(S.retry.left<=0) retryNow();}
+  if(ch&&!(document.activeElement&&(document.activeElement.tagName==="SELECT"||document.activeElement.tagName==="INPUT"&&document.activeElement.type==="text"))) render();
+  else if(ch) document.getElementById("readout").textContent=readout();
+},100);
+
+/* ===================== check list ===================== */
+function icon(st){return {ok:"✓",fail:"✕",run:"●",todo:"○",ask:"?"}[st]||"○";}
+function checkList(run,stages,label,opts){
+  opts=opts||{};
+  const lines=run?run.checks.filter(c=>(!stages||stages.includes(c.stage))&&!(opts.twelve&&(c.id==="runner"||c.id==="link"))):[];
+  let out=`<ul class="checks" aria-label="${esc(label)}">`, ph=null;
+  for(const c of lines){
+    if(opts.phases&&c.stage!==ph){ph=c.stage;out+=`<li class="phase">${esc({meet:"Find it",trust:"Sign in and check Docker",create:"Make the pool",check:"Check the cluster",install:"Install",pool:"Pool"}[ph])}</li>`;}
+    let st=c.status, note="";
+    if(!fl("dur")&&st==="run") st="todo"; // today draws no running line: one busy sentence instead
+    if(st==="ok") note=c.note;
+    if(!fl("fix")&&opts.connectToday&&c.stage==="create") st="todo";
+    let t=fl("dur")?(st==="ok"||st==="fail"?dur(c.took):st==="run"?dur(c.el):""):"";
+    if(fl("fix")&&opts.laterNote&&c.stage==="create"&&st==="todo") note="checked as the pool is made";
+    out+=`<li class="chk c-${st}"><span class="ic${st==="run"?" spin-t":""}" aria-hidden="true">${icon(st)}</span><span class="t">${esc(c.title)}${note&&fl("dur")?` <span class="note">${esc(note)}</span>`:""}<span class="sr"> ${st}</span></span><span class="tm num">${t}</span>`;
+    if(fl("dur")&&c.status==="run"&&c.pull){const p=Math.min(1,c.el/c.d),mb=Math.round(c.pull*p);
+      out+=`<div class="prog"><div class="bar" role="progressbar" aria-label="Runner image download" aria-valuemin="0" aria-valuemax="${c.pull}" aria-valuenow="${mb}"><i style="width:${(p*100).toFixed(1)}%"></i></div><span class="num">${mb} / ${c.pull} MB · ${(c.pull/c.d).toFixed(0)} MB/s</span> · Downloading the runner image to ${esc(H())}. No time limit while it moves.</div>`;}
+    else if(fl("fix")&&c.status==="run"&&c.el>=30){const h=run.kind==="cluster"?S.cl.context:H();
+      out+=`<div class="slow" role="status">Still on <b>${esc(c.title)}</b>, <span class="num">${dur(c.el)}</span>. ${esc(WHY[c.id]?WHY[c.id](h):c.title+" is taking longer than usual.")} ${c.id==="claim"?`It waits up to ${S.cl.wait} min, the pool's wait.`:"purlis stops at 3 min."} ${btn("cancel","Cancel","link")}</div>`;}
+    out+=`</li>`;
+  }
+  return out+`</ul>`;
+}
+function liveLine(run){ // refined: the step names itself while it works
+  const c=cur(run); if(!run||run.status!=="running"||!c) return "";
+  return `<p class="busy" role="status"><span class="spin" aria-hidden="true"></span><span>${esc(c.title)} <span class="num">${dur(c.el)}</span></span></p>`;
+}
+function busyToday(run){
+  if(!run||run.status!=="running") return "";
+  const h=H(), st=cur(run).stage;
+  const t=run.kind==="cluster"?(st==="pool"?"Claiming your runner. This can take a few minutes.":"Asking the cluster. This only reads.")
+    :run.doctor?`Checking ${h} again. If it lacks the runner image, purlis downloads it there first, which can take a few minutes.`
+    :st==="meet"?`Asking ${h} for its key. This only reads.`:st==="trust"?`Checking Docker on ${h}. This only reads.`:"Making the pool and its runner. The first time, this downloads the runner.";
+  return `<p class="busy" role="status"><span class="spin" aria-hidden="true"></span><span>${esc(t)}</span></p>`;
+}
+
+/* ===================== the finding card ===================== */
+function findingCard(fid,run){
+  const f=F[fid], h=run&&run.kind==="cluster"?S.cl.context:H(), pool=!!S.pool;
+  let title=typeof f.title==="function"?f.title(h):f.title, body=`<p>${esc(f.said(h))}</p>`, acts="";
+  let tag=fl("fix")?" "+stBadge(f.state):"";
+  if(fid==="host_key_changed"&&fl("fix")){
+    body+=`<dl class="facts"><dt>Trusted</dt><dd class="mono">${FP_OLD}</dd><dt>Shows now</dt><dd class="mono">${FP_NEW}</dd></dl>${codeBlock(`Run on ${h} itself, not over this link`,"ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub")}
+    <label class="chkl" style="display:flex;gap:8px"><input type="checkbox" id="keyok" data-bind="keyOk" ${S.keyOk?"checked":""}> I checked it on ${esc(h)}, and it prints ${FP_NEW.slice(0,16)}…</label><p>purlis doesn't try again on its own. Nothing runs on this pool until you trust the new key or forget the pool.</p>`;
+  }
+  if(fid==="plugin") body+=`<div class="field"><span class="l"><label for="cl-plugin">Folder with gke-gcloud-auth-plugin</label></span><input type="text" class="mono" id="cl-plugin" data-bind="cl.pluginDir" value="${esc(S.cl.pluginDir)}"></div>`;
+  if(fid==="vouch") body+=`<div class="field"><span class="l"><label for="cl-wait2">Longest wait for a cluster runner to be vouched for</label></span><select id="cl-wait2" data-bind="cl.wait">${[5,10,15,20].map(m=>`<option value="${m}" ${S.cl.wait==m?"selected":""}>${m} min</option>`).join("")}</select></div>`;
+  if(fl("fix")&&f.state==="Unreachable"&&S.retry) body+=`<p class="num">Trying again in ${Math.max(0,Math.ceil(S.retry.left))} s, attempt ${S.retry.attempt+1}. Try now dials at once.</p>`;
+  if(fl("fix")&&f.state==="Refused"&&run&&run.kind!=="cluster") body+=`<p>purlis stopped trying. It checks again when you press ${pool?"Check pool":"Check again"}.</p>`;
+  // actions
+  if(fl("fix")&&f.state==="Unreachable") acts+=btn("trynow","Try now","primary");
+  if(f.next==="change") acts+=btn("change","Change the machine",fl("fix")&&f.state==="Unreachable"?"":"primary");
+  else if(f.next==="trustagain") acts+=fl("fix")&&fid==="host_key_changed"?btn("trustnew","Trust the new key","primary",null,S.keyOk?"":" disabled"):btn("trustagain","Check and trust again","primary")+btn("again","Check again","");
+  else if(f.next==="remake") acts+=btn("remake","Make the runner again","primary");
+  else if(fid==="plugin") acts+=btn("useplugin","Use this folder","primary");
+  else if(fid==="vouch") acts+=btn("raise","Raise the wait and claim again","primary");
+  else if(fid==="plain_tcp") acts+=btn("usessh","Use SSH instead","primary")+btn("usetls","Use TLS instead","");
+  else if(!(fl("fix")&&f.state==="Unreachable")) acts+=btn("again",fl("fix")&&(pool||run&&run.kind==="cluster"&&S.cl.pool)?"Check pool":"Check again","primary");
+  if(!pool&&run&&run.kind!=="cluster"&&f.next!=="change"&&fid!=="plain_tcp") acts+=btn("change","Change the machine","");
+  if(f.admin) acts+=btn("admin","Send to your admin","");
+  let out=say(f.state==="Unreachable"&&fl("fix")?"attention":"trouble",title,body,acts,tag);
+  if(f.see){const [n,t]=f.see(h); out+=seeWhat(n,t);}
+  return out;
+}
+
+/* ===================== status: one place per variant ===================== */
+function headline(p){
+  const h=H(),f=p.reason&&F[p.reason];
+  switch(p.state){
+    case "Ready": return `Ready. Chats can run on ${h}. Runner ${runnerName()}, round trip 38 ms.`;
+    case "Setting up": {const c=cur(S.run);return c?`Setting up: ${c.title}${c.status==="run"?`, ${dur(c.el)}`:""}.`:"Setting up.";}
+    case "Unreachable": return `purlis can't reach ${h} and keeps trying${S.retry?`: next in ${Math.max(0,Math.ceil(S.retry.left))} s`:""}.`;
+    case "Refused": return `${h} answers, and refused: ${f?f.short:""}. purlis stopped trying.`;
+    case "Host key changed": return `${h} shows a different host key. purlis stopped and waits for your OK.`;
+    case "Runner gone": return `The runner on ${h} is gone. Its home volume, with your sign-ins, is still there.`;
+    case "Pool forgotten": return "Forgotten on this desktop.";
+  }
+  return "";
+}
+function statusActions(p){
+  let a="";
+  if(p.state==="Unreachable") a+=btn("trynow","Try now","primary","status");
+  if(p.state==="Refused") a+=btn("again","Check pool","primary","status");
+  if(p.state==="Host key changed") a+=btn("goconnect","Check the new key","primary","status");
+  if(p.state==="Runner gone") a+=btn("remake","Make the runner again","primary","status");
+  if(p.state==="Ready") a+=btn("again","Check pool","","status");
+  return a+btn("forget","Forget pool…","","status");
+}
+function others(){return scn().id==="other_desktops"&&fl("fix")?`<p class="does">2 runners belong to another desktop. purlis leaves them alone.</p>`:"";}
+function statusBar(){
+  const p=S.pool; if(!p) return "";
+  if(p.state==="Pool forgotten") return "";
+  return `<section class="statusbar k-${stKey(p.state)}" aria-label="Pool ${esc(p.name)}"><div class="title-row">${stBadge(p.state)}<b>Pool ${esc(p.name)}</b></div><p>${esc(headline(p))}</p>${others()}<div class="btnrow">${statusActions(p)}</div></section>`;
+}
+function leftovers(){
+  const items=[]; if(!S.pool||!S.pool.made) return items;
+  items.push([`Runner ${runnerName()} and its home volume ${runnerName()}-home`,`docker rm -f ${runnerName()}\ndocker volume rm ${runnerName()}-home`]);
+  items.push([`1 browser, ${runnerName()}-browser-1`,`docker rm -f ${runnerName()}-browser-1`]);
+  items.push(["Your sign-ins in the runner's home volume: GitHub (dev) and Claude Code",null]);
+  return items;
+}
+function forgetBox(){
+  const p=S.pool,h=H(),items=leftovers(),answers=p&&["Ready","Refused","Runner gone","Setting up"].includes(p.state)&&!(p.reason&&F[p.reason].state==="Unreachable");
+  let b=`<div class="box" role="group" aria-labelledby="fg-h"><h3 id="fg-h">Forget pool ${esc(S.name)}?</h3>`;
+  if(!items.length) b+=`<p class="does">Nothing purlis made is on ${esc(h)} yet, so nothing is left there.</p>`;
+  else{
+    b+=`<p class="does">These may stay on ${esc(h)}:</p><ul>${items.map(i=>`<li>${esc(i[0])}</li>`).join("")}</ul>`;
+    b+=answers?`<label class="chkl"><input type="checkbox" id="forget-remove" data-bind="forgetRemove" ${S.forgetRemove?"checked":""}> Remove them from ${esc(h)} too. It answers, so purlis can.</label>`
+      :`<p class="does">purlis can't ${p&&p.state==="Host key changed"?"trust":"reach"} ${esc(h)} now, so it removes nothing there. It shows the commands to run there afterwards.</p>`;
+  }
+  if(scn().id==="other_desktops") b+=`<p class="does">The 2 runners of another desktop are never touched.</p>`;
+  return b+`<div class="btnrow">${btn("forgetyes","Forget pool","danger")}${btn("forgetno","Cancel","")}</div></div>`;
+}
+function forgottenPage(){
+  const p=S.pool,h=H(),left=p.left||[];
+  let b=head(`Pool ${p.name} is forgotten`,"Chats can't use it. Nothing of it is kept on this desktop.",stBadge("Pool forgotten"));
+  if(left.length) b+=`<p class="p">These may still be on ${esc(h)}:</p><ul class="does">${left.map(i=>`<li>${esc(i[0])}</li>`).join("")}</ul>${codeBlock(`To remove them, run this on ${h}`,left.filter(i=>i[1]).map(i=>i[1]).join("\n"))}`;
+  else b+=`<p class="does">Nothing was left on ${esc(h)}.</p>`;
+  return b+action("Starts a new pool's setup from its first step.",btn("setupagain","Set it up again","primary"));
+}
+
+/* ===================== steps per variant ===================== */
+function stepIds(){
+  if(S.kind==="cluster") return fl("three")?["where","cluster","use"]:fl("merge")?["where","check","pool","signins","identity","try"]:["where","check","install","pool","signins","identity","try"];
+  return fl("three")?["where","machine","use"]:fl("merge")?["where","connect","signins","identity","try"]:["where","connect","pool","signins","identity","try"];
+}
+const NAMES={where:"Where chats run",connect:"Connect",pool:"Pool",signins:"Sign-ins",identity:"Agent identity",try:"Try it",check:"Check the cluster",install:"Install",machine:"Machine",cluster:"Cluster",use:"Use it"};
+function stepInfo(id){
+  const r=S.run, cl=S.cl, rc=cl.run, made=!!(S.pool&&S.pool.made), poolBad=S.pool&&!["Ready","Setting up","Pool forgotten"].includes(S.pool.state);
+  const fail=x=>x&&x.status==="failed";
+  const d=(run,stages)=>fl("raildur")&&run?dur(total(run,stages)):"";
+  if(S.kind==="cluster"){
+    const c=cl.pool&&cl.pool.state==="Ready";
+    switch(id){
+      case "where": return cl.where?{s:"done",line:cl.context.replace(/^gke_/,"")}:{s:"now"};
+      case "check": {if(!cl.where)return{s:"later"}; if(fail(rc)&&ORDER[cur(rc).stage]<=(fl("merge")?1:0))return{s:"attention",line:"Needs you"}; if(fl("merge")?cl.installed:cl.checked)return{s:"done",line:fl("merge")?"Checked and installed":"Ready for the install",took:d(rc,["check","install"])}; return{s:"now"};}
+      case "install": if(!cl.checked)return{s:"later"}; return cl.installed?{s:"done",line:"Installed by your admin"}:{s:"now"};
+      case "pool": {if(!cl.installed)return{s:"later"}; if(fail(rc)&&cur(rc).stage==="pool")return{s:"attention",line:cl.pool?cl.pool.state:"Not made"}; return c?{s:"done",line:cl.name,took:d(rc,["pool"])}:{s:"now"};}
+      case "cluster": {if(!cl.where)return{s:"later"}; if(fail(rc))return{s:"attention",line:cl.pool?cl.pool.state:"Needs you"}; return c?{s:"done",line:cl.name,took:d(rc)}:{s:"now"};}
+      default: return useInfo(id,c);
+    }
+  }
+  switch(id){
+    case "where": return S.where?{s:"done",line:"Docker on another machine"}:{s:"now"};
+    case "connect": {if(!S.where)return{s:"later"};
+      if(fail(r)&&(fl("merge")||cur(r).stage!=="create"))return{s:"attention",line:S.pool&&fl("fix")?S.pool.state:fl("fix")?F[r.finding].state:"Needs you"};
+      if(fl("merge")?made:S.connected){const bad=poolBad&&made&&S.pool.reason&&!["image","disk","runner","link"].includes(F[S.pool.reason].at); return{s:bad?"attention":"done",line:bad?S.pool.state:`${H()}, key ${FP_OLD.slice(7,15)}…`,took:d(r,fl("merge")?null:["meet","trust"])};}
+      return{s:"now"};}
+    case "pool": {if(!S.connected)return{s:"later"}; if(fail(r)&&cur(r).stage==="create")return{s:"attention",line:fl("fix")?F[r.finding].state:made?S.pool.state:"Wasn't made"}; if(made)return poolBad?{s:"attention",line:S.pool.state}:{s:"done",line:S.name}; return{s:"now"};}
+    case "machine": {if(!S.where)return{s:"later"}; if(fail(r)||poolBad)return{s:"attention",line:S.pool?S.pool.state:F[r.finding].state}; return made?{s:"done",line:`${S.name} on ${H()}`,took:d(r)}:{s:"now"};}
+    default: return useInfo(id,made);
+  }
+}
+function useInfo(id,made){
+  const tr=S.tryRun?dur(total(S.tryRun)):"";
+  switch(id){
+    case "signins": return !made?{s:"later"}:S.signins?{s:"done",line:"claude-work"}:{s:"now"};
+    case "identity": return !made||!S.signins?{s:"later"}:S.identity?{s:"done",line:"gh through coder"}:{s:"now"};
+    case "try": return !made||!S.identity?{s:"later"}:S.tried?{s:"done",line:"A real chat started",took:fl("raildur")?tr:""}:{s:"now"};
+    case "use": return !made?{s:"later"}:S.tried?{s:"done",line:"A real chat started",took:tr}:{s:"now"};
+  }
+  return {s:"later"};
+}
+function currentStep(){const ids=stepIds();for(const id of ids){const i=stepInfo(id);if(i.s!=="done")return id;}return ids[ids.length-1];}
+
+/* ===================== rail ===================== */
+function rail(){
+  const ids=stepIds(), infos=ids.map(stepInfo), view=S.view||currentStep();
+  let b=`<nav class="rail" aria-label="Steps of Pool setup" data-scope="steps"><p class="rail-count">${infos.filter(i=>i.s==="done").length} of ${ids.length} done</p>`;
+  if(fl("railstat")){const p=S.kind==="cluster"?S.cl.pool:S.pool;
+    if(p&&p.state&&p.state!=="Pool forgotten") b+=`<section class="railcard" aria-label="Pool status"><div class="title-row">${stBadge(p.state)}<b>${esc(S.kind==="cluster"?S.cl.name:p.name)}</b></div><p>${esc(S.kind==="cluster"?(p.state==="Ready"?"Ready. Chats can run in "+S.cl.context+".":"Kept as "+p.state+": "+(F[p.reason]?F[p.reason].short:"")+"."):headline(p))}</p>${S.kind==="cluster"?"":`<div class="btnrow">${statusActions(p)}</div>`}</section>`;}
+  b+=`<ol class="steps">`;
+  ids.forEach((id,n)=>{const i=infos[n];
+    b+=`<li class="s-${i.s}"><button type="button" id="step-${id}" data-act="view" data-arg="${id}" ${view===id?'aria-current="step"':""}><span class="circ" aria-hidden="true">${i.s==="done"?"✓":i.s==="attention"?"!":n+1}</span><span><span class="sname">${NAMES[id]}</span>${i.line?`<span class="sline">${esc(i.line)}</span>`:""}${i.took?`<span class="sline num">took ${esc(i.took)}</span>`:""}</span></button></li>`;});
+  return b+`</ol><p class="saved">Your choices are saved as you go. Close this tab whenever you like.</p></nav>`;
+}
+
+/* ===================== pages: Docker on another machine ===================== */
+function pageWhere(){
+  if(S.kind==="cluster"&&!fl("fix")) return pageWhereCluster();
+  let b=head("Where should your chats run?",WHERE_LEAD);
+  b+=`<div class="cards" role="radiogroup" aria-label="Where your chats run">
+  <label class="ocard"><input type="radio" name="whereopt" id="where-local" value="local" data-bind="whereOpt" ${S.whereOpt==="local"?"checked":""}><b>This machine</b><small>Docker on this machine runs your chats, each in its own container.</small></label>
+  <label class="ocard"><input type="radio" name="whereopt" id="where-remote" value="remote" data-bind="whereOpt" ${S.whereOpt==="remote"?"checked":""}><b>Another machine with Docker</b><small>A second Mac, a Linux box or a server, reached over SSH. Your chats keep running there while this machine sleeps.</small></label>${fl("fix")?`
+  <label class="ocard"><input type="radio" name="whereopt" id="where-cluster" value="cluster" data-bind="whereOpt" ${S.whereOpt==="cluster"?"checked":""}><b>A Kubernetes cluster</b><small>Your team's cluster. Each chat gets its own pod, made for you alone by the cluster operator. purlis signs in with your kubeconfig.</small></label>`:""}</div>`;
+  if(S.whereOpt==="cluster"){
+    b+=clusterFields()+`<p class="does">purlis reaches the cluster with your own sign-in, through kubectl, and keeps only the file's path and the context's name.</p>`;
+    return b+action(S.cl.where?null:"Keeps this context for the pool. Next, doctor looks at what the cluster has.",btn("clwhere",S.cl.where?"Continue":"Use this cluster","primary lg"));
+  }
+  b+=seeWhat("This only keeps your choice. Nothing is contacted yet.","");
+  if(S.whereOpt==="local") return b+action("This prototype follows Docker on another machine. Choose it above.",fl("fix")?null:btn("tocluster","Use your team's cluster instead",""))+(fl("fix")?"":`<p class="does">Today this button is the only way to a cluster while Docker runs here, and only under This machine. With no kubeconfig context found, there is no way to a cluster at all.</p>`);
+  return b+action(S.where?null:"Keeps your choice. Next, you pick the machine and check it's the one you mean.",btn("where",S.where?"Continue":"Set up Docker on another machine","primary lg"));
+}
+function chosenFacts(change){
+  const tls=S.route==="tls";
+  return `<dl class="facts" aria-label="What this pool connects to"><dt>Machine</dt><dd>${esc(H())}</dd><dt>Reached by</dt><dd>${tls?"Docker's API over TLS":"SSH"}</dd>${S.trusted?`<dt>${tls?"Its authority":"Its key"}</dt><dd><span class="badge ok">Trusted</span> <span class="mono">${FP_OLD}</span></dd>`:""}</dl>${change?`<div>${btn("change","Change","link","facts")}</div>`:""}`;
+}
+function pickSection(){
+  const tls=S.route==="tls";
+  let b=`<h2 class="h2" id="route-h">How should purlis reach it?</h2>`+radios("route",[{v:"ssh",l:`SSH <span class="badge accent">Recommended</span>`,d:"Signs in with your SSH keys and settings. Nothing changes on the other machine but what SSH needs."},{v:"tls",l:"Docker's API over TLS",d:"For a machine whose Docker is already set up to take connections, with certificates."}],S.route,"route");
+  if(!tls){
+    const opts=SSH_HOSTS.map(x=>({v:x,l:x,d:"From your SSH settings"}));
+    if(scn().id==="context_drift") opts.push({v:"context:build",l:"build",d:"From your Docker contexts"});
+    opts.push({v:"typed",l:"Another machine",d:"A machine that isn't in your SSH settings."});
+    b+=`<h2 class="h2">Which machine?</h2>`+radios("pick",opts,S.pick,"pick");
+    if(S.pick==="typed") b+=`<div class="field"><span class="l"><label for="typed">Its address</label></span><input type="text" class="mono" id="typed" data-bind="typed" value="${esc(S.typed)}" placeholder="you@build-box" autocomplete="off"><small>The same address you'd give ssh: your account on it, an @ and its name. An alias from your SSH settings works too.${fl("fix")?" Hosts from files your SSH settings Include are listed too.":""}</small></div>`;
+  } else {
+    b+=`<div class="field"><span class="l"><label for="typed">The machine's address</label></span><input type="text" class="mono" id="typed" data-bind="typed" value="${esc(S.typed)}" placeholder="lab.example.internal:2376"><small>Its name, and the port Docker takes TLS connections on: 2376 unless it was set otherwise.</small></div>
+    <details class="fold" open><summary>Options</summary><div class="fb"><p class="does">purlis reads these where they are, and checks the authority before every run.</p><div class="grid2">
+    <div class="field"><span class="l"><label for="tls-ca">Authority (CA) file</label></span><input type="text" class="mono" id="tls-ca" value="~/.docker/build/ca.pem"></div>
+    <div class="field"><span class="l"><label for="tls-cert">Certificate</label></span><input type="text" class="mono" id="tls-cert" value="~/.docker/build/cert.pem"></div>
+    <div class="field"><span class="l"><label for="tls-key">Key</label></span><input type="text" class="mono" id="tls-key" value="~/.docker/build/key.pem"></div></div></div></details>`;
+  }
+  return b;
+}
+function whoCanSignIn(){
+  const h=H();
+  return `<h2 class="h2">Who can sign in to ${esc(h)}?</h2>`+radios("owned",[{v:"not",l:`Others might, or I'm not sure <span class="badge accent">Recommended</span>`,d:"Chats there never get your saved logins. You can change this later, in Settings › Pools, on its row."},{v:"mine",l:"Only me, and people I trust with my logins",d:`Chats there may use your saved logins, each only when you allow it. If ${h}'s key ever changes, this goes back to not sure.`}],S.owned,"owned");
+}
+function confirmSection(){
+  const h=H(), known=scn().id!=="host_key_unknown", fp=scn().post==="host_key_changed"?FP_NEW:FP_OLD, newPool=!(S.pool&&S.pool.made);
+  if(S.route==="tls"){ const b=`<h2 class="h2">Check it's the right machine's authority</h2><p class="does">${esc(`${h}'s certificate is signed by this CA. Check it is the CA Docker on ${h} trusts before you trust it.`)}</p>`+codeBlock(`${h}'s authority, SHA-256`,fp,"Copy fingerprint");
+    return b+action(`Keeps this CA for the pool, then checks that Docker answers on ${h}.`,btn("trust",fl("merge")&&newPool?"Trust and create the pool":"Trust this machine","primary lg"),btn("notit","This isn't it","ghost")); }
+  const said=known?`This is the key ${h} shows, and your SSH already knows it for ${h}. Trust it to use this machine for the pool.`:`This is the key ${h} shows. Check it on ${h} before you trust it: run the command under See what this does there, and compare the two.`;
+  let b=`<h2 class="h2">Check it's the right machine</h2><p class="does">${esc(said)}</p>`+codeBlock(`${h}'s key, ssh-ed25519`,fp,"Copy fingerprint");
+  b+=seeWhat(`The first command, run on ${h} itself, prints its key, to compare with the one shown here. The second asks Docker there for its engine's id, as purlis does. Both only read.`,`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub\ndocker -H ${addr()} info --format '{{.ID}}'`,!known);
+  if(fl("fix")) b+=`<p class="does">Waiting for you. Nothing times out here.</p>`;
+  if(fl("merge")&&newPool){
+    b+=`<div class="field"><span class="l"><label for="name">Name the pool</label></span><input type="text" class="mono" id="name" data-bind="name" value="${esc(S.name)}"><small>Small letters, digits and dashes. Recommended: ${esc(H())}. Image and limits are set to what we recommend; Options has them.</small></div>`+whoCanSignIn();
+    return b+action(`Keeps this key for pool ${S.name}, checks Docker on ${h}, then makes the pool's runner there. purlis connects only to a machine showing this key.`,btn("trust","Trust and create the pool","primary lg"),btn("notit","This isn't it","ghost"));
+  }
+  return b+action(`Keeps this key for the pool, then checks that Docker answers on ${h}. purlis connects only to a machine showing this key.`,btn("trust","Trust this machine","primary lg"),btn("notit","This isn't it","ghost"));
+}
+function pageConnect(){
+  const r=S.run, h=H(), pool=S.pool, made=pool&&pool.made, failedNow=r&&r.status==="failed";
+  const meeting=r&&r.status==="paused"&&r.until==="meet";
+  const again=(failedNow||meeting)&&made;
+  let title=again?`Check ${h} again`:fl("merge")?"Connect and create the pool":"Connect to the other machine";
+  let tag="";
+  if(fl("fix")&&failedNow) tag=stBadge(pool?pool.state:F[r.finding].state);
+  else if(S.connected&&!failedNow) tag=`<span class="badge ok">${r&&!r.checks.filter(c=>c.id!=="runner"&&c.id!=="link").every(c=>c.status==="ok")?"Connected":"Every check passed"}</span>`;
+  const lead=S.connected&&!failedNow?`${h} is ready to run your chats.`:S.route==="tls"?"Choose the machine, and check it's the one you mean. purlis keeps no copy of your certificates: it reads them where they are.":"Choose the machine, and check it's the one you mean. purlis keeps no password or key of yours: SSH signs in with your own agent.";
+  let b=(fl("bar")?statusBar():"")+head(title,lead,tag);
+  if(S.drift) b+=say("attention","Your context points somewhere else",`<p>Your context build now points somewhere else than this pool. Connect again to follow it, or keep the pool as it is.</p>`,btn("ctxfollow","Connect again","primary")+btn("ctxkeep","Keep the pool as it is",""),fl("fix")?" "+stBadge("Ready"):"");
+  if(plainTcp()&&!r) return b+say("attention",F.plain_tcp.title(h),`<p>${esc(F.plain_tcp.said())}</p>`,btn("usessh","Use SSH instead","primary")+btn("usetls","Use TLS instead",""))+(fl("fix")?forgetRow():"");
+  if(!r){ b+=pickSection()+seeWhat("Reads the key the machine shows. Both commands only read.",`ssh -o StrictHostKeyChecking=accept-new ${addr().replace("ssh://","")} true\nssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`);
+    return b+action("Reads the key the machine shows, and keeps nothing. Nothing on it changes.",btn("connect",`Connect to ${h}`,"primary lg"))+(fl("fix")?forgetRow():""); }
+  b+=chosenFacts(!made);
+  if(fl("dur")){ b+=liveLine(r)+`<h2 class="h2">Docker on ${esc(h)}</h2>`+checkList(r,fl("merge")?null:["meet","trust","create"],`What purlis checked on ${h}`,{laterNote:!fl("merge")&&!made,phases:fl("merge"),twelve:!fl("merge")});
+    if(r.status==="paused"&&r.until==="trust"&&!fl("merge")) b+=`<p class="does num">Connect took ${dur(total(r,["meet","trust"]))}.</p>`; }
+  else { b+=busyToday(r); if(failedNow||S.connected) b+=`<h2 class="h2">Docker on ${esc(h)}</h2>`+checkList(r,null,`What purlis checked on ${h}`,{connectToday:!made,twelve:1}); }
+  if(meeting) b+=confirmSection();
+  if(failedNow&&(fl("merge")||r.doctor||cur(r).stage!=="create")) b+=findingCard(r.finding,r);
+  if(fl("merge")&&r.status==="done"&&made&&!failedNow) b+=`<p class="does num">Pool ${esc(S.name)} made in ${dur(total(r))}. Its runner is ${esc(runnerName())}.</p>${others()}`+action("Next, choose the profiles a chat on this pool can use.",btn("next","Continue","primary lg"));
+  else if(S.connected&&!fl("merge")&&!failedNow&&!made){ b+=whoCanSignIn()+action(`Keeps ${h} as this pool's machine. Next, you choose its image and limits.`,btn("next","Continue","primary lg")); }
+  else if(made&&!failedNow&&!fl("merge")) b+=action(null,btn("next","Continue","primary lg"));
+  if(failedNow) b+=getHelp();
+  if(fl("fix")&&!fl("bar")) b+=forgetRow();
+  return b;
+}
+function forgetRow(){return S.forgetOpen?forgetBox():`<div class="btnrow">${btn("forget","Forget pool…","")}<span class="does">Works in every state, and says what stays on ${esc(H())}.</span></div>`;}
+function pagePool(){
+  const r=S.run, made=S.pool&&S.pool.made, failedNow=r&&r.status==="failed"&&cur(r).stage==="create"&&!r.doctor;
+  if(made&&!failedNow){
+    let b=(fl("bar")?statusBar():"")+head(`Pool ${S.name}`,null,fl("fix")?stBadge(S.pool.state):"");
+    if(fl("dur")) b+=checkList(r,["create"],"Making the pool")+`<p class="does num">Made in ${dur(total(r,["create"]))}.</p>`+others();
+    if(S.pool.state!=="Ready"&&S.pool.reason&&(fl("fix")||S.pool.reason==="runner_gone")&&!(r&&r.status==="running")) b+=findingCard(S.pool.reason,r);
+    return b+action(null,btn("next","Continue","primary lg"))+(fl("fix")?forgetRow():"");
+  }
+  let b=head("Name your pool","Pick any short name you'll recognise. The rest is already set to what we recommend.",fl("fix")&&S.pool?stBadge(S.pool.state):"");
+  b+=`<div class="field"><span class="l"><label for="name">Name</label></span><input type="text" class="mono" id="name" data-bind="name" value="${esc(S.name)}"><small>Small letters, digits and dashes. Recommended: ${esc(H())}.</small></div>
+  <dl class="facts" aria-label="What purlis chose for you"><dt>Image</dt><dd>purlis's image, this version</dd><dt>Limits</dt><dd>Recommended, for one person's chats</dd></dl>
+  <details class="fold"><summary>Options</summary><div class="fb grid2">${["CPUs:2","Memory:4 GiB","Processes:512","/tmp:1 GiB","Suspends after no link for:12h"].map(x=>{const[l,v]=x.split(":");return `<div class="field"><span class="l">${esc(l)}</span><input type="text" value="${esc(v)}" aria-label="${esc(l)}"></div>`;}).join("")}</div></details>`;
+  b+=seeWhat("This is exactly what the button runs. Run it yourself if you prefer, and purlis marks this step done.",`purlis pool add ${S.name} --on ${addr()}`);
+  const creating=r&&r.status==="running"&&cur(r).stage==="create";
+  if(creating){ b+=fl("dur")?liveLine(r)+checkList(r,["create"],"Making the pool")+`<p class="does">The pool is kept as it is made: a failure leaves it in Settings › Pools, with its state.</p>`:busyToday(r); }
+  if(failedNow){
+    if(fl("fix")) b+=checkList(r,["create"],"Making the pool")+findingCard(r.finding,r);
+    else b+=say("trouble","The pool wasn't made",`<p>${esc(F[r.finding].said(H()))}</p>`,"");
+  }
+  if(!creating) b+=action(`Makes one container, its runner, in Docker on ${H()}.`,btn("create",failedNow&&fl("fix")?"Check pool":"Create the pool","primary lg"));
+  if(failedNow) b+=getHelp();
+  if(fl("fix")&&S.pool) b+=forgetRow();
+  return b;
+}
+function pageMachine(){ // refined 3: Connect and Pool on one live list
+  const r=S.run,h=H(),made=S.pool&&S.pool.made,failedNow=r&&r.status==="failed";
+  let b=head(made&&!failedNow?`Pool ${S.name} on ${h}`:"Machine",made?null:"Choose the machine, check it's the one you mean, and purlis makes the pool there. SSH signs in with your own agent; purlis keeps no password or key of yours.");
+  if(S.drift) b+=say("attention","Your context points somewhere else",`<p>Your context build now points somewhere else than this pool. Connect again to follow it, or keep the pool as it is.</p>`,btn("ctxfollow","Connect again","primary")+btn("ctxkeep","Keep the pool as it is",""));
+  if(plainTcp()&&!r) return b+say("attention",F.plain_tcp.title(h),`<p>${esc(F.plain_tcp.said())}</p>`,btn("usessh","Use SSH instead","primary")+btn("usetls","Use TLS instead",""));
+  if(!r) return b+pickSection()+action("Reads the key the machine shows, and keeps nothing. Nothing on it changes.",btn("connect",`Connect to ${h}`,"primary lg"));
+  b+=chosenFacts(!made)+liveLine(r)+checkList(r,null,`From first contact to a linked runner on ${h}`,{phases:true});
+  b+=`<p class="does num">${r.status==="done"?"All of it took":"So far"} ${dur(total(r))}.</p>`;
+  if(r.status==="paused"&&r.until==="meet") b+=confirmSection();
+  if(failedNow) b+=findingCard(r.finding,r)+getHelp();
+  if(made&&!failedNow&&r.status==="done") b+=others()+action("Next: sign-ins, the agent's identity and a real test chat, on one page.",btn("next","Continue","primary lg"));
+  return b;
+}
+
+/* ===================== pages: sign-ins, identity, try ===================== */
+function partSignins(sub){
+  if(S.signins) return (sub?`<h2 class="h2">Sign-ins</h2>`:head("Sign-ins"))+`<p class="p">claude-work is signed in on this pool. Its sign-in stays on your runner's own storage.</p>`+(sub?"":action(null,btn("next","Continue","primary lg")));
+  return (sub?`<h2 class="h2">Choose the profiles for this pool</h2><p class="does">A profile holds your Claude, Codex or other account.</p>`:head("Choose the profiles for this pool","A profile holds your Claude, Codex or other account. A chat on the pool can use the ones you tick. The ones you use are ticked for you."))+
+  `<ul class="profiles" aria-label="Your profiles"><li><label><input type="checkbox" checked> claude-work</label><span class="badge">Not signed in</span></li><li><label><input type="checkbox"> codex-personal</label><span class="badge">Not signed in</span></li></ul>`+
+  action("Sends the ticked profiles' settings to your runner, then opens each sign-in that's needed. Nothing of this machine's sign-in goes there.",btn("signin","Sign in 1 profile","primary lg"),btn("skip","Skip for now","ghost","signins"));
+}
+function partIdentity(sub){
+  if(S.identity) return (sub?`<h2 class="h2">Agent identity</h2>`:head("The agent has its identity",`Acting as coder on 3 repos. Chats won't ask about this again.`))+`<p class="does">To inspect or remove it, open Agent identity.</p>`+(sub?"":action(null,btn("next","Continue to Try it","primary lg")));
+  return (sub?`<h2 class="h2">Agent identity</h2>`:head("Agent identity"))+`<p class="p">The agent has no account of its own, so gh and git push won't work in a chat on the pool.</p>`+
+  action("Gives the agent its own account on your forge. Your own sign-in never reaches a chat.",btn("identity","Set up an identity","primary lg"),btn("skip","Skip for now","ghost","identity"));
+}
+function tryRunNew(){const L=[["link","The runner answers",0.6],["profile","Your profile claude-work is signed in",0.4],["ident","The agent acts as coder on github.com",0.5],["chat","A chat started",4.2]].map(([id,t,d])=>({id,stage:"try",title:t,d,note:"",status:"todo",el:0,took:null,limit:fl("fix")?180:Infinity}));return {kind:"try",until:"try",checks:L,i:0,status:"running"};}
+function partTry(sub){
+  const p=S.kind==="cluster"?S.cl.name:S.name, tr=S.tryRun, trying=tr&&tr.status==="running";
+  if(S.tried) return (sub?`<h2 class="h2">${esc(p)} is ready <span class="badge ok">Everything passed</span></h2>`:head(`${p} is ready`,`A real chat started on ${p}, so chats you start there will run.`,`<span class="badge ok">Everything passed</span>`))+
+    (fl("dur")?checkList(tr,null,"What was checked")+`<p class="does num">Try it took ${dur(total(tr))}.</p>`:checkList(tr,null,"What was checked"))+
+    action(null,btn("openchat",`Open a chat on ${p}`,"primary lg"),btn("another","Add another pool",""))+`<p class="does">Change anything later from Open setup on ${esc(p)}, in Settings under Pools.</p>`;
+  return (sub?`<h2 class="h2">Try it for real</h2>`:head(trying?"Trying it for real":"Try it for real",`Setup ends when a real chat has started on ${p}, so you know it works before you rely on it.`))+
+    (tr?(fl("dur")?liveLine(tr):"")+checkList(tr,null,"The checks"):checkList({checks:tryRunNew().checks},null,"What gets checked"))+
+    (trying&&!fl("dur")?`<p class="busy" role="status"><span class="spin" aria-hidden="true"></span><span>Starting a chat on ${esc(p)}. This can take a minute or two the first time, while the runner gets ready.</span></p>`:"")+
+    action(`Starts a real chat on ${p}, and closes it once it has started. Nothing is typed into it.`,btn("try",trying?"Starting a test chat":"Start a test chat","primary lg",null,trying?" disabled":""),trying?btn("trycancel","Cancel",""):"");
+}
+function pageUse(){
+  const p=S.kind==="cluster"?S.cl.name:S.name;
+  return head("Use it",`Three things make ${p} ready for real work. Each can be skipped and done later.`)+partSignins(1)+partIdentity(1)+partTry(1);
+}
+
+/* ===================== pages: cluster ===================== */
+function clusterFields(){
+  return `<div class="grid2"><div class="field"><span class="l"><label for="cl-kubeconfig">Kubeconfig file</label></span><input type="text" class="mono" id="cl-kubeconfig" data-bind="cl.kubeconfig" value="${esc(S.cl.kubeconfig)}"><small>kubectl's own default. KUBECONFIG, kubie or direnv files work too.</small></div>
+  <div class="field"><span class="l"><label for="cl-context">Context</label></span><select id="cl-context" class="mono" data-bind="cl.context">${CONTEXTS.map(x=>`<option ${x===S.cl.context?"selected":""}>${esc(x)}</option>`).join("")}</select><small>3 contexts in this file. Recommended: the one kubectl uses now.</small></div></div>`;
+}
+function pageWhereCluster(){
+  let b=head("Where should your chats run?",WHERE_LEAD)+`<div class="terms"><p><strong>A pool</strong> is the place your chats run instead of directly on this machine.</p><p><strong>A runner</strong> is one separate machine in that pool. A chat there can only touch what you send to it.</p></div>`;
+  if(fl("fix")) b+=clusterFields();
+  else b+=`<p class="p">Your kubeconfig names 3 contexts. purlis recommends ${esc(CONTEXTS[0])}, the one kubectl uses now.</p><details class="fold" open><summary>Options</summary><div class="fb">`+radios("ctx",CONTEXTS.map((x,i)=>({v:x,l:esc(x)+(i===0?` <span class="badge accent">Recommended</span>`:"")})),S.cl.context,"cl.context")+`<p class="does">purlis reaches the cluster with your own sign-in, through kubectl, and keeps only the context's name.</p></div></details>`;
+  return b+action(S.cl.where?null:"Keeps this context for the pool. Next, doctor looks at what the cluster has.",btn("clwhere",S.cl.where?"Continue":"Use this cluster","primary lg"));
+}
+function clRunPart(stages,label){
+  const r=S.cl.run; if(!r) return "";
+  let b=fl("dur")?liveLine(r)+checkList(r,stages,label):(r.status==="running"&&stages.includes(cur(r).stage)?busyToday(r):"")+(stages.includes("pool")?"":checkList(r,stages,label));
+  if(r.status==="failed"&&stages.includes(cur(r).stage)){
+    if(r.finding==="kube") b+=say("trouble","That didn't work",`<p>${esc(KUBE_ERR)}</p>`,btn("clagain","Check again","primary"));
+    else if(!fl("fix")&&cur(r).stage==="pool") b+=say("trouble","That didn't work",`<p>${esc(r.finding==="vouch"?`the cluster operator did not vouch for the runner of claim purlis-dev/${S.cl.name}-dev within 300 seconds, so purlis deleted the claim. The claim says: it took longer than this pool's limit of 5 minutes (Longest wait for a cluster runner to be vouched for): raise it to 10 minutes`:"kubectl said: sandboxclaims.agents.x-k8s.io is forbidden: User \"dev@acme.dev\" cannot create resource \"sandboxclaims\" in the namespace \"purlis-dev\"")}</p><p>Nothing was added. Pool ${esc(S.cl.name)} isn't in Settings › Pools.</p>`,"");
+    else b+=findingCard(r.finding,r);
+    b+=getHelp();
+  }
+  return b;
+}
+function pageCheck(){
+  let b=head("Check the cluster","Doctor looks at what the cluster has before anything changes. It only reads, with your own sign-in.");
+  if(fl("fix")) b+=`<dl class="facts"><dt>Kubeconfig</dt><dd class="mono">${esc(S.cl.kubeconfig)}</dd><dt>Context</dt><dd class="mono">${esc(S.cl.context)}</dd></dl>`;
+  b+=clRunPart(fl("merge")?["check","install"]:["check"],"What doctor found");
+  const r=S.cl.run, ok=fl("merge")?S.cl.installed:S.cl.checked;
+  if(!r) b+=action("Asks the cluster what it has. It changes nothing.",btn("clcheck","Check the cluster","primary lg"));
+  else if(ok) b+=(fl("dur")?`<p class="does num">Took ${dur(total(r,fl("merge")?["check","install"]:["check"]))}.</p>`:"")+action(null,btn("next","Continue","primary lg"));
+  return b;
+}
+function pageInstall(){
+  const r=S.cl.run, done=S.cl.installed;
+  return head("Install","Each part is installed on its own button. Your cluster's admin may have installed them already.")+(fl("dur")?liveLine(r):r&&r.status==="running"?busyToday(r):"")+checkList(r,["install"],"Parts of the install")+`<details class="fold"><summary>Uninstalling</summary><div class="fb">${codeBlock("Commands","kubectl delete -k https://purlis.dev/operator/0.5.2")}</div></details>`+
+    (done?(fl("dur")?`<p class="does num">Took ${dur(total(r,["install"]))}.</p>`:"")+action(null,btn("next","Continue","primary lg")):action("Reads which parts are there. It changes nothing.",btn("clinstall","Check the install","primary lg")));
+}
+function pageClusterPool(sub){
+  const c=S.cl,r=c.run,inPool=r&&ORDER[cur(r)?cur(r).stage:"pool"]>=2;
+  const ready=c.pool&&c.pool.state==="Ready";
+  let b=sub?`<h2 class="h2">Pool</h2>`:head("Pool","A pool is a named place your chats run. On a cluster, each chat's runner is a pod the cluster operator makes for you alone.",fl("fix")&&c.pool?stBadge(c.pool.state):"");
+  if(ready&&r.status==="done") return b+(fl("dur")?checkList(r,["pool"],"Adding the pool")+`<p class="does num">Added in ${dur(total(r,["pool"]))}.</p>`:`<p class="p">Pool ${esc(c.name)} is added, and your runner is linked.</p>`)+(sub?"":action(null,btn("next","Continue","primary lg")));
+  b+=`<div class="field"><span class="l"><label for="cl-name">Pool's name</label></span><input type="text" class="mono" id="cl-name" data-bind="cl.name" value="${esc(c.name)}"><small>As your cluster's admin gave it to you.</small></div>
+  <div class="field"><span class="l"><label for="cl-key">Key your admin gave you</label></span><input type="text" class="mono" id="cl-key" data-bind="cl.key" value="${esc(c.key||"ed25519:Qm9vdC1rZXktb2YtYWNtZS1kZXY")}"><small>Spaces, line breaks and capitals don't matter.</small></div>`;
+  if(fl("fix")) b+=`<details class="fold" open><summary>Options</summary><div class="fb"><div class="field"><span class="l"><label for="cl-wait">Longest wait for a cluster runner to be vouched for</label></span><select id="cl-wait" data-bind="cl.wait">${[5,10,15,20].map(m=>`<option value="${m}" ${c.wait==m?"selected":""}>${m} min</option>`).join("")}</select><small>A new node and its image download can take longer than 5 min.</small></div></div></details>`;
+  if(r&&inPool) b+=clRunPart(["pool"],"Adding the pool");
+  if(fl("fix")&&c.pool&&c.pool.state!=="Ready"&&c.pool.state!=="Setting up") b+=`<p class="does">Pool ${esc(c.name)} stays in Settings › Pools as ${esc(c.pool.state)}, so its wait and limits can be changed there.</p>`;
+  if(!(r&&r.status==="running"&&inPool)&&!(r&&r.status==="failed"&&inPool&&fl("fix"))) b+=action("Pins the key shown on this machine, claims your runner of the pool and pairs it here.",btn("clclaim","Pin the key and add the pool","primary lg"));
+  return b;
+}
+function pageCluster(){ // refined 3
+  const c=S.cl,r=c.run;
+  let b=head(c.pool&&c.pool.state==="Ready"?`Pool ${c.name}`:"Cluster","Doctor checks the cluster, your admin's install is confirmed, and purlis claims your runner. It reads with your own sign-in.");
+  b+=`<dl class="facts"><dt>Kubeconfig</dt><dd class="mono">${esc(c.kubeconfig)}</dd><dt>Context</dt><dd class="mono">${esc(c.context)}</dd></dl>`;
+  if(r){b+=liveLine(r)+checkList(r,null,"From the first read to a linked runner",{phases:true})+`<p class="does num">${r.status==="done"?"All of it took":"So far"} ${dur(total(r))}.</p>`;
+    if(r.status==="failed"){b+=findingCard(r.finding,r)+getHelp(); if(c.pool) b+=`<p class="does">Pool ${esc(c.name)} stays in Settings › Pools as ${esc(c.pool.state)}.</p>`;}}
+  if(!r||r.status==="paused"&&c.installed) b+=pageClusterPool(1).replace(/<section class="action"[\s\S]*$/,"")+action("Checks the cluster, then pins the key, claims your runner and pairs it here.",btn("clall","Check and add the pool","primary lg"));
+  if(r&&r.status==="done") b+=action(null,btn("next","Continue","primary lg"));
+  return b;
+}
+
+/* ===================== window: notices and Settings › Pools ===================== */
+function windowNotices(){
+  const p=S.pool, h=H(); if(!p||!p.made) return "";
+  if(fl("bar")||fl("railstat")){ // one place: the window only points to it
+    if(p.state==="Ready"||p.state==="Pool forgotten") return "";
+    return `<div class="pointer" role="status">${stBadge(p.state)}<span>Pool ${esc(p.name)} needs a look.</span>${btn("opensetup","Open setup","link","pointer")}</div>`;
+  }
+  let b="";
+  for(const k of S.notices){
+    if(k==="linkdown"&&p.state==="Unreachable") b+=`<div class="notice" role="alert"><span class="mk" aria-hidden="true">!</span><h3>${fl("fix")?stBadge("Unreachable")+" ":""}Pool ${esc(p.name)}'s runner is not linked</h3><div class="body"><p>Its chats have waited ${Math.max(1,Math.round(S.clock/60))} minute${S.clock>=90?"s":""}: ${esc(h)} didn't answer on port 22. purlis keeps linking to it again, trying at most 30 seconds apart.${fl("fix")&&S.retry?` Next try in ${Math.ceil(S.retry.left)} s.`:""}</p></div><div class="btnrow">${btn("ntrynow","Try now","")}${btn("opensetup",`Check pool ${p.name}`,"link","notice")}</div></div>`;
+    if(k==="pinchanged"&&p.state==="Host key changed") b+=`<div class="notice" role="alert"><span class="mk" aria-hidden="true">!</span><h3>${fl("fix")?stBadge("Host key changed")+" ":""}${esc(h)} shows a different key</h3><div class="body"><p>purlis connects to nothing there until you check it and trust it again.</p></div><div class="btnrow">${btn("goconnect","Check and trust again","","notice")}${fl("fix")?btn("forget","Forget pool…","","notice"):btn("sremove","Remove pool…","","notice")}</div></div>`;
+    if(k==="gone"&&p.state==="Runner gone") b+=`<div class="notice" role="alert"><span class="mk" aria-hidden="true">!</span><h3>${fl("fix")?stBadge("Runner gone")+" ":""}Runner removed</h3><div class="body"><p>The runner of pool ${esc(p.name)} was removed outside purlis. Its home volume is kept, with your sign-ins.</p></div><div class="btnrow">${btn("remake","Make the runner again","","notice")}${btn("opensettings","Open Pools settings","link")}</div></div>`;
+  }
+  return b?`<div class="notices" aria-label="Window notices">${b}</div>`:"";
+}
+function settingsPanel(){
+  const p=S.pool; if(!p||(!fl("fix")&&!p.made)||p.state==="Pool forgotten"&&(!fl("fix")||!p.made)) return "";
+  let b=`<section class="settings" aria-label="Settings › Pools (elsewhere in the window)"><h2>Settings › Pools</h2><p class="does">The pools on this machine.</p><div class="row"><span class="grow"><b class="mono">${esc(p.name)}</b> <span class="does">Docker on ${esc(H())}</span></span>${fl("fix")?stBadge(p.state):""}`;
+  if(fl("fix")) b+=p.state==="Pool forgotten"?"":btn("opensetup","Open setup","","settings")+btn("forget","Forget pool…","","settings");
+  else b+=btn("opensetup","Open setup","","settings")+btn("sremove","Remove pool","");
+  b+=`</div>`;
+  if(!fl("fix")&&S.removing){
+    const st=S.removing;
+    if(st==="ask") b+=`<div class="box"><h3>Remove pool ${esc(p.name)}?</h3><p class="does">Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo.</p><div class="btnrow">${btn("sremoveyes","Remove pool","danger")}${btn("sremoveno","Cancel","")}</div></div>`;
+    else if(st==="unreach") b+=`<div class="notice"><span class="mk" aria-hidden="true">!</span><h3>Pool ${esc(p.name)} wasn't removed</h3><div class="body"><p>${esc(H())} didn't answer on port 22. Nothing was removed. Forget it here forgets pool ${esc(p.name)} on this machine without contacting ${esc(H())}. Its runner's container and home volume stay on ${esc(H())}. ${esc(H())} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${esc(H())}. There is no undo.</p></div><div class="btnrow">${btn("forgethere","Forget it here","")}</div></div>`;
+    else if(st==="dead") b+=`<div class="notice"><span class="mk" aria-hidden="true">!</span><h3>Pool ${esc(p.name)} wasn't removed</h3><div class="body"><p>${esc(F[p.reason]?F[p.reason].said(H()):"")}</p></div></div>`;
+    else if(st==="gone") b+=`<p class="does">Pool ${esc(p.name)} was removed.</p>`;
+  }
+  return b+`</section>`;
+}
+
+/* ===================== render ===================== */
+function pageFor(id){
+  const p=S.pool;
+  if(S.kind!=="cluster"&&p&&p.state==="Pool forgotten") return forgottenPage();
+  if(S.forgetOpen&&(fl("bar")||fl("railstat"))&&S.kind!=="cluster") return (fl("bar")?statusBar():"")+head(`Forget pool ${S.name}`)+forgetBox();
+  switch(id){
+    case "where": return pageWhere();
+    case "connect": return pageConnect();
+    case "pool": return S.kind==="cluster"?pageClusterPool():pagePool();
+    case "machine": return pageMachine();
+    case "signins": return (fl("bar")?statusBar():"")+partSignins();
+    case "identity": return (fl("bar")?statusBar():"")+partIdentity();
+    case "try": return (fl("bar")?statusBar():"")+partTry();
+    case "use": return (fl("bar")?statusBar():"")+pageUse();
+    case "check": return pageCheck();
+    case "install": return pageInstall();
+    case "cluster": return pageCluster();
+  }
+  return "";
+}
+function render(){
+  const ae=document.activeElement, fid=ae&&ae.id, s0=ae&&ae.selectionStart, s1=ae&&ae.selectionEnd;
+  const sc=document.getElementById("readout"), scroll=sc&&sc.scrollTop;
+  const v=VARIANTS.find(x=>x.id===S.variant);
+  document.getElementById("vhead").innerHTML=`<span class="tag">Prototype note, not the design</span><h1>${esc(v.name)}</h1><p>${esc(v.what)}</p>`;
+  const view=S.view||currentStep();
+  document.getElementById("app").innerHTML=`<div class="win" role="region" aria-label="purlis window (mock)"><div class="tabs" aria-hidden="true"><span class="tab">fix-login</span><span class="tab on">Pool setup</span><span class="tab">Settings</span></div>${windowNotices()}<div class="ps">${rail()}<div class="page" id="page">${pageFor(view)}</div></div></div>${settingsPanel()}`;
+  document.getElementById("chrome").innerHTML=renderChrome();
+  document.getElementById("pt-theme").value=document.documentElement.getAttribute("data-theme")||"";
+  document.getElementById("sw-label").textContent=v.name;
+  if(fid){const el=document.getElementById(fid); if(el){el.focus({preventScroll:true}); try{if(s0!=null&&el.setSelectionRange)el.setSelectionRange(s0,s1);}catch(e){}}}
+  const ro=document.getElementById("readout"); if(scroll!=null&&ro) ro.scrollTop=scroll;
+}
+
+/* ===================== prototype chrome ===================== */
+function renderChrome(){
+  const sc=scn(), groups=[...new Set(SCEN.map(s=>s.g))];
+  let b=`<span class="tag">Prototype controls, not the design</span><section>
+  <label for="pt-scenario">Scenario</label><select id="pt-scenario">${groups.map(g=>`<optgroup label="${g}">${SCEN.filter(s=>s.g===g).map(s=>`<option value="${s.id}" ${s.id===S.scenario?"selected":""}>${esc(s.label)}</option>`).join("")}</optgroup>`).join("")}</select>
+  <p>${esc(sc.tip||(sc.fault?`Fails at "${F[sc.fault].at}". In a refined variant it is ${F[sc.fault].state}. A fix button assumes you made the fix.`:sc.post?"Finish setup to Ready, then press the trigger.":sc.cluster?"The cluster path.":""))}</p>
+  <div class="btnrow"><label for="pt-speed" style="margin:0">Speed</label><select id="pt-speed" style="width:auto">${[1,5,10,30].map(x=>`<option value="${x}" ${S.speed==x?"selected":""}>${x}×</option>`).join("")}</select>
+  <button type="button" class="btn" id="pt-reset">Reset</button>
+  <select id="pt-theme" aria-label="Theme" style="width:auto"><option value="">Auto theme</option><option value="light">Light</option><option value="dark">Dark</option></select></div>`;
+  if(sc.post) b+=`<div class="btnrow" style="margin-top:6px"><button type="button" class="btn" id="pt-trigger" ${S.pool&&S.pool.state==="Ready"?"":"disabled"}>Trigger: ${esc(sc.label)}</button></div>`;
+  if(F[S.fault]&&F[S.fault].state==="Unreachable") b+=`<div class="btnrow" style="margin-top:6px"><button type="button" class="btn" id="pt-back" ${S.back?"disabled":""}>${S.back?"The machine is back":"Bring the machine back"}</button></div>`;
+  b+=`<p>Keys: ← → switch variants. The hash #variant-t, -r1, -r2, -r3 keeps it.</p></section><section><label for="readout">State readout</label><pre id="readout" tabindex="0">${esc(readout())}</pre></section>`;
+  return b;
+}
+function readout(){
+  const r=S.run,c=cur(r),p=S.pool,cl=S.cl;
+  const L=[`variant      ${S.variant}`,`scenario     ${S.scenario}`,`last action  ${S.lastAction}`,`kind         ${S.kind}`,`address      ${addr()}  host ${H()}`,`fault        ${S.fault||"none"}`,
+    `pool         ${p?`${p.name}: ${p.state}${p.reason?" ("+p.reason+")":""}${p.made?"":" (not made)"}`:"none"}`,
+    `run          ${r?`${r.doctor?"doctor":"setup"} until ${r.until}, ${r.status}, ${r.i+1}/${r.checks.length}`:"none"}`];
+  if(c&&r.status!=="done") L.push(`  on         ${c.id} ${dur(c.el)}${c.el>=30?" (past 30 s)":""} limit ${isFinite(c.limit)?dur(c.limit):"none"}`);
+  if(r&&r.finding) L.push(`  finding    ${r.finding}`);
+  if(S.retry) L.push(`retry        attempt ${S.retry.attempt}, next in ${Math.max(0,S.retry.left).toFixed(0)} s`);
+  if(!fl("fix")&&S.memoryUntil>S.clock) L.push(`hidden memo  failing forward remembered ${Math.ceil(S.memoryUntil-S.clock)} s more: Try now can't beat it`);
+  if(r) L.push(`durations    `+r.checks.filter(x=>x.took!=null).map(x=>`${x.id} ${dur(x.took)}`).join(", "));
+  L.push(`steps        signins ${S.signins} identity ${S.identity} tried ${S.tried}`);
+  if(S.kind==="cluster") L.push(`cluster      ${cl.pool?cl.pool.state+(cl.pool.reason?" ("+cl.pool.reason+")":""):"no pool"}; run ${cl.run?cl.run.status+" "+(cl.run.i+1)+"/"+cl.run.checks.length:"none"}; wait ${cl.wait} min; ${cl.kubeconfig}`);
+  return L.join("\n");
+}
+
+/* ===================== actions ===================== */
+function goNext(){const ids=stepIds(),v=S.view||currentStep(),i=ids.indexOf(v);S.view=null;if(currentStep()===v&&ids[i+1])S.view=ids[i+1];}
+function makePoolRecord(){ if(!S.pool) S.pool={name:S.name,state:"Setting up",reason:null}; else S.pool.state="Setting up"; }
+const A={
+  view:a=>{S.view=a;S.forgetOpen=false;},
+  where:()=>{S.where=true;S.view=null;},
+  tocluster:()=>{S.kind="cluster";S.whereOpt="cluster";S.view=null;},
+  connect:()=>{ if(plainTcp()) return; S.run=newRun("docker","meet"); S.view=null; },
+  trust:()=>{ S.trusted=true; const r=S.run, made=S.pool&&S.pool.made; r.until=fl("merge")||made?"create":"trust"; r.status="running"; if(fl("merge")&&!made) makePoolRecord(); S.view=fl("three")?"machine":"connect"; },
+  notit:()=>{ S.run=null; S.trusted=false; S.connected=false; },
+  change:()=>{ S.run=null; S.retry=null; S.trusted=false; S.connected=false; if(!S.pool||!S.pool.made) S.pool=null; if(F[S.fault]&&F[S.fault].next==="change"){S.fault=null; S.pick="build-box"; S.typed=""; S.name="build-box";} },
+  next:()=>{ goNext(); },
+  create:()=>{ if(fl("fix")) makePoolRecord(); const r=S.run; if(r.status==="failed"){ S.fault=null; rerun(); return; } r.until="create"; r.status="running"; },
+  again:()=>{ if(S.kind==="cluster"){A.clagain();return;} const f=F[S.fault]; if(S.fault!=="host_key_changed"&&(!f||f.state!=="Unreachable"||S.back)) S.fault=null; S.retry=null; rerun(); },
+  trynow:()=>{ retryNow(); },
+  ntrynow:()=>{ if(fl("fix")){retryNow();return;} if(S.clock<S.memoryUntil){log("Try now: the remembered finding answers (hidden backoff)");return;} retryNow(); },
+  cancel:()=>{ const r=S.kind==="cluster"?S.cl.run:S.run; const c=cur(r); if(!c) return; c.status="fail"; c.took=c.el; r.status="failed"; r.finding=c.id==="claim"?"vouch":"cancelled"; S.retry=null; if(S.pool&&r===S.run){S.pool.state="Refused";S.pool.reason=r.finding;} },
+  usessh:()=>{ S.route="ssh"; S.pick="build-box"; S.typed=""; S.fault=null; S.name="build-box"; },
+  usetls:()=>{ S.route="tls"; S.typed=S.typed.replace(/^tcp:\/\//,"").replace(":2375",":2376"); S.fault=null; },
+  trustagain:()=>{ S.run=newRun("docker","meet",true); S.run.checks.forEach(c=>c.fail=null); S.fault=null; S.trusted=false; S.view=fl("three")?"machine":"connect"; },
+  trustnew:()=>{ if(!S.keyOk) return; S.keyOk=false; S.fault=null; S.notices=[]; S.run=newRun("docker","create",true); S.pool.state="Setting up"; },
+  goconnect:()=>{ S.view=fl("three")?"machine":"connect"; if(!fl("fix")) A.trustagain(); },
+  remake:()=>{ S.fault=null; S.notices=S.notices.filter(n=>n!=="gone"); S.run=newRun("docker","create",false); S.run.checks.forEach(c=>{if(c.stage!=="create"){c.status="ok";c.took=c.d;}}); S.run.i=S.run.checks.findIndex(c=>c.stage==="create"); S.pool.state=fl("fix")?"Setting up":S.pool.state; },
+  admin:()=>{ log("Send to your admin: words shown (not drawn in the prototype)"); },
+  gethelp:()=>{ log("Get help: opens a chat (not in the prototype)"); },
+  signin:()=>{ S.signins=true; S.view=null; },
+  identity:()=>{ S.identity=true; },
+  skip:a=>{ if(a==="signins")S.signins=true; else S.identity=true; S.view=null; },
+  try:()=>{ S.tryRun=tryRunNew(); },
+  trycancel:()=>{ S.tryRun=null; },
+  openchat:()=>{ log("Open a chat on the pool (not in the prototype)"); },
+  another:()=>{ resetAll(); },
+  forget:()=>{ S.forgetOpen=true; if(!fl("bar")&&!fl("railstat")) S.view=S.pool&&S.pool.made&&S.view==="pool"?"pool":"connect"; },
+  forgetno:()=>{ S.forgetOpen=false; },
+  forgetyes:()=>{ const p=S.pool||{name:S.name}; const answers=["Ready","Refused","Runner gone","Setting up"].includes(p.state)&&!(p.reason&&F[p.reason]&&F[p.reason].state==="Unreachable");
+    const left=answers&&S.forgetRemove?[]:leftovers(); S.pool=Object.assign(p,{state:"Pool forgotten",left,reason:null,made:!!p.made}); S.run=null; S.retry=null; S.forgetOpen=false; S.notices=[]; S.drift=false; },
+  setupagain:()=>{ resetAll(); S.fault=null; },
+  opensetup:()=>{ S.view=fl("three")?"machine":"connect"; },
+  opensettings:()=>{ log("Open Pools settings"); },
+  sremove:()=>{ const p=S.pool; S.removing=p.state==="Ready"||p.state==="Runner gone"?"ask":F[p.reason]&&["wrong_name","port_closed"].includes(p.reason)?"unreach":"dead"; },
+  sremoveno:()=>{ S.removing=null; },
+  sremoveyes:()=>{ S.removing=null; resetAll(); log("removed pool (today)"); },
+  forgethere:()=>{ S.removing=null; S.pool.left=leftovers(); S.pool.state="Pool forgotten"; S.run=null; S.retry=null; S.notices=[]; },
+  ctxfollow:()=>{ S.drift=false; log("Connect again: a new pool's setup on gpu-1 (not drawn)"); },
+  ctxkeep:()=>{ S.drift=false; },
+  clinstall:()=>{ const r=S.cl.run; r.until="install"; r.status="running"; },
+  clwhere:()=>{ S.cl.where=true; S.view=null; },
+  clcheck:()=>{ S.cl.run=newRun("cluster",fl("merge")?"install":"check"); },
+  clagain:()=>{ const r=S.cl.run; if(r.finding!=="kube") S.cl.fault=null; S.cl.run=newRun("cluster",r.until); if(fl("fix")&&S.cl.pool) S.cl.pool.state="Setting up"; },
+  clclaim:()=>{ const r=S.cl.run; if(fl("fix")) S.cl.pool={state:"Setting up",reason:null}; if(r.status==="failed"){ S.cl.run=newRun("cluster","pool"); S.cl.run.checks.forEach(c=>{if(c.stage!=="pool"){c.status="ok";c.took=c.d;}}); S.cl.run.i=S.cl.run.checks.findIndex(c=>c.stage==="pool"); return;} r.until="pool"; r.status="running"; },
+  clall:()=>{ S.cl.pool={state:"Setting up",reason:null}; if(S.cl.run&&S.cl.run.status==="paused"){S.cl.run.until="pool";S.cl.run.status="running";} else S.cl.run=newRun("cluster","pool"); },
+  useplugin:()=>{ S.cl.fault=null; const u=S.cl.run.until; S.cl.run=newRun("cluster",u); },
+  raise:()=>{ if(S.cl.wait<10) S.cl.wait=10; A.clclaim(); },
+};
+function trigger(){
+  const sc=scn(),p=S.pool; if(!p) return;
+  if(sc.post==="context_drift"){ S.drift=true; S.view=fl("three")?"machine":"connect"; return; }
+  S.fault=sc.post; S.back=false;
+  if(sc.post==="host_key_changed"){ p.state="Host key changed"; p.reason=sc.post; if(!fl("fix")) notice(sc.post); S.run=newRun("docker","create",true); const r=S.run; r.checks.forEach((c,i)=>{if(i<2){c.status="ok";c.took=c.d;}}); r.i=2; r.checks[2].status="fail"; r.checks[2].took=0.3; r.status="failed"; r.finding=sc.post; return; }
+  if(sc.post==="runner_gone"&&!fl("fix")) notice("runner_gone");
+  S.run=newRun("docker","create",true);
+  if(fl("fix")) p.state="Setting up";
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("button"); if(!t) return;
+  if(t.id==="pt-reset"){resetAll();log("reset");render();return;}
+  if(t.id==="pt-trigger"){trigger();log("trigger "+scn().post);render();return;}
+  if(t.id==="pt-back"){S.back=true;log("machine back");render();return;}
+  if(t.id==="sw-prev"||t.id==="sw-next"){cycle(t.id==="sw-next"?1:-1);return;}
+  const a=t.dataset.act; if(!a||!A[a]) return;
+  e.preventDefault(); A[a](t.dataset.arg); log(a+(t.dataset.arg?" "+t.dataset.arg:"")); render();
+  if(a==="view"||a==="next"){const h=document.getElementById("step-title"); if(h) h.focus({preventScroll:false});}
+});
+function setPath(k,v){ if(k.startsWith("cl.")) S.cl[k.slice(3)]=k==="cl.wait"?Number(v):v; else S[k]=v; }
+document.addEventListener("input",e=>{
+  const t=e.target,k=t.dataset&&t.dataset.bind; if(!k) return;
+  const v=t.type==="checkbox"?t.checked:t.value; setPath(k,v);
+  if(k==="whereOpt"){S.kind=v==="cluster"?"cluster":"remote";}
+  if(k==="typed"||k==="pick"){ if(S.run&&!S.pool){S.run=null;S.trusted=false;S.connected=false;} if(k==="pick"&&v==="typed"&&!S.typed)S.typed=""; const hn=H(); if(hn!=="the machine") S.name=/^\d/.test(hn)?"build-10":hn.split(".")[0]; }
+  if(t.type==="checkbox"||t.type==="radio"||t.tagName==="SELECT"){log("set "+k);render();}
+  else document.getElementById("readout").textContent=readout();
+});
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.id==="pt-scenario"){S.scenario=t.value;resetAll();log("scenario "+t.value);render();return;}
+  if(t.id==="pt-speed"){S.speed=Number(t.value);log("speed "+t.value+"×");render();return;}
+  if(t.id==="pt-theme"){if(t.value)document.documentElement.setAttribute("data-theme",t.value);else document.documentElement.removeAttribute("data-theme");render();return;}
+  if(t.dataset&&t.dataset.bind&&t.type==="text") render();
+});
+function typing(){const a=document.activeElement;return a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA"||a.isContentEditable);}
+function cycle(d){const i=VARIANTS.findIndex(v=>v.id===S.variant);setVariant(VARIANTS[(i+d+VARIANTS.length)%VARIANTS.length].id);}
+function setVariant(v){
+  if(S.variant===v) return; S.variant=v; S.forgetOpen=false; S.view=null; S.removing=null;
+  if(location.hash!=="#variant-"+v) history.replaceState(null,"","#variant-"+v);
+  resetAll(); log("variant "+v+" (scenario restarted)"); render();
+}
+document.addEventListener("keydown",e=>{
+  if(typing()||e.metaKey||e.ctrlKey||e.altKey) return;
+  if(e.key==="ArrowLeft"){cycle(-1);e.preventDefault();}
+  if(e.key==="ArrowRight"){cycle(1);e.preventDefault();}
+});
+window.addEventListener("hashchange",()=>{const m=location.hash.match(/^#variant-(t|r1|r2|r3)$/);if(m)setVariant(m[1]);});
+(function init(){
+  const m=location.hash.match(/^#variant-(t|r1|r2|r3)$/); S.variant=m?m[1]:"t";
+  if(!m) history.replaceState(null,"","#variant-t");
+  resetAll(); render();
+})();
+</script>
