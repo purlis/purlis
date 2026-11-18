@@ -589,12 +589,21 @@ while (accept(my $c, $s)) {
             .mode(0o700)
             .create(&root)
             .expect("the serve folder");
-        let folder = root.join("0123456789abcdef");
+        // A short name: a socket's path holds 103 bytes on macOS and `bind` cuts a longer one,
+        // so CI's long temp folder with a 16-character name (108 bytes) bound `.../49240.`, a
+        // name nothing allowed (round 8 of #7105, from the sandbox log: `deny(1)
+        // file-write-create` on the cut path).
+        let folder = root.join("0123");
         std::fs::DirBuilder::new()
             .mode(0o700)
             .create(&folder)
             .expect("the chat's folder");
         let socket = serve_socket(&folder, port);
+        assert!(
+            socket.as_os_str().len() <= 103,
+            "{} is too long for a socket's path",
+            socket.display()
+        );
         let cwd = tempfile::tempdir().expect("a folder");
         let tmp = tempfile::tempdir().expect("a temp folder");
         let mut own = seatbelt::Own::default();
@@ -627,36 +636,8 @@ while (accept(my $c, $s)) {
             .filter(|line| line.contains("deny") || line.contains(".sock"))
             .collect::<Vec<_>>()
             .join("\n");
-        let own_answer = tried(UNIX, &[&socket.display().to_string(), "once"]);
-        if own_answer != "yes" {
-            // Round 8: the kernel's errno for the bind, the path's length (a socket path holds
-            // 103 bytes at most on macOS) and what Seatbelt logged as refused.
-            let errno = tried(
-                r#"use Socket qw(:all); socket(my $s, AF_UNIX, SOCK_STREAM, 0); print(bind($s, pack_sockaddr_un($ARGV[0])) ? qq(bound) : qq(errno: $!))"#,
-                &[&socket.display().to_string()],
-            );
-            let log = std::process::Command::new("/usr/bin/log")
-                .args([
-                    "show",
-                    "--last",
-                    "2m",
-                    "--style",
-                    "compact",
-                    "--predicate",
-                    "eventMessage CONTAINS[c] \"deny\" AND (eventMessage CONTAINS[c] \"perl\" OR eventMessage CONTAINS[c] \"purlis-serve\")",
-                ])
-                .output()
-                .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
-                .unwrap_or_else(|why| format!("log show did not run: {why}"));
-            let _ = writeln!(
-                std::io::stderr(),
-                "ROUND 8 DIAGNOSTIC\nsocket {} ({} bytes)\nbind again: {errno}\nsandbox log:\n{log}",
-                socket.display(),
-                socket.as_os_str().len()
-            );
-        }
         assert_eq!(
-            own_answer,
+            tried(UNIX, &[&socket.display().to_string(), "once"]),
             "yes",
             "the chat's own socket {} ({} bytes); every deny and socket line of the profile:\n{seen}",
             socket.display(),
