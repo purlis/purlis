@@ -299,7 +299,7 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
         arm: None,
         reason: mergehold::reason(&held, &app).to_owned(),
         shape: None,
-        denial: mergehold::refusal(&held, &app),
+        denial: mergehold::refusal_for(command, &held, &app),
     })
 }
 

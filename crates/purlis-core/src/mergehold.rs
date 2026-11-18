@@ -474,15 +474,16 @@ pub fn reason(held: &Held, app: &AppSaid<'_>) -> &'static str {
     }
 }
 
+const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
+                     person's press. Nothing was merged.";
+// #6960: what the person says in the chat is no press.
+const NO_YES: &str = "A yes in this chat merges nothing: only the person's press of Merge \
+                      in Asks does.";
+
 /// **What the chat is told when its merge is held**, with what the app said: that a chat never
 /// merges, that nothing was merged, and what happens next. It says the person is asked only
 /// where the app confirmed it holds the ask.
 pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
-    const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
-                         person's press. Nothing was merged.";
-    // #6960: what the person says in the chat is no press.
-    const NO_YES: &str = "A yes in this chat merges nothing: only the person's press of Merge \
-                          in Asks does.";
     match (held, app) {
         (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said} {NO_YES}"),
         (Held::Request(request), AppSaid::Refused(why)) => format!(
@@ -512,12 +513,41 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
              the window, or run `gh pr merge <number>` (or `glab mr merge <number>`) for one \
              request, and the person is asked to merge it in Asks."
         ),
-        (Held::Unreadable, _) => format!(
-            "{OPENS} purlis cannot tell which request this merges, so nobody was asked. Run `gh \
-             pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is asked \
-             to merge it in Asks. {NO_YES}"
-        ),
+        (Held::Unreadable, _) => unreadable_said(None),
     }
+}
+
+/// **The refusal of `held` for the line `cmd`, naming what purlis took for a merge** (#7176):
+/// [`refusal`], and for a [`Held::Unreadable`] line the cause the release floor read it by, so
+/// the chat is told which word, flag or endpoint made the line a merge or a move of a protected
+/// branch, and what to do about that one.
+pub fn refusal_for(cmd: &str, held: &Held, app: &AppSaid<'_>) -> String {
+    match held {
+        Held::Unreadable => {
+            let cause = crate::floorguard::merge_reason(cmd);
+            let cause = cause.as_deref().map(|said| {
+                said.strip_prefix(crate::floorguard::RELEASE_FLOOR_FIX)
+                    .unwrap_or(said)
+            });
+            unreadable_said(cause)
+        }
+        _ => refusal(held, app),
+    }
+}
+
+/// The refusal of a line held as a merge whose request cannot be named, and what the floor said
+/// it took for one where that is known.
+fn unreadable_said(cause: Option<&str>) -> String {
+    let took = cause.map_or_else(String::new, |cause| {
+        format!(" It took it for one because: {cause}")
+    });
+    format!(
+        "{OPENS} purlis took this line for a merge, or for a move of a protected branch, and \
+         cannot name the request, so nobody was asked.{took} If it is a merge, \
+         run `gh pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is \
+         asked to merge it in Asks; if it only writes a branch, write the branch's name out in the \
+         call. {NO_YES}"
+    )
 }
 
 impl Request {

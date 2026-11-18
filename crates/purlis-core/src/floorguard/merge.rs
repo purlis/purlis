@@ -499,11 +499,76 @@ fn is_merge_path(segs: &[String]) -> bool {
     }
 }
 
-/// True when a path is a GitLab merge request itself, where a body purlis does not see is read as
-/// one that could merge it. Its notes and other sub-paths cannot, nor can a GitHub pull
-/// request's own path (#7131).
-fn is_merge_request_path(segs: &[String]) -> bool {
-    under_repository(segs).is_some_and(|rest| rest.len() == 2 && rest[0] == "merge_requests")
+/// The collections of a repository or project whose paths reach no merge and no ref, whatever
+/// stands in an id after them: CI job and pipeline control, issues, workflow runs, labels.
+const NEVER_A_MERGE: &[&str] = &[
+    "jobs",
+    "pipelines",
+    "issues",
+    "actions",
+    "labels",
+    "milestones",
+];
+
+/// A bare `$name` or `${name}`: a variable, and nothing else, as a whole path segment.
+fn is_bare_variable(seg: &str) -> bool {
+    let name = seg
+        .strip_prefix("${")
+        .and_then(|rest| rest.strip_suffix('}'))
+        .or_else(|| seg.strip_prefix('$'));
+    name.is_some_and(|name| {
+        name.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+}
+
+/// **Whether the shell fills in only ids of an endpoint whose path reaches no merge** (#7176): a
+/// write to `projects/$P/jobs/$J/play`, in a loop over jobs, is no merge, and a variable that
+/// holds one id cannot make it one. True only where every word the shell fills in is a whole
+/// segment that is a bare variable, none of them names the repository (`repos/$R/...`, where
+/// `$R` is one segment or two and moves what follows), and the path's resource is literal and
+/// one of [`NEVER_A_MERGE`], or a request's own path (`merge_requests/$N`, `pulls/$N`, whose
+/// editing is no merge, and whose third segment, where `merge` stands, is written out). Any
+/// other path the shell fills in is unreadable, as it was, and so is any call with a flag this
+/// reader does not know.
+fn only_ids_are_filled_in(endpoint: &str, segs: &[String]) -> bool {
+    if endpoint.contains(['`', '(']) {
+        return false;
+    }
+    let Some(at) = segs
+        .iter()
+        .position(|s| matches!(s.as_str(), "repos" | "repositories" | "projects"))
+    else {
+        return false;
+    };
+    // `repos/<owner>/<name>` is two segments a variable may stand for one or both of; a project
+    // or repository id is one.
+    let names = if segs[at] == "repos" { 2 } else { 1 };
+    let start = at + 1 + names;
+    let Some(rest) = segs.get(start..) else {
+        return false;
+    };
+    if segs[..at].iter().any(|s| opaque(s)) {
+        return false;
+    }
+    let names_ok = segs[at + 1..start]
+        .iter()
+        .all(|s| !opaque(s) || (segs[at] != "repos" && is_bare_variable(s)));
+    if !names_ok || rest.iter().any(|s| opaque(s) && !is_bare_variable(s)) {
+        return false;
+    }
+    match rest.first().map(String::as_str) {
+        Some(collection) if NEVER_A_MERGE.contains(&collection) => true,
+        Some("pulls" | "merge_requests") => {
+            rest.len() >= 2
+                && rest
+                    .get(2..)
+                    .is_none_or(|tail| tail.iter().all(|s| !opaque(s)))
+        }
+        _ => false,
+    }
 }
 
 /// True when a path is a repository or project itself, whose settings include auto-merge.
@@ -535,7 +600,9 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         if read {
             continue;
         }
-        if opaque(endpoint) {
+        if opaque(endpoint)
+            && !(call.unknown_flag.is_none() && only_ids_are_filled_in(endpoint, &segs))
+        {
             return Some(format!(
                 "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}. {SPLIT}",
                 call.why_not_a_read()
@@ -567,10 +634,11 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         {
             return Some(why.to_owned());
         }
-        // Where a field the call does not show could set a merge: a repository's settings, and a
-        // GitLab merge request's own path. GitHub's `pulls/N` sets its title, body, state, base
-        // and `maintainer_can_modify`, none of which merges; merging is `pulls/N/merge`.
-        let settable = is_merge_request_path(&segs) || is_repository(&segs);
+        // Where a field the call does not show could set a merge: a repository's settings. A
+        // request's own path, GitLab's `merge_requests/N` or GitHub's `pulls/N`, edits its title,
+        // description, labels, state and target and has no field that merges: merging is
+        // `.../merge`, held above (#7176; Q331).
+        let settable = is_repository(&segs);
         for field in &call.fields {
             // A key the shell fills in could be an auto-merge setting where one can be set.
             if opaque(&field.key) && settable {
@@ -593,7 +661,8 @@ const MOVES_THE_DEFAULT_BRANCH: &str = "Updating, making or deleting the default
 
 /// The sentence a refusal ends with where a ref write's branch cannot be read (Q330).
 const REF_BRANCH_UNREADABLE: &str = "purlis can't read which branch this ref write moves, so it \
-     is treated as a move of the default branch. Write the ref out literally.";
+     is treated as a move of the default branch, not as a merge of a request. Write the ref out \
+     literally, or commit on a branch folder and push it with `purlis worktree push`.";
 
 /// **A write to the default branch's ref through the API** (Q330): a `PATCH`, `POST` or
 /// `DELETE` on `git/refs/heads/<branch>` of one of [`DEFAULT_BRANCHES`], or a new ref
