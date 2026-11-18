@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795033122603,
+  "lastUpdate": 1795036006608,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51408,6 +51408,48 @@ window.BENCHMARK_DATA = {
             "value": 102.34336350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.595, 101.769, 102.343, 102.755, 102.910 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34fc0296da8d366842771697ca76d1a1c0dc5a66",
+          "message": "Closed chats by ULID, with #7149's review fixes: scoped filter, reopen copy, Resume and Reopen start once (#7145) (#7158)\n\n* Carry #7149 (head 200c5f27de) onto main: closed chats looked up by ULID (#7145)\n\nThe sandbox refuses git merge here, so #7149's five commits come in as\ntheir combined diff from its merge-base 1f36f1a79f.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* Carry #7149's changelog fragment\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* A closed chat is hidden only behind a finished row the scoped list draws (#7149's review)\n\nThe ULIDs of the finished tasks the filter found came from every chat,\nthe ones the scope leaves out too, so a list scoped to a workspace hid a\nclosed chat behind a row it never drew and said no chat matched.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* The reopen sentence is a function the copy check follows (#7149's review)\n\nAs a method on Reopened, reopen_closed_chat's call to it went unread by\ncopy.rust.test.ts: an \"Oops! Something went wrong\" there left the check\ngreen. As chatcard::ended_as_it_started it is followed by its path, and\nthe same words fail the check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* Resume and Reopen of the same just-ended chat start it once (#7149's review)\n\nResume held the chat by its number and Reopen by its ULID, so pressing\nboth at once started the conversation twice. Resume now holds the\nchat's ULID too, in the set Reopen holds, and refuses a chat that\nReopen has already started again under another number.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* One claim on a chat's conversation, named for what it guards (self-review)\n\nclaim_reopen and unclaim_reopen only passed through to the ULID claim,\nwhich Resume now holds too: both call claim_conversation, and the\nreopening set's comment says it holds Resume's claims as well.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n* #7149's renumbered-task link test asks for_project with no session (main's #6943)\n\n#6943 gave for_project the session whose runner files a link reads;\nthis pane is no runner chat's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PEVBVF1GX4T4GD3S3S7DPQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T20:07:02Z",
+          "tree_id": "6155e09f23e17ced7c4db1f38548c30f823bb351",
+          "url": "https://github.com/purlis/purlis/commit/34fc0296da8d366842771697ca76d1a1c0dc5a66"
+        },
+        "date": 1795035999714,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35241900000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.307, 0.327, 0.352, 0.353, 0.368 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.623224,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.570, 16.618, 16.623, 16.648, 16.681 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.41391349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.948, 101.054, 101.414, 101.752, 101.850 ms"
           }
         ]
       }
