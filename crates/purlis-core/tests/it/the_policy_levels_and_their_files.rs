@@ -541,6 +541,7 @@ fn a_project_rule_cannot_replace_an_organisation_rule_by_id() {
     assert_eq!(install(&loaded, "web/builder"), denied("skills-org-none"));
     let said = notice(&loaded, "can't replace");
     assert_eq!((said.file.as_str(), said.line), ("policy.cedar", 2));
+    assert!(said.what.contains("an Organisation rule"), "{}", said.what);
     assert_eq!(said.rules[0].level, Level::Organisation);
     assert_eq!(said.rules[0].owner, ORG_OWNER);
 }

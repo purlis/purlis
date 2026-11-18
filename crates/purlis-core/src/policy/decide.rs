@@ -17,13 +17,15 @@
 //! naming the rule that erred, never a skipped forbid (§6.3, proposed), and a request that does
 //! not fit the schema is a deny too.
 //!
-//! **The mode** (§6.4) is applied after Cedar: `enforce` keeps the outcome; `log` and `off` make
-//! a forbid's deny or ask an allow, `log` with a would-have-blocked line. A rule's own mode
+//! **The mode** (§6.4) is applied after Cedar, forbid by forbid: `enforce` keeps a forbid; `log`
+//! and `off` lift it, `log` with a would-have-blocked line. What stands is re-derived from the
+//! forbids still enforced: a plain one denies, else an ask asks, else the permits allow; so a
+//! mode can lower a deny to an ask, or to an allow. A rule's own mode
 //! (`[policy.rules]`) beats its family's, a lock beats both, and a You-level rule is never
 //! touched by a mode. **A mode acts on forbids only**: no permit, an error and an unfit request
 //! stay denies in every mode (Q319 C2). An `@ask` forbid on `read`, `write`, `connect` or `dial`
-//! takes the `asks` family's mode (Q319 C4); each deciding rule runs at its own mode or its
-//! family's, and the strictest decides (M75 slice 10). The sandbox exception is slice 11's, and
+//! takes the `asks` family's mode (Q319 C4). [`Decision::held_to`] puts back what a floor
+//! enforces and a project's mode lifted (M75 slice 10, rounds 2 and 3). The sandbox exception is slice 11's, and
 //! grants are slice 20's, so [`Decision::grant`] is always empty here.
 //!
 //! **Outside any plane** there is no host to ask: [`decide_locally`] judges by the shipped
@@ -39,7 +41,9 @@ use super::organisation;
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
 
 /// **What a request decides**: allow, ask the person, or deny.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     /// The action goes ahead.
@@ -137,6 +141,10 @@ pub struct Decision {
     pub mode: Mode,
     /// The outcome once the mode is applied: what is enforced.
     pub after_mode: Outcome,
+    /// The plain forbids a mode lifted where an enforced ask stands in their place: what
+    /// [`Decision::held_to`] names when a floor puts the deny back. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<Deciding>,
     /// Who locks the family or the action, where a level does: the mode was then `enforce`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<String>,
@@ -154,15 +162,21 @@ impl Decision {
         self.outcome != Outcome::Allow && self.after_mode == Outcome::Allow
     }
 
-    /// **This decision, held to what the person accepted and the machine locks** (M75-04 round 2):
-    /// where `floor` enforces this decision's family and the project's own mode loosened it, it is
-    /// enforced all the same, as the merge hold has always run: the stricter of the project's `HEAD`
-    /// and what was accepted, with a lock on top. Until the accepted copy and the Organisation's
-    /// files are read by [`levels::load`] (slices 06 and 14), a commit reaching `HEAD` that sets
-    /// the family `off` must not make the next merge run unasked.
+    /// **This decision, held to what the person accepted and the machine locks** (M75-04 round 2,
+    /// M75-10 round 3): where `floor` enforces this decision's family and the project's own mode
+    /// loosened it, to an ask or to an allow, it is enforced all the same, as the merge hold has
+    /// always run: the stricter of the project's `HEAD` and what was accepted, with a lock on top.
+    /// Until the accepted copy and the Organisation's files are read by [`levels::load`] (slices 06
+    /// and 14), a commit reaching `HEAD` that sets the family `off` or `log` must not make the next
+    /// action run unasked, or a deny run as an ask. Where a deny stood as an ask because its plain
+    /// forbids were lifted, those forbids are the deciding rules again.
     #[must_use]
     pub fn held_to(mut self, floor: &crate::enforcement::Resolved) -> Self {
-        if floor_enforces(floor, &self.family) && self.would_have_blocked() {
+        let loosened = self.after_mode < self.outcome;
+        if loosened && floor_enforces(floor, &self.family) {
+            if self.outcome == Outcome::Deny && !self.lifted.is_empty() {
+                self.deciding = std::mem::take(&mut self.lifted);
+            }
             self.mode = Mode::Enforce;
             self.after_mode = self.outcome;
         }
@@ -277,6 +291,7 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
         mode_family: family.clone(),
         mode: loaded.mode_for(&family, request.of),
         after_mode: outcome,
+        lifted: Vec::new(),
         lock: loaded.lock_on(&family, request.action),
         grant: None,
         unasked,
@@ -314,6 +329,15 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     } else {
         runs.iter().collect()
     };
+    // The plain forbids a mode lifted, which a floor names again where it puts the deny back.
+    let lifted: Vec<Deciding> = if plain.is_empty() && !asks.is_empty() && permitted {
+        runs.iter()
+            .filter(|r| !r.ask && !r.enforced())
+            .map(|r| r.rule.clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
     let (after_mode, rules, reference): (Outcome, Vec<Deciding>, Vec<&Run>) = if !plain.is_empty() {
         let rules = plain.iter().map(|r| r.rule.clone()).collect();
         (Outcome::Deny, rules, plain)
@@ -333,13 +357,21 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
         (Outcome::Deny, vec![everything_else()], original)
     };
     let strictest = reference.iter().max_by_key(|r| r.mode);
+    // A deny by the catch-all is no mode's doing: no permit applies, and a mode acts on forbids
+    // only. A `log` would read as a would-have-blocked line over an allow, which it is not, so
+    // `policy why` reads `enforce` for it; an `off` family stays `off`, as it says (Q319 C2).
+    let by_no_permit = rules.iter().any(|r| r.id == EVERYTHING_ELSE);
     Decision {
         outcome,
         deciding: rules,
         family,
         mode_family: strictest.map_or_else(String::new, |r| r.mode_family.clone()),
-        mode: strictest.map_or(Mode::Enforce, |r| r.mode),
+        mode: match strictest.map_or(Mode::Enforce, |r| r.mode) {
+            Mode::Log if by_no_permit => Mode::Enforce,
+            mode => mode,
+        },
         after_mode,
+        lifted,
         lock: reference.iter().find_map(|r| r.lock.clone()),
         grant: None,
         unasked: None,
@@ -348,6 +380,11 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
 
 /// The families whose rules take `off` or `enforce` only, or `enforce` only: a `log` there reads
 /// as `enforce` (Q308a, Q313.4), whatever a rule or a family said.
+///
+/// `secrets.credential_files` and `audit` are listed to fail closed, and cannot fire today: neither
+/// has an action of its own in the schema (the first is the sandbox's denial class, the second
+/// is written by the host), so `family_of` never answers either and `run_of` never has one as its
+/// family or as `asks`. They bind the day an action joins one. `vaults` is the one that fires.
 const NEVER_LOGGED: [&str; 3] = ["vaults", "secrets.credential_files", "audit"];
 
 /// The forbid `id`, with the mode it runs at for `request` (§6.4).

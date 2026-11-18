@@ -931,6 +931,8 @@ fn a_lifted_forbid_never_invents_an_allow_where_no_permit_applies() {
         let rm = decide::decide(&loaded, &exec("rm"), &empty_world());
         assert_eq!(rm.after_mode, Outcome::Deny, "{mode}: {rm:?}");
         assert_eq!(ids(&rm), ["policy-everything-else"], "{mode}");
+        // The deny is no `log`'s doing, so `policy why` never reads one beside it.
+        assert_ne!(rm.mode, Mode::Log, "{mode}: {rm:?}");
         let cat = decide::decide(&loaded, &exec("cat"), &empty_world());
         assert_eq!(cat.after_mode, Outcome::Deny, "{mode}");
         let ls = decide::decide(&loaded, &exec("ls"), &empty_world());
@@ -981,4 +983,146 @@ fn a_rule_that_cannot_log_enforces_at_decide_time_whatever_it_names() {
     assert_eq!(decision.after_mode, Outcome::Deny, "{decision:?}");
     assert_eq!(decision.mode, Mode::Enforce);
     assert_eq!(ids(&decision), ["vaults-everything"], "{decision:?}");
+}
+
+// ── M75-10 round 3: a floor restores a deny a mode lowered to an ask ────────────────────────
+
+/// `network` at `log` (the plain forbid lifted) and `asks` enforced (the shipped ask stands).
+const PLAIN_LIFTED_ASK_ENFORCED: &str =
+    "[policy]\ntemplate = \"strict\"\nnetwork = \"log\"\nasks = \"enforce\"\n";
+
+fn unknown_host() -> Request<'static> {
+    request("connect", ("Host", "other.example"), network_context())
+}
+
+#[test]
+fn a_floor_that_enforces_the_family_puts_back_a_deny_a_mode_lowered_to_an_ask() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let loaded = loaded(PLAIN_LIFTED_ASK_ENFORCED, Some(SHADOW));
+    let decided = decide::decide(&loaded, &unknown_host(), &empty_world());
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Deny, Outcome::Ask),
+        "{decided:?}"
+    );
+    assert_eq!(ids(&decided), ["network-unknown-host"]);
+
+    let held = decided.clone().held_to(&Resolved::parse("network=enforce"));
+    assert_eq!(
+        (held.outcome, held.after_mode, held.mode),
+        (Outcome::Deny, Outcome::Deny, Mode::Enforce),
+        "{held:?}"
+    );
+    // The plain forbids that decide it are named, not the ask they stood beside.
+    assert_eq!(ids(&held), ["network-shadow"], "{held:?}");
+
+    // A floor that does not enforce the family holds nothing.
+    for mode in ["log", "off"] {
+        let loose = decided
+            .clone()
+            .held_to(&Resolved::parse(&format!("network={mode}")));
+        assert_eq!(loose.after_mode, Outcome::Ask, "{mode}: {loose:?}");
+    }
+}
+
+#[test]
+fn a_known_host_and_an_unknown_one_are_held_alike_by_a_floor() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let settings =
+        format!("{PLAIN_LIFTED_ASK_ENFORCED}\n[policy.sets]\nknown-hosts = [\"github.com\"]\n");
+    let loaded = loaded(&settings, Some(SHADOW));
+    let floor = Resolved::parse("network=enforce");
+    let known = request("connect", ("Host", "github.com"), network_context());
+    for request in [known, unknown_host()] {
+        let held = decide::decide(&loaded, &request, &empty_world()).held_to(&floor);
+        assert_eq!(held.after_mode, Outcome::Deny, "{held:?}");
+    }
+}
+
+#[test]
+fn an_enforced_plain_forbid_beside_an_enforced_ask_denies() {
+    purlis_core::unsteered!();
+    let enforced = "[policy]\ntemplate = \"strict\"\nnetwork = \"enforce\"\nasks = \"enforce\"\n";
+    let decision = decide::decide(
+        &loaded(enforced, Some(SHADOW)),
+        &unknown_host(),
+        &empty_world(),
+    );
+    assert_eq!(
+        (decision.outcome, decision.after_mode),
+        (Outcome::Deny, Outcome::Deny),
+        "{decision:?}"
+    );
+    assert_eq!(ids(&decision), ["network-shadow"], "{decision:?}");
+}
+
+#[test]
+fn a_project_cannot_replace_an_organisation_file_rule_and_is_told_so() {
+    purlis_core::unsteered!();
+    // The same `@id` as the Organisation's ask, as a permit that would let every connect through.
+    let replacement = "// purlis-policy 1\n\
+         @id(\"network-org-ask\")\n\
+         permit (principal, action == Action::\"connect\", resource);\n";
+    let loaded = loaded_under(STRICT, Some(replacement), Some(ORG_ASK), None);
+    let decision = decide::decide(&loaded, &connect_x(), &empty_world());
+    assert_eq!(decision.after_mode, Outcome::Ask, "{decision:?}");
+    assert!(ids(&decision).contains(&"network-org-ask"), "{decision:?}");
+    let said = loaded
+        .notices
+        .iter()
+        .find(|n| n.what.contains("can't replace"))
+        .expect("a Notice says the rule is refused");
+    assert!(
+        said.what.contains("an Organisation rule"),
+        "an Organisation-file forbid has no [policy.rules] entry of its own to cite: {}",
+        said.what
+    );
+}
+
+mod a_floor_holds_a_chats_merge {
+    use super::*;
+    use purlis_core::enforcement::Resolved;
+    use purlis_core::policy::decide::ChatFacts;
+
+    /// A plain forbid on a merge, beside the shipped `guards-merge-hold` ask.
+    const PLAIN_MERGE: &str = "// purlis-policy 1\n\
+         @id(\"guards-merge-plain\")\n\
+         forbid (principal, action == Action::\"merge\", resource);\n";
+
+    #[test]
+    fn a_plain_forbid_that_logs_is_put_back_beside_the_hold_that_asks() {
+        purlis_core::unsteered!();
+        let settings = "[policy]\ntemplate = \"strict\"\n\n\
+                        [policy.rules]\n\"guards-merge-plain\" = \"log\"\n";
+        let dir = plane(settings, Some(PLAIN_MERGE));
+        let facts = ChatFacts {
+            workspace: None,
+            persona: None,
+            sandboxed: false,
+            attended: true,
+        };
+        let merge = |floor: &str| {
+            decide::for_chat(
+                dir.path(),
+                4,
+                Some(&facts),
+                &Resolved::parse(floor),
+                "merge",
+                ("Branch", "o/r#12"),
+            )
+            .expect("decided")
+        };
+        let held = merge("guards.merge=enforce");
+        assert_eq!(
+            (held.outcome, held.after_mode, held.mode),
+            (Outcome::Deny, Outcome::Deny, Mode::Enforce),
+            "{held:?}"
+        );
+        assert_eq!(ids(&held), ["guards-merge-plain"], "{held:?}");
+        // Without the floor the project's own `log` stands, and the hold asks.
+        let loose = merge("guards.merge=log");
+        assert_eq!(loose.after_mode, Outcome::Ask, "{loose:?}");
+    }
 }

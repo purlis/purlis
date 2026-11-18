@@ -219,6 +219,9 @@ struct Defaults {
 struct Tables {
     defaults: Defaults,
     rules: BTreeMap<String, Said<Mode>>,
+    /// The `rules` entries the loader wrote itself (an Organisation forbid's default `enforce`),
+    /// which the Organisation did not say in its `[policy.rules]`.
+    implicit_rules: BTreeSet<String>,
     sets: BTreeMap<String, Vec<String>>,
     locks: Locks,
     /// `[policy.limits]`: each integer limit, by key (slice 12 reads them).
@@ -1269,10 +1272,16 @@ fn read_organisation(
     // (round 4, steward ruling): a forbid's mode defaults to `enforce` unless the
     // Organisation's own `[policy.rules]` says otherwise.
     for rule in rules.iter().filter(|r| r.policy.effect() == Effect::Forbid) {
-        tables.rules.entry(rule.id.clone()).or_insert(Said {
-            value: Mode::Enforce,
-            line: 1,
-        });
+        if !tables.rules.contains_key(&rule.id) {
+            tables.implicit_rules.insert(rule.id.clone());
+            tables.rules.insert(
+                rule.id.clone(),
+                Said {
+                    value: Mode::Enforce,
+                    line: 1,
+                },
+            );
+        }
     }
     OrgRead {
         tables,
@@ -1502,15 +1511,26 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             Some(held)
                 if rule.level > Level::Organisation && org_tables.rules.contains_key(&rule.id) =>
             {
-                notices.push(Notice {
-                    file: rule.file.clone(),
-                    line: rule.line,
-                    what: format!(
+                // An entry the loader wrote for an Organisation-file forbid is no word of the
+                // Organisation's own `[policy.rules]`: the rule is simply an Organisation rule.
+                let what = if org_tables.implicit_rules.contains(&rule.id) {
+                    format!(
+                        "{} can't replace an Organisation rule of that @id, which {} wrote: the rule is refused",
+                        rule.id,
+                        owner_of_place(Level::Organisation, org_owner)
+                    )
+                } else {
+                    format!(
                         "{} can't replace the {} rule of that @id, which {} sets in its own [policy.rules]: the rule is refused",
                         rule.id,
                         held.level.word(),
                         owner_of_place(Level::Organisation, org_owner)
-                    ),
+                    )
+                };
+                notices.push(Notice {
+                    file: rule.file.clone(),
+                    line: rule.line,
+                    what,
                     rules: vec![named(held, org_owner), named(&rule, org_owner)],
                 });
             }
