@@ -675,3 +675,35 @@ fn a_command_without_its_prompts_off_words_keeps_every_other_word() {
         assert_eq!(bypass_in(&without), None, "{command:?}");
     }
 }
+
+#[test]
+fn inline_settings_whose_default_mode_switches_the_prompts_off_lose_only_that_key() {
+    // The re-review of #7104: Claude Code's `--settings` may carry its permission mode as
+    // `permissions.defaultMode`; the cap at auto takes that key out and keeps the rest.
+    let off = r#"{"permissions":{"defaultMode":"bypassPermissions","allow":["Read"]},"model":"x"}"#;
+    let kept = r#"{"permissions":{"allow":["Read"]},"model":"x"}"#;
+    for (command, want) in [
+        (
+            words(&["claude", "--settings", off, "-v"]),
+            words(&["claude", "--settings", kept, "-v"]),
+        ),
+        (
+            words(&["claude", &format!("--settings={off}")]),
+            words(&["claude", &format!("--settings={kept}")]),
+        ),
+    ] {
+        assert!(bypass_in(&command).is_some(), "{command:?}");
+        let without = without_bypass(&command);
+        assert_eq!(without, want, "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+    // Settings that ask, and a settings file's path, are left as they are.
+    for value in [
+        r#"{"permissions":{"defaultMode":"auto"}}"#,
+        "/etc/claude.json",
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        assert_eq!(bypass_in(&command), None, "{value}");
+        assert_eq!(without_bypass(&command), command, "{value}");
+    }
+}

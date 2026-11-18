@@ -983,6 +983,23 @@ fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_th
             "{text}"
         );
     }
+    // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
+    // still does, whatever the project says of either family (the re-review of #7104).
+    let git_locked = Locks::parse(
+        r#"{"enforcement": ["guards.git"]}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    for text in [
+        "[policy]\n",
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+    ] {
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsPlane),
+            Mode::Enforce,
+            "{text}"
+        );
+    }
 }
 
 /// `git <args>` in `root`, with no configuration but the repository's.

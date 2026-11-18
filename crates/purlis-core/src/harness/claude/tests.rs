@@ -2125,7 +2125,7 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
         &crate::sandbox::policy::Locks::none(),
     );
     assert_eq!(
-        guards_failing(&under_policy(armed_args(), &open)),
+        guards_failing(&under_policy(armed_args(), &open, false)),
         pairs([
             ("pretooluse", "continue"),
             ("pretooluse-read", "continue"),
@@ -2134,7 +2134,11 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
         ])
     );
     assert_eq!(
-        guards_failing(&under_policy(armed_args(), &Resolved::all(Mode::Enforce))),
+        guards_failing(&under_policy(
+            armed_args(),
+            &Resolved::all(Mode::Enforce),
+            false
+        )),
         pairs([
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
@@ -2147,11 +2151,49 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
 }
 
 #[test]
+fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_template() {
+    // The re-review of #7104 (ruling for Q327): A7c, behind the person's own ask and deny rules,
+    // counts as an enforced family, so where they name a program a dead Bash guard refuses
+    // rather than lets the call run. Only the Bash guard reads them.
+    use crate::enforcement::{Resolved, Settings};
+    for text in [
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nsecrets = \"log\"\nguards.credential = \"log\"\n",
+    ] {
+        let policy = Resolved::of(
+            &Settings::from_text(Some(text)),
+            &crate::sandbox::policy::Locks::none(),
+        );
+        assert_eq!(
+            guards_failing(&under_policy(armed_args(), &policy, false)),
+            pairs([
+                ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]),
+            "{text}, no rule names a program"
+        );
+        assert_eq!(
+            guards_failing(&under_policy(armed_args(), &policy, true)),
+            pairs([
+                ("pretooluse", "block"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]),
+            "{text}, a rule names a program"
+        );
+    }
+}
+
+#[test]
 fn the_permission_hook_fails_open_under_every_policy() {
     // #7067: a dead permission hook allows nothing; the pane asks, as with no answer.
     let args = under_policy(
         armed_args(),
         &crate::enforcement::Resolved::all(crate::enforcement::Mode::Enforce),
+        true,
     );
     let at = args
         .iter()

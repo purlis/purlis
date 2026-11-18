@@ -288,20 +288,27 @@ pub fn unapproved_notice(p: &Profile, root: &Path, declared: &Declarations) -> O
     {
         return None;
     }
-    let what = if let Some(state) = crate::profiletrust::profile_approval_needed(root, p) {
-        format!("Profile '{}' is {}", shown::short(&p.name), state.as_str())
-    } else {
-        let (state, d) = crate::profiletrust::declaration_approval_needed_in(root, p, declared)?;
-        format!(
-            "Harness '{}', declared in {}, is {} on this machine",
-            shown::short(&d.name),
-            d.file,
-            state.as_str()
-        )
+    // Each that nobody approved is named: the profile, the declaration its kind names, or both
+    // (the re-review of #7104).
+    let profile = crate::profiletrust::profile_approval_needed(root, p)
+        .map(|state| format!("Profile '{}' is {}", shown::short(&p.name), state.as_str()));
+    let harness =
+        crate::profiletrust::declaration_approval_needed_in(root, p, declared).map(|(state, d)| {
+            format!(
+                "Harness '{}', declared in {}, is {} on this machine",
+                shown::short(&d.name),
+                d.file,
+                state.as_str()
+            )
+        });
+    let (what, which) = match (profile, harness) {
+        (Some(profile), Some(harness)) => (format!("{profile}, {harness}"), "either"),
+        (Some(one), None) | (None, Some(one)) => (one, "it"),
+        (None, None) => return None,
     };
     Some(format!(
-        "{what}, and nobody has approved it. It started anyway, because this project's policy \
-         does not ask for approval. To be asked again, set trust to enforce in Settings › \
+        "{what}, and nobody has approved {which}. It started anyway, because this project's \
+         policy does not ask for approval. To be asked again, set trust to enforce in Settings › \
          Project › Policy."
     ))
 }
@@ -400,6 +407,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_start_on_an_unapproved_profile_of_an_unapproved_harness_names_both() {
+        // The re-review of #7104: where neither the profile nor the declaration its kind names
+        // was approved, the tab names each, not the profile alone.
+        crate::unsteered!();
+        let root = tempfile::tempdir().expect("a plane");
+        std::fs::write(
+            crate::names::manifest(root.path()),
+            "[policy]\ntemplate = \"open\"\n",
+        )
+        .expect("the manifest");
+        let _home = crate::sandbox::local::OwnConfigHome::new();
+        pressed(root.path());
+        let dir = root.path().join(crate::harness_declaration::DIR);
+        std::fs::create_dir_all(&dir).expect("the declarations' folder");
+        std::fs::write(
+            dir.join("shelly.toml"),
+            "name = \"shelly\"\ntitle = \"Shelly\"\nprogram = \"true\"\n",
+        )
+        .expect("a declaration");
+        std::fs::write(
+            root.path().join(profiles::LOCAL_FILE),
+            "[harness.shelly-work]\nkind = \"shelly\"\ncommand = [\"true\", \"-e\"]\n",
+        )
+        .expect("a local profile");
+        let declared = crate::harness_declaration::read(root.path());
+        let set = profiles::current(root.path());
+        let work = set
+            .get("shelly-work")
+            .unwrap_or_else(|| panic!("{:?}", set.refused));
+        let told = unapproved_notice(work, root.path(), &declared).expect("told");
+        assert!(
+            told.contains("Profile 'shelly-work'") && told.contains("harnesses/shelly.toml"),
+            "{told}"
+        );
+        assert!(told.contains("nobody has approved either"), "{told}");
     }
 
     /// The person's press in the window, on what the project at `root` says now.

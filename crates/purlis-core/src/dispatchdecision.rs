@@ -2128,6 +2128,66 @@ mod tests {
     }
 
     #[test]
+    fn an_administrators_ceiling_holds_a_dispatch_where_policy_limits_logs() {
+        // The re-review of #7104, end to end: under `limits = "log"` a count is lifted only up
+        // to an administrator's ceiling on it (Q308a: a lock wins over every mode). A dispatch
+        // past the ceiling is refused as before, and nothing is logged; one past the project's
+        // own value and within the ceiling starts, and a line names the limit.
+        use crate::sandbox::policy::{Locks, set_for_this_test};
+        let one = chat(Some("steward"));
+        let two = Chat {
+            identity: Identity {
+                id: Some(OTHER_ID.to_owned()),
+                ..Default::default()
+            },
+            ..dispatched(1, 1, Mode::Task, Owed::Due, Some("steward"))
+        };
+        let open = [(1, &one), (2, &two)];
+        let ask = |policy: &str| {
+            set_for_this_test(Locks::parse(
+                policy,
+                std::path::Path::new("/etc/purlis/policy.json"),
+            ));
+            let root = a_project("[dispatch]\ndepth = 1\n[policy]\nlimits = \"log\"\n");
+            let asked = asked_by_a_chat(
+                root.path(),
+                2,
+                None,
+                &Moment {
+                    open: &open,
+                    working: &|_| true,
+                    default: None,
+                    grants: &InForce::default(),
+                    profile: None,
+                    by: By::Chat,
+                    mode: Mode::Task,
+                    counted: Counted::Tasks,
+                    works_in: None,
+                    session_tokens: &|| 0,
+                },
+            );
+            set_for_this_test(Locks::none());
+            let rules = crate::enforcement::read_log(root.path(), OTHER_ID)
+                .into_iter()
+                .map(|line| (line.family, line.rule))
+                .collect::<Vec<_>>();
+            (asked.decision, rules)
+        };
+        let (held, lines) = ask(r#"{"dispatch": {"depth": 1}}"#);
+        assert!(
+            matches!(
+                held,
+                Decision::Refused(Refused::Limit(dispatchlimits::Refused::TooDeep { .. }))
+            ),
+            "{held:?}"
+        );
+        assert!(lines.is_empty(), "{lines:?}");
+        let (lifted, lines) = ask(r#"{"dispatch": {"depth": 3}}"#);
+        assert_eq!(lifted, Decision::Start);
+        assert_eq!(lines, [("limits".to_owned(), "dispatch.depth".to_owned())]);
+    }
+
+    #[test]
     fn a_destinations_0_switch_holds_where_policy_limits_lifts_the_asking_chats_own_count() {
         // #7104: the asking chat's own depth refuses first; under `limits = "log"` that count is
         // lifted, and the workspace it would work in, whose dispatch is off, still refuses.

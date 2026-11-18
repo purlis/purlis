@@ -481,16 +481,53 @@ fn the_persons_own_rules_hold_under_open_for_a_command_too_big_or_too_deep_to_re
         ")".repeat(7)
     );
     assert_eq!(crate::guardcaps::refusal(&deep), None, "the caps read it");
+    // The ruled program only inside the depth no reader reaches (the re-review of #7104): no
+    // arm read it, so only the person's rules binding the caps refuse it, and A7c, read alone,
+    // refuses it too as too deep to check, wherever the program sits.
+    let only_deep = format!(
+        "echo ok; {}{rule} {}{}",
+        "echo $(".repeat(7),
+        "y".repeat(20 * 1024),
+        ")".repeat(7)
+    );
+    assert_eq!(
+        crate::guardcaps::refusal(&only_deep),
+        None,
+        "the caps read it"
+    );
     let refused = |plant: &dyn Fn(&std::path::Path)| {
-        [("too big", &huge), ("too deep", &deep)].map(|(shape, cmd)| {
+        [
+            ("too big", &huge),
+            ("too deep", &deep),
+            ("only too deep", &only_deep),
+        ]
+        .map(|(shape, cmd)| {
             let judged = judged_under("template = \"open\"\n", cmd, None, plant);
-            (shape, judged.refused.is_some())
+            (shape, judged.refused.map(|verdict| verdict.arm))
         })
     };
-    assert_eq!(refused(&plant), [("too big", true), ("too deep", true)]);
-    // Where the person has no rule, `open` lets either through as before.
+    assert_eq!(
+        refused(&plant),
+        [
+            ("too big", Some(Some(Arm::Caps))),
+            ("too deep", Some(Some(Arm::Caps))),
+            ("only too deep", Some(Some(Arm::Caps))),
+        ]
+    );
+    // Where the person has no rule, `open` lets each through as before.
     assert_eq!(
         refused(&nothing_planted),
-        [("too big", false), ("too deep", false)]
+        [
+            ("too big", None),
+            ("too deep", None),
+            ("only too deep", None)
+        ]
+    );
+    let root = tempfile::tempdir().expect("a plane");
+    plant(root.path());
+    assert_eq!(
+        crate::rulespelling::refusal(&only_deep, root.path(), &[root.path()]),
+        Some(crate::guardcaps::too_deep_refusal()),
+        "A7c alone"
     );
 }

@@ -275,6 +275,22 @@ const MODE_FLAGS: [(&str, &str); 4] = [
 /// The flag Claude Code starts a chat in a permission mode by.
 const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 
+/// The flag Claude Code reads settings by: a file's path, or the settings inline as JSON.
+const CLAUDE_CODE_SETTINGS_FLAG: &str = "--settings";
+
+/// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
+/// prompts off, or `None` where it is no JSON or carries no such mode.
+fn settings_without_bypass(value: &str) -> Option<String> {
+    let mut settings: serde_json::Value = serde_json::from_str(value).ok()?;
+    let permissions = settings.get_mut("permissions")?.as_object_mut()?;
+    let mode = permissions.get("defaultMode")?.as_str()?;
+    if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
+        return None;
+    }
+    permissions.remove("defaultMode");
+    Some(settings.to_string())
+}
+
 /// **The words of `command` that start a harness with its permission prompts off**, if any
 /// do, as they are shown to a person: the flag, with its value where the value is what
 /// switches them off (`-c approval_policy=never`). `command` is a profile's own, as this
@@ -291,19 +307,23 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
-    (0..command.len()).find_map(|at| bypass_at(command, at).map(|(shown, _)| shown))
+    (0..command.len()).find_map(|at| bypass_at(command, at).map(|bypass| bypass.shown))
 }
 
 /// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
 /// chat another chat asked for is started on where `[policy] mode` let such a profile through
 /// (Q308b), so it still runs at its task's level, capped at auto (#3787, #7104). A flag's value
-/// goes with it where it is the next word.
+/// goes with it where it is the next word; inline `--settings` keep every key but the
+/// permission mode.
 pub fn without_bypass(command: &[String]) -> Vec<String> {
     let mut kept = Vec::with_capacity(command.len());
     let mut at = 0;
     while at < command.len() {
         match bypass_at(command, at) {
-            Some((_, words)) => at += words,
+            Some(bypass) => {
+                kept.extend(bypass.kept);
+                at += bypass.words;
+            }
             None => {
                 kept.push(command[at].clone());
                 at += 1;
@@ -313,19 +333,50 @@ pub fn without_bypass(command: &[String]) -> Vec<String> {
     kept
 }
 
-/// The words at `at` of `command` that switch the prompts off, as shown, and how many words
-/// they are: one, or two where the value is the next word.
-fn bypass_at(command: &[String], at: usize) -> Option<(String, usize)> {
+/// Words of a command line that switch the prompts off ([`bypass_at`]).
+struct Bypass {
+    /// As shown to a person.
+    shown: String,
+    /// How many words they are: one, or two where the value is the next word.
+    words: usize,
+    /// What stands in their place once the prompts are back on: nothing, or the same inline
+    /// `--settings` without the permission mode.
+    kept: Vec<String>,
+}
+
+/// The words at `at` of `command` that switch the prompts off, if they do.
+fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     use crate::sandbox::codex::{is_flag, split};
     let word = command.get(at)?;
     if BYPASS_FLAGS.contains(&word.as_str()) {
-        return Some((word.clone(), 1));
+        return Some(Bypass {
+            shown: word.clone(),
+            words: 1,
+            kept: Vec::new(),
+        });
     }
     if !is_flag(word) {
         return None;
     }
     let (flag, attached) = split(word);
     let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
+    let words = if attached.is_some() { 1 } else { 2 };
+    // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
+    // `permissions.defaultMode`. A settings file's path is not read here.
+    if flag == CLAUDE_CODE_SETTINGS_FLAG {
+        let rewritten = settings_without_bypass(value)?;
+        return Some(Bypass {
+            shown: format!(
+                "{flag} with permissions.defaultMode {}",
+                crate::attendance::PROMPTS_OFF
+            ),
+            words,
+            kept: match attached {
+                Some(_) => vec![format!("{flag}={rewritten}")],
+                None => vec![flag.to_owned(), rewritten],
+            },
+        });
+    }
     // A value may be written quoted and spaced (`approval_policy = "never"`).
     let plain = value.replace(['"', '\'', ' '], "");
     let off = if flag == CLAUDE_CODE_MODE_FLAG {
@@ -335,9 +386,13 @@ fn bypass_at(command: &[String], at: usize) -> Option<(String, usize)> {
             .iter()
             .any(|(known, never)| flag == *known && plain == *never)
     };
-    off.then(|| match attached {
-        Some(_) => (word.clone(), 1),
-        None => (format!("{flag} {value}"), 2),
+    off.then(|| Bypass {
+        shown: match attached {
+            Some(_) => word.clone(),
+            None => format!("{flag} {value}"),
+        },
+        words,
+        kept: Vec::new(),
     })
 }
 

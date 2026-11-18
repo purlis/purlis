@@ -41,7 +41,8 @@ choke point switches each, and the family of every decision purlis makes about a
 [`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
 forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
 sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
-`open` included: a dispatch never and a host you kept blocked.
+`open` included: a dispatch never, a host you kept blocked, and your harness's ask and deny rules
+for a program, behind which a Bash guard that fails to answer refuses the call.
 
 **A profile or harness declaration nobody approved still asks** under every template but `open`
 (Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start
@@ -66,6 +67,8 @@ unapproved, and then its chat's tab says so as it starts.
 - **Your local settings file can only make a family stricter.**
 - **An administrator's lock wins.** `/etc/purlis/policy.json`'s `enforcement` list names families
   that are always enforced on that machine, and its other locks keep their own families enforced.
+  A lock on `guards.git` also holds `guards.plane`, which took over the plane root's branch and
+  reset guards (A3, A3b) from it.
 - **A value purlis cannot read never loosens anything**: an unknown template is `strict`, an
   unknown mode is `enforce`, and the window says which.
 

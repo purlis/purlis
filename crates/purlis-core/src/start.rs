@@ -594,7 +594,7 @@ fn ready_given_on(
         }
         return Err(why);
     }
-    let (added, session, how) = match &declared {
+    let (mut added, session, how) = match &declared {
         Some(declared) => declared_arguments(declared, profile, start),
         None => arguments(harness, profile, start),
     };
@@ -614,11 +614,14 @@ fn ready_given_on(
     // **A chat another chat asked for never runs asking nobody** (#1446): where `[policy] mode`
     // let a profile whose command switches the prompts off through (Q308b), those words are
     // dropped, so the chat still starts at its task's level, capped at auto (#3787), and its
-    // tab says so.
+    // tab says so. A declared harness's own words, added after the profile's, are read too
+    // (the re-review of #7104).
     if matches!(start.made, crate::sandbox::Made::Asked { .. })
         && let Some(flag) = crate::dispatchunattended::bypass_in(&argv)
+            .or_else(|| crate::dispatchunattended::bypass_in(&added))
     {
         argv = crate::dispatchunattended::without_bypass(&argv);
+        added = crate::dispatchunattended::without_bypass(&added);
         notices.push(format!(
             "Profile '{}' switches the permission prompts off ({}), and a chat another chat \
              asked for never runs that way, so it started without it.",
