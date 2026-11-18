@@ -200,8 +200,8 @@ export function SettingsNearTheLimitNotice({
       onDismiss={onDismiss}
     >
       This chat&apos;s permission rules weigh {kb} KB, near the limit of what its harness&apos;s
-      auto mode checks. Past it, auto mode refuses what it would have checked, without asking. Remove the
-      branch folders you no longer need, then start the chat again.
+      auto mode checks. Past it, auto mode refuses what it would have checked, without asking.
+      Remove the branch folders you no longer need, then start the chat again.
     </Notice>
   );
 }
