@@ -226,7 +226,7 @@ phase_c() {
   req "$TOKEN" GET "/contents/vf-auto.txt?ref=vf-auto"
   req "$TOKEN" PUT /contents/vf-auto-2.txt "{\"message\":\"push after auto-merge\",\"content\":\"$(b64 again)\",\"branch\":\"vf-auto\"}"
   record A1-push "allowed (the chat's push to its own branch)" "$(observed)" info
-  for i in $(seq 1 18); do
+  for i in $(seq 1 60); do
     sleep 10
     req "$TOKEN" GET "/pulls/$n"
     merged=$(jqb A1-merge -r .merged); by=$(jqb A1-merge -r '.merged_by.login // ""')
@@ -234,8 +234,11 @@ phase_c() {
   done
   if [[ "$merged" == true ]]; then
     record A1-merge "PR not merged (the lock holds)" "merged by '$by' within $((i * 10))s: auto-merge completed past the lock" fail
+    req "$TOKEN" GET "/pulls/$n/commits"
+    record A1-commits "info (commits of the merged PR; the chat's push after enabling is vf-auto-2.txt)" \
+      "$(jqb A1-commits -r '[.[]? | .sha[0:7] + " " + (.commit.message | split("\n")[0])] | join("; ")')" info
   else
-    record A1-merge "PR not merged (the lock holds)" "not merged after 180s (mergeable_state $(jqb A1-merge -r .mergeable_state))" pass
+    record A1-merge "PR not merged (the lock holds)" "not merged after 600s (mergeable_state $(jqb A1-merge -r .mergeable_state))" pass
   fi
 }
 
