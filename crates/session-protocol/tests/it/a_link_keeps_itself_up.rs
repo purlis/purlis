@@ -195,9 +195,16 @@ async fn try_now_lets_go_of_what_the_connector_remembers_before_the_next_try() {
     });
     let first = lists(up(&mut links).await).await;
     to_b.set(Cable::Cut);
-    first.list().await.expect_err("the cut cable carries nothing");
+    first
+        .list()
+        .await
+        .expect_err("the cut cable carries nothing");
     down(&mut links).await;
-    assert_eq!(forgotten.load(Ordering::SeqCst), 0, "nothing is forgotten on its own");
+    assert_eq!(
+        forgotten.load(Ordering::SeqCst),
+        0,
+        "nothing is forgotten on its own"
+    );
     links.try_now();
     assert_eq!(forgotten.load(Ordering::SeqCst), 1);
     lists(up(&mut links).await).await;

@@ -485,11 +485,25 @@ pub fn socket_for(docker: &Docker, pool: &str) -> Result<PathBuf, Finding> {
 /// **[`docker_of`] for the pool named `name`** under `config`, in words: what a link, a check or
 /// a make reads before it runs anything there.
 pub fn docker_of_named(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
-    let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
+    docker_of_named_in_state(config, docker, name).map_err(|(said, _)| said)
+}
+
+/// [`docker_of_named`], with the state a failure puts the pool in (#7187): what a link says of
+/// a pool it can't reach, and whether it keeps trying.
+pub fn docker_of_named_in_state(
+    config: &Path,
+    docker: &Docker,
+    name: &str,
+) -> Result<Docker, (String, connect::RemoteState)> {
+    let pools = crate::runners::pools(config)
+        .map_err(|why| (why.to_string(), connect::RemoteState::Unreachable))?;
     match pools.iter().find(|pool| pool.name() == name) {
-        Some(pool) => {
-            docker_of(docker, pool).map_err(|finding| crate::poolsetup::connect_said(&finding))
-        }
+        Some(pool) => docker_of(docker, pool).map_err(|finding| {
+            (
+                crate::poolsetup::connect_said(&finding),
+                finding.remote_state(),
+            )
+        }),
         // A runner whose pool is gone is reached as it always was.
         None => Ok(docker.clone()),
     }
@@ -663,7 +677,10 @@ mod tests {
         assert_eq!(waiting.ask(now), Ask::Answer(silent()), "it is waiting");
         try_now("try-now-a");
         assert_eq!(failing("try-now-a", &pin), None, "the click dials at once");
-        assert!(failing("try-now-b", &pin).is_some(), "another pool keeps its wait");
+        assert!(
+            failing("try-now-b", &pin).is_some(),
+            "another pool keeps its wait"
+        );
         forget_failing("try-now-b");
     }
 

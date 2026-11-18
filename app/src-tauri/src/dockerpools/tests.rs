@@ -519,7 +519,7 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
         port: 22,
     };
 
-    let came = unreachable_said("build-box", &no_answer).expect("offered forgetting");
+    let came = unreachable_said("build-box", &no_answer);
 
     assert_eq!(
         came,
@@ -542,28 +542,43 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
     );
 }
 
-/// A machine that answered, and refused something else, is not offered forgetting: Remove's own
-/// words say what to do there.
+/// **Forget works in every state** (#7187, #7122): a machine that answered and refused, or whose
+/// key or engine changed, is offered forgetting as one that doesn't answer is. Remove can
+/// reach none of them, and a pool must never be stuck in the list.
 #[cfg(unix)]
 #[test]
-fn a_pool_whose_machine_answers_is_not_offered_forgetting() {
+fn a_pool_is_offered_forgetting_in_every_state_it_cannot_be_removed_from() {
     use purlis_core::sshroute::connect::Finding;
-    let refused = Finding::SignInRefused {
-        host: "build-box".into(),
-    };
-    assert_eq!(unreachable_said("build-box", &refused), None);
-    for unreachable in [
-        Finding::NoSuchName {
-            host: "build-box".into(),
+    let host = || "build-box".to_owned();
+    for finding in [
+        Finding::SignInRefused { host: host() },
+        Finding::EngineSilent {
+            host: host(),
+            said: "no".into(),
         },
+        Finding::ForwardingRefused { host: host() },
+        Finding::NoEngine {
+            host: host(),
+            user: "me".into(),
+        },
+        Finding::EngineChanged {
+            host: host(),
+            pinned: "A".into(),
+            now: "B".into(),
+            podman: false,
+        },
+        Finding::NoSuchName { host: host() },
         Finding::NotMetThrough {
-            host: "build-box".into(),
+            host: host(),
             said: String::new(),
         },
     ] {
         assert!(
-            unreachable_said("build-box", &unreachable).is_some(),
-            "{unreachable:?}"
+            matches!(
+                unreachable_said("build-box", &finding),
+                PoolRemoval::Unreachable { .. }
+            ),
+            "{finding:?}"
         );
     }
 }

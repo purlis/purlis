@@ -126,6 +126,134 @@ pub enum Finding {
     Here(String),
 }
 
+/// **The five states a pool on another machine, or a runner on it, is in when it is not
+/// reachable** (#7187, CONTEXT.md): what the person is told, and whether purlis tries again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteState {
+    /// **Unreachable**: nothing answers, or not yet. purlis retries on its own, and the person
+    /// can press Try now.
+    Unreachable,
+    /// **Refused**: the machine answers, but sign-in, Docker or forwarding fails. purlis stops
+    /// retrying, shows the reason, and offers Check pool.
+    Refused,
+    /// **Host key changed**: the machine presents a key, or an engine, other than the one
+    /// pinned. A security stop: never retried, and the person's OK in pool settings ends it.
+    HostKeyChanged,
+    /// **Runner gone**: the runner's container is no longer there. Its chats end, and the
+    /// person may start again on the pool.
+    RunnerGone,
+    /// **Pool forgotten**: the person forgot the pool here. Its chats end, and say so.
+    PoolForgotten,
+}
+
+impl RemoteState {
+    /// Whether purlis tries again on its own.
+    #[must_use]
+    pub fn retries(self) -> bool {
+        self == RemoteState::Unreachable
+    }
+
+    /// Whether the chats on it end.
+    #[must_use]
+    pub fn ends_the_chats(self) -> bool {
+        matches!(self, RemoteState::RunnerGone | RemoteState::PoolForgotten)
+    }
+}
+
+impl Finding {
+    /// **Which state this finding puts the pool in** (#7187). A machine that does not answer is
+    /// [`RemoteState::Unreachable`]; one that answers and refuses is [`RemoteState::Refused`];
+    /// one that presents another key or engine than the pinned one is
+    /// [`RemoteState::HostKeyChanged`].
+    #[must_use]
+    pub fn remote_state(&self) -> RemoteState {
+        match self {
+            Finding::NoSuchName { .. }
+            | Finding::NoAnswer { .. }
+            | Finding::NotSsh { .. }
+            | Finding::NotMet { .. }
+            | Finding::NotMetThrough { .. }
+            | Finding::ImageUnreachable { .. }
+            | Finding::Here(_) => RemoteState::Unreachable,
+            Finding::KeyChanged { .. }
+            | Finding::EngineChanged { .. }
+            | Finding::CaChanged { .. } => RemoteState::HostKeyChanged,
+            Finding::SignInRefused { .. }
+            | Finding::NoEngine { .. }
+            | Finding::NotAllowed { .. }
+            | Finding::EngineSilent { .. }
+            | Finding::ForwardingRefused { .. }
+            | Finding::NeedsPodman { .. }
+            | Finding::TlsFile { .. }
+            | Finding::NotSignedByCa { .. }
+            | Finding::ServerExpired { .. }
+            | Finding::WrongName { .. }
+            | Finding::ClientRefused { .. }
+            | Finding::ClientExpired { .. }
+            | Finding::Unconfined { .. }
+            | Finding::Architecture { .. }
+            | Finding::DiskFull { .. }
+            | Finding::KernelShort { .. }
+            | Finding::ContextMoved { .. } => RemoteState::Refused,
+        }
+    }
+}
+
+#[cfg(test)]
+mod remote_state_tests {
+    use super::*;
+
+    fn host() -> String {
+        "box".to_owned()
+    }
+
+    #[test]
+    fn a_machine_that_does_not_answer_is_unreachable_and_is_retried() {
+        let finding = Finding::NoAnswer {
+            host: host(),
+            port: 22,
+        };
+        assert_eq!(finding.remote_state(), RemoteState::Unreachable);
+        assert!(finding.remote_state().retries());
+    }
+
+    #[test]
+    fn a_machine_that_answers_and_refuses_is_refused_and_is_not_retried() {
+        for finding in [
+            Finding::SignInRefused { host: host() },
+            Finding::EngineSilent {
+                host: host(),
+                said: "no".to_owned(),
+            },
+            Finding::ForwardingRefused { host: host() },
+        ] {
+            assert_eq!(finding.remote_state(), RemoteState::Refused, "{finding:?}");
+            assert!(!finding.remote_state().retries());
+        }
+    }
+
+    #[test]
+    fn a_machine_with_another_key_or_engine_is_a_security_stop_never_retried() {
+        let engine = Finding::EngineChanged {
+            host: host(),
+            pinned: "A".to_owned(),
+            now: "B".to_owned(),
+            podman: false,
+        };
+        assert_eq!(engine.remote_state(), RemoteState::HostKeyChanged);
+        assert!(!engine.remote_state().retries());
+    }
+
+    #[test]
+    fn only_a_runner_gone_or_a_pool_forgotten_ends_its_chats() {
+        assert!(RemoteState::RunnerGone.ends_the_chats());
+        assert!(RemoteState::PoolForgotten.ends_the_chats());
+        assert!(!RemoteState::Refused.ends_the_chats());
+        assert!(!RemoteState::Unreachable.ends_the_chats());
+        assert!(!RemoteState::HostKeyChanged.ends_the_chats());
+    }
+}
+
 /// **What ssh makes of the route, from the person's own settings** (`ssh -G`): the machine's
 /// name or address it connects to, its port and user, whether a jump host or a command reaches
 /// it, and the `known_hosts` files it reads.

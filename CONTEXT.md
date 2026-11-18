@@ -563,6 +563,38 @@ own, apart from the session protocol's. It belongs to **Project**, with the two 
 _Avoid_: connection (unqualified), session (that is the process), pairing (that is how the keys
 were pinned)
 
+**Unreachable** (a pool or runner):
+The first of the five states a pool on another machine is in when purlis cannot use it: nothing
+answers, or not yet. purlis retries on its own, 5 to 120 seconds apart for the forward and at
+most 30 seconds apart for the link, and **Try now** forgets what was remembered of the failure
+and tries at once. A start waits up to 30 seconds with "Waiting for <pool>", then ends with the
+reason, offering Try now and Check pool. A part of **Pool** (ADR 0078, #7187).
+_Avoid_: offline, down (that is the link's own word for an outage, whatever its state), timed out
+
+**Refused** (a pool or runner):
+The machine answers, but sign-in, Docker or forwarding fails. purlis stops retrying, shows the
+reason and offers Check pool; nothing but the person's fix, or Try now, tries again. Said only of
+a machine that answered: one that did not is **Unreachable**. A part of **Pool** (#7187).
+_Avoid_: denied, failed, blocked
+
+**Host key changed** (a pool or runner):
+The machine presents another host key, or another engine, than the one pinned. A security stop:
+purlis never retries it on its own, and it ends only with the person's OK in pool settings. A
+part of **Pool** (ADR 0123, #7187).
+_Avoid_: key mismatch, untrusted, refused (that is a machine that answered and said no)
+
+**Runner gone** (a runner):
+The runner's container is no longer on its machine, removed outside purlis. Its chats end, and
+the window offers "Start again on this pool", which makes a runner again. A part of **Runner**
+(#4149, #7187).
+_Avoid_: removed (that is purlis's own Remove), lost, dead
+
+**Pool forgotten** (a pool):
+The person forgot the pool on this machine, whatever state it was in. Its chats and browsers end,
+and the window says so; what may be left on the machine, runners, browsers and logins, is listed
+before the person confirms. A part of **Pool** (#7122, #7139, #7187).
+_Avoid_: removed (Remove contacts the machine; forgetting does not), deleted
+
 **Label** (of a runner):
 What a runner not marked owned is for: exactly one of `harness` (runs chats), `app` (serves one
 version of a workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it

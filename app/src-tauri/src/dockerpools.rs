@@ -696,19 +696,19 @@ fn unreachable_of(machine: &Machine, name: &str) -> Option<PoolRemoval> {
     let pool = pools.iter().find(|pool| pool.name() == name)?;
     let host = pool.remote_engine()?.host().to_owned();
     let finding = purlis_core::sshroute::pool::docker_of(&machine.docker, pool).err()?;
-    unreachable_said(&host, &finding)
+    Some(unreachable_said(&host, &finding))
 }
 
-/// [`unreachable_of`], once the machine `host` was found: only one that can't be reached.
+/// [`unreachable_of`], once the machine `host` was found: whatever it found, for Remove can
+/// reach nothing of a pool that is not reachable, whether the machine doesn't answer, refuses
+/// the sign-in, Docker or forwarding, or presents another key or engine (#7187: Forget works in
+/// every state).
 #[cfg(unix)]
-fn unreachable_said(
-    host: &str,
-    finding: &purlis_core::sshroute::connect::Finding,
-) -> Option<PoolRemoval> {
-    purlis_core::poolsetup::connecting::unreachable(finding).then(|| PoolRemoval::Unreachable {
+fn unreachable_said(host: &str, finding: &purlis_core::sshroute::connect::Finding) -> PoolRemoval {
+    PoolRemoval::Unreachable {
         why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
         host: host.to_owned(),
-    })
+    }
 }
 
 /// Refused, with nothing done, where what Remove would do to pool `name` is no longer what the

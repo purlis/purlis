@@ -723,7 +723,7 @@ export function UnreachableNotice({
 
 /** What {@link UnreachableNotice} says of pool `name` on `host`, which didn't answer for `why`. */
 export const unreachableSaid = (name: string, host: string, why: string) =>
-  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Its runner's container and home volume stay on ${host}. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
+  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Whatever may be left on ${host} stays there: its runner's container and home volume, the browsers it ran, and the logins given on it. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
