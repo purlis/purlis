@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { jobsOf } from "./ci-push-jobs.mjs";
-import { batchOf, batchesChanged, differences, escapeRows, filterOf, flaky, recordsOfSteps, shuffled } from "./scenario-legs.mjs";
+import { batchOf, batchesChanged, differences, escapeRows, filterOf, flaky, junitRecords, recordsOfSteps, shuffled } from "./scenario-legs.mjs";
 
 const TOOL = fileURLToPath(new URL("./scenario-legs.mjs", import.meta.url));
 
@@ -163,4 +163,28 @@ test("the_existing_macos_sandbox_targets_run_and_fail_on_red: nightly and on the
   assert.match(job.text, /sandbox-scenarios-report-existing-macos/);
   assert.match(job.text, /target\/sandbox-scenarios\/\*\.jsonl/);
   assert.match(readFileSync(join(root, ".github/nightly-on-phase-1-proven.txt"), "utf8"), /^existing-macos-sandbox-tests\s+macos-/m);
+});
+
+test("a_test_nextest_passed_in_one_run_and_failed_in_another_is_flaky_with_no_cell_report", () => {
+  const xml = (verdicts) =>
+    `<testsuites><testsuite name="purlis-app">${verdicts
+      .map(([name, v]) => `<testcase name="${name}" classname="purlis-app"${v === "pass" ? "/>" : `>${v === "fail" ? "<failure message=\"x\"/>" : "<skipped/>"}</testcase>`}`)
+      .join("")}</testsuite></testsuites>`;
+  assert.deepEqual(
+    junitRecords(xml([["scenarios::a", "pass"], ["scenarios::b", "fail"], ["scenarios::c", "skip"]])).map((r) => [r.row, r.verdict]),
+    [["purlis-app scenarios::a", "pass"], ["purlis-app scenarios::b", "fail"], ["purlis-app scenarios::c", "not_run"]],
+  );
+  const dir = mkdtempSync(join(tmpdir(), "legs-"));
+  try {
+    for (const [i, v] of ["pass", "fail", "pass"].entries()) {
+      mkdirSync(join(dir, `run-${i + 1}`));
+      writeFileSync(join(dir, `run-${i + 1}`, "junit.xml"), xml([["scenarios::steady", "pass"], ["scenarios::odd", v]]));
+    }
+    const found = flaky(dir, { source: "stress-x20" });
+    assert.equal(found.differences.length, 1);
+    assert.match(found.issues[0].title, /scenarios::odd/);
+    assert.match(found.issues[0].body, /stress-x20/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });

@@ -4,6 +4,8 @@
 //! **A run's reports, read back for the run-result gate step** (T1.1-54): the JSON lines the legs
 //! wrote, the legs a run ran, and the trigger that started it.
 
+use std::path::Path;
+
 use purlis_scenarios::coverage::Ran;
 use purlis_scenarios::legs::{ran_from, read_reports, trigger_from};
 use purlis_scenarios::model::{EntryKind, Os, ReportLeg, ReportVerdict, TimingsMode};
@@ -70,4 +72,48 @@ fn the_legs_a_run_ran_and_its_trigger_are_read_from_words() {
     assert_eq!(trigger_from("merge_group"), Ok(Trigger::MergeQueue));
     assert_eq!(trigger_from("nightly"), Ok(Trigger::Nightly));
     assert!(trigger_from("push").is_err());
+}
+
+#[test]
+fn the_run_result_gate_program_reads_a_job_s_reports_and_says_why_it_is_red() {
+    let gate = |reports: &std::path::Path, trigger: &str, ran: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_scenarios-gate"))
+            .args([reports.to_str().expect("a path"), trigger, ran])
+            .output()
+            .expect("the gate runs")
+    };
+    let folder = tempfile::tempdir().expect("a folder");
+    // Every cover of the repo's list is still pending, so a job that ran owes nothing yet.
+    let green = gate(folder.path(), "pull_request", "fake:linux:scaled");
+    assert!(green.status.success(), "{green:?}");
+    // A report folder that is not there, a trigger or a leg it does not know: red, with the reason.
+    for (args, said) in [
+        (
+            ("missing-folder", "pull_request", "fake:linux:scaled"),
+            "missing-folder",
+        ),
+        (
+            (
+                folder.path().to_str().expect("a path"),
+                "push",
+                "fake:linux:scaled",
+            ),
+            "no trigger",
+        ),
+        (
+            (
+                folder.path().to_str().expect("a path"),
+                "nightly",
+                "fake:linux",
+            ),
+            "leg:os:timings",
+        ),
+    ] {
+        let red = gate(Path::new(args.0), args.1, args.2);
+        assert!(!red.status.success(), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&red.stdout).contains(said),
+            "{args:?}: {red:?}"
+        );
+    }
 }

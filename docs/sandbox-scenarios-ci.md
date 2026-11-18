@@ -40,14 +40,25 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 
 ## Budgets
 
-A job's `timeout-minutes` is its budget: exceeding it fails the job. They start at 15 minutes for
-the Linux pull request job and 60 for the macOS job, and are set from the runs named here.
+A job's `timeout-minutes` is its budget: exceeding it fails the job. They started at 15 minutes for
+the Linux pull request job and 60 for the macOS job, and are set from what these runs measured.
+The 15 minutes could not hold: a cold test build is 14 minutes on Linux and 28 to 30 on macOS
+before a single scenario runs, so the budget is the build, the kit and the suite with a margin.
 
-| Job | Budget (min) | Measured |
-|---|---|---|
-| `sandbox-scenarios-linux` | 75 | to be measured |
-| `sandbox-scenarios-macos` | 120 | to be measured |
-| `macos-sandbox-tests` | 120 | to be measured |
-| `linux-release-profile` | 150 | to be measured |
+| Job | Budget (min) | Measured | Runs |
+|---|---|---|---|
+| `sandbox-scenarios-linux` | 45 | test build 14, kit 10, suite 2.5; the coverage gate's own build after it 12; 36 in all on a green run | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720), [44239993521](https://github.com/purlis/purlis/actions/runs/44239993521) |
+| `sandbox-scenarios-macos` | 55 | macos-15: build 30, kit 4.5, suite 2.5 (38 in all); macos-26: build 28, kit 6, suite 4 (40) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
+| `macos-sandbox-tests` | 100 | 77 | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
+| `linux-release-profile` | 60 | 37 on a cold cache (build 30 or so, the checks seconds) | [44267476720](https://github.com/purlis/purlis/actions/runs/44267476720) |
 
-Nightly entries carry theirs in `.github/nightly-on-phase-1-proven.txt`.
+The nightly's entries run only from main's scheduler, after a merge, so their budgets are the
+pull request runs' above with what the nightly adds: the suite ×3 (Linux 60, macOS 90), the
+production-timing run (Linux 75, macOS 90: a build, the kit, and M-NET-25's 15 real minutes), and
+the release profile (60). They are in `.github/nightly-on-phase-1-proven.txt`, and the first
+nightly's run IDs replace this paragraph's derivation.
+
+**Why the run-result gate is a program of its own.** A `cargo nextest run` after the suite finds the
+workspace's test build stale and builds it again: 14 minutes on Linux, 21 on macOS in run
+44267476720 (the matrix coverage gate pays the same 12 minutes on Linux). The gate
+(`scenarios-gate`, built into the kit's target folder with `purlis`) needs no build.

@@ -1959,38 +1959,3 @@ fn a_nightly_only_entry_skipped_in_the_merge_queue_is_not_a_failure() {
         "{found:#?}"
     );
 }
-
-// ---- the run-result gate step (T1.1-54) -------------------------------------------------------
-
-/// **The run-result gate step**: judges the reports under `SCENARIOS_REPORTS` for the legs the run
-/// says it ran (`SCENARIOS_RAN`, `fake:linux:scaled,fixture:linux:scaled`), as the trigger that
-/// started it (`SCENARIOS_TRIGGER`: `pull_request`, `label`, `merge_group` or `nightly`) owes
-/// them: a covered entry with neither a pass nor a pinned `expected_fail` in the leg its cover
-/// requires fails the run, so a cell a loader, filter or shard never picked up cannot pass
-/// silently. Each job judges the legs it ran: a pull request's merge check reads the jobs its head
-/// ran (its labels decide which), and nightly and the gate merge run every leg's job, so every
-/// leg is judged. `live:` covers are ticket 44's.
-#[test]
-#[ignore = "judges a run's reports: sandbox-scenarios.yml's gate job runs it with SCENARIOS_REPORTS"]
-fn the_run_results_hold_every_leg_this_job_ran() {
-    let folder =
-        std::env::var("SCENARIOS_REPORTS").expect("SCENARIOS_REPORTS: a folder of reports");
-    let trigger = purlis_scenarios::legs::trigger_from(
-        &std::env::var("SCENARIOS_TRIGGER").expect("SCENARIOS_TRIGGER"),
-    )
-    .expect("a trigger");
-    let ran =
-        purlis_scenarios::legs::ran_from(&std::env::var("SCENARIOS_RAN").expect("SCENARIOS_RAN"))
-            .expect("the legs that ran");
-    let records = purlis_scenarios::legs::read_reports(std::path::Path::new(&folder))
-        .expect("the reports read");
-    println!(
-        "{} records, {} legs ran, as {trigger:?}",
-        records.len(),
-        ran.len()
-    );
-    let covered = Coverage::read().expect("coverage.json");
-    let repo = Repo::read().expect("the repo's cells");
-    let found = judge_ran_legs(&covered, &repo, trigger, &ran, &records);
-    assert!(found.is_empty(), "{found:#?}");
-}

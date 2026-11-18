@@ -107,6 +107,10 @@ runs() {
     [ "$repeat" -eq 1 ] || echo "::endgroup::"
     mkdir -p "$runs/run-$i"
     mv "$report"/*.jsonl "$runs/run-$i"/ 2>/dev/null || true
+    # nextest's own verdicts of this run, which `flaky` compares test by test as well.
+    if [ "$repeat" -gt 1 ] && [ -f target/nextest/ci/junit.xml ]; then
+      cp target/nextest/ci/junit.xml "$runs/run-$i/junit.xml"
+    fi
   done
   [ "$stress" -eq 0 ] || kill "$stress" 2>/dev/null || true
   mv "$aside"/* "$report"/ 2>/dev/null || true

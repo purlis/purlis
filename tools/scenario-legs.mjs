@@ -20,7 +20,8 @@
 //   (`kind: escape`, or a cell with `escape: true` or a step that expects a refusal, so a refusal
 //   that did not hold) opens one labelled `area:security` and `priority:p0` instead: everything
 //   runs in public (Q301), and nothing goes anywhere private. `--dry-run` prints each issue it
-//   would open, as JSON, and opens none. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
+//   would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's `junit.xml`
+//   (nextest's) is compared with its leg report, test by test. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
 // - **shuffle**: the batches of a suite, in an order seeded by `<seed>`. A batch is a test's module
 //   path (everything before its last `::`), so the order of batches changes between runs and the
 //   order of a batch's own cells never does (cells depend on earlier cells' state).
@@ -56,6 +57,27 @@ export function readReports(path) {
       const inner = join(path, name);
       return statSync(inner).isDirectory() || name.endsWith(".jsonl") ? readReports(inner) : [];
     });
+}
+
+/**
+ * The verdicts of the tests in nextest's JUnit file `xml`, as records of kind `test`: `row` is the
+ * test's full name, and the verdict is `pass`, `fail` or `not_run` (skipped). A run's tests are
+ * compared beside its leg report, so a scenario that passes in one run and fails in another is
+ * found whether or not the cell it plays writes a record of its own.
+ */
+export function junitRecords(xml) {
+  const out = [];
+  const cases = xml.split("<testcase ").slice(1);
+  for (const chunk of cases) {
+    const head = chunk.slice(0, chunk.indexOf(">"));
+    const attr = (name) => new RegExp(`\\b${name}="([^"]*)"`).exec(head)?.[1];
+    const body = head.endsWith("/") ? "" : chunk.slice(chunk.indexOf(">"), chunk.indexOf("</testcase>"));
+    const name = attr("name");
+    if (!name) continue;
+    const verdict = /<(failure|error|flakyFailure|flakyError|rerunFailure)\b/.test(body) ? "fail" : /<skipped\b/.test(body) ? "not_run" : "pass";
+    out.push({ kind: "test", row: `${attr("classname") ?? ""} ${name}`.trim(), os: "any", leg: "junit", verdict });
+  }
+  return out;
 }
 
 /** What names one entry of a leg's report, across runs. */
@@ -141,7 +163,10 @@ export function flaky(dir, { cells, source = "nightly", runUrl = "" } = {}) {
   const runs = readdirSync(dir)
     .sort()
     .filter((name) => statSync(join(dir, name)).isDirectory())
-    .map((name) => readReports(join(dir, name)));
+    .map((name) => {
+      const junit = join(dir, name, "junit.xml");
+      return [...readReports(join(dir, name)), ...(existsSync(junit) ? junitRecords(readFileSync(junit, "utf8")) : [])];
+    });
   const found = differences(runs, cells ? escapeRows(cells) : new Set());
   return { runs: runs.length, differences: found, issues: found.map((d) => issueOf(d, { source, runUrl })) };
 }
@@ -235,7 +260,7 @@ function main([command, ...rest]) {
       console.error(`usage: scenario-legs.mjs flaky <runs-dir> [--source nightly|stress-x20] [--dry-run]; ${dir} is not a folder`);
       return 2;
     }
-    const dry = rest.includes("--dry-run");
+    const dry = rest.includes("--dry-run") || process.env.FLAKY_DRY_RUN === "1";
     const runUrl = process.env.GITHUB_SERVER_URL
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : "";
@@ -243,7 +268,14 @@ function main([command, ...rest]) {
     console.log(`${result.runs} runs compared: ${result.differences.length} entries differ`);
     for (const issue of result.issues) {
       if (dry) console.log(JSON.stringify({ wouldOpen: issue }));
-      else open(issue, { repo: process.env.GITHUB_REPOSITORY, say: console.log });
+      else {
+        // A token that cannot open an issue (a fork's pull request) must not hide the red.
+        try {
+          open(issue, { repo: process.env.GITHUB_REPOSITORY, say: console.log });
+        } catch (error) {
+          console.log(`::warning title=flaky scenario::could not open "${issue.title}": ${error.message.split("\n")[0]}`);
+        }
+      }
     }
     for (const d of result.differences) console.log(`::error title=${d.escape ? "escape verdict differs" : "flaky scenario"}::${d.what}: ${d.verdicts.join(", ")}`);
     return result.differences.length === 0 ? 0 : 1;

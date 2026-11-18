@@ -107,8 +107,10 @@ jobs:
     needs: plan
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
-    # The test build, and the scenario kit's `purlis` and `purlis-app` built apart (T1.1-06).
-    timeout-minutes: 75
+    # **Budget: 45 minutes**, from runs 44267476720 (the test build 14 min, the kit 10, the suite
+    # 2.5, 27 min to the coverage gate) and 44239993521 (the whole job, 36 min, its coverage gate
+    # 12 min of a second build): `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
+    timeout-minutes: 45
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
@@ -226,7 +228,10 @@ jobs:
       matrix:
         os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    # **Budget: 55 minutes**, from run 44267476720, where the test build took 30 min (macos-15) and
+    # 28 (macos-26), the kit 5 and 6, the suite 2.5 and 4: 38 and 40 minutes in all. A macOS
+    # runner's cold build is the job; `docs/sandbox-scenarios-ci.md`. Exceeding it fails the job.
+    timeout-minutes: 55
     permissions:
       contents: read
       issues: write
@@ -278,8 +283,10 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && needs.plan.outputs.macos != 'false' }}
     runs-on: macos-latest
-    # `studio-confinement-macos`'s 75 minutes, and purlis-app's test build on top.
-    timeout-minutes: 120
+    # **Budget: 100 minutes**, from run 44267476720, where it took 77 (`studio-confinement-macos`'s
+    # steps and purlis-app's test build on top); `docs/sandbox-scenarios-ci.md`. Exceeding it fails
+    # the job.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -306,7 +313,9 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && needs.plan.outputs.release-profile == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # **Budget: 60 minutes**, from run 44267476720, where a cold release build and its checks took
+    # 37; the nightly saves the cache a pull request restores. `docs/sandbox-scenarios-ci.md`.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

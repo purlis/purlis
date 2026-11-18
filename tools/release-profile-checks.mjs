@@ -88,7 +88,10 @@ export const CHECKS = {
     const listing = run("dpkg-deb", ["-c", join(folder, debs[0])]);
     if (listing.error || listing.status !== 0) return `dpkg-deb -c ${debs[0]}: ${listing.error?.message ?? listing.stderr}`;
     for (const name of ["purlis-app", "purlis"]) {
-      if (!new RegExp(`/usr/bin/${name}\\s*$`, "m").test(listing.stdout)) return `${debs[0]} holds no /usr/bin/${name}`;
+      if (!new RegExp(`/usr/bin/${name}\\s*$`, "m").test(listing.stdout)) {
+        const held = listing.stdout.split("\n").filter((l) => /\/usr\/bin\//.test(l)).map((l) => l.trim().split(/\s+/).pop());
+        return `${debs[0]} holds no /usr/bin/${name} (it holds ${held.join(", ") || "nothing in /usr/bin"})`;
+      }
     }
     return null;
   },

@@ -100,6 +100,9 @@ runs:
       run: |
         cargo build --locked -p purlis-cli --bin purlis --target-dir target/scenario-kit
         echo "PURLIS_BINARY=$PWD/target/scenario-kit/debug/purlis" >> "$GITHUB_ENV"
+        # The run-result gate (below), built here and not run through cargo after the suite: a
+        # cargo run then finds the workspace's test build stale and builds it again.
+        cargo build --locked -p purlis-scenarios --bin scenarios-gate --target-dir target/scenario-kit
         if [ "$RUNNER_OS" = Linux ]; then
           cargo build --locked -p purlis-app --bin purlis-app --target-dir target/scenario-kit
           echo "PURLIS_HOST_APP=$PWD/target/scenario-kit/debug/purlis-app" >> "$GITHUB_ENV"
@@ -167,9 +170,7 @@ runs:
       if: ${{ !cancelled() }}
       shell: bash
       env:
-        CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
-        SCENARIOS_REPORTS: target/sandbox-scenarios
-        SCENARIOS_TRIGGER: ${{ inputs.trigger }}
+        TRIGGER: ${{ inputs.trigger }}
         OS_WORD: ${{ runner.os == 'macOS' && 'macos' || 'linux' }}
         SUITE: ${{ inputs.suite }}
         PRODUCTION: ${{ inputs.production-timings }}
@@ -177,6 +178,4 @@ runs:
         ran="fixture:$OS_WORD:scaled,e2e:$OS_WORD:scaled"
         [ "$SUITE" != true ] || ran="$ran,fake:$OS_WORD:scaled"
         [ "$PRODUCTION" != true ] || ran="$ran,fake:$OS_WORD:production"
-        export SCENARIOS_RAN="$ran"
-        cargo nextest run $CARGO_PACKAGES --locked --profile ci --retries 0 --no-capture --run-ignored only \
-          -E 'binary_id(purlis-scenarios::coverage) & test(=the_run_results_hold_every_leg_this_job_ran)'
+        target/scenario-kit/debug/scenarios-gate target/sandbox-scenarios "$TRIGGER" "$ran"
