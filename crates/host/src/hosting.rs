@@ -3318,7 +3318,7 @@ impl Hosting {
             })?
     }
 
-    /// **A file chat `program` printed, read for the window** (1.91, #6387): from the
+    /// **A file chat `program` printed, read for the window** (1.92, #6387): from the
     /// program's own folder, in the project it runs in, which the asking link must hold. The
     /// binary reads it ([`crate::code::Code::read_file`]), off the runtime.
     async fn read_file(

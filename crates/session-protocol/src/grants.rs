@@ -55,7 +55,7 @@
 //! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.44) | yes | | | | | relayed |
 //! | `clones_of`, the clones a host holds in a workspace of a project it keeps (1.51) | yes | | | | | relayed |
 //! | `repos_held`, every repository in the projects a host keeps, with its refs (1.69) | yes | | | | | relayed |
-//! | `read_file`, a file a chat on the host printed, read for the window's light editor (1.91) | yes | | | | | relayed |
+//! | `read_file`, a file a chat on the host printed, read for the window's light editor (1.92) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
 //! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
