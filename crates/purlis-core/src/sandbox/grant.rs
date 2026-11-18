@@ -349,7 +349,7 @@ pub struct Place<'a> {
 }
 
 /// [`Place`]'s lists, owned: what this machine says for a project and a chat.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Ground {
     pub root: PathBuf,
     pub chat: PathBuf,

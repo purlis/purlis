@@ -989,6 +989,31 @@ fn a_path_folder_the_floor_holds_may_be_allowed() {
     assert!(grant::write(&held.display().to_string(), &ground.place()).is_err());
 }
 
+/// **`Ground::of` names what the floor holds at every level** (the re-review of #7105): the
+/// `PATH` folder a project's `[policy]` never answers is in `floor_held` at the floor and at the
+/// full sandbox alike, where nothing else lists it, so `unasked_write` refuses it at both.
+#[test]
+fn ground_of_names_what_the_floor_holds_at_the_floor_and_at_the_full_sandbox() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let held = real(bin.path());
+    let machine = machine_with(bin.path());
+    let at_floor = grant::Ground::of(&root, &root, &machine);
+    assert!(at_floor.floor);
+    assert!(
+        at_floor.floor_held.contains(&held),
+        "{:?}",
+        at_floor.floor_held
+    );
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let full = grant::Ground::of(&root, &root, &machine);
+    assert!(!full.floor);
+    assert!(full.floor_held.contains(&held), "{:?}", full.floor_held);
+    for ground in [&at_floor, &full] {
+        assert!(grant::unasked_write(&held.display().to_string(), ground).is_err());
+    }
+}
+
 #[test]
 fn the_floor_keeps_the_projects_certificate_checks() {
     let (_dir, root) = project();
@@ -2733,8 +2758,9 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
         at.join("Hooks.sock"),
         at.join("slots.sock"),
         at.join("purlis-crash-0123abcd.sock"),
-        at.join("dev.purlis.app_si.sock"),
-        at.join("dev.purlis.app.e2e_si.sock"),
+        at.join("dev_purlis_app_si.sock"),
+        at.join("dev_purlis_app_e2e_si.sock"),
+        at.join("dev_charter_app_si.sock"),
     ];
     let mut listening = Vec::new();
     for socket in held.iter().chain([&hook, &reached]) {
@@ -2763,5 +2789,50 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
     assert_eq!(run(&connect(&reached)), "yes", "another program's socket");
     for socket in &held {
         assert_eq!(run(&connect(socket)), "no", "{}", socket.display());
+    }
+}
+
+/// **What `ports = "off"` still holds names the sockets purlis makes, by the names it makes
+/// them** (the re-review of #7105): the app's single-instance socket is
+/// `/tmp/dev_purlis_app_si.sock`, the identifier's `.` made `_` by Tauri's plugin, never
+/// `dev.purlis.app_si.sock`. Read from the rules' own regexes, on every system, where the test
+/// above can apply the profile only on a Mac that is not already sandboxed.
+#[test]
+fn the_sockets_ports_off_still_holds_are_named_as_purlis_makes_them() {
+    let held = super::seatbelt::every_local_held()
+        .iter()
+        .map(|rule| {
+            let regex = rule
+                .split_once("(path-regex #\"")
+                .and_then(|(_, rest)| rest.split_once("\")"))
+                .map(|(regex, _)| regex)
+                .unwrap_or_else(|| panic!("a path regex in {rule}"));
+            regex::Regex::new(regex).expect("a regex")
+        })
+        .collect::<Vec<_>>();
+    let is_held = |path: &str| held.iter().any(|regex| regex.is_match(path));
+    for id in crate::names::BUNDLE_ID
+        .spellings()
+        .flat_map(|id| [id.to_owned(), format!("{id}.e2e")])
+    {
+        let socket = format!("/tmp/{}", crate::names::single_instance_socket(&id));
+        assert!(is_held(&socket), "{socket}");
+    }
+    for socket in [
+        "/tmp/dev_purlis_app_si.sock",
+        "/tmp/dev_purlis_app_e2e_si.sock",
+        "/tmp/DEV_PURLIS_APP_si.sock",
+        "/Users/a/p/.purlis/app/hooks.sock",
+        "/var/folders/x/purlisd.sock",
+        "/var/folders/x/purlis-crash-0123abcd.sock",
+        "/var/folders/x/purlis-serve/ab/3000.sock",
+    ] {
+        assert!(is_held(socket), "{socket}");
+    }
+    for socket in [
+        "/Users/a/.docker/run/docker.sock",
+        "/tmp/dev_other_app_si.sock",
+    ] {
+        assert!(!is_held(socket), "{socket}");
     }
 }

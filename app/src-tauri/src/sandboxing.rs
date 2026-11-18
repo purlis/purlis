@@ -3806,6 +3806,21 @@ pub(crate) fn answered_by_the_policy(
     answered_at(held, told, (what, target), network, mode)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// A test's seam: what a chat does between [`answered_at`]'s two resolutions of a folder,
+    /// run once and taken.
+    pub(crate) static BETWEEN_RESOLUTIONS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn between_resolutions() {
+    if let Some(then) = BETWEEN_RESOLUTIONS.with(|seam| seam.borrow_mut().take()) {
+        then();
+    }
+}
+
 /// [`answered_by_the_policy`] with `asks` at `mode`, as the project's `[policy]` resolved it.
 pub(crate) fn answered_at(
     held: &crate::planes::Held,
@@ -3824,25 +3839,50 @@ pub(crate) fn answered_at(
     // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
     // Only the project and the folders the person listed are answered; the rest still raise
     // the Notice, in every mode.
-    if what == GrantWhat::Write {
+    let unasked = if what == GrantWhat::Write {
         let Some(folder) = held.chats().folder_of(told.session) else {
             return false;
         };
         let ground = sandbox::grant::Ground::of(root, &folder, &machine);
-        if sandbox::grant::unasked_write(target, &ground).is_err() {
-            return false;
+        match sandbox::grant::unasked_write(target, &ground) {
+            Ok(folder) => Some(folder),
+            Err(_) => return false,
         }
-    }
-    let answered = judged_and_kept(
+    } else {
+        None
+    };
+    #[cfg(test)]
+    between_resolutions();
+    let folder = held.chats().folder_of(told.session);
+    let Ok((granted, level)) = judged(
         root,
         &machine,
+        folder.as_deref(),
+        told.session,
+        (what, target, GrantLevel::Chat),
+    ) else {
+        return false;
+    };
+    // **Exactly the folder [`sandbox::grant::unasked_write`] answered** (the re-review of
+    // #7105, blocker 2): `target` is resolved twice, there and in [`judged`], and a chat that
+    // swaps what a path in it leads to between the two would otherwise have the second folder
+    // kept, a held one among them, with nobody asked. A folder that resolved differently is
+    // not answered, and its Notice is raised.
+    if let Some(unasked) = &unasked
+        && granted != sandbox::grant::What::Write(unasked.clone())
+    {
+        return false;
+    }
+    if kept_for(
+        root,
         held.chats(),
         Some(told.session),
-        (what, target, GrantLevel::Chat),
+        (&granted, level),
         &held.audit_then_record(network),
         now_secs(),
-    );
-    if answered.is_err() {
+    )
+    .is_err()
+    {
         return false;
     }
     if mode == Mode::Log {
@@ -3850,8 +3890,15 @@ pub(crate) fn answered_at(
             .chats()
             .id_of(told.session)
             .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
-        // The line names what was allowed, so the person can read back what the policy let in.
-        enforcement::record(root, &chat, Family::Asks, ASK_ANSWERED_RULE, Some(target));
+        // The line names what was allowed, the folder granted rather than the path the chat
+        // was blocked at, so the person can read back what the policy let in.
+        enforcement::record(
+            root,
+            &chat,
+            Family::Asks,
+            ASK_ANSWERED_RULE,
+            Some(&granted.target()),
+        );
     }
     true
 }

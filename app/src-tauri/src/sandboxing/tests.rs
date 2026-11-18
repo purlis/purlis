@@ -3720,4 +3720,75 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
         session,
         &sandbox::grant::What::Write(home.join(".config/gh"))
     ));
+
+    // **The folder kept is the folder judged unasked** (the re-review of #7105, blocker 2): a
+    // chat that swaps what a path leads to between the two resolutions has nothing kept.
+    let swapped = root.join("swapped");
+    let elsewhere = root.join("elsewhere");
+    std::fs::create_dir_all(&swapped).expect("a folder");
+    std::fs::create_dir_all(&elsewhere).expect("another");
+    super::BETWEEN_RESOLUTIONS.with(|seam| {
+        let (swapped, elsewhere) = (swapped.clone(), elsewhere.clone());
+        *seam.borrow_mut() = Some(Box::new(move || {
+            std::fs::remove_dir(&swapped).expect("the folder goes");
+            std::os::unix::fs::symlink(&elsewhere, &swapped).expect("a link in its place");
+        }));
+    });
+    assert!(
+        !answered(&swapped.display().to_string(), Mode::Off),
+        "a folder that resolved to another between the two is not answered"
+    );
+    for folder in [&swapped, &elsewhere] {
+        assert!(
+            !held
+                .chats()
+                .holds_for(session, &sandbox::grant::What::Write(folder.clone())),
+            "{} kept",
+            folder.display()
+        );
+    }
+
+    // **A folder the floor holds is never answered, though a folder above it is listed** (the
+    // re-review of #7105): a `PATH` folder under the home (`~/.cargo/bin`, most often), with
+    // its parent listed in Settings, still raises the Notice, and so does the listed folder.
+    let machine = sandbox::Machine::this();
+    let on_path = machine
+        .env
+        .get("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|dir| dir.canonicalize().ok())
+        .find(|dir| {
+            let home = home.canonicalize().unwrap_or_else(|_| home.clone());
+            dir.is_dir() && dir.starts_with(&home) && dir.parent() != Some(home.as_path())
+        });
+    if let Some(bin) = on_path {
+        let above = bin.parent().expect("a folder above").to_path_buf();
+        sandbox::local::list_grantable(&root, &above).expect("listed");
+        for folder in [&bin, &above] {
+            assert!(
+                !answered(&folder.display().to_string(), Mode::Off),
+                "{} still asks",
+                folder.display()
+            );
+        }
+        sandbox::local::unlist_grantable(&root, &above).expect("unlisted");
+    } else {
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            b"skipped the floor-held case: no folder on PATH under the home\n",
+        );
+    }
+
+    // **Under `log`, the line names the folder granted**, not the path the chat was blocked at.
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&elsewhere, &link).expect("a link");
+    assert!(answered(&link.display().to_string(), Mode::Log));
+    let logged =
+        purlis_core::enforcement::read_log(&root, &held.chats().id_of(session).expect("its id"));
+    assert_eq!(
+        logged.last().and_then(|line| line.host.clone()),
+        Some(elsewhere.display().to_string())
+    );
 }
