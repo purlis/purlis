@@ -1098,6 +1098,26 @@ fn read_organisation(
             if more_broken {
                 return strict(files);
             }
+            // Two rules of one `@id` cannot both be held, and one would have to be dropped:
+            // `policy.json` may not replace what `policy.cedar` says (round 2, should-fix 2).
+            if let Some(clash) = more
+                .rules
+                .iter()
+                .find(|translated| rules.iter().any(|held| held.id == translated.id))
+            {
+                notices.push(Notice {
+                    file: format!("{}/policy.json", org.folder),
+                    line: 1,
+                    what: format!(
+                        "Its translation holds a rule with the @id \"{}\", which {RULES_FILE} \
+                         holds too. The Organisation's file is broken, so it reads as strict with \
+                         every lock, under the full sandbox",
+                        clash.id
+                    ),
+                    rules: Vec::new(),
+                });
+                return strict(files);
+            }
             tables.locks.add(&more.tables.locks);
             tables.lock_lines.extend(more.tables.lock_lines);
             rules.extend(more.rules);
@@ -1142,12 +1162,19 @@ impl Loaded {
             loaded.rule_modes.insert(id.clone(), said.value);
         }
         rules.retain(|rule| loaded.rule_modes.get(&rule.id) != Some(&Mode::Off));
-        let fallback: Vec<Rule> = rules
+        // The Organisation's rules stay in the fallback, as `load`'s do: the one thing the
+        // shipped default cannot do is drop an administrator's forbid (round 2, should-fix 3).
+        let organisation_rules: Vec<String> = rules
             .iter()
-            .filter(|rule| rule.file == shipped)
-            .cloned()
+            .filter(|rule| rule.file != shipped)
+            .map(|rule| rule.id.clone())
             .collect();
+        let fallback: Vec<Rule> = rules.clone();
         let (policy, refused) = assemble_or_fallback(rules, fallback);
+        let dropped = refused.is_some()
+            && organisation_rules
+                .iter()
+                .any(|id| policy.rule(id).is_none());
         if let Some(problem) = refused {
             loaded.notices.push(problem_notice(
                 problem,
@@ -1157,12 +1184,19 @@ impl Loaded {
                 &[],
             ));
         }
+        // Where an Organisation rule did not survive, the Organisation reads as `strict` plus
+        // every lock, never as no rules.
+        let (defaults, locks) = if dropped {
+            (Tables::strict().defaults, Locks::every())
+        } else {
+            (read.tables.defaults, read.tables.locks)
+        };
         loaded.policy = policy;
         loaded.sets = read.tables.sets.clone();
-        loaded.organisation_locks = read.tables.locks;
-        loaded.organisation = read.tables.defaults;
+        loaded.organisation_locks = locks;
+        loaded.organisation = defaults;
         loaded.organisation_owner = org.owner.to_owned();
-        loaded.sandbox_at_least = read.broken.then_some(SandboxLevel::Full);
+        loaded.sandbox_at_least = (read.broken || dropped).then_some(SandboxLevel::Full);
         loaded
     }
 }

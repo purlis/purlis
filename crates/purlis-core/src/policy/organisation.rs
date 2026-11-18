@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use crate::dispatchlimits::Limit;
 use crate::sandbox::Preset;
 use crate::sandbox::grant;
+use crate::sandbox::hosts::Host;
 use crate::sandbox::policy::{Check, Locks, Refused};
 
 use super::levels::{self, Organisation};
@@ -122,9 +123,16 @@ pub fn failed_notice(folder: &Path, refused: &Refused) -> String {
          remove any access-control list that lets someone write it), or remove the folder, and \
          then restart purlis"
     };
+    // purlis runs as the person, never as root: a file only root can read is a file it cannot.
+    let readable = if refused.check == Check::Read && cfg!(unix) {
+        " purlis does not run as root, so a file that only root can read cannot be read either: \
+         make each file readable by everyone (mode 0644), owned by root."
+    } else {
+        ""
+    };
     format!(
         "The Organisation's folder {} fails the check \"{}\" ({}), so it reads as strict with \
-         every lock, under the full sandbox. {way_out}",
+         every lock, under the full sandbox. {way_out}.{readable}",
         folder.display(),
         refused.check.name(),
         refused.why
@@ -285,8 +293,9 @@ pub struct Described {
     pub expected_type: bool,
     /// Its owner.
     pub owner: Principal,
-    /// Its access-control list.
-    pub aces: Vec<Ace>,
+    /// Its access-control list: `None` for a **null DACL**, which grants everyone full access
+    /// (not an empty list, which grants no one anything). It fails the judgement.
+    pub aces: Option<Vec<Ace>>,
 }
 
 /// **Whether a Windows Organisation folder, and each file in it, is one purlis trusts** (spec
@@ -327,8 +336,13 @@ pub fn judge_windows(folder: &Described, file: Option<&Described>) -> Result<(),
                 &format!("{its} owner is not the Administrators group or SYSTEM"),
             );
         }
-        if described
-            .aces
+        let Some(aces) = &described.aces else {
+            return refuse(
+                Check::Acl,
+                &format!("{its} access-control list is null, which lets everyone write it"),
+            );
+        };
+        if aces
             .iter()
             .any(|ace| ace.allow && ace.writes && !ace.who.is_admin())
         {
@@ -384,6 +398,60 @@ fn keep_of(scopes: &[grant::Level]) -> &'static str {
     }
 }
 
+/// **The Cedar entity a listed `host`'s name is, and its port**, as `Host::covers` reads it: a
+/// name is the `Host` of that id, `*.domain` is the `HostSet` every name under it is put in
+/// ([`crate::policy::wildcard_set`]), and a port is the request's `context.port`: a request's
+/// resource is the bare host, never the host's own spelling.
+fn host_entity(host: &Host) -> (String, Option<u16>) {
+    let spelt = host.to_string();
+    let bare = match host.port() {
+        Some(port) => spelt.strip_suffix(&format!(":{port}")).unwrap_or(&spelt),
+        None => &spelt,
+    };
+    let entity = match bare.strip_prefix("*.") {
+        Some(suffix) => format!("HostSet::{}", quoted(&super::wildcard_set(suffix))),
+        None => format!("Host::{}", quoted(bare)),
+    };
+    (entity, host.port())
+}
+
+/// **The condition that is `host`**: the request is that name, at that port where it has one.
+fn host_matches(host: &Host) -> String {
+    any_host_matches(std::slice::from_ref(host))
+}
+
+/// **The condition that is any of `hosts`**, `false` where there is none. The hosts of one port
+/// share one flat set, so a long list (a preset's) never nests: Cedar's evaluator refuses a
+/// condition nested deeper than it can follow, and that would deny every request.
+fn any_host_matches(hosts: &[Host]) -> String {
+    // One set holds one entity type (the schema's validator refuses a mixed one): names, then
+    // wildcards' sets, each by port.
+    let mut by_port: std::collections::BTreeMap<(Option<u16>, bool), Vec<String>> =
+        std::collections::BTreeMap::new();
+    for host in hosts {
+        let (entity, port) = host_entity(host);
+        by_port
+            .entry((port, entity.starts_with("HostSet::")))
+            .or_default()
+            .push(entity);
+    }
+    let groups: Vec<String> = by_port
+        .into_iter()
+        .map(|((port, _), entities)| {
+            let set = format!("resource in [{}]", entities.join(", "));
+            match port {
+                Some(port) => format!("({set} && context.port == {port})"),
+                None => format!("({set})"),
+            }
+        })
+        .collect();
+    if groups.is_empty() {
+        "false".to_owned()
+    } else {
+        groups.join(" || ")
+    }
+}
+
 /// A word as a Cedar or TOML string's contents.
 fn quoted(word: &str) -> String {
     format!("\"{}\"", word.replace('\\', "\\\\").replace('"', "\\\""))
@@ -401,19 +469,20 @@ fn array(words: &[&str]) -> String {
     )
 }
 
-/// **The translation of an already-valid policy** (spec §13.6; **proposed**, review round 1):
+/// **The translation of an already-valid policy** (spec §13.6; the mapping is decided, round 2 of
+/// #7170, and recorded in `docs/plane-format.md`):
 ///
 /// - `owner` becomes the Organisation's owner;
 /// - `presets` and `hosts` become Organisation permits on `connect`, and where either fixes the
 ///   set, a forbid on every other host, with the `network` family locked, so no level adds one
-///   (`personal-hosts` and `persona-hosts` lock it too);
+///   (`personal-hosts` and `persona-hosts` lock it too). A listed host reads as `Host::covers`
+///   reads it ([`host_matches`]): a wildcard is a suffix set, a port is `context.port`;
 /// - `never-hosts` become forbids on `connect`, and `dispatch` pairs forbids on `dispatch-to`;
-/// - the other `sandbox.*` and `dispatch.*` locks become `[policy.locks]` families or actions:
-///   `opt-out` locks `sandbox`, `persona-tools` `tools`, `vault-grants` `vaults`, `live-asks`
-///   `asks`, a dispatch forbidden everywhere `dispatch`, and `enforcement` its families;
-///   `write-grants`, `socket-grants`, `proposed-changes`, `undeclared-secret-asks` and
+/// - a `false` of `dispatch.allow`, `opt-out`, `persona-tools`, `vault-grants` or `live-asks` is a
+///   hard forbid with no `@ask`, and its family lock;
+/// - `write-grants`, `socket-grants`, `proposed-changes`, `undeclared-secret-asks` and
 ///   `run-grants` lock the action each one forbids (`write`, `dial`, `propose`, `request`,
-///   `run`);
+///   `run`), and `enforcement` its families;
 /// - `allow-scopes` becomes the `keep` lock, at the widest scope it names;
 /// - dispatch limits become `[policy.limits]`, which slice 12 reads;
 /// - `relayed-internal` is not a permission on a policy action: it stays where it is read today.
@@ -428,64 +497,111 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     }
 
     // ── hosts ────────────────────────────────────────────────────────────────────────────
-    let mut hosts: Vec<String> = Vec::new();
+    let mut hosts: Vec<Host> = Vec::new();
     let mut fixed = false;
     if locks.fixes_presets() {
         fixed = true;
         for preset in locks.presets(&Preset::ALL) {
-            hosts.extend(preset.own_hosts().iter().map(|h| (*h).to_owned()));
+            // A preset's host is spelt as a policy spells one, so it is read as one.
+            hosts.extend(
+                preset
+                    .own_hosts()
+                    .iter()
+                    .filter_map(|h| Host::parse(h).ok()),
+            );
         }
     }
     if let Some(allowed) = locks.allowed_hosts() {
         fixed = true;
-        hosts.extend(allowed.iter().map(ToString::to_string));
+        hosts.extend(allowed.iter().cloned());
     }
-    hosts.sort();
+    hosts.sort_by_key(ToString::to_string);
     hosts.dedup();
+    let listed: Vec<String> = hosts.iter().map(host_matches).collect();
     if fixed {
         lock_family(&mut families, "network");
-        for (n, host) in hosts.iter().enumerate() {
+        for (n, matches) in listed.iter().enumerate() {
             rules.push_str(&format!(
                 "@id(\"network-organisation-host-{n}\") @level(\"organisation\")\n\
-                 permit (principal, action == Action::\"connect\", resource == Host::{});\n",
-                quoted(host)
+                 permit (principal, action == Action::\"connect\", resource)\n  \
+                 when {{ {matches} }};\n"
             ));
         }
-        let set = hosts
-            .iter()
-            .map(|host| format!("Host::{}", quoted(host)))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let set = any_host_matches(&hosts);
         rules.push_str(&format!(
             "@id(\"network-organisation-fixed-hosts\") @level(\"organisation\")\n\
              forbid (principal, action == Action::\"connect\", resource)\n  \
-             unless {{ resource in [{set}] }};\n"
+             unless {{ {set} }};\n"
         ));
     }
     for (n, host) in locks.never_hosts().iter().enumerate() {
         rules.push_str(&format!(
             "@id(\"network-organisation-never-{n}\") @level(\"organisation\")\n\
-             forbid (principal, action == Action::\"connect\", resource == Host::{});\n",
-            quoted(&host.to_string())
+             forbid (principal, action == Action::\"connect\", resource)\n  \
+             when {{ {} }};\n",
+            host_matches(host)
         ));
     }
     if locks.forbids_personal_hosts() || locks.forbids_persona_hosts() {
         lock_family(&mut families, "network");
     }
 
-    // ── the other locks ──────────────────────────────────────────────────────────────────
-    let families_forbidden = [
-        (locks.forbids_opt_out(), "sandbox"),
-        (locks.forbids_persona_tools(), "tools"),
-        (locks.forbids_vault_grants(), "vaults"),
-        (locks.forbids_live_asks(), "asks"),
-        (locks.forbids_dispatch(), "dispatch"),
+    // ── a `false` is a no: a hard forbid, never an ask (round 2, steward ruling) ─────────
+    let unknown_host = if hosts.is_empty() {
+        String::new()
+    } else {
+        format!(" || {}", any_host_matches(&hosts))
+    };
+    let hard_forbids: [(bool, &[&'static str], &str, String); 5] = [
+        (
+            locks.forbids_dispatch(),
+            &["dispatch"],
+            "dispatch-organisation-forbidden",
+            "forbid (principal, action == Action::\"dispatch-to\", resource);".to_owned(),
+        ),
+        (
+            locks.forbids_opt_out(),
+            &["sandbox", "trust"],
+            "trust-organisation-no-opt-out",
+            "forbid (principal, action == Action::\"start\", resource)\n  \
+             when { context.sandbox == \"off\" };"
+                .to_owned(),
+        ),
+        (
+            locks.forbids_persona_tools(),
+            &["tools"],
+            "tools-organisation-no-persona-tools",
+            "forbid (principal, action in [Action::\"run\", Action::\"mount\"], resource);"
+                .to_owned(),
+        ),
+        (
+            locks.forbids_vault_grants(),
+            &["vaults"],
+            "vaults-organisation-no-vault-grants",
+            "forbid (principal, action == Action::\"use\", resource)\n  \
+             unless { resource in principal.persona };"
+                .to_owned(),
+        ),
+        (
+            locks.forbids_live_asks(),
+            &["asks", "network"],
+            "network-organisation-no-live-asks",
+            format!(
+                "forbid (principal, action == Action::\"connect\", resource)\n  \
+                 unless {{ resource in HostSet::\"known-hosts\"{unknown_host} }};"
+            ),
+        ),
     ];
-    for (forbidden, family) in families_forbidden {
+    for (forbidden, locked, id, rule) in hard_forbids {
         if forbidden {
-            lock_family(&mut families, family);
+            for family in locked {
+                lock_family(&mut families, family);
+            }
+            rules.push_str(&format!("@id(\"{id}\") @level(\"organisation\")\n{rule}\n"));
         }
     }
+
+    // ── the other locks ──────────────────────────────────────────────────────────────────
     let actions_forbidden = [
         (locks.forbids_write_grants(), "write"),
         (locks.forbids_socket_grants(), "dial"),

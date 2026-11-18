@@ -364,10 +364,11 @@ trash = { version = "5", default-features = false, features = ["freedesktop"] }
 [target."cfg(windows)".dependencies]
 # The Organisation's folder on Windows is `FOLDERID_ProgramData`, asked of the known-folder API and
 # never of `%ProgramData%`, which a chat could set (M75-06, spec §4.5). `dirs-sys` is the crate
-# `dirs` already asks it with, and `windows-sys` the one it is built on: both already in this
-# workspace's lockfile, so they add no crate to the tree.
+# `dirs` already asks it with, and `windows-sys` the one it is built on. The version is the one
+# `dirs-sys` resolves to (0.61): `known_folder` takes that version's `GUID`, so a `FOLDERID_*` of
+# any other version does not compile. Both are already in this workspace's lockfile.
 dirs-sys = "0.5"
-windows-sys = { version = "0.59", default-features = false, features = ["Win32_UI_Shell"] }
+windows-sys = { version = "0.61", default-features = false, features = ["Win32_UI_Shell"] }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keyring items held to charter's app (ruling V90a): the helper that writes them turns the

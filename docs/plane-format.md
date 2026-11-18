@@ -659,15 +659,20 @@ the presets is set, the required sandbox among them, so purlis never reads a pol
 trust as no policy. **Decided, not yet written** ([ADR 0124](adr/0124-who-judges-a-chat-and-how-much.md) decision 15, phase 4): a last-known-good copy of the policy, kept in a keychain item bound to the app binary (**Tier:** Keyring), used with an audit entry when the file can't be read, and expired after 30 days unless a policy key says otherwise; with no good copy ever, every lock is set, as above. No other layer of C9 (an MDM profile, a Windows policy key, an
 organisation's policy) is read yet. **Since M75 slice 06 the file is read as part of the Organisation's folder** (below): it is translated in memory and adds to the two files' rules and locks.
 
-**Access-control lists are read on macOS and Windows** (M75 slice 06, #7014; it was not so before:
+**Access-control lists are read on macOS** (M75 slice 06, #7014; it was not so before:
 D-1423-5). On Linux an ACL that grants write shows in the permission bits (the group bits are its
-mask) and is refused. On macOS an ACL is kept apart from the bits, so it is read
-(`sandbox::policy::acl_lets_others_write`) and a policy file or folder whose ACL lets anyone but
-root write is refused as one the owner cannot vouch for; an ACL that cannot be read is taken to
-let them. `ls -le /etc/purlis` shows one, and `chmod -N` removes it. On Windows the owner must be
-the Administrators group or SYSTEM and no one else may write
-(`policy::organisation::judge_windows`). The folders above `/etc/purlis` are not checked; they
-are root's on a stock system, as for `sudoers`.
+mask) and is refused. On macOS an ACL is kept apart from the bits, so it is read, of the path
+itself and never of what a link points at (`sandbox::policy::acl_lets_others_write`), and a policy
+file or folder whose ACL lets anyone but root write is refused as one the owner cannot vouch for;
+an ACL that cannot be read is taken to let them. `ls -le /etc/purlis` shows one, and `chmod -N`
+removes it. **On Windows no owner and ACL reader is written yet** (decided, round 2 of #7170; its
+own issue): `policy::organisation::judge_windows` is the judgement (the owner must be the
+Administrators group or SYSTEM, no one else may write, and a null DACL, which grants everyone
+everything, fails) and is gated on every OS, but until a reader hands it a folder, **a folder that
+exists on Windows fails closed**: strict plus every lock, with the check named `readable and
+judgeable`. An administrator who needs the Organisation's policy on Windows waits for that reader.
+The folders above `/etc/purlis` are not checked; they are root's on a stock system, as for
+`sudoers`.
 
 ### `/etc/purlis/policy.cedar` and `/etc/purlis/policy.toml` — the Organisation's policy
 
@@ -683,13 +688,40 @@ are root's on a stock system, as for `sudoers`.
   the set, a forbid on every other host with the `network` family locked; `never-hosts` and
   `dispatch.locked` become forbids; the `sandbox.*` and `dispatch.*` locks become
   `[policy.locks]` families and actions; `allow-scopes` becomes the `keep` lock; `enforcement`
-  locks its families. **A key this version does not know makes the file broken**, as today.
+  locks its families. **A key this version does not know, or one written twice in one object,
+  makes the file broken**, as today; so does a rule in the translation whose `@id` `policy.cedar`
+  holds too.
+
+  **A listed host reads as `Host::covers` reads it** (decided, round 2 of #7170): a request's
+  resource is the bare host with its port in `context.port`, so `host:port` becomes a condition
+  on both, and `*.domain` becomes membership in `HostSet::"*.domain"`, a set every request's host
+  is put in for each suffix that covers it (`a.b.example.com` is in `*.b.example.com` and
+  `*.example.com`, never in `*.a.b.example.com`). `*.domain` covers every name under it
+  and not the domain itself; no port covers every port.
+
+  **A `false` in `policy.json` is a no, never an ask** (decided, round 2 of #7170, the steward's
+  ruling): each becomes a hard Organisation `forbid` with no `@ask`, plus its family lock, so
+  neither a project nor the person can soften it:
+
+  | `policy.json` | Rule (Organisation, no `@ask`) | Families locked |
+  |---|---|---|
+  | `dispatch.allow: false` | `dispatch-organisation-forbidden`: every `dispatch-to` | `dispatch` |
+  | `sandbox.opt-out: false` | `trust-organisation-no-opt-out`: `start` where `context.sandbox == "off"` | `sandbox`, `trust` |
+  | `sandbox.persona-tools: false` | `tools-organisation-no-persona-tools`: every `run` and `mount` (the schema cannot tell a persona's tool from a project's, so every tool) | `tools` |
+  | `sandbox.vault-grants: false` | `vaults-organisation-no-vault-grants`: `use` of a secret outside the asking persona's vaults | `vaults` |
+  | `sandbox.live-asks: false` | `network-organisation-no-live-asks`: `connect` to a host that is neither in `known-hosts` nor one the Organisation lists | `asks`, `network` |
+
+  `write-grants`, `socket-grants`, `proposed-changes`, `undeclared-secret-asks` and `run-grants`
+  lock the action each forbids (`write`, `dial`, `propose`, `request`, `run`) and write no rule of
+  their own yet. `dispatch.locked` pairs become `dispatch-organisation-pair-N` forbids, which read
+  the chat's persona from the world.
 - **Its owner and ACL are verified at load, on every OS.** The folder and each file in it: no
   link, the right kind of thing, owned by root (Windows: Administrators or SYSTEM), written by no
   one else by its permission bits or its ACL. A failure, or anything that cannot be read or
   judged, reads as `strict` plus every lock, under the full sandbox, with a Notice that names
-  the failed check and the admin's way out: fix the owner and ACL, or remove the folder. A
-  Windows build that cannot yet read a folder's owner and ACL fails closed the same way when the
+  the failed check and the admin's way out: fix the owner and ACL, or remove the folder. A file
+  only root can read is one purlis cannot read (it does not run as root), and the Notice says so. A
+  Windows build, which has no owner and ACL reader yet, fails closed the same way when the
   folder is there.
 - **Outside every plane** the Organisation's files are layered on the shipped default under
   `strict`, so an admin's forbid and lock hold there too.

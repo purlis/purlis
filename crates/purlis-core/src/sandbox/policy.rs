@@ -923,10 +923,80 @@ const KEYS: [&str; 16] = [
     "relayed-internal",
 ];
 
+/// Walks a JSON text and fails at the first object that names a key twice.
+struct NoDuplicateKeys;
+
+impl<'de> serde::de::DeserializeSeed<'de> for NoDuplicateKeys {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for NoDuplicateKeys {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("JSON")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while seq.next_element_seed(NoDuplicateKeys)?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key.clone()) {
+                return Err(serde::de::Error::custom(format!(
+                    "it says \"{}\" twice",
+                    clip(&key)
+                )));
+            }
+            map.next_value_seed(NoDuplicateKeys)?;
+        }
+        Ok(())
+    }
+}
+
 /// `text` as a policy read from `file`, or why it is refused.
 fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
     let top: serde_json::Value =
         serde_json::from_str(text).map_err(|_| "it is not JSON".to_owned())?;
+    // `Value` keeps the last of a key written twice, so `{"sandbox": {"opt-out": false},
+    // "sandbox": {}}` would read as no lock at all: a file that says anything twice is refused.
+    if let Err(duplicate) = serde::de::DeserializeSeed::deserialize(
+        NoDuplicateKeys,
+        &mut serde_json::Deserializer::from_str(text),
+    ) {
+        return Err(duplicate.to_string());
+    }
     let top = top
         .as_object()
         .ok_or_else(|| "it is not a JSON object".to_owned())?;
@@ -1427,7 +1497,7 @@ pub fn read_trusted_as(admin: u32, path: &Path) -> Result<Option<String>, Refuse
 /// refused before.
 #[cfg(target_os = "macos")]
 fn acl_writes(meta: &std::fs::Metadata, at: &Path) -> bool {
-    use exacl::{AclEntryKind, Perm};
+    use exacl::{AclEntryKind, AclOption, Perm};
     if meta.file_type().is_symlink() {
         return false;
     }
@@ -1439,7 +1509,8 @@ fn acl_writes(meta: &std::fs::Metadata, at: &Path) -> bool {
         | Perm::WRITEEXTATTR
         | Perm::WRITESECURITY
         | Perm::CHOWN;
-    match exacl::getfacl(at, None) {
+    // Read the ACL of the path itself, never of what a link there points at.
+    match exacl::getfacl(at, AclOption::SYMLINK_ACL) {
         Err(_) => true,
         Ok(entries) => {
             let entries: Vec<AclEntry> = entries

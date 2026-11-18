@@ -844,6 +844,59 @@ impl World {
     }
 }
 
+/// The `HostSet` a wildcard host `*.suffix` is, as a rule names it: `HostSet::"*.example.com"`.
+/// The one spelling the Organisation's translation writes and a request's host is put in.
+pub fn wildcard_set(suffix: &str) -> String {
+    format!("*.{suffix}")
+}
+
+/// `world` with the request's `Host` resource put in the `HostSet` of every `*.suffix` that
+/// covers it (`a.b.example.com` is in `*.b.example.com` and `*.example.com`, never in
+/// `*.a.b.example.com`), or `None` where the resource is no named host: an address is covered by
+/// no wildcard. Whatever sets the world already gave the host are kept.
+fn world_with_suffix_sets(
+    world: &Entities,
+    question: &Question<'_>,
+) -> Result<Option<Entities>, String> {
+    let (kind, id) = question.resource;
+    if kind != "Host" {
+        return Ok(None);
+    }
+    let name = id.to_ascii_lowercase();
+    let name = name.strip_suffix('.').unwrap_or(&name);
+    if name.starts_with('[') || name.parse::<std::net::Ipv4Addr>().is_ok() {
+        return Ok(None);
+    }
+    let types = &names().types;
+    let (Some(set_type), Some(host_type)) = (types.get("HostSet"), types.get("Host")) else {
+        return Err("the schema has no Host or HostSet".to_owned());
+    };
+    let mut sets: std::collections::HashSet<EntityUid> = std::collections::HashSet::new();
+    let mut rest = name;
+    while let Some((_, suffix)) = rest.split_once('.') {
+        if suffix.is_empty() {
+            break;
+        }
+        sets.insert(EntityUid::from_type_name_and_id(
+            set_type.clone(),
+            EntityId::new(wildcard_set(suffix)),
+        ));
+        rest = suffix;
+    }
+    if sets.is_empty() {
+        return Ok(None);
+    }
+    let uid = EntityUid::from_type_name_and_id(host_type.clone(), EntityId::new(id));
+    if let Some(known) = world.ancestors(&uid) {
+        sets.extend(known.cloned());
+    }
+    world
+        .clone()
+        .upsert_entities([cedar_policy::Entity::new_no_attrs(uid, sets)], None)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
 /// One question for the policy: may this chat do this to that, in this context?
 #[derive(Debug, Clone)]
 pub struct Question<'a> {
@@ -958,7 +1011,14 @@ impl Policy {
             Ok(request) => request,
             Err(why) => return Decision::Unasked { why },
         };
-        let response = self.authorizer.is_authorized(&request, &self.all, &world.0);
+        // A host is in the set of each `*.suffix` that covers it, so a rule can name a wildcard
+        // exactly as `Host::covers` reads it (M75-06 round 2).
+        let entities = match world_with_suffix_sets(&world.0, question) {
+            Ok(entities) => entities,
+            Err(why) => return Decision::Unasked { why },
+        };
+        let entities = entities.as_ref().unwrap_or(&world.0);
+        let response = self.authorizer.is_authorized(&request, &self.all, entities);
         let mut erred: Vec<String> = response
             .diagnostics()
             .errors()
@@ -997,7 +1057,7 @@ impl Policy {
         // Every deciding forbid asks: an ask with no permit under it is a deny (Q318.2).
         let under = self
             .authorizer
-            .is_authorized(&request, &self.permits, &world.0);
+            .is_authorized(&request, &self.permits, entities);
         if under.decision() == CedarDecision::Allow {
             Decision::Ask {
                 asks: ids(&deciding),
