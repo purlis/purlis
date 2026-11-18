@@ -24,7 +24,7 @@ pub const FORBIDDEN_BODY: &str = "the test origin's own 403";
 const HEAD_AT_MOST: usize = 64 * 1024;
 
 /// How long a client has to send its head, and a write may wait.
-const PATIENCE: Duration = Duration::from_secs(10);
+pub(super) const PATIENCE: Duration = Duration::from_secs(10);
 
 /// **What an origin answers.**
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,21 +96,7 @@ impl Origin {
 
     /// **An origin speaking `scheme`, answering as `variant`, on a new port of `at`.**
     pub fn start(scheme: Scheme<'_>, variant: Variant, at: IpAddr) -> io::Result<Self> {
-        let tls = match scheme {
-            Scheme::Http => None,
-            Scheme::Https { ca, names } => {
-                let (chain, key) = ca.leaf(names)?;
-                let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-                    rustls::crypto::ring::default_provider(),
-                ))
-                .with_safe_default_protocol_versions()
-                .map_err(io::Error::other)?
-                .with_no_client_auth()
-                .with_single_cert(chain, key)
-                .map_err(io::Error::other)?;
-                Some(Arc::new(config))
-            }
-        };
+        let tls = tls_for(&scheme)?;
         let listener = TcpListener::bind((at, 0))?;
         let addr = listener.local_addr()?;
         let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
@@ -156,6 +142,23 @@ impl Drop for Origin {
         // Wakes the accept, which then sees the stop.
         let _ = TcpStream::connect_timeout(&self.addr, Duration::from_millis(200));
     }
+}
+
+/// The TLS configuration an origin of `scheme` serves, or `None` for plain HTTP.
+pub(super) fn tls_for(scheme: &Scheme<'_>) -> io::Result<Option<Arc<rustls::ServerConfig>>> {
+    let Scheme::Https { ca, names } = scheme else {
+        return Ok(None);
+    };
+    let (chain, key) = ca.leaf(names)?;
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(io::Error::other)?
+    .with_no_client_auth()
+    .with_single_cert(chain, key)
+    .map_err(io::Error::other)?;
+    Ok(Some(Arc::new(config)))
 }
 
 /// Serves one connection: one request, answered, then closed.
@@ -218,7 +221,7 @@ fn answer(
     stream.flush()
 }
 
-fn read_head(stream: &mut impl Read) -> io::Result<String> {
+pub(super) fn read_head(stream: &mut impl Read) -> io::Result<String> {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
@@ -230,7 +233,7 @@ fn read_head(stream: &mut impl Read) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&head).into_owned())
 }
 
-fn parse(head: &str, sni: Option<String>) -> Option<Seen> {
+pub(super) fn parse(head: &str, sni: Option<String>) -> Option<Seen> {
     let mut lines = head.split("\r\n");
     let mut first = lines.next()?.split(' ');
     let (method, path) = (first.next()?.to_owned(), first.next()?.to_owned());

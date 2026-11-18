@@ -9,6 +9,8 @@
 //!   ([`TestCa::bundle`], [`ca_env`]).
 //! - [`Origin`]: a local HTTP or HTTPS origin in one of the named [`Variant`]s, recording every
 //!   request it gets ([`Seen`]).
+//! - [`FakeForge`]: a GitHub-shaped and GitLab-shaped API for a merge, recording every request and
+//!   the credential it presented (T1.1-50).
 //! - [`DirectTarget`]: TCP and UDP listeners on this machine's **non-loopback** interface
 //!   address, so an escape cell that bypasses the proxy has something it could have reached; the
 //!   UDP one speaks enough DNS to record a direct lookup.
@@ -19,8 +21,10 @@
 
 mod ca;
 mod direct;
+mod forge;
 mod origin;
 
 pub use ca::{CA_VARIABLES, TestCa, ca_env};
 pub use direct::{DirectTarget, interface_address};
+pub use forge::{Credential, FORGE_HEADER, FakeForge, Forge, MERGE_SHA, Refusal, Request};
 pub use origin::{FORBIDDEN_BODY, ORIGIN_HEADER, Origin, Scheme, Seen, Variant};

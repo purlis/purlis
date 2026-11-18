@@ -31,7 +31,9 @@ jsonschema = { version = "0.61.2", default-features = false, features = ["arbitr
 [dev-dependencies]
 # The resolver seam (`purlis_core::sandbox::names`) and the proxies built with it, for the
 # seam's own tests. Turned on here, in a dev-dependency, so no shipped build has it.
-purlis-core = { workspace = true, features = ["test-support"] }
+purlis-core = { workspace = true, features = ["test-support", "fenced"] }
+# The forge client's own token type, for the test that has purlis's client merge on the fake forge.
+secrecy = "0.10"
 tempfile.workspace = true
 
 [lints]

@@ -13,6 +13,9 @@
 //! apply its wrap fails there and, anywhere else, says why it did not run.
 
 #[cfg(unix)]
+#[path = "scenarios/forge.rs"]
+mod forge;
+#[cfg(unix)]
 #[path = "scenarios/host.rs"]
 pub(crate) mod host;
 #[cfg(unix)]
