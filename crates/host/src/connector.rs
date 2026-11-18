@@ -158,17 +158,19 @@ impl CommandConnector {
                 std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
             }
         })?;
-        let prepare_step = purlis_session_protocol::steps::begin("link_prepare");
         let prepared = match self.prepare.clone() {
-            Some(prepare) => Some(
-                tokio::task::spawn_blocking(move || prepare())
+            Some(prepare) => {
+                // Timed only where there is something to prepare.
+                let step = purlis_session_protocol::steps::begin("link_prepare");
+                let prepared = tokio::task::spawn_blocking(move || prepare())
                     .await
                     .map_err(std::io::Error::other)?
-                    .map_err(std::io::Error::other)?,
-            ),
+                    .map_err(std::io::Error::other)?;
+                step.done();
+                Some(prepared)
+            }
             None => None,
         };
-        prepare_step.done();
         let spawn = purlis_session_protocol::steps::begin("link_exec_spawn");
         let mut command = tokio::process::Command::new(&self.program);
         let held = prepared.map(|prepared| {

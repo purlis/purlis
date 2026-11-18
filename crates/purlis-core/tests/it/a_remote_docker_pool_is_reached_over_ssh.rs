@@ -10,7 +10,7 @@
 //!
 //! It needs the fixture: `REMOTE_DOCKER_TEST_ROUTE` (`ssh://pool@127.0.0.1:2222`), the sshd's
 //! container in `REMOTE_DOCKER_TEST_SSHD` and dind's in `REMOTE_DOCKER_TEST_DIND`, reached with
-//! this machine's `docker`. Without them it runs nothing and passes, except the step-timing test under CI (`CI` set),
+//! this machine's `docker`. Without them it runs nothing and passes, except the step-timing test in the parity job (`PURLIS_PARITY` set),
 //! where a missing fixture fails. The tests change the sshd's
 //! host key and connections, so the job runs them one at a time.
 
@@ -748,8 +748,10 @@ fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
 // the table is printed and, on CI, written to the job's summary: it is the baseline of
 // `docs/research/2026-11-remote-start-baseline.md`.
 
-/// The fixture, or nothing where this machine has none. **Under CI (`CI` set) a missing fixture
-/// fails the test**: a parity job that ran nothing and passed would say nothing was checked.
+/// The fixture, or nothing where this machine has none. **In the remote parity job
+/// (`PURLIS_PARITY` set, which `ci.yml` sets for it alone) a missing fixture fails the test**: a
+/// parity job that ran nothing and passed would say nothing was checked. The general test job
+/// has `CI` set and no fixture, so it is `PURLIS_PARITY` that says the fixture is promised.
 fn fixture_or_fail_in_ci(needs: &[&str]) -> Option<Fixture> {
     let missing: Vec<&str> = needs
         .iter()
@@ -758,8 +760,8 @@ fn fixture_or_fail_in_ci(needs: &[&str]) -> Option<Fixture> {
         .collect();
     if !missing.is_empty() {
         assert!(
-            std::env::var_os("CI").is_none(),
-            "the remote parity fixture is missing under CI: {} not set",
+            std::env::var_os("PURLIS_PARITY").is_none(),
+            "the remote parity fixture is missing in the parity job: {} not set",
             missing.join(", ")
         );
         return None;

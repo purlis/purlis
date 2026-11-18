@@ -11,7 +11,7 @@
 //!
 //! ```text
 //! purlis: step ssh_forward_open done after 412 ms (pool: lab)
-//! purlis: step docker_exec done after 38 ms (parent: runner_start)
+//! purlis: step runner_start done after 38 ms (parent: container_check)
 //! ```
 //!
 //! **A step that is not closed with [`Step::done`] reads `refused`.** The guard is dropped on
@@ -21,7 +21,8 @@
 //!
 //! **A step inside another names it** ([`Step::under`]): a `parent` field on its line. The
 //! parent's time contains its children's, so a table that sums every line counts them twice;
-//! sum the lines with no parent, or one parent's children.
+//! sum the lines with no parent, or one parent's children. A `docker` call ([`begin_debug`])
+//! is inside whichever step made it and names none: it is a `debug` line, never part of a sum.
 //!
 //! The top-level steps log at `info`; each `docker` run ([`begin_debug`]) at `debug`, so the
 //! default log carries the shape of a start and `RUST_LOG=purlis::step=debug` its every call.

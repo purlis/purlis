@@ -34,11 +34,10 @@ the calls inside the steps.
 | `profile_ready` | `chats.rs` (around `on_pools.ready`) | the pool's profile check and keep, before the harness starts |
 | `start_program_call` | `hostedsessions.rs::call_start` | the window's wait for `StartProgram`, over the link and relay |
 | `harness_spawn` | `host/hosting.rs::start` | the host's own start of the program (on the runner for a pool) |
-| `browser_engine_prepare`, `browser_engine_download`, `browser_engine_start` | `browser-engine` | engine choice and install check; the download only when none is installed; the engine's process start until it answers |
+| `browser_engine_download`, `browser_engine_start` | `browser-engine` | the download only when none is installed (`browser_engine_prepare` appears only as a refusal); the engine's process start until it answers |
 
 **Nested steps overlap, so a sum counts them twice.** A step inside another carries a `parent`
-field (`runner_start` is under `container_check`, `browser_engine_download` under
-`browser_engine_prepare`), and the test's table has an `inside` column. `container_check`
+field (`runner_start` is under `container_check`), and the test's table has an `inside` column. `container_check`
 contains its `docker_*` calls (shown as `(a call)`), `first_link` contains `link_*` and the
 handshake, and `profile_ready` contains a `first_link`. To total a start, add only the rows with
 nothing in `inside` that are not wrappers of others, or take one wrapper alone; never every row.
@@ -62,7 +61,9 @@ the numbers below are from CI.
 
 ## Baseline
 
-CI_NUMBERS_PLACEHOLDER
+**Pending.** The numbers come from the first `remote-parity` run of
+`a_start_on_a_remote_pool_times_each_of_its_steps`, which writes its table to the job's summary;
+paste it here from that run. Nothing below is measured yet.
 
 ## Not measured by that test
 
