@@ -3604,3 +3604,43 @@ fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_bo
     assert!(revoke(root, &chats, &listed[0].id, &audit).is_err());
     assert_eq!(seen.lock().unwrap().len(), 1, "nothing more audited");
 }
+
+/// #7190: a pool login opt-in kept on this machine is listed with the other Allows, and Remove
+/// by the id the list gave takes it away, so the next login asks.
+#[test]
+fn a_kept_pool_login_opt_in_is_listed_and_remove_takes_it_away() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let browsers = crate::chatbrowsers::ChatBrowsers::default()
+        .keeping_answers(root.path(), Some(config.path()));
+    purlis_core::poollogins::OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d1".into(),
+            image: "i1".into(),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "i1".into(),
+            pod: String::new(),
+            engine: "this machine's Docker".into(),
+        },
+    );
+
+    let rows = pool_login_rows(&browsers);
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].what, GrantWhat::PoolLogin);
+    assert_eq!(rows[0].persona.as_deref(), Some("steward"));
+    assert_eq!(rows[0].target, "id-shop on builds");
+    assert_eq!(rows[0].level, GrantLevel::Machine);
+    let (persona, login, pool) = pool_login_of(&rows[0].id).expect("its id names it");
+    revoke_pool_login(&browsers, persona, login, pool).expect("removed");
+    assert!(pool_login_rows(&browsers).is_empty());
+    assert!(
+        revoke_pool_login(&browsers, persona, login, pool)
+            .unwrap_err()
+            .contains("no longer there"),
+        "a second Remove finds nothing"
+    );
+}

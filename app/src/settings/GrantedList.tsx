@@ -54,6 +54,8 @@ const ALLOWS: Record<SandboxGrant["what"], (one: SandboxGrant) => string> = {
     `Browsers open, send and type on ${one.target} (browsers only; chats' commands still ask)`,
   write: (one) => `Write ${one.target} and everything in it`,
   "run-grant": (one) => `Run ${one.target}, in the chat's own sandbox`,
+  "pool-login": (one) =>
+    `Chats as ${one.persona ?? "a persona"} may have their browser logins filled on the pool's runner: ${one.target}. Asks again if the pool, its image or its pin changes`,
 };
 
 /** One Allow, as a sentence: what it allows, at which scope, who allowed it and when. */
@@ -82,6 +84,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   if (one.what === "browser-site") return `browsers reaching ${one.target}`;
   if (one.what === "run-grant") return `running ${one.target}`;
+  if (one.what === "pool-login") return `${one.persona ?? "a persona"}'s browser login ${one.target}`;
   return `writing ${one.target}`;
 }
 
@@ -178,7 +181,10 @@ export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string
                   {`Open vault ${one.target}`}
                 </OutLink>
               )}
-              {(one.what === "vault" || one.what === "persona-hosts" || one.what === "browser") &&
+              {(one.what === "vault" ||
+                one.what === "persona-hosts" ||
+                one.what === "browser" ||
+                one.what === "pool-login") &&
                 one.persona !== null && (
                   <OutLink plane={plane} action={showPersona(one.persona)}>
                     {`Show ${one.persona}`}
