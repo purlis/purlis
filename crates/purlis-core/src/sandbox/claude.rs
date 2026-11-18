@@ -712,13 +712,20 @@ impl Settings {
     /// meets one, below or above it, compared case-blind: `cwd`, each `allowWrite` entry (a
     /// person's grants, the caches; a glob by the last whole folder before it,
     /// [`whole_folder_of`]), each write root of the person's own and the administrators'
-    /// settings as the chat started ([`persons_write_roots`]; one added while the chat runs
-    /// counts from its next start, and the window offers no folder for the session to a chat
-    /// that leaves pins out, [`super::Applied::leaves_pins_out`]), and Claude Code's shared temp
-    /// folder ([`SHARED_TEMP`], the only paths its sandbox always writes), each by both its
-    /// names; and `/`, at the floor, meets every pin. The chat's own temp folder is made new for
-    /// it as it starts ([`super::Confinement::proxy_only`]), so no pin is in or above it. The
-    /// Edit tool's pins are kept whole ([`every_branch_folders_git`]).
+    /// settings as the chat started ([`persons_write_roots`]), the git folder a linked worktree
+    /// at `cwd` shares with its main checkout ([`common_git_dir_of`]), and Claude Code's shared
+    /// temp folder ([`SHARED_TEMP`], the only paths its sandbox always writes), each by both its
+    /// names and where its `..` lands by its words; and `/`, at the floor, meets every pin. The
+    /// chat's own temp folder is made new for it as it starts
+    /// ([`super::Confinement::proxy_only`]), so no pin is in or above it. The Edit tool's pins
+    /// are kept whole ([`every_branch_folders_git`]).
+    ///
+    /// **A write root added while the chat runs is not seen here** (the review of #7005). Claude
+    /// Code 2.1.325 takes one at once, not at its next start: `/add-dir`, an "allow all edits in
+    /// this folder" answer in its own prompt, and a change to the person's settings, which it
+    /// reads again as they change and builds its sandbox anew from. A pin left out under such a
+    /// root does not hold there. The window offers no folder for the session to a chat that
+    /// leaves pins out ([`super::Applied::leaves_pins_out`]), which closes only its own ask.
     pub fn written_in(&self, cwd: &Path) -> Settings {
         let mut out = self.clone();
         if as_before() {
@@ -726,14 +733,23 @@ impl Settings {
         }
         let mut places: Vec<String> = Vec::new();
         let mut place = |path: &Path| {
-            for name in both_names(path) {
-                let name = name.display().to_string();
-                if !places.contains(&name) {
-                    places.push(name);
+            // As written, and where its `..` lands by its words, as Claude Code reads a write
+            // root (the review of #7005).
+            for path in [path.to_path_buf(), super::planted::lexical(path)] {
+                for name in both_names(&path) {
+                    let name = name.display().to_string();
+                    if !places.contains(&name) {
+                        places.push(name);
+                    }
                 }
             }
         };
         place(cwd);
+        // The git folder a linked worktree shares with its main checkout, which Claude Code adds
+        // as a write root of a chat opened in the worktree (the review of #7005).
+        if let Some(common) = common_git_dir_of(cwd) {
+            place(&common);
+        }
         for root in &self.persons_roots {
             place(Path::new(root));
         }
@@ -1212,12 +1228,33 @@ fn strings_of(list: &Value) -> Option<Vec<String>> {
 /// nothing whole is left. A brace counts too: it is read as a glob by some readers, and cutting
 /// further back only keeps more pins.
 fn whole_folder_of(path: &str) -> &str {
+    // A glob that climbs with `..` may land anywhere its glob matches: everywhere, then.
+    if path.split('/').any(|part| part == "..") && path.contains(['*', '?', '[', '{', '\\']) {
+        return "/";
+    }
     let whole = match path.find(['*', '?', '[', '{', '\\']) {
         Some(at) => path[..at].rfind('/').map_or("", |slash| &path[..slash]),
         None => path,
     };
     let whole = whole.trim_end_matches('/');
     if whole.is_empty() { "/" } else { whole }
+}
+
+/// **The git folder the linked worktree at `cwd` shares with its main checkout**, as Claude
+/// Code finds it to add as a write root (read in its bundled CLI, 2.1.325): `cwd/.git` a file
+/// naming `<common>/worktrees/<name>`, `<common>` named `*.git`. `None` for any other folder.
+fn common_git_dir_of(cwd: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(cwd.join(".git")).ok()?;
+    let named = text
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir:"))?
+        .trim();
+    let admin = super::planted::lexical(&cwd.join(named));
+    let worktrees = admin.parent()?;
+    let common = worktrees.parent()?;
+    (worktrees.file_name()? == "worktrees"
+        && common.file_name()?.to_string_lossy().ends_with(".git"))
+    .then(|| common.to_path_buf())
 }
 
 /// Whether `path` is a plain path, with nothing a glob reads as more than itself. One that ends
@@ -1348,17 +1385,23 @@ fn persons_write_roots(compiled: &Compiled) -> Vec<String> {
 /// (read in its bundled CLI, 2.1.325): on macOS the managed preferences an MDM profile installs,
 /// for this user and for the device; on Linux under WSL, the Windows machine's managed file.
 fn managed_elsewhere() -> Vec<PathBuf> {
+    managed_elsewhere_for(std::env::var_os("USER").as_deref())
+}
+
+/// [`managed_elsewhere`] for `user`, as `$USER` names this user. With no user named, the folder
+/// that holds every user's managed preferences is listed in place of this user's: read as a
+/// settings file it cannot be read, so every pin is kept (the review of #7005), where it is
+/// there.
+pub(crate) fn managed_elsewhere_for(user: Option<&std::ffi::OsStr>) -> Vec<PathBuf> {
     const DOMAIN: &str = "com.anthropic.claudecode";
     if cfg!(target_os = "macos") {
+        let every_users = Path::new("/Library/Managed Preferences");
         let mut out = Vec::new();
-        if let Some(user) = std::env::var_os("USER").filter(|it| !it.is_empty()) {
-            out.push(
-                Path::new("/Library/Managed Preferences")
-                    .join(user)
-                    .join(format!("{DOMAIN}.plist")),
-            );
+        match user.filter(|it| !it.is_empty()) {
+            Some(user) => out.push(every_users.join(user).join(format!("{DOMAIN}.plist"))),
+            None => out.push(every_users.to_path_buf()),
         }
-        out.push(Path::new("/Library/Managed Preferences").join(format!("{DOMAIN}.plist")));
+        out.push(every_users.join(format!("{DOMAIN}.plist")));
         out
     } else if cfg!(target_os = "linux") {
         vec![PathBuf::from(
@@ -1426,7 +1469,11 @@ pub(crate) fn write_roots_in(files: &[PathBuf], home: Option<&Path>) -> Vec<Stri
         if !expanded.starts_with('/') {
             return EVERYWHERE.to_owned();
         }
-        whole_folder_of(&expanded).to_owned()
+        let whole = whole_folder_of(&expanded);
+        // Where its `..` lands by its words, as Claude Code reads a write root.
+        super::planted::lexical(Path::new(whole))
+            .display()
+            .to_string()
     };
     let mut out: Vec<String> = Vec::new();
     let mut add = |root: String| {

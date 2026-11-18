@@ -564,6 +564,83 @@ fn a_persons_glob_write_root_is_read_as_its_last_whole_folder() {
     assert_eq!(roots, ["/a", "/c/d", "/b"]);
 }
 
+/// **A chat in a linked worktree keeps the pins in its main checkout's git folder** (the review
+/// of #7005): Claude Code adds the git folder a linked worktree shares with its main checkout as
+/// a write root of the chat (read in its bundled CLI, 2.1.325), so that folder's `config` and its
+/// submodules' are written where a command may write, and their pins are kept.
+#[test]
+fn a_chat_in_a_linked_worktree_keeps_the_pins_in_its_main_checkouts_git_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir = dir.path().canonicalize().unwrap();
+    let main = dir.join("main");
+    fs::create_dir_all(&main).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    git(&main, &["commit", "-q", "--allow-empty", "-m", "start"]);
+    let linked = dir.join("elsewhere/linked");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "linked",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let config = main.join(".git/config").display().to_string();
+    let module = main.join(".git/modules/m/config").display().to_string();
+    let other = dir.join("other/.git").display().to_string();
+
+    let kept = deny_write(&pinned(&[&config, &module, &other], &[]).written_in(&linked));
+
+    assert!(kept.contains(&config), "{kept:?}");
+    assert!(kept.contains(&module), "{kept:?}");
+    assert!(
+        !kept.contains(&other),
+        "a pin no write root meets still goes: {kept:?}"
+    );
+}
+
+/// **A write root that climbs with `..` is read where it lands** (the review of #7005): Claude
+/// Code resolves a write root's `..` by its words, so `/a/gone/..` writes `/a` whether or not
+/// `/a/gone` is there, and a pin in `/a/project` is kept. One with a glob as well is read as `/`.
+#[test]
+fn a_write_root_that_climbs_with_dot_dot_is_read_where_it_lands() {
+    for root in ["/a/gone/..", "/a/gone/../", "/a/./gone/../b/.."] {
+        let kept = deny_write(
+            &pinned(&["/a/project/.git", "/elsewhere/repo/.git"], &[root])
+                .written_in(Path::new("/home/someone/chat")),
+        );
+        assert!(
+            kept.contains(&"/a/project/.git".to_owned()),
+            "{root} writes /a: {kept:?}"
+        );
+        assert!(
+            !kept.contains(&"/elsewhere/repo/.git".to_owned()),
+            "{root} writes nothing under /elsewhere: {kept:?}"
+        );
+    }
+    let kept = deny_write(
+        &pinned(&["/elsewhere/repo/.git"], &["/a/b*/../.."]).written_in(Path::new("/home/x")),
+    );
+    assert_eq!(
+        kept,
+        ["/elsewhere/repo/.git"],
+        "a glob that climbs is read as /"
+    );
+    let file = tempfile::NamedTempFile::new().unwrap();
+    fs::write(
+        file.path(),
+        r#"{"permissions": {"additionalDirectories": ["/c/gone/../d"]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        super::claude::write_roots_in(&[file.path().to_path_buf()], None),
+        ["/c/d"]
+    );
+}
+
 /// **A pin is kept where a write root names it in another case** (the review of #7005): on a
 /// volume that is not case-sensitive, as macOS's is by default, `/A/Project` is `/a/project`, so
 /// a pin is weighed against each root case-blind and kept when they differ by case alone.
@@ -587,6 +664,38 @@ fn a_held_path_that_ends_in_whitespace_keeps_its_rules_below_it() {
         let rules: Vec<String> = rules.into_iter().map(str::to_owned).collect();
         assert_eq!(super::claude::fewest(rules.clone()), rules);
     }
+}
+
+/// **Where the user is not known, every user's managed preferences are read as a source that
+/// cannot be** (the review of #7005): an MDM profile installs a user's under
+/// `/Library/Managed Preferences/<user>`, and with no `$USER` to name it purlis cannot tell which
+/// is this user's, so the folder that holds them all is listed in its place, which, read as a
+/// settings file, keeps every pin.
+#[test]
+fn with_no_user_named_every_users_managed_preferences_keep_every_pin() {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let all = Path::new("/Library/Managed Preferences");
+    let named = super::claude::managed_elsewhere_for(Some(std::ffi::OsStr::new("someone")));
+    assert!(
+        named.contains(&all.join("someone/com.anthropic.claudecode.plist")),
+        "{named:?}"
+    );
+    assert!(!named.contains(&all.to_path_buf()), "{named:?}");
+    for user in [None, Some(std::ffi::OsStr::new(""))] {
+        let unnamed = super::claude::managed_elsewhere_for(user);
+        assert!(
+            unnamed.contains(&all.to_path_buf()),
+            "{user:?}: {unnamed:?}"
+        );
+    }
+    // A folder read in a settings file's place keeps every pin.
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        super::claude::write_roots_in(&[dir.path().to_path_buf()], None),
+        ["/"]
+    );
 }
 
 /// **Managed preferences an MDM profile installs are read as Claude Code reads them, and a

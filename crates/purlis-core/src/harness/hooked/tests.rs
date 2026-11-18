@@ -690,6 +690,7 @@ fn an_ask_is_read_by_the_harness_the_app_started_the_chat_as() {
 /// `addDirectories` suggestion adds a write root mid-chat, and a pin under it that its settings
 /// left out would not hold there. Plain Allow and a rule for the session stay; the person can
 /// still grant the folder for the chat's next start, whose settings keep the pins under it.
+/// Before the app says which chats keep every pin, none is known to, so none is offered it.
 #[test]
 fn a_chat_whose_settings_leave_pins_out_is_offered_no_folder_for_the_session() {
     let mut payload = payload();
@@ -712,8 +713,8 @@ fn a_chat_whose_settings_leave_pins_out_is_offered_no_folder_for_the_session() {
     let hooks = hooks();
     assert_eq!(
         ids(&hooks, "3"),
-        ["allow", "suggestion:0", "suggestion:1", "deny"],
-        "before it is wired, the folder is offered as it always was"
+        ["allow", "suggestion:0", "deny"],
+        "before it is wired, no chat is known to keep its pins, so none is offered the folder"
     );
 
     hooks.granting_folders_by(Box::new(|chat| chat == "4"));

@@ -524,8 +524,8 @@ impl HookAsks {
     /// and a git folder pin its settings left out, where no command wrote as it started, would
     /// not hold under it. So, failing closed, a chat whose settings leave pins out is offered
     /// plain Allow and its other options, and the person grants the folder for its next start,
-    /// whose settings keep each pin under it. Before this is wired, the folder is offered as
-    /// ever.
+    /// whose settings keep each pin under it. Before this is wired, no chat is known to keep
+    /// every pin, so none is offered the folder.
     pub fn granting_folders_by(&self, may: FoldersMay) {
         *self
             .folders
@@ -539,7 +539,7 @@ impl HookAsks {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .is_none_or(|Folders(may)| may(chat))
+            .is_some_and(|Folders(may)| may(chat))
     }
 
     /// Reads each ask from now on by the harness the app recorded for its chat (#1703),

@@ -304,6 +304,15 @@ pub struct Chat {
     /// `None` is a chat whose start in this launch has not returned, and every
     /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
+    /// **Whether the settings the chat started on leave a git folder pin out** (#6961, the
+    /// review of #7005): what its start worked out
+    /// ([`crate::sandbox::Applied::leaves_pins_out`]), so a chat reattached from the session
+    /// host, which runs on those settings still, is judged by them and not by what the sandbox
+    /// would write today. Such a chat is offered no folder for the session. `None` is a chat
+    /// whose start in this launch has not returned, and every record written before this
+    /// field: a reattach then takes it as leaving a pin out, failing closed. Not a format
+    /// change, for [`Self::pinned`]'s reason.
+    pub pins_left_out: Option<bool>,
     /// **How the chat's start routed its skills** (SK-15f, #3578): the built-in router, or what
     /// came of asking the router extension its persona or workspace chose (SK-15b). A chat
     /// reattached from the session host routes its set by this, as its harness still holds the
@@ -1867,6 +1876,14 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     plane_skills: Option<bool>,
+    /// Whether the settings the chat started on leave a pin out, or absent — see
+    /// [`Chat::pins_left_out`]. A value that is not a flag reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pins_left_out: Option<bool>,
     /// How the chat's start routed its skills, or absent — see [`Chat::routing`]. A value that
     /// does not read whole reads as absent.
     #[serde(
@@ -2206,6 +2223,7 @@ impl From<&Chat> for ChatOnDisk {
             pid: chat.pid.unwrap_or_default(),
             model: chat.model.clone().unwrap_or_default(),
             plane_skills: chat.plane_skills,
+            pins_left_out: chat.pins_left_out,
             routing: chat.routing.clone(),
             studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
             own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
@@ -2293,6 +2311,7 @@ impl From<ChatOnDisk> for Chat {
             pid: (chat.pid > 0).then_some(chat.pid),
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
             plane_skills: chat.plane_skills,
+            pins_left_out: chat.pins_left_out,
             routing: chat.routing,
             // Never on disk ([`Chat::task_level`]): a chat read back asks.
             task_level: crate::dispatchmode::Level::Asks,

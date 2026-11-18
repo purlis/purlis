@@ -203,6 +203,7 @@ pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
         pid: _,
         model,
         plane_skills,
+        pins_left_out: _,
         routing,
         task_level,
         unrecorded,

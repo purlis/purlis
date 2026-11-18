@@ -10512,6 +10512,23 @@ fn a_reattached_chat_keeps_the_studio_flag_its_start_read_3466() {
     assert!(!plane_skills_at_start(false, Some(true), || false));
 }
 
+/// **A reattached chat is judged by the settings it started on** (the review of #7005): whether
+/// they left a git folder pin out is what its record says, never what today's sandbox would
+/// write, and a record that does not say is taken as leaving one out, failing closed.
+#[test]
+fn a_reattached_chat_keeps_whether_its_start_left_pins_out() {
+    let never = || -> bool { panic!("today's sandbox was asked") };
+    assert!(pins_left_out_at_start(true, Some(true), never));
+    assert!(!pins_left_out_at_start(true, Some(false), never));
+    assert!(
+        pins_left_out_at_start(true, None, never),
+        "a record that does not say leaves pins out"
+    );
+    // A start that is not a reattach asks the settings it writes now.
+    assert!(!pins_left_out_at_start(false, Some(true), || false));
+    assert!(pins_left_out_at_start(false, Some(false), || true));
+}
+
 #[test]
 fn the_flag_a_chat_started_with_is_what_its_record_keeps_3466() {
     let dir = tempfile::tempdir().unwrap();

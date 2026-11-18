@@ -5467,12 +5467,10 @@ impl Applied {
             return false;
         };
         let written = whole.written_in(cwd);
-        let listed = |settings: &claude::Settings| -> usize {
-            settings.sandbox["filesystem"]["denyWrite"]
-                .as_array()
-                .map_or(0, Vec::len)
-        };
-        listed(&written) < listed(&whole)
+        // By its entries: any left out, whatever else the list holds.
+        let listed =
+            |settings: &claude::Settings| settings.sandbox["filesystem"]["denyWrite"].clone();
+        listed(&written) != listed(&whole)
     }
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
