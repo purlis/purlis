@@ -529,9 +529,6 @@ fn socket_name_regexes() -> [String; 3] {
 /// after these ([`served`]). It also stops a chat creating any file named `hooks.sock`,
 /// `slots.sock` or `purlisd*.sock` anywhere (`docs/policy.md`).
 pub fn held_socket_names_unwritten() -> Vec<String> {
-    if std::env::var_os("HOME").is_some() {
-        return Vec::new();
-    }
     let [_, names, folders] = socket_name_regexes();
     // And each of those folders itself, so it is never moved whole with its sockets inside.
     let folders_and_themselves = format!("{}(/|$)", folders.trim_end_matches('/'));
