@@ -220,10 +220,13 @@ fn what_a_chat_was_handed_is_named_on_disk_by_vault_and_key_and_never_its_value(
 
     assert_eq!(written.lines().count(), 1, "{written}");
     assert!(
-        written
-            .starts_with("{\"vault\":\"team\",\"key\":\"db-password\",\"shown\":[{\"bytes\":22,"),
+        written.starts_with(&format!(
+            "{{\"chat\":\"{}\",\"vault\":\"team\",\"key\":\"db-password\",\"nonce\":\"",
+            id(44)
+        )),
         "{written}"
     );
+    assert!(written.contains(",\"shown\":[{\"bytes\":22,"), "{written}");
     assert!(!written.contains("FAKE-HANDED-VALUE-0009"), "{written}");
 }
 
@@ -391,9 +394,10 @@ fn a_value_whose_entry_cannot_be_named_on_disk_is_said_and_named_at_the_next_han
     .unwrap();
     let written = std::fs::read_to_string(file(&root, 55)).expect("named");
     assert!(
-        written.starts_with("{\"vault\":\"team\",\"key\":\"k\",\"shown\":[{\"bytes\":22,"),
+        written.contains("\"vault\":\"team\",\"key\":\"k\",\"nonce\":\""),
         "{written}"
     );
+    assert!(written.contains(",\"shown\":[{\"bytes\":22,"), "{written}");
 }
 
 #[test]
@@ -587,7 +591,7 @@ fn a_later_chat_dealt_a_crashed_chat_s_number_names_its_own_and_its_screen_is_ma
     assert_eq!(written.lines().count(), 1, "{written}");
 }
 
-/// The plane key of the project at `root`, as a launch finds it.
+/// The plane of the project at `root`, whose key seals what its chats were handed.
 fn plane_of(root: &Path) -> super::super::Ctx {
     super::super::Ctx::new(root, super::super::Env::from_process())
 }
@@ -690,4 +694,40 @@ fn one_value_handed_twice_as_one_entry_is_printed_by_bases_of_their_own() {
     let first = first.sought(&ctx, &id(63)).expect("sealed by purlis");
     let again = again.sought(&ctx, &id(63)).expect("sealed by purlis");
     assert_ne!(first[0].base.base, again[0].base.base);
+}
+
+/// A line for chat `chat` naming entry `key`, its seals made up: one no plane key holds, as a
+/// writer that cannot be told from another names it.
+fn a_line_made_up(chat: &str, key: &str) -> Named {
+    Named {
+        chat: Some(chat.to_owned()),
+        entry: Entry::new("team", key),
+        nonce: a_nonce().expect("a nonce"),
+        shown: Vec::new(),
+        seal: format!("{key:0>64}"),
+        handed: None,
+    }
+}
+
+#[test]
+fn two_writers_naming_one_chat_s_entries_at_once_lose_none_of_them() {
+    // The window and the host each name what they hand a chat, in processes of their own.
+    let (_dir, root) = a_project();
+    let chat = id(64);
+    let writers: Vec<_> = (0..2)
+        .map(|writer| {
+            let (root, chat) = (root.clone(), chat.clone());
+            std::thread::spawn(move || {
+                for one in 0..60 {
+                    let line = a_line_made_up(&chat, &format!("w{writer}k{one}"));
+                    name_on_disk(&root, 64, &chat, &[line]).expect("named");
+                }
+            })
+        })
+        .collect();
+    for writer in writers {
+        writer.join().expect("a writer");
+    }
+
+    assert_eq!(named(&root, 64).expect("named").len(), 120);
 }

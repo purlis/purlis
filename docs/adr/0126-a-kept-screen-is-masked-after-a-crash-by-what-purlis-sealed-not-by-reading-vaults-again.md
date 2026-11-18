@@ -35,11 +35,15 @@ plane's `fingerprint.key` for one purpose (`fingerprint::seal`):
 
 - its **length** in bytes;
 - its **print**: a Rabin–Karp hash modulo 2⁶¹−1, the one the window already rolls along a
-  screen, under a **base of its own**, drawn from the plane's key for this chat, this entry and
-  this place in the line;
-- its **seal**: `HMAC-SHA256` of the chat, the vault, the key and the form.
+  screen, under a **base of its own**, drawn from the plane's key for this chat, this entry,
+  the line's nonce and this place in the line;
+- its **seal**: `HMAC-SHA256` of the chat, the vault, the key, the nonce and the form, for the
+  purpose `a value handed to a chat, v2`: #6847's seal of a value had a purpose of the same
+  words over other parts, and a new layout takes a new purpose.
 
-And the line carries a seal of its own over the chat, the entry and everything above.
+The line names the chat it was handed to by its id, in clear, and carries a **nonce**, 16 bytes
+drawn at random as it is written, and a seal of its own over the chat, the entry, the nonce and
+everything above.
 
 A launch after a crash checks each line's seal, rolls each print along the screen's text, and
 masks a window only where its print matches and the window seals the same. **No vault is read**,
@@ -53,6 +57,21 @@ Two forms of one value are related: one is the other with a line feed after it. 
 base `b`, `print(v + "\n") = print(v)·b + 11`, which gives `b` away, and with `b` known each
 print is one linear equation on the value's bytes, which a lattice can solve for a short value.
 Each print under its own base, drawn from the plane's key, says nothing without that key.
+
+One entry may be handed more than once, in two forms (as read, and escaped for a dotenv file),
+and the two values are related the same way. So the base is drawn with the line's nonce too:
+no two lines share one, whatever entry they name.
+
+### Which lines a write keeps
+
+The window and the session host each name what they hand a chat, so a line is added under an
+`flock` of the store's folder: neither writer loses the other's.
+
+A write drops a line only where it is **provably another chat's**: it names another chat, and
+its seal is purlis's for that chat, a crash having left it under a number dealt again (#7129).
+Every other line stays, whether it holds or not: a line of an earlier shape, or one sealed under
+a key the plane has made again since, cannot be checked, and dropping it would leave the value
+it names unmasked on the screen. It stays, and the screen is not kept.
 
 ### What it costs
 
@@ -73,6 +92,7 @@ crash path never reaches a vault.
 ## Consequences
 
 - A task left behind by a crash keeps its screen, masked, whatever vault its values came from.
-- A line not sealed by purlis as it stands (edited, or another chat's, #7129) leaves the screen
-  not kept, as any line purlis cannot account for does.
+- A line not sealed by purlis as it stands (edited, another chat's, of an earlier shape, or
+  under a key made again) leaves the screen not kept, as any line purlis cannot account for
+  does. Only a line provably another chat's is ever dropped.
 - `docs/plane-format.md` records the line's new shape under `app/chat-handed/<chat>.names`.

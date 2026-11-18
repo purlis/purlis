@@ -7835,27 +7835,31 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   what it knew of the values with it, and **reads no vault** to do it (#6907, ADR 0126).
   **Never a value**: the values themselves are known only in memory, as a keyed digest
   (`secrets::handedto`), and here only as prints and seals under the plane's key.
-- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>", "shown": [...],
-  "seal": "<64 hex>"}`, and `"form"` where the value was handed in another form than as read:
-  `"dotenv-escaped"`, as a dotenv file holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode
-  or null>, "reads_hostaddr": <bool>, "escaped": <bool>}}`, pointed at a tunnel on the loopback's
-  port `<n>` (#1667); or `"unrepeatable"`, a one-time code or a minted token, made once. `form`
+- **Format:** one JSON object per line, `{"chat": "<ULID>", "vault": "<vault>", "key": "<key>",
+  "nonce": "<32 hex>", "shown": [...], "seal": "<64 hex>"}`, and `"form"` where the value was
+  handed in another form than as read: `"dotenv-escaped"`, as a dotenv file holds it;
+  `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>, "escaped":
+  <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or `"unrepeatable"`, a one-time code or a minted token, made once. `form`
   is a record of how the chat was handed it; nothing reads it to mask. `shown` holds, for each
   way the value as handed may be shown (as handed; trimmed; and for a value of several lines,
   whole with CRLF line ends and each line alone, trimmed; each once, none under 4 bytes),
   `{"bytes": <n>, "print": "<16 hex>", "seal": "<64 hex>"}`: its length; its Rabin–Karp print
   modulo 2⁶¹−1 under a base of its own, the first 64 bits of the seal (purpose `the base a value
-  handed to a chat is printed by`) of the chat's id, the vault, the key and its place in
-  `shown`, so no two prints share a base; and the seal (purpose `a value handed to a chat`) of
-  the chat's id, the vault, the key and the form. The line's `seal` (purpose `a line naming what
-  a chat was handed`) covers the chat's id, the vault, the key and `[<entry>, <shown>]` as JSON.
-  **Every seal covers the id (ULID) of the chat the line was written for** (#7129), which the
-  line does not hold: a line is checked against the id of the chat whose screen is kept, so one
-  written for another chat that was dealt the same number does not hold. Every seal is `HMAC-SHA256` of its parts,
+  handed to a chat is printed by`) of the chat's id, the vault, the key, the line's nonce and its
+  place in `shown`, so no two prints share a base, of one line or of two lines of one entry; and
+  the seal (purpose `a value handed to a chat, v2`) of the chat's id, the vault, the key, the
+  nonce and the form. `nonce` is 16 bytes drawn at random as the line is written. The line's
+  `seal` (purpose `a line naming what a chat was handed`) covers the chat's id, the vault, the
+  key, the nonce and `[<entry>, <shown>]` as JSON. **`chat` is the id (ULID) of the chat the line
+  was written for, in clear, and every seal covers it** (#7129): a line masks the screen of the
+  chat it names alone, and a line purlis sealed for another chat, left under the same number by
+  a crash, is dropped as this chat names its own. Every seal is `HMAC-SHA256` of its parts,
   each ended by a NUL, under a key derived from `fingerprint.key` for its purpose alone
-  (`fingerprint::seal`): no use without the plane's key, which no sandboxed chat reads. Each
-  entry and form once, written whole through a temp file (mode 0600, its folder 0700) and read
-  through no link.
+  (`fingerprint::seal`): no use without the plane's key, which no sandboxed chat reads. A value
+  handed again in the same form is not named again by the process that named it, though the
+  window and the session host, or a launch after a crash, each name it once more. Written whole
+  through a temp file (mode 0600, its folder 0700) under an `flock` of the folder, since the
+  window and the session host both write it, and read through no link.
 - **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
   value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
   named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
@@ -7864,8 +7868,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
   will bring back. A file that does not read, a line in it that does not, and a line whose own
-  seal is not purlis's as it stands and for that chat (edited, written for another chat, or one
-  purlis did not write), or that the plane has no key to check, leave that task's screen not
+  seal is not purlis's as it stands and for that chat (edited, written for another chat, of an
+  earlier shape, sealed under a key since made again, or one purlis did not write), or that the
+  plane has no key to check, leave that task's screen not kept. A write keeps every line but one
+  purlis provably sealed for another chat: one it cannot check stays, and keeps the screen not
   kept. A chat with no id is handed nothing. A window of a screen is masked only where
   its print matches and it seals the same.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
