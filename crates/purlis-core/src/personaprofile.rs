@@ -105,8 +105,12 @@ pub fn named_by(root: &Path, persona: &str) -> Named {
     let chain = crate::personas::lineage(root, persona);
     let mut named = Named {
         persona: persona.to_owned(),
-        denies_tools: (!crate::personaverbs::chatstart::denied_tools(root, persona).is_empty())
-            .then(|| crate::personaverbs::def_rel(root, persona)),
+        // Only where `[policy] tools` enforces it (Q308b); otherwise the start says it, once
+        // ([`crate::personaverbs::chatstart::unenforced`]).
+        denies_tools: (crate::enforcement::mode(root, crate::enforcement::Family::Tools)
+            == crate::enforcement::Mode::Enforce
+            && !crate::personaverbs::chatstart::denied_tools(root, persona).is_empty())
+        .then(|| crate::personaverbs::def_rel(root, persona)),
         listed: crate::dispatchprofiles::listed_at(root, persona),
         ..Named::default()
     };
@@ -148,13 +152,17 @@ pub fn offers_of(
     declared: &crate::harness_declaration::Declarations,
 ) -> Vec<Offer> {
     use crate::profiletrust::{declaration_approval_needed_in, profile_approval_needed};
+    // Only where `[policy] trust` enforces the approval (Q308b): otherwise the start runs it.
+    let asked = crate::enforcement::mode(root, crate::enforcement::Family::Trust)
+        == crate::enforcement::Mode::Enforce;
     set.profiles()
         .iter()
         .map(|profile| Offer {
             name: profile.name.clone(),
             kind: profile.kind.clone(),
-            needs_approval: profile_approval_needed(root, profile).is_some()
-                || declaration_approval_needed_in(root, profile, declared).is_some(),
+            needs_approval: asked
+                && (profile_approval_needed(root, profile).is_some()
+                    || declaration_approval_needed_in(root, profile, declared).is_some()),
         })
         .collect()
 }

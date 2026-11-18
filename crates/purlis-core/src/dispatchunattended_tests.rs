@@ -611,3 +611,121 @@ fn an_unsandboxed_or_ungranted_dispatch_is_covered_only_where_the_policy_does_no
         assert_eq!(as_the_policy_runs(never.clone(), mode), never.clone());
     }
 }
+
+/// A project at a fresh folder whose committed file holds `[policy]` `text`.
+fn a_project_whose_policy_is(text: &str) -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        crate::names::manifest(root.path()),
+        format!("[policy]\n{text}"),
+    )
+    .expect("the manifest");
+    root
+}
+
+#[test]
+fn a_profile_with_its_prompts_off_is_refused_a_dispatched_chat_as_policy_mode_runs() {
+    // Q308b: the refusal is `mode`'s. Enforced, it refuses as it always has; logged, the chat
+    // starts and one line says it would have been refused; off, nothing is said.
+    let yolo = words(&["claude", "--dangerously-skip-permissions"]);
+    let chat = "01J9ZQ3V5N8X4T2K7M6P0R1S2C";
+    for (text, refused, lines) in [
+        ("template = \"strict\"\n", true, 0),
+        ("template = \"strict\"\nmode = \"log\"\n", false, 1),
+        ("template = \"team\"\n", true, 0),
+    ] {
+        let root = a_project_whose_policy_is(text);
+        let said = bypass_refusal_in(root.path(), Some(chat), "yolo", &yolo, NamedBy::TheDispatch);
+        assert_eq!(said.is_some(), refused, "{text}");
+        let started = start_of_a_persona_chat_in(
+            root.path(),
+            Some(chat),
+            the_asking_chats_own(),
+            "devops",
+            Some(Inherited {
+                profile: "yolo",
+                command: &yolo,
+            }),
+        );
+        assert_eq!(started.is_err(), refused, "{text}");
+        let logged = crate::enforcement::read_log(root.path(), chat);
+        assert_eq!(logged.len(), lines * 2, "{text}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.family == "mode" && line.rule == "dispatch.prompts-off")
+        );
+    }
+    // A profile that asks is never refused, whatever the mode.
+    let root = a_project_whose_policy_is("template = \"strict\"\n");
+    assert_eq!(
+        bypass_refusal_in(
+            root.path(),
+            None,
+            "work",
+            &words(&["claude"]),
+            NamedBy::TheDispatch
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_command_without_its_prompts_off_words_keeps_every_other_word() {
+    // #7104: what a chat another chat asked for is started on, capped at auto.
+    for (command, kept) in [
+        (
+            vec!["claude", "--dangerously-skip-permissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "bypassPermissions", "-v"],
+            vec!["claude", "-v"],
+        ),
+        (vec!["codex", "-a", "never", "--yolo"], vec!["codex"]),
+        (
+            vec!["codex", "-capproval_policy=never", "exec"],
+            vec!["codex", "exec"],
+        ),
+        (
+            vec!["claude", "--permission-mode", "auto"],
+            vec!["claude", "--permission-mode", "auto"],
+        ),
+    ] {
+        let without = without_bypass(&words(&command));
+        assert_eq!(without, words(&kept), "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+}
+
+#[test]
+fn inline_settings_whose_default_mode_switches_the_prompts_off_lose_only_that_key() {
+    // The re-review of #7104: Claude Code's `--settings` may carry its permission mode as
+    // `permissions.defaultMode`; the cap at auto takes that key out and keeps the rest.
+    let off = r#"{"permissions":{"defaultMode":"bypassPermissions","allow":["Read"]},"model":"x"}"#;
+    let kept = r#"{"permissions":{"allow":["Read"]},"model":"x"}"#;
+    for (command, want) in [
+        (
+            words(&["claude", "--settings", off, "-v"]),
+            words(&["claude", "--settings", kept, "-v"]),
+        ),
+        (
+            words(&["claude", &format!("--settings={off}")]),
+            words(&["claude", &format!("--settings={kept}")]),
+        ),
+    ] {
+        assert!(bypass_in(&command).is_some(), "{command:?}");
+        let without = without_bypass(&command);
+        assert_eq!(without, want, "{command:?}");
+        assert_eq!(bypass_in(&without), None, "{command:?}");
+    }
+    // Settings that ask, and a settings file's path, are left as they are.
+    for value in [
+        r#"{"permissions":{"defaultMode":"auto"}}"#,
+        "/etc/claude.json",
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        assert_eq!(bypass_in(&command), None, "{value}");
+        assert_eq!(without_bypass(&command), command, "{value}");
+    }
+}

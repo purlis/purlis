@@ -1006,11 +1006,17 @@ fn guards(binary: &std::path::Path) -> serde_json::Value {
 /// **`armed` with each guard's failure as `policy` runs it** (#7067,
 /// [`crate::hookreg::Handler::on_failure`]): `"block"` where a family the guard judges is
 /// enforced, Claude Code's own `"continue"` under `off` or `log`. `policy` is what the chat's
-/// start resolved ([`crate::enforcement::at_start`]), the same its hooks are handed.
+/// start resolved ([`crate::enforcement::at_start`]), the same its hooks are handed;
+/// `rules_name_a_program`, whether the person's ask and deny rules in force at the start name a
+/// program, so A7c holds a dead Bash guard closed (the re-review of #7104).
 ///
 /// Only ever looser where `policy` is: a `--settings` this adapter did not write, or a guard it
 /// cannot name, is left as it is.
-pub fn under_policy(mut armed: Vec<String>, policy: &crate::enforcement::Resolved) -> Vec<String> {
+pub fn under_policy(
+    mut armed: Vec<String>,
+    policy: &crate::enforcement::Resolved,
+    rules_name_a_program: bool,
+) -> Vec<String> {
     let Some(at) = armed
         .iter()
         .position(|word| word == "--settings")
@@ -1042,7 +1048,7 @@ pub fn under_policy(mut armed: Vec<String>, policy: &crate::enforcement::Resolve
             .and_then(serde_json::Value::as_str)
             .and_then(|command| command.rsplit_once(" hook "))
             .and_then(|(_, word)| crate::hookreg::find(word))
-            .and_then(|handler| handler.on_failure(policy));
+            .and_then(|handler| handler.on_failure(policy, rules_name_a_program));
         if let Some(failure) = failure {
             hook["onFailure"] = failure.into();
         }

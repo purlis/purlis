@@ -380,6 +380,22 @@ const MODE_FLAGS: [(&str, &str); 4] = [
 /// The flag Claude Code starts a chat in a permission mode by.
 const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 
+/// The flag Claude Code reads settings by: a file's path, or the settings inline as JSON.
+const CLAUDE_CODE_SETTINGS_FLAG: &str = "--settings";
+
+/// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
+/// prompts off, or `None` where it is no JSON or carries no such mode.
+fn settings_without_bypass(value: &str) -> Option<String> {
+    let mut settings: serde_json::Value = serde_json::from_str(value).ok()?;
+    let permissions = settings.get_mut("permissions")?.as_object_mut()?;
+    let mode = permissions.get("defaultMode")?.as_str()?;
+    if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
+        return None;
+    }
+    permissions.remove("defaultMode");
+    Some(settings.to_string())
+}
+
 /// **The words of `command` that start a harness with its permission prompts off**, if any
 /// do, as they are shown to a person: the flag, with its value where the value is what
 /// switches them off (`-c approval_policy=never`). `command` is a profile's own, as this
@@ -396,30 +412,90 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
+    (0..command.len()).find_map(|at| bypass_at(command, at).map(|bypass| bypass.shown))
+}
+
+/// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
+/// chat another chat asked for is started on where `[policy] mode` let such a profile through
+/// (Q308b), so it still runs at its task's level, capped at auto (#3787, #7104). A flag's value
+/// goes with it where it is the next word; inline `--settings` keep every key but the
+/// permission mode.
+pub fn without_bypass(command: &[String]) -> Vec<String> {
+    let mut kept = Vec::with_capacity(command.len());
+    let mut at = 0;
+    while at < command.len() {
+        match bypass_at(command, at) {
+            Some(bypass) => {
+                kept.extend(bypass.kept);
+                at += bypass.words;
+            }
+            None => {
+                kept.push(command[at].clone());
+                at += 1;
+            }
+        }
+    }
+    kept
+}
+
+/// Words of a command line that switch the prompts off ([`bypass_at`]).
+struct Bypass {
+    /// As shown to a person.
+    shown: String,
+    /// How many words they are: one, or two where the value is the next word.
+    words: usize,
+    /// What stands in their place once the prompts are back on: nothing, or the same inline
+    /// `--settings` without the permission mode.
+    kept: Vec<String>,
+}
+
+/// The words at `at` of `command` that switch the prompts off, if they do.
+fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     use crate::sandbox::codex::{is_flag, split};
-    command.iter().enumerate().find_map(|(at, word)| {
-        if BYPASS_FLAGS.contains(&word.as_str()) {
-            return Some(word.clone());
-        }
-        if !is_flag(word) {
-            return None;
-        }
-        let (flag, attached) = split(word);
-        let next = || command.get(at + 1).map(String::as_str);
-        let value = attached.or_else(next)?;
-        // A value may be written quoted and spaced (`approval_policy = "never"`).
-        let plain = value.replace(['"', '\'', ' '], "");
-        let off = if flag == CLAUDE_CODE_MODE_FLAG {
-            ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
-        } else {
-            MODE_FLAGS
-                .iter()
-                .any(|(known, never)| flag == *known && plain == *never)
-        };
-        off.then(|| match attached {
+    let word = command.get(at)?;
+    if BYPASS_FLAGS.contains(&word.as_str()) {
+        return Some(Bypass {
+            shown: word.clone(),
+            words: 1,
+            kept: Vec::new(),
+        });
+    }
+    if !is_flag(word) {
+        return None;
+    }
+    let (flag, attached) = split(word);
+    let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
+    let words = if attached.is_some() { 1 } else { 2 };
+    // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
+    // `permissions.defaultMode`. A settings file's path is not read here.
+    if flag == CLAUDE_CODE_SETTINGS_FLAG {
+        let rewritten = settings_without_bypass(value)?;
+        return Some(Bypass {
+            // The mode's own word is the attendance fact's alone to spell.
+            shown: format!("{flag} (its permissions.defaultMode)"),
+            words,
+            kept: match attached {
+                Some(_) => vec![format!("{flag}={rewritten}")],
+                None => vec![flag.to_owned(), rewritten],
+            },
+        });
+    }
+    // A value may be written quoted and spaced (`approval_policy = "never"`).
+    let plain = value.replace(['"', '\'', ' '], "");
+    let off = if flag == CLAUDE_CODE_MODE_FLAG {
+        ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
+    } else {
+        MODE_FLAGS
+            .iter()
+            .any(|(known, never)| flag == *known && plain == *never)
+    };
+    off.then(|| Bypass {
+        shown: match attached {
             Some(_) => word.clone(),
             None => format!("{flag} {value}"),
-        })
+        },
+        words,
+        kept: Vec::new(),
     })
 }
 
@@ -470,6 +546,46 @@ pub fn bypass_refusal(profile: &str, command: &[String], by: NamedBy<'_>) -> Opt
             crate::shown::short(persona)
         ),
     })
+}
+
+/// **[`bypass_refusal`], as `[policy] mode` runs for the project at `root`** (Q308b): under
+/// `off` no chat is refused for its profile switching the prompts off, and under `log` it starts
+/// and one line for chat `chat` says it would have been refused.
+pub fn bypass_refusal_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    profile: &str,
+    command: &[String],
+    by: NamedBy<'_>,
+) -> Option<String> {
+    let refused = bypass_refusal(profile, command, by)?;
+    crate::enforcement::judged(
+        root,
+        chat,
+        crate::enforcement::Family::HarnessMode,
+        crate::enforcement::mode(root, crate::enforcement::Family::HarnessMode),
+        crate::enforcement::RULE_ASKS_NOBODY,
+        None,
+        refused,
+    )
+}
+
+/// [`start_of_a_persona_chat`], with its refusal of a profile that switches the prompts off
+/// asked as `[policy] mode` runs for the project at `root` ([`bypass_refusal_in`]).
+pub fn start_of_a_persona_chat_in(
+    root: &std::path::Path,
+    chat: Option<&str>,
+    start: Start,
+    target: &str,
+    on: Option<Inherited<'_>>,
+) -> Result<Start, String> {
+    if let Some(Inherited { profile, command }) = on
+        && let Some(refused) =
+            bypass_refusal_in(root, chat, profile, command, NamedBy::TheAskingChat)
+    {
+        return Err(refused);
+    }
+    start_of_a_persona_chat(start, target, None)
 }
 
 /// The profile a persona chat starts on, by its name and its command as this machine declares

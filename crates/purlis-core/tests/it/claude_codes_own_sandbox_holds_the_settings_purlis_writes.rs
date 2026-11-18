@@ -1538,7 +1538,7 @@ mod a_guard_that_fails {
         ) else {
             panic!("a Claude Code chat is armed");
         };
-        let args = purlis_core::harness::claude::under_policy(args, policy);
+        let args = purlis_core::harness::claude::under_policy(args, policy, false);
         let at = args
             .iter()
             .position(|word| word == "--settings")

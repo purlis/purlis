@@ -149,6 +149,7 @@ fn a_persona_with_a_deny_list_is_refused_wherever_purlis_cannot_enforce_it() {
         "personas/reviewer/persona.md",
         "---\nname: reviewer\ndisallowed-tools: Write, Edit\n---\n",
     );
+    enforce_tools(&plane, "enforce");
     let root = plane.root();
     assert_eq!(
         unenforced(root, "reviewer", Some(Harness::ClaudeCode)),
@@ -323,4 +324,47 @@ fn an_approved_servers_environment_is_the_values_its_entry_writes_out() {
             "https://grafana.example.com".to_owned()
         )]
     );
+}
+
+/// The plane's committed file, with `[policy] tools` at `mode` on top of `strict`.
+fn enforce_tools(plane: &Plane, mode: &str) {
+    let mut text = plane.read("charter.toml");
+    text.push_str(&format!(
+        "\n[policy]\ntemplate = \"strict\"\ntools = \"{mode}\"\n"
+    ));
+    plane.write("charter.toml", &text);
+}
+
+#[test]
+fn a_deny_list_purlis_cannot_carry_refuses_the_start_as_policy_tools_runs() {
+    // Q308b: the refusal is `tools`'. Logged, the chat starts and one line says so.
+    for (mode, refused, lines) in [("enforce", true, 0), ("log", false, 1)] {
+        let plane = Plane::fixture("minimal");
+        plane.write(
+            "personas/reviewer/persona.md",
+            "---\nname: reviewer\ndisallowed-tools: Write, Edit\n---\n",
+        );
+        enforce_tools(&plane, mode);
+        let root = plane.root();
+        assert_eq!(
+            unenforced(root, "reviewer", Some(Harness::Codex)).is_some(),
+            refused,
+            "{mode}"
+        );
+        // The dispatch's own choice of a profile asks the same family.
+        assert_eq!(
+            crate::personaprofile::named_by(root, "reviewer")
+                .denies_tools
+                .is_some(),
+            refused,
+            "{mode}"
+        );
+        let logged = crate::enforcement::read_log(root, crate::enforcement::UNKNOWN_CHAT);
+        assert_eq!(logged.len(), lines, "{mode}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.family == "tools" && line.rule == "persona.disallowed-tools")
+        );
+    }
 }

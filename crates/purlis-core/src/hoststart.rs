@@ -1671,7 +1671,12 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             // Its guards fail as the project's policy runs them (#7067): armed failing closed,
             // and loosened here to what its start resolves, the same its hooks are handed.
             let args = if harness == Harness::ClaudeCode {
-                crate::harness::claude::under_policy(args, &crate::enforcement::at_start(root))
+                crate::harness::claude::under_policy(
+                    args,
+                    &crate::enforcement::at_start(root),
+                    crate::rulespelling::Rules::in_force(root, &[cwd.unwrap_or(root)])
+                        .names_a_program(),
+                )
             } else {
                 args
             };
