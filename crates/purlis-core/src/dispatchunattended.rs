@@ -421,8 +421,9 @@ fn is_guard_env(name: &str) -> bool {
     let name = name.trim().to_ascii_uppercase();
     name == "HOME"
         || name == "CLAUDE_CONFIG_DIR"
-        || name.starts_with("PURLIS_")
-        || name.starts_with("CHARTER_")
+        || crate::names::ENV_PREFIX
+            .spellings()
+            .any(|prefix| name.starts_with(prefix))
 }
 
 /// The inline settings that switch the permission prompts off, as [`settings_without_bypass`]
