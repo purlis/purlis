@@ -69,7 +69,7 @@ desktop relays: a family its administrator holds enforced is never lifted there.
   folder the floor holds on `PATH`. Those raise the Notice in every mode.
 - A **socket** ask is answered so only under `asks = "off"`; under `log` it still asks.
 - A host ask a session host's board answers, and a host its proxy carries for `network`, are
-  told to the window (session protocol 1.91, `Confine::lifted`, `SandboxTold::Lifted`), which
+  told to the window (session protocol 1.92, `Confine::lifted`, `SandboxTold::Lifted`), which
   alone resolves the policy and knows the chat, and logs it.
 
 ## Reported as not in force
