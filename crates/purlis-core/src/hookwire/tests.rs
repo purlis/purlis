@@ -5564,6 +5564,7 @@ fn an_unidentified_peer_is_refused_and_never_treated_as_the_person() {
         "{with_none:?}"
     );
     assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
 
 /// A [`reach::WhoAmI`] written on a new connection to `path`, and the line the app answers.
 #[cfg(unix)]
