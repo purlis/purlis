@@ -14391,7 +14391,7 @@ export type PolicyState = {
 	locked: string[],
 };
 
-/**  One family the project now runs looser than you accepted. */
+/**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,

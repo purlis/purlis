@@ -658,6 +658,9 @@ mod tests {
         // as a keyring that holds what it cannot show.
         assert!(matches!(read_or_make(&NoStore), Found::NoKeyring));
         // A keyring that is there and fails says its own reason.
-        assert_eq!(Unreadable::Failed("locked".to_owned()).to_string(), "locked");
+        assert_eq!(
+            Unreadable::Failed("locked".to_owned()).to_string(),
+            "locked"
+        );
     }
 }
