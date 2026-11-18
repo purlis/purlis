@@ -228,6 +228,9 @@ pub struct Gate<'a> {
     /// The chat as this window has it open: its persona, and whether it runs with no sandbox.
     /// `None` for a chat this window does not have open.
     pub chat: Option<(Option<String>, bool)>,
+    /// The chat's id (ADR 0066), where this window has it open: what is named on disk of what
+    /// it is handed is sealed for it alone (#7129).
+    pub id: Option<String>,
     /// The project.
     pub root: &'a Path,
     /// Where this machine keeps its pools, where it keeps any.
@@ -666,7 +669,7 @@ pub fn answered(
     // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
     as_shown()?;
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309). A token
-    // minted with the entry is made once: a launch after a crash cannot know it.
+    // minted with the entry is made once, and named so.
     let form = match checked.tool.mint {
         Some(_) => purlis_core::secrets::handedto::Form::Unrepeatable,
         None => purlis_core::secrets::handedto::Form::AsRead,
@@ -674,8 +677,14 @@ pub fn answered(
     for (key, value) in &values {
         let entry = purlis_core::secrets::handedto::Entry::new(&checked.tool.vault, key)
             .in_form(form.clone());
-        purlis_core::secrets::handedto::remember(gate.root, ask.chat, &entry, value)
-            .map_err(|why| brokered::not_named_said(&why))?;
+        purlis_core::secrets::handedto::remember(
+            gate.root,
+            ask.chat,
+            gate.id.as_deref(),
+            &entry,
+            value,
+        )
+        .map_err(|why| brokered::not_named_said(&why))?;
     }
     Ok(Approved {
         handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
@@ -781,6 +790,7 @@ pub fn run_on_its_runner(
             .chats()
             .login_asker(root, session)
             .map(|(asker, unconfined)| (asker.persona, unconfined)),
+        id: held.chats().id_of(session),
         root,
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,

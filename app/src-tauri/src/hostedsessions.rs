@@ -5758,6 +5758,16 @@ impl SessionHost for HostedSessions {
             .unwrap_or_default()
     }
 
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        if self.link().is_err() {
+            return Vec::new();
+        }
+        lock(&self.left)
+            .values()
+            .filter_map(|left| Some((left.number, left.run.clone()?)))
+            .collect()
+    }
+
     fn close_what_was_not_reattached(&self) {
         if self.link().is_err() || self.left_unread.load(Ordering::SeqCst) {
             return;

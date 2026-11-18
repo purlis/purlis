@@ -1372,8 +1372,13 @@ impl Held {
         }
         // A task that had finished when the window went without quitting is still in the
         // session host, and nothing kept its screen: it is read now, while the chats put back
-        // start, and kept before each is closed where it is held (#6504).
-        let screens = self.chats.start_keeping_screens_left(&finished);
+        // start, and kept before each is closed where it is held (#6504). Where the record was
+        // refused, none says which chats were tasks: each is proven one by its run (#6737).
+        let screens = if refused.is_some() {
+            self.chats.start_keeping_screens_proven_left()
+        } else {
+            self.chats.start_keeping_screens_left(&finished)
+        };
         let back = crate::restored::finish(self, begun, size, read).len();
         self.chats.close_finished_left(screens);
         // What the session host still runs of this project from before this window and no

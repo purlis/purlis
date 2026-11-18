@@ -4617,3 +4617,45 @@ fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_stil
         .unwrap();
     assert!(again.is_empty(), "{again:?}");
 }
+
+/// #6737: a launch whose record of what was open was refused proves which chat a program the
+/// session host left is by the run the host says it began: the chat that run's `run.started`
+/// names, and nothing for a run the log never started.
+#[test]
+fn the_chat_of_a_run_is_the_one_its_run_started_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    let chat_a = "01M7TASKCHAT000000000000AA";
+    let chat_b = "01M7OWNCHAT0000000000000BB";
+    log.append(
+        Some(chat_a),
+        Some("01M7RUNA1"),
+        None,
+        "run.started",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    log.append(
+        Some(chat_b),
+        Some("01M7RUNB1"),
+        None,
+        "run.started",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    // An event of chat B under chat A's run is not a start, and says nothing of the run.
+    log.append(
+        Some(chat_b),
+        Some("01M7RUNA2"),
+        None,
+        "hook.stop",
+        serde_json::json!({}),
+    )
+    .unwrap();
+
+    let found = chats_of_runs(dir.path(), &["01M7RUNA1", "01M7RUNB1", "01M7RUNA2"]).unwrap();
+
+    assert_eq!(found.get("01M7RUNA1").map(String::as_str), Some(chat_a));
+    assert_eq!(found.get("01M7RUNB1").map(String::as_str), Some(chat_b));
+    assert_eq!(found.get("01M7RUNA2"), None);
+}

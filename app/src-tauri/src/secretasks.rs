@@ -1160,6 +1160,7 @@ pub fn asked(
         root: held.root().to_path_buf(),
         env: Env::from_process(),
         chat: asked.chat,
+        id: held.chats().id_of(asked.chat),
         persona: open.persona.clone(),
         folder: open.cwd.clone(),
         confines: held.chats().confines_now(asked.chat),
