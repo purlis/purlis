@@ -187,6 +187,8 @@ pub struct Loaded {
     pub organisation_locks: Locks,
     /// The project's locks.
     pub project_locks: Locks,
+    /// The Organisation's `[policy.limits]`, as its files say them, for slice 12.
+    pub organisation_limits: BTreeMap<String, i64>,
     /// Each rule's mode where a `[policy.rules]` sets one; `off` rules are not in the policy.
     pub rule_modes: BTreeMap<String, Mode>,
     /// Who the Organisation is: the owner its rules and locks are named by.
@@ -219,6 +221,8 @@ struct Tables {
     rules: BTreeMap<String, Said<Mode>>,
     sets: BTreeMap<String, Vec<String>>,
     locks: Locks,
+    /// `[policy.limits]`: each integer limit, by key (slice 12 reads them).
+    limits: BTreeMap<String, i64>,
     /// The line each lock key is on.
     lock_lines: BTreeMap<String, usize>,
     /// The line each named set is on.
@@ -298,6 +302,7 @@ impl Loaded {
             organisation_locks: Locks::default(),
             project_locks: Locks::default(),
             rule_modes: BTreeMap::new(),
+            organisation_limits: BTreeMap::new(),
             organisation_owner: "the Organisation".to_owned(),
             organisation: Defaults::default(),
             project: Tables::strict().defaults,
@@ -491,8 +496,15 @@ fn read_tables(
                     into.insert(named.to_owned(), defaults);
                 }
             }
-            // `[policy.limits]` is slice 12's and `sandbox` slice 11's: not read here.
-            "limits" if item.is_table_like() => {}
+            // `[policy.limits]` is slice 12's, which validates it; the integers are kept so an
+            // Organisation's are not lost on the way (M75-06 round 3). `sandbox` is slice 11's.
+            "limits" if item.is_table_like() => {
+                for (k, v) in item.as_table_like().into_iter().flat_map(|t| t.iter()) {
+                    if let Some(n) = v.as_integer() {
+                        tables.limits.insert(k.to_owned(), n);
+                    }
+                }
+            }
             "sandbox" => {}
             _ => read_default(
                 name,
@@ -622,6 +634,18 @@ fn read_sets(
     for (name, v) in sets.iter() {
         let (key, _) = sets.get_key_value(name).expect("a key it iterates");
         let line = at(key, v);
+        // `*.suffix` is the name of the set a wildcard host is: a request's host is put in it,
+        // so a level may not define one (M75-06 round 3, S2).
+        if name.starts_with("*.") {
+            problem(
+                line,
+                format!(
+                    "the set \"{name}\" is named like a wildcard host, which is the name the \
+                     policy gives the hosts under a domain: pick another name"
+                ),
+            );
+            continue;
+        }
         match strings(v) {
             Some(members) => {
                 tables.sets.insert(name.to_owned(), members);
@@ -1120,6 +1144,11 @@ fn read_organisation(
             }
             tables.locks.add(&more.tables.locks);
             tables.lock_lines.extend(more.tables.lock_lines);
+            // The translation pins each forbid it writes to `enforce`, and an Organisation's
+            // forbid is enforced whatever the mode of the project (round 3, NB1): its modes
+            // replace `policy.toml`'s of the same rule. Its limits join `policy.toml`'s.
+            tables.rules.extend(more.tables.rules);
+            tables.limits.extend(more.tables.limits);
             rules.extend(more.rules);
         }
     }
@@ -1158,12 +1187,14 @@ impl Loaded {
             rules.push(rule);
         }
         // What is off is not in the policy; every other mode is the rule's own.
+        loaded.organisation_limits = read.tables.limits.clone();
         for (id, said) in &read.tables.rules {
             loaded.rule_modes.insert(id.clone(), said.value);
         }
         rules.retain(|rule| loaded.rule_modes.get(&rule.id) != Some(&Mode::Off));
-        // The Organisation's rules stay in the fallback, as `load`'s do: the one thing the
-        // shipped default cannot do is drop an administrator's forbid (round 2, should-fix 3).
+        // The fallback is these same rules, so a refused set reads as strict plus every lock
+        // with every Organisation rule kept: the one thing the shipped default cannot do is
+        // drop an administrator's forbid (round 2, should-fix 3).
         let organisation_rules: Vec<String> = rules
             .iter()
             .filter(|rule| rule.file != shipped)
@@ -1579,6 +1610,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         organisation_locks: org_tables.locks.clone(),
         project_locks: project_tables.locks.clone(),
         rule_modes: BTreeMap::new(),
+        organisation_limits: org_tables.limits.clone(),
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults.clone(),
         project: project_tables.defaults.clone(),
@@ -1749,6 +1781,7 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
         organisation_locks: org_tables.locks,
         project_locks: project_tables.locks,
         rule_modes,
+        organisation_limits: org_tables.limits.clone(),
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults,
         project: project_tables.defaults,

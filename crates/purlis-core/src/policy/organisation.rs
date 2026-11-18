@@ -473,8 +473,8 @@ fn array(words: &[&str]) -> String {
 /// #7170, and recorded in `docs/plane-format.md`):
 ///
 /// - `owner` becomes the Organisation's owner;
-/// - `presets` and `hosts` become Organisation permits on `connect`, and where either fixes the
-///   set, a forbid on every other host, with the `network` family locked, so no level adds one
+/// - `hosts` (and the hosts of `presets`, where both are set) become Organisation permits on
+///   `connect`, and where `hosts` is set, a forbid on every other host, with the `network` family locked, so no level adds one
 ///   (`personal-hosts` and `persona-hosts` lock it too). A listed host reads as `Host::covers`
 ///   reads it ([`host_matches`]): a wildcard is a suffix set, a port is `context.port`;
 /// - `never-hosts` become forbids on `connect`, and `dispatch` pairs forbids on `dispatch-to`;
@@ -485,11 +485,16 @@ fn array(words: &[&str]) -> String {
 ///   `run`), and `enforcement` its families;
 /// - `allow-scopes` becomes the `keep` lock, at the widest scope it names;
 /// - dispatch limits become `[policy.limits]`, which slice 12 reads;
+/// - every forbid written is pinned by `[policy.rules]` to `enforce`: an Organisation's forbid
+///   holds whatever the project's mode or template;
 /// - `relayed-internal` is not a permission on a policy action: it stays where it is read today.
 pub fn translate_locks(locks: &Locks) -> Translation {
     let mut families: Vec<&'static str> = Vec::new();
     let mut actions: Vec<&'static str> = Vec::new();
     let mut rules = String::from("// purlis-policy 1\n");
+    // Every forbid written is pinned to `enforce` below: an Organisation's forbid holds
+    // whatever the project's mode or template, as the legacy locks did (round 3, NB1).
+    let mut forbid_ids: Vec<String> = Vec::new();
     fn lock_family(families: &mut Vec<&'static str>, family: &'static str) {
         if !families.contains(&family) {
             families.push(family);
@@ -499,20 +504,22 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     // ── hosts ────────────────────────────────────────────────────────────────────────────
     let mut hosts: Vec<Host> = Vec::new();
     let mut fixed = false;
-    if locks.fixes_presets() {
-        fixed = true;
-        for preset in locks.presets(&Preset::ALL) {
-            // A preset's host is spelt as a policy spells one, so it is read as one.
-            hosts.extend(
-                preset
-                    .own_hosts()
-                    .iter()
-                    .filter_map(|h| Host::parse(h).ok()),
-            );
-        }
-    }
+    // The legacy file fixes the hosts only where it sets `hosts` (spec §13.6): `presets` alone
+    // says which presets a project may turn on, which is no host restriction, so it is none
+    // here (round 3). Where both are set, a preset's hosts are among those that are allowed.
     if let Some(allowed) = locks.allowed_hosts() {
         fixed = true;
+        if locks.fixes_presets() {
+            for preset in locks.presets(&Preset::ALL) {
+                // A preset's host is spelt as a policy spells one, so it is read as one.
+                hosts.extend(
+                    preset
+                        .own_hosts()
+                        .iter()
+                        .filter_map(|h| Host::parse(h).ok()),
+                );
+            }
+        }
         hosts.extend(allowed.iter().cloned());
     }
     hosts.sort_by_key(ToString::to_string);
@@ -528,6 +535,7 @@ pub fn translate_locks(locks: &Locks) -> Translation {
             ));
         }
         let set = any_host_matches(&hosts);
+        forbid_ids.push("network-organisation-fixed-hosts".to_owned());
         rules.push_str(&format!(
             "@id(\"network-organisation-fixed-hosts\") @level(\"organisation\")\n\
              forbid (principal, action == Action::\"connect\", resource)\n  \
@@ -535,6 +543,7 @@ pub fn translate_locks(locks: &Locks) -> Translation {
         ));
     }
     for (n, host) in locks.never_hosts().iter().enumerate() {
+        forbid_ids.push(format!("network-organisation-never-{n}"));
         rules.push_str(&format!(
             "@id(\"network-organisation-never-{n}\") @level(\"organisation\")\n\
              forbid (principal, action == Action::\"connect\", resource)\n  \
@@ -597,6 +606,7 @@ pub fn translate_locks(locks: &Locks) -> Translation {
             for family in locked {
                 lock_family(&mut families, family);
             }
+            forbid_ids.push(id.to_owned());
             rules.push_str(&format!("@id(\"{id}\") @level(\"organisation\")\n{rule}\n"));
         }
     }
@@ -615,6 +625,7 @@ pub fn translate_locks(locks: &Locks) -> Translation {
         }
     }
     for (n, (from, to)) in locks.locked_pairs().iter().enumerate() {
+        forbid_ids.push(format!("dispatch-organisation-pair-{n}"));
         rules.push_str(&format!(
             "@id(\"dispatch-organisation-pair-{n}\") @level(\"organisation\")\n\
              forbid (principal in Persona::{}, action == Action::\"dispatch-to\", \
@@ -655,6 +666,12 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     if !limits.is_empty() {
         settings.push_str("[policy.limits]\n");
         settings.extend(limits);
+    }
+    if !forbid_ids.is_empty() {
+        settings.push_str("[policy.rules]\n");
+        for id in &forbid_ids {
+            settings.push_str(&format!("{} = \"enforce\"\n", quoted(id)));
+        }
     }
     Translation {
         owner: locks.owner(),

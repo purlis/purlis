@@ -684,9 +684,12 @@ The folders above `/etc/purlis` are not checked; they are root's on a stock syst
 - **Where:** `/etc/purlis`, and on Windows `%ProgramData%\purlis`, found with the known-folder API
   (`FOLDERID_ProgramData`) and never from the environment variable, which a chat could set. The
   folder also holds `policy.json` above, **translated** in memory (M75 spec §13.6): `owner` is the
-  Organisation's owner; `presets` and `hosts` become permits on `connect`, and where either fixes
-  the set, a forbid on every other host with the `network` family locked; `never-hosts` and
-  `dispatch.locked` become forbids; the `sandbox.*` and `dispatch.*` locks become
+  Organisation's owner; `hosts` (with the hosts of `presets`, where both are set) become permits
+  on `connect`, and where `hosts` is set, a forbid on every other host with the `network` family
+  locked (`presets` alone restricts no host, as the legacy reader reads it); `never-hosts` and
+  `dispatch.locked` become forbids; **every forbid the translation writes is pinned to `enforce`
+  by `[policy.rules]`, whatever the project's mode or template** (round 3 of #7170), and a
+  translated `[policy.limits]` is kept for slice 12; the `sandbox.*` and `dispatch.*` locks become
   `[policy.locks]` families and actions; `allow-scopes` becomes the `keep` lock; `enforcement`
   locks its families. **A key this version does not know, or one written twice in one object,
   makes the file broken**, as today; so does a rule in the translation whose `@id` `policy.cedar`

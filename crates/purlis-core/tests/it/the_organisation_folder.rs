@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use purlis_core::policy::decide::{self, Outcome, Request};
-use purlis_core::policy::levels::Chat;
+use purlis_core::policy::levels::{Accepted, Chat};
 use purlis_core::sandbox::policy::{Locks, set_for_this_test};
 
 fn connect(host: &'static str) -> Request<'static> {
@@ -109,6 +109,15 @@ fn a_plane_less_process_under_a_refused_organisation_reads_every_lock() {
 /// `host` at `port`, asked of the Organisation as a process outside every plane would, and as a
 /// chat in a plane would, with the world each has (none known).
 fn connect_both_ways(host: &'static str, port: i64) -> [decide::Decision; 2] {
+    connect_in_project(host, port, None)
+}
+
+/// As [`connect_both_ways`], in a plane whose project file is `project` (the copy last accepted).
+fn connect_in_project(
+    host: &'static str,
+    port: i64,
+    project: Option<&str>,
+) -> [decide::Decision; 2] {
     let mut request = connect(host);
     request.context["port"] = port.into();
     let found = purlis_core::policy::organisation::in_force();
@@ -118,7 +127,10 @@ fn connect_both_ways(host: &'static str, port: i64) -> [decide::Decision; 2] {
         workspaces: &[],
         personas: &[],
         organisation: found.as_ref().map(|f| f.as_sources()),
-        accepted: None,
+        accepted: project.map(|settings| Accepted {
+            settings: Some(settings),
+            rules: None,
+        }),
     });
     let world = purlis_core::policy::World::from_json(serde_json::json!([])).expect("a world");
     [
@@ -129,7 +141,9 @@ fn connect_both_ways(host: &'static str, port: i64) -> [decide::Decision; 2] {
 
 /// Whether `said` was refused by the Organisation's rule `id`.
 fn refused_by(said: &decide::Decision, id: &str) -> bool {
-    said.outcome == Outcome::Deny && said.deciding.iter().any(|d| d.id == id)
+    said.outcome == Outcome::Deny
+        && said.after_mode == Outcome::Deny
+        && said.deciding.iter().any(|d| d.id == id)
 }
 
 #[test]
@@ -217,7 +231,7 @@ fn a_fixed_host_list_with_a_wildcard_or_a_port_forbids_only_what_it_does_not_cov
 fn a_preset_that_lists_a_wildcard_host_does_not_forbid_the_names_under_it() {
     purlis_core::unsteered!();
     // The forge preset lists `*.githubusercontent.com`.
-    organisation(r#"{"sandbox": {"presets": ["forge"]}}"#);
+    organisation(r#"{"sandbox": {"presets": ["forge"], "hosts": ["extra.example"]}}"#);
     for said in connect_both_ways("raw.githubusercontent.com", 443) {
         assert!(
             !refused_by(&said, "network-organisation-fixed-hosts"),
@@ -375,4 +389,247 @@ fn a_locked_dispatch_pair_refuses_that_pair_alone() {
     // Another target, or another persona asking, is not that pair.
     assert!(!refused_by(&dispatch("web/builder", "deployer"), pair));
     assert!(!refused_by(&dispatch("infra/deployer", "reviewer"), pair));
+}
+
+/// The project files that would loosen the `network` family or one rule: no policy at all, the
+/// family off, the shipped `watch` template, and a rule turned off by its id.
+const LOOSE_PROJECTS: [Option<&str>; 4] = [
+    None,
+    Some("[policy]\nnetwork = \"off\"\n"),
+    Some("[policy]\ntemplate = \"watch\"\n"),
+    Some("[policy.rules]\n\"network-organisation-never-0\" = \"off\"\n"),
+];
+
+#[test]
+fn an_organisation_never_host_is_enforced_whatever_the_projects_mode() {
+    purlis_core::unsteered!();
+    let never = "network-organisation-never-0";
+    for json in [
+        r#"{"sandbox": {"never-hosts": ["*.evil.example"]}}"#,
+        r#"{"sandbox": {"never-hosts": ["*.evil.example"], "hosts": ["fine.example"]}}"#,
+    ] {
+        organisation(json);
+        for project in LOOSE_PROJECTS {
+            for said in connect_in_project("a.evil.example", 443, project) {
+                assert!(
+                    refused_by(&said, never),
+                    "{json} under {project:?}: {said:?}"
+                );
+                assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn an_organisation_fixed_host_list_is_enforced_whatever_the_projects_mode() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"hosts": ["fine.example"]}}"#);
+    for project in LOOSE_PROJECTS {
+        for said in connect_in_project("evil.example", 443, project) {
+            assert!(
+                refused_by(&said, "network-organisation-fixed-hosts"),
+                "under {project:?}: {said:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_exact_never_host_meets_the_host_however_it_is_spelt() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"never-hosts": ["evil.example"]}}"#);
+    let never = "network-organisation-never-0";
+    for host in [
+        "evil.example",
+        "Evil.Example",
+        "evil.example.",
+        "EVIL.EXAMPLE.",
+    ] {
+        for said in connect_both_ways(host, 443) {
+            assert!(refused_by(&said, never), "{host}: {said:?}");
+        }
+    }
+}
+
+#[test]
+fn a_path_shaped_or_ported_host_id_is_unasked_and_never_in_a_wildcards_set() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"hosts": ["*.corp.example"]}}"#);
+    for host in [
+        "evil.com/x.corp.example",
+        "evil.com?x.corp.example",
+        "a.corp.example:443",
+        "*.corp.example",
+        "",
+    ] {
+        for said in connect_both_ways(host, 443) {
+            assert_eq!(said.outcome, Outcome::Deny, "{host}: {said:?}");
+            assert_eq!(said.after_mode, Outcome::Deny, "{host}: {said:?}");
+            assert!(said.unasked.is_some(), "{host}: {said:?}");
+        }
+    }
+}
+
+#[test]
+fn an_ipv6_never_host_meets_the_address_however_it_is_spelt() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"never-hosts": ["[fd00::1]"]}}"#);
+    let never = "network-organisation-never-0";
+    for host in [
+        "[fd00::1]",
+        "[FD00::1]",
+        "[fd00:0:0:0:0:0:0:1]",
+        "[fd00:0::1]",
+    ] {
+        for said in connect_both_ways(host, 443) {
+            assert!(refused_by(&said, never), "{host}: {said:?}");
+        }
+    }
+    for said in connect_both_ways("[fd00::2]", 443) {
+        assert!(!refused_by(&said, never), "{said:?}");
+    }
+}
+
+#[test]
+fn an_ipv6_never_host_with_a_port_refuses_that_port_alone() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"never-hosts": ["[fd00::1]:8443", "trailing.example.:8443"]}}"#);
+    for said in connect_both_ways("[fd00::1]", 8443) {
+        assert!(
+            refused_by(&said, "network-organisation-never-0"),
+            "{said:?}"
+        );
+    }
+    for said in connect_both_ways("[fd00::1]", 443) {
+        assert!(
+            !refused_by(&said, "network-organisation-never-0"),
+            "{said:?}"
+        );
+    }
+    // A trailing dot is dropped as it is read, and a request's host is read as the policy's is.
+    for host in ["trailing.example", "trailing.example."] {
+        for said in connect_both_ways(host, 8443) {
+            assert!(
+                refused_by(&said, "network-organisation-never-1"),
+                "{host}: {said:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_empty_host_list_forbids_every_host_and_an_empty_preset_list_none() {
+    purlis_core::unsteered!();
+    let fixed = "network-organisation-fixed-hosts";
+    organisation(r#"{"sandbox": {"hosts": []}}"#);
+    for said in connect_both_ways("fine.example", 443) {
+        assert!(refused_by(&said, fixed), "{said:?}");
+    }
+    // `presets` alone restricts no host, as the legacy reader and spec §13.6 read it.
+    for json in [
+        r#"{"sandbox": {"presets": []}}"#,
+        r#"{"sandbox": {"presets": ["forge"]}}"#,
+    ] {
+        organisation(json);
+        for said in connect_both_ways("fine.example", 443) {
+            assert!(
+                !said
+                    .deciding
+                    .iter()
+                    .any(|d| d.id.starts_with("network-organisation")),
+                "{json}: {said:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_project_cannot_soften_a_legacy_false_key() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"opt-out": false}}"#);
+    let id = "trust-organisation-no-opt-out";
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    let world = purlis_core::policy::World::from_json(serde_json::json!([])).expect("a world");
+    let start = Request {
+        action: "start",
+        resource: ("Harness", "claude-code"),
+        context: serde_json::json!({
+            "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
+            "profile": "default", "gaps": []
+        }),
+        ..connect("x")
+    };
+    let projects = [
+        ("[policy]\nsandbox = \"off\"\ntrust = \"off\"\n", None),
+        (
+            "[policy.rules]\n\"trust-organisation-no-opt-out\" = \"off\"\n",
+            None,
+        ),
+        (
+            "[policy]\nsandbox = \"off\"\n",
+            Some(
+                "// purlis-policy 1\n@id(\"trust-organisation-no-opt-out\")\n\
+                 permit (principal, action == Action::\"start\", resource);\n",
+            ),
+        ),
+    ];
+    for (settings, rules) in projects {
+        let root = tempfile::tempdir().expect("a folder");
+        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+            root: root.path(),
+            workspaces: &[],
+            personas: &[],
+            organisation: Some(found.as_sources()),
+            accepted: Some(Accepted {
+                settings: Some(settings),
+                rules,
+            }),
+        });
+        let said = decide::decide(&loaded, &start, &world);
+        assert!(refused_by(&said, id), "{settings}: {said:?}");
+    }
+}
+
+#[test]
+fn a_project_cannot_name_a_set_like_a_wildcard_host() {
+    purlis_core::unsteered!();
+    organisation(r#"{"sandbox": {"hosts": ["*.corp.example"]}}"#);
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    let root = tempfile::tempdir().expect("a folder");
+    let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+        root: root.path(),
+        workspaces: &[],
+        personas: &[],
+        organisation: Some(found.as_sources()),
+        accepted: Some(Accepted {
+            settings: Some("[policy.sets]\n\"*.corp.example\" = [\"evil.com\"]\n"),
+            rules: None,
+        }),
+    });
+    assert!(
+        loaded
+            .notices
+            .iter()
+            .any(|n| n.what.contains("named like a wildcard host")),
+        "{:?}",
+        loaded.notices
+    );
+    assert!(!loaded.sets.contains_key("*.corp.example"));
+}
+
+#[test]
+fn an_organisations_limits_are_kept_for_slice_12() {
+    purlis_core::unsteered!();
+    organisation(r#"{"dispatch": {"depth": 2}}"#);
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    let root = tempfile::tempdir().expect("a folder");
+    let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+        root: root.path(),
+        workspaces: &[],
+        personas: &[],
+        organisation: Some(found.as_sources()),
+        accepted: None,
+    });
+    assert_eq!(loaded.organisation_limits.get("dispatch.depth"), Some(&2));
 }

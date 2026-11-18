@@ -897,6 +897,27 @@ fn world_with_suffix_sets(
         .map_err(|e| e.to_string())
 }
 
+/// **A `Host` resource's one canonical spelling** (lower case, no final dot, a canonical IPv6
+/// address in brackets, no path), or `None` where the resource is no host. An id that is not a
+/// host, that carries a port (the port is the context's) or that is a wildcard cannot be asked:
+/// it is `Unasked`, a deny.
+fn canonical_host(question: &Question<'_>) -> Result<Option<String>, String> {
+    let (kind, id) = question.resource;
+    if kind != "Host" {
+        return Ok(None);
+    }
+    let host = crate::sandbox::hosts::Host::parse(id)
+        .map_err(|why| format!("the host {id:?} is not one: {why}"))?;
+    let spelt = host.to_string();
+    if host.port().is_some() || spelt.starts_with("*.") {
+        return Err(format!(
+            "the host {id:?} is a name or an address alone: its port is the context's, and a \
+             wildcard is a rule's, not a request's"
+        ));
+    }
+    Ok(Some(spelt))
+}
+
 /// One question for the policy: may this chat do this to that, in this context?
 #[derive(Debug, Clone)]
 pub struct Question<'a> {
@@ -1007,6 +1028,21 @@ impl Policy {
 
     /// **Decides one question** (spec §6.3).
     pub fn decide(&self, question: &Question<'_>, world: &World) -> Decision {
+        // A `Host` resource is one spelling, whatever the caller typed: a rule that names
+        // `evil.example` must meet `Evil.Example.` (M75-06 round 3, S1).
+        let (canonical, spelt);
+        let question = match canonical_host(question) {
+            Ok(Some(id)) => {
+                spelt = id;
+                canonical = Question {
+                    resource: (question.resource.0, spelt.as_str()),
+                    ..question.clone()
+                };
+                &canonical
+            }
+            Ok(None) => question,
+            Err(why) => return Decision::Unasked { why },
+        };
         let request = match Self::request(question) {
             Ok(request) => request,
             Err(why) => return Decision::Unasked { why },
