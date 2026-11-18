@@ -102,18 +102,16 @@ impl Handler {
     ///
     /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
     /// one that is not yet switchable keeps its refusal while the guard lives and, as before
-    /// Q308, does not hold a call when it dies. Its wiring will count it. Nor does `sandbox`:
-    /// the guard's arms of it are the wrap's own, enforced whatever `[policy]` says
-    /// (`toolgate`'s `Gate::mode`, the review of #7105), so its level never switches them.
+    /// Q308, does not hold a call when it dies. Its wiring will count it. `sandbox` counts like
+    /// any other (ruling Q327): its mode is its level's ([`crate::enforcement::mode_of_level`]),
+    /// enforced wherever a wrap is applied and off where there is none, as under `open`, so a
+    /// dead guard refuses where the sandbox it judges is in force and continues where it is not.
     pub fn on_failure(&self, policy: &crate::enforcement::Resolved) -> Option<&'static str> {
-        use crate::enforcement::{Family, Mode};
         if !self.guards_a_call() {
             return None;
         }
         let enforced = self.judges().iter().any(|family| {
-            family.switchable()
-                && *family != Family::Sandbox
-                && policy.mode(*family) == Mode::Enforce
+            family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
         });
         Some(if enforced { "block" } else { "continue" })
     }
@@ -471,13 +469,37 @@ mod tests {
                 ("pretooluse-dispatch", "continue"),
             ]
         );
-        // With those logged, nothing either guard judges is enforced.
+        // With those logged, the read guard judges nothing enforced. The Bash guard still
+        // judges `sandbox`, which `watch` wraps at the floor and so enforces (ruling Q327).
+        let logged = "[policy]\ntemplate = \"watch\"\nsecrets = \"log\"\nguards.credential = \"log\"\n";
         assert_eq!(
-            failing(&under(
-                "[policy]\ntemplate = \"watch\"\nsecrets = \"log\"\nguards.credential = \"log\"\n"
-            )),
+            failing(&under(logged)),
+            [
+                ("pretooluse", "block"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // And with the sandbox off as well, nothing either guard judges is enforced.
+        assert_eq!(
+            failing(&under(&format!(
+                "{logged}[sandbox]\nmode = \"off\"\npolicy = \"local\"\n"
+            ))),
             [
                 ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // The sandbox alone enforced: the Bash guard, which judges it, refuses when it dies.
+        assert_eq!(
+            failing(&under(
+                "[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n"
+            )),
+            [
+                ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
                 ("pretooluse-dispatch", "continue"),
