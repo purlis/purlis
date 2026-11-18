@@ -781,11 +781,12 @@ pub(crate) fn kept_vault_blocked_said(
         .and_then(|open| open.persona);
     // The person's reason goes with the decision, so a run it answers tells it too (#5934).
     let chain = chain_policy(held, session);
-    let kept = kept_blocked_but_held(held.root(), persona.as_deref(), vault, chain.as_deref())
-        .map(|kept| KeptButHeld {
+    let kept = kept_blocked_but_held(held.root(), persona.as_deref(), vault, chain.as_deref()).map(
+        |kept| KeptButHeld {
             reason: purlis_core::askoutcome::reason(reason),
             ..kept
-        });
+        },
+    );
     let mut told = Vec::new();
     keep_blocked_pressed(held, network, session, vault, kept.as_ref(), &mut told);
     if let Some(kept) = kept {

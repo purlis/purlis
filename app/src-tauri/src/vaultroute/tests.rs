@@ -815,7 +815,10 @@ fn keep_blocked_on_a_vault_the_persona_may_not_use_holds_and_says_nothing_more()
         kept_blocked_but_held(project.path(), Some("steward"), "devops", None),
         None
     );
-    assert_eq!(kept_blocked_but_held(project.path(), None, "devops", None), None);
+    assert_eq!(
+        kept_blocked_but_held(project.path(), None, "devops", None),
+        None
+    );
 }
 
 /// How every family runs where the project's `[policy]` turns `vaults` off, as the app would
@@ -868,10 +871,7 @@ fn a_vault_check_for_a_dispatched_chat_runs_under_its_chain_s_policy() {
         ..steward()
     };
     let pressed = allow(root, &refusals, &chained, "devops", &auditing(&heard), 1);
-    assert!(
-        !matches!(pressed, Ok(Allowed::Already(_))),
-        "{pressed:?}"
-    );
+    assert!(!matches!(pressed, Ok(Allowed::Already(_))), "{pressed:?}");
 }
 
 #[test]

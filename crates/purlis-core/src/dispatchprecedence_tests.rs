@@ -854,12 +854,18 @@ fn a_policy_that_does_not_read_says_so_rather_than_that_only_a_committed_change_
         ..InForce::default()
     });
     assert!(unread.contains("could not read"), "{unread}");
-    assert!(!unread.contains("committed policy, made by a person"), "{unread}");
+    assert!(
+        !unread.contains("committed policy, made by a person"),
+        "{unread}"
+    );
     let named = said(&InForce {
         denied: vec![pair("steward", "devops")],
         ..InForce::default()
     });
-    assert!(named.contains("committed policy, made by a person"), "{named}");
+    assert!(
+        named.contains("committed policy, made by a person"),
+        "{named}"
+    );
 }
 
 #[test]
