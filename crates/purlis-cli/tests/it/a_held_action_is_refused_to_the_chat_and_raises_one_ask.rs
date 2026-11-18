@@ -328,6 +328,25 @@ fn a_merge_whose_request_cannot_be_read_is_refused_and_asks_nobody() {
     assert!(chat.holds.every().is_empty());
 }
 
+/// The hook's refusal of a line held as unreadable names the cause the floor read it by, so a
+/// chat learns which variable made the line a merge and how to write it (#7176): the switch of
+/// `guard.rs` to `mergehold::refusal_for`.
+#[test]
+fn a_held_line_names_the_variable_that_made_it_one_and_the_way_out() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial(
+            "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[].id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done",
+            "default",
+        )
+        .expect("refused");
+    assert!(reason.contains("It took it for one because"), "{reason}");
+    assert!(reason.contains("projects/p/jobs/$j/play"), "{reason}");
+    assert!(reason.contains("for j in 101 102"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert_eq!(chat.merges_asked(), 0);
+}
+
 #[test]
 fn what_is_no_merge_is_not_held() {
     let chat = Chat::new();

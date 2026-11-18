@@ -90,9 +90,61 @@ fn playing_a_manual_ci_job_passes() {
     passes(&[
         "glab api -X POST projects/p/jobs/123/play",
         "for j in 1 2 3; do glab api -X POST projects/p/jobs/$j/play; done",
-        "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[] | select(.status==\"manual\") | .id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done",
+        "for j in 101 102; do glab api -X POST projects/p/jobs/$j/play; done",
+        "J=101; glab api -X POST projects/p/jobs/$J/play",
+        "J=101\nglab api -X POST \"projects/p/jobs/${J}/play\"",
         "glab api --method POST projects/p/jobs/123/retry",
     ]);
+}
+
+// Shape 5, as the ruling of Q331 reads it: a variable in a writing path is held unless the line
+// binds it to digits. The loop over `$(...)` is the accepted false hold.
+#[test]
+fn variables_in_writing_paths_hold() {
+    purlis_core::unsteered!();
+    held(&[
+        "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[] | .id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done",
+        // B1: a variable in an id's place carries a path.
+        "n='3/merge'; glab api -X PUT \"projects/p/merge_requests/$n\"",
+        "for n in 3/merge; do gh api -X PUT \"repos/o/r/pulls/$n\"; done",
+        "n='3/merge'; gh api -X PUT repos/o/r/pulls/$n -f sha=abc",
+        "n=3/merge glab api -X PUT projects/p/merge_requests/$n",
+        "export n=3/merge; glab api -X PUT projects/p/merge_requests/$n",
+        "read n < f; glab api -X PUT projects/p/merge_requests/$n",
+        "n=$(cat f); glab api -X PUT projects/p/merge_requests/$n",
+        "n='3/merge'; glab api -X PUT projects/p/merge_requests/${n}",
+        "n='3/merge'; glab api -X PUT projects/p/merge_requests/$n/",
+        "n='3/merge'; gh api -X PUT repos/{owner}/{repo}/pulls/$n",
+        "n='3/merge'; glab api -X PUT https://gitlab.com/api/v4/projects/p/merge_requests/$n",
+        // B2: a variable in the project, repository or collection re-routes the call.
+        "P='1/merge_requests/3/merge?x='; glab api -X PUT \"projects/$P/jobs/$J/play\"",
+        "ID='1/git/refs/heads/main?x='; gh api -X PATCH repositories/$ID/issues/5 -f sha=abc",
+        "P='1/repository/branches/main?x='; glab api -X DELETE projects/$P/issues/5",
+        "P='1/protected_branches/main?x='; glab api -X DELETE projects/$P/labels/5",
+        "ID='1/pulls/3/merge?x='; gh api -X PUT repositories/$ID/issues/5",
+        "j='1/play -X PUT projects/p/merge_requests/3/merge'; glab api -X POST projects/p/jobs/$j",
+        // A digit binding that does not hold on the line.
+        "J=101 glab api -X POST projects/p/jobs/$J/play",
+        "glab api -X POST projects/p/jobs/$J/play; J=101",
+        "J=101; J=$(cat f); glab api -X POST projects/p/jobs/$J/play",
+        "J=101; read J; glab api -X POST projects/p/jobs/$J/play",
+        "J=101 && glab api -X POST projects/p/jobs/$J/play",
+        "(J=101); glab api -X POST projects/p/jobs/$J/play",
+        "J=1/merge; glab api -X POST projects/p/jobs/$J/play",
+        "for j in 1 2/merge; do glab api -X POST projects/p/merge_requests/$j; done",
+    ]);
+}
+
+#[test]
+fn a_held_loop_over_a_substitution_says_to_loop_over_digits() {
+    purlis_core::unsteered!();
+    let cmd = "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[].id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done";
+    let said = release_floor_reason(cmd, true).expect("held");
+    assert!(said.contains("for j in 101 102"), "{said}");
+    let held = mergehold::held(cmd).expect("held");
+    let refusal = mergehold::refusal_for(cmd, &held, &mergehold::AppSaid::Unheard);
+    assert!(refusal.contains("projects/p/jobs/$j/play"), "{refusal}");
+    assert!(refusal.contains("for j in 101 102"), "{refusal}");
 }
 
 // Shape 6.

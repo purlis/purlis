@@ -499,76 +499,105 @@ fn is_merge_path(segs: &[String]) -> bool {
     }
 }
 
-/// The collections of a repository or project whose paths reach no merge and no ref, whatever
-/// stands in an id after them: CI job and pipeline control, issues, workflow runs, labels.
-const NEVER_A_MERGE: &[&str] = &[
-    "jobs",
-    "pipelines",
-    "issues",
-    "actions",
-    "labels",
-    "milestones",
-];
+/// The sentence a refusal ends with where a writing call's path holds a variable that is not
+/// bound to digits on the line (#7176; Q331).
+const VARIABLE_WAY_OUT: &str = "purlis cannot know what a value it did not see holds, and a \
+     value may carry a `/`, a `?` or a flag. Run each id written out literally, or loop over the \
+     ids written out: `for j in 101 102; do ...; done`.";
 
-/// A bare `$name` or `${name}`: a variable, and nothing else, as a whole path segment.
-fn is_bare_variable(seg: &str) -> bool {
-    let name = seg
-        .strip_prefix("${")
-        .and_then(|rest| rest.strip_suffix('}'))
-        .or_else(|| seg.strip_prefix('$'));
-    name.is_some_and(|name| {
-        name.chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-    })
+/// Every `$name` and `${name}` in `endpoint` that `cmd` binds only to digits, as `name`.
+/// **A variable in a writing call's path is read only where the same line binds it to digits**
+/// (#7176; Q331: this guard is an early warning, the forge is the lock). The reader cannot know a
+/// value it did not see: a variable from `$(...)`, `read`, `export`, the environment or a file,
+/// or one that holds a `/`, a `?` or a space, can carry a path, a query or a flag, and so re-route
+/// the call. Digits cannot.
+///
+/// A name is bound to digits only when every bare use of it on the line is one of
+///
+/// * `for NAME in 1 2 3; do`, or
+/// * `NAME=123` (or quoted), a statement of its own: at the start of the line or after `;` or a
+///   newline or `do`, and followed by `;`, a newline or the end of the line. `NAME=1 cmd` sets it
+///   only for `cmd`, after the shell has expanded its words, and `NAME=1 && ...` may not run, so
+///   neither binds,
+///
+/// and no `$NAME` comes before the first such binding. A line with a `(` or a backtick is read as
+/// binding nothing: a subshell's binding ends with it. A `${NAME...}` with an operator is no
+/// plain reference.
+fn digit_bound(cmd: &str, name: &str) -> bool {
+    if cmd.contains(['(', '`']) {
+        return false;
+    }
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    // Each bare occurrence of the name (not a `$name` or `${name}`), as its byte offset.
+    let mut bare = Vec::new();
+    let mut first_use = usize::MAX;
+    for (at, _) in cmd.match_indices(name) {
+        let before = cmd[..at].chars().next_back();
+        let after = cmd[at + name.len()..].chars().next();
+        if before.is_some_and(is_word) || after.is_some_and(is_word) {
+            continue;
+        }
+        let preceded_by_dollar = before == Some('$');
+        let in_braces = cmd[..at].ends_with("${");
+        if preceded_by_dollar || in_braces {
+            // `${NAME}` is a plain reference, `${NAME:-x}` and `${NAME/a/b}` are not.
+            if in_braces && after != Some('}') {
+                return false;
+            }
+            first_use = first_use.min(at);
+        } else {
+            bare.push(at);
+        }
+    }
+    let mut bound_at = Vec::new();
+    let assign = Regex::new(&format!(
+        r#"(?:^|[;\n]|\bdo)[ \t]*({})=(["']?)[0-9]+["']?[ \t]*(?:;|\n|$)"#,
+        regex::escape(name)
+    ))
+    .expect("compiles");
+    for m in assign.captures_iter(cmd) {
+        let whole = m.get(1).expect("group 1");
+        bound_at.push((whole.start(), m.get(0).expect("match").end()));
+    }
+    let looped = Regex::new(&format!(
+        r"\bfor[ \t]+({})[ \t]+in((?:[ \t]+[0-9]+)+)[ \t]*(?:;|\n)[ \t]*do\b",
+        regex::escape(name)
+    ))
+    .expect("compiles");
+    for m in looped.captures_iter(cmd) {
+        bound_at.push((
+            m.get(1).expect("group 1").start(),
+            m.get(0).expect("match").end(),
+        ));
+    }
+    if bound_at.is_empty() || bare.iter().any(|at| !bound_at.iter().any(|(b, _)| b == at)) {
+        return false;
+    }
+    let earliest = bound_at.iter().map(|(_, end)| *end).min().unwrap_or(0);
+    first_use >= earliest
 }
 
-/// **Whether the shell fills in only ids of an endpoint whose path reaches no merge** (#7176): a
-/// write to `projects/$P/jobs/$J/play`, in a loop over jobs, is no merge, and a variable that
-/// holds one id cannot make it one. True only where every word the shell fills in is a whole
-/// segment that is a bare variable, none of them names the repository (`repos/$R/...`, where
-/// `$R` is one segment or two and moves what follows), and the path's resource is literal and
-/// one of [`NEVER_A_MERGE`], or a request's own path (`merge_requests/$N`, `pulls/$N`, whose
-/// editing is no merge, and whose third segment, where `merge` stands, is written out). Any
-/// other path the shell fills in is unreadable, as it was, and so is any call with a flag this
-/// reader does not know.
-fn only_ids_are_filled_in(endpoint: &str, segs: &[String]) -> bool {
-    if endpoint.contains(['`', '(']) {
-        return false;
-    }
-    let Some(at) = segs
-        .iter()
-        .position(|s| matches!(s.as_str(), "repos" | "repositories" | "projects"))
-    else {
-        return false;
-    };
-    // `repos/<owner>/<name>` is two segments a variable may stand for one or both of; a project
-    // or repository id is one.
-    let names = if segs[at] == "repos" { 2 } else { 1 };
-    let start = at + 1 + names;
-    let Some(rest) = segs.get(start..) else {
-        return false;
-    };
-    if segs[..at].iter().any(|s| opaque(s)) {
-        return false;
-    }
-    let names_ok = segs[at + 1..start]
-        .iter()
-        .all(|s| !opaque(s) || (segs[at] != "repos" && is_bare_variable(s)));
-    if !names_ok || rest.iter().any(|s| opaque(s) && !is_bare_variable(s)) {
-        return false;
-    }
-    match rest.first().map(String::as_str) {
-        Some(collection) if NEVER_A_MERGE.contains(&collection) => true,
-        Some("pulls" | "merge_requests") => {
-            rest.len() >= 2
-                && rest
-                    .get(2..)
-                    .is_none_or(|tail| tail.iter().all(|s| !opaque(s)))
+/// `endpoint` with each `$name` or `${name}` that [`digit_bound`] says holds only digits written
+/// as `0`, so the rest of the reader sees the path the shell will make. A reference left in it is
+/// one the line does not bind to digits.
+fn with_digit_variables(endpoint: &str, cmd: &str) -> String {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})")
+            .expect("compiles")
+    });
+    re.replace_all(endpoint, |caps: &regex::Captures<'_>| {
+        let name = caps
+            .get(1)
+            .or_else(|| caps.get(2))
+            .map_or("", |m| m.as_str());
+        if digit_bound(cmd, name) {
+            "0".to_owned()
+        } else {
+            caps[0].to_owned()
         }
-        _ => false,
-    }
+    })
+    .into_owned()
 }
 
 /// True when a path is a repository or project itself, whose settings include auto-merge.
@@ -600,14 +629,21 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         if read {
             continue;
         }
-        if opaque(endpoint)
-            && !(call.unknown_flag.is_none() && only_ids_are_filled_in(endpoint, &segs))
-        {
+        // Every part of a writing call's path is written out, or a variable the line binds to
+        // digits (#7176; Q331).
+        let resolved = with_digit_variables(endpoint, cmd);
+        if opaque(&resolved) {
+            let way_out = if resolved.contains('$') {
+                format!(" {VARIABLE_WAY_OUT}")
+            } else {
+                String::new()
+            };
             return Some(format!(
-                "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}. {SPLIT}",
+                "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}.{way_out} {SPLIT}",
                 call.why_not_a_read()
             ));
         }
+        let segs = segments(&resolved);
         if segs.iter().any(|s| s == "." || s == "..") {
             return Some(format!(
                 "{UNREADABLE} The endpoint `{endpoint}` climbs with `.` or `..`. {SPLIT}"

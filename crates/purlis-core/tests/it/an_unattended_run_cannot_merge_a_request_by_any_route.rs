@@ -490,11 +490,18 @@ fn a_push_option_value_and_a_requests_sub_paths_are_not_over_read() {
         "gh api -X POST repos/o/r/pulls/12/reviews --input review.json",
         "gh api -X POST repos/o/r/pulls/12/comments -F \"$K=x\"",
         // Editing a request's title or description is no merge, with a body read from a file
-        // or a request number a variable holds (#7176; Q331).
+        // and a path written out (#7176; Q331).
         "glab api -X PUT projects/1/merge_requests/5 --input body.json",
-        "glab api --method PUT projects/$ID/merge_requests/$MR --input body.json",
     ]);
     refused_unattended_only(&["git push -o \"$OPT\" origin feat"]);
+}
+
+#[test]
+fn a_variable_in_a_writing_path_is_held_unless_bound_to_digits_on_the_line() {
+    purlis_core::unsteered!();
+    refused_unattended_only(&[
+        "glab api --method PUT projects/$ID/merge_requests/$MR --input body.json",
+    ]);
 }
 
 #[test]
