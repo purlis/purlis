@@ -47,7 +47,10 @@ pub fn rows(floor: &Resolved, os: Os) -> Vec<Row> {
                 .join(" ");
             Row::ok(
                 &name,
-                format!("{} declared, and the chat still starts. {said}", declared.entries().len()),
+                format!(
+                    "{} declared, and the chat still starts. {said}",
+                    declared.entries().len()
+                ),
             )
         })
         .collect()

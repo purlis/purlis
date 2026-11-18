@@ -154,6 +154,7 @@ pub mod inboxupdates;
 pub mod instructions;
 pub mod inventory;
 pub(crate) mod keptscreen;
+pub mod knowngaps;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
@@ -210,7 +211,6 @@ pub mod planeroot;
 pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
-pub mod knowngaps;
 pub mod policy;
 #[cfg(unix)]
 pub mod poollimits;

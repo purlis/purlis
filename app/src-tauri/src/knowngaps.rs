@@ -42,7 +42,10 @@ pub struct HarnessGaps {
 }
 
 fn keys(families: &[purlis_core::enforcement::Family]) -> Vec<String> {
-    families.iter().map(|family| family.key().to_owned()).collect()
+    families
+        .iter()
+        .map(|family| family.key().to_owned())
+        .collect()
 }
 
 fn shown(entry: &Entry) -> KnownGapShown {
@@ -96,7 +99,10 @@ pub(crate) async fn chat_known_gaps(
 ) -> Result<Vec<KnownGapShown>, String> {
     let held = planes.held(&plane)?;
     let chat = held.chats().logged_id_of(session);
-    let Some(Ok(dir)) = crate::EVENT_LOG.get().map(|log| log.as_ref().map(Clone::clone)) else {
+    let Some(Ok(dir)) = crate::EVENT_LOG
+        .get()
+        .map(|log| log.as_ref().map(Clone::clone))
+    else {
         return Ok(Vec::new());
     };
     crate::off_the_window("reading a chat's known gaps", move || {

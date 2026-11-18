@@ -25,7 +25,12 @@ fn git(dir: &Path, args: &[&str]) {
             .arg("-C")
             .arg(dir)
             .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
-            .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
             .args(args)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1"),
@@ -173,7 +178,10 @@ fn an_off_rule_needs_no_enforcement_and_declares_no_gap() {
     }
     let on = Declared::at(&facts, &Resolved::all(Mode::Enforce));
     for id in ["codex-no-command-ask", "codex-sandboxed-asks-rejected"] {
-        assert!(on.ids().contains(&id), "{id} is declared where `asks` is on");
+        assert!(
+            on.ids().contains(&id),
+            "{id} is declared where `asks` is on"
+        );
     }
     // A `log` family still declares: it is in force, only not enforced.
     let logging = Declared::at(&facts, &floor_with(Family::Asks, Mode::Log));
@@ -231,7 +239,10 @@ fn every_action_has_a_fail_closed_point_or_a_gap() {
             }
         }
     }
-    assert_eq!(knowngaps::cover("no-such-action", Harness::Codex, Os::Linux), None);
+    assert_eq!(
+        knowngaps::cover("no-such-action", Harness::Codex, Os::Linux),
+        None
+    );
 }
 
 #[test]
@@ -250,9 +261,17 @@ fn claude_code_reads_are_a_declared_gap() {
 fn an_unheld_plane_root_rename_is_a_declared_gap() {
     let floor = Resolved::all(Mode::Enforce);
     let mut unheld = facts(Harness::Codex, Os::Linux);
-    assert!(Declared::at(&unheld, &floor).ids().contains(&"plane-root-rename"));
+    assert!(
+        Declared::at(&unheld, &floor)
+            .ids()
+            .contains(&"plane-root-rename")
+    );
     unheld.plane_root_rename_held = true;
-    assert!(!Declared::at(&unheld, &floor).ids().contains(&"plane-root-rename"));
+    assert!(
+        !Declared::at(&unheld, &floor)
+            .ids()
+            .contains(&"plane-root-rename")
+    );
 }
 
 #[test]
@@ -264,7 +283,10 @@ fn on_windows_an_unset_context_machine_is_a_declared_gap_and_a_rule_reading_it_d
         .iter()
         .find(|entry| entry.gap.id == "machine-unset-on-windows")
         .expect("declared on Windows");
-    assert!(gap.gap.families.is_empty(), "no family's mode switches it off");
+    assert!(
+        gap.gap.families.is_empty(),
+        "no family's mode switches it off"
+    );
     for os in [Os::MacOs, Os::Linux] {
         let there = Declared::at(&facts(Harness::ClaudeCode, os), &floor);
         assert!(!there.ids().contains(&"machine-unset-on-windows"));
@@ -292,18 +314,17 @@ forbid (principal, action == Action::"exec", resource)
         via: "hook",
         start: None,
     };
-    let decision = purlis_core::policy::decide::in_plane(
-        plane.path(),
-        &asker,
-        "exec",
-        ("Command", "ls"),
-    );
+    let decision =
+        purlis_core::policy::decide::in_plane(plane.path(), &asker, "exec", ("Command", "ls"));
     assert_eq!(
         decision.outcome,
         purlis_core::policy::decide::Outcome::Deny,
         "a rule that reads an unset machine denies: {decision:?}"
     );
-    assert!(decision.ids().contains(&"processes-this-machine-only"), "{decision:?}");
+    assert!(
+        decision.ids().contains(&"processes-this-machine-only"),
+        "{decision:?}"
+    );
 }
 
 #[test]
@@ -318,7 +339,10 @@ fn a_declared_gap_shows_in_settings_doctor_and_the_pane_head() {
             .iter()
             .find(|row| row.name == format!("known gaps: {}", harness.name()))
             .unwrap_or_else(|| panic!("doctor has no row for {harness:?}"));
-        for gap in GAPS.iter().filter(|gap| gap.may_hold_for(harness, Os::Linux)) {
+        for gap in GAPS
+            .iter()
+            .filter(|gap| gap.may_hold_for(harness, Os::Linux))
+        {
             assert!(
                 row.detail.contains(gap.id) && row.detail.contains(gap.said),
                 "doctor does not declare `{}` for {harness:?}: {row:?}",
@@ -339,4 +363,3 @@ fn a_declared_gap_shows_in_settings_doctor_and_the_pane_head() {
         .expect("a row for codex");
     assert!(!codex.detail.contains("codex-no-command-ask"), "{codex:?}");
 }
-
