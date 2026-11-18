@@ -6000,7 +6000,11 @@ impl Chats {
         crate::restoring::hand_back_here();
         // Settings past `limits.harness_settings_bytes` are said on the chat's tab (#6961): near
         // its check's limit, a harness's auto mode refuses unasked what it would have checked.
-        let heavy = purlis_core::hoststart::settings_past_the_budget(&all).filter(|_| !reattaching);
+        let heavy = purlis_core::hoststart::settings_past_the_budget(
+            &all,
+            &purlis_core::hoststart::rules_outside(chat.cwd.as_deref()),
+        )
+        .filter(|_| !reattaching);
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
             Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(

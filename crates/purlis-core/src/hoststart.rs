@@ -1334,39 +1334,81 @@ pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
 pub const HARNESS_SETTINGS_FILE_BYTES: usize = 768 * 1024;
 
 /// **What of a chat's harness `settings` its auto mode's check counts**, in bytes: the
-/// permission rules (`permissions.allow`, `deny`, `ask`) and the `autoMode` lists, as one JSON
-/// document ([`HARNESS_SETTINGS_BYTES`]). Nothing else in the settings counts, the sandbox
-/// least of all.
-pub fn auto_mode_weight(settings: &serde_json::Value) -> usize {
-    let mut counted = serde_json::Map::new();
-    let mut permissions = serde_json::Map::new();
-    for list in ["allow", "deny", "ask"] {
-        if let Some(rules) = settings["permissions"].get(list) {
-            permissions.insert(list.to_owned(), rules.clone());
+/// permission rules (`permissions.allow`, `deny`, `ask`) as auto mode serialises them, and the
+/// `autoMode` lists ([`HARNESS_SETTINGS_BYTES`]). Nothing else in the settings counts, the
+/// sandbox least of all. `outside` are the other settings files the same session reads (the
+/// person's, the project's, the managed policy: [`rules_outside`]), whose rules count too.
+///
+/// Each rule weighs as the object auto mode sends, `{rule, canonical, source, pattern?}`
+/// (#7157, from the shape recorded on #7157 after the review of #7005; **not re-read in Claude
+/// Code's bundle by this change**: `canonical` is taken as the rule again, `source` as the
+/// longest spelling of one, `root` left out, so a rule weighs about what it does or a little
+/// less). The raw size of the settings was no measure of it: the rule is sent with three more
+/// fields beside it.
+pub fn auto_mode_weight(settings: &serde_json::Value, outside: &[serde_json::Value]) -> usize {
+    let mut sent = Vec::new();
+    for (source, doc) in std::iter::once(("flagSettings", settings))
+        .chain(outside.iter().map(|doc| ("projectSettings", doc)))
+    {
+        for list in ["allow", "deny", "ask"] {
+            let Some(rules) = doc["permissions"][list].as_array() else {
+                continue;
+            };
+            for rule in rules.iter().filter_map(serde_json::Value::as_str) {
+                let mut one = serde_json::json!({
+                    "rule": rule,
+                    "canonical": rule,
+                    "source": source,
+                });
+                if let Some(pattern) = rule
+                    .split_once('(')
+                    .and_then(|(_, rest)| rest.strip_suffix(')'))
+                {
+                    one["pattern"] = pattern.into();
+                }
+                sent.push(one);
+            }
         }
     }
-    if !permissions.is_empty() {
-        counted.insert(
-            "permissions".to_owned(),
-            serde_json::Value::Object(permissions),
-        );
+    let mut counted = if sent.is_empty() {
+        0
+    } else {
+        serde_json::to_string(&sent).map_or(0, |json| json.len())
+    };
+    for doc in std::iter::once(settings).chain(outside) {
+        if let Some(lists) = doc.get("autoMode") {
+            counted += lists.to_string().len();
+        }
     }
-    if let Some(lists) = settings.get("autoMode") {
-        counted.insert("autoMode".to_owned(), lists.clone());
-    }
-    serde_json::Value::Object(counted).to_string().len()
+    counted
+}
+
+/// **The settings files a Claude Code session reads besides the `--settings` purlis writes**,
+/// as JSON: the managed policy and its drop-ins, the person's `settings.json`, and the
+/// project's and local ones for `cwd` (the files whose rules auto mode sends with the chat's,
+/// [`auto_mode_weight`]). A file that is not there, is over a megabyte, or is not JSON counts for
+/// nothing.
+pub fn rules_outside(cwd: Option<&Path>) -> Vec<serde_json::Value> {
+    crate::footerclaim::settings_files(cwd, &crate::doctor::session::claude_config_home())
+        .iter()
+        .filter(|file| {
+            std::fs::metadata(file).is_ok_and(|found| found.is_file() && found.len() <= 1 << 20)
+        })
+        .filter_map(|file| serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok())
+        .collect()
 }
 
 /// **How much what auto mode counts of the `--settings` JSON on `args` weighs, where it is past
-/// [`HARNESS_SETTINGS_BYTES`]** ([`auto_mode_weight`]): what the chat's tab says, with a way out
-/// (#6961). `None` for lighter settings, a path, or none at all.
-pub fn settings_past_the_budget(args: &[String]) -> Option<usize> {
+/// [`HARNESS_SETTINGS_BYTES`]** ([`auto_mode_weight`], with the `outside` files' rules): what
+/// the chat's tab says, with a way out (#6961). `None` for lighter settings, a path, or none at
+/// all.
+pub fn settings_past_the_budget(args: &[String], outside: &[serde_json::Value]) -> Option<usize> {
     let at = args.iter().position(|word| word == "--settings")? + 1;
     let settings: serde_json::Value = args
         .get(at)
         .filter(|json| json.starts_with('{'))
         .and_then(|json| serde_json::from_str(json).ok())?;
-    Some(auto_mode_weight(&settings)).filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
+    Some(auto_mode_weight(&settings, outside)).filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
 }
 
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
@@ -1397,7 +1439,22 @@ pub fn settings_in_a_file(
     else {
         return Ok(args);
     };
-    if args[at].len() <= SETTINGS_IN_A_WORD || !args[at].starts_with('{') {
+    if !args[at].starts_with('{') {
+        return Ok(args);
+    }
+    // A harness builds its sandbox's profile from these settings and hands it to its own
+    // program on a command line, which the system bounds: one past the cap fails there, and a
+    // chat that fails that way says nothing of why (#7157).
+    if args[at].len() > HARNESS_SETTINGS_FILE_BYTES {
+        return Err(format!(
+            "this chat was not started: its harness settings weigh {} KiB, over the {} KiB a \
+             sandbox can be built from. Keep fewer workspaces or branch folders under the plane \
+             this chat is held from, then start it again.",
+            args[at].len().div_ceil(1024),
+            HARNESS_SETTINGS_FILE_BYTES / 1024
+        ));
+    }
+    if args[at].len() <= SETTINGS_IN_A_WORD {
         return Ok(args);
     }
     if crate::reopen::a_ulid(id).is_none() {

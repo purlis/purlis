@@ -21,6 +21,8 @@ harness-escapes-pinned        ubuntu-24.04   90       kind: escape
 harness-escapes-latest        ubuntu-24.04   90       kind: escape
 # Ticket 23: the sandbox's laws as property tests, at 100 000 cases from a fresh seed (T1.1-23).
 property-tests                ubuntu-24.04   90       kind: escape
+# Claude Code's NEWEST release, kept required (#7157): `fewest` relies on its gitignore-style,
+# case-insensitive matching, and only this entry sees a release that changes it.
 claude-code-newest-writes     macos-latest   60       kind: escape
 # Ticket 8: no expected_fail mark names an issue GitHub says is closed (T1.1-08).
 coverage-issues               ubuntu-24.04   60

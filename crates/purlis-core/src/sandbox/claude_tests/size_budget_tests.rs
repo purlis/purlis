@@ -38,6 +38,9 @@ const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
 /// The most a chat's whole generated harness settings file may weigh.
 const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
+/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured when #7157 set the ratchet.
+const COUNTED_TODAY: usize = 219_348;
+
 /// Workspaces in the plane.
 const WORKSPACES: usize = 12;
 
@@ -185,7 +188,7 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
     let settings = the_settings_of_a_chat_in(&root, &cwd, home.path());
 
     let parsed: serde_json::Value = serde_json::from_str(&settings).expect("JSON");
-    let counted = crate::hoststart::auto_mode_weight(&parsed);
+    let counted = crate::hoststart::auto_mode_weight(&parsed, &[]);
     let deny = parsed["permissions"]["deny"].as_array().map_or(0, Vec::len);
     let deny_write = parsed["sandbox"]["filesystem"]["denyWrite"]
         .as_array()
@@ -206,6 +209,14 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
         counted <= BUDGET,
         "{said}: auto mode counts more than the budget of {BUDGET} bytes \
          (`limits.harness_settings_bytes`)"
+    );
+    // A ratchet (#7157): the budget has room, so a rule added to every chat would pass it
+    // unseen. This weight is what the plane's chats are measured to send today; a change that
+    // moves it either way says so here, and a rise past a tenth is a re-bloat to look at.
+    assert!(
+        counted <= COUNTED_TODAY + COUNTED_TODAY / 10,
+        "{said}: more than a tenth over the {COUNTED_TODAY} bytes this plane weighed when \
+         #7157 measured it"
     );
     assert!(
         settings.len() <= FILE_CAP,
@@ -376,5 +387,22 @@ fn a_held_path_that_ends_in_whitespace_keeps_its_rules_below_it() {
     ] {
         let rules: Vec<String> = rules.into_iter().map(str::to_owned).collect();
         assert_eq!(super::claude::fewest(rules.clone()), rules);
+    }
+}
+
+/// **A path with `]` is a pattern, as every character [`PATTERN_CHARACTERS`] names is** (#7157):
+/// Claude Code reads it as a glob, so a rule on it holds no path below, and a rule below it is
+/// not folded into it.
+///
+/// [`PATTERN_CHARACTERS`]: crate::sandbox::PATTERN_CHARACTERS
+#[test]
+fn a_path_with_a_closing_bracket_is_a_pattern_and_folds_nothing() {
+    for c in crate::sandbox::PATTERN_CHARACTERS {
+        let rules: Vec<String> = vec![format!("Read(//a/b{c})"), format!("Read(//a/b{c}/c)")];
+        assert_eq!(
+            super::claude::fewest(rules.clone()),
+            rules,
+            "{c:?} is a pattern, so the rule below it stays"
+        );
     }
 }

@@ -602,21 +602,21 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
 #[test]
 fn settings_past_the_budget_are_named_by_their_weight() {
     let with_rules = |bytes: usize| {
-        let empty = serde_json::json!({"permissions": {"deny": [""]}}).to_string();
+        let empty = serde_json::json!({"soft_deny": [""]}).to_string();
         let rule = "x".repeat(bytes - empty.len());
         let json = serde_json::json!({
-            "permissions": {"deny": [rule]},
+            "autoMode": {"soft_deny": [rule]},
             "sandbox": {"filesystem": {"denyWrite": ["/a"]}},
         });
-        assert_eq!(auto_mode_weight(&json), bytes);
+        assert_eq!(auto_mode_weight(&json, &[]), bytes);
         words(&json.to_string())
     };
     assert_eq!(
-        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES + 1)),
+        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES + 1), &[]),
         Some(HARNESS_SETTINGS_BYTES + 1)
     );
     assert_eq!(
-        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES)),
+        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES), &[]),
         None
     );
     let held_paths: Vec<String> = (0..20_000)
@@ -629,17 +629,61 @@ fn settings_past_the_budget_are_named_by_their_weight() {
     .to_string();
     assert!(many_paths.len() > HARNESS_SETTINGS_BYTES);
     assert_eq!(
-        settings_past_the_budget(&words(&many_paths)),
+        settings_past_the_budget(&words(&many_paths), &[]),
         None,
         "the sandbox's paths are no part of auto mode's check"
     );
     let lists = serde_json::json!({
         "autoMode": {"soft_deny": ["y".repeat(HARNESS_SETTINGS_BYTES)]},
     });
-    assert!(settings_past_the_budget(&words(&lists.to_string())).is_some());
-    assert_eq!(settings_past_the_budget(&["claude".to_owned()]), None);
+    assert!(settings_past_the_budget(&words(&lists.to_string()), &[]).is_some());
+    assert_eq!(settings_past_the_budget(&["claude".to_owned()], &[]), None);
     assert_eq!(
-        settings_past_the_budget(&["--settings".to_owned(), "/a/file.json".to_owned()]),
+        settings_past_the_budget(&["--settings".to_owned(), "/a/file.json".to_owned()], &[]),
         None
     );
+}
+
+/// #7157: a permission rule weighs as auto mode sends it, `{rule, canonical, source, pattern?}`,
+/// not as it is written; a rule from another settings file the session reads weighs the same.
+#[test]
+fn a_rule_weighs_as_auto_mode_serialises_it() {
+    let rule = "Read(//a/b)";
+    let sent = format!(
+        r#"[{{"rule":"{rule}","canonical":"{rule}","source":"flagSettings","pattern":"//a/b"}}]"#
+    );
+    let json = serde_json::json!({"permissions": {"deny": [rule]}});
+    assert_eq!(auto_mode_weight(&json, &[]), sent.len());
+    assert!(
+        sent.len() > 3 * rule.len(),
+        "a short rule weighs several times what it is written as"
+    );
+    let person = serde_json::json!({"permissions": {"allow": ["Bash(git status)"]}});
+    assert!(
+        auto_mode_weight(&json, &[person]) > auto_mode_weight(&json, &[]),
+        "the person's, the project's and the managed rules count too"
+    );
+}
+
+/// #7157: a chat's settings past the file cap are refused with a reason, whether or not they
+/// would fit a word of a command line, and no file is written.
+#[test]
+fn settings_past_the_file_cap_refuse_the_start() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let folder = root.join("own-data");
+    let json = serde_json::json!({"sandbox": {"filesystem": {"denyWrite": [
+        "x".repeat(HARNESS_SETTINGS_FILE_BYTES)
+    ]}}})
+    .to_string();
+    assert!(json.len() > HARNESS_SETTINGS_FILE_BYTES);
+    let why = settings_in_a_file(Some(&folder), root, CHAT, words(&json)).unwrap_err();
+    assert!(
+        why.contains("was not started") && why.contains("768 KiB"),
+        "{why}"
+    );
+    assert!(!folder.exists(), "nothing was written");
+    // Just under the cap goes through a file, as before.
+    let fits = serde_json::json!({"a": "x".repeat(HARNESS_SETTINGS_FILE_BYTES - 100)}).to_string();
+    assert!(settings_in_a_file(Some(&folder), root, CHAT, words(&fits)).is_ok());
 }
