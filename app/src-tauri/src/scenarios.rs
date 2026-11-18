@@ -517,6 +517,90 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
     }
 }
 
+/// **On macOS the OS wrap is on a Codex and an opencode chat's process** (T1.1-06, #7152): at
+/// Full, under `strict`, each chat reads a plain file of its project (the control) and then the
+/// project's vault, and only the second is refused, by Seatbelt (`Operation not permitted`). The
+/// vault's path is put together in the shell, so no guard that reads a command's words refuses
+/// it first: what refuses it is `sandbox-exec`, and a chat started without it reads the vault and
+/// fails here. Claude Code on macOS holds itself (ticket 10, #6900), and Linux's wrap is asserted
+/// by `a_linux_claude_chat_in_the_scenario_host_is_sandboxed`: both are reported `not_run`.
+#[cfg(unix)]
+#[test]
+fn a_macos_chat_is_held_by_the_os_wrap() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    if !cfg!(target_os = "macos") {
+        report::write(&[a_fixture_record(
+            "a_macos_chat_is_held_by_the_os_wrap",
+            None,
+            Some(purlis_scenarios::model::Protection::Full),
+            purlis_scenarios::model::ReportVerdict::NotRun,
+            "the macOS wrap (`sandbox-exec`) alone; Linux's is \
+             `a_linux_claude_chat_in_the_scenario_host_is_sandboxed`",
+        )])
+        .expect("the leg's report");
+        homes.ran_no_scenario();
+        return;
+    }
+    report::write(&[a_fixture_record(
+        "a_macos_chat_is_held_by_the_os_wrap",
+        Some(purlis_scenarios::model::Dialect::Claude),
+        Some(purlis_scenarios::model::Protection::Full),
+        purlis_scenarios::model::ReportVerdict::NotRun,
+        "Claude Code on macOS runs its own sandbox, which the fake does not play (ticket 10, \
+         #6900)",
+    )])
+    .expect("the leg's report");
+    for dialect in [Dialect::Codex, Dialect::OpenCode] {
+        let Some(scenario) = Scenario::under(
+            &homes,
+            Protection::Full,
+            None,
+            dialect,
+            host::Template::Strict,
+        ) else {
+            return;
+        };
+        let vaults = scenario.root.join(".purlis").join("vaults");
+        std::fs::create_dir_all(&vaults).expect("the vaults");
+        std::fs::write(
+            vaults.join("covering.json"),
+            "{\"covering\": \"VAULT-HELD\"}\n",
+        )
+        .expect("a vault");
+        std::fs::write(scenario.root.join("plain.txt"), "PLAIN-READS\n").expect("a plain file");
+        let root = scenario.root.display();
+        let chat = scenario.starts(&serde_json::json!({
+            "turns": [{"prompt": "go", "calls": [
+                {"step": "reads-plain", "tool": "bash",
+                 "run": format!("cat '{root}/plain.txt' 2>&1; echo exit=$?")},
+                {"step": "reads-the-vault", "tool": "bash",
+                 "run": format!(
+                     "d='{root}/.pur'; d=\"${{d}}lis\"; cat \"$d/vaults/covering.json\" 2>&1; \
+                      echo exit=$?"
+                 )}
+            ]}]
+        }));
+        scenario.until_played(chat, &["reads-the-vault"]);
+        let said = scenario.said();
+        let plain = stdout_of(&scenario, chat, "reads-plain");
+        assert!(
+            plain.contains("PLAIN-READS") && plain.contains("exit=0"),
+            "{dialect:?}: the control: a plain file of the project does not read: {plain}\n{said}"
+        );
+        let vault = stdout_of(&scenario, chat, "reads-the-vault");
+        assert!(
+            !vault.contains("VAULT-HELD"),
+            "{dialect:?}: the chat read the vault, so no OS wrap is on its process: {vault}\n{said}"
+        );
+        assert!(
+            vault.contains("Operation not permitted") && !vault.contains("exit=0"),
+            "{dialect:?}: the vault read was not refused by Seatbelt: {vault}\n{said}"
+        );
+    }
+}
+
 /// **The command lines of the ancestors of the chat harness playing `script`**, read from
 /// `/proc` as the system has them (Linux), from its parent up to the first process. The harness
 /// is the process running the fake with `script` that is not the wrap (`wrapped`), whose own
@@ -643,27 +727,31 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
         purlis_core::process::alive(sleeper),
         "it runs while the scenario does"
     );
-    scenario.also_started(sleeper);
+    scenario.left_in_the_background(sleeper);
     assert!(!scenario.pids().is_empty(), "the chat runs");
     drop(scenario);
-    // #7103 is the sleeper outliving the quit on macOS. Said when it stops doing so, so the
-    // expected fail is retired rather than left to hide a leak.
+    // #7103 is the sleeper outliving the quit on macOS. When it stops doing so the expected
+    // fail is retired, never left to hide a leak: the leg's report says so, and the test fails.
     if cfg!(target_os = "macos") && homes.background_left().is_empty() {
-        let _ = std::io::Write::write_fmt(
-            &mut std::io::stderr(),
-            format_args!(
-                "unexpected pass #7103: the host's quit ended the chat's background process on \
-                 macOS; retire the expected fail\n"
-            ),
-        );
+        let said = "unexpected pass #7103: the host's quit ended the chat's background process on \
+                    macOS; retire the expected fail";
+        report::write(&[a_fixture_record(
+            "a_scenario_leaves_no_process_and_no_temp_dir_behind",
+            Some(purlis_scenarios::model::Dialect::Codex),
+            Some(purlis_scenarios::model::Protection::Full),
+            purlis_scenarios::model::ReportVerdict::Fail,
+            said,
+        )])
+        .expect("the leg's report");
+        panic!("{said}");
     }
 }
 
 /// **A chat that outlives its host's quit fails the leak check on every OS** (T1.1-06, #7103):
-/// on macOS a group the quit left is #7103's expected fail only when every chat process seen in
-/// it has ended, so only what the chat left in the background runs. Probe 2 (run 44169502700)
-/// passed six macOS scenarios with a quit that ended nothing, because any group left was taken
-/// for #7103's.
+/// on macOS a group the quit left is #7103's expected fail only when a test registered it as a
+/// chat's background process's and every chat process seen in it has ended. Probe 2 (run
+/// 44169502700) passed six macOS scenarios with a quit that ended nothing, because any group
+/// left was taken for #7103's.
 #[cfg(unix)]
 #[test]
 fn a_chat_that_outlives_its_hosts_quit_fails_the_leak_check_on_every_os() {
@@ -676,19 +764,50 @@ fn a_chat_that_outlives_its_hosts_quit_fails_the_leak_check_on_every_os() {
     let dead = |_: u32| false;
     let chat_200_runs = |pid: u32| pid == 200;
     assert_eq!(
-        host::of_the_quit(&[10, 20], &seen, dead, true),
+        host::of_the_quit(&[10, 20], &seen, &[10, 20], dead, true),
         (vec![10, 20], vec![]),
-        "macOS: chats ended, only a background process left in each group: #7103's"
+        "macOS: chats ended, only a registered background process left in each group: #7103's"
     );
     assert_eq!(
-        host::of_the_quit(&[10, 20], &seen, chat_200_runs, true),
+        host::of_the_quit(&[10, 20], &seen, &[10, 20], chat_200_runs, true),
         (vec![10], vec![20]),
         "macOS: a chat the quit did not end is a leak, not #7103's"
     );
     assert_eq!(
-        host::of_the_quit(&[10, 20], &seen, dead, false),
+        host::of_the_quit(&[10, 20], &seen, &[10], dead, true),
+        (vec![10], vec![20]),
+        "macOS: a group no test registered as a background process's is a leak"
+    );
+    assert_eq!(
+        host::of_the_quit(&[10, 20], &seen, &[10, 20], dead, false),
         (vec![], vec![10, 20]),
         "Linux: every group the quit left is a leak"
+    );
+}
+
+/// **A group no chat was ever seen in is #7103's only when a test registered it** (T1.1-06,
+/// #7103): a tool's command runs in a process group of its own, so "every chat seen in it has
+/// ended" holds of it vacuously. Before #7152 any such group the quit left was taken for #7103's
+/// on macOS, a held `curl` or a sleeper nobody named included.
+#[cfg(unix)]
+#[test]
+fn a_group_no_chat_was_seen_in_is_a_leak_unless_registered_as_background() {
+    let seen = [(100, Some(10))];
+    let dead = |_: u32| false;
+    assert_eq!(
+        host::of_the_quit(&[30], &seen, &[], dead, true),
+        (vec![], vec![30]),
+        "macOS: a tool's group nobody registered, with no chat in it, is a leak"
+    );
+    assert_eq!(
+        host::of_the_quit(&[30], &seen, &[30], dead, true),
+        (vec![30], vec![]),
+        "macOS: the same group, registered as a chat's background process's, is #7103's"
+    );
+    assert_eq!(
+        host::of_the_quit(&[30], &[], &[], dead, true),
+        (vec![], vec![30]),
+        "macOS: with no chat seen at all, nothing is excused"
     );
 }
 
@@ -759,6 +878,12 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
             "{dialect:?}: the call ended after {took:?}, before the hold of {:?} ended",
             scenario.timings.hold()
         );
+        assert!(
+            took < scenario.timings.hold() + HOLD_ENDS_WITHIN,
+            "{dialect:?}: the call ended after {took:?}, not at the hold of {:?} (within {:?})",
+            scenario.timings.hold(),
+            HOLD_ENDS_WITHIN
+        );
         let result = scenario.result_of(chat, "held").expect("played");
         assert!(
             !result.to_string().contains("status 200"),
@@ -772,6 +897,11 @@ fn a_held_connection_in_a_scenario_raises_an_ask_and_blocks_at_the_hold() {
         assert!(scenario.names.origin_hits().is_empty());
     }
 }
+
+/// How soon after its hold a held call is refused: the board's refusal reaches curl at once, so
+/// this is a slow runner's margin, well below curl's own `--max-time`.
+#[cfg(unix)]
+const HOLD_ENDS_WITHIN: Duration = Duration::from_secs(30);
 
 /// The command a chat runs to reach `host` on HTTPS, saying the status it was answered and how
 /// long the call took, as curl measures it.
@@ -970,10 +1100,21 @@ fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
     scenario.until_played(chat, &["before-the-quit"]);
     let closed = scenario.starts(&two_turns("closed-before-the-quit", "never-played-there"));
     scenario.until_played(closed, &["closed-before-the-quit"]);
+    let closed_pid = scenario
+        .open_chats()
+        .into_iter()
+        .find(|(id, _)| *id == closed)
+        .and_then(|(_, pid)| pid)
+        .expect("the chat to close runs");
     scenario.closes(closed);
     until(&scenario, "the closed chat is no longer open", || {
         scenario.open_chats().iter().all(|(id, _)| *id != closed)
     });
+    until(
+        &scenario,
+        "the closed chat's process ended before the quit",
+        || !purlis_core::process::alive(closed_pid),
+    );
     assert_eq!(
         scenario.open_names(),
         ["chat 1"],
@@ -1010,9 +1151,23 @@ fn a_quit_ends_every_chat_and_a_relaunch_restarts_the_live_ones() {
 /// of its own process, the `purlis-app` CI built apart from the test build (`PURLIS_HOST_APP`),
 /// at production timings, the host is killed outright, and the window is told its chat ended
 /// with its host. What survives and what is reported beyond that are ticket 48's cells.
-#[cfg(target_os = "linux")]
+/// Elsewhere the host is never its own process in the scenarios (`PURLIS_HOST_APP` is built on
+/// Linux alone), so the leg reports it `not_run`, never passed.
+#[cfg(unix)]
 #[test]
 fn the_host_kill_is_observed() {
+    if !cfg!(target_os = "linux") {
+        report::write(&[a_fixture_record(
+            "the_host_kill_is_observed",
+            None,
+            None,
+            purlis_scenarios::model::ReportVerdict::NotRun,
+            "the session host runs as a process of its own in the scenarios on Linux alone \
+             (`PURLIS_HOST_APP`)",
+        )])
+        .expect("the leg's report");
+        return;
+    }
     let Some(app) = std::env::var_os(host::HOST_APP_VAR) else {
         return host::cannot_run::<()>(&format!(
             "{} names no purlis-app built apart from the test build",

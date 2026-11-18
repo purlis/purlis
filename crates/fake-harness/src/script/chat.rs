@@ -86,6 +86,22 @@ struct Agent {
     kind: String,
 }
 
+/// **Says the process group of a tool command it started**, `group`, as a line appended to the
+/// file `$FAKE_HARNESS_GROUPS` names, where one is named: a tool's command runs in a group of its
+/// own, which no chat's process is in, so a scenario's teardown reads them here to watch what a
+/// tool left running. Best effort: a line not written leaves that group unwatched.
+#[cfg(unix)]
+fn say_tool_group(group: u32) {
+    let Some(file) = std::env::var_os("FAKE_HARNESS_GROUPS") else {
+        return;
+    };
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, format!("{group}\n").as_bytes()));
+}
+
 /// The cursor a relaunch continues from: `$FAKE_HARNESS_STATE/<session id>.json`.
 pub struct Cursor;
 
@@ -918,6 +934,8 @@ impl Chat {
                 );
             }
         };
+        #[cfg(unix)]
+        say_tool_group(child.id());
         let read = |r: Option<Box<dyn std::io::Read + Send>>| {
             std::thread::spawn(move || {
                 let mut s = String::new();

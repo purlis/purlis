@@ -346,6 +346,7 @@ impl Homes {
         kept.groups_left.extend(more.groups_left);
         kept.background.extend(more.background);
         kept.quits.extend(more.quits);
+        kept.unwatched.extend(more.unwatched);
         // Best effort, from a teardown that may run as a test fails: a `left.json` not written
         // fails the parent's check.
         if let Ok(text) = serde_json::to_string(&kept) {
@@ -391,8 +392,13 @@ impl Homes {
             left.quits
         );
         assert!(
+            left.unwatched.is_empty(),
+            "the teardown could not watch every chat by its process group: {:?}",
+            left.unwatched
+        );
+        assert!(
             left.groups_left.is_empty(),
-            "a chat's process group outlived its host's quit: {:?}",
+            "a chat's or a tool's process group outlived its host's quit: {:?}",
             left.groups_left
         );
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -431,17 +437,20 @@ pub(crate) struct Left {
     /// test said it started.
     pub pids: Vec<u32>,
     pub folders: Vec<PathBuf>,
-    /// The process groups of its chats still running once the host's quit answered, but for
-    /// #7103's (`background`).
+    /// The process groups of its chats and of their tool commands still running once the host's
+    /// quit answered, but for #7103's (`background`).
     #[serde(default)]
     pub groups_left: Vec<u32>,
-    /// The process groups the quit left on macOS whose every chat had ended, so that only a
-    /// process a chat left in the background ran in them: #7103's expected fail.
+    /// The process groups the quit left on macOS that a test registered as a chat's background
+    /// process's, whose every chat had ended: #7103's expected fail.
     #[serde(default)]
     pub background: Vec<u32>,
     /// Each quit of the host that was not answered, and why.
     #[serde(default)]
     pub quits: Vec<String>,
+    /// Each chat process the teardown could not watch by its process group, and why.
+    #[serde(default)]
+    pub unwatched: Vec<String>,
 }
 
 /// **The kit the scenario host arms each chat with: what the app ships** (T1.1-06), hand-built
@@ -686,9 +695,15 @@ pub(crate) struct Scenario {
     profiled: std::sync::Once,
     /// Processes a test says the scenario started besides its chats.
     also: Mutex<Vec<u32>>,
+    /// Processes a test says a chat left running in the background
+    /// ([`Self::left_in_the_background`]): only their process groups can be #7103's.
+    background: Mutex<Vec<u32>>,
     /// Every chat process it saw run, and its process group, an ended chat's included: what
     /// its teardown checks for leftovers.
     seen: Mutex<Vec<(u32, Option<u32>)>>,
+    /// Each running chat process whose process group could not be read, and why: the teardown
+    /// cannot watch it, so the parent fails on it.
+    unwatched: Mutex<Vec<String>>,
     /// Folders it made outside its home ([`Self::a_folder_outside`]), which its teardown removes.
     outside: Mutex<Vec<PathBuf>>,
     /// Each chat's sandbox as the window composed it at its start, by its number.
@@ -801,7 +816,9 @@ impl Scenario {
             launched: Mutex::default(),
             profiled: std::sync::Once::new(),
             also: Mutex::default(),
+            background: Mutex::default(),
             seen: Mutex::default(),
+            unwatched: Mutex::default(),
             outside: Mutex::default(),
             applied: Mutex::default(),
             began,
@@ -951,22 +968,42 @@ fn process_group_of(pid: u32) -> Option<u32> {
 }
 
 /// **Which of the process groups the host's quit left are #7103's** (macOS): a group is that
-/// known leak only when every chat process seen in it has ended, so what still runs in it is a
-/// process the chat left in the background. A group whose chat itself still runs is a leak like
-/// any other, on every OS. Answers the groups that are #7103's and the groups that are leaks.
+/// known leak only when a test registered it as the group of a process a chat left in the
+/// background (`background`, [`Scenario::left_in_the_background`]) and every chat process seen
+/// in it has ended. Any other group the quit left is a leak, on every OS: a chat that still
+/// runs, and a tool's group nobody registered, which no chat was ever seen in. Answers the
+/// groups that are #7103's and the groups that are leaks.
 pub(crate) fn of_the_quit(
     still: &[u32],
     seen: &[(u32, Option<u32>)],
+    background: &[u32],
     alive: impl Fn(u32) -> bool,
     macos: bool,
 ) -> (Vec<u32>, Vec<u32>) {
     still.iter().copied().partition(|group| {
         macos
+            && background.contains(group)
             && seen
                 .iter()
                 .filter(|(_, of)| *of == Some(*group))
                 .all(|(pid, _)| !alive(*pid))
     })
+}
+
+/// The file each chat of a scenario's fake harness writes the process group of every tool
+/// command it starts to, one per line (`FAKE_HARNESS_GROUPS`): a tool's command runs in a group
+/// of its own, which no chat's process is in.
+fn tool_groups_file(root: &Path) -> PathBuf {
+    own_folder(root).join("tool-groups")
+}
+
+/// The process group of every tool command the chats of the project at `root` started.
+fn tool_groups(root: &Path) -> Vec<u32> {
+    std::fs::read_to_string(tool_groups_file(root))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect()
 }
 
 /// Whether any process of `group` runs.
@@ -1046,6 +1083,10 @@ impl Scenario {
                     crate::behaviour::fake_harness().display().to_string(),
                 ),
                 ("FAKE_HARNESS_PLACES", places.to_string()),
+                (
+                    "FAKE_HARNESS_GROUPS",
+                    tool_groups_file(&self.root).display().to_string(),
+                ),
             ]
             .map(|(k, v)| (k.to_owned(), v)),
         );
@@ -1172,7 +1213,13 @@ impl Scenario {
         let mut seen = self.seen.lock().expect("seen");
         for pid in running {
             if !seen.iter().any(|(one, _)| *one == pid) {
-                seen.push((pid, process_group_of(pid)));
+                let group = process_group_of(pid);
+                if group.is_none() && purlis_core::process::alive(pid) {
+                    self.unwatched.lock().expect("unwatched").push(format!(
+                        "chat process {pid} runs, but `ps` said no process group for it"
+                    ));
+                }
+                seen.push((pid, group));
             }
         }
     }
@@ -1305,6 +1352,14 @@ impl Scenario {
         self.also.lock().expect("also").push(pid);
     }
 
+    /// **A chat left `pid` running in the background**, as #7103's sleeper: its teardown ends
+    /// it, and on macOS its process group, and no other, may be #7103's expected fail
+    /// ([`of_the_quit`]).
+    pub(crate) fn left_in_the_background(&self, pid: u32) {
+        self.also_started(pid);
+        self.background.lock().expect("background").push(pid);
+    }
+
     /// The process of each chat it started that runs now.
     pub(crate) fn pids(&self) -> Vec<u32> {
         self.open_chats()
@@ -1337,11 +1392,12 @@ impl Scenario {
 impl Drop for Scenario {
     /// **Teardown**: the window lets go of every project and tells the host to quit, which ends
     /// every chat it runs; the runtime goes; then the project's folder. What it started (every
-    /// chat process it saw, an ended chat's too), a quit the host did not answer, and each chat's
-    /// process group still running after the quit are written for the parent, which fails on
-    /// any of them. On macOS a group the quit left whose every chat has ended, so only a
-    /// background process runs in it, is #7103: an expected fail, said and ended
-    /// ([`of_the_quit`]).
+    /// chat process it saw, an ended chat's too), a quit the host did not answer, a chat it
+    /// could not watch by its process group, and each process group of a chat or of a tool
+    /// command (`FAKE_HARNESS_GROUPS`) still running after the quit are written for the parent,
+    /// which fails on any of them. On macOS a group the quit left that a test registered as a
+    /// chat's background process's ([`Self::left_in_the_background`]), whose every chat has
+    /// ended, is #7103: an expected fail, said and ended ([`of_the_quit`]).
     fn drop(&mut self) {
         self.note_running();
         let seen = self.seen.lock().expect("seen").clone();
@@ -1363,11 +1419,28 @@ impl Drop for Scenario {
             ..Left::default()
         };
         let own = process_group_of(std::process::id());
+        left.unwatched
+            .extend(self.unwatched.lock().expect("unwatched").iter().cloned());
+        // A chat the teardown cannot watch by its group is said, never skipped.
+        for (pid, group) in &seen {
+            match group {
+                Some(group) if *group <= 1 => left
+                    .unwatched
+                    .push(format!("chat process {pid} is in process group {group}")),
+                Some(group) if Some(*group) == own => left.unwatched.push(format!(
+                    "chat process {pid} is in the test's own process group {group}"
+                )),
+                _ => {}
+            }
+        }
+        // Read while they run: a group the quit left can be #7103's only if it is one of these.
+        let background = process_groups(&self.background.lock().expect("background"));
         let mut groups: Vec<u32> = Vec::new();
         for group in seen
             .iter()
             .filter_map(|(_, group)| *group)
             .chain(process_groups(&left.pids))
+            .chain(tool_groups(&self.root))
         {
             if group > 1 && Some(group) != own && !groups.contains(&group) {
                 groups.push(group);
@@ -1389,9 +1462,12 @@ impl Drop for Scenario {
             {
                 std::thread::sleep(Duration::from_millis(50));
             }
+            // Only what still runs once the wait is over: a chat that ended in it left nothing.
+            let still: Vec<u32> = still.into_iter().filter(|g| group_alive(*g)).collect();
             let (background, leaks) = of_the_quit(
                 &still,
                 &seen,
+                &background,
                 purlis_core::process::alive,
                 cfg!(target_os = "macos"),
             );
