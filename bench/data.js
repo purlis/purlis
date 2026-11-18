@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794976076097,
+  "lastUpdate": 1794978286749,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51156,6 +51156,48 @@ window.BENCHMARK_DATA = {
             "value": 101.31548649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.777, 100.982, 101.315, 101.871, 102.044 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1657e7881671bcef0fb8801f777d5c62b6319fdc",
+          "message": "Pane links: a runner chat's file opens read-only, read from inside the runner (#6387) (#6943)\n\n* Runner file links (#6387): read_file over the session protocol (1.90), read on the runner with the path as data\n\nThe runner resolves the path a chat printed from the chat's own folder, follows every link on its\nown side, holds the resolved path to the chat's workspace unless the person answered an ask,\nand reads only a plain text file of at most 2 MiB, in pieces of 512 KiB, opened one folder at a\ntime with no link followed. Binaries, devices, pipes, folders and /proc, /sys, /dev are refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): one neutral link kind for a runner chat's file, behind an adapter per runner kind\n\nRunnerFile reads a runner chat's path, asks its runner through a RunnerFiles adapter, and opens a\nfile in the chat's workspace there without asking; one outside asks first, naming the runner, and\nits answer keeps it opened for that pane on that runner. ~ is never asked; a binary or oversize\nfile is no link and says why; a runner that does not answer leaves the text quiet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the Docker pool adapter, the read-only runner tab and the ask naming the runner\n\nA runner chat's pane links paths through its Docker pool runner's link (session protocol 1.90 or\nlater): a hover only looks, within 1.5 s, and a tab reads the file in pieces of one version, held\nto the chat's workspace there unless the person answered the ask. The tab is titled\n'<name> · In runner <runner>, read-only'; the ask for a file outside the workspace names the runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): a behaviour on every target, a runner chat's file read on its Docker pool runner\n\nOn a Docker pool's runner (local and remote engine), a file the chat wrote in its folder is read\nback whole, one outside its workspace is not read without an ask, and /dev/null is not a plain\nfile. Every other target's chats run here and read nothing on a runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): list the runner file command as the window's own, sort its limits, read a file the behaviour's chat wrote outside every project, and the ask's story baselines\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the UI RPC's client, regenerated now the runner file command is the window's own\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): a file opened on an answered ask is read only while it is still that file\n\nThe answer keeps the file's device and number as the runner found them. The tab's read asks\nagain when the runner now finds another file, or another path, under that name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the tab's sentence for a file that kept changing starts with a capital\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the ask for a runner's file is the ask for a file here, with the runner's row\n\nThe runner says the chat's workspace, or the project for a chat at its root, with each plain file\nit finds, so the ask shows its row and its words as it does on this machine. The runner's file\nhas its own kind of ask, and the window's switches over it are simpler.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the largest read a runner's file hover names comes from the protocol's own limit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the runner tab's \"In runner X, read-only\" is written once\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): each path on a runner chat's line is looked at with its own wait\n\nThe paths of a runner chat's line are asked of the runner together, at most eight at a time,\nso one slow path no longer leaves the rest of the line unlinked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the runner tab's header, formatted\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): the runner file ask's story baselines, drawn again with its workspace row\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): a runner chat's line keeps the paths found when slower ones run out of time\n\nThe paths of a runner chat's line are looked at by a pool, with a place for each look among\neight shared by every pane. No look starts once the line could outlast the pane's wait, so the\npaths found stay linked and the rest are no link. While every place is taken, a line answers at\nonce, unlinked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): answering the ask for a runner's file looks at the runner once\n\nThe file's identity is taken from the look that finds it again for the answer, so answering makes\none look at the runner, not two, and an answer given for a file since swapped for another opens\nnothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): read_file's docs name protocol 1.91, after main's 1.90\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): a runner chat's ask tests name the chat, as main's #6516 asks of a chat's pane\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): read_file's docs name protocol 1.92, after main's 1.91\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n* Runner file links (#6387): read_file moves to protocol 1.93 after main's 1.92, and a runner's file ask goes by main's Asking\n\n#7134 took 1.92 and frame 216, so read_file is 1.93 with frames 217 and 218. #6384's Opening::Ask carries what it is about: a runner chat's file outside its home asks as FileOutside, and the window draws it with the runner's row; a misleading marked link keeps its own ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7HNDAQDBEJFC36Z3NYPRGR4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T04:18:08Z",
+          "tree_id": "94263a44cc289898fb6917ca3f68f6ab4d2f406b",
+          "url": "https://github.com/purlis/purlis/commit/1657e7881671bcef0fb8801f777d5c62b6319fdc"
+        },
+        "date": 1794978280736,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.441998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.435, 0.436, 0.442, 0.459, 0.459 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7122385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.548, 16.665, 16.712, 16.762, 16.821 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.15863300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.514, 101.611, 102.159, 102.325, 102.879 ms"
           }
         ]
       }
