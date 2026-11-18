@@ -82,3 +82,25 @@ Phase B findings (2026-11-18, by hand; the rows above are the script's). Ref sta
 - Not conclusive (HTTP 000): P9 and P10 (GraphQL) show no HTTP status, so the script's `pass` is not evidence; rerun them and read the response.
 - P7-note: the repo is not a fork, so P7's 422 proves nothing about the lock.
 - Refused as expected: M1, M2 (405 rule violation), P1, P2 (409), P4 (422 cannot delete), P5, P6, T1 to T3 (422), L1 to L3 (403). Allowed as expected: T0, AL1 to AL4, W1a, W1b. Info: L0, C1, C2 (200).
+
+## 2026-11-18T16:50Z · chat.sh · B2 · as chat · purlis/purlis-forge-lock-verify-1
+
+| row | expected | observed | result |
+|---|---|---|---|
+| P3 | refused (force-update main to vf-allowed's head 3ca3474, not main's) | HTTP 422 Repository rule violations found  Cannot update this protected ref.  Cannot force-push to this branch    | pass |
+| P8-setup | info (PR 5 based on main: put it on nightly first, control) | HTTP 200   | info |
+| P8 | refused (retarget PR 5 from nightly to main) | HTTP 200   | fail |
+| P8-after | info (PR 5's base after the PATCH) | base main | info |
+| P9 | refused (GraphQL createCommitOnBranch on main) | HTTP 200 Repository rule violations found  Cannot update this protected ref.    | pass |
+| P10 | refused (GraphQL mergeBranch into main) | HTTP 200 Failed to merge: "Repository rule violations found\n\nCannot update this protected ref.\n\n"  | pass |
+| M3-reread | info (PR 4 after merge-async answered 202, re-read 20s on; main was 20ed14a) | state open merged false mergeable_state unknown; main now 20ed14a | info |
+| R6 | allowed (notes of published release v0; v1 is gone, and v0 is not immutable) | HTTP 200   | pass |
+
+B2 findings (2026-11-18, by hand; kit fixed first: P3 uses a branch head that is not main's, P8 puts the PR back on `nightly` before retargeting, GraphQL goes as a `-f query=` field because purlis's `gh` refuses `--input` on `graphql`, and a reply with no HTTP status is `inconclusive`, never `pass`):
+
+- P3 pass: force PATCH of main to vf-allowed's head refused 422 ("Cannot force-push to this branch"). Main unchanged.
+- FAIL P8: with PR 5 on `nightly`, the chat's `PATCH /pulls/5 {"base":"main"}` returned 200 and the base is now `main`. A chat token can retarget a pull request onto a protected branch. No ref moved; the gap is that a retargeted PR is then mergeable by whoever may merge, against a base it was not reviewed for.
+- P9 and P10 pass: HTTP 200 with a GraphQL error "Repository rule violations found: Cannot update this protected ref." (createCommitOnBranch and mergeBranch). Main unchanged. The earlier HTTP 000 was the shim refusing `--input -`, not a reply.
+- M3 re-read, 20s on: PR 4 `open`, `merged: false`, `mergeable_state: unknown`; main still 20ed14a. `merge-async` answered 202 and GitHub did nothing visible: no merge, no ref move. Info, not a lock gap.
+- R6: release v1 is gone (R5b), so R6 ran on the published release v0 (not immutable): the chat edited its notes, 200. It says nothing about immutable releases.
+- Immutable-release docs: NOT RECORDED. The fetch of docs.github.com was refused by the permission classifier in this chat, so [doc: unread] and whether R5b contradicts the docs is open. Observed before phase B: `immutable: true` on v1 per the person's listing, yet 204 on delete by the chat token; `immutable` reads false on both v0 releases now.
