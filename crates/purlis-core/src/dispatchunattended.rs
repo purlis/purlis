@@ -358,10 +358,13 @@ pub fn as_the_policy_runs_for(
 
 /// The words of a harness's command line that start it with its permission prompts off, as a
 /// profile's command would carry them: Claude Code's and Codex's.
-const BYPASS_FLAGS: [&str; 4] = [
+const BYPASS_FLAGS: [&str; 5] = [
     "--dangerously-skip-permissions",
     "--dangerously-bypass-approvals-and-sandbox",
     "--yolo",
+    // Claude Code's flag that narrows hooks to the managed ones, as `disableAllHooks` does
+    // ([`crate::footerclaim`]): purlis's guards are not managed.
+    "--safe-mode",
     // Codex's low-friction mode: it runs what its own sandbox allows without asking first.
     "--full-auto",
 ];
@@ -392,18 +395,43 @@ fn is_inline(value: &str) -> bool {
 }
 
 /// Whether a `permissions.allow` entry allows every Bash command unasked: `Bash` alone, or
-/// `Bash(*)`, `Bash(:*)` and the like, where the glob inside is nothing but wildcards.
+/// `Bash(*)`, `Bash(:*)` and the like, where the glob inside is nothing but wildcards. Read
+/// without regard to case or whitespace (`bash`, `Bash (*)`, a tab inside the parentheses): a
+/// spelling Claude Code reads as the same rule must not slip past, so this reads more as broad,
+/// never less.
 fn is_broad_bash_allow(rule: &str) -> bool {
-    let rule = rule.trim();
-    match rule.strip_prefix("Bash") {
+    let rule: String = rule
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
+    match rule.strip_prefix("bash") {
         Some("") => true,
         Some(rest) => rest
             .strip_prefix('(')
             .and_then(|rest| rest.strip_suffix(')'))
-            .is_some_and(|glob| glob.chars().all(|c| matches!(c, '*' | ':' | ' '))),
+            .is_some_and(|glob| glob.chars().all(|c| matches!(c, '*' | ':'))),
         None => false,
     }
 }
+
+/// Whether an inline `env` key moves where purlis's guards or their state are read from: the
+/// home and config folder Claude Code reads its settings from, and any variable of purlis's own.
+fn is_guard_env(name: &str) -> bool {
+    let name = name.trim().to_ascii_uppercase();
+    name == "HOME"
+        || name == "CLAUDE_CONFIG_DIR"
+        || name.starts_with("PURLIS_")
+        || name.starts_with("CHARTER_")
+}
+
+/// The inline settings that switch the permission prompts off, as [`settings_without_bypass`]
+/// names them; every other key it takes out puts a guard at risk.
+const PROMPT_KEYS: [&str; 3] = [
+    "permissions.defaultMode",
+    "permissions.allow of Bash",
+    "sandbox.autoAllowBashIfSandboxed",
+];
 
 /// What inline settings carry that [`settings_without_bypass`] takes out.
 type Removed = Vec<&'static str>;
@@ -444,14 +472,79 @@ fn settings_without_bypass(value: &str) -> Option<Result<(String, Removed), ()>>
             }
         }
     }
+    if let Some(auto) = settings
+        .get_mut("sandbox")
+        .and_then(serde_json::Value::as_object_mut)
+        && auto
+            .get(AUTO_ALLOW_KEY)
+            .is_some_and(|on| on != &serde_json::Value::Bool(false))
+    {
+        auto.remove(AUTO_ALLOW_KEY);
+        removed.push("sandbox.autoAllowBashIfSandboxed");
+    }
     if let Some(object) = settings.as_object_mut() {
-        for key in ["hooks", "disableAllHooks"] {
+        for key in GUARD_KEYS {
             if object.remove(key).is_some() {
                 removed.push(key);
             }
         }
+        if let Some(env) = object
+            .get_mut("env")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            let before = env.len();
+            env.retain(|name, _| !is_guard_env(name));
+            if env.len() != before {
+                removed.push("env that moves its guards");
+            }
+        }
     }
     (!removed.is_empty()).then(|| Ok((settings.to_string(), removed)))
+}
+
+/// Top-level keys of inline settings that put a hook of the profile's own ahead of, or silence,
+/// purlis's guards, whatever their value: `hooks`, `disableAllHooks` and `allowManagedHooksOnly`
+/// ([`crate::footerclaim`]).
+const GUARD_KEYS: [&str; 3] = ["hooks", "disableAllHooks", "allowManagedHooksOnly"];
+
+/// The sandbox key that lets Bash run unasked wherever the sandbox holds it.
+const AUTO_ALLOW_KEY: &str = "autoAllowBashIfSandboxed";
+
+/// What a profile's words do, for the sentence that refuses them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum What {
+    /// They switch the permission prompts off.
+    PromptsOff,
+    /// They can silence or outrank purlis's guards, as well as, perhaps, the prompts.
+    GuardsOff,
+    /// Inline settings purlis cannot read, so it cannot tell.
+    Unreadable,
+}
+
+impl What {
+    /// What follows "starts its harness with" in a sentence that refuses them. `PromptsOff` is
+    /// the sentence it always was.
+    pub fn clause(self) -> &'static str {
+        match self {
+            Self::PromptsOff => "the permission prompts off",
+            Self::GuardsOff => {
+                "settings that can switch the permission prompts or purlis's guards off"
+            }
+            Self::Unreadable => {
+                "inline settings purlis cannot read, so it cannot tell whether they switch the \
+                 permission prompts or its guards off"
+            }
+        }
+    }
+}
+
+/// What [`bypass_in`] found: the words as shown to a person, and what they do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// As shown to a person.
+    pub flag: String,
+    /// What they do.
+    pub what: What,
 }
 
 /// **The words of `command` that start a harness with its permission prompts off**, if any
@@ -470,7 +563,25 @@ fn settings_without_bypass(value: &str) -> Option<Result<(String, Removed), ()>>
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
-    (0..command.len()).find_map(|at| bypass_at(command, at).map(|bypass| bypass.shown))
+    bypass_found(command).map(|found| found.flag)
+}
+
+/// [`bypass_in`], with what the words do ([`What`]).
+pub fn bypass_found(command: &[String]) -> Option<Found> {
+    bypass_found_beside(command, &[])
+}
+
+/// [`bypass_found`] on a line that holds settings purlis wrote itself: `own` are those words,
+/// exactly as armed ([`crate::sandbox::Words::armed`]), and a `--settings` whose value is one
+/// of them is purlis's own hooks and guards, never read as a profile's. **Only an exact word
+/// is exempt**, so a profile's settings that merely look like purlis's are read as any other.
+pub fn bypass_found_beside(command: &[String], own: &[String]) -> Option<Found> {
+    (0..command.len()).find_map(|at| {
+        bypass_at(command, at, own).map(|bypass| Found {
+            flag: bypass.shown,
+            what: bypass.what,
+        })
+    })
 }
 
 /// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
@@ -479,10 +590,16 @@ pub fn bypass_in(command: &[String]) -> Option<String> {
 /// goes with it where it is the next word; inline `--settings` keep every key but the
 /// permission mode.
 pub fn without_bypass(command: &[String]) -> Vec<String> {
+    without_bypass_beside(command, &[])
+}
+
+/// [`without_bypass`] on a line that holds settings purlis wrote itself ([`bypass_found_beside`]):
+/// those words are kept whole, hooks and all.
+pub fn without_bypass_beside(command: &[String], own: &[String]) -> Vec<String> {
     let mut kept = Vec::with_capacity(command.len());
     let mut at = 0;
     while at < command.len() {
-        match bypass_at(command, at) {
+        match bypass_at(command, at, own) {
             Some(bypass) => {
                 kept.extend(bypass.kept);
                 at += bypass.words;
@@ -505,10 +622,12 @@ struct Bypass {
     /// What stands in their place once the prompts are back on: nothing, or the same inline
     /// `--settings` without the permission mode.
     kept: Vec<String>,
+    /// What they do.
+    what: What,
 }
 
 /// The words at `at` of `command` that switch the prompts off, if they do.
-fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
+fn bypass_at(command: &[String], at: usize, own: &[String]) -> Option<Bypass> {
     use crate::sandbox::codex::{is_flag, split};
     let word = command.get(at)?;
     if BYPASS_FLAGS.contains(&word.as_str()) {
@@ -516,6 +635,7 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
             shown: word.clone(),
             words: 1,
             kept: Vec::new(),
+            what: What::PromptsOff,
         });
     }
     if !is_flag(word) {
@@ -528,11 +648,20 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     // `permissions.defaultMode`, and what else would silence a guard ([`settings_without_bypass`]).
     // A settings file's path is not read here.
     if flag == CLAUDE_CODE_SETTINGS_FLAG {
+        // Purlis's own armed settings carry its hooks: they are not a profile's to be read.
+        if own.iter().any(|word| word == value) {
+            return None;
+        }
         return Some(match settings_without_bypass(value)? {
             Ok((rewritten, removed)) => Bypass {
                 // The mode's own word is the attendance fact's alone to spell.
                 shown: format!("{flag} (its {})", removed.join(", its ")),
                 words,
+                what: if removed.iter().all(|key| PROMPT_KEYS.contains(key)) {
+                    What::PromptsOff
+                } else {
+                    What::GuardsOff
+                },
                 kept: match attached {
                     Some(_) => vec![format!("{flag}={rewritten}")],
                     None => vec![flag.to_owned(), rewritten],
@@ -541,12 +670,10 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
             // Refused whole: nothing of it is kept, so no mode in it runs.
             Err(()) => Bypass {
                 // Not a claim that they switch anything off: only that none can be ruled out.
-                shown: format!(
-                    "{flag} (inline settings purlis cannot read, so purlis cannot tell \
-                     whether they switch the prompts or its guards off)"
-                ),
+                shown: format!("{flag} (unreadable)"),
                 words,
                 kept: Vec::new(),
+                what: What::Unreadable,
             },
         });
     }
@@ -566,6 +693,7 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
         },
         words,
         kept: Vec::new(),
+        what: What::PromptsOff,
     })
 }
 
@@ -595,22 +723,24 @@ pub enum NamedBy<'a> {
 /// the asking chat's own profile, not on one its dispatch names, and not on one the persona's
 /// definition names, which a chat can write. A handoff is held to it as a task is.
 pub fn bypass_refusal(profile: &str, command: &[String], by: NamedBy<'_>) -> Option<String> {
-    let flag = crate::shown::short(&bypass_in(command)?);
+    let found = bypass_found(command)?;
+    let flag = crate::shown::short(&found.flag);
+    let clause = found.what.clause();
     let profile = crate::shown::short(profile);
     Some(match by {
         NamedBy::TheAskingChat => format!(
-            "profile '{profile}' starts its harness with the permission prompts off ({flag}), \
+            "profile '{profile}' starts its harness with {clause} ({flag}), \
              and a task never takes that from the chat that dispatched it. Dispatch \
              from a chat on a profile that asks."
         ),
         NamedBy::TheDispatch => format!(
-            "the dispatch names profile '{profile}', which starts its harness with the \
-             permission prompts off ({flag}), and purlis starts no chat for another chat on \
+            "the dispatch names profile '{profile}', which starts its harness with \
+             {clause} ({flag}), and purlis starts no chat for another chat on \
              such a profile. Name a profile that asks, or none."
         ),
         NamedBy::ThePersona(persona) => format!(
-            "persona '{}' names profile '{profile}', which starts its harness with the \
-             permission prompts off ({flag}), and purlis starts no chat for another chat on \
+            "persona '{}' names profile '{profile}', which starts its harness with \
+             {clause} ({flag}), and purlis starts no chat for another chat on \
              such a profile. Give the persona a profile that asks, from its view, or name one \
              with --profile.",
             crate::shown::short(persona)

@@ -617,16 +617,17 @@ fn ready_given_on(
     // tab says so. A declared harness's own words, added after the profile's, are read too
     // (the re-review of #7104).
     if matches!(start.made, crate::sandbox::Made::Asked { .. })
-        && let Some(flag) = crate::dispatchunattended::bypass_in(&argv)
-            .or_else(|| crate::dispatchunattended::bypass_in(&added))
+        && let Some(found) = crate::dispatchunattended::bypass_found(&argv)
+            .or_else(|| crate::dispatchunattended::bypass_found(&added))
     {
         argv = crate::dispatchunattended::without_bypass(&argv);
         added = crate::dispatchunattended::without_bypass(&added);
         notices.push(format!(
-            "Profile '{}' switches the permission prompts off ({}), and a chat another chat \
+            "Profile '{}' starts its harness with {} ({}), and a chat another chat \
              asked for never runs that way, so it started without it.",
             crate::shown::short(&profile.name),
-            crate::shown::short(&flag)
+            found.what.clause(),
+            crate::shown::short(&found.flag)
         ));
     }
     let standing = Standing::of(&here, root);

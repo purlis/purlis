@@ -283,33 +283,34 @@ fn refusal_on(
             ),
         });
     }
-    let flag = crate::dispatchunattended::bypass_in(command?)?;
-    let flag = crate::shown::short(&flag);
+    let found = crate::dispatchunattended::bypass_found(command?)?;
+    let flag = crate::shown::short(&found.flag);
+    let clause = found.what.clause();
     Some(match how {
         Again::Started => format!(
             "This chat was dispatched by another chat, and its profile '{shown}' now starts \
-             its harness with the permission prompts off ({flag}), which a dispatched chat \
+             its harness with {clause} ({flag}), which a dispatched chat \
              never runs with, so it was not started again. Take that out of the profile's \
              command in Settings › Harness and start it again, or close it and dispatch the \
              work again on a profile that asks."
         ),
         Again::Reopened => format!(
             "This task was dispatched by another chat, and its profile '{shown}' now starts \
-             its harness with the permission prompts off ({flag}), which a dispatched chat \
+             its harness with {clause} ({flag}), which a dispatched chat \
              never runs with, so it was not reopened. Take that out of the profile's command \
              in Settings › Harness and reopen it, or dispatch the work again on a profile \
              that asks. Its report is still here to read."
         ),
         Again::Asked => format!(
             "You started this chat with Ask, and its profile '{shown}' now starts its harness \
-             with the permission prompts off ({flag}), which a persona chat started that way \
+             with {clause} ({flag}), which a persona chat started that way \
              never runs with, so it was not started again. Take that out of the profile's \
              command in Settings › Harness and start it again, or close it and ask again on a \
              profile that asks."
         ),
         Again::ReopenedAsked => format!(
             "You started this task with Ask, and its profile '{shown}' now starts its harness \
-             with the permission prompts off ({flag}), which a persona chat started that way \
+             with {clause} ({flag}), which a persona chat started that way \
              never runs with, so it was not reopened. Take that out of the profile's command \
              in Settings › Harness and reopen it, or ask again on a profile that asks. Its \
              report is still here to read."

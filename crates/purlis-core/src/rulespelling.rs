@@ -935,7 +935,9 @@ mod tests {
     /// its profile's `HOME` or relative `CLAUDE_CONFIG_DIR` names, never the app's own.
     #[test]
     fn a_chats_start_reads_the_rules_of_the_home_and_config_dir_its_profile_sets() {
-        let dir = std::env::temp_dir().join(format!("purlis-7165-{}", std::process::id()));
+        // A folder of its own, removed when the test ends, even by a panic.
+        let held = tempfile::tempdir().expect("a temp folder");
+        let dir = held.path().to_path_buf();
         let write = |at: &str| {
             let file = dir.join(at).join("settings.json");
             std::fs::create_dir_all(file.parent().expect("a folder")).expect("folder");
@@ -958,7 +960,6 @@ mod tests {
         assert!(named(&var("CLAUDE_CONFIG_DIR", "cfg")));
         assert!(!named(&[]));
         assert!(!named(&var("CLAUDE_CONFIG_DIR", "elsewhere")));
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A program word only the shell can name — a variable, a substitution, a glob — may be

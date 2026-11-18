@@ -8884,7 +8884,7 @@ fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
 /// sandboxed run of the tests may refuse.
 #[test]
 fn a_chat_at_every_level_starts_with_its_harness_own_check() {
-    use crate::dispatchunattended::bypass_in;
+    use crate::dispatchunattended::bypass_found_beside;
     // The app's plugin, with the shim an opencode chat loads: without it, opencode is not armed.
     let plugin = tempfile::tempdir().expect("a plugin");
     let shim = crate::opencode::shim_in(plugin.path());
@@ -8985,6 +8985,8 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
         }
     }
     for (harness, level, _plane, root, applied, armed) in cells {
+        // The settings purlis wrote are its own: read beside them, never as a profile's.
+        let own = armed.clone();
         let line = match &applied {
             None => crate::start::Ready::line(Vec::new(), armed, Vec::new()),
             Some(applied) => {
@@ -9013,7 +9015,11 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
                 line.args
             }
         };
-        assert_eq!(bypass_in(&line), None, "{harness:?} at {level}: {line:?}");
+        assert_eq!(
+            bypass_found_beside(&line, &own),
+            None,
+            "{harness:?} at {level}: {line:?}"
+        );
         assert!(
             !names_a_permission_mode(&line),
             "{harness:?} at {level}: {line:?}"
