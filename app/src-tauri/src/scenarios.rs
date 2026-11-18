@@ -650,7 +650,12 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
 #[cfg(unix)]
 #[test]
 fn a_chat_that_outlives_its_hosts_quit_fails_the_leak_check_on_every_os() {
-    let seen = [(100, Some(10)), (200, Some(20)), (201, Some(20)), (300, None)];
+    let seen = [
+        (100, Some(10)),
+        (200, Some(20)),
+        (201, Some(20)),
+        (300, None),
+    ];
     let dead = |_: u32| false;
     let chat_200_runs = |pid: u32| pid == 200;
     assert_eq!(
