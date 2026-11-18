@@ -88,3 +88,25 @@ bound what an agent does with your authority, never what you do.
   `/etc/purlis/policy.toml` makes the Organisation's file broken, and a broken Organisation reads
   as `strict` plus every lock under the full sandbox, not as that one set left out. Check the
   window's Notice after editing it.
+
+## Known gaps: what a harness cannot enforce
+
+A rule in force (a family whose mode is not `off`) that a harness cannot enforce on this system is a
+**known gap**. purlis declares it and the chat still starts: in Settings under *Sandbox › Known
+gaps*, in `purlis doctor` (for a project that wrote a `[policy]`), in the chat's start event and on
+its pane. A family set to `off` declares none.
+
+`context.gaps` on `start` holds the keys of the families that are `enforce` and have a gap for the
+chat being started. A project that wants such a chat refused writes the rule itself; the shipped
+default has none:
+
+```cedar
+@id("trust-no-start-on-a-sandbox-gap") @level("project")
+forbid (principal, action == Action::"start", resource)
+  when { context.gaps.contains("sandbox") };
+```
+
+The refusal names the rule and the gaps. `crates/purlis-core/src/knowngaps.rs` holds the capability
+table (each action's enforcement point per harness and system, or the gap that stands in its place)
+and every gap's entry; `context.machine` is unset on Windows, where no machine store mints a device
+id, so a rule reading it is denied until one exists.

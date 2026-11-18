@@ -510,8 +510,23 @@ fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
     assert_eq!(begun["attributes"]["profile"], "work");
     // R-227: what the host resolved, the person's opt-out for this chat only, and the commit of a
     // `charter.toml` no commit has.
+    let mut protection = begun["attributes"]["protection"].clone();
+    // M75-37: and the known gaps it started with, which depend on this machine's system. A chat
+    // with its sandbox lifted carries the one a lifted chat has, and Claude Code's reads.
+    let gaps = protection
+        .as_object_mut()
+        .and_then(|protection| protection.remove("known_gaps"))
+        .expect("the start event records the known gaps it started with");
+    let gaps: Vec<&str> = gaps
+        .as_array()
+        .expect("a list of ids")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert!(gaps.contains(&"policy-self-protection-lifted"), "{gaps:?}");
+    assert!(gaps.contains(&"claude-code-reads"), "{gaps:?}");
     assert_eq!(
-        begun["attributes"]["protection"],
+        protection,
         serde_json::json!({
             "layers": [{"layer": "sandbox", "level": "off", "tier": "chat"}],
             "charter_commit": "none",

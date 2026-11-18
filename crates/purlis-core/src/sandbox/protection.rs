@@ -76,6 +76,12 @@ pub struct InForce {
     /// is kept as written, so an answer of a shape a later phase gives is still read.
     #[serde(default)]
     pub answers_in_force: Vec<serde_json::Value>,
+    /// **The known gaps the chat started with** (M75-37, Q319 C1): the ids of every gap that held
+    /// for its harness on this system and left unenforced a family whose rule was in force
+    /// ([`crate::knowngaps::Declared`]). The chat started all the same. A line written before
+    /// they were recorded reads as none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub known_gaps: Vec<String>,
 }
 
 /// Reads a start's `protection` leniently: one in a shape this version cannot read is not
@@ -131,6 +137,7 @@ pub fn at_start(
         charter_file,
         charter_dirty,
         answers_in_force: Vec::new(),
+        known_gaps: Vec::new(),
     }
 }
 

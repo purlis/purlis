@@ -87,6 +87,7 @@ const started = (session: number): ChatLogRow => ({
     charter_file: "purlis.toml",
     charter_dirty: false,
     answers_in_force: 0,
+    known_gaps: [],
   },
 });
 

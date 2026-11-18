@@ -4258,3 +4258,21 @@ fn a_size_is_said_in_the_units_a_reader_expects() {
     assert_eq!(sandbox::bytes_said(1_240_000), "1.2 MB");
     assert_eq!(sandbox::bytes_said(3_400_000_000), "3.4 GB");
 }
+
+// ---- known gaps (M75-37) ------------------------------------------------------------------------
+
+#[test]
+fn a_project_that_wrote_a_policy_has_its_known_gaps_declared_and_one_that_did_not_has_none() {
+    let (_d, root) = plane("schema = 1\n");
+    let names: Vec<String> = doctor(&root).run().into_iter().map(|r| r.name).collect();
+    assert!(names.iter().all(|name| !name.starts_with("known gaps")), "{names:?}");
+
+    let (_d, root) = plane("schema = 1\n[policy]\ntemplate = \"strict\"\n");
+    let rows = doctor(&root).run();
+    let known: Vec<&Row> = rows.iter().filter(|r| r.name.starts_with("known gaps: ")).collect();
+    assert_eq!(known.len(), crate::harness::Harness::ALL.len(), "{rows:?}");
+    for row in known {
+        assert_eq!(row.status, Status::Ok, "a declared gap is no failure: {row:?}");
+        assert!(row.detail.contains("the chat still starts"), "{row:?}");
+    }
+}

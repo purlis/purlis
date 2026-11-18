@@ -210,6 +210,7 @@ pub mod planeroot;
 pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
+pub mod knowngaps;
 pub mod policy;
 #[cfg(unix)]
 pub mod poollimits;

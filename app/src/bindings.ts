@@ -3637,6 +3637,17 @@ export const commands = {
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
 	/**
+	 *  **The known gaps the open project declares**, per harness, on this system.
+	 */
+	knownGaps: (plane: PlaneId) => typedError<HarnessGaps[], string>(__TAURI_INVOKE("known_gaps", { plane })),
+	/**
+	 *  **The known gaps chat `session` started with**, as its start event recorded them
+	 *  (`run.started`'s protection), each as the table says it now. An id this build does not know is
+	 *  left out, never guessed. Not the Chat log's command: that one is read only when its tab opens
+	 *  (R-225), and this is read for the pane's head.
+	 */
+	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
+	/**
 	 *  **Tell the chat…, pressed twice** (T1-33, Q267): chat `session` is typed [`TELL_LINE`] where
 	 *  it waits, through T1-36's way in. Answers why where nothing was typed.
 	 */
@@ -11614,6 +11625,32 @@ export type KeptMark =
 "this-machine-only" | 
 /**  In the workspace's LIVE allowlist: a save shares it with the project. */
 "with-the-project";
+
+/**  The gaps of one harness. */
+export type HarnessGaps = {
+	/**  The harness, by the word the plane calls it (`claude`, `codex`, `opencode`). */
+	harness: string,
+	/**  Its gaps, in the table's order. */
+	gaps: KnownGapShown[],
+};
+
+/**  One known gap, as the window says it. */
+export type KnownGapShown = {
+	/**  Its stable id. */
+	id: string,
+	/**  What it is, as a sentence. */
+	said: string,
+	/**  What purlis does there. */
+	instead: string,
+	/**  Where it comes from (`#6972 §4 gap 3`, `spec §11.5`). */
+	from: string,
+	/**  The families it affects whose mode is not `off`, by their `[policy]` keys. */
+	families: string[],
+	/**  Of those, the ones that are enforced: what `context.gaps` carries. */
+	enforced: string[],
+	/**  Whether it holds only for some starts of the harness. */
+	conditional: boolean,
+};
 
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
@@ -19801,6 +19838,9 @@ export type StartProtection = {
 	charter_dirty: boolean,
 	/**  How many answers were in force: none until phase 2. */
 	answers_in_force: number,
+	/**  The ids of the known gaps the chat started with (M75-37): each resolves through
+	 *  `chat_known_gaps`. */
+	known_gaps: string[],
 };
 
 /**

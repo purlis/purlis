@@ -4533,6 +4533,7 @@ fn a_start_whose_protection_sync_fails_is_still_begun_with_its_routing_record() 
             charter_file: "charter.toml".to_owned(),
             charter_dirty: false,
             answers_in_force: Vec::new(),
+            known_gaps: Vec::new(),
         }),
         ..Attributes::default()
     };

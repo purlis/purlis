@@ -334,6 +334,15 @@ pub fn family_of(action: &str) -> Option<&'static str> {
     families_of_actions().get(action).copied()
 }
 
+/// **Every action of the schema, with its family**, in the order of the actions' names: what a
+/// table that must name each one (the capability table of M75-37) is held to.
+pub fn actions() -> Vec<(&'static str, &'static str)> {
+    families_of_actions()
+        .iter()
+        .map(|(action, family)| (action.as_str(), *family))
+        .collect()
+}
+
 /// **The fields `action`'s context record declares**, read from the embedded schema once: what
 /// a host fills before it asks (§3.2). Empty for a word the schema has no action for.
 pub fn context_fields(action: &str) -> &'static [String] {

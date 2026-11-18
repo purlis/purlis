@@ -504,6 +504,7 @@ fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
             charter_file: "charter.toml".to_owned(),
             charter_dirty: true,
             answers_in_force: Vec::new(),
+            known_gaps: Vec::new(),
         })
     );
     let Row::Ended {

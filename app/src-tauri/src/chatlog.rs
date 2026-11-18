@@ -58,6 +58,9 @@ pub struct StartProtection {
     pub charter_dirty: bool,
     /// How many answers were in force: none until phase 2.
     pub answers_in_force: u32,
+    /// The ids of the known gaps the chat started with (M75-37): each resolves through
+    /// `chat_known_gaps`.
+    pub known_gaps: Vec<String>,
 }
 
 /// One row of a chat's Chat log.
@@ -185,6 +188,7 @@ fn protection_of(in_force: InForce) -> StartProtection {
         charter_file: in_force.charter_file,
         charter_dirty: in_force.charter_dirty,
         answers_in_force: u32::try_from(in_force.answers_in_force.len()).unwrap_or(u32::MAX),
+        known_gaps: in_force.known_gaps,
     }
 }
 
@@ -380,7 +384,7 @@ fn chat_log_of(events: &[purlis_core::eventlog::Event], chat: Option<&str>) -> C
 }
 
 /// [`chat_log_of`], each block with the reason `reason` finds for its call (R-340).
-fn chat_log_with(
+pub(crate) fn chat_log_with(
     events: &[purlis_core::eventlog::Event],
     chat: Option<&str>,
     reason: &dyn Fn(&str) -> Option<String>,

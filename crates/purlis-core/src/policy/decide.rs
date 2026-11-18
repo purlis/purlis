@@ -450,6 +450,19 @@ pub struct Asker<'a> {
     pub depth: i64,
     /// What the action came through: `hook` for a hook's ask.
     pub via: &'a str,
+    /// What `start` reads of the start that is judged, where this is one (M75-37): the other
+    /// actions read none of it.
+    pub start: Option<StartFacts<'a>>,
+}
+
+/// **What a start's context holds besides the common fields** (spec §3.2, §14.8): the profile it
+/// runs on, and the families its policy enforces that have a known gap here.
+#[derive(Debug, Clone, Copy)]
+pub struct StartFacts<'a> {
+    /// The profile the chat runs on.
+    pub profile: &'a str,
+    /// `context.gaps`: the keys of the enforced families with a known gap.
+    pub gaps: &'a [String],
 }
 
 impl Asker<'_> {
@@ -465,6 +478,14 @@ impl Asker<'_> {
                 "harness_mode" => self.harness_mode.into(),
                 "depth" => self.depth.into(),
                 "via" => self.via.into(),
+                "profile" => match &self.start {
+                    Some(start) => start.profile.into(),
+                    None => continue,
+                },
+                "gaps" => match &self.start {
+                    Some(start) => start.gaps.into(),
+                    None => continue,
+                },
                 // `machine` is sealed and unset until the person confirms it (07b), and the
                 // narrowing fields come with each family's slice.
                 _ => continue,
@@ -561,6 +582,7 @@ pub fn for_chat(
         harness_mode: "default",
         depth: 0,
         via: "hook",
+        start: None,
     };
     let decision = in_plane(root, &asker, action, resource).held_to(floor);
     // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
@@ -628,6 +650,7 @@ pub fn replays_host(
         harness_mode: "default",
         depth: 0,
         via: "hook",
+        start: None,
     };
     crate::hookwire::Answer::Decided(Box::new(in_plane(
         root,

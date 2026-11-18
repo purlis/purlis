@@ -63,6 +63,7 @@ fn the_chat_log_hands_the_window_the_start_and_the_end_in_its_own_words() {
             charter_file: "charter.toml".to_owned(),
             charter_dirty: false,
             answers_in_force: 0,
+            known_gaps: Vec::new(),
         })
     );
     assert_eq!((state.as_str(), *code), ("failed", Some(3)));
