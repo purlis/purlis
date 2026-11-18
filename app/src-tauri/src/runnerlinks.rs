@@ -202,8 +202,10 @@ impl ToARunner {
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
                 if let Some((local, pool)) = &forwarding {
-                    purlis_core::sshroute::pool::docker_of_named(&config, local, pool)
-                        .map_err(NotChecked::Refused)?;
+                    // A machine that answers and refuses is not dialled again on a timer
+                    // (#7187): the link says why once, and Check pool says what changed.
+                    purlis_core::sshroute::pool::docker_of_named_in_state(&config, local, pool)
+                        .map_err(|(why, state)| not_checked_in(why, state))?;
                 }
                 let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
@@ -334,6 +336,20 @@ pub fn on_another_engine_said(kept: &Kept) -> String {
         kept.pool(),
         kept.name()
     )
+}
+
+/// **A forward's failure, said to the link by the state it puts the pool in** (#7187): a
+/// machine that does not answer is tried again; one that answers and refuses, or whose key or
+/// engine changed, is not.
+pub fn not_checked_in(
+    why: String,
+    state: purlis_core::sshroute::connect::RemoteState,
+) -> NotChecked {
+    if state.retries() {
+        NotChecked::Refused(why)
+    } else {
+        NotChecked::Declined(why)
+    }
 }
 
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
@@ -655,7 +671,9 @@ pub fn count_of(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(PoolLink::Down { why }) => Err(crate::devices::shown_safely(&why)),
+        Err(PoolLink::Down { why } | PoolLink::Refused { why }) => {
+            Err(crate::devices::shown_safely(&why))
+        }
         Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }
@@ -1335,6 +1353,10 @@ pub fn link_of(down: hostlink::Down) -> crate::dockerpools::PoolLink {
     use crate::dockerpools::PoolLink;
     if down.key_changed {
         PoolLink::KeyChanged
+    } else if down.refused {
+        PoolLink::Refused {
+            why: crate::devices::shown_safely(&down.why),
+        }
     } else {
         PoolLink::Down {
             why: crate::devices::shown_safely(&down.why),

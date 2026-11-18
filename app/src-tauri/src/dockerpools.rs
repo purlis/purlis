@@ -168,6 +168,9 @@ pub enum PoolLink {
     OperatorKeyChanged,
     /// It did not answer, and why.
     Down { why: String },
+    /// **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+    /// fails, and why. purlis stopped trying on its own; Check pool says what changed.
+    Refused { why: String },
     /// It suspended itself, a day without a link (#2051): its container is stopped, its home
     /// kept, and the window's next chat there starts it again. A check never wakes it.
     Suspended,
@@ -608,7 +611,7 @@ pub async fn remove_docker_pool(
                 remove_on(&machine, &name, &discarding)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
-                links_end_once_gone(&host.connection(), &config, &name);
+                links_end_once_gone(&host.connection(), &config, &name, false);
             }
             removed.map(|left| PoolRemoval::Removed { left })
         })
@@ -683,7 +686,7 @@ fn gone_from_here(
         project.browsers().forget_pool_logins(name);
     }
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
-        links_end_once_gone(&host.connection(), config, name);
+        links_end_once_gone(&host.connection(), config, name, true);
     }
     (!left.is_empty()).then(|| crate::devices::shown_safely(left))
 }
@@ -753,6 +756,7 @@ fn links_end_once_gone(
     connection: &crate::hostedsessions::Connection,
     config: &std::path::Path,
     name: &str,
+    forgotten: bool,
 ) {
     let read = purlis_core::runners::pools(config)
         .map(|pools| pools.iter().any(|pool| pool.name() == name))
@@ -762,7 +766,7 @@ fn links_end_once_gone(
         });
     match read {
         Ok(true) => {}
-        Ok(false) => connection.pool_removed(name),
+        Ok(false) => connection.pool_removed(name, forgotten),
         Err(why) => {
             tracing::warn!("purlis: what this machine keeps of its pools was not read: {why}");
             connection.links_to_pool_end(name);

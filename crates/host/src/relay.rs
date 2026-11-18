@@ -314,7 +314,7 @@ impl Relay {
             loop {
                 let (waits, up) = match &*standing.borrow_and_update() {
                     Standing::Linking => (true, false),
-                    Standing::Down(down) => (!down.key_changed && !down.gone, false),
+                    Standing::Down(down) => (!down.stops_retrying(), false),
                     Standing::Up(_) => (false, true),
                     Standing::Over(_) => (false, false),
                 };
@@ -352,7 +352,7 @@ impl Relay {
             let _changing = Counted::start(&relayed.client.changing);
             let comes_up = matches!(
                 &*standing.borrow(),
-                Standing::Down(down) if !down.key_changed && !down.gone
+                Standing::Down(down) if !down.stops_retrying()
             );
             if comes_up {
                 let mut kept = relayed.client.kept();
@@ -586,6 +586,15 @@ fn not_linked(down: &Down) -> Refusal {
             ),
         };
     }
+    if down.refused {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "Runner refused ({why}). purlis sent it nothing and stopped trying: use Check \
+                 pool in the pool's settings, then send this again"
+            ),
+        };
+    }
     Refusal {
         code: session::NOT_STARTED.into(),
         why: format!(
@@ -674,7 +683,7 @@ async fn keep(
                         up = None;
                         retiring = None;
                         told.down(&client, &down);
-                        gone = down.gone.then(|| down.clone());
+                        gone = (down.gone || down.refused).then(|| down.clone());
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -704,8 +713,13 @@ enum LinkTold {
     /// Nothing since the link was last up: it is up, as far as the client knows.
     #[default]
     Up,
-    /// That no link is up, why, and whether the other host is gone for good (#4149).
-    Down { gone: bool, why: String },
+    /// That no link is up, why, whether the other host is gone for good (#4149), and whether it
+    /// answers and refuses (#7187).
+    Down {
+        gone: bool,
+        refused: bool,
+        why: String,
+    },
 }
 
 impl LinkTold {
@@ -717,10 +731,14 @@ impl LinkTold {
     fn down(&mut self, client: &ClientLink, down: &Down) {
         let (tell, was_gone) = match &*self {
             LinkTold::Up => (true, false),
-            LinkTold::Down { gone, why } => ((down.gone && !gone) || *why != down.why, *gone),
+            LinkTold::Down { gone, refused, why } => (
+                (down.gone && !gone) || (down.refused && !refused) || *why != down.why,
+                *gone,
+            ),
         };
         *self = LinkTold::Down {
             gone: down.gone || was_gone,
+            refused: down.refused,
             why: down.why.clone(),
         };
         if tell {
@@ -728,6 +746,7 @@ impl LinkTold {
                 why: down.why.clone(),
                 key_changed: down.key_changed,
                 gone: down.gone,
+                refused: down.refused,
             });
         }
     }

@@ -1258,6 +1258,11 @@ export const commands = {
 	 */
 	with_the_runner: boolean,
 	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
+	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
 	 *  end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
@@ -12153,6 +12158,11 @@ export type LostChat = {
 	 */
 	with_the_runner: boolean,
 	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
+	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
 	 *  end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
@@ -14568,6 +14578,11 @@ export type PoolLink =
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
+ *  **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+ *  fails, and why. purlis stopped trying on its own; Check pool says what changed.
+ */
+{ state: "refused"; why: string } | 
+/**
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
@@ -15958,7 +15973,32 @@ export type Reconnection =
  *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
  *  a Notice of its own.
  */
-"runner_gone";
+"runner_gone" | 
+/**
+ *  The runner's machine answers, but its sign-in, Docker or forwarding fails (#7187,
+ *  Refused): its host stops trying on its own, so its chats stay dimmed and the window says
+ *  why, with Check pool and no Try now.
+ */
+"refused" | 
+/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
+"pool_forgotten";
+
+/**
+ *  **Which of the five remote states a pool's runner is in** (#7187, CONTEXT.md), as the window
+ *  says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState), read where
+ *  the link tells it.
+ */
+export type LinkState = 
+/**  Nothing answers, or not yet: purlis tries again, and the person may press Try now. */
+"unreachable" | 
+/**  The machine answers and refuses: purlis stopped trying; Check pool. */
+"refused" | 
+/**  The machine presents another key or engine than the pinned one. */
+"host_key_changed" | 
+/**  The runner's container is gone. */
+"runner_gone" | 
+/**  The pool was forgotten here. */
+"pool_forgotten";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -17164,6 +17204,8 @@ export type RunnerLinkDown = {
 	why: string,
 	/**  When the link went down, in seconds since 1970. */
 	since: number,
+	/**  Which state it is in (#7187): Refused says why and offers Check pool, not Try now. */
+	state: LinkState,
 };
 
 /**  How the window reads what a runner records (#3393). */

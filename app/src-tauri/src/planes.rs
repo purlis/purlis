@@ -5255,6 +5255,7 @@ impl Planes {
                             let now = crate::hostlost::LostRun {
                                 resumable: false,
                                 with_the_runner: true,
+                                pool_forgotten: false,
                                 ..was
                             };
                             lost.note(session, now);
@@ -5264,6 +5265,7 @@ impl Planes {
                                 left_in: now.left_in,
                                 resumable: false,
                                 with_the_runner: true,
+                                pool_forgotten: false,
                                 // Said as the chat ending with its runner, with nothing to resume.
                                 ended: None,
                             });
@@ -5289,6 +5291,10 @@ impl Planes {
                     let with_the_runner = lost_with
                         .as_ref()
                         .is_some_and(|held| held.chats.sessions().lost_with_its_runner(session));
+                    // Its pool was forgotten here (#7187): ended, with nothing to resume from here.
+                    let pool_forgotten = lost_with.as_ref().is_some_and(|held| {
+                        held.chats.sessions().lost_with_its_pool_forgotten(session)
+                    });
                     let with_the_host = lost_with.is_some() && !with_the_runner;
                     if let Some(held) = lost_with {
                         let resumes_by_id = held
@@ -5307,13 +5313,14 @@ impl Planes {
                         if let Some(left_in) =
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
-                            let resumable = resumable && !with_the_runner;
+                            let resumable = resumable && !with_the_runner && !pool_forgotten;
                             lost.note(
                                 session,
                                 crate::hostlost::LostRun {
                                     left_in,
                                     resumable,
                                     with_the_runner,
+                                    pool_forgotten,
                                 },
                             );
                             tell_lost(crate::hostlost::LostChat {
@@ -5322,6 +5329,7 @@ impl Planes {
                                 left_in,
                                 resumable,
                                 with_the_runner,
+                                pool_forgotten,
                                 ended: crate::hostlost::ended_with_it(&held.chats, session),
                             });
                         }

@@ -802,6 +802,77 @@ async fn a_runner_removed_outside_purlis_is_refused_in_plain_words_and_not_tried
     assert!(asked <= 7, "the check was asked {asked} times");
 }
 
+/// A runner's connector whose check finds its machine answering and refusing (#7187).
+#[derive(Clone)]
+struct ToARefusingMachine {
+    checks: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Connector for ToARefusingMachine {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        self.checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndRefused(
+                "pool builds's machine refused the sign-in".into(),
+            )))
+        })
+    }
+}
+
+/// **A start on a refused machine does not wait the 30 seconds a link that is merely down does**
+/// (#7187): it is refused at once, saying the machine refused and that purlis stopped trying, and
+/// the check is not asked in a loop.
+#[tokio::test]
+async fn a_start_on_a_machine_that_refuses_is_refused_at_once_and_not_tried_in_a_loop() {
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connector = ToARefusingMachine {
+        checks: Arc::clone(&checks),
+    };
+    let desktop = Arc::new(Kept::new(DESKTOP));
+    let pinned = Kept::new(RUNNER).pinned();
+    let relays: RelaysTo = Arc::new(move |_: &str| {
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            "builds/builds".to_owned(),
+        ))
+    });
+    let a = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(Duration::from_secs(30));
+    let window = routed(Scope::LocalUi, a).await;
+    window.relay_to("builds").await.unwrap();
+
+    let began = std::time::Instant::now();
+    for _ in 0..3 {
+        let refused = tokio::time::timeout(PATIENCE, window.list())
+            .await
+            .expect("refused, not left waiting")
+            .unwrap_err();
+        assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+        assert!(refused.to_string().contains("Runner refused"), "{refused}");
+    }
+    assert!(
+        began.elapsed() < Duration::from_secs(10),
+        "a refusal does not wait the link's 30 seconds: {:?}",
+        began.elapsed()
+    );
+    let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(asked <= 7, "the check was asked {asked} times");
+}
+
 /// **A window's name is held once on each runner** (#4248): its link to a draining runner and its
 /// link to the pool's runner now share the one name it keeps, and a second link to either runner
 /// under that name is refused while the first holds it.

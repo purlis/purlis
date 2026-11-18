@@ -49,15 +49,28 @@ pub struct Down {
     /// lists, removed outside purlis. The kept link is not tried again; a new one is taken only
     /// when something asks for it, and its check says so again.
     pub gone: bool,
+    /// The far end answers, but refuses (#7187): its sign-in, its Docker or its forwarding
+    /// fails, and trying again on a timer would only be told the same. The kept link is not
+    /// tried again on its own; a new one is taken when something asks for it, and Check pool
+    /// says what changed. Not a changed key, which is its own stop ([`Down::key_changed`]).
+    pub refused: bool,
 }
 
 impl Down {
+    /// Whether the kept link is not tried again on its own: a changed key, a far end gone for
+    /// good, or one that answers and refuses (#7187). What waiting would mend, none of them is.
+    #[must_use]
+    pub fn stops_retrying(&self) -> bool {
+        self.key_changed || self.gone || self.refused
+    }
+
     /// Down for `why`, with the same key at the far end, as far as anyone knows.
     pub fn because(why: impl Into<String>) -> Down {
         Down {
             why: why.into(),
             key_changed: false,
             gone: false,
+            refused: false,
         }
     }
 }
@@ -84,6 +97,15 @@ pub struct KeyNoLongerHeld(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct FarEndGone(pub String);
+
+/// **A connector's refusal by a far end that answers** (#7187), in words a person reads: a
+/// connector's `connect` that fails with this, inside its [`std::io::Error`], is told as a
+/// [`Down`] that is [`Down::refused`], and the kept link ends there rather than trying again.
+/// A Docker pool's connector refuses so where its machine answers but the sign-in, the engine
+/// or the forward fails.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct FarEndRefused(pub String);
 
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
 pub struct Links {
@@ -164,6 +186,9 @@ pub fn keep_linked<C: Connector>(
                     .get_ref()
                     .is_some_and(|inner| inner.is::<KeyNoLongerHeld>()),
                 gone: why.get_ref().is_some_and(|inner| inner.is::<FarEndGone>()),
+                refused: why
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<FarEndRefused>()),
                 why: format!("the connector did not connect: {why}"),
             })?;
             connect_kept(io, handshake, &ours, &answering, liveness)
@@ -171,6 +196,7 @@ pub fn keep_linked<C: Connector>(
                 .map_err(|why| Down {
                     key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
                     gone: false,
+                    refused: false,
                     why: why.to_string(),
                 })
         };
@@ -179,9 +205,10 @@ pub fn keep_linked<C: Connector>(
             let (link, mut ends) = match dial().await {
                 Ok(linked) => linked,
                 Err(why) => {
-                    // A far end gone for good is said once, and the kept link ends.
-                    let gone = why.gone;
-                    if tell.send(Linked::Down(why)).await.is_err() || gone {
+                    // A far end gone for good, or one that answers and refuses (#7187), is said
+                    // once, and the kept link ends.
+                    let stops = why.gone || why.refused;
+                    if tell.send(Linked::Down(why)).await.is_err() || stops {
                         return;
                     }
                     tokio::select! {

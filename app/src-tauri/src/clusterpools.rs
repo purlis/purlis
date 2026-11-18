@@ -213,8 +213,61 @@ pub fn stage_of(
     }))
 }
 
+/// **A start waiting for the pool `pool`'s runner, whose link is down** (#7187): the pane's
+/// "Waiting for <pool> — <reason>", with the Cancel the picker already has. `None` where `pool`'s
+/// link is not down.
+pub fn waiting_for_link(
+    pool: &str,
+    down: &[crate::reconnecting::RunnerLinkDown],
+) -> Option<RunnerStage> {
+    let down = down.iter().find(|one| one.pool == pool)?;
+    let why = crate::devices::shown_safely(&down.why);
+    Some(RunnerStage {
+        said: format!("Waiting for {pool} — {}", why.trim_end_matches('.')),
+        more: "purlis keeps linking to it. Cancel stops waiting; after 30 seconds the start \
+               ends with this reason, with Try now and Check pool."
+            .to_owned(),
+        cluster_said: None,
+    })
+}
+
+/// **A start on pool `pool`'s runner, which is linked, and taking a while** (#7187): nothing on
+/// the remote path is silent for more than 30 seconds, so the pane says what it waits on and
+/// when it gives up.
+pub fn waiting_on_runner(pool: &str) -> RunnerStage {
+    RunnerStage {
+        said: format!("Waiting for {pool}'s runner"),
+        more: "It is starting the chat. A start that takes more than 3 minutes ends, saying \
+               which step it was on."
+            .to_owned(),
+        cluster_said: None,
+    }
+}
+
+/// **What a start in `root`'s `workspace` is waiting on** (#3709, #7187): a pool whose link is
+/// down first, then where a cluster's runner has got to, then, for any other pool, that its
+/// runner is starting the chat. Nothing where the chat runs on this machine.
+pub fn stage_while_waiting(
+    root: &Path,
+    workspace: Option<&str>,
+    start: Option<&purlis_core::machine::StartChoice>,
+    down: &[crate::reconnecting::RunnerLinkDown],
+) -> Result<Option<RunnerStage>, String> {
+    let config = config_root()?;
+    let Some(pool) = purlis_core::pools::chat_place(&config, root, workspace, start)?.pool else {
+        return Ok(None);
+    };
+    if let Some(stage) = waiting_for_link(&pool, down) {
+        return Ok(Some(stage));
+    }
+    Ok(Some(
+        stage_of(root, workspace, start)?.unwrap_or_else(|| waiting_on_runner(&pool)),
+    ))
+}
+
 /// **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
-/// window's Start while it waits. Nothing where there is no stage to say.
+/// window's Start while it waits. Nothing where there is no stage to say; for a pool whose link is
+/// down, that it is waited for (#7187).
 #[tauri::command]
 #[specta::specta]
 pub async fn runner_stage(
@@ -225,8 +278,9 @@ pub async fn runner_stage(
 ) -> Result<Option<RunnerStage>, String> {
     let held = planes.held(&plane)?;
     let start = runs_on.map(crate::RunsOnPick::choice).transpose()?;
+    let down = held.chats().sessions().runners_down();
     crate::off_the_window("reading where the runner has got to", move || {
-        stage_of(held.root(), workspace.as_deref(), start.as_ref())
+        stage_while_waiting(held.root(), workspace.as_deref(), start.as_ref(), &down)
     })
     .await
 }

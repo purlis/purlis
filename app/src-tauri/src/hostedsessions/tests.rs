@@ -116,7 +116,7 @@ fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
         }),
     );
 
-    connection.pool_removed("builds");
+    connection.pool_removed("builds", false);
 
     assert_eq!(
         heard.recv_timeout(Duration::from_secs(5)),
@@ -166,7 +166,7 @@ fn a_chat_on_a_link_nothing_else_holds_is_told_as_its_pool_is_removed() {
         }),
     );
     drop(link);
-    connection.pool_removed("builds");
+    connection.pool_removed("builds", false);
     assert_eq!(heard.recv_timeout(Duration::from_secs(5)), Ok(true));
 }
 
@@ -177,7 +177,7 @@ fn a_pool_removed_is_no_longer_held_untrusted_by_its_name() {
     let pool = window.to_a_pool("builds");
     let _ = pool.ran_unsandboxed();
     assert!(window.untrusts("builds"));
-    window.pool_removed("builds");
+    window.pool_removed("builds", false);
     assert!(!window.untrusts("builds"));
 }
 
@@ -199,7 +199,7 @@ fn a_link_dialled_while_its_pool_is_removed_is_not_kept() {
     let connection = Arc::new(Connection::default());
     let removing = Arc::downgrade(&connection);
     let relayed: RelayedDial = Arc::new(move |within, naming, pool: &str| {
-        removing.upgrade().unwrap().pool_removed(pool);
+        removing.upgrade().unwrap().pool_removed(pool, false);
         open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
     });
     connection.ready_relaying(window, dial, relayed);
@@ -1257,6 +1257,7 @@ fn a_secret_exec_of_a_host_the_relay_lost_ends_here() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
 
@@ -2812,6 +2813,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     for seq in 1..=3000 {
@@ -2853,6 +2855,7 @@ fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the link is said to be down", || {
@@ -2867,6 +2870,7 @@ fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
             why: "the connector did not connect: Docker didn't answer".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the link is said to be down for the new reason", || {
@@ -2908,6 +2912,7 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
             why: "the runner answered with another key".into(),
             key_changed: true,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the window is told the runner's key changed", || {
@@ -2942,6 +2947,7 @@ fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
             why: "pool first's runner first was removed outside purlis".into(),
             key_changed: false,
             gone: true,
+            refused: false,
         })
         .unwrap();
     until("the window is told the runner is gone", || {
@@ -2952,6 +2958,45 @@ fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
             ]
     });
     assert_eq!(hosted.sessions.reconnecting(), [id]);
+}
+
+/// A runner's machine that answers and refuses (#7187): its chats are dimmed as for any outage,
+/// the window is told it refused, and what it says of the link is Refused, so it offers Check
+/// pool and no Try now.
+#[test]
+fn a_runner_whose_machine_refuses_leaves_its_chats_dimmed_and_says_so() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "pool first's machine refused the sign-in".into(),
+            key_changed: false,
+            gone: false,
+            refused: true,
+        })
+        .unwrap();
+    until("the window is told the machine refused", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::Refused),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+    let down = hosted.sessions.link_down().expect("the link is down");
+    assert_eq!(down.state, crate::reconnecting::LinkState::Refused);
+    assert!(down.why.contains("refused the sign-in"), "{}", down.why);
 }
 
 /// The window's link to its own host, which relays it to a runner whose host composes each

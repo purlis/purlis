@@ -304,16 +304,16 @@ fn a_pools_links_end_once_it_is_gone_and_not_while_it_is_kept() {
     );
     let window = std::sync::Arc::new(crate::hostedsessions::Connection::default());
     let _pool = window.to_a_pool("builds");
-    links_end_once_gone(&window, config.path(), "builds");
+    links_end_once_gone(&window, config.path(), "builds", false);
     assert_eq!(window.removals_of("builds"), 0, "still kept");
     write(serde_json::json!({"version": 1, "pools": [], "runners": []}).to_string());
-    links_end_once_gone(&window, config.path(), "builds");
+    links_end_once_gone(&window, config.path(), "builds", false);
     assert_eq!(window.removals_of("builds"), 1, "gone");
     write("not json".to_owned());
-    links_end_once_gone(&window, config.path(), "builds");
+    links_end_once_gone(&window, config.path(), "builds", false);
     assert_eq!(window.removals_of("builds"), 2, "cannot be read");
     let _ = window.to_a_pool("builds").ran_unsandboxed();
-    links_end_once_gone(&window, config.path(), "builds");
+    links_end_once_gone(&window, config.path(), "builds", false);
     assert!(
         window.untrusts("builds"),
         "only a pool seen to be gone lets go of what is held against its name"

@@ -608,9 +608,15 @@ use crate::view::{Limits, Views};
 /// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
 /// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
 /// is not asked, and its chat's paths stay no link.
+///
+/// 1.94 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
+/// `refused` where the machine a pool reaches it through answers but its sign-in, Docker or
+/// forwarding fails, which the relaying host does not retry on its own. A window before 1.94
+/// ignores the field and reads it as any link that is down, so its Reconnecting notice and Try
+/// now go on as they did; nothing is sent to a host of any version for it.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 93,
+    minor: 94,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -3148,6 +3154,12 @@ pub enum Pushed {
         /// refused.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         gone: bool,
+        /// The other host answers, but refuses (1.94, #7187): its sign-in, Docker or forwarding
+        /// fails. The relaying host does not link to it again on its own; until something asks
+        /// again, each command that needs it tries once and is refused. A window before 1.94
+        /// ignores the field and reads it as any link that is down, which it waits on.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        refused: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.

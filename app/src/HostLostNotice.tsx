@@ -47,8 +47,10 @@ export function HostLostNotice({
 
   // What it had running of its own ended with the host (#5752): named, never "nothing was lost".
   // A chat on a gone runner says only that, since nothing of it can be resumed.
-  const ended = lost.with_the_runner ? null : lost.ended;
-  const said = lost.with_the_runner
+  const ended = lost.with_the_runner || lost.pool_forgotten ? null : lost.ended;
+  const said = lost.pool_forgotten
+    ? `${offScreen ? "That chat" : "This chat"} ended because its pool was forgotten on this machine. Its runner may still be there, but purlis no longer reaches it from here.`
+    : lost.with_the_runner
     ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
     : lost.left_in === "hibernated"
       ? ended
@@ -60,7 +62,7 @@ export function HostLostNotice({
     ? ended
       ? " Resume starts it again on its conversation and tells it what ended."
       : " Resume starts it again on its conversation."
-    : lost.with_the_runner
+    : lost.with_the_runner || lost.pool_forgotten
       ? " Start a new chat to go on."
       : " It named no conversation to resume, so start a new chat to go on.";
 
@@ -69,7 +71,13 @@ export function HostLostNotice({
       cause={`chat-lost-with-the-host:${session}`}
       at="pane"
       tone="trouble"
-      label={lost.with_the_runner ? "Ended with its runner" : "Session host stopped"}
+      label={
+        lost.pool_forgotten
+          ? "Pool forgotten"
+          : lost.with_the_runner
+            ? "Ended with its runner"
+            : "Session host stopped"
+      }
       fixes={
         lost.resumable
           ? [

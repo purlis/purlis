@@ -620,6 +620,7 @@ fn a_browser_view_on_a_runner_is_reconnecting_while_its_link_is_down_and_reconne
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -641,6 +642,7 @@ fn a_browser_view_that_draws_again_from_a_snapshot_is_reconnected() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -682,6 +684,7 @@ fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {

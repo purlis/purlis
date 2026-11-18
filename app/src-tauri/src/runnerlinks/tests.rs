@@ -686,6 +686,7 @@ fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
         why: "anything".to_owned(),
         key_changed: true,
         gone: false,
+        refused: false,
     };
     assert_eq!(link_of(changed), PoolLink::KeyChanged);
 }
@@ -963,4 +964,29 @@ fn the_first_link_waits_out_the_checks_and_the_handshakes_own_deadlines() {
     assert!(FIRST_LINK_WITHIN > CHECK_WITHIN + handshake * 2);
     // A sign-in waits for the link's first word inside its own wait.
     assert!(SIGN_IN_STARTS_WITHIN > FIRST_LINK_WITHIN);
+}
+
+/// **A machine that answers and refuses is not dialled again on a timer** (#7187): the forward's
+/// failure is told as a refusal the link stops on, and a down link that says so is the pool
+/// settings' Refused. One that does not answer is retried as ever.
+#[test]
+fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
+    use crate::dockerpools::PoolLink;
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_in("sign-in refused".into(), RemoteState::Refused),
+        purlis_host::NotChecked::Declined("sign-in refused".into())
+    );
+    assert_eq!(
+        not_checked_in("no answer".into(), RemoteState::Unreachable),
+        purlis_host::NotChecked::Refused("no answer".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("sign-in refused");
+    down.refused = true;
+    assert_eq!(
+        link_of(down),
+        PoolLink::Refused {
+            why: "sign-in refused".to_owned()
+        }
+    );
 }

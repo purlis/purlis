@@ -124,6 +124,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link === undefined || link === "asking") return "asking its runner…";
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
+  if (link.state === "refused") return "refused";
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
   if (link.state === "on_another_engine") return "on another Docker engine";
@@ -631,7 +632,7 @@ function PoolEntry({
               <p className="ui-setting-help ui-text-secondary">{anotherEngineSaid(pool.name)}</p>
             )}
             {remade !== undefined && <p className="ui-setting-help ui-text-secondary">{remade}</p>}
-            {typeof link === "object" && link.state === "down" && (
+            {typeof link === "object" && (link.state === "down" || link.state === "refused") && (
               <p className="ui-setting-help ui-text-secondary">{link.why}</p>
             )}
             {/* Its Notice, with Check and trust again, stands in the window's Notices (#6270). */}
@@ -830,7 +831,7 @@ function ClusterPoolEntry({
               </p>
             )}
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
-            {typeof link === "object" && link.state === "down" && (
+            {typeof link === "object" && (link.state === "down" || link.state === "refused") && (
               <p className="ui-setting-help ui-text-secondary">{link.why}</p>
             )}
             {pool.owned ? (

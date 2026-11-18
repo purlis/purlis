@@ -48,8 +48,18 @@ export function RunnerLinkDownNotice({
       key={down.pool}
       cause={`runner-link-down:${plane}:${down.pool}`}
       tone="trouble"
-      label={`Pool ${down.pool}'s runner is not linked`}
-      fixes={[{ label: "Try now", onPress: () => void commands.runnerLinkNow(plane, down.pool) }]}
+      label={
+        down.state === "refused"
+          ? `Pool ${down.pool} refused the connection`
+          : `Pool ${down.pool}'s runner is not linked`
+      }
+      // Refused is not retried (#7187): Try now would only be told the same, so Check pool is
+      // the way on.
+      fixes={
+        down.state === "refused"
+          ? []
+          : [{ label: "Try now", onPress: () => void commands.runnerLinkNow(plane, down.pool) }]
+      }
       link={{ label: `Check pool ${down.pool}`, onPress: () => onCheckPool(down.pool) }}
       onDismiss={() => dismiss(down)}
     >
@@ -61,6 +71,9 @@ export function RunnerLinkDownNotice({
 /** What the Notice says of `down`, at `now`. */
 export function downSaid(down: RunnerLinkDown, now: number): string {
   const why = down.why.endsWith(".") ? down.why : `${down.why}.`;
+  if (down.state === "refused") {
+    return `The machine answers, but it refuses: ${why} purlis stopped trying. Check the pool, then start the chat again.`;
+  }
   return (
     `Its chats have waited ${forHowLong(now - down.since * 1000)}: ${why} ` +
     "purlis keeps linking to it again, trying at most 30 seconds apart."
@@ -159,8 +172,11 @@ function useLinksDown(plane: PlaneId): {
     const ends = setTimeout(() => setNow(Date.now()), quietUntil - Date.now() + 1);
     return () => clearTimeout(ends);
   }, [quietUntil]);
+  // A refused link is said at once: waiting does not mend it, and nothing is retried (#7187).
   const shown = down.filter(
-    (one) => now - one.since * 1000 >= QUIET_FOR_MS && !dismissed.has(keyOf(one)),
+    (one) =>
+      (one.state === "refused" || now - one.since * 1000 >= QUIET_FOR_MS) &&
+      !dismissed.has(keyOf(one)),
   );
   const dismiss = (one: RunnerLinkDown) => setDismissed((was) => new Set(was).add(keyOf(one)));
   return { shown, now, dismiss };

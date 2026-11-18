@@ -25,12 +25,16 @@ pub type BeforeEach = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 /// longer the one it was paired with, which the link tells as a changed key
 /// ([`purlis_session_protocol::hostlink::KeyNoLongerHeld`]), or because the far end is gone for
 /// good, which the link tells once and does not try again
-/// ([`purlis_session_protocol::hostlink::FarEndGone`], #4149).
+/// ([`purlis_session_protocol::hostlink::FarEndGone`], #4149), or because the far end answers and
+/// refuses ([`NotChecked::Declined`], #7187).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotChecked {
     Refused(String),
     KeyChanged(String),
     Gone(String),
+    /// The far end answers and refuses (#7187): its sign-in, engine or forward fails. Told as a
+    /// refusal the link does not try again on its own ([`FarEndRefused`]).
+    Declined(String),
 }
 
 /// [`BeforeEach`], whose refusal can say the far end's key changed ([`NotChecked`]).
@@ -154,6 +158,9 @@ impl CommandConnector {
                 }
                 NotChecked::Gone(why) => {
                     std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
+                }
+                NotChecked::Declined(why) => {
+                    std::io::Error::other(purlis_session_protocol::hostlink::FarEndRefused(why))
                 }
             })?;
         let prepared = match self.prepare.clone() {

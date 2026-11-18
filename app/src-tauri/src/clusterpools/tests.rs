@@ -396,3 +396,32 @@ fn an_add_with_a_pasted_key_that_isnt_the_pools_is_refused_before_anything_is_ke
         assert!(!why.contains("paste the key"), "{why}");
     }
 }
+
+/// **A start waiting for a pool whose link is down says so, with why** (#7187): "Waiting for
+/// <pool> — <reason>" is the stage the picker shows beside its Cancel.
+#[test]
+fn a_start_on_a_pool_whose_link_is_down_says_it_waits_for_the_pool_and_why() {
+    use crate::reconnecting::{LinkState, RunnerLinkDown};
+    let down = [RunnerLinkDown {
+        pool: "builds".to_owned(),
+        why: "Docker on 10.0.0.2 didn't answer through SSH.".to_owned(),
+        since: 0,
+        state: LinkState::Unreachable,
+    }];
+    let stage = waiting_for_link("builds", &down).expect("builds is down");
+    assert_eq!(
+        stage.said,
+        "Waiting for builds — Docker on 10.0.0.2 didn't answer through SSH"
+    );
+    assert!(stage.more.contains("Cancel"), "{}", stage.more);
+    assert!(waiting_for_link("other", &down).is_none());
+}
+
+/// **A linked runner that is slow says what it waits on** (#7187): nothing is silent past 30
+/// seconds, and the 3-minute end is named.
+#[test]
+fn a_start_on_a_linked_runner_says_what_it_waits_on_and_when_it_ends() {
+    let stage = waiting_on_runner("builds");
+    assert_eq!(stage.said, "Waiting for builds's runner");
+    assert!(stage.more.contains("3 minutes"), "{}", stage.more);
+}

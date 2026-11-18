@@ -209,3 +209,51 @@ async fn try_now_lets_go_of_what_the_connector_remembers_before_the_next_try() {
     assert_eq!(forgotten.load(Ordering::SeqCst), 1);
     lists(up(&mut links).await).await;
 }
+
+/// A connector whose far end answers and refuses (#7187): sign-in, Docker or forwarding fails.
+#[derive(Clone)]
+struct ToARefusingFarEnd {
+    tries: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl hostlink::Connector for ToARefusingFarEnd {
+    type Io = tokio::io::DuplexStream;
+
+    fn connect(&self) -> futures::future::BoxFuture<'static, std::io::Result<Self::Io>> {
+        self.tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndRefused(
+                "the machine refused the sign-in".into(),
+            )))
+        })
+    }
+}
+
+/// **Refused stops retrying** (#7187): a far end that answers and refuses is told once, as
+/// refused, and the kept link ends there instead of dialing it every pause. Another try is made
+/// only where something asks for it.
+#[tokio::test(start_paused = true)]
+async fn a_far_end_that_answers_and_refuses_is_told_once_and_not_tried_again() {
+    let tries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut links = hostlink::keep_linked(
+        ToARefusingFarEnd {
+            tries: std::sync::Arc::clone(&tries),
+        },
+        Handshake::THIS_BUILD,
+        host_a(),
+        b_as_pinned(),
+        Liveness::default(),
+    );
+    let Some(Linked::Down(down)) = links.next().await else {
+        panic!("a refused far end is told as down")
+    };
+    assert!(down.refused, "it said the far end refused: {down:?}");
+    assert!(!down.key_changed && !down.gone);
+    assert!(
+        down.why.contains("refused the sign-in"),
+        "its reason is shown: {down:?}"
+    );
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert!(links.next().await.is_none(), "the kept link ended");
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
