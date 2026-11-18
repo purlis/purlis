@@ -5326,8 +5326,9 @@ export type CloseHanded = {
 
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
- *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_id`).
+ *  before a restart, what its tab said, where it ran and when it closed, and the number it was
+ *  found by where that is one it had before a restart (#7125). Choosing it opens its card
+ *  (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
@@ -5337,6 +5338,12 @@ export type ClosedChat = {
 	 */
 	id: string,
 	earlier: number[],
+	/**
+	 *  **The number typed that found it, where it is one it had before a restart** (#6685): its
+	 *  row says `(was #702)` beside `#731`, by
+	 *  [`purlis_core::chatrecords::ChatRecord::found_by`], the rule's one home (#7125).
+	 */
+	found_by: number | null,
 	title: string,
 	place: string,
 	/**  When it closed, UTC, RFC 3339. */

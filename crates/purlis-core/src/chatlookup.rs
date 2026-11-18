@@ -109,10 +109,7 @@ pub fn by_id_in(root: &Path, id: &str, open: &[OpenChat]) -> Found {
     }) {
         return Found::Ended(Box::new(record.clone()));
     }
-    known
-        .chats
-        .iter()
-        .find(|chat| chat.id == id)
+    chatrecords::of_id(&known.chats, id)
         .map_or(Found::NoChat, |chat| Found::Closed(Box::new(chat.clone())))
 }
 

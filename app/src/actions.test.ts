@@ -165,8 +165,8 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`reopenTask:${id}`);
       return { ok: true } as Ran;
     }),
-    reopenClosedChat: vi.fn(async (number: number) => {
-      calls.push(`reopenClosedChat:${number}`);
+    reopenClosedChat: vi.fn(async (chat: string) => {
+      calls.push(`reopenClosedChat:${chat}`);
       return { ok: true } as Ran;
     }),
     paneBack: note("paneBack"),

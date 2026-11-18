@@ -734,6 +734,7 @@ const CLOSED: ClosedChat = {
   number: 731,
   id: "01K6CHATS0000000000000000C",
   earlier: [702],
+  found_by: null,
   title: "Tidy the changelog",
   place: "smart-ide",
   // Local time, so every cell says 11:00 whatever its clock's zone.

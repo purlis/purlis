@@ -33,11 +33,12 @@ import {
 } from "./actions";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
-import type { AtLimit, FinishedTask } from "./bindings";
+import type { AtLimit, ClosedChat, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
 import { aCardIsUp, cardDown, sessionCardIsUp, cardUp, skipsTheRest, useCardUp } from "./chatCard";
 import { ChatShownState } from "./ChatRows";
+import { chatNumberIn } from "./chatNumber";
 import { ChatPersonaState, useShownState } from "./ChatPersonaState";
 import { Grip } from "./ui/grip/Grip";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
@@ -56,7 +57,6 @@ import {
   stamped,
   type Filter,
   type Rank,
-  type FoundClosed,
 } from "./chatsList";
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { inScope, keepScope, keptScope, SCOPES, settleScope, type Scope } from "./chatsScope";
@@ -466,13 +466,15 @@ export function ChatsSection({
   /** **The closed chats the filter finds** (#6484): read only while words or a number are typed,
    *  and none the list draws already as a finished task. */
   const openNow = useMemo(() => every.map((row) => row.session).join(","), [every]);
+  const closedTyped = chatNumberIn(filter.text) ?? null;
   const closedAsked = useClosedChats(
     chats.plane,
     filter.text.trim() !== "" && ranks.length === 0,
     openNow,
+    closedTyped,
   );
   const closedRead = closedAsked.chats;
-  const closedShown = useMemo((): FoundClosed[] => {
+  const closedShown = useMemo((): ClosedChat[] => {
     if (closedRead.length === 0) return [];
     const drawnAsTasks = new Set<number>();
     for (const tasks of finished.values())
@@ -1301,6 +1303,7 @@ export function ChatsSection({
                   browsers whose chat closed stand; each opens its card. */}
               {closedChatsRow({
                 closed: closedShown,
+                typed: closedTyped,
                 plane: chats.plane,
                 onPress: press,
                 onSay: setSaid,
