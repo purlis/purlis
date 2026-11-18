@@ -196,7 +196,8 @@ fn how_long(within: std::time::Duration) -> String {
         let minutes = within.as_secs() / 60;
         format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
     } else if within.as_secs() >= 1 {
-        format!("{} seconds", within.as_secs())
+        let secs = within.as_secs();
+        format!("{secs} second{}", if secs == 1 { "" } else { "s" })
     } else {
         format!("{} milliseconds", within.as_millis())
     }

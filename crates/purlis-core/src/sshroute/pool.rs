@@ -145,6 +145,7 @@ pub fn docker_through(
     if let Some(Ask::Answer(finding)) = kept.as_ref().map(|kept| kept.ask(Instant::now())) {
         return Err(finding);
     }
+    let began = Instant::now();
     let (socket, opened) = match forward::hold_noting(&opening) {
         Ok(held) => {
             if kept.is_some() {
@@ -162,7 +163,10 @@ pub fn docker_through(
                 None => Failing::first(diagnosed(ssh, remote, pool, settings_in, said), now),
             };
             let finding = failed.finding.clone();
-            note_failing(pool, &remote.pin, failed);
+            // Try now was pressed while this try ran: its failure is not remembered.
+            if !cleared_since(pool, began) {
+                note_failing(pool, &remote.pin, failed);
+            }
             return Err(finding);
         }
     };
@@ -442,6 +446,23 @@ pub fn look_again() {
 /// it. Other pools' failing forwards keep their waits.
 pub fn try_now(pool: &str) {
     forget_failing(pool);
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pool.to_owned(), Instant::now());
+}
+
+/// When each pool's Try now was last pressed: a try that began before it does not write its
+/// failure back, or the click would be answered from the memory it just cleared.
+static CLEARED: std::sync::Mutex<std::collections::BTreeMap<String, Instant>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn cleared_since(pool: &str, began: Instant) -> bool {
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(pool)
+        .is_some_and(|at| *at >= began)
 }
 
 /// **Pool `name`'s `docker` and the socket of the engine it reaches**: for a pool on this
@@ -675,7 +696,13 @@ mod tests {
         note_failing("try-now-b", &pin, Failing::first(silent(), now));
         let waiting = failing("try-now-a", &pin).unwrap();
         assert_eq!(waiting.ask(now), Ask::Answer(silent()), "it is waiting");
+        let began = Instant::now();
         try_now("try-now-a");
+        assert!(
+            cleared_since("try-now-a", began),
+            "a try begun before the click is not kept"
+        );
+        assert!(!cleared_since("try-now-b", began));
         assert_eq!(failing("try-now-a", &pin), None, "the click dials at once");
         assert!(
             failing("try-now-b", &pin).is_some(),

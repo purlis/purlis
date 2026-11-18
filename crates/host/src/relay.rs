@@ -291,7 +291,7 @@ impl Relay {
             Standing::Down(down) | Standing::Over(Some(down)) => {
                 format!("linking to the runner, which is down: {}", down.why)
             }
-            Standing::Over(None) => "linking to the runner".to_owned(),
+            Standing::Over(None) => "the link to the runner, which had ended".to_owned(),
             Standing::Up(_) => "the runner starting the program".to_owned(),
         }
     }
