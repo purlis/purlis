@@ -19,11 +19,10 @@ use purlis_core::memstore::Base;
 use purlis_core::sessionrecord;
 use purlis_core::workspaces::{Plane, Workspace};
 
-fn at(h: u32, m: u32) -> chrono::NaiveDateTime {
-    chrono::NaiveDate::from_ymd_opt(2026, 10, 3)
+fn at(h: i8, m: i8) -> jiff::civil::DateTime {
+    purlis_core::wallclock::day(2026, 10, 3)
         .unwrap()
-        .and_hms_opt(h, m, 0)
-        .unwrap()
+        .at(h, m, 0, 0)
 }
 
 /// A project with workspaces `alpha` and `beta` and a persona, each of `beta` and the persona
@@ -175,8 +174,11 @@ fn writers(p: &tempfile::TempDir, store: &str) -> Vec<(&'static str, bool)> {
                         7,
                         &"a".repeat(40),
                         "b1",
-                        chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 3, 9, 0, 0)
-                            .unwrap(),
+                        jiff::civil::date(2026, 10, 3)
+                            .at(9, 0, 0, 0)
+                            .to_zoned(jiff::tz::TimeZone::UTC)
+                            .unwrap()
+                            .timestamp(),
                     ),
                 )
                 .is_some(),

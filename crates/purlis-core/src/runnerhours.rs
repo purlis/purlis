@@ -230,23 +230,22 @@ pub fn runners_of(lines: &[Line], pool: &str) -> BTreeSet<String> {
 /// **When the ISO week holding `now` began**, Monday 00:00 in `now`'s time zone, in seconds
 /// since the epoch. A Monday with no midnight (a clock moved forward over it) begins at its
 /// first hour that is.
-pub fn week_began<Tz: chrono::TimeZone>(now: &chrono::DateTime<Tz>) -> u64 {
-    use chrono::Datelike;
-    let local = now.naive_local();
-    let back = chrono::Days::new(u64::from(local.weekday().num_days_from_monday()));
-    let Some(monday) = local.date().checked_sub_days(back) else {
+pub fn week_began(now: &jiff::Zoned) -> u64 {
+    let local = now.datetime();
+    let back = i64::from(local.weekday().to_monday_zero_offset());
+    let Ok(monday) = local.date().checked_sub(jiff::Span::new().days(back)) else {
         return 0;
     };
     (0..24)
-        .filter_map(|hour| monday.and_hms_opt(hour, 0, 0))
-        .find_map(|midnight| now.timezone().from_local_datetime(&midnight).earliest())
-        .and_then(|began| u64::try_from(began.timestamp()).ok())
+        .map(|hour| monday.at(hour, 0, 0, 0))
+        .find_map(|midnight| crate::wallclock::earliest(now.time_zone(), midnight))
+        .and_then(|began| u64::try_from(began.as_second()).ok())
         .unwrap_or(0)
 }
 
 /// [`week_began`] for now, in this machine's local time.
 pub fn this_week_began() -> u64 {
-    week_began(&chrono::Local::now())
+    week_began(&jiff::Zoned::now())
 }
 
 /// **`lines`, bounded** (#3492): those older than [`KEPT_FOR`] at `now` dropped, each runner's

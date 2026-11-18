@@ -41,7 +41,9 @@ pub enum NotTaken {
     /// A chat the app started, whose harness gave this process no connection to the app: none
     /// of [`purlis_core::chattools::CONNECTION_ENV`] reached it.
     NoConnection,
-    /// The app's socket is not there, or nothing listens on it: the app has gone.
+    /// The app's socket is not there, or nothing listens on it, and this process does not run
+    /// under it: the app has gone. Never said where the app runs above this process, full or
+    /// slow as it may be ([`hookwire::reach::Unreached::Refused`]).
     AppGone,
     /// The app ended the connection without answering: an app older than the ask.
     Dropped,
@@ -129,24 +131,46 @@ pub fn forwarded(write: Write) -> Forwarded {
     }
 }
 
-/// This chat's number and its hook socket, or why it has no connection to the app.
-fn the_chat_s_connection() -> Result<(u32, std::ffi::OsString), NotTaken> {
-    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
-    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
-        .filter(|s| !s.is_empty())
-        .ok_or(NotTaken::NoConnection)?;
-    Ok((chat, socket))
-}
-
-/// Why connecting to the app failed, as a write that was not taken.
-fn not_connected(e: &std::io::Error) -> NotTaken {
-    use std::io::ErrorKind;
-    if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
-        NotTaken::AppGone
-    } else {
-        NotTaken::Dropped
+/// The app, reached at the plane's socket and authenticated, and the chat it says this process
+/// runs in (#6995, [`hookwire::reach`]); or why it cannot be asked. Something that answers and
+/// is not the app is `Ok(Err(why))`: every ask is refused with that, never run here.
+fn the_chat_s_connection(
+    within: std::time::Duration,
+) -> Result<Result<hookwire::reach::Reached, String>, NotTaken> {
+    use hookwire::reach::{self, Unreached};
+    let cwd = std::env::current_dir().unwrap_or_default();
+    match reach::reach(&cwd, &purlis_core::envvar::var, within) {
+        Ok(reached) => Ok(Ok(reached)),
+        Err(Unreached::NotAChat) => Err(NotTaken::NotAChat),
+        // A chat whose harness handed it no socket at all, and no app at the plane's.
+        Err(Unreached::AppGone(_))
+            if purlis_core::envvar::var_os(SOCKET_ENV).is_none_or(|s| s.is_empty()) =>
+        {
+            Err(NotTaken::NoConnection)
+        }
+        Err(Unreached::AppGone(_)) => Err(NotTaken::AppGone),
+        // Something that is not the app, or an app that is there and let nothing through (it
+        // is full, or cannot tell which chat this is): refused, and never written here (#6995).
+        Err(not @ (Unreached::NotTheApp(_) | Unreached::Refused(_))) => {
+            Ok(Err(not.said().unwrap_or_default()))
+        }
     }
 }
+
+/// **Whether this process runs in a chat the app started**, as the app says by its ancestry, or
+/// as its environment says (which only ever adds a chat): what a guard that refuses only a
+/// chat asks before it refuses without asking the app anything (#6995). Something that answers
+/// and is not the app leaves this a chat's, so the guard refuses.
+pub fn in_a_chat() -> bool {
+    crate::session::chat_number().is_some()
+        || !matches!(
+            the_chat_s_connection(A_CHAT_IS_NAMED_WITHIN),
+            Err(NotTaken::NotAChat)
+        )
+}
+
+/// How long the app may take to name the chat a guard runs in: it reads the asker's ancestry.
+const A_CHAT_IS_NAMED_WITHIN: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// The app's answer to the ask `make` builds for this chat's number, or why no app can be
 /// asked.
@@ -154,10 +178,12 @@ pub fn asked(
     make: impl FnOnce(u32) -> Ask,
     within: std::time::Duration,
 ) -> Result<std::io::Result<Answer>, NotTaken> {
-    let (chat, socket) = the_chat_s_connection()?;
-    let mut asking = hookwire::Asking::on(Path::new(&socket), hookwire::ChatToken::from_env())
-        .map_err(|e| not_connected(&e))?;
-    Ok(asking.ask(&make(chat), within))
+    let reached = match the_chat_s_connection(within)? {
+        Ok(reached) => reached,
+        Err(why) => return Ok(Ok(Answer::No { why })),
+    };
+    let mut asking = hookwire::Asking::over(reached.stream, reached.token);
+    Ok(asking.ask(&make(reached.chat), within))
 }
 
 /// The app's reply to the ask `make` builds for this chat's number, over the hook channel's
@@ -169,14 +195,17 @@ pub fn replied(
     within: std::time::Duration,
 ) -> Result<std::io::Result<hookwire::framed::Reply>, NotTaken> {
     use hookwire::framed::Greeted;
-    let (chat, socket) = the_chat_s_connection()?;
-    let token = hookwire::ChatToken::from_env();
-    match hookwire::Framed::on(Path::new(&socket), token.as_ref(), chat, within) {
+    let reached = match the_chat_s_connection(within)? {
+        Ok(reached) => reached,
+        Err(why) => return Ok(Ok(Answer::No { why }.into())),
+    };
+    let chat = reached.chat;
+    match hookwire::Framed::over(reached.stream, reached.token.as_ref(), chat, within) {
         Ok(Greeted::Framed(mut framed)) => Ok(framed.ask(&make(chat), within)),
         Ok(Greeted::Older) => asked(make, within).map(|answer| answer.map(Into::into)),
         // The app read the hello and said no: its sentence, as a refused ask's.
         Ok(Greeted::Refused(why)) => Ok(Ok(Answer::No { why }.into())),
-        Err(e) => Err(not_connected(&e)),
+        Err(_) => Err(NotTaken::Dropped),
     }
 }
 

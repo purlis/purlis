@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 
 use super::store;
@@ -58,7 +58,7 @@ impl Landing {
         number: u64,
         head: &str,
         merge: &str,
-        when: DateTime<Utc>,
+        when: Timestamp,
     ) -> Landing {
         Landing {
             ts: crate::dispatch::stamp(when),
@@ -159,8 +159,12 @@ mod tests {
         (dir, root)
     }
 
-    fn at(second: u32) -> DateTime<Utc> {
-        chrono::TimeZone::with_ymd_and_hms(&Utc, 2026, 10, 2, 9, 0, second).unwrap()
+    fn at(second: i8) -> Timestamp {
+        jiff::civil::date(2026, 10, 2)
+            .at(9, 0, second, 0)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp()
     }
 
     /// FD-25 (#985): a landing is filed under the device id the machine store keeps, never

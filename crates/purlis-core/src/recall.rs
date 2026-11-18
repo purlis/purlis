@@ -49,7 +49,7 @@ pub struct Ask {
     pub query: Option<String>,
     /// `0` is no cap. Negative is Python's slice from the end, as `rows[:limit]` gives it.
     pub limit: i64,
-    pub since: Option<chrono::NaiveDate>,
+    pub since: Option<jiff::civil::Date>,
 }
 
 /// One recalled memory.
@@ -59,7 +59,7 @@ pub struct Hit {
     pub path: PathBuf,
     pub title: String,
     pub score: usize,
-    pub date: Option<chrono::NaiveDate>,
+    pub date: Option<jiff::civil::Date>,
 }
 
 /// Hits, and what was withheld — `recall.Recalled`.
@@ -92,7 +92,7 @@ pub fn py_head<T>(mut items: Vec<T>, n: i64) -> Vec<T> {
 /// An age (`14d`, `2w`, `3m`, a month being 30 days) or an ISO date. Anything else is an
 /// error rather than no filter: a silently ignored `--since` returns MORE than was asked
 /// for, and the reader takes a full corpus as proof that nothing was recorded recently.
-pub fn parse_since(value: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, String> {
+pub fn parse_since(value: &str, today: jiff::civil::Date) -> Result<jiff::civil::Date, String> {
     let s = memstore::py_strip(value);
     let refused = || {
         format!(
@@ -112,9 +112,11 @@ pub fn parse_since(value: &str, today: chrono::NaiveDate) -> Result<chrono::Naiv
                 _ => 30,
             };
             let days = n.checked_mul(per).ok_or_else(refused)?;
-            return today
-                .checked_sub_days(chrono::Days::new(days as u64))
-                .filter(|d| chrono::Datelike::year(d) >= 1)
+            return jiff::Span::new()
+                .try_days(days)
+                .ok()
+                .and_then(|back| today.checked_sub(back).ok())
+                .filter(|d| d.year() >= 1)
                 .ok_or_else(refused);
         }
     }
@@ -123,7 +125,7 @@ pub fn parse_since(value: &str, today: chrono::NaiveDate) -> Result<chrono::Naiv
 
 /// `date.fromisoformat` as Python 3.11 reads it: `YYYY-MM-DD`, `YYYYMMDD`, and the week
 /// forms `YYYY-Www`, `YYYY-Www-D`, `YYYYWww`, `YYYYWwwD`.
-pub fn from_isoformat(s: &str) -> Option<chrono::NaiveDate> {
+pub fn from_isoformat(s: &str) -> Option<jiff::civil::Date> {
     if !s.is_ascii() {
         return None;
     }
@@ -137,12 +139,14 @@ pub fn from_isoformat(s: &str) -> Option<chrono::NaiveDate> {
         if !(1..=7).contains(&d) {
             return None;
         }
-        let weekday = chrono::Weekday::try_from((d - 1) as u8).ok()?;
-        chrono::NaiveDate::from_isoywd_opt(y, w, weekday)
+        let weekday = jiff::civil::Weekday::from_monday_one_offset(i8::try_from(d).ok()?).ok()?;
+        jiff::civil::ISOWeekDate::new(i16::try_from(y).ok()?, i8::try_from(w).ok()?, weekday)
+            .ok()
+            .map(|week| week.date())
     };
     match s.len() {
         10 if &s[4..5] == "-" && &s[7..8] == "-" => {
-            chrono::NaiveDate::from_ymd_opt(year(&s[..4])?, num(&s[5..7])?, num(&s[8..])?)
+            crate::wallclock::day(year(&s[..4])?, num(&s[5..7])?, num(&s[8..])?)
         }
         8 if &s[4..5] == "-" && &s[5..6] == "W" => week(year(&s[..4])?, num(&s[6..])?, 1),
         10 if &s[4..5] == "-" && &s[5..6] == "W" && &s[8..9] == "-" => {
@@ -150,7 +154,7 @@ pub fn from_isoformat(s: &str) -> Option<chrono::NaiveDate> {
         }
         8 if &s[4..5] == "W" => week(year(&s[..4])?, num(&s[5..7])?, num(&s[7..])?),
         7 if &s[4..5] == "W" => week(year(&s[..4])?, num(&s[5..])?, 1),
-        8 => chrono::NaiveDate::from_ymd_opt(year(&s[..4])?, num(&s[4..6])?, num(&s[6..])?),
+        8 => crate::wallclock::day(year(&s[..4])?, num(&s[4..6])?, num(&s[6..])?),
         _ => None,
     }
 }
@@ -543,7 +547,7 @@ pub fn scan(root: &Path, ask: &Ask) -> Recalled {
             });
         }
     } else {
-        let mut items: Vec<(chrono::NaiveDate, Hit)> = Vec::new();
+        let mut items: Vec<(jiff::civil::Date, Hit)> = Vec::new();
         for (label, dir) in &srcs {
             let (found, missed) = memstore::read_entries(root, dir);
             unread.extend(missed);
@@ -562,7 +566,7 @@ pub fn scan(root: &Path, ask: &Ask) -> Recalled {
                 }
                 // `date.min` puts the undated last without dropping them.
                 items.push((
-                    date.unwrap_or(chrono::NaiveDate::MIN),
+                    date.unwrap_or(jiff::civil::Date::MIN),
                     Hit {
                         label: label.clone(),
                         path,
@@ -605,7 +609,7 @@ pub fn scan(root: &Path, ask: &Ask) -> Recalled {
 mod tests {
     use super::*;
 
-    fn day(s: &str) -> chrono::NaiveDate {
+    fn day(s: &str) -> jiff::civil::Date {
         s.parse().unwrap()
     }
 

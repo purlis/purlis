@@ -277,11 +277,15 @@ impl Host {
     /// that answers nothing: what a machine past the limit has when the published manifest
     /// answers 504 (#5413).
     fn serving_past_its_engines_limit_with_no_manifest_to_read() -> Host {
-        let past = purlis_core::browsers::when_the_pin_was_issued() + chrono::TimeDelta::days(22);
+        let past = purlis_core::browsers::when_the_pin_was_issued()
+            + jiff::SignedDuration::from_hours(24 * 22);
         Host::serving_with(
             true,
             &[
-                (purlis_core::browsers::ENGINES_CLOCK_VAR, past.to_rfc3339()),
+                (
+                    purlis_core::browsers::ENGINES_CLOCK_VAR,
+                    purlis_core::oldspelling::rfc3339(past),
+                ),
                 ("ALL_PROXY", "http://127.0.0.1:9".to_owned()),
             ],
         )

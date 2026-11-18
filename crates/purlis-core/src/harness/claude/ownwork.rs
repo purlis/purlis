@@ -14,7 +14,8 @@
 //! Anything not read as one of these counts as nothing, so a payload this cannot read hands the
 //! end of the turn to the person, as before.
 
-use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 
 use crate::ownwork::pieces::{Kind, Piece};
 use crate::ownwork::{InFlight, OWN_WORK_LIMIT, Said, WakeUp};
@@ -31,15 +32,15 @@ const IN_FLIGHT: [&str; 2] = ["running", "pending"];
 
 /// How far ahead a one-shot wake-up is looked for: a year and a day, the longest a five-field
 /// cron that names one minute of one day can lie ahead.
-const ONE_SHOT_LOOKS_AHEAD: Duration = Duration::days(367);
+const ONE_SHOT_LOOKS_AHEAD: SignedDuration = SignedDuration::from_hours(367 * 24);
 
 /// How far back a one-shot wake-up still listed is read as overdue, and so due now: one that
 /// matched in the last day has not fired yet (Claude Code drops one that has).
-const OVERDUE_LOOKS_BACK: Duration = Duration::days(1);
+const OVERDUE_LOOKS_BACK: SignedDuration = SignedDuration::from_hours(24);
 
 /// **What Claude Code's `Stop` `payload` says the chat waits on of its own**, read at `now` on
 /// the chat's own wall clock. Nothing for a payload that is absent or says nothing readable.
-pub fn read(payload: Option<&serde_json::Value>, now: NaiveDateTime) -> Said {
+pub fn read(payload: Option<&serde_json::Value>, now: DateTime) -> Said {
     let Some(payload) = payload else {
         return Said::default();
     };
@@ -77,7 +78,10 @@ pub fn read(payload: Option<&serde_json::Value>, now: NaiveDateTime) -> Said {
                 } else {
                     ONE_SHOT_LOOKS_AHEAD
                 };
-                (schedule.next_after(now, ahead)? - now).num_seconds()
+                schedule
+                    .next_after(now, ahead)?
+                    .duration_since(now)
+                    .as_secs()
             };
             Some(WakeUp { due_in, recurring })
         })
@@ -193,7 +197,7 @@ pub fn started(
 /// `now` is the chat's own wall clock and `epoch` the same moment in seconds since 1970.
 pub fn pieces(
     payload: Option<&serde_json::Value>,
-    now: NaiveDateTime,
+    now: DateTime,
     epoch: i64,
     output_of: &dyn Fn(&str) -> Option<String>,
 ) -> Option<Vec<Piece>> {
@@ -250,7 +254,7 @@ pub fn pieces(
                     Some(epoch)
                 } else {
                     let next = parsed.next_after(now, ONE_SHOT_LOOKS_AHEAD)?;
-                    Some(epoch.saturating_add((next - now).num_seconds()))
+                    Some(epoch.saturating_add(next.duration_since(now).as_secs()))
                 }
             });
         let kind = if recurring { Kind::Cron } else { Kind::WakeUp };
@@ -374,9 +378,9 @@ impl Cron {
         })
     }
 
-    fn day_matches(&self, at: NaiveDateTime) -> bool {
+    fn day_matches(&self, at: DateTime) -> bool {
         let day = bit(self.days, at.day());
-        let weekday = bit(self.weekdays, at.weekday().num_days_from_sunday());
+        let weekday = bit(self.weekdays, at.weekday().to_sunday_zero_offset());
         let month = bit(self.months, at.month());
         month
             && if self.any_day || self.any_weekday {
@@ -386,22 +390,25 @@ impl Cron {
             }
     }
 
-    fn matches(&self, at: NaiveDateTime) -> bool {
+    fn matches(&self, at: DateTime) -> bool {
         self.day_matches(at) && bit(self.hours, at.hour()) && bit(self.minutes, at.minute())
     }
 
     /// The minute it next fires in, from the minute after `now` to `ahead` past it, on the
     /// chat's own wall clock: the minute `now` is in is one a due run already fired in.
-    fn next_after(&self, now: NaiveDateTime, ahead: Duration) -> Option<NaiveDateTime> {
-        let last = now + ahead;
-        let mut at = now.with_second(0)?.with_nanosecond(0)? + Duration::minutes(1);
+    fn next_after(&self, now: DateTime, ahead: SignedDuration) -> Option<DateTime> {
+        let last = now.checked_add(ahead).ok()?;
+        let mut at = minute_of(now)?
+            .checked_add(SignedDuration::from_mins(1))
+            .ok()?;
         while at <= last {
             if !self.day_matches(at) {
-                at = at.date().succ_opt()?.and_hms_opt(0, 0, 0)?;
+                at = at.date().tomorrow().ok()?.at(0, 0, 0, 0);
             } else if !bit(self.hours, at.hour()) {
-                at = at.with_minute(0)? + Duration::hours(1);
+                at = at.with().minute(0).build().ok()?;
+                at = at.checked_add(SignedDuration::from_hours(1)).ok()?;
             } else if !bit(self.minutes, at.minute()) {
-                at += Duration::minutes(1);
+                at = at.checked_add(SignedDuration::from_mins(1)).ok()?;
             } else {
                 return Some(at);
             }
@@ -410,20 +417,30 @@ impl Cron {
     }
 
     /// Whether it fired in the minute `now` is in, or in the [`OVERDUE_LOOKS_BACK`] before it.
-    fn fired_lately(&self, now: NaiveDateTime) -> bool {
+    fn fired_lately(&self, now: DateTime) -> bool {
         self.fired_within(now, OVERDUE_LOOKS_BACK)
     }
 
     /// Whether it fired in the minute `now` is in, or in the `back` before it.
-    fn fired_within(&self, now: NaiveDateTime, back: Duration) -> bool {
-        let Some(minute) = now.with_second(0).and_then(|at| at.with_nanosecond(0)) else {
+    fn fired_within(&self, now: DateTime, back: SignedDuration) -> bool {
+        let Some(minute) = minute_of(now) else {
             return false;
         };
-        (0..=back.num_minutes()).any(|ago| self.matches(minute - Duration::minutes(ago)))
+        (0..=back.as_mins()).any(|ago| {
+            minute
+                .checked_sub(SignedDuration::from_mins(ago))
+                .is_ok_and(|at| self.matches(at))
+        })
     }
 }
 
-fn bit(set: u64, n: u32) -> bool {
+/// The start of the minute `at` is in.
+fn minute_of(at: DateTime) -> Option<DateTime> {
+    at.with().second(0).subsec_nanosecond(0).build().ok()
+}
+
+/// Whether `set` holds `n`, a clock or calendar field (never negative).
+fn bit(set: u64, n: i8) -> bool {
     set & (1 << n) != 0
 }
 

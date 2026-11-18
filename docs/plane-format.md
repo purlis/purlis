@@ -4874,8 +4874,14 @@ write into this folder cannot make its own text arrive as the person's.
   can put a key of its choosing there. **A key item already there is used only once the app has
   shown it owns it**: it makes the item again in place with the same key, which the Keychain lets
   only the item's owner do. An item another program owns makes every sealed answer read as
-  broken until the person presses again. An item made to let every program in (`-A`) is not
-  caught yet (#7007).
+  broken, and the app cannot delete it: the window's Accept then says to delete every keychain
+  item named `purlis-seal` (in Keychain Access, or `security delete-generic-password -s
+  purlis-seal` once for each), and the next Accept reads the keychain again and makes a new key,
+  with no restart (#7073). An item made to let every program in (`-A`) is not caught yet
+  (#7007). **A write of the key cut short** between its delete and its add leaves the key at
+  rest in its spare item (`purlis-seal/spare`, account `answers`): with no key item and the
+  app's own spare, the app makes the spare the key again, so every seal still holds; a spare
+  another program made is treated as that program's key.
 - **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
   cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
@@ -8084,7 +8090,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `app/src-tauri/src/sessionhost.rs`'s `HookChannels`). When
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
-  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
+  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`, which a
+  hook's report is sent to. **An ask is not** (#6995, `hookwire::reach`): it finds the socket
+  from the app process the chat runs under, which must be the one listening, and the app names
+  the asking chat by its ancestry (`{"whoami": true}`, answered `{"you_are": <n>, "token":
+  "<the chat's token>"}` or a `no`). Inside a sandbox, where that process cannot be read, the
+  variable and the plane above the working directory say where to knock, and a socket is
+  believed only in a folder the asker may not write; it tries, with a file
+  `.purlis-may-write-<pid>-<16 hex>` beside the socket that is removed at once where it was
+  made. Where no app runs above the asker, the same momentary file is tried in the account's
+  home folder (as the user database names it): refused there, a sandbox holds the asker, which
+  is then a chat's. The app answers a `whoami` it cannot answer either way (the asker cannot be
+  read, two chats' programs are above it, or a chat's program is not recorded yet) with its own
+  `no`, never with the one for a process in none of its chats.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/slots.sock`

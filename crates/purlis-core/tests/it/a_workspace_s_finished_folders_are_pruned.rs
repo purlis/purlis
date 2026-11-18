@@ -34,7 +34,7 @@ fn plain(f: &support::Fixture, name: &str) -> PathBuf {
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "{name} was not cut");
@@ -75,7 +75,7 @@ fn pruned_by(
             stands_in: None,
         },
         &f.plane,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |line| said.push(spoken(&line)),
     );
     (code, said.join("\n"))
@@ -249,7 +249,7 @@ fn a_folder_an_open_chat_holds_stays_until_it_declares_done() {
         "held",
         None,
         &holder,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     let person = Who::here(None, None, None);
@@ -311,7 +311,7 @@ fn pruned_for_a_chat(
             },
         },
         &Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let said = match &answer {
         Answer::Said { lines, .. } => lines.iter().map(spoken).collect::<Vec<_>>().join("\n"),
@@ -425,7 +425,7 @@ fn pruned_asking(
             stands_in: None,
         },
         &f.plane,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |line| said.push(spoken(&line)),
     );
     (code, said.join("\n"))
@@ -844,7 +844,7 @@ fn a_chats_remove_delete_branch_on_a_gone_folder_deletes_its_branch_config_and_a
             },
         },
         &Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
 
     let said = match &answer {

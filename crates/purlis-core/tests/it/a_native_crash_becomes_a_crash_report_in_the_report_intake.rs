@@ -319,7 +319,7 @@ fn left_by_the_handler(crashes: &Path, at: u64) -> std::path::PathBuf {
 }
 
 fn now() -> u64 {
-    chrono::Utc::now().timestamp().unsigned_abs()
+    jiff::Timestamp::now().as_second().unsigned_abs()
 }
 
 #[test]
@@ -338,10 +338,10 @@ fn a_minidump_waiting_on_the_next_launch_is_reported_once_and_kept_on_this_devic
     assert!(matches!(said[..], [Outcome::Sent { .. }]), "{said:?}");
     assert_eq!(next_launch, [], "reported once");
     let event = &lines(&recorded.received()[0])[2];
-    let when = chrono::DateTime::from_timestamp(i64::try_from(at).unwrap(), 0).unwrap();
+    let when = jiff::Timestamp::from_second(i64::try_from(at).unwrap()).unwrap();
     assert_eq!(
         event["timestamp"],
-        when.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        when.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
     );
     assert!(!left.exists());
     assert_eq!(

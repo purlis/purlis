@@ -162,8 +162,9 @@ pub struct ChatLog {
 
 fn at(ms: Option<u64>) -> Option<String> {
     let ms = i64::try_from(ms?).ok()?;
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map(|when| when.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    jiff::Timestamp::from_millisecond(ms)
+        .ok()
+        .map(|when| when.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
 fn protection_of(in_force: InForce) -> StartProtection {

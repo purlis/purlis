@@ -125,8 +125,8 @@ fn declared(names: &[&str]) -> Declared {
     }
 }
 
-fn stamp(at: i64) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(at, 0).unwrap()
+fn stamp(at: i64) -> jiff::Timestamp {
+    jiff::Timestamp::from_second(at).ok().unwrap()
 }
 
 fn page(then: &Then) -> String {

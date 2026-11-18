@@ -511,7 +511,7 @@ pub(crate) async fn router_grade_start(
             library: planned.copies.iter().map(RecordedCopy::of).collect(),
             harness: None,
             profile: Some(profile.clone()),
-            ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+            ts: purlis_core::dispatch::stamp(jiff::Timestamp::now()),
             runs: grading::RUNS,
             report: routers::interrupted_report(
                 &router,
@@ -611,7 +611,7 @@ pub(crate) async fn router_grade_start(
                     let report = engine::grade(&request, &mut chats, Some(limits.clone()));
                     let graded = RouterGraded {
                         harness: chats.harness.take(),
-                        ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+                        ts: purlis_core::dispatch::stamp(jiff::Timestamp::now()),
                         spent: chats.spent,
                         model: grades::reported_model(chats.reported.iter().map(String::as_str)),
                         report,

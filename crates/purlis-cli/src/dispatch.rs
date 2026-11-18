@@ -386,7 +386,7 @@ pub fn send(
     let sent = handoff::task_message(
         &longest,
         &here.place(None),
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
         brief,
     );
     if let Some(bad) = handoff::bad_message(&sent) {
@@ -912,7 +912,7 @@ fn sent_on(
         };
     };
     let socket = std::path::PathBuf::from(socket);
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let queued = purlis_core::dispatchqueue::queue(&socket, chat, &token, queued, now);
     if on.is_none() {
         *on = the_app();

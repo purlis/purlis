@@ -6,10 +6,8 @@ use purlis_skills::runs::{Call, Heard, Spans, Start};
 
 const RUN: &str = "01JB0000000000000000000RUN";
 
-fn may() -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn may() -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>("2026-05-04T11:32:17+00:00").unwrap()
 }
 
 fn a_plane() -> tempfile::TempDir {
@@ -91,7 +89,7 @@ fn no_skill_run_is_logged_in_a_project_this_purlis_may_not_write() {
             dir.path(),
             &Starting::of_open(&open, None),
             Some("ops"),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             "box"
         ),
         None
@@ -444,9 +442,9 @@ fn runs_since_counts_each_skills_runs_by_its_own_name_from_a_moment_on_and_none_
          {\"skill\": \"stamped-wrong\", \"ts\": \"yesterday\"}\n",
     )
     .unwrap();
-    let since = chrono::DateTime::parse_from_rfc3339("2026-10-07T00:00:00+00:00")
+    let since = str::parse::<jiff::Timestamp>("2026-10-07T00:00:00+00:00")
         .unwrap()
-        .timestamp();
+        .as_second();
 
     let counted = runs_since(dir.path(), u64::try_from(since).unwrap());
 

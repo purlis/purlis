@@ -1498,10 +1498,10 @@ fn kept_on_its_dispatch(
     message: &purlis_core::dispatchqueue::undelivered::Message,
 ) -> bool {
     use purlis_core::dispatchqueue::For;
-    let queued_at = chrono::DateTime::from_timestamp(message.at, 0);
+    let queued_at = jiff::Timestamp::from_second(message.at).ok();
     let between = |record: &&purlis_core::dispatchrecord::Record| {
         record.running()
-            && chrono::DateTime::parse_from_rfc3339(&record.started)
+            && str::parse::<jiff::Timestamp>(&record.started)
                 .ok()
                 .zip(queued_at)
                 .is_some_and(|(started, queued)| started <= queued)

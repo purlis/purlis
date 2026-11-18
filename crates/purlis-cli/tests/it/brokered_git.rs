@@ -144,9 +144,11 @@ impl World {
         root
     }
 
-    /// `purlis <args>` in `root`, with `chat` the env of a chat the app started, or none.
+    /// `purlis <args>` in `root`, with `chat` the env of a chat the app started, or none: the
+    /// person's own terminal, which no app runs above (#6995), so it is started as an orphan.
     fn purlis(&self, root: &Path, args: &[&str], chat: &[(&str, &str)]) -> Output {
-        support::purlis()
+        let mut command = support::purlis();
+        command
             .args(args)
             .current_dir(root)
             .env_clear()
@@ -154,9 +156,68 @@ impl World {
             .env("HOME", &self.home)
             .env("PATH", "/usr/bin:/bin")
             .env("USER", "tester")
-            .envs(chat.iter().copied())
-            .output()
-            .expect("the binary runs")
+            .envs(chat.iter().copied());
+        if chat.is_empty() {
+            return orphaned(&command, &self.base);
+        }
+        command.output().expect("the binary runs")
+    }
+}
+
+/// `command` run as an orphan: started in the background by a shell that exits at once, so the
+/// process that started it (this test, which plays the app) is not above it. What it said and
+/// its status, through files under `scratch`; it reads nothing on its standard input.
+fn orphaned(command: &Command, scratch: &Path) -> Output {
+    use std::os::unix::process::ExitStatusExt;
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let (out, err, code) = (
+        scratch.join(format!("orphan-{id}.out")),
+        scratch.join(format!("orphan-{id}.err")),
+        scratch.join(format!("orphan-{id}.code")),
+    );
+    let mut shell = Command::new("/bin/sh");
+    shell
+        .arg("-c")
+        .arg(r#"o=$1; e=$2; c=$3; shift 3; ( "$@" >"$o" 2>"$e" </dev/null; echo $? >"$c.part"; mv "$c.part" "$c" ) &"#)
+        .arg("sh")
+        .arg(&out)
+        .arg(&err)
+        .arg(&code)
+        .arg(command.get_program())
+        .args(command.get_args())
+        .env_clear()
+        .stdin(std::process::Stdio::null());
+    if let Some(dir) = command.get_current_dir() {
+        shell.current_dir(dir);
+    }
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            shell.env(key, value);
+        }
+    }
+    assert!(shell.status().unwrap().success());
+    let until = std::time::Instant::now() + Duration::from_secs(120);
+    while !code.exists() {
+        assert!(
+            std::time::Instant::now() < until,
+            "the orphan never finished"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let status: i32 = std::fs::read_to_string(&code)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    Output {
+        status: std::process::ExitStatus::from_raw(status << 8),
+        stdout: std::fs::read(&out).unwrap_or_default(),
+        stderr: std::fs::read(&err).unwrap_or_default(),
     }
 }
 
@@ -225,7 +286,7 @@ fn the_broker_at(
             },
             &asked,
             &isolation,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ),
         _ => Answer::No {
             why: hookwire::NOTHING_ANSWERS.to_owned(),
@@ -1231,4 +1292,429 @@ fn a_chat_commits_with_the_command_with_and_without_the_sandbox() {
     let ran = run(&["worktree", "commit", "-m", "still", "c.txt"], true);
     assert!(ran.status.success(), "{}", err(&ran));
     assert!(was_committed("c.txt"));
+}
+
+// ---- #6995: an ask believes only the app the chat runs under ----
+
+/// What the stand-in app answers every git ask in the cells below, so a run shows it was heard.
+const HEARD_BY_THE_APP: &str = "heard by the app the chat runs under";
+
+/// What a fake listener answers every line: that the app ran it, and it went well.
+const FAKE_ALLOWED: &str = r#"{"said":{"lines":[],"code":0}}"#;
+
+/// A listener that is not the app, at `socket`: a `python3` that answers every line with
+/// [`FAKE_ALLOWED`] and writes `heard` beside it for each, until the test ends it. Waits until it
+/// listens.
+struct Fake {
+    child: std::process::Child,
+    heard: PathBuf,
+}
+
+impl Fake {
+    fn at(socket: &Path) -> Fake {
+        std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let heard = socket.with_extension("heard");
+        let child = Command::new("python3")
+            .args([
+                "-c",
+                "import socket, sys\n\
+                 s = socket.socket(socket.AF_UNIX)\n\
+                 s.bind(sys.argv[1]); s.listen(8)\n\
+                 while True:\n\
+                 \x20   c, _ = s.accept(); f = c.makefile('rwb')\n\
+                 \x20   for line in f:\n\
+                 \x20       open(sys.argv[3], 'a').write('heard\\n')\n\
+                 \x20       f.write(sys.argv[2].encode() + b'\\n'); f.flush()\n\
+                 \x20   c.close()\n",
+            ])
+            .arg(socket)
+            .arg(FAKE_ALLOWED)
+            .arg(&heard)
+            .spawn()
+            .expect("python3 runs");
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while !socket.exists() {
+            assert!(std::time::Instant::now() < until, "the fake never listened");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        Fake { child, heard }
+    }
+
+    /// Whether anything was said to it.
+    fn heard(&self) -> bool {
+        self.heard.exists()
+    }
+}
+
+impl Drop for Fake {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Read only by a test build of purlis: an ancestor's program is the app's only by its name, as
+/// in a shipped build, never because it is one of the build's own test binaries
+/// ([`hookwire::reach::program_of`]).
+const ONLY_THE_APP: &str = "REACH_TRUSTS_ONLY_THE_APP";
+
+/// Set in the copy of this test binary that plays the app: the folder its test works in.
+const PLAYS_THE_APP: &str = "BROKERED_GIT_PLAYS_THE_APP";
+
+/// **The folder a cell of the app's trust works in, where this process plays the app**: a copy
+/// of this test binary named as the app's program is (`purlis-app`), in the folder of the
+/// `purlis` it starts, runs `test` and answers `Some` there. Here, in the test that started it,
+/// it asserts that copy passed and answers `None`. No test binary is trusted for the app by
+/// being one ([`ONLY_THE_APP`]), so what the cell shows is what a shipped build does.
+fn played_by_the_app(test: &str) -> Option<PathBuf> {
+    if let Some(base) = std::env::var_os(PLAYS_THE_APP) {
+        return Some(PathBuf::from(base));
+    }
+    let purlis = PathBuf::from(support::purlis().get_program());
+    let build = std::fs::canonicalize(purlis.parent().unwrap()).unwrap();
+    let fixture = tempfile::Builder::new()
+        .prefix("reach-fixture-")
+        .tempdir_in(&build)
+        .unwrap();
+    let app = fixture.path().join(purlis_core::names::APP_BINARY.write);
+    std::fs::copy(std::env::current_exe().unwrap(), &app).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let out = purlis_core::forklock::output(
+        support::command(&app)
+            .args(["--exact", test, "--test-threads=1", "--nocapture"])
+            .env(PLAYS_THE_APP, tmp.path()),
+    )
+    .unwrap();
+    let said = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success() && said.contains("test result: ok. 1 passed"),
+        "{said}"
+    );
+    None
+}
+
+/// An app that records each git ask's chat and answers [`HEARD_BY_THE_APP`].
+fn a_hearing_app(base: &Path) -> (Reading, ChatToken, PathBuf, mpsc::Receiver<Ask>) {
+    an_app(base, |_| Answer::No {
+        why: HEARD_BY_THE_APP.to_owned(),
+    })
+}
+
+/// The chat each git ask the app heard was asked for.
+fn chats_heard(asked: &mpsc::Receiver<Ask>) -> Vec<u32> {
+    asked
+        .try_iter()
+        .filter_map(|ask| match ask {
+            Ask::Git(git) => Some(git.chat),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `purlis worktree add widget p1 -w alpha` in `cwd`, in a chat whose environment is `chat`,
+/// trusting only a program named as the app's for the app ([`played_by_the_app`]).
+fn worktree_add(world: &World, root: &Path, cwd: &Path, chat: &[(&str, &str)]) -> Output {
+    support::purlis()
+        .args(["worktree", "add", "widget", "p1", "-w", "alpha"])
+        .current_dir(cwd)
+        .env_clear()
+        .env("CHARTER_ROOT", root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(ONLY_THE_APP, "1")
+        .envs(chat.iter().copied())
+        .output()
+        .expect("the binary runs")
+}
+
+#[test]
+fn a_chat_s_ask_with_its_environment_emptied_still_reaches_the_app_it_runs_under() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::a_chat_s_ask_with_its_environment_emptied_still_reaches_the_app_it_runs_under",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("scrubbed", "[\"forge\"]");
+    let (_reading, _token, _socket, asked) = a_hearing_app(&world.base);
+
+    // No socket, no chat number and no token: the app names the chat by this process's ancestry.
+    let ran = worktree_add(&world, &root, &root, &[]);
+
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains(HEARD_BY_THE_APP), "{}", err(&ran));
+    assert_eq!(chats_heard(&asked), vec![3]);
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+}
+
+#[test]
+fn a_socket_the_environment_names_that_is_not_the_app_is_never_believed() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::a_socket_the_environment_names_that_is_not_the_app_is_never_believed",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("faked", "[\"forge\"]");
+    let (_reading, token, socket, asked) = a_hearing_app(&world.base);
+    let fake = Fake::at(&world.base.join("fake/hooks.sock"));
+    let fake_path = world.base.join("fake/hooks.sock");
+    let env = [
+        (SOCKET_ENV, fake_path.to_str().unwrap()),
+        (CHAT_ENV, "3"),
+        (TOKEN_ENV, token.expose()),
+    ];
+    let _ = socket;
+
+    let ran = worktree_add(&world, &root, &root, &env);
+
+    // Refused, never believed and never run here: the environment only ever tightens, so a
+    // socket it names that the app does not hold leaves this chat no app at all.
+    assert!(!fake.heard(), "the fake was told the chat's ask");
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(
+        err(&ran).contains(hookwire::reach::NO_APP_ANSWERED),
+        "{}",
+        err(&ran)
+    );
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+    assert_eq!(chats_heard(&asked), Vec::<u32>::new());
+}
+
+#[test]
+fn a_chat_named_by_its_environment_is_the_one_the_app_says_it_runs_in() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::a_chat_named_by_its_environment_is_the_one_the_app_says_it_runs_in",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("forged", "[\"forge\"]");
+    let socket = world.base.join("app").join("hooks.sock");
+    let listener = Listener::bind(&world.base, &socket).expect("a socket");
+    // Chat 3 is this test's; chat 7's program is another process, whose token the chat read.
+    listener.tokens().issue_to_this_process(3).expect("a token");
+    let mut other = Command::new("sleep").arg("30").spawn().unwrap();
+    let sevens = listener.tokens().issue(7).expect("a token");
+    listener.tokens().bind(
+        7,
+        hookwire::Program::of(other.id()).expect("the other chat's program"),
+    );
+    let (tx, asked) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, ask| {
+            tx.lock().unwrap().send(ask).unwrap();
+            Answer::No {
+                why: HEARD_BY_THE_APP.to_owned(),
+            }
+        }),
+    );
+
+    let ran = worktree_add(
+        &world,
+        &root,
+        &root,
+        &[
+            (SOCKET_ENV, socket.to_str().unwrap()),
+            (CHAT_ENV, "7"),
+            (TOKEN_ENV, sevens.expose()),
+        ],
+    );
+    let _ = other.kill();
+    let _ = other.wait();
+
+    assert!(err(&ran).contains(HEARD_BY_THE_APP), "{}", err(&ran));
+    assert_eq!(chats_heard(&asked), vec![3], "asked as the chat it runs in");
+}
+
+#[test]
+fn a_socket_planted_in_a_plane_of_the_chat_s_making_is_never_believed() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::a_socket_planted_in_a_plane_of_the_chat_s_making_is_never_believed",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("real", "[\"forge\"]");
+    let (_reading, _token, _socket, asked) = a_hearing_app(&world.base);
+    // A plane the chat made in its own folder, with a socket of its own where the app's would be.
+    let planted = root.join("workspaces/alpha/planted");
+    std::fs::create_dir_all(&planted).unwrap();
+    std::fs::write(planted.join("charter.toml"), "schema = 1\n").unwrap();
+    let fake = Fake::at(&planted.join(".purlis/app/hooks.sock"));
+
+    let ran = worktree_add(&world, &root, &planted, &[]);
+
+    assert!(!fake.heard(), "the planted socket was told the chat's ask");
+    assert!(err(&ran).contains(HEARD_BY_THE_APP), "{}", err(&ran));
+    assert_eq!(chats_heard(&asked), vec![3]);
+}
+
+/// `purlis worktree add widget p1 -w alpha` in `root`, started as an orphan, so no app runs
+/// above it; its status and what it said.
+fn orphaned_worktree_add(world: &World, root: &Path, chat: &[(&str, &str)]) -> (i32, String) {
+    let mut command = support::purlis();
+    command
+        .args(["worktree", "add", "widget", "p1", "-w", "alpha"])
+        .current_dir(root)
+        .env_clear()
+        .env("CHARTER_ROOT", root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(ONLY_THE_APP, "1")
+        .envs(chat.iter().copied());
+    let ran = orphaned(&command, &world.base);
+    (ran.status.code().unwrap_or(-1), err(&ran))
+}
+
+#[test]
+fn a_chat_whose_app_is_gone_is_refused_and_nothing_runs_here_even_where_a_fake_answers() {
+    purlis_core::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let world = World::at(tmp.path());
+    let root = world.plane("gone", "[\"forge\"]");
+    let fake_path = world.base.join("fake/hooks.sock");
+    let fake = Fake::at(&fake_path);
+
+    for chat in [
+        &[(SOCKET_ENV, fake_path.to_str().unwrap()), (CHAT_ENV, "3")][..],
+        &[(CHAT_ENV, "3")][..],
+    ] {
+        let (code, said) = orphaned_worktree_add(&world, &root, chat);
+        assert_eq!(code, 1, "{chat:?}: {said}");
+        assert!(
+            said.contains(hookwire::reach::NO_APP_ANSWERED),
+            "{chat:?}: {said}"
+        );
+        assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+    }
+    assert!(!fake.heard(), "the fake was told the chat's ask");
+}
+
+/// An app above the chat that never answers: a listener of the app's program, holding the
+/// plane's socket, that takes each connection and says nothing until the test ends.
+fn a_silent_app(base: &Path) -> (std::os::unix::net::UnixListener, PathBuf) {
+    let socket = base.join("app").join("hooks.sock");
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    (listener, socket)
+}
+
+#[test]
+fn an_emptied_environment_under_a_full_app_is_refused_and_never_run_here() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::an_emptied_environment_under_a_full_app_is_refused_and_never_run_here",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("full", "[\"forge\"]");
+    // Every place the app serves is taken: each connection is turned away unread.
+    let socket = world.base.join("app").join("hooks.sock");
+    let listener = Listener::bind(&world.base, &socket)
+        .expect("a socket")
+        .serving_at_most(32, 0);
+    listener.tokens().issue_to_this_process(3).expect("a token");
+    let (tx, asked) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, ask| {
+            tx.lock().unwrap().send(ask).unwrap();
+            Answer::No {
+                why: HEARD_BY_THE_APP.to_owned(),
+            }
+        }),
+    );
+
+    // `env -i`: no socket, no chat number and no token.
+    let ran = worktree_add(&world, &root, &root, &[]);
+
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(
+        err(&ran).contains(hookwire::reach::NO_APP_ANSWERED),
+        "refused, never run here: {}",
+        err(&ran)
+    );
+    assert_eq!(chats_heard(&asked), Vec::<u32>::new());
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+}
+
+#[test]
+fn an_emptied_environment_under_an_app_that_does_not_answer_is_refused_and_never_run_here() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::an_emptied_environment_under_an_app_that_does_not_answer_is_refused_and_never_run_here",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("silent", "[\"forge\"]");
+    let (_listener, _socket) = a_silent_app(&world.base);
+
+    let ran = worktree_add(&world, &root, &root, &[]);
+
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(
+        err(&ran).contains(hookwire::reach::NO_APP_ANSWERED),
+        "refused, never run here: {}",
+        err(&ran)
+    );
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_emptied_environment_in_a_pid_namespace_of_its_own_is_refused_and_never_run_here() {
+    purlis_core::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let world = World::at(tmp.path());
+    let root = world.plane("unshared", "[\"forge\"]");
+    let (_reading, _token, _socket, asked) = a_hearing_app(&world.base);
+    // `unshare -Urpf --mount-proc env -i purlis …`: the first process of a new pid namespace,
+    // whose parent reads as 0, with nothing in its environment.
+    let mut probe = Command::new("unshare");
+    probe.args(["-Urpf", "--mount-proc", "/bin/true"]);
+    if !purlis_core::forklock::status(&mut probe).is_ok_and(|it| it.success()) {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this host refuses an unprivileged pid namespace"
+        );
+        return;
+    }
+    let purlis = PathBuf::from(support::purlis().get_program());
+    let out = purlis_core::forklock::output(
+        Command::new("unshare")
+            .args(["-Urpf", "--mount-proc", "env", "-i"])
+            .arg(format!("CHARTER_ROOT={}", root.display()))
+            .arg(format!("HOME={}", world.home.display()))
+            .arg("PATH=/usr/bin:/bin")
+            .arg(&purlis)
+            .args(["worktree", "add", "widget", "p1", "-w", "alpha"])
+            .current_dir(&root),
+    )
+    .unwrap();
+
+    assert_eq!(out.status.code(), Some(1), "{}", err(&out));
+    assert!(
+        err(&out).contains(hookwire::reach::NO_APP_ANSWERED),
+        "refused, never run here: {}",
+        err(&out)
+    );
+    assert_eq!(chats_heard(&asked), Vec::<u32>::new());
+    assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
 }

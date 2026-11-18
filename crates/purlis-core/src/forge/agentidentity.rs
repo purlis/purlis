@@ -12,7 +12,10 @@
 //!    and a `state`, and posts them to GitHub. GitHub takes a manifest only by a post, so a link
 //!    alone can't do this. Only the holder of that address gets the page.
 //! 3. GitHub sends the browser back with a one-time code and that `state`. Any other request is
-//!    refused by the listener's own rules, and the first that matches closes it.
+//!    refused by the listener's own rules, and the first that matches closes it. One to the
+//!    redirect address with a code but not this `state` closes it too, with the code untaken and
+//!    the person told how to finish: by pasting the address the browser ended on
+//!    ([`create_from_address`]; ADR 0077 as amended 2026-11-17).
 //! 4. The code is exchanged at once ([`convert`]). The answer is held to what was asked: the named
 //!    owner, the permissions, no events. The client secret and webhook secret
 //!    are never taken out of the answer, which wipes them as it goes.
@@ -52,7 +55,7 @@ pub const VAULT: &str = "agent-identity";
 /// The one forge host this flow makes an App on. Others are #3882's.
 pub const HOST: &str = apptoken::HOST;
 
-/// How long the person has on GitHub's page before the listener closes.
+/// How long the person has on GitHub's page before the listener closes. The window says it.
 pub const ALLOWED: Duration = Duration::from_secs(15 * 60);
 
 /// Where the browser is first sent, under a word of its own.
@@ -82,6 +85,13 @@ const CAME_BACK_PAGE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta cha
 const DECLINED_PAGE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
 <title>purlis</title></head><body><h1>GitHub did not make the App</h1>\
 <p>Return to purlis to try again. You can close this tab.</p></body></html>\n";
+
+/// The page for a redirect that came back to this flow's address with a code, but not with this
+/// try's `state`: GitHub made an App, and purlis can't tell it is this try's.
+const UNMATCHED_PAGE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
+<title>purlis</title></head><body><h1>Return to purlis to finish</h1>\
+<p>GitHub made the App, but purlis couldn't match this answer to the App it asked for. \
+To finish, copy this page's address and paste it in purlis.</p></body></html>\n";
 
 /// The one script of the page that posts the manifest: its hash is the only script its content
 /// policy allows.
@@ -216,6 +226,15 @@ fn post_page(action: &str, manifest: &str) -> (String, String) {
         attribute(manifest),
     );
     (body, policy)
+}
+
+/// **Where `owner`'s GitHub Apps are listed**, and an App is found or deleted.
+#[must_use]
+pub fn apps_page(owner: &Owner) -> String {
+    match owner {
+        Owner::Organisation(name) => format!("https://{HOST}/organizations/{name}/settings/apps"),
+        Owner::Personal(_) => format!("https://{HOST}/settings/apps"),
+    }
 }
 
 /// The page where App `slug` is installed on repos.
@@ -363,19 +382,39 @@ pub struct Ways<'a> {
     pub clock: loopback::Clock<'a>,
 }
 
+/// What the person can do about an App GitHub may have made, whose answer purlis didn't take.
+fn maybe_made(owner: &Owner) -> String {
+    format!(
+        "If you pressed Create GitHub App, GitHub made the App then. To finish, paste the address \
+         your browser ended on, which works for an hour. Or delete the App at {} and start over.",
+        apps_page(owner)
+    )
+}
+
 /// What a listener's stop means to the person.
-fn stopped_said(why: Stopped) -> String {
+fn stopped_said(why: Stopped, owner: &Owner) -> String {
     match why {
-        Stopped::TimedOut => "GitHub's page wasn't finished in time. Start over.",
-        Stopped::Cancelled => "Stopped. No App was kept.",
-        Stopped::Declined(_) => "GitHub didn't make the App. Start over.",
-        Stopped::Strangers => {
-            "Too many requests that weren't GitHub's reached purlis's listener, so it stopped. \
-             Start over."
-        }
-        Stopped::Failed => "purlis's listener failed. Start over.",
+        Stopped::TimedOut => format!(
+            "GitHub's answer didn't come back within {} minutes, so purlis stopped waiting. {}",
+            ALLOWED.as_secs() / 60,
+            maybe_made(owner)
+        ),
+        Stopped::Cancelled => "Stopped. No App was kept.".to_owned(),
+        Stopped::Declined(_) => "GitHub didn't make the App. Start over.".to_owned(),
+        Stopped::Strangers => format!(
+            "Too many requests that weren't GitHub's reached purlis's listener, so it stopped. {}",
+            maybe_made(owner)
+        ),
+        Stopped::Failed => format!("purlis's listener failed. {}", maybe_made(owner)),
     }
-    .to_owned()
+}
+
+/// What came back to this flow's address.
+enum Back {
+    /// This try's redirect, and its code.
+    Ours(Code),
+    /// A redirect with a code, but not this try's `state`. The code is dropped unread.
+    Unmatched,
 }
 
 /// **The whole of the browser's part**: the page opened, its one redirect taken, the code
@@ -394,7 +433,7 @@ pub fn create_app(
     let (page, policy) = post_page(&action, &manifest(wanted, &redirect));
     let start = format!("{START_PATH}{}", word.expose());
     (ways.open)(&format!("http://127.0.0.1:{port}{start}"))?;
-    let code = loopback::take_with(listening, ALLOWED, cancelled, &ways.clock, &mut |target| {
+    let back = loopback::take_with(listening, ALLOWED, cancelled, &ways.clock, &mut |target| {
         if target == start {
             return Heard::Page {
                 policy: policy.clone(),
@@ -403,18 +442,70 @@ pub fn create_app(
         }
         match pkce::read_redirect_at(BACK_PATH, target, &state) {
             Redirected::Code(code) => Heard::Took {
-                value: code,
+                value: Back::Ours(code),
                 page: CAME_BACK_PAGE,
             },
             Redirected::Declined(why) => Heard::Stop {
                 why: Stopped::Declined(why),
                 page: DECLINED_PAGE,
             },
+            // GitHub came back with a code, so an App was made, but it can't be told from a
+            // stranger's: the wait ends here, rather than run out its time unseen, and the person
+            // is told how to finish. The code is not taken.
+            Redirected::NotOurs if pkce::code_at(BACK_PATH, target).is_some() => Heard::Took {
+                value: Back::Unmatched,
+                page: UNMATCHED_PAGE,
+            },
             Redirected::NotOurs => Heard::NotOurs,
         }
     })
-    .map_err(stopped_said)?;
-    convert(ways.exchange, &code, wanted)
+    .map_err(|why| stopped_said(why, &wanted.owner))?;
+    match back {
+        Back::Ours(code) => convert(ways.exchange, &code, wanted),
+        Back::Unmatched => {
+            tracing::warn!(
+                "purlis: GitHub's redirect for an App came back without this try's state; nothing \
+                 was taken"
+            );
+            Err(format!(
+                "Your browser came back from GitHub with an answer purlis couldn't match to this \
+                 try, so purlis took nothing and stopped waiting. {}",
+                maybe_made(&wanted.owner)
+            ))
+        }
+    }
+}
+
+/// **Finishes from the address the browser ended on**, as the person pasted it: GitHub's
+/// redirect to this flow's address on this machine, any port. Its code is taken without the
+/// `state`, since the person brought it, and is held by [`convert`] to what was asked like any
+/// other. Nothing of the address is ever said back.
+pub fn create_from_address(
+    endpoint: &dyn Endpoint,
+    address: &str,
+    wanted: &Wanted,
+) -> Result<Created, String> {
+    convert(endpoint, &code_in_address(address)?, wanted)
+}
+
+/// **The code in the address the person pasted**, or a sentence that says nothing of it: read
+/// before anything is stopped or sent, so a paste that isn't the redirect changes nothing.
+pub fn code_in_address(address: &str) -> Result<Code, String> {
+    let not_it = || {
+        "That isn't the address GitHub sent your browser back to. It starts with \
+         http://127.0.0.1: and holds code=. Copy it from the browser's address bar."
+            .to_owned()
+    };
+    let rest = address
+        .trim()
+        .strip_prefix("http://127.0.0.1:")
+        .ok_or_else(not_it)?;
+    let at = rest.find('/').ok_or_else(not_it)?;
+    let (port, target) = rest.split_at(at);
+    if port.is_empty() || port.len() > 5 || !port.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(not_it());
+    }
+    pkce::code_at(BACK_PATH, target).ok_or_else(not_it)
 }
 
 /// The reserved key an App's private key is kept under.

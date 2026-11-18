@@ -2163,8 +2163,9 @@ fn versions_table(name: &str, history: &history::History) -> String {
     }
     let mut text = String::new();
     for version in &history.versions {
-        let when = chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
-            .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+        let when = jiff::Timestamp::from_second(i64::try_from(version.at).unwrap_or(0))
+            .ok()
+            .map(|at| at.strftime("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_default();
         // The author and the subject are whatever the commit says.
         let line = Markup::new()

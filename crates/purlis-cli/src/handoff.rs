@@ -268,7 +268,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
         }
     };
     let msg = handoff::first_message(
-        &handoff::stamp(&source_chat, &source, now.naive_local()),
+        &handoff::stamp(&source_chat, &source, now.datetime()),
         &brief,
     );
     // Measured as the chat will be sent it: with the stamp naming the chat that asks — which
@@ -521,15 +521,14 @@ fn not_held(from: Option<&str>, to: &str, first: &str) -> String {
 /// The instant this handoff happens at: the hidden `--now`, a LOCAL naive time as it is
 /// everywhere in this binary, else the clock. A `--now` that names no single local instant
 /// is refused rather than swapped for the clock.
-fn when(now: Option<&str>) -> Result<chrono::DateTime<chrono::Local>, String> {
+fn when(now: Option<&str>) -> Result<jiff::Zoned, String> {
     let Some(text) = now else {
-        return Ok(chrono::Local::now());
+        return Ok(jiff::Zoned::now());
     };
-    let naive: chrono::NaiveDateTime = text
-        .parse()
+    let naive = purlis_core::wallclock::reading(text)
         .map_err(|e| format!("--now is not a local naive timestamp: {e}"))?;
-    chrono::TimeZone::from_local_datetime(&chrono::Local, &naive)
-        .single()
+    purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive)
+        .map(|at| at.to_zoned(jiff::tz::TimeZone::system()))
         .ok_or_else(|| "--now names no single local instant".to_owned())
 }
 
@@ -578,7 +577,7 @@ fn record_todo(opened: &Opened<'_>) -> Result<Todo, String> {
         return Ok(Todo::AlreadyListed(dup));
     }
     target
-        .add_todo(&text, opened.now.naive_local())
+        .add_todo(&text, opened.now.datetime())
         .map(|_| Todo::Recorded)
         .map_err(|e| e.to_string())
 }
@@ -592,7 +591,7 @@ struct Opened<'a> {
     source_chat: &'a str,
     /// Where the chat that handed off works: a workspace, or the plane root.
     source: &'a purlis_core::active::Place,
-    now: chrono::DateTime<chrono::Local>,
+    now: jiff::Zoned,
 }
 
 /// What the app that started this chat did with a handoff.

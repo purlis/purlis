@@ -47,7 +47,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::{Capability, Extension, Standing};
 
@@ -449,7 +449,7 @@ pub fn gather(
     config_root: &Path,
     built_in: &super::BuiltIn,
     choices: impl FnOnce() -> super::project::Choices,
-    now: DateTime<Utc>,
+    now: Timestamp,
     reading: Reading,
 ) -> Facts {
     let mut choices = Some(choices);
@@ -546,7 +546,7 @@ pub(crate) fn on_here(
 }
 
 /// One approved, unchanged extension's facts file, into `facts`.
-fn read_one(found: &Extension, now: DateTime<Utc>, reading: Reading, facts: &mut Facts) {
+fn read_one(found: &Extension, now: Timestamp, reading: Reading, facts: &mut Facts) {
     let manifest = &found.manifest;
     let name = &manifest.name;
     let badges: Vec<&DeclaredBadge> = manifest
@@ -717,7 +717,7 @@ fn shown(word: &str) -> String {
 }
 
 /// One `{ "value": …, "at": … }`, as drawn at `now` — or the end of a sentence saying why not.
-fn cell(field: &serde_json::Value, fresh_seconds: u64, now: DateTime<Utc>) -> Result<Cell, String> {
+fn cell(field: &serde_json::Value, fresh_seconds: u64, now: Timestamp) -> Result<Cell, String> {
     let field = field
         .as_object()
         .ok_or("is not an object holding a value and when it was true")?;
@@ -741,10 +741,10 @@ fn cell(field: &serde_json::Value, fresh_seconds: u64, now: DateTime<Utc>) -> Re
         .ok_or("does not say when it was true ('at', in Unix seconds)")?;
     // A clock a little ahead of charter's is an age of nothing, not a negative one. Further
     // ahead than that is a value that would never go stale, which is not a status.
-    if at > now.timestamp().saturating_add(MOST_SKEW_SECONDS) {
+    if at > now.as_second().saturating_add(MOST_SKEW_SECONDS) {
         return Err("says it was true in the future".into());
     }
-    let age_seconds = u64::try_from(now.timestamp().saturating_sub(at)).unwrap_or(0);
+    let age_seconds = u64::try_from(now.as_second().saturating_sub(at)).unwrap_or(0);
     Ok(Cell {
         value,
         age_seconds,
@@ -768,7 +768,7 @@ mod tests {
 
     #[test]
     fn a_value_from_a_clock_ahead_of_charters_is_fresh_and_no_age() {
-        let now = DateTime::from_timestamp(1_000, 0).expect("a time");
+        let now = jiff::Timestamp::from_second(1_000).expect("a time");
         let field = serde_json::json!({"value": 3, "at": 1_060});
         let cell = cell(&field, 10, now).expect("a cell");
         assert_eq!(
@@ -779,14 +779,14 @@ mod tests {
 
     #[test]
     fn a_value_from_far_in_the_future_is_refused_rather_than_fresh_forever() {
-        let now = DateTime::from_timestamp(1_000, 0).expect("a time");
+        let now = jiff::Timestamp::from_second(1_000).expect("a time");
         let field = serde_json::json!({"value": 3, "at": 1_000 + 86_400});
         assert!(cell(&field, 10, now).is_err());
     }
 
     #[test]
     fn a_value_that_draws_as_nothing_is_refused() {
-        let now = DateTime::from_timestamp(1_000, 0).expect("a time");
+        let now = jiff::Timestamp::from_second(1_000).expect("a time");
         let field = serde_json::json!({"value": "ok\u{202e}", "at": 1_000});
         assert!(cell(&field, 10, now).is_err());
     }
@@ -1061,13 +1061,13 @@ mod tests {
     const SECOND_COLUMN: &str = r#"{"id":"d","title":"Deploy","fresh_seconds":60}"#;
 
     /// The clock every reading here is taken at.
-    fn noon() -> DateTime<Utc> {
-        DateTime::from_timestamp(1_800_000_000, 0).expect("a time")
+    fn noon() -> Timestamp {
+        jiff::Timestamp::from_second(1_800_000_000).expect("a time")
     }
 
     /// `{ "value": value, "at": seconds before noon }`.
     fn said(value: &str, ago: i64) -> serde_json::Value {
-        serde_json::json!({"value": value, "at": noon().timestamp() - ago})
+        serde_json::json!({"value": value, "at": noon().as_second() - ago})
     }
 
     /// Extensions in a temporary directory, installed in a config root beside them.
@@ -1494,7 +1494,7 @@ mod tests {
     #[test]
     fn a_value_may_be_text_or_a_number_up_to_forty_characters() {
         let now = noon();
-        let at = now.timestamp();
+        let at = now.as_second();
         let text = cell(&serde_json::json!({"value": " ok ", "at": at}), 10, now).expect("text");
         assert_eq!(text.value, "ok");
         let longest = "é".repeat(MOST_VALUE_CHARS);
@@ -1518,7 +1518,7 @@ mod tests {
         let now = noon();
         let aged = |ago: i64| {
             cell(
-                &serde_json::json!({"value": 1, "at": now.timestamp() - ago}),
+                &serde_json::json!({"value": 1, "at": now.as_second() - ago}),
                 60,
                 now,
             )
@@ -1535,7 +1535,7 @@ mod tests {
         let now = noon();
         let ahead = |by: i64| {
             cell(
-                &serde_json::json!({"value": 1, "at": now.timestamp() + by}),
+                &serde_json::json!({"value": 1, "at": now.as_second() + by}),
                 60,
                 now,
             )

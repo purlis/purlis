@@ -34,48 +34,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CHARTER_HOOK_BINARY}\" hook pretooluse",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CHARTER_HOOK_BINARY}\" hook pretooluse-read",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CHARTER_HOOK_BINARY}\" hook pretooluse-edit",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Task|Agent|mcp__purlis__dispatch|mcp__purlis__dispatch_list|mcp__purlis__dispatch_read|mcp__purlis__dispatch_wait|mcp__purlis__dispatch_tell|mcp__purlis__dispatch_answer|mcp__purlis__dispatch_pass_on|mcp__purlis__dispatch_cancel|mcp__purlis__dispatch_close|mcp__purlis__dispatch_report|mcp__purlis__dispatch_note|mcp__purlis__dispatch_ask",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CHARTER_HOOK_BINARY}\" hook pretooluse-dispatch",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",

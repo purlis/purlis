@@ -94,7 +94,7 @@ fn from_a_chat(f: &support::Fixture, piece: &str) -> (Answer, String) {
             },
         },
         &Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let said = match &answer {
         Answer::Said { lines, .. } => lines.iter().map(spoken).collect::<Vec<_>>().join("\n"),
@@ -116,7 +116,7 @@ fn plain(f: &support::Fixture, name: &str) -> std::path::PathBuf {
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "{name} was not cut");

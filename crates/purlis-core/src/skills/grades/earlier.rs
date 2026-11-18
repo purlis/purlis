@@ -78,10 +78,8 @@ pub struct Earlier {
 
 impl Earlier {
     /// When it left the place, where that reads.
-    pub fn until(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        chrono::DateTime::parse_from_rfc3339(&self.until)
-            .ok()
-            .map(|at| at.with_timezone(&chrono::Utc))
+    pub fn until(&self) -> Option<jiff::Timestamp> {
+        str::parse::<jiff::Timestamp>(&self.until).ok()
     }
 
     /// Whether it says only what purlis writes.
@@ -251,7 +249,7 @@ pub fn moved(
     (from, old): (&Level, &str),
     (to, new): (&Level, &str),
     followed: &[(String, String)],
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<(), String> {
     let (Some(was), Some(is), Some(level)) = (
         super::after_edit::key(from, old),
@@ -275,7 +273,7 @@ pub fn moved(
     let mut kept = read(root);
     let mut earlier = kept.skills.remove(&was).unwrap_or_default();
     if unfollowed {
-        let until = now.to_rfc3339();
+        let until = crate::oldspelling::rfc3339(now);
         let left = std::iter::once((old.to_owned(), level, under_way))
             .chain(
                 followed

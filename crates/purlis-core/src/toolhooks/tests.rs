@@ -83,10 +83,8 @@ impl Plane {
     }
 }
 
-fn now() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-        .unwrap()
-        .with_timezone(&Utc)
+fn now() -> Timestamp {
+    str::parse::<Timestamp>("2026-05-04T11:32:17+00:00").unwrap()
 }
 
 fn denied(answer: &Answer) -> &str {

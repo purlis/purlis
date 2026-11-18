@@ -220,6 +220,46 @@ pub async fn agent_identities(
     .await
 }
 
+/// What the person chose, as the core takes it: refused in a test build, which has no person at a
+/// browser and must never reach the real forge.
+fn wanted_of(owner: String, personal: bool, workflows: bool) -> Result<Wanted, String> {
+    crate::forgeaccounts::host_scope()?;
+    if purlis_core::fence::FENCED {
+        return Err("A test build of purlis doesn't make GitHub Apps.".to_owned());
+    }
+    Ok(Wanted {
+        owner: if personal {
+            Owner::Personal(owner)
+        } else {
+            Owner::Organisation(owner)
+        },
+        workflows,
+    })
+}
+
+/// Keeps the key of an App GitHub made, then opens the page for choosing its repos. Answers its
+/// client id.
+fn keep_and_go_on(
+    ctx: &Ctx,
+    created: &core::Created,
+    browse: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<String, String> {
+    core::keep_key(ctx, created)?;
+    // The key is safe by now, and Open the page again in the window does the same.
+    if browse(&created.install_page()).is_err() {
+        tracing::warn!("purlis: the page for choosing an App's repos did not open");
+    }
+    Ok(created.app.clone())
+}
+
+/// Opens `page` in the person's browser. The opener's own words could repeat the address.
+fn browse_with(app: &tauri::AppHandle, page: &str) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt as _;
+    app.opener()
+        .open_url(page, None::<&str>)
+        .map_err(|_| "the browser did not open".to_owned())
+}
+
 /// **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
 /// the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
 /// organisation's, or with `personal` the person's own. Answers the client id.
@@ -238,26 +278,8 @@ pub async fn agent_identity_create(
     let cancelled = tries(|all| all.begin(&attempt))?;
     let this_try = attempt.clone();
     let done = blocking(move || {
-        crate::forgeaccounts::host_scope()?;
-        // A test build has no person at a browser, and must never reach the real forge.
-        if purlis_core::fence::FENCED {
-            return Err("A test build of purlis doesn't make GitHub Apps.".to_owned());
-        }
-        let wanted = Wanted {
-            owner: if personal {
-                Owner::Personal(owner)
-            } else {
-                Owner::Organisation(owner)
-            },
-            workflows,
-        };
-        let browse = |page: &str| {
-            use tauri_plugin_opener::OpenerExt as _;
-            // The opener's own words could repeat the address.
-            app.opener()
-                .open_url(page, None::<&str>)
-                .map_err(|_| "the browser did not open".to_owned())
-        };
+        let wanted = wanted_of(owner, personal, workflows)?;
+        let browse = |page: &str| browse_with(&app, page);
         let open = |page: &str| {
             *OPENED.lock().unwrap_or_else(|e| e.into_inner()) =
                 Some((this_try.clone(), page.to_owned()));
@@ -279,13 +301,7 @@ pub async fn agent_identity_create(
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take_if(|(opened_by, _)| *opened_by == this_try);
-        let created = created?;
-        core::keep_key(&ctx, &created)?;
-        // The key is safe by now, and Open the page again in the window does the same.
-        if browse(&created.install_page()).is_err() {
-            tracing::warn!("purlis: the page for choosing an App's repos did not open");
-        }
-        Ok(created.app.clone())
+        keep_and_go_on(&ctx, &created?, &browse)
     })
     .await;
     tries(|all| all.end(&attempt));
@@ -313,6 +329,37 @@ pub async fn agent_identity_reopen(app: tauri::AppHandle) -> Result<(), String> 
     app.opener()
         .open_url(page, None::<&str>)
         .map_err(|_| "the browser did not open".to_owned())
+}
+
+/// **Finishes making the App from the address the browser ended on**: for when GitHub
+/// made the App and its redirect never reached the listener, or reached it unmatched. The person
+/// pasted the address themselves, so its code is taken without the `state`, and is still held to
+/// what was asked: the owner named, the permissions, no events. A try still waiting on GitHub is
+/// stopped once the address reads, and not before. Then as [`agent_identity_create`].
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_identity_create_from_address(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    address: String,
+    owner: String,
+    personal: bool,
+    workflows: bool,
+) -> Result<String, String> {
+    let ctx = ctx_of(&planes, &plane)?;
+    blocking(move || {
+        let wanted = wanted_of(owner, personal, workflows)?;
+        let code = core::code_in_address(&address)?;
+        if let Some((running, _)) = OPENED.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            tries(|all| all.stop(&running));
+        }
+        core::ready_to_keep(&ctx)?;
+        let exchange = oauth::Https::shared();
+        let created = core::convert(exchange.as_ref(), &code, &wanted)?;
+        keep_and_go_on(&ctx, &created, &|page| browse_with(&app, page))
+    })
+    .await
 }
 
 /// **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing.

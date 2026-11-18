@@ -59,8 +59,8 @@ pub(crate) fn set_foreign_for_this_test(foreign: bool) {
 }
 
 /// What the app found where it keeps the seal's key.
-#[cfg(not(test))]
-enum Found {
+#[derive(Clone)]
+pub(crate) enum Found {
     /// The app's own item, and its key.
     Held(zeroize::Zeroizing<Vec<u8>>),
     /// An item this app does not own: another program made it, so its key may be known.
@@ -69,8 +69,72 @@ enum Found {
     Unread,
 }
 
+/// **The keyring calls the seal's key is found, checked and made with** (#7073): the operating
+/// system's in the app ([`OsKeyItems`]), a test's stand-in otherwise, so what [`read_or_make`]
+/// decides is tested whole.
+pub(crate) trait KeyItems {
+    /// The item's value; `None` where there is none.
+    fn read(&self, service: &str, account: &str) -> Result<Option<String>, String>;
+    /// Whether this program owns the item, shown by making it again in place with `value`
+    /// ([`super::keyhold::owned_here`]).
+    fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String>;
+    /// A new item of this program's own ([`super::keyhold::make_own`]).
+    fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String>;
+}
+
+/// The operating system's keyring, as the app reaches it.
 #[cfg(not(test))]
-static FOUND: std::sync::OnceLock<Found> = std::sync::OnceLock::new();
+struct OsKeyItems;
+
+#[cfg(not(test))]
+impl KeyItems for OsKeyItems {
+    fn read(&self, service: &str, account: &str) -> Result<Option<String>, String> {
+        match ::keyring::Entry::new(service, account).and_then(|entry| entry.get_password()) {
+            Ok(value) => Ok(Some(value)),
+            Err(::keyring::Error::NoEntry) => Ok(None),
+            Err(why) => Err(why.to_string()),
+        }
+    }
+
+    fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+        super::keyhold::owned_here(service, account, value).map_err(|why| why.to_string())
+    }
+
+    fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+        super::keyhold::make_own(service, account, value)
+            .map(|_| ())
+            .map_err(|why| why.to_string())
+    }
+}
+
+/// **What the app found of the seal's key, kept for the process's life** but read again at the
+/// person's press where it was not the app's own key (#7073): a key item deleted since, or a
+/// keyring that answers now, is found without a restart.
+#[derive(Default)]
+pub(crate) struct KeyCache(Option<Found>);
+
+impl KeyCache {
+    /// What was found, read from `items` the first time, and again where `again` and it was not
+    /// [`Found::Held`]. A key the app holds is never read again.
+    pub(crate) fn found(&mut self, again: bool, items: &dyn KeyItems) -> Found {
+        if again && !matches!(self.0, Some(Found::Held(_))) {
+            self.0 = None;
+        }
+        self.0.get_or_insert_with(|| read_or_make(items)).clone()
+    }
+}
+
+#[cfg(not(test))]
+static FOUND: std::sync::Mutex<KeyCache> = std::sync::Mutex::new(KeyCache(None));
+
+/// What the app found of the seal's key ([`KeyCache::found`]).
+#[cfg(not(test))]
+fn found(again: bool) -> Found {
+    FOUND
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .found(again, &OsKeyItems)
+}
 
 /// The seal's key, made the first time the app asks; none in any other process, in a fenced
 /// build, where the keyring cannot be read, or where the item was made by another program
@@ -88,8 +152,8 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return None;
         }
-        match FOUND.get_or_init(read_or_make) {
-            Found::Held(key) => Some(key.clone()),
+        match found(false) {
+            Found::Held(key) => Some(key),
             Found::Foreign | Found::Unread => None,
         }
     }
@@ -97,7 +161,8 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
 
 /// **Whether the seal's key item was made by another program than the app** (the re-review of
 /// #6992, S4): a seal made with it proves nothing, so every sealed answer reads as broken and is
-/// denied until the person presses again. Only the app can tell.
+/// denied until the person deletes the item and presses again ([`ready_to_seal`]). Only the app
+/// can tell.
 pub fn key_is_foreign() -> bool {
     #[cfg(test)]
     {
@@ -107,11 +172,52 @@ pub fn key_is_foreign() -> bool {
     {
         super::keyhold::is_the_app()
             && !crate::fence::FENCED
-            && matches!(FOUND.get_or_init(read_or_make), Found::Foreign)
+            && matches!(found(false), Found::Foreign)
     }
 }
 
-/// The key the keyring holds, or a new one made and kept there.
+/// What the press says where another program made the seal's key item (#7073): the app cannot
+/// delete an item it does not own, so the person does, and the next press makes a new key.
+pub const FOREIGN_KEY: &str = "another program made the keychain item purlis keeps its seal key \
+     in (purlis-seal), so purlis cannot trust it and accepted nothing. Delete every keychain item \
+     named purlis-seal, in Keychain Access or with `security delete-generic-password -s \
+     purlis-seal` once for each, then press Accept again: purlis makes a new key";
+
+/// What the press says where the keyring could not be read or the key made.
+pub const KEY_UNREAD: &str = "purlis could not read or make its seal key in the keyring, so it \
+     accepted nothing. Unlock the keychain and press Accept again";
+
+/// What the press says in a process that is not the app.
+const NOT_THE_APP: &str = "only purlis's app can accept a policy";
+
+/// **Whether this process can seal now, the key read again where it could not before** (#7073):
+/// the person's press, after they deleted a key item another program made or unlocked the
+/// keyring, finds the key without a restart. The sentence for the window where it cannot.
+pub fn ready_to_seal() -> Result<(), &'static str> {
+    #[cfg(test)]
+    {
+        if TEST_FOREIGN.with(std::cell::Cell::get) {
+            return Err(FOREIGN_KEY);
+        }
+        TEST_KEY
+            .with(|held| held.borrow().is_some())
+            .then_some(())
+            .ok_or(NOT_THE_APP)
+    }
+    #[cfg(not(test))]
+    {
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return Err(NOT_THE_APP);
+        }
+        match found(true) {
+            Found::Held(_) => Ok(()),
+            Found::Foreign => Err(FOREIGN_KEY),
+            Found::Unread => Err(KEY_UNREAD),
+        }
+    }
+}
+
+/// **The key the keyring holds, or a new one made and kept there.**
 ///
 /// **An item that is there is used only once the app proves it owns it**: it is made again in
 /// place with the same key ([`super::keyhold::owned_here`]), which the Keychain lets only the
@@ -119,34 +225,32 @@ pub fn key_is_foreign() -> bool {
 /// catch: an item made with an access rule that lets every program in (`security
 /// add-generic-password -A`), which any program may also delete; a check of the item's access
 /// rule needs Security calls only `unsafe` reaches, which is a ruling of its own.
-#[cfg(not(test))]
-fn read_or_make() -> Found {
-    let Ok(entry) = ::keyring::Entry::new(SERVICE, ACCOUNT) else {
-        return Found::Unread;
-    };
-    match entry.get_password() {
-        Ok(hex) => {
-            let Some(key) = decode(&hex).filter(|key| key.len() == KEY_BYTES) else {
-                return Found::Foreign;
-            };
-            match super::keyhold::owned_here(SERVICE, ACCOUNT, &hex) {
-                Ok(true) => Found::Held(key),
-                Ok(false) => Found::Foreign,
+///
+/// **No item, and a spare one** ([`super::keyhold::spares_of`]): a write of the key that was cut
+/// short between its delete and its add left the key at rest there (#7073). The app's own spare
+/// is made the key again, so every seal made with it still holds; a spare another program made
+/// is [`Found::Foreign`], never a key.
+pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
+    match items.read(SERVICE, ACCOUNT) {
+        Ok(Some(hex)) => checked(items, SERVICE, &hex),
+        Ok(None) => {
+            let [spare, _] = super::keyhold::spares_of(SERVICE);
+            match items.read(&spare, ACCOUNT) {
+                Ok(Some(hex)) => match checked(items, &spare, &hex) {
+                    Found::Held(key) => match items.make_own(SERVICE, ACCOUNT, &hex) {
+                        Ok(()) => Found::Held(key),
+                        Err(why) => {
+                            tracing::warn!("purlis: the seal's spare key was not restored ({why})");
+                            Found::Unread
+                        }
+                    },
+                    other => other,
+                },
+                Ok(None) => fresh(items),
                 Err(why) => {
-                    tracing::warn!("purlis: the seal's key could not be checked ({why})");
+                    tracing::warn!("purlis: the seal's spare key could not be read ({why})");
                     Found::Unread
                 }
-            }
-        }
-        Err(::keyring::Error::NoEntry) => {
-            let mut fresh = zeroize::Zeroizing::new(vec![0u8; KEY_BYTES]);
-            if getrandom::fill(&mut fresh).is_err() {
-                return Found::Unread;
-            }
-            let hex = zeroize::Zeroizing::new(crate::extension::hex(&fresh));
-            match super::keyhold::make_own(SERVICE, ACCOUNT, &hex) {
-                Ok(_) => Found::Held(fresh),
-                Err(_) => Found::Unread,
             }
         }
         Err(why) => {
@@ -156,7 +260,34 @@ fn read_or_make() -> Found {
     }
 }
 
-#[cfg(not(test))]
+/// The key `hex` read from `service`, held only where this program owns its item.
+fn checked(items: &dyn KeyItems, service: &str, hex: &str) -> Found {
+    let Some(key) = decode(hex).filter(|key| key.len() == KEY_BYTES) else {
+        return Found::Foreign;
+    };
+    match items.owned_here(service, ACCOUNT, hex) {
+        Ok(true) => Found::Held(key),
+        Ok(false) => Found::Foreign,
+        Err(why) => {
+            tracing::warn!("purlis: the seal's key could not be checked ({why})");
+            Found::Unread
+        }
+    }
+}
+
+/// A new random key, made and kept as this program's own item.
+fn fresh(items: &dyn KeyItems) -> Found {
+    let mut fresh = zeroize::Zeroizing::new(vec![0u8; KEY_BYTES]);
+    if getrandom::fill(&mut fresh).is_err() {
+        return Found::Unread;
+    }
+    let hex = zeroize::Zeroizing::new(crate::extension::hex(&fresh));
+    match items.make_own(SERVICE, ACCOUNT, &hex) {
+        Ok(()) => Found::Held(fresh),
+        Err(_) => Found::Unread,
+    }
+}
+
 fn decode(hex: &str) -> Option<zeroize::Zeroizing<Vec<u8>>> {
     let bytes: Option<Vec<u8>> = (0..hex.len())
         .step_by(2)
@@ -303,5 +434,110 @@ mod tests {
                 "{service}"
             );
         }
+    }
+
+    /// A keyring of items, each with whether this program owns it.
+    #[derive(Default)]
+    struct Items(std::cell::RefCell<std::collections::BTreeMap<(String, String), (String, bool)>>);
+
+    impl Items {
+        fn with(self, service: &str, value: &str, ours: bool) -> Self {
+            self.0.borrow_mut().insert(
+                (service.to_owned(), ACCOUNT.to_owned()),
+                (value.to_owned(), ours),
+            );
+            self
+        }
+
+        fn value(&self, service: &str) -> Option<String> {
+            self.0
+                .borrow()
+                .get(&(service.to_owned(), ACCOUNT.to_owned()))
+                .map(|(value, _)| value.clone())
+        }
+
+        fn forget(&self, service: &str) {
+            self.0
+                .borrow_mut()
+                .remove(&(service.to_owned(), ACCOUNT.to_owned()));
+        }
+    }
+
+    impl KeyItems for Items {
+        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, String> {
+            Ok(self.value(service))
+        }
+
+        fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+            let key = (service.to_owned(), account.to_owned());
+            let mut items = self.0.borrow_mut();
+            if items.get(&key).is_some_and(|(_, ours)| !ours) {
+                return Ok(false);
+            }
+            items.insert(key, (value.to_owned(), true));
+            Ok(true)
+        }
+
+        fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+            if self.owned_here(service, account, value)? {
+                Ok(())
+            } else {
+                Err("another program's item".to_owned())
+            }
+        }
+    }
+
+    fn held(found: Found) -> Vec<u8> {
+        match found {
+            Found::Held(key) => key.to_vec(),
+            Found::Foreign => panic!("held, not foreign"),
+            Found::Unread => panic!("held, not unread"),
+        }
+    }
+
+    fn spare() -> String {
+        super::super::keyhold::spares_of(SERVICE)[0].clone()
+    }
+
+    #[test]
+    fn a_key_item_another_program_made_is_foreign_and_never_a_key() {
+        // The re-review of #6992, S4, and #7073: the ownership check is what turns a key whose
+        // maker may know it into no key at all.
+        let items = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false);
+        assert!(matches!(read_or_make(&items), Found::Foreign));
+        let ours = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), true);
+        assert_eq!(held(read_or_make(&ours)), vec![0xab; KEY_BYTES]);
+    }
+
+    #[test]
+    fn a_spare_key_left_by_a_cut_short_write_is_the_key_again() {
+        // #7073: a crash between the delete and the add leaves the key in the spare alone; a new
+        // key would break every seal made with it.
+        let items = Items::default().with(&spare(), &"cd".repeat(KEY_BYTES), true);
+        assert_eq!(held(read_or_make(&items)), vec![0xcd; KEY_BYTES]);
+        assert_eq!(items.value(SERVICE), Some("cd".repeat(KEY_BYTES)));
+        // A spare another program made is never taken for the key.
+        let theirs = Items::default().with(&spare(), &"cd".repeat(KEY_BYTES), false);
+        assert!(matches!(read_or_make(&theirs), Found::Foreign));
+    }
+
+    #[test]
+    fn the_press_reads_a_foreign_key_again_and_a_held_key_never() {
+        // #7073: once the person deletes the item another program made, the press finds no key
+        // and makes one, without a restart.
+        let items = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false);
+        let mut cache = KeyCache::default();
+        assert!(matches!(cache.found(false, &items), Found::Foreign));
+        items.forget(SERVICE);
+        assert!(
+            matches!(cache.found(false, &items), Found::Foreign),
+            "kept until a press"
+        );
+        let made = held(cache.found(true, &items));
+        assert_eq!(items.value(SERVICE), Some(crate::extension::hex(&made)));
+        // The app's own key is never read again, whatever is put where it was.
+        items.forget(SERVICE);
+        let items = items.with(SERVICE, &"ef".repeat(KEY_BYTES), false);
+        assert_eq!(held(cache.found(true, &items)), made);
     }
 }

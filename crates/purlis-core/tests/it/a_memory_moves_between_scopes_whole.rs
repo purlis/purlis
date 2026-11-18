@@ -32,11 +32,11 @@ fn plane(tmp: &tempfile::TempDir) -> Plane {
     Plane::open(root)
 }
 
-fn at() -> chrono::NaiveDateTime {
+fn at() -> jiff::civil::DateTime {
     "2026-03-02T09:14:37".parse().unwrap()
 }
 
-fn later() -> chrono::NaiveDateTime {
+fn later() -> jiff::civil::DateTime {
     "2026-10-05T17:01:02".parse().unwrap()
 }
 

@@ -412,6 +412,10 @@ pub struct Settings {
     /// What the table holds that purlis could not read, one sentence each, for the window's
     /// Notice. Each was taken in the strict direction.
     pub refused: Vec<String>,
+    /// **Whether git could not read the committed file** ([`committed_text`]): the project is
+    /// read as `strict` meanwhile, and that is never kept as what the person accepted, since it
+    /// is no tightening the project made (#7073).
+    pub unread: bool,
 }
 
 impl Settings {
@@ -556,6 +560,7 @@ impl Settings {
                     "git could not read the project's last commit, so its [policy] is enforced"
                         .to_owned(),
                 ],
+                unread: true,
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
@@ -1034,8 +1039,13 @@ pub fn at_start(root: &Path) -> Resolved {
 /// acceptance that cannot be kept changes nothing this answers.
 fn resolved_in_the_app(root: &Path) -> Resolved {
     let accepted = accepted(root);
-    let resolved = committed(root).stricter(&accepted);
+    let settings = Settings::read(root);
+    let resolved =
+        Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root)).stricter(&accepted);
+    // A `HEAD` git could not read is strict for now and never kept (#7073): a git that timed out
+    // once is no tightening the project made, and would need a press to undo.
     if resolved != accepted
+        && !settings.unread
         && let Err(why) = crate::sandbox::local::accept_policy(root, resolved.as_kept())
     {
         tracing::warn!("purlis: the accepted policy was not kept ({why})");
@@ -1334,7 +1344,9 @@ pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Opt
         return;
     };
     let line = Logged {
-        at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        at: jiff::Timestamp::now()
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+            .to_string(),
         rule: crate::shown::one_line(rule, MOST_CHARS),
         family: family.key().to_owned(),
         chat: chat.to_owned(),
@@ -1371,17 +1383,85 @@ fn append(root: &Path, path: &Path, line: &Logged) -> std::io::Result<()> {
         options.mode(0o600);
     }
     let mut file = crate::contain::nofollow(&mut options).open(path)?;
-    if lines_in(&mut file)? >= MOST_LINES {
+    // One writer at a time, so the count kept is the file's.
+    let mut counts = COUNTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let now = Counted::of(&file.metadata()?, 0);
+    let lines = match counts.get(path) {
+        Some(kept) if kept.same_file(&now) => kept.lines,
+        _ => lines_in(&mut file)?,
+    };
+    if lines >= MOST_LINES {
+        counts.insert(path.to_path_buf(), Counted { lines, ..now });
         return Ok(());
     }
     let mut text = serde_json::to_string(line).map_err(std::io::Error::other)?;
     text.push('\n');
-    file.write_all(text.as_bytes())
+    file.write_all(text.as_bytes())?;
+    counts.insert(
+        path.to_path_buf(),
+        Counted::of(&file.metadata()?, lines + 1),
+    );
+    Ok(())
+}
+
+/// **How many lines each log held after the app's last write to it** (#7073), so a line is not
+/// a read of the whole file: counted again only where the file is not as the app left it
+/// (another file in its place, or a length the app did not write).
+static COUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, Counted>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// One log as the app last left it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Counted {
+    /// Which file it is: its device and inode where the platform has them.
+    file: (u64, u64),
+    /// Its length in bytes.
+    len: u64,
+    /// The lines it holds.
+    lines: usize,
+}
+
+impl Counted {
+    fn of(meta: &std::fs::Metadata, lines: usize) -> Self {
+        #[cfg(unix)]
+        let file = {
+            use std::os::unix::fs::MetadataExt;
+            (meta.dev(), meta.ino())
+        };
+        #[cfg(not(unix))]
+        let file = (0, 0);
+        Self {
+            file,
+            len: meta.len(),
+            lines,
+        }
+    }
+
+    /// Whether `now` is this very file at the length the app left it.
+    fn same_file(&self, now: &Self) -> bool {
+        self.file == now.file && self.len == now.len
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread read a log whole to count its lines.
+    static COUNTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many times this thread read a log whole** to count its lines.
+#[cfg(test)]
+fn counted_whole() -> usize {
+    COUNTED.with(std::cell::Cell::get)
 }
 
 /// How many lines `file` holds, read from its start.
 fn lines_in(file: &mut std::fs::File) -> std::io::Result<usize> {
     use std::io::{BufRead, Seek};
+    #[cfg(test)]
+    COUNTED.with(|counted| counted.set(counted.get() + 1));
     file.seek(std::io::SeekFrom::Start(0))?;
     let mut lines = 0;
     let mut reader = std::io::BufReader::new(&*file);

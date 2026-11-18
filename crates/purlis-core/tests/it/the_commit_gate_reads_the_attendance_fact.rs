@@ -43,7 +43,7 @@ fn gate(attendance: Attendance, mode: Option<&str>) -> Option<String> {
         payload: &payload,
         env: &|_| None,
         cwd: plane.path(),
-        now: chrono::Utc::now(),
+        now: jiff::Timestamp::now(),
         host: "a-machine",
     };
     commitgate::nudge(&hook, attendance)

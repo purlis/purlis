@@ -56,7 +56,7 @@ fn a_dispatch(mode: Mode, by_person: bool, brief: &str) -> Opening {
 /// `dispatches::opened` does both.
 fn dispatched(root: &Path, opening: Opening, sent: &Sent) -> Record {
     let brief = opening.brief.clone();
-    let record = dispatchrecord::open(root, opening, chrono::Utc::now()).unwrap();
+    let record = dispatchrecord::open(root, opening, jiff::Timestamp::now()).unwrap();
     sent.note(&record, &brief);
     record
 }
@@ -268,7 +268,7 @@ fn a_newer_record_naming_a_chat_by_number_only_does_not_hide_this_chat_s_own() {
     let mut by_number = a_dispatch(Mode::Task, false, "# Other\n");
     by_number.worker.chat.id = None;
     by_number.worker.chat.chat = the_worker().number.unwrap();
-    let later = chrono::Utc::now() + chrono::Duration::seconds(5);
+    let later = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(5);
     dispatchrecord::open(&root, by_number, later).unwrap();
 
     let again = again(&root, &the_worker(), &sent).expect("its own record");
@@ -284,7 +284,7 @@ fn the_digests_kept_are_bounded_and_the_oldest_go_first() {
     let record = dispatchrecord::open(
         &root,
         a_dispatch(Mode::Task, false, BRIEF),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     let numbered = |n: usize| Record {

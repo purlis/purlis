@@ -197,7 +197,7 @@ pub(crate) fn read(held: &Held, session: u32) -> Option<Activity> {
     let chat = crate::dispatches::chat_ref(held, session)?;
     let open = crate::dispatches::open_chats(held);
     let bounds = activity::Bounds::TAB;
-    let found = activity::timeline_within(held.root(), &chat, chrono::Utc::now(), bounds);
+    let found = activity::timeline_within(held.root(), &chat, jiff::Timestamp::now(), bounds);
     let mut lines: Vec<ActivityLine> = found
         .lines
         .iter()
@@ -439,7 +439,7 @@ impl Daily {
         project: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
     ) -> Self {
         Self::every(root, SWEEP_EVERY, move |root| {
-            let expired = dispatchrecord::expire_talk(root, chrono::Utc::now());
+            let expired = dispatchrecord::expire_talk(root, jiff::Timestamp::now());
             if let Some(held) = project.get().and_then(std::sync::Weak::upgrade) {
                 for id in &expired {
                     forgotten(&held, id);
@@ -791,7 +791,7 @@ mod tests {
         use purlis_core::dispatchrecord::{Asker, Ending, Report, Worker};
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let task = |mode: Mode| purlis_core::dispatchrecord::Opening {
             mode,
             asker: Asker {

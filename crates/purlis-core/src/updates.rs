@@ -365,24 +365,23 @@ pub struct IsoWeek {
 }
 
 impl IsoWeek {
-    /// The week holding `secs` since the epoch, in UTC, or `None` for a time chrono cannot
+    /// The week holding `secs` since the epoch, in UTC, or `None` for a time jiff cannot
     /// place.
     pub fn of(secs: i64) -> Option<IsoWeek> {
-        use chrono::Datelike;
-        let week = chrono::DateTime::from_timestamp(secs, 0)?.iso_week();
-        Some(IsoWeek {
-            year: week.year(),
-            week: week.week(),
-        })
+        Some(IsoWeek::holding(jiff::Timestamp::from_second(secs).ok()?))
     }
 
     /// This week, by the system clock.
     pub fn now() -> IsoWeek {
-        use chrono::Datelike;
-        let week = chrono::Utc::now().iso_week();
+        IsoWeek::holding(jiff::Timestamp::now())
+    }
+
+    /// The week holding `at`, in UTC.
+    fn holding(at: jiff::Timestamp) -> IsoWeek {
+        let week = crate::wallclock::utc_day(at).iso_week_date();
         IsoWeek {
-            year: week.year(),
-            week: week.week(),
+            year: i32::from(week.year()),
+            week: u32::from(week.week().unsigned_abs()),
         }
     }
 
@@ -397,7 +396,12 @@ impl IsoWeek {
         }
         let year: i32 = year.parse().ok()?;
         let week: u32 = week.parse().ok()?;
-        chrono::NaiveDate::from_isoywd_opt(year, week, chrono::Weekday::Mon)?;
+        jiff::civil::ISOWeekDate::new(
+            i16::try_from(year).ok()?,
+            i8::try_from(week).ok()?,
+            jiff::civil::Weekday::Monday,
+        )
+        .ok()?;
         Some(IsoWeek { year, week })
     }
 }
@@ -651,12 +655,13 @@ mod tests {
     fn an_iso_week_is_read_off_the_calendar_including_at_the_turn_of_the_year() {
         // Worked examples, from the ISO 8601 rule that week 1 holds the year's first Thursday.
         let day = |y, m, d| {
-            chrono::NaiveDate::from_ymd_opt(y, m, d)
+            crate::wallclock::day(y, m, d)
                 .unwrap()
-                .and_hms_opt(12, 0, 0)
+                .at(12, 0, 0, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_utc()
                 .timestamp()
+                .as_second()
         };
         assert_eq!(
             IsoWeek::of(day(2026, 10, 5)).unwrap().to_string(),

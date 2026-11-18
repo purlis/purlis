@@ -92,7 +92,7 @@ impl Probe {
                 params: &params,
                 plane,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     }
 
@@ -178,7 +178,7 @@ fn an_answer_in_the_facts_file_is_used_while_fresh_and_the_program_is_not_starte
     let mut doc: Value =
         serde_json::from_str(&std::fs::read_to_string(&facts).expect("facts")).expect("JSON");
     doc["workspaces"]["alpha"]["queries"]["asked"]["at"] =
-        json!(chrono::Utc::now().timestamp() - 61);
+        json!(jiff::Timestamp::now().as_second() - 61);
     std::fs::write(&facts, doc.to_string()).expect("written");
     let stale = probe.ask("query-probe.asked", json!({}));
     assert_eq!(data(&stale)["asked"], 3);
@@ -244,7 +244,7 @@ fn a_viewer_without_the_extension_or_its_query_or_with_it_off_is_answered_needs_
                 params: &json!({}),
                 plane: false,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         assert_eq!(answer.outcome, needs);
     }

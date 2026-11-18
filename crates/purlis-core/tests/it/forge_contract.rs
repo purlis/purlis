@@ -1373,7 +1373,7 @@ mod cases {
                 }),
             ]
         );
-        let day = |d| chrono::NaiveDate::from_ymd_opt(2026, 10, d);
+        let day = |d| purlis_core::wallclock::day(2026, 10, d);
         let sprint = item.iteration.as_ref().expect("the item's iteration");
         assert_eq!(sprint.title.as_deref(), Some("Sprint 3"));
         assert_eq!((sprint.start, sprint.end), (day(5), day(18)));
@@ -3754,7 +3754,7 @@ mod merge_when_ready_scenes {
     #[test]
     fn a_head_the_forge_says_was_touched_a_moment_ago_is_not_settled_whatever_the_machine_says() {
         purlis_core::unsteered!();
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = purlis_core::oldspelling::rfc3339(jiff::Timestamp::now());
         for touched in [json!(now), Value::Null, json!("yesterday")] {
             let (backend, recorded) = over(
                 Kind::GitHub,

@@ -336,6 +336,22 @@ fn every() -> Vec<Row> {
             ActionId::CheckAgain,
         ),
         row(
+            Finding::KernelShort {
+                host: "build-box".into(),
+                short: crate::dockerpool::kernel::Short {
+                    release: Some("6.8.0-45-generic".into()),
+                    ubuntu_24_04: true,
+                },
+            },
+            ssh,
+            "kernel-short",
+            "build-box runs Linux 6.8.0-45-generic, and purlis's sandbox needs Landlock version 6 \
+             (Linux 6.12 or later), so no chat on this pool will start. A container runs on its \
+             host's kernel. On build-box, run `sudo apt install --install-recommends \
+             linux-generic-hwe-24.04` for a newer kernel, then restart build-box and check again.",
+            ActionId::CheckAgain,
+        ),
+        row(
             Finding::ContextMoved {
                 name: "builder".into(),
             },
@@ -385,10 +401,11 @@ fn variant(finding: &Finding) -> usize {
         Finding::Here(_) => 23,
         Finding::NotSsh { .. } => 24,
         Finding::NotMetThrough { .. } => 25,
+        Finding::KernelShort { .. } => 26,
     }
 }
 
-const VARIANTS: usize = 26;
+const VARIANTS: usize = 27;
 
 fn facts(route: &str, finding: &Finding) -> Facts {
     let tls = crate::tlsroute::is_tcp(route).then(|| crate::tlsroute::Files {
@@ -743,6 +760,12 @@ struct Stand {
     dir: tempfile::TempDir,
 }
 
+/// What `docker info` says of a host on Ubuntu 24.04's newer kernel.
+const INFO: &str = r#"{"OSType":"linux","Architecture":"x86_64","KernelVersion":"6.14.0-29-generic","OperatingSystem":"Ubuntu 24.04.3 LTS"}"#;
+
+/// What `docker info` says of a host on Ubuntu 24.04's first kernel, Linux 6.8.
+const INFO_6_8: &str = r#"{"OSType":"linux","Architecture":"x86_64","KernelVersion":"6.8.0-45-generic","OperatingSystem":"Ubuntu 24.04.1 LTS"}"#;
+
 const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 impl Stand {
@@ -751,6 +774,7 @@ impl Stand {
         let d = dir.path().display().to_string();
         let script = format!(
             "#!/bin/sh\nd='{d}'\necho \"$*\" >> \"$d/log\"\ncase \"$*\" in\n\
+             *' _landlock'*) cat \"$d/abi\" 2>/dev/null ;;\n\
              *'--entrypoint df '*) cat \"$d/df\" 2>/dev/null; cat \"$d/df-said\" >&2 2>/dev/null; \
              exit \"$(cat \"$d/df-exit\" 2>/dev/null || echo 0)\" ;;\n\
              *SecurityOptions*) [ -f \"$d/security\" ] || {{ echo 'Cannot connect to the Docker \
@@ -770,7 +794,8 @@ impl Stand {
             "security",
             r#"["name=seccomp,profile=builtin","name=cgroupns"]"#,
         );
-        stand.set("info", r#"{"OSType":"linux","Architecture":"x86_64"}"#);
+        stand.set("info", INFO);
+        stand.set("abi", "6\n");
         stand.set("inspect", r#"[{"Os":"linux","Architecture":"amd64"}]"#);
         stand.set("pulled", r#"[{"Os":"linux","Architecture":"amd64"}]"#);
         stand.set(
@@ -947,7 +972,7 @@ fn connect_checks_the_engine_with_docker_info_alone() {
     assert_eq!(
         on_connect(&stand.docker(), "build-box"),
         Ok(Passed {
-            checked: vec!["unconfined", "unsupported-architecture"],
+            checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
             disk_unmeasured: false,
         })
     );
@@ -970,6 +995,145 @@ fn connect_checks_the_engine_with_docker_info_alone() {
     assert!(
         !log.contains("image") && !log.contains("pull") && !log.contains("run"),
         "{log}"
+    );
+}
+
+/// **A host whose kernel lacks Landlock 6 is found before any runner is made** (#7084): the
+/// runner image's own `purlis` reads the kernel's Landlock version in a container held by the
+/// runner's own seccomp profile, so it answers as a runner there would, and the host's release
+/// is named for the person.
+#[test]
+fn a_host_whose_kernel_lacks_landlock_6_is_found_before_any_runner_is_made() {
+    let stand = Stand::new();
+    stand.set("info", INFO_6_8);
+    stand.set("abi", "4\n");
+    assert_eq!(
+        engine(&stand.docker(), "build-box", &ours()),
+        Err(Finding::KernelShort {
+            host: "build-box".into(),
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.8.0-45-generic".into()),
+                ubuntu_24_04: true,
+            },
+        })
+    );
+    let log = stand.log();
+    let probe = log.lines().find(|line| line.contains("_landlock")).unwrap();
+    assert!(
+        probe.contains("--entrypoint /usr/local/bin/purlis"),
+        "{probe}"
+    );
+    assert!(probe.contains("seccomp="), "{probe}");
+    assert!(probe.contains("--network none"), "{probe}");
+    assert!(!log.contains("--entrypoint df"), "{log}");
+}
+
+/// **The kernel's own Landlock version wins over its release** (#7084): a host that has
+/// Landlock 6 on a release before 6.12 passes, and one with it passes with the check named.
+#[test]
+fn the_kernels_landlock_version_wins_over_its_release() {
+    let stand = Stand::new();
+    stand.set("info", INFO_6_8);
+    let passed = engine(&stand.docker(), "build-box", &ours()).unwrap();
+    assert!(passed.checked.contains(&"kernel-short"), "{passed:?}");
+    assert_eq!(passed, Passed::every());
+}
+
+/// **An image whose `purlis` can't say its Landlock is judged by the host's release** (#7084):
+/// a runner image from before the probe answers nothing, so a release before 6.12 is short and
+/// one at or after it passes. Neither said, nothing is held up and nothing is claimed.
+#[test]
+fn an_image_that_cant_say_its_landlock_is_judged_by_the_hosts_release() {
+    let stand = Stand::new();
+    stand.gone("abi");
+    stand.set("info", INFO_6_8);
+    assert!(matches!(
+        engine(&stand.docker(), "build-box", &ours()),
+        Err(Finding::KernelShort { .. })
+    ));
+    stand.set("info", INFO);
+    assert_eq!(
+        engine(&stand.docker(), "build-box", &ours()),
+        Ok(Passed::every())
+    );
+    stand.set("info", r#"{"OSType":"linux","Architecture":"x86_64"}"#);
+    let passed = engine(&stand.docker(), "build-box", &ours()).unwrap();
+    assert!(!passed.checked.contains(&"kernel-short"), "{passed:?}");
+    assert!(passed.checked.contains(&"disk-full"), "{passed:?}");
+}
+
+/// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image
+/// is picked, the host's release is all there is to read, and nothing is run there.
+#[test]
+fn connect_finds_a_short_kernel_from_docker_info_alone() {
+    let stand = Stand::new();
+    assert_eq!(
+        on_connect(&stand.docker(), "build-box"),
+        Ok(Passed {
+            checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
+            disk_unmeasured: false,
+        })
+    );
+    stand.set(
+        "info",
+        r#"{"OSType":"linux","Architecture":"x86_64","KernelVersion":"6.1.0-26-amd64","OperatingSystem":"Debian GNU/Linux 12 (bookworm)"}"#,
+    );
+    assert_eq!(
+        on_connect(&stand.docker(), "build-box"),
+        Err(Finding::KernelShort {
+            host: "build-box".into(),
+            short: crate::dockerpool::kernel::Short {
+                release: Some("6.1.0-26-amd64".into()),
+                ubuntu_24_04: false,
+            },
+        })
+    );
+    let log = stand.log();
+    assert!(!log.contains("run"), "{log}");
+}
+
+/// **A short kernel elsewhere than Ubuntu 24.04 is told the floor, not a command** (#7084):
+/// only Ubuntu 24.04 has one package that brings Linux 6.12 or later, and a release that
+/// couldn't be read isn't named.
+#[test]
+fn a_short_kernel_elsewhere_than_ubuntu_24_04_is_told_the_floor_and_no_command() {
+    let finding = Finding::KernelShort {
+        host: "build-box".into(),
+        short: crate::dockerpool::kernel::Short {
+            release: None,
+            ubuntu_24_04: false,
+        },
+    };
+    let (words, next) = super::super::connecting::said_and_next(&finding);
+    assert_eq!(
+        words,
+        "build-box's kernel doesn't have Landlock version 6 (Linux 6.12 or later), which purlis's \
+         sandbox needs, so no chat on this pool will start. A container runs on its host's \
+         kernel. Update build-box to Linux 6.12 or later, restart it, then check again."
+    );
+    assert_eq!(next.unwrap().id, ActionId::CheckAgain);
+    let see = step_of(&trusted_over_ssh(finding)).see.unwrap();
+    assert!(!see.text.contains("apt"), "{}", see.text);
+    assert!(see.text.contains("KernelVersion"), "{}", see.text);
+}
+
+/// **A kernel new enough that still lacks Landlock is told to turn it on** (#7084): telling a
+/// host on Linux 6.14 to update to 6.12 would lead nowhere.
+#[test]
+fn a_kernel_new_enough_that_lacks_landlock_is_told_to_turn_it_on() {
+    let (words, _) = super::super::connecting::said_and_next(&Finding::KernelShort {
+        host: "build-box".into(),
+        short: crate::dockerpool::kernel::Short {
+            release: Some("6.14.0-29-generic".into()),
+            ubuntu_24_04: true,
+        },
+    });
+    assert_eq!(
+        words,
+        "build-box runs Linux 6.14.0-29-generic, and its kernel doesn't have Landlock version 6, \
+         which purlis's sandbox needs, so no chat on this pool will start. A container runs on \
+         its host's kernel. Turn Landlock on in build-box's kernel (add `landlock` to its `lsm=` \
+         boot setting), restart it, then check again."
     );
 }
 
@@ -1284,6 +1448,7 @@ fn only_the_findings_named_for_the_admin_go_to_the_admin() {
         "unconfined",
         "disk-full",
         "image-unreachable",
+        "kernel-short",
         "tls-not-signed",
         "tls-client-refused",
     ] {

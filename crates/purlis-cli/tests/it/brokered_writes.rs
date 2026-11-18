@@ -84,7 +84,7 @@ fn an_app(tmp: &tempfile::TempDir, answer: Option<Answer>) -> App {
                 &project,
                 &asker,
                 &write.write,
-                chrono::Local::now().naive_local(),
+                jiff::Zoned::now().datetime(),
             ) {
                 Ok(brokered::Done::Written(written)) => Answer::Written {
                     to: written.to,
@@ -378,7 +378,7 @@ fn a_memory_in(tmp: &tempfile::TempDir, ws: &str, text: &str) -> String {
     let path = purlis_core::workspaces::Plane::open(root(tmp))
         .workspace(ws)
         .unwrap()
-        .remember(text, chrono::Local::now().naive_local())
+        .remember(text, jiff::Zoned::now().datetime())
         .expect("remembered");
     path.file_stem().unwrap().to_string_lossy().into_owned()
 }
@@ -1260,6 +1260,113 @@ fn the_session_record_tool_whose_app_has_gone_writes_the_record_itself() {
 
     assert_ne!(result["isError"], true, "{result}");
     assert_eq!(records_in_alpha(&tmp).len(), 1);
+}
+
+/// **An app above the chat whose every place is taken** (#6995, #991): it serves at most two
+/// connections at once, and two asks of this process's own hold both, unanswered until it is
+/// dropped. A chat can do this itself: one process may hold 32 of the app's places.
+struct FullApp {
+    app: App,
+    release: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    fillers: Vec<std::thread::JoinHandle<()>>,
+}
+
+fn a_full_app(tmp: &tempfile::TempDir) -> FullApp {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let socket = tmp.path().join("app").join("hooks.sock");
+    let (tx, asked) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let release = std::sync::Arc::new(AtomicBool::new(false));
+    let held = std::sync::Arc::clone(&release);
+    let listener = Listener::bind(tmp.path(), &socket)
+        .unwrap_or_else(|e| panic!("a socket: {e}"))
+        .serving_at_most(32, 2);
+    let token = listener.tokens().issue_to_this_process(3).expect("a token");
+    let reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, ask| {
+            tx.lock().unwrap().send(ask.clone()).unwrap();
+            while !held.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Answer::No {
+                why: "released".to_owned(),
+            }
+        }),
+    );
+    let fillers = (0..2)
+        .map(|_| {
+            let socket = socket.clone();
+            let token = token.clone();
+            std::thread::spawn(move || {
+                let stream = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+                let mut asking = hookwire::Asking::over(stream, Some(token));
+                let _ = asking.ask(
+                    &Ask::Write(Box::new(hookwire::WriteAsk {
+                        chat: 3,
+                        write: Write::PersonaRemember {
+                            text: "Holds a place".to_owned(),
+                            title: None,
+                            shared: true,
+                        },
+                    })),
+                    Duration::from_secs(60),
+                );
+            })
+        })
+        .collect();
+    let app = App {
+        _reading: reading,
+        token,
+        socket,
+        asked,
+    };
+    // Both places are held once the app has been asked twice.
+    for _ in 0..2 {
+        app.asked
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a place held");
+    }
+    FullApp {
+        app,
+        release,
+        fillers,
+    }
+}
+
+impl Drop for FullApp {
+    fn drop(&mut self) {
+        self.release
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        for filler in self.fillers.drain(..) {
+            let _ = filler.join();
+        }
+    }
+}
+
+#[test]
+fn the_mcp_server_under_a_full_app_writes_neither_memory_nor_session_record_itself() {
+    // The app is above the server and is full: it could have written either, so the server,
+    // which runs outside the sandbox, never writes in its place (#6995).
+    let tmp = a_project();
+    let full = a_full_app(&tmp);
+
+    let remembered = persona_remember_over_mcp(
+        &tmp,
+        &full.app.chat_env(),
+        serde_json::json!({ "text": "Never written", "shared": true }),
+    );
+    let recorded = session_record_over_mcp(&tmp, &full.app.chat_env());
+
+    assert_eq!(remembered["isError"], true, "{remembered}");
+    assert!(
+        files(&root(&tmp).join("personas/_shared/memory")).is_empty(),
+        "{remembered}"
+    );
+    assert_eq!(recorded["isError"], true, "{recorded}");
+    assert!(records_in_alpha(&tmp).is_empty(), "{recorded}");
+    // Neither reached the app: both were turned away at the door.
+    assert!(full.app.asked.try_recv().is_err());
 }
 
 #[test]

@@ -14,10 +14,8 @@ fn project() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 const ASKER_ID: &str = "01K6ASKER0000000000000000A";
