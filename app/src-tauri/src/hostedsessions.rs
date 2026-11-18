@@ -5469,10 +5469,6 @@ impl SessionHost for HostedSessions {
 
     /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
     /// never opens one to the runner.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        self.runner_files_of(id).is_some()
-    }
-
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
         if !self.kept_on_the_runner || !self.on_a_docker_pool() {
             return None;
