@@ -1,0 +1,1 @@
+{"session_id":"s","tool_name":"Bash","tool_input":{"command":"touch /etc/x"},"tool_response":{"stdout":"","stderr":"touch: /etc/x: Operation not permitted\ncurl: (56) CONNECT tunnel failed, response 403","interrupted":false}}

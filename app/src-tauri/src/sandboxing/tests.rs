@@ -3559,9 +3559,10 @@ fn a_projects_run_grants_moved_by_the_core_reach_the_window_named_for_that_proje
 fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_board_audited() {
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
-    let board = std::sync::Arc::new(purlis_core::sandbox::asks::Asks::new(std::sync::Arc::new(
-        |_: purlis_core::sandbox::asks::Heard| {},
-    )));
+    let board = std::sync::Arc::new(purlis_core::sandbox::asks::Asks::new(
+        std::sync::Arc::new(|_: purlis_core::sandbox::asks::Heard| {}),
+        &purlis_core::sandbox::timings::Timings::production(),
+    ));
     let chats =
         crate::chats::tests::restartable_chats_of(root, crate::host::pretend::Pretend::default());
     crate::chats::tests::a_chat_asking_live_on(

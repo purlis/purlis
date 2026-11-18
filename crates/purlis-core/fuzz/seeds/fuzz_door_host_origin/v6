@@ -1,0 +1,5 @@
+¸GET / HTTP/1.1
+Host: [::1]:3000
+Cookie: a=b; purlis-door-3000=0123456789abcdef0123456789abcdef
+Sec-Fetch-Site: same-origin
+

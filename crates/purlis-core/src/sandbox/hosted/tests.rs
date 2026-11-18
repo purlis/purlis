@@ -215,8 +215,10 @@ fn a_port_is_given_back_only_while_this_machines_sandbox_gives_it_now() {
 #[test]
 fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_off() {
     use purlis_session_protocol::session::ReachChange;
-    let board =
-        crate::sandbox::asks::Asks::new(std::sync::Arc::new(|_: crate::sandbox::asks::Heard| {}));
+    let board = crate::sandbox::asks::Asks::new(
+        std::sync::Arc::new(|_: crate::sandbox::asks::Heard| {}),
+        &crate::sandbox::timings::Timings::production(),
+    );
     let allow = ReachChange::AllowNext {
         host: "api.example.com:443".to_owned(),
     };
@@ -248,4 +250,22 @@ fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_
         target: "api.example.com:443".to_owned(),
     };
     assert_eq!(super::next_changed(Some(&board), &other), None);
+}
+
+/// **A plan's fit looks its listed names up through the one recorded lookup** (T1.1-06): every
+/// name the runner's fit asked the system's resolver for is in `asked_the_system`, so a scenario's
+/// "saw nothing" cannot pass while a fit looked a name up behind it.
+#[test]
+fn a_plans_fit_records_each_name_it_asked_the_system_for() {
+    let project = tempfile::tempdir().expect("a project");
+    let name = format!("fit-{}.invalid", std::process::id());
+    let plan = Plan {
+        reach: Reach::of(vec![(name.clone(), crate::sandbox::reach::By::You)]).written(),
+        ..composed(Vec::new())
+    };
+    let _fits = super::fits_here(project.path(), &plan.wired());
+    assert!(
+        crate::sandbox::names::asked_the_system(&name),
+        "the fit looked {name} up without the record seeing it"
+    );
 }

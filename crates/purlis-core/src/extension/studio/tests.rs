@@ -1264,6 +1264,7 @@ fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
             &[],
             &carried_when_confined,
             &|_, _| vec![at],
+            crate::sandbox::timings::Timings::production().patience(),
         );
         assert!(
             matches!(connected, Connected::OnlyLocal),
@@ -1329,6 +1330,7 @@ fn a_confined_proxy_refuses_a_tunnel_to_a_declared_name_pinned_to_a_model_provid
         crate::sandbox::egress::Proxy::serving(crate::sandbox::egress::Serving::confined(
             vec!["registry.example.com".to_owned()],
             std::sync::Arc::new(providers),
+            &crate::sandbox::timings::Timings::production(),
         ))
         .expect("a proxy"),
     );

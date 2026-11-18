@@ -690,7 +690,13 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
     let proxy = std::sync::Arc::new(
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+        ReachProxy::bound_by(
+            Lane::of(listed),
+            sites.new_sites(),
+            sites.bound().clone(),
+            &crate::sandbox::timings::Timings::production(),
+        )
+        .unwrap(),
     );
     let status = |port: u16| -> String {
         let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
@@ -851,7 +857,13 @@ fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
     let proxy = std::sync::Arc::new(
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+        ReachProxy::bound_by(
+            Lane::of(listed),
+            sites.new_sites(),
+            sites.bound().clone(),
+            &crate::sandbox::timings::Timings::production(),
+        )
+        .unwrap(),
     );
     let status = |port: u16| -> String {
         let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
@@ -899,7 +911,13 @@ fn a_fill_holds_its_other_approved_sites_too_and_its_judge_says_where_it_may_lea
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
     let proxy = std::sync::Arc::new(
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+        ReachProxy::bound_by(
+            Lane::of(listed),
+            sites.new_sites(),
+            sites.bound().clone(),
+            &crate::sandbox::timings::Timings::production(),
+        )
+        .unwrap(),
     );
     let holder = super::FillHolder::of(&proxy, "https://auth.example.com")
         .expect("a site")
@@ -938,7 +956,13 @@ fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_br
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
     let proxy = std::sync::Arc::new(
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+        ReachProxy::bound_by(
+            Lane::of(listed),
+            sites.new_sites(),
+            sites.bound().clone(),
+            &crate::sandbox::timings::Timings::production(),
+        )
+        .unwrap(),
     );
     let held = Site::of("dash.example.test", 443);
     proxy.hold_for_fill(&held).expect("held");
@@ -1092,8 +1116,13 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
         let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
         let (listed, _) = reach_of(Some(&reach)).unwrap();
         let proxy = std::sync::Arc::new(
-            ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone())
-                .unwrap(),
+            ReachProxy::bound_by(
+                Lane::of(listed),
+                sites.new_sites(),
+                sites.bound().clone(),
+                &crate::sandbox::timings::Timings::production(),
+            )
+            .unwrap(),
         );
         (sites, proxy)
     };
@@ -2017,8 +2046,13 @@ fn a_browser_opened_from_a_kept_login_reaches_its_form_s_site_from_its_start() {
     };
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
-    let proxy =
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap();
+    let proxy = ReachProxy::bound_by(
+        Lane::of(listed),
+        sites.new_sites(),
+        sites.bound().clone(),
+        &crate::sandbox::timings::Timings::production(),
+    )
+    .unwrap();
     let status = |port: u16| -> String {
         let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
         stream

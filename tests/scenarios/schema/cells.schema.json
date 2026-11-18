@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A sandbox scenario batch (T1.1-05)",
+  "description": "Cells run in order in one chat (or two), read by the Rust scenario suite and by the plane's live checker. What a schema cannot say (event kinds, a dialect's missing events, proof of a run, marks naming real assertions, the row table) is checked by tests/scenarios/src/validate.rs.",
+  "$ref": "#/$defs/batch",
+  "$defs": {
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch", "protection", "persona", "hosts", "cells"],
+      "properties": {
+        "$schema": {"type": "string"},
+        "batch": {"type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$"},
+        "title": {"type": "string"},
+        "protection": {"enum": ["none", "basic", "full"]},
+        "persona": {"type": "string", "minLength": 1},
+        "hosts": {
+          "description": "$h1 and the like: .test origins in the suite, real hosts live.",
+          "type": "object",
+          "propertyNames": {"pattern": "^h[0-9]+[a-z]?$"},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "deny_exempt_rules": {"type": "array", "items": {"type": "string"}},
+        "cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cell"}}
+      }
+    },
+    "dialect": {"enum": ["claude", "codex", "opencode"]},
+    "os": {"enum": ["linux", "macos"]},
+    "leg": {
+      "description": "fake: the fake harness in the scenario host; claude_sandbox: ticket 10's leg; real_wrap: ticket 53's; live: ticket 44's pass.",
+      "enum": ["fake", "claude_sandbox", "real_wrap", "live"]
+    },
+    "timings": {"enum": ["scaled", "production"]},
+    "timings_expr": {
+      "description": "Timings units: names of Timings fields and out-of-process durations, literals (500ms, 2s, 15m, or a bare number of seconds), N*name, joined by + and -.",
+      "type": "string",
+      "pattern": "^\\s*([0-9.]+\\*)?[A-Za-z0-9_.]+(\\s*[-+]\\s*([0-9.]+\\*)?[A-Za-z0-9_.]+)*\\s*$"
+    },
+    "duration": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(ms|s|m)$"},
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "steps"],
+      "properties": {
+        "id": {
+          "description": "The matrix row, or an escape, control or just-inside entry's id.",
+          "type": "string",
+          "pattern": "^[A-Z]+(-[A-Za-z0-9]+)+$"
+        },
+        "escape": {
+          "description": "An escape cell: its failure means the refused action happened. It carries no expected_fail; a failing one is filed as an area:security, priority:p0 issue and fixed first (Q301).",
+          "type": "boolean"
+        },
+        "dialects": {
+          "description": "Default: every dialect.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/dialect"}
+        },
+        "per_dialect": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/dialect"},
+          "additionalProperties": {"$ref": "#/$defs/override"}
+        },
+        "per_os": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/os"},
+          "additionalProperties": {"$ref": "#/$defs/override"}
+        },
+        "live_only": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {"reason": {"type": "string", "minLength": 1}}
+        },
+        "expected_fail": {"type": "array", "items": {"$ref": "#/$defs/mark"}},
+        "production_only": {
+          "description": "The production_only pair (ticket 1) this cell hinges on; it then runs only at Timings::production().",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "string"}
+        },
+        "production_nightly_only": {
+          "description": "The ruling keeping this cell to the nightly production run (today Q300, M-NET-25).",
+          "type": "string",
+          "pattern": "^Q[0-9]+$"
+        },
+        "template": {
+          "description": "The `[policy]` template (Q308) its chats start under. Every cell runs under `strict`, today's purlis, unless it names another (T1.1-06).",
+          "enum": ["open", "watch", "team", "strict"]
+        },
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}}
+      }
+    },
+    "override": {
+      "description": "shows: for an event kind the dialect lacks, what it shows instead (empty: nothing), in every step. steps: whole expectation lists replaced for one step, by its number from 1.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shows": {"$ref": "#/$defs/shows"},
+        "steps": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[1-9][0-9]*$"},
+          "additionalProperties": {"$ref": "#/$defs/step_patch"}
+        }
+      }
+    },
+    "shows": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/event"}}
+    },
+    "step_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "require": {"type": "array", "items": {"$ref": "#/$defs/require"}},
+        "forbid": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "window": {"type": "array", "items": {"$ref": "#/$defs/window_query"}},
+        "transcript": {"type": "array", "items": {"$ref": "#/$defs/sentence"}}
+      }
+    },
+    "pins_file": {
+      "description": "tests/scenarios/pins/<dialect>.json (ticket 3): one dialect's defaults, in a per_dialect entry's shape.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dialect"],
+      "properties": {
+        "$schema": {"type": "string"},
+        "dialect": {"$ref": "#/$defs/dialect"},
+        "shows": {"$ref": "#/$defs/shows"},
+        "recorded": {
+          "description": "Where ticket 3 drew these defaults from: the checked-in recording, and each fact it shows that a cell cannot name as an event (a command's timeout, which events fire, what the model is shown), in words.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "facts"],
+          "properties": {
+            "from": {"type": "string", "pattern": "^tests/recordings/recorded/[a-z]+/[^/]+/recording\\.json$"},
+            "facts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+            "gaps": {
+              "description": "Each event the dialect shows nothing of where purlis needs it, by the event's kind in `shows`: a known gap, named with its issue (#NNNN), never a fact the recording merely lacks.",
+              "type": "object",
+              "propertyNames": {"pattern": "^hook\\."},
+              "additionalProperties": {"type": "string", "pattern": "^Known gap \\(#[0-9]+\\): "}
+            }
+          }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "chat": {"description": "Which chat, in a two-chat cell.", "type": "string"},
+        "calls": {"type": "array", "items": {"$ref": "#/$defs/call"}},
+        "outcome": {"enum": ["came_back", "failed", "denied", "no_post"]},
+        "refusal_expected": {"type": "boolean"},
+        "repeat_of": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cell", "step"],
+          "properties": {"cell": {"type": "string"}, "step": {"type": "integer", "minimum": 1}}
+        },
+        "wait": {"$ref": "#/$defs/timings_expr"},
+        "press": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "target", "when"],
+              "properties": {
+                "label": {"type": "string"},
+                "target": {"type": "string"},
+                "when": {"type": "string"},
+                "delay": {"$ref": "#/$defs/timings_expr"},
+                "then": {"type": "string"}
+              }
+            },
+            {"description": "A window action from ticket 7's list.", "type": "string", "minLength": 1}
+          ]
+        },
+        "restart": {"enum": ["quit", "window", "host_killed"]},
+        "require": {"type": "array", "items": {"$ref": "#/$defs/require"}},
+        "forbid": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "window": {"type": "array", "items": {"$ref": "#/$defs/window_query"}},
+        "transcript": {"type": "array", "items": {"$ref": "#/$defs/sentence"}}
+      }
+    },
+    "call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "input"],
+      "properties": {
+        "tool": {"type": "string", "minLength": 1},
+        "input": {},
+        "client": {"type": "string"},
+        "timeout": {"description": "The harness's or the client's own timeout for the call.", "$ref": "#/$defs/duration"},
+        "parallel": {"type": "boolean"},
+        "background": {"type": "boolean"},
+        "subagent": {"type": "boolean"}
+      }
+    },
+    "require": {
+      "oneOf": [
+        {"$ref": "#/$defs/event"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["either"],
+          "properties": {"either": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/event"}}}
+        },
+        {
+          "description": "Two events, the first before the second.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["order"],
+          "properties": {"order": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/event"}}}
+        }
+      ]
+    },
+    "event": {
+      "description": "An event kind (checked against purlis-core's kinds), how many, where in the step, and body fields it must carry (dotted; null: absent; \"args\": \"this_call\": the step's own call's digest).",
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "pattern": "^[a-z]+(\\.[a-z_-]+)+$"},
+        "count": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "string", "pattern": "^(≤|≥)[0-9]+$|^[0-9]+\\.\\.[0-9]+$"}
+          ]
+        },
+        "before": {"const": "post"},
+        "at": {"const": "next_prompt"},
+        "within": {"$ref": "#/$defs/timings_expr"}
+      },
+      "propertyNames": {"pattern": "^[a-z_][a-z0-9_]*(\\.[a-z0-9_]+)*$"},
+      "additionalProperties": {"type": ["string", "number", "boolean", "null"]}
+    },
+    "window_query": {
+      "description": "A query from ticket 7's window vocabulary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query"],
+      "properties": {
+        "query": {"type": "string", "minLength": 1},
+        "forbid": {"type": "boolean"},
+        "at": {"const": "next_prompt"}
+      }
+    },
+    "sentence": {
+      "description": "An exact sentence the chat is shown, or must not be.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["says"],
+      "properties": {"says": {"type": "string", "minLength": 1}, "forbid": {"type": "boolean"}}
+    },
+    "mark": {
+      "description": "One per failing assertion and issue. A step's assertion is require[i], forbid[i], window[i], transcript[i], outcome, calls or repeat_of; a global check's mark names the check and the refusal. A within assertion's observed value is a range in Timings units.",
+      "type": "object",
+      "oneOf": [
+        {"required": ["step", "assertion", "observed"], "not": {"anyOf": [{"required": ["check"]}, {"required": ["refusal"]}]}},
+        {"required": ["check", "refusal"], "not": {"anyOf": [{"required": ["step"]}, {"required": ["assertion"]}]}}
+      ],
+      "additionalProperties": false,
+      "required": ["issue"],
+      "properties": {
+        "issue": {"type": "integer", "minimum": 1},
+        "step": {"type": "integer", "minimum": 1},
+        "assertion": {"type": "string", "pattern": "^((require|forbid|window|transcript)\\[[0-9]+\\]|outcome|calls|repeat_of)$"},
+        "check": {"type": "string"},
+        "refusal": {"type": "string"},
+        "note": {"description": "The observation the mark pins, cited from the run record it came from.", "type": "string", "minLength": 1},
+        "observed": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from", "to"],
+              "properties": {"from": {"$ref": "#/$defs/timings_expr"}, "to": {"$ref": "#/$defs/timings_expr"}}
+            },
+            {"not": {"type": "object"}}
+          ]
+        },
+        "leg": {"$ref": "#/$defs/leg"},
+        "timings": {"$ref": "#/$defs/timings"},
+        "dialect": {"$ref": "#/$defs/dialect"},
+        "os": {"$ref": "#/$defs/os"}
+      }
+    }
+  }
+}

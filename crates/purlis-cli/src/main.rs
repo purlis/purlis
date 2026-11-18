@@ -1488,6 +1488,8 @@ impl purlis_host::Confine for Confines {
             confining.alone,
             tell,
             askable,
+            // The session host's confinements wait by production's timings (T1.1-01).
+            &purlis_core::sandbox::timings::Timings::production(),
         )
         .map(|hosted| Box::new(HeldByServe(hosted)) as Box<dyn purlis_host::Confining>)
     }
@@ -5494,6 +5496,10 @@ fn main() -> ExitCode {
     // (`panicend`). The guard's refusal below replaces it and ends the process its own way.
     #[cfg(not(debug_assertions))]
     purlis_core::panicend::fatal();
+    // What it was built with, for the scenario host's check of its kit (T1.1-06): hidden.
+    if let Some(code) = purlis_core::fence::say_built_with_if_asked() {
+        std::process::exit(code);
+    }
     // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
     // the hidden `purlis _sandbox`, never in help and not a public command line. Each call its
     // supervisor refuses is told to the app as the chat's sandbox block (#2344).

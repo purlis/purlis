@@ -9,6 +9,10 @@ fn main() {
     // and a Rust panic, on any thread, still ends the process (`panicend`).
     #[cfg(not(debug_assertions))]
     purlis_core::panicend::fatal();
+    // What it was built with, for the scenario host's check of its host process (T1.1-06).
+    if let Some(code) = purlis_core::fence::say_built_with_if_asked() {
+        std::process::exit(code);
+    }
     // Started again as the app's crash handler (#5691): serve until the app ends, and exit,
     // before anything of the app starts.
     purlis_app_lib::nativecrash::serve_if_asked();

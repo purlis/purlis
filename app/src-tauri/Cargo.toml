@@ -181,6 +181,9 @@ purlis-host = { workspace = true, features = ["test-support"] }
 # When a chat's harness started, as the next host reads it of a program a crashed one left (#5749).
 purlis-same-user.workspace = true
 tempfile.workspace = true
+# The cells' format (T1.1-05): the production-timing plan and the leg-report record the scenario
+# host writes (T1.1-06).
+purlis-scenarios = { path = "../../tests/scenarios" }
 # A screenshot's pixels, read to tell a value kept out was painted over (#2243): the version
 # purlis-browser-engine's tests read them with.
 png = "0.18"
