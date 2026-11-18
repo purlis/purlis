@@ -842,14 +842,25 @@ pub fn line_pipelines(line: &Line) -> Option<Vec<Pipeline>> {
                     .iter()
                     .map(|c| c.iter().filter(|tk| tk.as_str() == "<<").count())
                     .collect();
+                // `source /dev/stdin` and `. /dev/stdin` run their stdin as shell (#7131).
+                let sources_stdin = |it: &shellwrap::Invocation| {
+                    SOURCING.contains(&it.prog.as_str())
+                        && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv)
+                };
                 let executor = cmds.iter().zip(split.iter()).any(|(c, it)| {
                     !c.is_empty()
-                        && (is_executor(&c[0]) || is_executor(&it.prog) || through_busybox(it))
+                        && (is_executor(&c[0])
+                            || is_executor(&it.prog)
+                            || through_busybox(it)
+                            || sources_stdin(it))
                 });
                 let shell_runs = |name: &str| is_executor(name) && !is_foreign_interpreter(name);
                 let shell = cmds.iter().zip(split.iter()).any(|(c, it)| {
                     !c.is_empty()
-                        && (shell_runs(&c[0]) || shell_runs(&it.prog) || through_busybox(it))
+                        && (shell_runs(&c[0])
+                            || shell_runs(&it.prog)
+                            || through_busybox(it)
+                            || sources_stdin(it))
                 });
                 Pipeline {
                     argvs: split.into_iter().map(|it| it.argv).collect(),
@@ -1200,6 +1211,15 @@ pub fn heredoc_could_run(line: &Line, start: usize) -> bool {
     };
     if is_executor(&prog) || REMOTE_SHELLS.contains(&prog.as_str()) {
         return true;
+    }
+    // `source /dev/stdin <<'EOF'` runs its body in the current shell (#7131).
+    if let Some(words) = words.as_deref()
+        && SOURCING.contains(&prog.as_str())
+    {
+        let it = shellwrap::split_env_chdir(words);
+        if shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv) {
+            return true;
+        }
     }
     if enclosing_commands(line, start)
         .iter()

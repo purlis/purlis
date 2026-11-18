@@ -1076,7 +1076,7 @@ pub fn met_a_string_too_deep() {
 /// [`Reading::outward`] words, and its [`Reading::own`] words, both from the same walk.
 struct Walked {
     joined: JoinedSegment,
-    own: Vec<String>,
+    own: Vec<Tok>,
 }
 
 /// What [`Reading::own`] writes where a substitution stands in the command around it, after
@@ -1095,6 +1095,10 @@ pub const SUBSTITUTED: &str = "(…)";
 pub struct Reading {
     pub outward: Vec<String>,
     pub own: Vec<String>,
+    /// Each of [`Reading::own`]'s words as the source spells it, quotes and substitutions and
+    /// all (`$X$(echo gh)/y`, #7131), with each backtick pair written as `$(…)`; an empty string
+    /// where the line did not lex and nothing measured the word.
+    pub own_source: Vec<String>,
 }
 
 /// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
@@ -1103,15 +1107,23 @@ pub struct Reading {
 /// [`segment_argv`] reads it, a logical line at a time, by the same walk.
 pub fn segment_readings(cmd: &str) -> Vec<Reading> {
     let cmd = unbacktick(cmd);
-    let walked = match lex(&cmd) {
-        Ok(toks) => walk_segments(toks).0,
-        Err(_) => fallback_walk(&cmd).0,
+    let (walked, measured) = match lex(&cmd) {
+        Ok(toks) => (walk_segments(toks).0, true),
+        Err(_) => (fallback_walk(&cmd).0, false),
+    };
+    let chars: Vec<char> = cmd.chars().collect();
+    let source = |t: &Tok| match (usize::try_from(t.start), usize::try_from(t.end)) {
+        (Ok(start), Ok(end)) if measured && start <= end => chars
+            .get(start..end)
+            .map_or_else(String::new, |s| s.iter().collect()),
+        _ => String::new(),
     };
     walked
         .into_iter()
         .map(|w| Reading {
             outward: w.joined.argv,
-            own: w.own,
+            own_source: w.own.iter().map(source).collect(),
+            own: w.own.into_iter().map(|t| t.text).collect(),
         })
         .collect()
 }
@@ -1158,7 +1170,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
                 before: before.clone(),
                 after: Some(after.to_string()),
             },
-            own: texts(seg.own),
+            own: seg.own,
         });
         *before = Some(after.to_string());
     };
@@ -1203,6 +1215,10 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
                     let mut before = befores.pop().flatten();
                     close(seg, &mut before, ")");
                     stack.pop();
+                    // The word the substitution stands in runs in the source to its `)`.
+                    if let Some(word) = open_segs.last_mut().and_then(|s| s.own.last_mut()) {
+                        word.end = t.end;
+                    }
                     word_goes_on_at = Some(t.end);
                     continue;
                 }
@@ -1274,7 +1290,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
                 before,
                 after: None,
             },
-            own: texts(seg.own),
+            own: seg.own,
         });
     }
     if deepest > MAX_NESTING {

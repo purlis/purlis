@@ -26,3 +26,13 @@
   `-c push.followTags`. A `case` pattern, an arithmetic expansion, an array's words, `"${cmd[@]}"`
   and the body of a `python3 -`, `node -` or `ruby` heredoc are no program the shell builds, and
   pass. This reading is an early warning; the forge credential is the lock (#7133).
+- **The shell and GraphQL are read by their grammar, not by patterns** (#7131). A `case` counts
+  only where a command starts and opens patterns only after `case WORD in`, so `echo do case;
+  {gh,pr,merge,12}` is held. A GraphQL query is lexed, so a `#` comment holding a `"` hides no
+  mutation, and only a mutation's operation names are read: `createPullRequest` with a
+  `baseRefName` passes. A substitution anywhere in a program word is held unless it only
+  prints a path (`git rev-parse --show-toplevel`, `dirname "$0"`, `pwd`, `brew --prefix`,
+  `which python3`, `realpath`), so `$(which python3) --version` passes and `$X$(echo gh pr merge
+  12)/y` is held. `gh repo sync --force` of the default branch, an organisation's ruleset write,
+  `git push --mirr` and `--tag` (git's own abbreviations), `git -c remote.origin.push=…` and
+  `source /dev/stdin` fed a merge are held or refused unattended too.

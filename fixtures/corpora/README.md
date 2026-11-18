@@ -323,22 +323,37 @@ it. No verdict moved. `rfr` is the only key that changed, on generated rows 1061
 The floor now refuses, unattended, a line whose command the shell builds, because that command
 could be a merge or a publish (Q331: this reading is the early warning, and the forge credential
 is the lock, #7133). `rfr` is the only key that moved, from `null` to the floor's refusal, on
-250 rows:
+238 rows:
 
 - **A charter noun the shell fills in** (#7124): a glob, a brace expansion, an expansion or a
   substitution where `handoff` or another noun goes, such as `charter hando?f`, `charter
   {handoff,}` and ``charter "a `env` b"``. Curated row 443, and generated rows 18, 52, 57, 69, 71, 78, 128, 159, 174, 280, 612, 617, 738, 853, 914, 988, 1088, 1168, 1200, 1226, 1355, 1394, 1407, 1574, 1594, 1614, 1736, 1765, 1788, 1819, 1880, 1896, 1903, 1930, 1931, 2072, 2082, 2111, 2166, 2226, 2233, 2297, 2310, 2328, 2340, 2370, 2383 and 2390.
-- **A program the shell builds** (#7131): a command substitution as the program's last path
-  component, whatever words follow (`$(which bash) <<'EOF'`, `x$(echo …)`, a line that is only
-  `` `env` `` after a heredoc has ended, whose output the shell runs), or a glob or a brace
+- **A program the shell builds** (#7131): a command substitution anywhere in the program word
+  that does more than print a path, whatever words follow (`x$(echo …)`, a line that is only
+  `` `env` `` after a heredoc has ended, whose output the shell runs, and generated row 2125,
+  whose backtick never closes), or a glob or a brace
   expansion there (`chart*`, `char?er`, `[c]harter`, and the fuzz's `?echo`). A substitution
-  inside a heredoc body nothing runs is data, and is not read this way. Curated rows 35, 105,
-  455, 456, 469 and 470, and generated rows 22, 36, 38, 68, 77, 95, 106, 123, 152, 167, 173, 190, 203, 205, 224, 242, 255, 265, 327, 357, 391, 397, 402, 416, 436, 443, 444, 448, 462, 466, 472, 484, 493, 516, 517, 520, 529, 531, 537, 559, 567, 584, 595, 620, 625, 638, 644, 658, 669, 680, 697, 710, 715, 716, 717, 736, 750, 780, 784, 793, 803, 812, 816, 818, 838, 846, 854, 861, 871, 872, 880, 893, 911, 912, 936, 938, 944, 957, 975, 989, 997, 998, 1049, 1056, 1111, 1112, 1154, 1175, 1178, 1181, 1184, 1189, 1195, 1222, 1251, 1255, 1259, 1262, 1291, 1293, 1305, 1316, 1329, 1330, 1339, 1353, 1356, 1357, 1372, 1381, 1392, 1402, 1408, 1411, 1412, 1435, 1456, 1469, 1495, 1528, 1532, 1550, 1572, 1583, 1598, 1610, 1620, 1628, 1630, 1637, 1660, 1684, 1692, 1713, 1729, 1731, 1732, 1740, 1743, 1744, 1747, 1753, 1754, 1785, 1791, 1792, 1797, 1807, 1812, 1822, 1824, 1836, 1847, 1849, 1851, 1865, 1872, 1874, 1902, 1914, 1924, 1939, 1968, 1973, 2016, 2018, 2027, 2037, 2039, 2043, 2059, 2067, 2088, 2089, 2092, 2114, 2121, 2150, 2158, 2208, 2211, 2216, 2222, 2231, 2232, 2235, 2238, 2289, 2291, 2312, 2313, 2327, 2335, 2339 and 2344.
+  inside a heredoc body nothing runs is data, and is not read this way. Curated rows 35,
+  455, 456, 469 and 470, and generated rows 22, 36, 38, 68, 77, 95, 106, 123, 152, 167, 173, 190, 203, 205, 224, 242, 255, 265, 327, 357, 391, 397, 402, 416, 436, 443, 444, 448, 462, 466, 472, 484, 493, 516, 517, 520, 531, 537, 559, 567, 584, 595, 620, 625, 638, 644, 658, 669, 697, 710, 715, 716, 717, 750, 780, 784, 793, 803, 812, 816, 818, 838, 846, 854, 861, 871, 872, 880, 893, 911, 912, 936, 938, 944, 957, 975, 989, 997, 998, 1049, 1056, 1111, 1112, 1175, 1178, 1181, 1184, 1189, 1195, 1222, 1251, 1255, 1259, 1262, 1291, 1293, 1329, 1330, 1339, 1353, 1356, 1357, 1372, 1381, 1392, 1402, 1408, 1411, 1435, 1456, 1469, 1495, 1528, 1532, 1572, 1598, 1610, 1620, 1628, 1630, 1637, 1660, 1684, 1692, 1729, 1731, 1732, 1740, 1743, 1744, 1747, 1753, 1754, 1785, 1791, 1792, 1797, 1807, 1812, 1822, 1824, 1836, 1847, 1849, 1851, 1865, 1872, 1902, 1914, 1924, 1939, 1968, 1973, 2016, 2018, 2027, 2037, 2039, 2043, 2059, 2067, 2088, 2089, 2092, 2114, 2121, 2150, 2158, 2208, 2216, 2222, 2231, 2232, 2235, 2238, 2289, 2291, 2312, 2313, 2327, 2335, 2339 and 2344.
 
 Four rows this reading first moved went back to `null` in its second round (#7131): generated
 rows 1052, 1263, 1283 and 1837, each a `python3 -m charter …` whose heredoc body holds
 `` `env` ``. A body only an interpreter of another language runs is not shell, so a word at
 the start of one of its lines is no program the shell builds.
+
+Thirteen more went back to `null` in its third round (#7131): curated row 105 and generated
+rows 529, 680, 736, 1154, 1305, 1316, 1412, 1550, 1583, 1874 and 2211, each a `$(which bash)`
+or `` `which bash` `` program, and generated row 1713, whose program is a lone `?`. A
+substitution whose body only prints a path (`which` of one name among them) makes a path, not a
+command, and `?` alone matches only a name one character long, which no CLI the floor reads
+has. Generated row 2125 moved from `null` to a refusal in the same round. And 161 rows this
+reading had already moved kept their refusal with new words. In 158, a substitution in a
+program word is now refused as one "that the shell splits into words, and it could print any
+command", naming its body, where it was refused as a program "built by the shell". In three
+(generated rows 617, 1614 and 1903, each a `bash <<'EOF'` whose body runs a charter noun the
+shell fills in), the floor now reads `bash <<'EOF'` as a shell reading its script from stdin,
+as every other guard reads it, so the noun is refused as a program built by the shell before it
+is refused as a noun filled in. No verdict moved in those 161.
 
 ## The session recording
 
