@@ -151,6 +151,8 @@ pub fn docker_through(
             if kept.is_some() {
                 forget_failing(pool);
             }
+            // The link is back: a Try now mark is only for a try still in flight.
+            forget_cleared(pool);
             held
         }
         Err(said) => {
@@ -452,6 +454,26 @@ pub fn try_now(pool: &str) {
         .insert(pool.to_owned(), Instant::now());
 }
 
+fn forget_cleared(pool: &str) {
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(pool);
+}
+
+/// **Pool `pool`'s link is back**: its Try now mark is not needed any more.
+pub fn link_is_back(pool: &str) {
+    forget_cleared(pool);
+}
+
+/// **Pool `pool` is gone from this machine** (removed or forgotten): what this process kept of
+/// it, its failing forward, its checked engine and its Try now mark, goes with it.
+pub fn pool_gone(pool: &str) {
+    forget_failing(pool);
+    forget_checked(pool);
+    forget_cleared(pool);
+}
+
 /// When each pool's Try now was last pressed: a try that began before it does not write its
 /// failure back, or the click would be answered from the memory it just cleared.
 static CLEARED: std::sync::Mutex<std::collections::BTreeMap<String, Instant>> =
@@ -709,6 +731,26 @@ mod tests {
             "another pool keeps its wait"
         );
         forget_failing("try-now-b");
+    }
+
+    #[test]
+    fn a_pools_try_now_mark_goes_when_its_link_is_back_or_the_pool_is_gone() {
+        let marked = |pool: &str| {
+            CLEARED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(pool)
+        };
+        try_now("prune-back");
+        try_now("prune-gone");
+        try_now("prune-kept");
+        assert!(marked("prune-back") && marked("prune-gone"));
+        link_is_back("prune-back");
+        pool_gone("prune-gone");
+        assert!(!marked("prune-back"), "a link that is back needs no mark");
+        assert!(!marked("prune-gone"), "a pool that is gone needs no mark");
+        assert!(marked("prune-kept"), "another pool keeps its mark");
+        pool_gone("prune-kept");
     }
 
     #[test]

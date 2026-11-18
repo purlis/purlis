@@ -569,6 +569,7 @@ impl Connection {
     /// there still, so its chats end as **Pool forgotten**, and not with the runner.
     pub fn pool_removed(&self, pool: &str, forgotten: bool) {
         lock(&self.untrusted).remove(pool);
+        purlis_core::sshroute::pool::pool_gone(pool);
         for link in self.links_of_pool(pool) {
             if forgotten {
                 link.end_with_its_pool_forgotten();
