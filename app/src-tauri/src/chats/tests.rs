@@ -3030,13 +3030,44 @@ fn a_closed_chat_being_reopened_is_not_reopened_twice() {
     chats.close(session).expect("closes for good");
     let record = purlis_core::chatrecords::every(plane.path()).remove(0);
     let opened = host.openings().len();
-    chats.claim(session).expect("the first press holds it");
+    chats
+        .claim_reopen(&record)
+        .expect("the first press holds it");
 
     let second = chats.reopen_closed(&record, SIZE).unwrap_err();
 
     assert!(second.contains("not started twice"), "{second}");
     assert_eq!(host.openings().len(), opened, "nothing more started");
-    chats.unclaim(session);
+    chats.unclaim_reopen(&record);
+}
+
+/// #7145: **a closed chat's Reopen is held by its ULID, never its number.** Where a number was
+/// dealt twice (#6740), two closed chats with different ULIDs both answer to it: one being
+/// reopened, or a chat under that number being started again, never refuses the other.
+#[test]
+fn a_closed_chat_reopens_while_another_chat_that_had_its_number_is_being_started() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(session).expect("closes for good");
+    let older = purlis_core::chatrecords::every(plane.path()).remove(0);
+    let newer = purlis_core::chatrecords::ChatRecord {
+        id: "01K7145NEWERCHAT0000000000".to_owned(),
+        ..older.clone()
+    };
+    // The older one's Reopen is starting it, and a chat under its number is restarting.
+    chats.claim_reopen(&older).expect("the older one's press");
+    chats.claim(older.number).expect("a restart of the number");
+
+    let started = chats.reopen_closed(&newer, SIZE);
+
+    assert!(started.is_ok(), "{started:?}");
+    chats.unclaim(older.number);
+    chats.unclaim_reopen(&older);
+    chats.end_all();
 }
 
 /// A closed chat whose harness named no conversation is not reopened, and says why (#6485).

@@ -1077,6 +1077,10 @@ pub struct Chats {
     /// The chats being started again in their place right now (#1342): one restart at a time
     /// per chat, whichever asked for it.
     restarting: Mutex<std::collections::HashSet<u32>>,
+    /// The closed chats being reopened right now (#6485), by their ULIDs (#7145): one Reopen at
+    /// a time per chat. Never by number, which two closed chats may share (#6740) and which a
+    /// chat open now may have been dealt again.
+    reopening: Mutex<std::collections::HashSet<String>>,
     /// What each chat was last told of where it is working (#1450), by its number: who its
     /// siblings and its persona's other chats were then, so a later turn is told only what
     /// changed ([`Self::working`]). **Here, beside the app's record of the chat, and in
@@ -1920,6 +1924,7 @@ impl Chats {
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
+            reopening: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
@@ -4306,6 +4311,23 @@ impl Chats {
         lock(&self.restarting).remove(&session);
     }
 
+    /// Marks the closed chat `record` keeps as being reopened, by its ULID, or refuses: one
+    /// Reopen at a time per chat (#7145).
+    fn claim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) -> Result<(), String> {
+        if lock(&self.reopening).insert(record.id.clone()) {
+            Ok(())
+        } else {
+            Err(format!(
+                "purlis is already reopening chat {}, so it was not started twice.",
+                record.number
+            ))
+        }
+    }
+
+    fn unclaim_reopen(&self, record: &purlis_core::chatrecords::ChatRecord) {
+        lock(&self.reopening).remove(&record.id);
+    }
+
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
     /// restarted, the new run is ended (nobody asked for it any more, and it would keep the
     /// chat's grants alive unseen); otherwise the new run takes its place, and what was queued
@@ -4377,7 +4399,8 @@ impl Chats {
     /// on its conversation, the same chat under its id in a new run and under a new number, as
     /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
     /// is open again, where nothing was kept, and where its harness named no conversation. Once
-    /// at a time: a second press while it starts is refused.
+    /// at a time, by its ULID: a second press while it starts is refused, and another chat that
+    /// had its number is not held back (#7145).
     ///
     /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
     pub fn reopen_closed(
@@ -4396,7 +4419,8 @@ impl Chats {
         })?;
         // Claimed before it is asked whether it is open, so a second press while the first
         // starts it is refused by the claim, and one after finds it open: never started twice.
-        self.claim(number)?;
+        // By its ULID (#7145): another closed chat, or a chat open now, may have its number.
+        self.claim_reopen(record)?;
         let started = if lock(&self.open)
             .values()
             .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
@@ -4407,7 +4431,7 @@ impl Chats {
         } else {
             self.start_recorded_told(&again, size, Why::Relaunch, None, None)
         };
-        self.unclaim(number);
+        self.unclaim_reopen(record);
         started
     }
 
