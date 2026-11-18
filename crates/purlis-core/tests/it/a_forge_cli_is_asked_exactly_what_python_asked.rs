@@ -195,6 +195,7 @@ mod child {
             "GLAB_CHECK_UPDATE=false",
             "PAGER=cat",
             "GLAB_PAGER=cat",
+            "GH_PAGER=cat",
             "GH_TOKEN=tok-under-test",
             &format!("HOME={home}"),
         ] {

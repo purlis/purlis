@@ -421,6 +421,10 @@ pub enum AppSaid<'a> {
     /// The app could not read the hand-over ([`crate::hookwire::UNKNOWN_LINE`]): it and this
     /// purlis are different builds, so nobody was asked (#6960).
     OtherBuild,
+    /// As [`AppSaid::OtherBuild`], where the hook is the app's own binary on disk
+    /// ([`crate::plugin::BINARY_ENV`]): the only explanation is a bundle replaced under an app
+    /// that runs on, so the app is older than the purlis that wrote the hand-over (#7177).
+    OlderApp,
     /// No app answered in time, or none was there.
     Unheard,
 }
@@ -435,8 +439,10 @@ pub enum WayOut {
     /// The chat asks the person in words, who merges on their press, in Asks or the window. A
     /// yes in the chat merges nothing.
     AskThePerson,
-    /// The person restarts purlis, or updates the purlis plugin of the chat's harness, so the app
-    /// and the chat's purlis are one build: then the same merge asks them in Asks.
+    /// The person restarts purlis (Restart to update, or quit and reopen), or, where the hook is
+    /// not the app's own binary, updates the purlis plugin of the chat's harness, so the app and
+    /// the chat's purlis are one build: then the same merge asks them in Asks. A new chat is no
+    /// way out: the same app starts it with the same binary path (#7177).
     OneBuild,
 }
 
@@ -457,7 +463,9 @@ pub fn ways_out(held: &Held, app: &AppSaid<'_>) -> &'static [WayOut] {
     match (held, app) {
         (Held::Request(_), AppSaid::Held(_)) => &[],
         (Held::Request(_), AppSaid::Refused(_) | AppSaid::Unheard) => &[WayOut::AskThePerson],
-        (Held::Request(_), AppSaid::OtherBuild) => &[WayOut::OneBuild, WayOut::AskThePerson],
+        (Held::Request(_), AppSaid::OtherBuild | AppSaid::OlderApp) => {
+            &[WayOut::OneBuild, WayOut::AskThePerson]
+        }
         (Held::Unreadable, _) => &[WayOut::MergeOnItsOwn],
         (Held::Land, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
     }
@@ -495,10 +503,18 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
         (Held::Request(request), AppSaid::OtherBuild) => format!(
             "{OPENS} The app that started this chat could not read purlis's hand-over of {}{}: \
              the app and this purlis are different builds, so nobody was asked. Ask the person \
-             to restart purlis, to update the purlis plugin of this chat's harness, or, if purlis \
-             was updated after this chat started, to start a new chat, so both are one build: \
-             then this same merge asks them in Asks. Until then, ask them to \
-             merge it in the window. Do not merge it another way. {NO_YES}",
+             to restart purlis (Restart to update, or quit and reopen it), or to update the purlis \
+             plugin of this chat's harness, so both are one build: then this same merge asks \
+             them in Asks. Until then, ask them to merge it in the window. Do not merge it \
+             another way. {NO_YES}",
+            request.number_said(),
+            request.repo_said()
+        ),
+        (Held::Request(request), AppSaid::OlderApp) => format!(
+            "{OPENS} Nobody was asked to merge {}{}: purlis was updated on disk but the running \
+             app is older: restart purlis (Restart to update, or quit and reopen it), then run \
+             the same line again. A new chat does not help: the same app starts it. Until then, \
+             ask the person to merge it in the window. Do not merge it another way. {NO_YES}",
             request.number_said(),
             request.repo_said()
         ),

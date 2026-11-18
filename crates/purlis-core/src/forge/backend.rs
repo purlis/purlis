@@ -1368,13 +1368,15 @@ fn past_leading_lines(out: &str) -> Result<Value, serde_json::Error> {
     let mut at = 0;
     for line in out.split_inclusive('\n') {
         if line.starts_with(['{', '[']) {
-            return match serde_json::Deserializer::from_str(&out[at..])
-                .into_iter::<Value>()
-                .next()
-            {
-                Some(Ok(value)) => Ok(value),
-                _ => whole,
-            };
+            // A notice that itself opens with a bracket (`[warning] ...`) is not JSON: the next
+            // first-column candidate is tried. The value must end its line, so `[] rest` is no `[]`.
+            let mut values = serde_json::Deserializer::from_str(&out[at..]).into_iter::<Value>();
+            if let Some(Ok(value)) = values.next() {
+                let after = &out[at + values.byte_offset()..];
+                if after.is_empty() || after.starts_with(['\n', '\r']) {
+                    return Ok(value);
+                }
+            }
         }
         at += line.len();
     }
@@ -1620,6 +1622,24 @@ mod answer_read_tests {
         let cut = "{\n  \"a\": {\n    \"b\": 1\n  },\n  \"c\": ";
         assert!(read_json(cut, None).is_err());
         assert!(read_json("{\"a\": 1}\ntrailing", Some(200)).is_err());
+    }
+
+    /// #7177: a notice that opens with a bracket or a brace is no start; the next first-column
+    /// line that holds the value is. A value followed by more on its line is not read.
+    #[test]
+    fn a_notice_that_opens_with_a_bracket_does_not_fail_the_read() {
+        let record = serde_json::json!({"sha": "0123456789abcdef0123456789abcdef01234567"});
+        for out in [
+            format!("[warning] glab is old\n{record}\n"),
+            format!("{{notice}} glab is old\n{record}\n[info] done\n"),
+        ] {
+            assert_eq!(read_json(&out, None).unwrap(), record, "{out}");
+        }
+        assert!(read_json("[] rest\n", None).is_err());
+        assert!(read_json("[warning] only\n", None).is_err());
+        // A cut, pretty-printed array of objects is no object inside it.
+        let cut = "[\n  {\n    \"a\": 1\n  },\n  {\n    \"b\": ";
+        assert!(read_json(cut, None).is_err());
     }
 
     /// #6960: the error quotes the answer's first line alone, without control characters, cut
