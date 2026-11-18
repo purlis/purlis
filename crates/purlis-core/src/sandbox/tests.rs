@@ -8884,7 +8884,7 @@ fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
 /// sandboxed run of the tests may refuse.
 #[test]
 fn a_chat_at_every_level_starts_with_its_harness_own_check() {
-    use crate::dispatchunattended::bypass_in;
+    use crate::dispatchunattended::bypass_found_beside;
     // The app's plugin, with the shim an opencode chat loads: without it, opencode is not armed.
     let plugin = tempfile::tempdir().expect("a plugin");
     let shim = crate::opencode::shim_in(plugin.path());
@@ -8985,6 +8985,8 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
         }
     }
     for (harness, level, _plane, root, applied, armed) in cells {
+        // The settings purlis wrote are its own: read beside them, never as a profile's.
+        let own = armed.clone();
         let line = match &applied {
             None => crate::start::Ready::line(Vec::new(), armed, Vec::new()),
             Some(applied) => {
@@ -9013,7 +9015,11 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
                 line.args
             }
         };
-        assert_eq!(bypass_in(&line), None, "{harness:?} at {level}: {line:?}");
+        assert_eq!(
+            bypass_found_beside(&line, &own),
+            None,
+            "{harness:?} at {level}: {line:?}"
+        );
         assert!(
             !names_a_permission_mode(&line),
             "{harness:?} at {level}: {line:?}"
@@ -9044,6 +9050,35 @@ fn own_check_kept(harness: Harness, level: &str, armed: &[String], env: &[(Strin
         assert_eq!(settings.len(), 1, "{cell}: one --settings");
     }
     for settings in &settings {
+        // **What purlis's own armed settings may hold** (#7165, round 3): the `--settings`
+        // exemption is whole, so this is what keeps a regression in them from passing.
+        let object = settings.as_object().expect("--settings is an object");
+        assert!(
+            object.get("hooks").is_some_and(|hooks| hooks.is_object()),
+            "{cell}: purlis's own hooks are present: {settings}"
+        );
+        for key in ["disableAllHooks", "allowManagedHooksOnly"] {
+            assert!(!object.contains_key(key), "{cell}: {key} in {settings}");
+        }
+        assert_ne!(
+            settings.pointer("/permissions/defaultMode"),
+            Some(&serde_json::json!("bypassPermissions")),
+            "{cell}: {settings}"
+        );
+        // `allow` holds purlis's own tools and commands; the one broad rule is the bare `Bash`
+        // the wrap allows where it holds the commands, never a spelling of it with a pattern.
+        for rule in settings
+            .pointer("/permissions/allow")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+        {
+            assert!(
+                rule == "Bash" || !crate::dispatchunattended::is_broad_bash_allow(rule),
+                "{cell}: allow {rule:?} in {settings}"
+            );
+        }
         // Claude Code's own checking mode, `"default"`, is the one tightening a level may set.
         let mode = settings.pointer("/permissions/defaultMode");
         assert!(

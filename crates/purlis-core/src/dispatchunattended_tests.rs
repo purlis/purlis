@@ -771,3 +771,242 @@ fn inline_settings_are_read_through_whitespace_escaped_keys_and_repeated_flags()
     assert_eq!(bypass_in(&without), None);
     assert!(without.contains(&kept.to_owned()));
 }
+
+#[test]
+fn inline_settings_that_allow_all_of_bash_or_silence_hooks_are_refused_and_lose_only_those_keys() {
+    // #7165: no `defaultMode`, and still no prompts for Bash, or no guards.
+    for (value, kept, shown) in [
+        (
+            r#"{"permissions":{"allow":["Bash","Read"]},"model":"x"}"#,
+            r#"{"permissions":{"allow":["Read"]},"model":"x"}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"permissions":{"allow":["Bash(*)","Bash(:*)","Bash( ** )"]}}"#,
+            r#"{"permissions":{"allow":[]}}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"hooks":{"PreToolUse":[]},"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "hooks",
+        ),
+        (
+            r#"{"disableAllHooks":true,"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "disableAllHooks",
+        ),
+        (r#"{"disableAllHooks":"yes"}"#, "{}", "disableAllHooks"),
+    ] {
+        for (command, want) in [
+            (
+                words(&["claude", "--settings", value, "-v"]),
+                words(&["claude", "--settings", kept, "-v"]),
+            ),
+            (
+                words(&["claude", &format!("--settings={value}")]),
+                words(&["claude", &format!("--settings={kept}")]),
+            ),
+        ] {
+            let said = bypass_in(&command).unwrap_or_default();
+            assert!(said.contains(shown), "{value}: {said}");
+            let without = without_bypass(&command);
+            assert_eq!(without, want, "{value}");
+            assert_eq!(bypass_in(&without), None, "{value}");
+        }
+    }
+    // A narrow allow of Bash asks for everything else, so it stays.
+    let narrow = words(&[
+        "claude",
+        "--settings",
+        r#"{"permissions":{"allow":["Bash(git status)","Bash(npm run *)"]}}"#,
+    ]);
+    assert_eq!(bypass_in(&narrow), None);
+    assert_eq!(without_bypass(&narrow), narrow);
+}
+
+#[test]
+fn an_unreadable_inline_settings_value_does_not_say_it_switches_the_prompts_off() {
+    // #7165, item 6: it is refused because nothing can be ruled out, and says so.
+    let command = words(&["claude", "--settings", "{not json"]);
+    let said = bypass_refusal("work", &command, NamedBy::TheDispatch).expect("refused");
+    assert!(said.contains("cannot tell whether"), "{said}");
+    assert!(!said.contains("with the permission prompts off"), "{said}");
+}
+
+#[test]
+fn the_settings_purlis_armed_keep_their_hooks_through_without_bypass() {
+    // The round-2 blocker of #7168: purlis's own `--settings` always carry `hooks`, and the line
+    // a chat starts on holds them beside the profile's words.
+    let own = r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/bin/purlis hook bash-guard","onFailure":"block"}]}]},"env":{"X":"1"}}"#;
+    let armed = words(&["--plugin-dir", "/p", "--settings", own]);
+    let mut line = words(&["claude", "--model", "x"]);
+    line.extend(armed.clone());
+    assert_eq!(bypass_found_beside(&line, &armed), None);
+    assert_eq!(without_bypass_beside(&line, &armed), line);
+    // Attached, the same.
+    let attached = words(&[&format!("--settings={own}")]);
+    assert_eq!(
+        bypass_found_beside(&attached, &[]).map(|f| f.what),
+        Some(What::GuardsOff)
+    );
+    // Read as a profile's, the same words are flagged and lose their hooks: only the exact
+    // words purlis armed are exempt, and a copy that differs in a byte is not.
+    assert!(bypass_in(&line).is_some());
+    assert!(
+        !without_bypass(&line)
+            .iter()
+            .any(|w| w.contains("bash-guard"))
+    );
+    let spoof = words(&["--settings", &format!("{own} ")]);
+    assert!(bypass_found_beside(&spoof, &armed).is_some());
+    // And a profile's own hooks beside purlis's are still taken out.
+    let mut both = armed.clone();
+    both.extend(words(&["--settings", r#"{"hooks":{"PreToolUse":[]}}"#]));
+    let without = without_bypass_beside(&both, &armed);
+    assert!(without.contains(&own.to_owned()));
+    assert!(without.contains(&"{}".to_owned()));
+}
+
+#[test]
+fn a_profile_that_only_adds_a_hook_is_refused_in_words_that_are_true_of_it() {
+    // Round 2, item 6: the refusal said the prompts were off, and clipped "cannot tell".
+    let hook = words(&["claude", "--settings", r#"{"hooks":{"PreToolUse":[]}}"#]);
+    let long = words(&[
+        "claude",
+        "--settings",
+        r#"{"hooks":{},"disableAllHooks":true,"allowManagedHooksOnly":true}"#,
+    ]);
+    let unreadable = words(&["claude", "--settings", "{not json"]);
+    for (command, must) in [
+        (&hook, "purlis's guards off (--settings (its hooks))"),
+        (&long, "purlis's guards off (--settings (its hooks"),
+        (
+            &unreadable,
+            "cannot tell whether they switch the permission prompts or its guards off (--settings (unreadable))",
+        ),
+    ] {
+        for by in [
+            NamedBy::TheAskingChat,
+            NamedBy::TheDispatch,
+            NamedBy::ThePersona("p"),
+        ] {
+            let said = bypass_refusal("work", command, by).expect("refused");
+            assert!(said.contains(must), "{said}");
+        }
+    }
+    let said = bypass_refusal("work", &hook, NamedBy::TheDispatch).expect("refused");
+    assert!(!said.contains("with the permission prompts off"), "{said}");
+    // A flag that does switch them off reads as it always did.
+    let yolo = words(&["claude", "--dangerously-skip-permissions"]);
+    let said = bypass_refusal("work", &yolo, NamedBy::TheDispatch).expect("refused");
+    assert!(
+        said.contains("with the permission prompts off (--dangerously-skip-permissions)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn inline_settings_that_move_a_guard_or_the_sandbox_gate_lose_only_those_keys() {
+    // Round 2, item 3.
+    for (value, kept, shown) in [
+        (
+            r#"{"allowManagedHooksOnly":true,"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "allowManagedHooksOnly",
+        ),
+        // Round 3: the key is written `false`, never removed (removing it restores Claude Code's
+        // default, which is on), and an enabled sandbox with no key is the same finding.
+        (
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":true,"enabled":true}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false,"enabled":true}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"sandbox":{"enabled":true}}"#,
+            r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":"yes"}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
+            r#"{"env":{"HOME":"/x","KEEP":"1"}}"#,
+            r#"{"env":{"KEEP":"1"}}"#,
+            "env that moves its guards",
+        ),
+        (
+            r#"{"env":{"claude_config_dir":"/x","PURLIS_SOCK":"/y","CHARTER_APP":"1"}}"#,
+            r#"{"env":{}}"#,
+            "env that moves its guards",
+        ),
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        let said = bypass_in(&command).unwrap_or_default();
+        assert!(said.contains(shown), "{value}: {said}");
+        assert_eq!(
+            without_bypass(&command),
+            words(&["claude", "--settings", kept]),
+            "{value}"
+        );
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{value}");
+    }
+    // An ordinary env and a sandbox that does not auto-allow stay.
+    for value in [
+        r#"{"env":{"FOO":"1"}}"#,
+        r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
+        r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
+        // A sandbox this does not enable is not read as one that allows.
+        r#"{"sandbox":{"enabled":false}}"#,
+        r#"{"sandbox":{}}"#,
+    ] {
+        let command = words(&["claude", "--settings", value]);
+        assert_eq!(bypass_in(&command), None, "{value}");
+        assert_eq!(without_bypass(&command), command, "{value}");
+    }
+    // `--safe-mode` is a flag of its own, and goes alone.
+    let command = words(&["claude", "--safe-mode", "-v"]);
+    assert_eq!(bypass_in(&command).as_deref(), Some("--safe-mode"));
+    // It narrows hooks, so it is a guard, not a prompt.
+    assert_eq!(
+        bypass_found(&command).map(|found| found.what),
+        Some(What::GuardsOff)
+    );
+    assert_eq!(without_bypass(&command), words(&["claude", "-v"]));
+}
+
+#[test]
+fn a_broad_bash_allow_is_read_without_regard_to_case_or_whitespace() {
+    for rule in [
+        "bash",
+        "BASH",
+        " Bash ",
+        "Bash (*)",
+        "bash(*)",
+        "Bash(\t*\t)",
+        "Bash( : * )",
+        "Bash(**)",
+        "Bash(\u{a0}*)",
+    ] {
+        let value = format!(
+            r#"{{"permissions":{{"allow":[{}]}}}}"#,
+            serde_json::json!(rule)
+        );
+        let command = words(&["claude", "--settings", &value]);
+        assert!(bypass_in(&command).is_some(), "{rule:?}");
+        assert_eq!(bypass_in(&without_bypass(&command)), None, "{rule:?}");
+    }
+    for rule in ["Bash(git status)", "Bash(npm run *)", "Bashful", "Read(*)"] {
+        let value = format!(
+            r#"{{"permissions":{{"allow":[{}]}}}}"#,
+            serde_json::json!(rule)
+        );
+        assert_eq!(
+            bypass_in(&words(&["claude", "--settings", &value])),
+            None,
+            "{rule:?}"
+        );
+    }
+}
