@@ -186,7 +186,9 @@ pub struct Ready {
     pub floorless: Option<String>,
     /// What the window says on this chat's tab as it starts, one line each, non-modal: why its
     /// `AGENTS.md` was not written, and every `AGENTS.md` that charter's exclude line hides
-    /// and charter did not write (V35, ADR 0085). Empty for nearly every start.
+    /// and charter did not write (V35, ADR 0085), and a profile or harness declaration that
+    /// starts unapproved because `[policy] trust` does not ask (Q329). Empty for nearly every
+    /// start.
     pub notices: Vec<String>,
     /// The branches whose `AGENTS.md` a notice above names as the operator's and hidden by
     /// charter's exclude line (V35): what the window's **Open file** and **Move aside…** act on
@@ -452,6 +454,8 @@ fn ready_given_on(
     if let Some(why) = crate::wiring::refusal_in(profile, root, declared) {
         return Err(why);
     }
+    // And where `[policy] trust` let an unapproved command through, the person is told (Q329).
+    notices.extend(crate::wiring::unapproved_notice(profile, root, declared));
     // How it signs in, or no chat: a sign-in its harness cannot take, or credentials with no
     // way to it here, starts nothing (#2036).
     let sign_in = crate::profilesignin::at_start(
@@ -607,6 +611,21 @@ fn ready_given_on(
             .map_err(|gone| format!("{} Nothing was started.", gone.said()))?,
     };
     let mut program = argv.remove(0);
+    // **A chat another chat asked for never runs asking nobody** (#1446): where `[policy] mode`
+    // let a profile whose command switches the prompts off through (Q308b), those words are
+    // dropped, so the chat still starts at its task's level, capped at auto (#3787), and its
+    // tab says so.
+    if matches!(start.made, crate::sandbox::Made::Asked { .. })
+        && let Some(flag) = crate::dispatchunattended::bypass_in(&argv)
+    {
+        argv = crate::dispatchunattended::without_bypass(&argv);
+        notices.push(format!(
+            "Profile '{}' switches the permission prompts off ({}), and a chat another chat \
+             asked for never runs that way, so it started without it.",
+            crate::shown::short(&profile.name),
+            crate::shown::short(&flag)
+        ));
+    }
     let standing = Standing::of(&here, root);
     let mut env = environment(
         profile,

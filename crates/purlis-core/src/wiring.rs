@@ -120,7 +120,24 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
          asks once",
         whole(&p.name)
     );
-    if let Some(state) = crate::profiletrust::profile_approval_needed(root, p) {
+    // **Whether the approval is asked at all is `[policy] trust`'s** (Q308b): under `off` a
+    // command nobody approved runs, and under `log` it runs and one line says it would have
+    // been refused. A file purlis refused, above, is refused in every mode.
+    let waived = |rule: &str| {
+        crate::enforcement::judged(
+            root,
+            None,
+            crate::enforcement::Family::Trust,
+            crate::enforcement::mode(root, crate::enforcement::Family::Trust),
+            rule,
+            None,
+            (),
+        )
+        .is_none()
+    };
+    if let Some(state) = crate::profiletrust::profile_approval_needed(root, p)
+        && !waived(crate::enforcement::RULE_PROFILE_APPROVAL)
+    {
         return Some((
             format!(
                 "profile '{name}' is {}, and nobody has approved it — nothing was started. \
@@ -130,18 +147,20 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
             fix,
         ));
     }
-    crate::profiletrust::declaration_approval_needed_in(root, p, declared).map(|(state, d)| {
-        (
-            format!(
-                "harness '{}', declared in {}, is {} on this machine, and nobody has approved \
+    crate::profiletrust::declaration_approval_needed_in(root, p, declared)
+        .filter(|_| !waived(crate::enforcement::RULE_DECLARATION_APPROVAL))
+        .map(|(state, d)| {
+            (
+                format!(
+                    "harness '{}', declared in {}, is {} on this machine, and nobody has approved \
                  it — nothing was started. Approve it once so purlis can run it.",
-                shown::short(&d.name),
-                d.file,
-                state.as_str()
-            ),
-            fix,
-        )
-    })
+                    shown::short(&d.name),
+                    d.file,
+                    state.as_str()
+                ),
+                fix,
+            )
+        })
 }
 
 /// The harness declaration `p` runs on, where its kind is one the project or this machine
@@ -257,6 +276,36 @@ pub fn refusal(p: &Profile, root: &Path) -> Option<String> {
 
 /// [`refusal`] against the project's harness declarations as already read: the ones the
 /// launch then runs ([`crate::start::ready_in`]), so the bytes approved are the bytes run.
+/// **What the person is told when a start runs a command nobody approved** (Q329): where
+/// `[policy] trust` does not enforce the approval (only `open`, or the person's own pressed
+/// `trust = "off"` or `"log"`), the profile or harness declaration `p` runs on starts
+/// unapproved, and its tab says so as it starts ([`crate::start::Ready::notices`]). `None`
+/// where nothing unapproved runs, or where the approval was asked.
+pub fn unapproved_notice(p: &Profile, root: &Path, declared: &Declarations) -> Option<String> {
+    if p.source == Source::BuiltIn
+        || crate::enforcement::mode(root, crate::enforcement::Family::Trust)
+            == crate::enforcement::Mode::Enforce
+    {
+        return None;
+    }
+    let what = if let Some(state) = crate::profiletrust::profile_approval_needed(root, p) {
+        format!("Profile '{}' is {}", shown::short(&p.name), state.as_str())
+    } else {
+        let (state, d) = crate::profiletrust::declaration_approval_needed_in(root, p, declared)?;
+        format!(
+            "Harness '{}', declared in {}, is {} on this machine",
+            shown::short(&d.name),
+            d.file,
+            state.as_str()
+        )
+    };
+    Some(format!(
+        "{what}, and nobody has approved it. It started anyway, because this project's policy \
+         does not ask for approval. To be asked again, set trust to enforce in Settings › \
+         Project › Policy."
+    ))
+}
+
 pub fn refusal_in(p: &Profile, root: &Path, declared: &Declarations) -> Option<String> {
     if let Some(why) = not_startable(p, declared) {
         return Some(why);
@@ -267,6 +316,96 @@ pub fn refusal_in(p: &Profile, root: &Path, declared: &Declarations) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_nobody_approved_is_refused_as_policy_trust_runs() {
+        // Q308b: the approval is `trust`'s. Enforced, nothing starts until the person
+        // approves it; logged, it starts and one line says it would have been refused.
+        for (policy, refused, lines) in [("", true, 0), ("trust = \"log\"\n", false, 1)] {
+            let root = tempfile::tempdir().expect("a plane");
+            std::fs::write(
+                crate::names::manifest(root.path()),
+                format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+            )
+            .expect("the manifest");
+            // A loosening below `watch`, which enforces `trust` (Q329), is the person's press.
+            let _home = crate::sandbox::local::OwnConfigHome::new();
+            pressed(root.path());
+            let mut p = built_in("claude", "claude");
+            p.source = Source::Local;
+            p.name = "mine".to_owned();
+            let said = not_asked(&p, root.path(), &Declarations::default());
+            assert_eq!(said.is_some(), refused, "{policy:?}");
+            if refused {
+                assert!(said.unwrap().0.contains("nobody has approved it"));
+            }
+            let logged =
+                crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+            assert_eq!(logged.len(), lines, "{policy:?}");
+            assert!(
+                logged
+                    .iter()
+                    .all(|line| line.family == "trust" && line.rule == "profile.approval")
+            );
+        }
+    }
+
+    #[test]
+    fn an_unapproved_declared_harness_is_refused_under_watch_and_told_where_trust_is_lifted() {
+        // Q329: `trust` is enforced under every template but `open`. Under `watch` (no
+        // template named) a declared harness nobody approved is refused, and the picker's
+        // offer asks for the approval; under `open` it starts, and its tab says so.
+        crate::unsteered!();
+        for (policy, refused) in [
+            ("", true),
+            ("[policy]\ntemplate = \"watch\"\n", true),
+            ("[policy]\ntemplate = \"hold\"\n", true),
+            ("[policy]\ntemplate = \"open\"\n", false),
+            ("[policy]\ntemplate = \"strict\"\ntrust = \"off\"\n", false),
+        ] {
+            let root = tempfile::tempdir().expect("a plane");
+            std::fs::write(crate::names::manifest(root.path()), policy).expect("the manifest");
+            // A loosening below `watch` is the person's press (Q308a).
+            let _home = crate::sandbox::local::OwnConfigHome::new();
+            pressed(root.path());
+            let dir = root.path().join(crate::harness_declaration::DIR);
+            std::fs::create_dir_all(&dir).expect("the declarations' folder");
+            std::fs::write(
+                dir.join("shelly.toml"),
+                "name = \"shelly\"\ntitle = \"Shelly\"\nprogram = \"true\"\n",
+            )
+            .expect("a declaration");
+            let declared = crate::harness_declaration::read(root.path());
+            let set = profiles::current(root.path());
+            let shelly = set
+                .get("shelly")
+                .unwrap_or_else(|| panic!("{:?}", set.refused));
+            let why = refusal_in(shelly, root.path(), &declared);
+            assert_eq!(why.is_some(), refused, "{policy:?}: {why:?}");
+            if let Some(why) = why {
+                assert!(why.contains("nobody has approved it"), "{why}");
+            }
+            let offers = crate::personaprofile::offers_of(root.path(), &set, &declared);
+            let offer = offers
+                .iter()
+                .find(|offer| offer.name == "shelly")
+                .expect("offered");
+            assert_eq!(offer.needs_approval, refused, "{policy:?}");
+            let told = unapproved_notice(shelly, root.path(), &declared);
+            assert_eq!(told.is_some(), !refused, "{policy:?}: {told:?}");
+            if let Some(told) = told {
+                assert!(
+                    told.contains("harnesses/shelly.toml") && told.contains("started anyway"),
+                    "{told}"
+                );
+            }
+        }
+    }
+
+    /// The person's press in the window, on what the project at `root` says now.
+    fn pressed(root: &Path) {
+        crate::enforcement::press(root, &crate::enforcement::digest_of(root)).expect("pressed");
+    }
 
     fn built_in(kind: &str, command: &str) -> Profile {
         let mut p = profiles::builtins()

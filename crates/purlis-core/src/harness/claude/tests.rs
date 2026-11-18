@@ -2139,7 +2139,9 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
             ("pretooluse-edit", "continue"),
-            ("pretooluse-dispatch", "continue"),
+            // `guards.shape`, the dispatch guard's family, switches since Q308b's nine did
+            // (#7104), so where it is enforced a dead dispatch guard refuses too.
+            ("pretooluse-dispatch", "block"),
         ])
     );
 }

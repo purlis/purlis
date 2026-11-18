@@ -244,7 +244,7 @@ pub fn answer(
             let wanted = Wanted::moved(&open);
             // **Heard from a pool, it waits for the person**, whatever the persona
             // (`crate::runnerdispatches`).
-            if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+            if let Some(pool) = crate::runnerdispatches::held_from_a_pool(held, wanted.chat) {
                 if let Err(why) = would_start(held, &wanted) {
                     return no(why);
                 }
@@ -302,7 +302,7 @@ pub fn answer(
             }
             // Heard from a pool, it waits for the person, as an open does: a name purlis would
             // not draw is refused first, so nothing the person could not start waits on them.
-            if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+            if let Some(pool) = crate::runnerdispatches::held_from_a_pool(held, wanted.chat) {
                 if let Err(why) = dispatchdecision::task_name(&wanted.name)
                     .and_then(|_| would_start(held, &wanted).map(|_| ()))
                 {
@@ -3074,7 +3074,7 @@ fn dispatch_noting(
         // harness's prompts off**, whoever named it: the dispatch, the persona's definition
         // (which a chat can write), or nobody, where it is the asking chat's own. Said now,
         // before the person is asked for anything.
-        if let Some(refused) = asks_nobody(&on, chosen, asked.to.as_deref()) {
+        if let Some(refused) = asks_nobody(root, &on, chosen, asked.to.as_deref()) {
             return Err(refused.into());
         }
         // **The grant**, where a chat asks for a persona. The person needs none, and a chat
@@ -3325,7 +3325,10 @@ fn dispatch_noting(
             match to.as_deref() {
                 // **The joined start** (#1446): whatever the start held of the asking chat's
                 // is dropped here, and a profile that asks nobody is refused here too.
-                Some(target) => dispatchunattended::start_of_a_persona_chat(
+                // Asked as `[policy] mode` runs (Q308b).
+                Some(target) => dispatchunattended::start_of_a_persona_chat_in(
+                    root,
+                    None,
                     start,
                     target,
                     its_profile.as_ref().map(|profile| Inherited {
@@ -4164,13 +4167,14 @@ fn tell_the_asker(
 /// **Why no chat is started on the profile `chosen`**, where its own command switches the
 /// harness's permission prompts off (`purlis_core::dispatchunattended::bypass_refusal`), in
 /// the words for whoever named it. `persona` is the persona the new chat runs as. A handoff
-/// and a task are held to it alike.
+/// and a task are held to it alike, as `[policy] mode` runs for the project at `root` (Q308b).
 fn asks_nobody(
+    root: &std::path::Path,
     on: &On,
     chosen: &purlis_core::personaprofile::Chosen,
     persona: Option<&str>,
 ) -> Option<String> {
-    use purlis_core::dispatchunattended::{NamedBy, bypass_refusal};
+    use purlis_core::dispatchunattended::{NamedBy, bypass_refusal_in};
     use purlis_core::personaprofile::Who;
     let profile = on.launch.0.get(&chosen.profile)?;
     let by = match chosen.by {
@@ -4178,7 +4182,7 @@ fn asks_nobody(
         Who::Persona | Who::PersonaModel => NamedBy::ThePersona(persona.unwrap_or_default()),
         Who::AskingChat => NamedBy::TheAskingChat,
     };
-    bypass_refusal(&profile.name, &profile.command, by)
+    bypass_refusal_in(root, None, &profile.name, &profile.command, by)
 }
 
 /// Whether chat `chat`'s program still runs, by the board: one that has ended, with or
