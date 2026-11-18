@@ -104,6 +104,17 @@ fn a_file_longer_than_a_piece_is_read_whole_in_pieces() {
 }
 
 #[test]
+fn pieces_that_join_into_a_file_that_is_not_text_are_said_to_be_binary() {
+    // Each piece passed as text on the runner, cut inside a character; whole, it is not.
+    let runner = fake(b"caf\xe9\n");
+
+    assert_eq!(
+        reads(&runner).read("latin1.txt", None),
+        Ok(ReadThere::Binary(5))
+    );
+}
+
+#[test]
 fn an_empty_file_is_read_as_no_text() {
     let runner = fake(b"");
 

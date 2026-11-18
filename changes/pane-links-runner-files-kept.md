@@ -9,3 +9,5 @@
 - **A runner chat's hover looks at a file outside its workspace as a hover on your machine
   does.** It never looks into a removable, network or automounted volume there, unless the
   chat's project or folder is on it (#7076).
+- **A runner chat's file reads less on its runner.** A hover reads only the file's first 8 KiB to
+  tell text, and each piece of its tab only that piece (#7078).

@@ -31,9 +31,11 @@
 //!   on the resolved path, and again on the file opened, before a byte of it is read: it is
 //!   answered [`FileRead::Kept`].
 //! - **At most [`MOST_FILE_READ`] bytes of text**: a larger file, or one with a NUL byte or
-//!   that is not UTF-8, is answered by its size alone.
+//!   that is not UTF-8, is answered by its size alone. Only what is asked is read (#7078): a
+//!   look reads the file's first [`MOST_FILE_LOOKED`] bytes to tell text, and a piece its own
+//!   bytes alone, judged as text but for a character cut at its edges.
 
-use std::io::Read as _;
+use std::io::{Read as _, Seek as _};
 use std::path::{Component, Path, PathBuf};
 
 use purlis_session_protocol::session::{
@@ -55,6 +57,10 @@ pub struct Asked<'a> {
     /// (`file::guarded_folders`, #7076): removable, network and automounted volumes.
     pub guarded: &'a [PathBuf],
 }
+
+/// **The most bytes a look reads** (#7078): what tells text from a binary at its start, as git
+/// judges a file by its first 8000 bytes.
+pub const MOST_FILE_LOOKED: u64 = 8 * 1024;
 
 /// The folders of the system's own files, which are never read, whatever they say they are.
 const SYSTEMS_OWN: [&str; 3] = ["/proc", "/sys", "/dev"];
@@ -119,30 +125,25 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
     if size > MOST_FILE_READ {
         return FileRead::TooLarge { path, size };
     }
-    let mut bytes = Vec::new();
-    if file
-        .take(MOST_FILE_READ + 1)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
+    // Only what is asked is read (#7078): a look, the file's first bytes, to tell text; a
+    // piece, its own bytes from where it was asked.
+    let (from, most) = match asked.at {
+        None => (0, MOST_FILE_LOOKED),
+        Some(at) => (at.min(size), MOST_FILE_PIECE),
+    };
+    let mut file = file;
+    if from > 0 && file.seek(std::io::SeekFrom::Start(from)).is_err() {
         return FileRead::NotThere;
     }
-    let read = bytes.len() as u64;
-    if read > MOST_FILE_READ {
-        return FileRead::TooLarge { path, size: read };
+    let mut bytes = Vec::new();
+    if file.take(most).read_to_end(&mut bytes).is_err() {
+        return FileRead::NotThere;
     }
-    if bytes.contains(&0) || std::str::from_utf8(&bytes).is_err() {
-        return FileRead::Binary { path, size: read };
+    let to_its_end = from + bytes.len() as u64 >= size;
+    if !reads_as_text(&bytes, from > 0, !to_its_end) {
+        return FileRead::Binary { path, size };
     }
-    let piece = asked.at.map(|at| {
-        let from = usize::try_from(at.min(read)).unwrap_or(bytes.len());
-        let to =
-            usize::try_from(at.saturating_add(MOST_FILE_PIECE).min(read)).unwrap_or(bytes.len());
-        FilePiece {
-            at,
-            bytes: bytes[from..to].to_vec(),
-        }
-    });
+    let piece = asked.at.map(|at| FilePiece { at, bytes });
     FileRead::Plain {
         path,
         from_workspace,
@@ -152,9 +153,33 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
                 folder: folder.to_str()?.to_owned(),
             })
         }),
-        size: read,
-        version: version_of(&meta, read),
+        size,
+        version: version_of(&meta, size),
         piece,
+    }
+}
+
+/// **Whether `bytes`, a stretch of a file, reads as text**: no NUL, and UTF-8 but for a
+/// character cut at either edge, where the stretch starts after the file's start
+/// (`cut_at_start`) or ends before its end (`cut_at_end`).
+fn reads_as_text(bytes: &[u8], cut_at_start: bool, cut_at_end: bool) -> bool {
+    if bytes.contains(&0) {
+        return false;
+    }
+    let mut bytes = bytes;
+    if cut_at_start {
+        // A character's later bytes, at most three, whose first byte is before the stretch.
+        let later = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte & 0b1100_0000 == 0b1000_0000)
+            .count();
+        bytes = &bytes[later..];
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(_) => true,
+        // A character whose last bytes are after the stretch.
+        Err(cut) => cut_at_end && cut.error_len().is_none(),
     }
 }
 

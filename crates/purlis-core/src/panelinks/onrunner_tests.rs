@@ -765,3 +765,68 @@ fn the_chats_own_project_is_read_inside_a_folder_never_looked_in() {
         Some("repos/web/src/main.rs")
     );
 }
+
+#[test]
+fn a_look_judges_a_file_by_its_first_bytes_alone() {
+    let r = runner();
+    let start = usize::try_from(super::MOST_FILE_LOOKED).expect("a size");
+    let mut bytes = vec![b'a'; start];
+    bytes.extend_from_slice(b"\0 far past what a look reads");
+    write(&r.cwd.join("late.log"), &bytes);
+
+    assert!(matches!(
+        r.look("late.log"),
+        FileRead::Plain { size, piece: None, .. } if size == bytes.len() as u64
+    ));
+}
+
+#[test]
+fn a_look_whose_first_bytes_end_inside_a_character_is_text() {
+    let r = runner();
+    let start = usize::try_from(super::MOST_FILE_LOOKED).expect("a size");
+    // `é` is two bytes: the look's last byte is the first half of one.
+    let text = "a".repeat(start - 1) + &"é".repeat(8);
+    write(&r.cwd.join("accents.txt"), text.as_bytes());
+
+    assert_eq!(
+        plain(&r.look("accents.txt")).1,
+        Some("repos/web/accents.txt")
+    );
+}
+
+#[test]
+fn a_piece_is_read_from_where_it_was_asked_alone() {
+    let r = runner();
+    let first = usize::try_from(MOST_FILE_PIECE).expect("a size");
+    let mut bytes = vec![b'a'; first];
+    bytes[10] = 0;
+    bytes.extend_from_slice(b"the second piece\n");
+    write(&r.cwd.join("two.log"), &bytes);
+
+    let second = r.read("two.log", FileReach::Workspace, MOST_FILE_PIECE);
+
+    assert_eq!(piece(&second).bytes, b"the second piece\n");
+    assert!(matches!(
+        r.read("two.log", FileReach::Workspace, 0),
+        FileRead::Binary { size, .. } if size == bytes.len() as u64
+    ));
+}
+
+#[test]
+fn pieces_cut_inside_a_character_are_text_and_join_into_the_file() {
+    let r = runner();
+    let first = usize::try_from(MOST_FILE_PIECE).expect("a size");
+    let text = "a".repeat(first - 1) + &"é".repeat(4) + "\n";
+    write(&r.cwd.join("cut.txt"), text.as_bytes());
+
+    let mut joined = piece(&r.read("cut.txt", FileReach::Workspace, 0))
+        .bytes
+        .clone();
+    joined.extend(
+        piece(&r.read("cut.txt", FileReach::Workspace, MOST_FILE_PIECE))
+            .bytes
+            .clone(),
+    );
+
+    assert_eq!(joined, text.as_bytes());
+}
