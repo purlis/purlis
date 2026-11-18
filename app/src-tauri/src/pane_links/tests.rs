@@ -955,7 +955,7 @@ fn an_issue_s_number_says_it_is_one_and_opens_its_forge_page_in_the_browser() {
     assert_eq!(
         answered,
         LinkOpened::Opened {
-            kind: KindHint::Url,
+            kind: KindHint::Issue,
             target: page.into()
         }
     );

@@ -614,7 +614,12 @@ pub(crate) fn answer_in(
         },
         Opening::Open(Target::Url(url)) => match open_url(url.as_str()) {
             Ok(()) => LinkOpened::Opened {
-                kind: KindHint::Url,
+                // An issue's number opens a web address, and is still an issue's (#6223).
+                kind: if candidate.kind == Kind::Issue {
+                    KindHint::Issue
+                } else {
+                    KindHint::Url
+                },
                 target: url.as_str().to_owned(),
             },
             Err(reason) => LinkOpened::Refused { reason },

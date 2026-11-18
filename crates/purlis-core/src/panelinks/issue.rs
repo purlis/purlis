@@ -17,9 +17,10 @@
 //! - **Only folders in the chat's project are read**: a folder the chat moved to outside it
 //!   (#6367) has no remote purlis reads, so its numbers are no link. The remotes are read by
 //!   gitoxide from the repository's own config, isolated from the system's and the person's, and
-//!   no git runs.
+//!   no git runs; a `.git` file, or its git folder's `commondir`, naming a folder outside the
+//!   project is never followed ([`repository_of`]).
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use super::{Kind, LinkKind, Opening, Pane, Resolved, Target, WebAddress};
 use crate::forge::{Forge, Kind as ForgeKind};
@@ -164,27 +165,14 @@ impl LinkKind for IssueRef {
 
 /// **The remotes of the repository `folder` is in**, read by gitoxide from its config alone
 /// (isolated: not the system's or the person's), as `(name, fetch url)`. None where no repository
-/// whose work tree is in `project` holds it, or its config cannot be read.
+/// holds it in `project`, or its config cannot be read.
 fn read_remotes(folder: &Path, project: &Path) -> Vec<(String, String)> {
-    let isolated = gix::sec::trust::Mapping {
-        full: gix::open::Options::isolated(),
-        reduced: gix::open::Options::isolated(),
-    };
-    let Ok(found) = gix::ThreadSafeRepository::discover_opts(
-        folder,
-        gix::discover::upwards::Options::default(),
-        isolated,
-    ) else {
+    let Some(work) = repository_of(folder, project) else {
         return Vec::new();
     };
-    let repo = found.to_thread_local();
-    let in_project = repo
-        .workdir()
-        .and_then(|work| std::fs::canonicalize(work).ok())
-        .is_some_and(|work| work.starts_with(project));
-    if !in_project {
+    let Ok(repo) = gix::open_opts(&work, gix::open::Options::isolated()) else {
         return Vec::new();
-    }
+    };
     repo.remote_names()
         .into_iter()
         .filter_map(|name| {
@@ -193,6 +181,53 @@ fn read_remotes(folder: &Path, project: &Path) -> Vec<(String, String)> {
             Some((name.to_string(), url.to_bstring().to_string()))
         })
         .collect()
+}
+
+/// **The work tree of the repository `folder` (resolved) is in**, found as git finds it, but
+/// never outside `project` (resolved): the nearest folder from `folder` up to `project` holding a
+/// `.git`, whose git folder, read from a `.git` file's `gitdir:` where it is one, and that git
+/// folder's `commondir`, are both in `project`. A `.git` file anything wrote can name any folder,
+/// a guarded one too, and nothing outside the project is opened. `None` otherwise.
+fn repository_of(folder: &Path, project: &Path) -> Option<PathBuf> {
+    let work = folder
+        .ancestors()
+        .take_while(|at| at.starts_with(project))
+        .find(|at| std::fs::symlink_metadata(at.join(".git")).is_ok())?;
+    let dot_git = work.join(".git");
+    let git = if std::fs::symlink_metadata(&dot_git).ok()?.is_dir() {
+        dot_git
+    } else {
+        let said = std::fs::read_to_string(&dot_git).ok()?;
+        let named = said.lines().next()?.strip_prefix("gitdir:")?.trim();
+        within(&work.join(named), project)?
+    };
+    let common = match std::fs::read_to_string(git.join("commondir")) {
+        Ok(said) => within(&git.join(said.trim()), project)?,
+        Err(_) => git,
+    };
+    within(&common, project)?;
+    Some(work.to_path_buf())
+}
+
+/// `path` resolved, where that is in `project`: read as written first, so a path outside it is
+/// never looked at, then with its links resolved.
+fn within(path: &Path, project: &Path) -> Option<PathBuf> {
+    let mut written = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                written.pop();
+            }
+            Component::CurDir => {}
+            other => written.push(other),
+        }
+    }
+    if !written.starts_with(project) {
+        return None;
+    }
+    std::fs::canonicalize(&written)
+        .ok()
+        .filter(|real| real.starts_with(project))
 }
 
 #[cfg(test)]

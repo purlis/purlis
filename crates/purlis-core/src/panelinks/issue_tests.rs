@@ -277,3 +277,72 @@ fn a_repository_above_the_project_is_never_read() {
         Resolved::Quiet
     );
 }
+
+/// A repository's git folder at `git`, as git lays one out, whose origin is `origin`.
+fn git_folder(git: &Path, origin: &str) {
+    for folder in ["objects", "refs/heads"] {
+        std::fs::create_dir_all(git.join(folder)).expect("a folder");
+    }
+    std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(
+        git.join("config"),
+        format!(
+            "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\
+             [remote \"origin\"]\n\turl = {origin}\n"
+        ),
+    )
+    .expect("config");
+}
+
+#[test]
+fn a_git_file_pointing_outside_the_project_is_never_followed() {
+    // A `.git` file an agent wrote can name any folder: purlis reads no git folder outside the
+    // project, so a guarded one is never looked in.
+    let here = fixture();
+    let elsewhere = here.outside.join("repo.git");
+    git_folder(&elsewhere, "git@github.com:someone/else.git");
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}\n", elsewhere.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn a_branch_folder_reads_its_clone_s_remotes() {
+    // A branch folder's `.git` file names its clone's `.git/worktrees/<name>`, whose
+    // `commondir` names the clone's git folder: both in the project.
+    let here = fixture();
+    let clone_git = here.app().join(".git");
+    git_folder(&clone_git, "git@github.com:purlis/purlis.git");
+    let named = clone_git.join("worktrees/feature");
+    std::fs::create_dir_all(&named).expect("a folder");
+    std::fs::write(named.join("HEAD"), "ref: refs/heads/feature\n").expect("HEAD");
+    std::fs::write(named.join("commondir"), "../..\n").expect("commondir");
+    let branch = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    std::fs::write(
+        named.join("gitdir"),
+        format!("{}\n", branch.join(".git").display()),
+    )
+    .expect("gitdir");
+    std::fs::write(
+        branch.join(".git"),
+        format!("gitdir: {}\n", named.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&branch)),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
