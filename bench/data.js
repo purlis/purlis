@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794966157289,
+  "lastUpdate": 1794969076384,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51072,6 +51072,48 @@ window.BENCHMARK_DATA = {
             "value": 101.986489,
             "unit": "ms",
             "extra": "median of 5 runs: 101.397, 101.700, 101.986, 102.043, 105.015 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1f36f1a79f0720ecee8f06935f306f9ce96f1ac6",
+          "message": "The window shows the project's policy: the pane head, Settings › Project › Policy with its would-have-blocked count, and the move to watch announced once (Q308a, instruction 45) (#7093)\n\n* Q308a, instruction 45: the window shows the project's policy\n\n- The pane head of a live chat says its project's template and how many families it sets apart\n  (PolicyMark), the whole policy on its tooltip; a narrow pane drops it first.\n- Settings > Project > Policy: the template, each family set apart and how your chats run it,\n  administrator locks, a loosening's sealed Accept, and the would-have-blocked count that opens\n  the enforcement log (policy_log, a read served on a link).\n- The move to watch is announced once per machine (policy-watch-announced, the layout file's\n  seen-once store), in a project that names no template.\n\nThe window only shows the policy: the app's PolicyState gains the template, overrides and locks,\nread from purlis-core without changing enforcement.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M3MJTRGR2GW8Y2ATBJ46X0\nPurlis-Persona: steward\n\n* #7093 fix round: the policy fixtures the tests and stories share, with a known rule and a host:port\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7MRK45VTG13F6D35ESWVQQ5\nPurlis-Persona: steward\n\n* #7093 fix round: the log is read as it is written, one read of the settings, and unsealed is said everywhere\n\n- policy_log keeps only lines the app would write (known rule, host:port, chat, time, lengths) and counts the rest as dropped; newest first with the last written first within a second; the window is handed the newest 500 and the full count.\n- The policy state's template and overrides come from the same read as its digest (Standing carries what the file said, how it runs and what is locked).\n- Where this machine's acceptance does not hold: the mark says strict, Settings never says \"the default\", PolicyWatchAnnounced says nothing and keeps its once-per-machine cause, and Settings offers the Accept that seals again and says so.\n- Settings reads the policy again after a refused Accept, and the log again when the window is focused or its project comes back.\n- Copy: a stop is blocked; the host:port is named; an unknown chat says so; the administrator line is reworded.\n- The pane head's policy threshold is measured by a story that draws the widest mark (strict +12): 570.\n- Tests for the count, the 500 cap, the chat number, dropped lines and \"The newest N of M are shown\", each seen red; WATCH moves to the fixture; the sleep is a waitFor.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7MRK45VTG13F6D35ESWVQQ5\nPurlis-Persona: steward\n\n* #7093: the policy goes under 550, where the longest head stops fitting it\n\nCI's stories run 44158857596 measured the longest head with the policy's widest\nmark, strict +12, fitting from 542 px (default theme, comfortable) down to 508 px\n(classic, compact) in Chromium and WebKit; HEAD_DROPS dropped it under 570, and\nPolicyGoesWhereItNoLongerFits failed in every cell. It goes under 550 now, and the\nstory allows 48 px to spare, since the compact density's head is some 30 px\nnarrower than the comfortable one's that the width is measured on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NJEQQHFN1SQ7H617ZG3SHH\nPurlis-Persona: steward\n\n* #7093: CI's baselines for the policy's stories, and the policy measure inside a baseline's height\n\nThe baselines are stories run 44169251136's (head 06e64e7a3), taken with\ntools/story-baselines-pull.mjs's checks and reviewed: PolicyMark's The Default\n(watch) and Set Apart (team +2), PolicyWatchAnnounced's Notice, settings/Policy's\nLoosening Waits, SettingsSearch's Set Here with Policy in its nav, and ChatFoot's\nHead At Every Width with strict +12 fitting at 550 and gone at 500.\n\nPolicyGoesWhereItNoLongerFits drew 80 rows, 4172 px tall, over the 4096 px a\nbaseline may be, so its picture could not be taken. It measures 40 rows now, from\n570 down to 492, which still brackets every cell's narrowest (508 to 542).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NJEQQHFN1SQ7H617ZG3SHH\nPurlis-Persona: steward\n\n* #7093: the enforcement log's times are read with jiff, as main now keeps them\n\nMain moved our crates from chrono to jiff (#7119) and dropped chrono from\npurlis-app, so policypress.rs's one chrono call failed every Rust job once CI\nmerged the pull request with main. It reads the same format with\njiff::civil::DateTime::strptime; a_line_the_app_would_not_write_is_left_out_and_counted\nstill drops a time that is not one and one with an offset other than Z.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NJEQQHFN1SQ7H617ZG3SHH\nPurlis-Persona: steward\n\n* #7093: the policy's measure is not pictured\n\nCI drew PolicyGoesWhereItNoLongerFits 2049 to 2092 px tall with only its top\nseventeen rows painted and the rest blank: the frame paints no further. It is a\nmeasure, and HeadAtEveryWidth already pictures strict +12 fitting at 550 and gone\nat 500, so it takes screenshot: false, as ActivityBar's measured stories do, with\nthe reason in its comment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NJEQQHFN1SQ7H617ZG3SHH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T01:06:16Z",
+          "tree_id": "70922a3e97070ccbf5c898368538e48f6c4e2a7c",
+          "url": "https://github.com/purlis/purlis/commit/1f36f1a79f0720ecee8f06935f306f9ce96f1ac6"
+        },
+        "date": 1794969070997,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.332797,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.319, 0.330, 0.333, 0.340, 0.363 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.651439500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.577, 16.625, 16.651, 16.657, 16.686 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1421905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.084, 100.979, 102.142, 102.193, 102.707 ms"
           }
         ]
       }
