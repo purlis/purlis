@@ -2573,6 +2573,10 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
     let chat_dir = hooks::chat_dir(&purlis_core::envvar::var);
+    // The `purlis` command the call ran, in fixed words, for a Report of purlis's own block.
+    let purlis_command = data["tool_input"]["command"]
+        .as_str()
+        .and_then(purlis_core::sandboxblock::command::in_line);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
         let own = purlis_core::sandboxblock::its_own_to_retry(
             &block,
@@ -2594,6 +2598,7 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
             target,
             read_back,
             suggested,
+            purlis_command: purlis_command.clone().filter(|_| block.ours),
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
             Ok(()) if !own => taken.taken.push(block),

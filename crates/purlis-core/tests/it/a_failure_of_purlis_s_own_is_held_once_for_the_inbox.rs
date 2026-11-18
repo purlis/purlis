@@ -288,6 +288,7 @@ fn a_sandbox_block_of_purlis_s_own_takes_the_same_road() {
                 kind: Kind::ProjectState,
                 ours: true,
             },
+            command: None,
             ran_as: RanAs::default(),
         })
     };

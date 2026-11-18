@@ -4258,3 +4258,35 @@ fn a_size_is_said_in_the_units_a_reader_expects() {
     assert_eq!(sandbox::bytes_said(1_240_000), "1.2 MB");
     assert_eq!(sandbox::bytes_said(3_400_000_000), "3.4 GB");
 }
+
+// ---- inside a chat's sandbox (#7178) --------------------------------------------------------
+
+#[test]
+fn inside_a_chats_sandbox_no_row_looks_at_what_the_sandbox_denies() {
+    let (_d, root) = plane("schema = 1\n");
+    // A spool this build does not read, which a doctor outside the sandbox says.
+    let spool = root.join(".purlis/app/spool");
+    std::fs::create_dir_all(&spool).unwrap();
+    std::fs::write(spool.join("keys.json"), r#"{"v":3,"keys":[]}"#).unwrap();
+    let outside = Doctor::at(&root, &root, false, false).run();
+    assert!(outside.iter().any(|r| r.name == "hook spool"));
+
+    let mut inside = Doctor::at(&root, &root, false, false);
+    inside.confined = true;
+    let rows = inside.run();
+    assert!(
+        rows.iter().all(|r| r.name != "hook spool"),
+        "the spool is denied to the chat, so it is not looked at"
+    );
+    for name in ["vaults", "credential paths"] {
+        let said = row(&rows, name);
+        assert_eq!(said.status, Status::Ok, "{name}");
+        assert!(
+            said.detail
+                .starts_with("not checked from inside a chat's sandbox"),
+            "{name}: {}",
+            said.detail
+        );
+    }
+    assert!(rows.iter().all(|r| r.name != "vault files"));
+}

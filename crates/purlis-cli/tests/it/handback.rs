@@ -254,3 +254,34 @@ fn a_report_kept_for_the_plane_root_is_learned_by_the_next_chat_started_there_an
     assert!(context.ends_with("> done at the root"), "{context}");
     assert!(handback::take(plane.path(), For::Place(&Place::PlaneRoot)).is_empty());
 }
+
+#[test]
+fn a_hook_inside_the_chats_sandbox_takes_no_report_where_no_app_answers() {
+    // #7178: the sandbox holds the reports' folder and the plane's key from a hook that runs in
+    // it (Codex, opencode), so taking one here, with no app to take it, would be purlis's own
+    // write and read refused. The report waits for a turn the app answers.
+    let plane = a_plane();
+    handback::leave(plane.path(), For::Chat(3), &a_report("done")).unwrap();
+    let inside = [
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "1"),
+    ];
+
+    let out = hook_as(plane.path(), "userpromptsubmit", "3", &inside);
+
+    assert_eq!(out, "", "nothing is handed on what was not taken");
+    assert_eq!(
+        handback::waiting(plane.path(), For::Chat(3)).len(),
+        1,
+        "the report is still waiting"
+    );
+
+    // Outside the sandbox it is taken here as it always was.
+    let outside = [
+        (purlis_core::hookwire::HARNESS_ENV, "claude-code"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "1"),
+    ];
+    let out = hook_as(plane.path(), "userpromptsubmit", "3", &outside);
+    assert!(context_of(&out, "UserPromptSubmit").contains("reported back"));
+    assert!(handback::waiting(plane.path(), For::Chat(3)).is_empty());
+}

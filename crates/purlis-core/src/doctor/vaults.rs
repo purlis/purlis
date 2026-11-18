@@ -39,7 +39,7 @@ pub(super) const NAME: &str = "vault files";
 
 /// The row for the project `d` answers for, or `None`.
 pub(super) fn vault_files(d: &Doctor) -> Option<Row> {
-    if !d.has_plane {
+    if !d.has_plane || d.confined {
         return None;
     }
     row_for(&Ctx::new(&d.root, Env::from_process()))

@@ -214,6 +214,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 target: None,
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             },
             SandboxBlocked {
                 chat: 7,
@@ -228,6 +229,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 target: Some("com.apple.trustd.agent".to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             },
         ]
     );

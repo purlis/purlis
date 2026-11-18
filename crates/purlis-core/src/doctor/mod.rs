@@ -400,6 +400,11 @@ pub struct Doctor {
     /// says once trimming it has stopped working while a host serves. `None` for a doctor a
     /// test names, which must never read the operator's own.
     pub(crate) host_log: Option<host_log::HostLog>,
+    /// Whether this doctor runs inside a chat's sandbox ([`crate::sandbox::writes_are_sandboxed`],
+    /// #7178). The sandbox denies a chat what the rows of the vaults, their credential files and
+    /// the hook spool look at, so from there they are not looked at: a look would be refused, and
+    /// the refusal drafted as a Report of purlis's own block. Said in the rows, never silent.
+    pub(crate) confined: bool,
     /// What this machine's runner host looks like (RR-15, #724), where this purlis is a
     /// runner's: installed as a version (RR-14) or kept by a service manager. `None` on a
     /// desktop, and for a doctor a test names.
@@ -432,6 +437,7 @@ impl Doctor {
             .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
         d.host_log = host_log::HostLog::here();
+        d.confined = crate::sandbox::writes_are_sandboxed();
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -509,6 +515,7 @@ impl Doctor {
             extensions: None,
             cache_home: None,
             host_log: None,
+            confined: false,
             #[cfg(unix)]
             runner_host: None,
         }

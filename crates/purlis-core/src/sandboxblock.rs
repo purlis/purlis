@@ -2507,6 +2507,9 @@ pub mod denial;
 #[path = "sandboxblock_background.rs"]
 pub mod background;
 
+#[path = "sandboxblock_command.rs"]
+pub mod command;
+
 pub mod supervised;
 
 #[path = "sandboxblock_drivers.rs"]
