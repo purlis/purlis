@@ -80,6 +80,7 @@ impl Handler {
         match self.name {
             "pretooluse" => &[
                 Family::GuardsShape,
+                Family::GuardsPlane,
                 Family::Secrets,
                 Family::GuardsCredential,
                 Family::GuardsGit,
@@ -94,6 +95,12 @@ impl Handler {
         }
     }
 
+    /// **Whether this guard runs A7c**, the backstop behind the person's own ask and deny rules
+    /// ([`crate::toolgate::Arm::RuleSpelling`]), which has no family: the Bash guard alone.
+    fn reads_the_persons_rules(&self) -> bool {
+        self.name == "pretooluse"
+    }
+
     /// **What Claude Code does when this guard fails** (#7067): it could not start, timed out,
     /// exited with a code other than 0 or 2, or printed JSON it cannot read. `"block"` where the
     /// chat's `policy` enforces a family the guard judges, so a dead guard refuses as a live one
@@ -103,13 +110,23 @@ impl Handler {
     /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
     /// one that is not yet switchable keeps its refusal while the guard lives and, as before
     /// Q308, does not hold a call when it dies. Its wiring will count it.
-    pub fn on_failure(&self, policy: &crate::enforcement::Resolved) -> Option<&'static str> {
+    ///
+    /// **A7c counts as an enforced family where the person's rules name a program**
+    /// (`rules_name_a_program`; the re-review of #7104, ruling for Q327): it holds in every
+    /// mode behind the person's own ask and deny rules, so a dead Bash guard, the one that reads
+    /// them, refuses under every template then.
+    pub fn on_failure(
+        &self,
+        policy: &crate::enforcement::Resolved,
+        rules_name_a_program: bool,
+    ) -> Option<&'static str> {
         if !self.guards_a_call() {
             return None;
         }
-        let enforced = self.judges().iter().any(|family| {
-            family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
-        });
+        let enforced = (rules_name_a_program && self.reads_the_persons_rules())
+            || self.judges().iter().any(|family| {
+                family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
+            });
         Some(if enforced { "block" } else { "continue" })
     }
 }
@@ -419,7 +436,7 @@ mod tests {
         let strict = crate::enforcement::Resolved::all(crate::enforcement::Mode::Enforce);
         for h in HANDLERS.iter().filter(|h| !h.guards_a_call()) {
             assert!(h.judges().is_empty(), "{}", h.name);
-            assert_eq!(h.on_failure(&strict), None, "{}", h.name);
+            assert_eq!(h.on_failure(&strict, true), None, "{}", h.name);
         }
     }
 
@@ -435,7 +452,7 @@ mod tests {
         let failing = |policy: &Resolved| -> Vec<(&str, &str)> {
             HANDLERS
                 .iter()
-                .filter_map(|h| Some((h.name, h.on_failure(policy)?)))
+                .filter_map(|h| Some((h.name, h.on_failure(policy, false)?)))
                 .collect()
         };
         assert_eq!(
@@ -444,7 +461,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
                 ("pretooluse-edit", "continue"),
-                ("pretooluse-dispatch", "continue"),
+                // `guards.shape` switches since Q308b's nine did (#7104).
+                ("pretooluse-dispatch", "block"),
             ]
         );
         assert_eq!(

@@ -777,6 +777,12 @@ fn a_token_from_the_cluster_is_kept_for_its_chat_alone_till_its_chat_ends() {
 fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
+    // The ask is `consents`' (Q308b), which the default, `watch`, only logs.
+    std::fs::write(
+        crate::names::manifest(root),
+        "[policy]\nconsents = \"enforce\"\n",
+    )
+    .unwrap();
     // A clone the person made in their own terminal: purlis has no record of it.
     a_clone(root, "api", "https://github.com/acme/api.git");
     let config = tempfile::tempdir().unwrap();
@@ -880,6 +886,12 @@ fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
 fn a_dismissed_notice_that_later_stops_a_chat_is_raised_again_as_an_ask() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
+    // The ask is `consents`' (Q308b), which the default, `watch`, only logs.
+    std::fs::write(
+        crate::names::manifest(root),
+        "[policy]\nconsents = \"enforce\"\n",
+    )
+    .unwrap();
     a_clone(root, "web", "https://github.com/acme/web.git");
     let config = tempfile::tempdir().unwrap();
     let gh = crate::sandbox::tools::Tool {
@@ -1016,6 +1028,12 @@ fn a_clone_whose_git_folder_a_chat_writes_raises_no_trust_this_clone() {
 fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_succeeds() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
+    // The ask is `consents`' (Q308b), which the default, `watch`, only logs.
+    std::fs::write(
+        crate::names::manifest(root),
+        "[policy]\nconsents = \"enforce\"\n",
+    )
+    .unwrap();
     let config = tempfile::tempdir().unwrap();
     let ws = root.join("workspaces/ws");
     a_clone(root, "api", "https://github.com/acme/api.git");

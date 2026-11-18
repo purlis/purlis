@@ -77,7 +77,7 @@ fn trust_asked(chat: &For<'_>) -> Option<String> {
         .iter()
         .map(|repo| crate::sandbox::local::clone_key(&repo.path))
         .collect();
-    let folders: Vec<String> =
+    let folders: Vec<(String, String)> =
         super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
             .into_iter()
             .filter(|clone| clone.workspace == workspace)
@@ -88,7 +88,16 @@ fn trust_asked(chat: &For<'_>) -> Option<String> {
                     .starts_with(&format!("{HOST}/"))
                     .then_some((clone.folder, place))
             })
-            .map(|(folder, place)| {
+            .collect();
+    if folders.is_empty() {
+        return None;
+    }
+    // Raised as an ask where `[policy] consents` asks (Q308b); the press stays the window's.
+    let asked = crate::windowonly::asks(chat.root);
+    let folders: Vec<String> = folders
+        .into_iter()
+        .map(|(folder, place)| {
+            if asked {
                 crate::windowonly::raise(
                     chat.root,
                     chat.chat,
@@ -97,15 +106,18 @@ fn trust_asked(chat: &For<'_>) -> Option<String> {
                         place,
                     },
                 );
-                folder
-            })
-            .collect();
-    if folders.is_empty() {
-        return None;
-    }
+            }
+            folder
+        })
+        .collect();
+    let where_ = if asked {
+        "purlis asked the person in Asks"
+    } else {
+        "the person trusts it in the window"
+    };
     Some(format!(
         "no GitHub App token was minted: purlis has no record of {}, so it did not clone {} and \
-         the person has not trusted {}. purlis asked the person in Asks: \"{}\", with {}. Run \
+         the person has not trusted {}. {where_}: \"{}\", with {}. Run \
          the command again once they have",
         folders.join(", "),
         if folders.len() == 1 { "it" } else { "them" },

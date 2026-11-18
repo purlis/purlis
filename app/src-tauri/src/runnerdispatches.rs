@@ -292,6 +292,18 @@ pub fn heard_from_a_pool(held: &Held, chat: u32) -> Option<String> {
     crate::hooks::heard_from_a_pool().or_else(|| held.chats().pool_of(chat))
 }
 
+/// [`heard_from_a_pool`], where `[policy] runners` holds a runner chat's dispatch for the
+/// person (Q308b, `purlis_core::runnerwrite::held_for_the_person`): `None` where it does not,
+/// and the dispatch is decided as this machine's own chat's.
+pub fn held_from_a_pool(held: &Held, chat: u32) -> Option<String> {
+    heard_from_a_pool(held, chat).filter(|_| {
+        purlis_core::runnerwrite::held_for_the_person(
+            held.root(),
+            purlis_core::runnerwrite::RunnerAsk::Dispatch,
+        )
+    })
+}
+
 /// **Holds `wanted`, heard from `pool`, for the person**, and answers what the chat is told:
 /// held, as a dispatch waiting on the person is ([`Answer::NeedsGrant`]). Nothing starts.
 pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {

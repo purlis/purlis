@@ -1313,6 +1313,62 @@ fn recorded(
 /// level of which it is denied writing, goes through a file.
 pub const SETTINGS_IN_A_WORD: usize = 120 * 1024;
 
+/// **The most what a chat's harness sends its auto mode's check should weigh** (T1.1-71,
+/// #6961): 256 KB of permission rules and auto mode lists, as purlis writes them
+/// ([`auto_mode_weight`]). Read in Claude Code 2.1.325's bundled CLI: auto mode sends its server
+/// a context of the session's permission rules (`allow`, `deny`, `ask`, each with its source and
+/// root), its `autoMode` lists, the trusted folders and the git state; past 1,040,000 bytes it
+/// withholds the context, and every action the check would decide is refused, nobody asked.
+/// Past 256,000 it sheds the git state and the history, and past 128,000 in the rules part
+/// alone, allow rules. The sandbox is no part of it. A quarter of the ceiling leaves room for
+/// what Claude Code adds to each rule and for the person's own. The policy key
+/// `limits.harness_settings_bytes`, default 256 KB, measures this, not the file (Q307 Q6, as
+/// clarified on #7005; #6969).
+pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
+
+/// **The most a chat's whole harness settings file should weigh**: a sanity cap, apart from
+/// [`HARNESS_SETTINGS_BYTES`], on what grows with the paths a chat is held from. Claude Code
+/// builds its macOS sandbox profile from those paths and hands it to `sandbox-exec -p` on the
+/// command line (read in 2.1.325), which macOS bounds by `ARG_MAX`, 1 MiB with the environment.
+/// 768 KiB is above the 668 KB a large plane's chats ran on before #6961, and leaves that room.
+pub const HARNESS_SETTINGS_FILE_BYTES: usize = 768 * 1024;
+
+/// **What of a chat's harness `settings` its auto mode's check counts**, in bytes: the
+/// permission rules (`permissions.allow`, `deny`, `ask`) and the `autoMode` lists, as one JSON
+/// document ([`HARNESS_SETTINGS_BYTES`]). Nothing else in the settings counts, the sandbox
+/// least of all.
+pub fn auto_mode_weight(settings: &serde_json::Value) -> usize {
+    let mut counted = serde_json::Map::new();
+    let mut permissions = serde_json::Map::new();
+    for list in ["allow", "deny", "ask"] {
+        if let Some(rules) = settings["permissions"].get(list) {
+            permissions.insert(list.to_owned(), rules.clone());
+        }
+    }
+    if !permissions.is_empty() {
+        counted.insert(
+            "permissions".to_owned(),
+            serde_json::Value::Object(permissions),
+        );
+    }
+    if let Some(lists) = settings.get("autoMode") {
+        counted.insert("autoMode".to_owned(), lists.clone());
+    }
+    serde_json::Value::Object(counted).to_string().len()
+}
+
+/// **How much what auto mode counts of the `--settings` JSON on `args` weighs, where it is past
+/// [`HARNESS_SETTINGS_BYTES`]** ([`auto_mode_weight`]): what the chat's tab says, with a way out
+/// (#6961). `None` for lighter settings, a path, or none at all.
+pub fn settings_past_the_budget(args: &[String]) -> Option<usize> {
+    let at = args.iter().position(|word| word == "--settings")? + 1;
+    let settings: serde_json::Value = args
+        .get(at)
+        .filter(|json| json.starts_with('{'))
+        .and_then(|json| serde_json::from_str(json).ok())?;
+    Some(auto_mode_weight(&settings)).filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
+}
+
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
 /// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
 /// integrity path.
@@ -1671,7 +1727,12 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             // Its guards fail as the project's policy runs them (#7067): armed failing closed,
             // and loosened here to what its start resolves, the same its hooks are handed.
             let args = if harness == Harness::ClaudeCode {
-                crate::harness::claude::under_policy(args, &crate::enforcement::at_start(root))
+                crate::harness::claude::under_policy(
+                    args,
+                    &crate::enforcement::at_start(root),
+                    crate::rulespelling::Rules::in_force(root, &[cwd.unwrap_or(root)])
+                        .names_a_program(),
+                )
             } else {
                 args
             };

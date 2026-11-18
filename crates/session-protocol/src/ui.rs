@@ -1261,6 +1261,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A file outside the project a pane link opened (#6216): read only after the person answered
     // the window's ask, which a link has no way to show.
     "pane_link_file",
+    // A runner chat's file a pane link opened (#6387): read on the runner for the window's tab,
+    // outside the workspace only after the window's ask, which a link has no way to show.
+    "pane_link_runner_file",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",

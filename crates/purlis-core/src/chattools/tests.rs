@@ -1855,6 +1855,46 @@ mod forge_milestones_tool {
     }
 
     #[test]
+    fn a_repo_of_another_workspace_is_read_only_where_policy_guards_forge_does_not_enforce() {
+        // Q308b: the workspace's bound is `guards.forge`'s.
+        const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2D";
+        for (policy, read, lines) in [("", false, 0), ("guards.forge = \"log\"\n", true, 1)] {
+            let p = plane();
+            let beta = crate::workspaces::Plane::open(p.path())
+                .workspace("beta")
+                .unwrap();
+            std::fs::create_dir_all(beta.dir()).unwrap();
+            beta.scaffold_charter().unwrap();
+            let manifest = crate::names::manifest(p.path());
+            let mut text = std::fs::read_to_string(&manifest).unwrap_or_default();
+            text.push_str(&format!("\n[policy]\ntemplate = \"strict\"\n{policy}"));
+            std::fs::write(&manifest, text).unwrap();
+            let forge = recording(json!([milestone(Value::Null)]), false);
+            let forge_of = forge.clone();
+            let said = forge_milestones(
+                p.path(),
+                &in_ws("beta"),
+                &args(json!({ "repo": "api" })),
+                CHAT,
+                &move |repo| repo.forge.backend_for(forge_of.clone()),
+            );
+            assert_eq!(said.is_ok(), read, "{policy:?}: {said:?}");
+            if !read {
+                assert!(
+                    said.unwrap_err()
+                        .contains("is not a repo of this workspace")
+                );
+            }
+            let logged = crate::enforcement::read_log(p.path(), CHAT);
+            assert_eq!(logged.len(), lines, "{policy:?}");
+            assert!(
+                logged.iter().all(|line| line.family == "guards.forge"
+                    && line.rule == "forge.milestones.workspace")
+            );
+        }
+    }
+
+    #[test]
     fn a_due_date_in_any_script_is_cut_on_a_character() {
         let p = plane();
         let forge = recording(

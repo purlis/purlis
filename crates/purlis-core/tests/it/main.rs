@@ -198,6 +198,7 @@ mod every_deferral_names_its_ticket;
 mod every_first_party_source_file_carries_its_licence_header;
 mod every_git_call_goes_through_the_runner;
 mod every_guard_reads_a_hostile_command_in_linear_time;
+mod every_inventory_row_maps_to_exactly_one_family;
 mod every_named_limit_on_a_runners_path_is_sorted;
 mod every_repo_path_comes_from_the_resolver;
 mod every_scanner_sees_a_clone_in_either_layout;

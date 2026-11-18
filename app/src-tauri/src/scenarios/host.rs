@@ -184,16 +184,24 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
         "the project's [policy] did not read: {:?}",
         standing.refused
     );
-    if !standing.waiting.is_empty() {
+    // The window offers the press where the project runs looser than what the person accepted,
+    // and where an acceptance kept for it no longer holds: a scenario that makes its project's
+    // folder again, at the same path, is another clone to purlis, which reads what was accepted
+    // for the one before as broken until the person accepts again.
+    if !standing.waiting.is_empty() || standing.unsealed {
         press(standing.digest);
     }
     let at_start = purlis_core::enforcement::at_start(root);
+    let standing = purlis_core::enforcement::standing(root);
     assert_eq!(
         at_start,
         resolved_under(template, root),
-        "a chat in the project starts under {} as the scenario asked: {}",
+        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what a press would lift: {:?}; the denies in force: {:?})",
         template.word(),
-        at_start.spelled()
+        at_start.spelled(),
+        standing.unsealed,
+        standing.lifted,
+        purlis_core::enforcement::denies_in_force(root)
     );
     if template == Template::Strict {
         assert_eq!(

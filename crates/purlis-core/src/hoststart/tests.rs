@@ -593,3 +593,53 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
         ])
     );
 }
+
+/// T1.1-71 (#6961): settings whose permission rules and auto mode lists weigh past
+/// `limits.harness_settings_bytes` are named by that weight, for the chat's tab to say; lighter
+/// ones, and a line with none, are not. Only what Claude Code's auto mode sends its check counts
+/// (read in 2.1.325: the rules and the `autoMode` lists, never the sandbox), so a sandbox that
+/// holds many paths weighs nothing here.
+#[test]
+fn settings_past_the_budget_are_named_by_their_weight() {
+    let with_rules = |bytes: usize| {
+        let empty = serde_json::json!({"permissions": {"deny": [""]}}).to_string();
+        let rule = "x".repeat(bytes - empty.len());
+        let json = serde_json::json!({
+            "permissions": {"deny": [rule]},
+            "sandbox": {"filesystem": {"denyWrite": ["/a"]}},
+        });
+        assert_eq!(auto_mode_weight(&json), bytes);
+        words(&json.to_string())
+    };
+    assert_eq!(
+        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES + 1)),
+        Some(HARNESS_SETTINGS_BYTES + 1)
+    );
+    assert_eq!(
+        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES)),
+        None
+    );
+    let held_paths: Vec<String> = (0..20_000)
+        .map(|n| format!("/a/path/{n:05}/.git"))
+        .collect();
+    let many_paths = serde_json::json!({
+        "permissions": {"deny": ["WebFetch"]},
+        "sandbox": {"filesystem": {"denyWrite": held_paths}},
+    })
+    .to_string();
+    assert!(many_paths.len() > HARNESS_SETTINGS_BYTES);
+    assert_eq!(
+        settings_past_the_budget(&words(&many_paths)),
+        None,
+        "the sandbox's paths are no part of auto mode's check"
+    );
+    let lists = serde_json::json!({
+        "autoMode": {"soft_deny": ["y".repeat(HARNESS_SETTINGS_BYTES)]},
+    });
+    assert!(settings_past_the_budget(&words(&lists.to_string())).is_some());
+    assert_eq!(settings_past_the_budget(&["claude".to_owned()]), None);
+    assert_eq!(
+        settings_past_the_budget(&["--settings".to_owned(), "/a/file.json".to_owned()]),
+        None
+    );
+}

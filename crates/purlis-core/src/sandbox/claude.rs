@@ -296,12 +296,19 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // in or at it is denied ([`super::Denied::git_folder_pins`]), and Claude Code pins every
     // folder above a denied path (see the caches below), so a `.git` directory stays where it is
     // while git writes the rest of it, and a `.git` file is held itself. Each as a plain path, by
-    // every name a rule on it is written by: a glob gets no folder above it pinned.
+    // every name a rule on it is written by: a glob gets no folder above it pinned. The Edit
+    // tool pins nothing, so for it every branch folder's git in a plane is one rule (#6961): a
+    // plane holds hundreds, and each by path weighs the settings past auto mode's check.
     for pin in &compiled.denied.git_folder_pins {
         for name in names_for(pin) {
             let path = name.display().to_string();
-            edit_rules.push(format!("Edit(/{path})"));
-            edit_rules.push(format!("Edit(/{path}/**)"));
+            match every_branch_folders_git(&path) {
+                Some(glob) => edit_rules.push(format!("Edit(/{glob})")),
+                None => {
+                    edit_rules.push(format!("Edit(/{path})"));
+                    edit_rules.push(format!("Edit(/{path}/**)"));
+                }
+            }
             deny_write.push(path);
         }
     }
@@ -540,6 +547,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         made_folders: Vec::new(),
         compile_cache: compile_cache(compiled),
     }
+    .tidied()
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
@@ -591,6 +599,7 @@ fn floor(
         },
         compile_cache: compile_cache(compiled),
     }
+    .tidied()
 }
 
 /// Whether `compiled` puts a chat's builds through the project's compile cache
@@ -604,7 +613,72 @@ fn compile_cache(compiled: &Compiled) -> bool {
             .is_some_and(|caches| caches.sccache.is_some())
 }
 
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Set on this thread while [`as_before_6961`] runs.
+    static AS_BEFORE_6961: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **`make`, with each Claude Code chat's settings written on this thread as they were before
+/// #6961**: every rule and path written out, and each branch folder's git by its own Edit rules. What a test runs Claude Code on beside the settings
+/// written now, so that each decides the same (the review of #7005). Only for tests.
+#[cfg(any(test, feature = "test-support"))]
+pub fn as_before_6961<T>(make: impl FnOnce() -> T) -> T {
+    struct Unset;
+    impl Drop for Unset {
+        fn drop(&mut self) {
+            AS_BEFORE_6961.with(|it| it.set(false));
+        }
+    }
+    AS_BEFORE_6961.with(|it| it.set(true));
+    let _unset = Unset;
+    make()
+}
+
+/// Whether this thread writes settings as they were before #6961 ([`as_before_6961`]).
+fn as_before() -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    return AS_BEFORE_6961.with(std::cell::Cell::get);
+    #[cfg(not(any(test, feature = "test-support")))]
+    false
+}
+
 impl Settings {
+    /// These settings with each rule and each denied path written once ([`fewest`], [`once`]).
+    fn tidied(mut self) -> Settings {
+        if as_before() {
+            return self;
+        }
+        self.deny = fewest(std::mem::take(&mut self.deny));
+        for list in ["denyRead", "denyWrite"] {
+            if let Some(paths) = strings_of(&self.sandbox["filesystem"][list]) {
+                self.sandbox["filesystem"][list] = json!(once(paths));
+            }
+        }
+        self
+    }
+
+    /// These settings, `before` with more added, with each rule and path added written only
+    /// where what is there does not hold it already: what `before` had is kept as it was, and
+    /// leads each list, so a caller that reads the added rules after `before`'s
+    /// ([`crate::harness::claude::reporting_on`]) reads exactly them.
+    fn tidied_after(mut self, before: &Settings) -> Settings {
+        if as_before() {
+            return self;
+        }
+        self.deny = added_once(&before.deny, &self.deny, fewest);
+        for list in ["denyRead", "denyWrite"] {
+            let (Some(had), Some(now)) = (
+                strings_of(&before.sandbox["filesystem"][list]),
+                strings_of(&self.sandbox["filesystem"][list]),
+            ) else {
+                continue;
+            };
+            self.sandbox["filesystem"][list] = json!(added_once(&had, &now, once));
+        }
+        self
+    }
+
     /// Whether these switch Claude Code's own sandbox off: a chat purlis wraps whole
     /// ([`super::claude_wrap`]).
     pub fn is_off(&self) -> bool {
@@ -654,7 +728,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{name}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 
     /// These settings for a chat whose commands reach the network through purlis's proxy
@@ -727,7 +801,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{folder}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 
     /// These settings with `denied` denied too, after the compiled rules: each path as written
@@ -753,7 +827,7 @@ impl Settings {
                 out.deny.push(format!("Edit(/{path}/**)"));
             }
         }
-        out
+        out.tidied_after(self)
     }
 }
 
@@ -834,9 +908,236 @@ fn plain_and_cased(prefix: &str, name: &str) -> [String; 2] {
     ]
 }
 
-/// `glob` with each class [`either_case`] made written back as the letter it was made from:
-/// what a test compares a held name with.
+/// **`rules` for Claude Code's own tools, each path written once** (#6961, Sentry
+/// PURLIS-APP-J): what decides as they did, in fewer words. Settings near a megabyte switch auto
+/// mode's check off for the chat, and every action that needs the check is then refused unasked.
+///
+/// Claude Code matches a Read or Edit rule's path the way gitignore matches a line (the `ignore`
+/// library at its defaults, read in its bundled CLI): **a path is held when it or a folder above
+/// it matches, and letters match in either case.** So, of the rules for one tool, this drops:
+///
+/// - a rule written twice;
+/// - `T(<p>/**)` beside `T(<p>)`, which holds what is below `<p>` already;
+/// - `T(<glob>)` that [`either_case`] made, beside `T(<the name as written>)`, which matches
+///   every case already;
+/// - `T(<q>)`, a plain path, below `T(<p>)`, a plain path that is a folder above it.
+///
+/// A rule on another tool, or one that is not a path rule, is kept as it is, in its place. That
+/// every spelling the rules held before is held still, and by the pinned Claude Code itself, is
+/// `the_smaller_rules_deny_every_spelling_the_old_rules_denied`.
+pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
+    let parts = |rule: &str| -> Option<(String, String)> {
+        let (tool, rest) = rule.split_once('(')?;
+        let path = rest.strip_suffix(')')?;
+        matches!(tool, "Read" | "Edit").then(|| (tool.to_owned(), path.to_owned()))
+    };
+    let written: std::collections::HashSet<&str> = rules.iter().map(String::as_str).collect();
+    let plain: std::collections::HashSet<(String, String)> = rules
+        .iter()
+        .filter_map(|rule| parts(rule))
+        .filter(|(_, path)| literal(path))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for rule in &rules {
+        if !seen.insert(rule.as_str()) {
+            continue;
+        }
+        let Some((tool, path)) = parts(rule) else {
+            out.push(rule.clone());
+            continue;
+        };
+        if let Some(above) = path.strip_suffix("/**")
+            && !above.ends_with(char::is_whitespace)
+            && written.contains(format!("{tool}({above})").as_str())
+        {
+            continue;
+        }
+        let as_written = uncased(&path);
+        if as_written != path && written.contains(format!("{tool}({as_written})").as_str()) {
+            continue;
+        }
+        if literal(&path)
+            && folders_above(&path).any(|above| plain.contains(&(tool.clone(), above.to_owned())))
+        {
+            continue;
+        }
+        out.push(rule.clone());
+    }
+    out
+}
+
+/// `paths` for Claude Code's sandbox, each written once, and none below a plain path in the list:
+/// Claude Code holds a listed path and all that is below it, and pins each folder above it, so
+/// a path below another listed one holds and pins nothing more (#6961). A glob is kept as it is.
+fn once(paths: Vec<String>) -> Vec<String> {
+    let plain: std::collections::HashSet<String> =
+        paths.iter().filter(|path| literal(path)).cloned().collect();
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter(|path| seen.insert(path.clone()))
+        .filter(|path| !literal(path) || !folders_above(path).any(|above| plain.contains(above)))
+        .collect()
+}
+
+/// **Whether the rules `deny` hold `tool` from `path`**, as [`fewest`] leaves them: a rule on
+/// the path itself, on `<path>/**`, or on a plain folder above it, in any case. `path` is a
+/// rule's path, as a test asks for it (`//a/b`, a glob, `<p>/**`, or an [`either_case`] glob).
+/// What a test asks where it once asked for the exact rule.
 #[cfg(test)]
+pub(crate) fn tool_holds(deny: &[String], tool: &str, path: &str) -> bool {
+    let has = |path: &str| deny.iter().any(|rule| *rule == format!("{tool}({path})"));
+    if has(path) {
+        return true;
+    }
+    let path = path.strip_suffix("/**").unwrap_or(path);
+    if has(path) {
+        return true;
+    }
+    let path = uncased(path).to_lowercase();
+    if !literal(&path) {
+        return false;
+    }
+    // A rule's glob as gitignore reads one: `*` within a name, `**` any folders or none, in
+    // either case, and what is below what it matches held with it.
+    let matches = |glob: &str| {
+        let mut pattern = String::from("(?i)^");
+        let mut rest = glob;
+        while let Some(c) = rest.chars().next() {
+            if let Some(after) = rest.strip_prefix("**/") {
+                pattern.push_str("(?:.*/)?");
+                rest = after;
+            } else if let Some(after) = rest.strip_prefix("**") {
+                pattern.push_str(".*");
+                rest = after;
+            } else {
+                match c {
+                    '*' => pattern.push_str("[^/]*"),
+                    '?' => pattern.push_str("[^/]"),
+                    _ => pattern.push_str(&regex::escape(&c.to_string())),
+                }
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+        pattern.push_str("(?:/.*)?$");
+        regex::Regex::new(&pattern).is_ok_and(|it| it.is_match(&path))
+    };
+    deny.iter()
+        .filter_map(|rule| rule.strip_prefix(&format!("{tool}(")))
+        .filter_map(|rest| rest.strip_suffix(')'))
+        .map(|held| uncased(held).to_lowercase())
+        .any(|held| {
+            if literal(&held) {
+                path == held || path.starts_with(&format!("{held}/"))
+            } else {
+                !held.contains('[') && matches(&held)
+            }
+        })
+}
+
+/// [`tool_holds`] for `rule`, written as a whole rule (`Edit(//a/b)`).
+#[cfg(test)]
+pub(crate) fn rule_holds(deny: &[String], rule: &str) -> bool {
+    match rule
+        .split_once('(')
+        .and_then(|(tool, rest)| Some((tool, rest.strip_suffix(')')?)))
+    {
+        Some((tool, path)) => tool_holds(deny, tool, path),
+        None => deny.iter().any(|it| it == rule),
+    }
+}
+
+/// **Whether a sandbox list (`denyRead`, `denyWrite`) holds `path`**, as [`once`] leaves it:
+/// listed itself, or below a plain path listed, of the same kind (plain, or [`either_case`]'s).
+#[cfg(test)]
+pub(crate) fn list_holds<S: AsRef<str>>(list: &[S], path: &str) -> bool {
+    let list: Vec<&str> = list.iter().map(AsRef::as_ref).collect();
+    if list.contains(&path) {
+        return true;
+    }
+    let cased = uncased(path) != path;
+    let path = uncased(path);
+    if !literal(&path) {
+        return false;
+    }
+    list.iter()
+        .filter(|it| (uncased(it) != **it) == cased)
+        .map(|it| uncased(it))
+        .filter(|it| literal(it))
+        .any(|it| path.starts_with(&format!("{it}/")))
+}
+
+/// **Every branch folder's git in the plane `path`'s is in**, as one glob, where `path` is a
+/// branch folder's git (`<plane>/workspaces/<ws>/.worktrees/<repo>/<piece>/.git`, the folders
+/// [`super::planted::clones_purlis_works_in`] finds): `<plane>/workspaces/*/.worktrees/*/*/.git`.
+/// It holds that one and every other branch folder's, one made later among them, and nothing
+/// that is not a branch folder's git. `None` for any other path, and for one whose plane's own
+/// path a glob would read as more than itself.
+fn every_branch_folders_git(path: &str) -> Option<String> {
+    if as_before() {
+        return None;
+    }
+    let rest = path.strip_suffix("/.git")?;
+    let (rest, _piece) = rest.rsplit_once('/')?;
+    let (rest, _repo) = rest.rsplit_once('/')?;
+    let rest = rest.strip_suffix(&format!("/{}", crate::worktree::DIR_NAME))?;
+    let (rest, _workspace) = rest.rsplit_once('/')?;
+    let plane = rest.strip_suffix(&format!("/{}", super::WORKSPACES))?;
+    let parts = &path[plane.len()..];
+    (literal(path) && !plane.is_empty() && parts.split('/').all(|part| part != ".." && part != "."))
+        .then(|| {
+            format!(
+                "{plane}/{}/*/{}/*/*/.git",
+                super::WORKSPACES,
+                crate::worktree::DIR_NAME
+            )
+        })
+}
+
+/// `now`, which is `had` with more after it, with `had` as it was and each added entry kept only
+/// where `tidy`, run over the whole, keeps it: an added entry `tidy` drops is held by one it
+/// keeps, which is `had`'s or another added one.
+fn added_once(had: &[String], now: &[String], tidy: fn(Vec<String>) -> Vec<String>) -> Vec<String> {
+    debug_assert!(now.starts_with(had), "added after what was there");
+    let kept: std::collections::HashSet<String> = tidy(now.to_vec()).into_iter().collect();
+    let mut out = had.to_vec();
+    for added in &now[had.len().min(now.len())..] {
+        if kept.contains(added) && !out.contains(added) {
+            out.push(added.clone());
+        }
+    }
+    out
+}
+
+/// The strings of a JSON list, or `None` where it is not one.
+fn strings_of(list: &Value) -> Option<Vec<String>> {
+    list.as_array().map(|paths| {
+        paths
+            .iter()
+            .filter_map(|path| path.as_str().map(str::to_owned))
+            .collect()
+    })
+}
+
+/// Whether `path` is a plain path, with nothing a glob reads as more than itself. One that ends
+/// in whitespace is not: Claude Code reads a rule's path as gitignore reads a line, which drops
+/// whitespace at its end, so `T(<p> )` holds `<p>` and not what is below `<p> `, and neither it
+/// nor a rule below it is folded into another.
+fn literal(path: &str) -> bool {
+    !path.contains(['*', '?', '[', '\\']) && !path.ends_with(char::is_whitespace)
+}
+
+/// Each folder above `path`, as `path` spells it: `/a/b/c` gives `/a` and `/a/b`; `//a/b`, a
+/// rule's absolute path, gives `//a`.
+fn folders_above(path: &str) -> impl Iterator<Item = &str> {
+    path.match_indices('/')
+        .map(|(at, _)| &path[..at])
+        .filter(|above| !above.trim_start_matches('/').is_empty())
+}
+
+/// `glob` with each class [`either_case`] made written back as the letter it was made from:
+/// what a test compares a held name with, and how [`fewest`] knows a rule's plain twin.
 pub(crate) fn uncased(glob: &str) -> String {
     let chars: Vec<char> = glob.chars().collect();
     let mut out = String::with_capacity(glob.len());

@@ -255,7 +255,8 @@ fn the_fake_harness_routes_come_from_purlis_core_for_every_dialect() {
             .collect()
     };
 
-    // Claude Code: every hook of the generated plugin, and the permission hook on `--settings`.
+    // Claude Code: every hook of the generated plugin, and on `--settings` the guards (#7067)
+    // and the permission hook.
     let claude = routes("claude", &env);
     let plugin: Value = serde_json::from_str(&purlis_core::plugin::hooks_json()).expect("JSON");
     let mut want = BTreeSet::new();
@@ -273,6 +274,17 @@ fn the_fake_harness_routes_come_from_purlis_core_for_every_dialect() {
             }
         }
     }
+    for guard in purlis_core::hookreg::HANDLERS
+        .iter()
+        .filter(|h| h.guards_a_call())
+    {
+        want.insert((
+            guard.event.to_owned(),
+            guard.matcher.map(str::to_owned),
+            guard.name.to_owned(),
+            u64::from(guard.timeout),
+        ));
+    }
     want.insert((
         "PermissionRequest".to_owned(),
         None,
@@ -282,7 +294,7 @@ fn the_fake_harness_routes_come_from_purlis_core_for_every_dialect() {
     assert_eq!(
         triples(&claude),
         want,
-        "Claude Code's routes are its plugin's"
+        "Claude Code's routes are its plugin's, its guards' and its permission hook"
     );
     for handler in purlis_core::hookreg::HANDLERS {
         assert!(

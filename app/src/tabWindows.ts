@@ -90,6 +90,9 @@ export function withStartHanded(held: StartNotes | undefined, handed: StartNotes
   return {
     notes: [...new Set([...held.notes, ...handed.notes])],
     agentsMd: held.agentsMd.length > 0 ? held.agentsMd : handed.agentsMd,
+    ...((held.heavySettings ?? handed.heavySettings) === undefined
+      ? {}
+      : { heavySettings: held.heavySettings ?? handed.heavySettings }),
   };
 }
 

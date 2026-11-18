@@ -126,6 +126,8 @@ export const READ_BY_CODE = [
 export const DOCS_READ_BY_RUST = [
   "docs/plane-format.md",
   "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
+  // `it/every_inventory_row_maps_to_exactly_one_family` holds every row of #6970 to one family.
+  "docs/policy-inventory-families.md",
 ];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a

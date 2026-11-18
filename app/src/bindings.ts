@@ -164,6 +164,12 @@ export const commands = {
 	 */
 	paneLinkFile: (from: LinkFrom, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_file", { from, path })),
 	/**
+	 *  **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
+	 *  chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
+	 *  run of the app and within the hour, and it is still the file it was then. Read on the runner, as data, through its kind's adapter.
+	 */
+	paneLinkRunnerFile: (from: LinkFrom, runner: string, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_runner_file", { from, runner, path })),
+	/**
 	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
 	 *  `query`**, best first: at most [`MOST`].
 	 */
@@ -11919,6 +11925,11 @@ export type LinkAsk =
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
 { about: "file-outside"; home: LinkHome | null } | 
 /**
+ *  A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+ *  that home there, as the runner said it.
+ */
+{ about: "file-on-runner"; runner: string; home: LinkHome | null } | 
+/**
  *  A link a program marked whose words read as another address or path (the prototype's
  *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
  */
@@ -11962,7 +11973,12 @@ export type LinkFileAt =
 /**  The project's own files. */
 { in: "project"; path: string } | 
 /**  Not in the project. */
-{ in: "outside"; path: string };
+{ in: "outside"; path: string } | 
+/**
+ *  On the runner the chat runs on, by its path there, read from there and read-only
+ *  ([`pane_link_runner_file`], #6387).
+ */
+{ in: "runner"; runner: string; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
@@ -20015,6 +20031,12 @@ export type Started = {
 	 *  line: what the notice's Open file and Move aside… act on (NO-4).
 	 */
 	agents_md: TheirAgentsMd[],
+	/**
+	 *  How many bytes the chat's harness settings weigh, where that is past
+	 *  `limits.harness_settings_bytes` (#6961): its pane says so, with a way out. Absent for
+	 *  every other start.
+	 */
+	heavy_settings: number | null,
 };
 
 /**  A chat that started on a project's Retry: its id, and the session it runs as. */

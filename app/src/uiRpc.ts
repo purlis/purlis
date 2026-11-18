@@ -53,6 +53,7 @@ export const commands = {
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
 	paneLinkFile: __WINDOW_ONLY_RESULT,
+	paneLinkRunnerFile: __WINDOW_ONLY_RESULT,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -8596,6 +8597,11 @@ export type LinkAsk =
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
 { about: "file-outside"; home: LinkHome | null } | 
 /**
+ *  A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+ *  that home there, as the runner said it.
+ */
+{ about: "file-on-runner"; runner: string; home: LinkHome | null } | 
+/**
  *  A link a program marked whose words read as another address or path (the prototype's
  *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
  */
@@ -8639,7 +8645,12 @@ export type LinkFileAt =
 /**  The project's own files. */
 { in: "project"; path: string } | 
 /**  Not in the project. */
-{ in: "outside"; path: string };
+{ in: "outside"; path: string } | 
+/**
+ *  On the runner the chat runs on, by its path there, read from there and read-only
+ *  ([`pane_link_runner_file`], #6387).
+ */
+{ in: "runner"; runner: string; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
@@ -16692,6 +16703,12 @@ export type Started = {
 	 *  line: what the notice's Open file and Move aside… act on (NO-4).
 	 */
 	agents_md: TheirAgentsMd[],
+	/**
+	 *  How many bytes the chat's harness settings weigh, where that is past
+	 *  `limits.harness_settings_bytes` (#6961): its pane says so, with a way out. Absent for
+	 *  every other start.
+	 */
+	heavy_settings: number | null,
 };
 
 /**  A chat that started on a project's Retry: its id, and the session it runs as. */

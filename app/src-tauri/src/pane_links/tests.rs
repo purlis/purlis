@@ -575,7 +575,7 @@ fn an_unknown_number_says_nothing_on_a_hover_and_opening_it_is_refused() {
 
 #[test]
 fn a_pane_in_no_project_links_no_chat_and_says_nothing_on_its_hover() {
-    let (links, chats) = for_project(None);
+    let (links, chats) = for_project(None, None);
     assert_eq!(
         seen_in(&links, &Pane::default(), &chat("chat 652"), &chats),
         None

@@ -439,7 +439,37 @@ fn paced(root: &Path, chat: u32, now: std::time::Instant) -> Result<(), String> 
             std::sync::Arc::new(crate::brokered::Rate::new(COMMITS_A_WHILE, COMMITS_WITHIN))
         })
         .clone();
-    pace_of(&rate, chat, now)
+    pace_under(
+        root,
+        &rate,
+        chat,
+        now,
+        crate::enforcement::mode(root, crate::enforcement::Family::Limits),
+    )
+}
+
+/// [`pace_of`], as `[policy] limits` runs (Q308b): under `log` or `off` a commit past the cap
+/// is counted, not refused, and under `log` one line says the cap was passed.
+fn pace_under(
+    root: &Path,
+    rate: &crate::brokered::Rate,
+    chat: u32,
+    now: std::time::Instant,
+    mode: crate::enforcement::Mode,
+) -> Result<(), String> {
+    match pace_of(rate, chat, now) {
+        Ok(()) => Ok(()),
+        Err(why) => crate::enforcement::judged(
+            root,
+            None,
+            crate::enforcement::Family::Limits,
+            mode,
+            crate::enforcement::RULE_COMMIT_RATE,
+            None,
+            why,
+        )
+        .map_or(Ok(()), Err),
+    }
 }
 
 /// [`paced`], against `rate`.
