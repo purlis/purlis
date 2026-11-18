@@ -6389,11 +6389,7 @@ pub fn compiler(harness: Harness) -> Option<Compiler> {
 /// [`compiler`] on `machine`: where purlis wraps a Claude Code chat there, its wrap and not its
 /// own sandbox's settings (#4083).
 fn compiler_on(harness: Harness, machine: &Machine) -> Option<Compiler> {
-    // MUTATION (DO NOT MERGE): purlis never wraps a Claude Code chat.
-    if harness == Harness::ClaudeCode
-        && machine.purlis_wraps(harness)
-        && std::env::var_os("PURLIS_PROBE_NEVER_SET").is_some()
-    {
+    if harness == Harness::ClaudeCode && machine.purlis_wraps(harness) {
         return Some(|compiled| claude_wrap::wrap(compiled).map(Form::ClaudeWrapped));
     }
     compiler(harness)
