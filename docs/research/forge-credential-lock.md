@@ -720,7 +720,7 @@ row S1 "OAuth login (repo scope) can POST /rulesets" "(as the app's login)"
 
 Run **every row first as CHAT, then as ADMIN**: the second proves the first was refused for the
 right reason. Run phase C (bypass actor Integration for the App and a narrowed token) last and
-remove it. The answers are committed as a table in `docs/research/forge-lock-probe-answers.md`,
+remove it. The answers are committed as a table in `docs/research/forge-lock-verify-results.md`, recorded by the kit of 13.3,
 with the date, the plan of the account and the GitHub API version header, and the nightly (slice
 11) reruns the same script.
 
@@ -788,20 +788,23 @@ seen to fail.
 
 ## 13. Open decisions for the person
 
-1. **The bypass actor and its mode.** *Options:* the **admin role** (round 1's answer: every
-   admin, including teammates' admins, can bypass; blocks teammates who are not admins from
-   merging, section 9), **only the person** (`actor_type: User`, if slice 0 B3 accepts it; the
-   narrowest), or **a team**. Mode: `always` or `pull_request`. **Recommendation:** the person
-   only if B3 allows it, else the admin role; **`pull_request` on branches, `always` on tags**;
-   the gate App only if row M2 or auto-merge makes it necessary.
-2. **Refuse vs warn for repos that cannot be locked** (free private repos, a person without
-   admin, GitHub Enterprise Server, GitLab before slice 10). **Recommendation:** **warn** and
-   record the acceptance for those; **refuse** for a repo that *can* be locked and is not, after
-   one release of warning (10.2). A refusal the person cannot act on is a trap.
-3. **Running slice 0 on a throwaway repo under the person's account.** It needs a repo the person
-   creates (private needs Pro or above), the App installed, two tokens, and about an hour.
-   **Recommendation:** yes, before any slice is built; delete the repo after. This task did not
-   create it or call any forge.
+**Decided** by the person, on issue #7133 (2026-11-18). Slice 0 still measures what these rest on
+(B3 for the first); where it disagrees, the row says so and the decision is reopened.
+
+1. **The bypass actor and its mode: decided.** Bypass is **the person alone**: `actor_type: User`
+   if GitHub accepts it (row B3), else the **repository admin role**. Mode **`pull_request`** on
+   branch rulesets and **`always`** on tag rulesets. The gate App is built only if row M2 or
+   auto-merge makes it necessary.
+2. **Refuse vs warn: decided.** An unlocked repo **warns, then refuses** (after one release of
+   warning, 10.2). A repo that cannot be locked (free private, no admin, GitHub Enterprise Server,
+   GitLab before slice 10) warns and records the person's acceptance.
+3. **Slice 0 runs on a throwaway repo: decided.** A **public** repo under the person's account
+   (public needs no paid plan for rulesets), named `purlis-forge-lock-verify-*`, **deleted
+   afterwards**. The kit is `tools/forge-lock-verify/`: `person.sh` (every step that acts as the
+   person: create the repo, install the App, both rulesets and the bypass rows, the person's press,
+   auto-merge, delete) and `chat.sh` (every row as the chat's minted token); each row is recorded
+   as row, expected, observed, pass/fail in `docs/research/forge-lock-verify-results.md`. A chat
+   never uses the person's credentials; this task wrote the kit and ran nothing against a forge.
 
 Smaller, with a default: ADR 0067's amendment and a new ADR for the lock (default: an amendment
 of 0067 and 0077 each, `docs/adr/<NNNN>/<date>-<slug>.md`); GitHub Enterprise Server is out of
