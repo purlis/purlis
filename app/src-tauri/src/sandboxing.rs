@@ -3847,7 +3847,10 @@ pub(crate) fn answered_at(
         return false;
     }
     let root = held.root();
-    let machine = this_machine();
+    // TEMPORARY (round 4 of #7105), reverted in the next commit: this machine, not the test's,
+    // so the floor-held case built in the fixture is seen failing first.
+    let _ = this_machine;
+    let machine = sandbox::Machine::this();
     // **Never a folder a later program loads code from** (the review of #7105, blocker 1): a
     // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
     // Only the project and the folders the person listed are answered; the rest still raise
