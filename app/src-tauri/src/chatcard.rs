@@ -545,16 +545,15 @@ pub(crate) struct Reopened {
     pub now: u32,
 }
 
-impl Reopened {
-    /// What the window is told where the chat it started ended before it could be drawn: the
-    /// chat by the number its card has, and the one it started as (#7145).
-    pub(crate) fn ended_as_it_started(self) -> String {
-        format!(
-            "chat {} was reopened as chat {}, which ended as it started. Reopen it again from \
-             its card, or start a new chat in its place.",
-            self.closed_as, self.now
-        )
-    }
+/// What the window is told where the chat `reopened` started ended before it could be drawn:
+/// the chat by the number its card has, and the one it started as (#7145). A function of the
+/// module, not a method, so the copy check follows `reopen_closed_chat`'s call to it.
+pub(crate) fn ended_as_it_started(reopened: Reopened) -> String {
+    format!(
+        "chat {} was reopened as chat {}, which ended as it started. Reopen it again from its \
+         card, or start a new chat in its place.",
+        reopened.closed_as, reopened.now
+    )
 }
 
 /// **Reopens the closed chat whose ULID is `id`, from the record the app kept of it** (#6485):
@@ -1026,11 +1025,10 @@ mod reopen_tests {
     #[test]
     fn a_reopened_chat_that_ended_as_it_started_is_named_by_its_card_s_number_and_its_new_one() {
         // #7145: by its ULID, the window sends no number, so the app names it.
-        let said = Reopened {
+        let said = ended_as_it_started(Reopened {
             closed_as: 731,
             now: 812,
-        }
-        .ended_as_it_started();
+        });
 
         assert!(
             said.starts_with("chat 731 was reopened as chat 812,"),

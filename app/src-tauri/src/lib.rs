@@ -1353,7 +1353,7 @@ async fn reopen_closed_chat(
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
         let reopened = chatcard::reopen_closed(&held, &chat, Size { columns, rows })?;
-        drawn(&held, reopened.now).map_err(|_| reopened.ended_as_it_started())
+        drawn(&held, reopened.now).map_err(|_| chatcard::ended_as_it_started(reopened))
     })
     .await
 }
