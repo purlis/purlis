@@ -1286,6 +1286,11 @@ pub enum PolicyAccepted {
 /// record is written ([`accept_policy`]), so a read between the two, or a second write that read
 /// the same counter, would find an acceptance that does not hold and read it as `strict`. Held
 /// for the one read or write, never across another.
+fn trace(line: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "ACCEPTTRACE {line}");
+}
+
 fn accepting() -> std::sync::MutexGuard<'static, ()> {
     static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     ONE.lock()
@@ -1315,6 +1320,16 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         || crate::secrets::seal::kept_holds(POLICY_KIND, &clone, ""),
         |text| crate::secrets::seal::kept_holds(POLICY_KIND, &clone, text),
     );
+    trace(&format!(
+        "read root={} key={} anchor={} file_there={} sealed={} kept={:?} accepted={}",
+        root.display(),
+        clone_key(root),
+        clone,
+        path(root).exists(),
+        sealed.is_some(),
+        kept,
+        held.policy_accepted.is_some()
+    ));
     match (sealed, kept, held.policy_accepted) {
         // Sealed, and the keyring keeps this very one. A sealed record with no anchor is one
         // the keyring never saw kept, or whose anchor was taken away: broken (the re-review of
@@ -1369,11 +1384,20 @@ pub fn accept_policy(
             "purlis could not keep the acceptance's seal in the keyring, so nothing was accepted",
         ));
     }
-    change(root, |held| {
+    let done = change(root, |held| {
         held.policy_accepted = Some(accepted);
         held.policy_seal = Some(seal);
         held.policy_counter = counter;
-    })
+    });
+    trace(&format!(
+        "accept root={} key={} anchor={} counter={counter} wrote={:?} git={}",
+        root.display(),
+        clone_key(root),
+        clone,
+        done.as_ref().map_err(ToString::to_string),
+        root.join(".git").symlink_metadata().is_ok()
+    ));
+    done
 }
 
 /// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.
