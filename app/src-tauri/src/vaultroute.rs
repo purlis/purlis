@@ -436,6 +436,16 @@ pub struct Chat<'a> {
     pub session: u32,
     pub persona: Option<&'a str>,
     pub name: Option<String>,
+    /// The strictest `[policy]` along the chain that dispatched it ([`chain_policy`]).
+    pub policy: Option<String>,
+}
+
+/// **The strictest `[policy]` along the chain that dispatched chat `chat`**, from the app's
+/// record of it ([`purlis_core::reopen::HandedFrom::policy`]): what a vault check made for that
+/// chat runs under ([`Ctx::under_chain`]), so it answers what the chat's brokered read will
+/// (#7153). `None` for a chat no dispatch started.
+pub(crate) fn chain_policy(held: &crate::planes::Held, chat: u32) -> Option<String> {
+    held.chats().handed_from(chat).and_then(|from| from.policy)
 }
 
 /// **Lets `chat`'s persona use `vault` in the project at `root` on this machine** (#1430).
@@ -461,8 +471,9 @@ fn allow(
     at: u64,
 ) -> Result<Allowed, String> {
     let session = chat.session;
+    let checked = Ctx::new(root, Env::from_process()).under_chain(chat.policy.as_deref());
     if let Some(persona) = chat.persona.filter(|p| !p.is_empty())
-        && brokered::authorise(&Ctx::new(root, Env::from_process()), Some(persona), vault).is_ok()
+        && brokered::authorise(&checked, Some(persona), vault).is_ok()
     {
         refusals.put_away(session, vault);
         return Ok(Allowed::Already(sandbox::local::VaultGrant {
@@ -677,6 +688,7 @@ pub async fn allow_refused_vault(
                 session,
                 persona: open.persona.as_deref(),
                 name: held.chats().shown_name(session),
+                policy: chain_policy(&held, session),
             },
             &vault,
             &held.audit_then_record(network.as_ref()),
@@ -768,11 +780,13 @@ pub(crate) fn kept_vault_blocked_said(
         .find(|open| open.session == session)
         .and_then(|open| open.persona);
     // The person's reason goes with the decision, so a run it answers tells it too (#5934).
-    let kept =
-        kept_blocked_but_held(held.root(), persona.as_deref(), vault).map(|kept| KeptButHeld {
+    let chain = chain_policy(held, session);
+    let kept = kept_blocked_but_held(held.root(), persona.as_deref(), vault, chain.as_deref()).map(
+        |kept| KeptButHeld {
             reason: purlis_core::askoutcome::reason(reason),
             ..kept
-        });
+        },
+    );
     let mut told = Vec::new();
     keep_blocked_pressed(held, network, session, vault, kept.as_ref(), &mut told);
     if let Some(kept) = kept {
@@ -955,15 +969,18 @@ pub(crate) fn kept_but_held_outcome(
 /// **Where Keep blocked holds nothing, since `persona` may already use `vault`** (#5801; ADR
 /// 0112, amended 2026-11-08): its tag, or a row of the Allowed list an Always allow or a refused
 /// vault's Allow made, by the broker's own rule ([`brokered::authorise`]). Says how, and how to
-/// take it back. None where the persona may not use it, or the chat runs as none.
+/// take it back. None where the persona may not use it, or the chat runs as none. Judged under
+/// `chain`, the strictest `[policy]` of the chain that dispatched the chat ([`chain_policy`]).
 pub(crate) fn kept_blocked_but_held(
     root: &std::path::Path,
     persona: Option<&str>,
     vault: &str,
+    chain: Option<&str>,
 ) -> Option<KeptButHeld> {
     use purlis_core::askoutcome::HeldBy;
     let persona = persona.filter(|p| !p.is_empty())?;
-    brokered::authorise(&Ctx::new(root, Env::from_process()), Some(persona), vault).ok()?;
+    let checked = Ctx::new(root, Env::from_process()).under_chain(chain);
+    brokered::authorise(&checked, Some(persona), vault).ok()?;
     // The broker's own rule: the tag first, then a row of the Allowed list where policy leaves
     // vault grants (#5876's review). Removing a row leaves a tag that still holds.
     let ctx = Ctx::new(root, Env::from_process());

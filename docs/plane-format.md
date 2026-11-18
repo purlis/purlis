@@ -4876,7 +4876,12 @@ write into this folder cannot make its own text arrive as the person's.
   again. **On a machine with no keyring purlis can use** (a Linux with no Secret Service, say),
   nothing is sealed, so no grant of yours and no acceptance is kept and none counts, and no never
   can be added; the window says so. That is a declared gap, never read as a keyring that fails,
-  which holds what it cannot show. **Those six lists
+  which holds what it cannot show. **purlis looks for the keyring once, as it starts** (keyring
+  4 latches what it found, #7153), and a Secret Service that had not answered yet reads the same
+  as none: so where this file or the nevers file carries a seal the app made, no keyring now is
+  read as one that failed, and the nevers are unknown until purlis is opened again. **Declared
+  gap:** every sealed record taken away while the keyring's start-up failed reads as a machine
+  that never had one. **Those six lists
   grant and accept only what this set seals**: a name in one of them with no entry here that
   verifies is dropped, and shown read-only in Settings › Project › Dispatch. A pair is granted
   again only through the ordinary per-pair ask. Absent before the first grant or acceptance

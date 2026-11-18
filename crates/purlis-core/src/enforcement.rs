@@ -1027,6 +1027,21 @@ pub fn answered_by_the_app(resolved: Option<Resolved>) {
     }
 }
 
+#[cfg(all(not(test), feature = "test-support"))]
+thread_local! {
+    /// Another crate's test's stand-in for what the app answered, on its own thread alone.
+    static ANSWERED_HERE: std::cell::RefCell<Option<Resolved>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **What the app answered, for this thread of another crate's test alone** (#7153): so a test
+/// of the app's own code can run a family `off` without changing what the tests beside it read.
+/// `None` stands for no answer kept on this thread. Only tests turn `test-support` on.
+#[cfg(all(not(test), feature = "test-support"))]
+pub fn answered_on_this_thread(resolved: Option<Resolved>) {
+    ANSWERED_HERE.with(|held| *held.borrow_mut() = resolved);
+}
+
 fn answered() -> Option<Resolved> {
     #[cfg(test)]
     {
@@ -1034,6 +1049,10 @@ fn answered() -> Option<Resolved> {
     }
     #[cfg(not(test))]
     {
+        #[cfg(feature = "test-support")]
+        if let Some(here) = ANSWERED_HERE.with(|held| held.borrow().clone()) {
+            return Some(here);
+        }
         let Ok(mut held) = ANSWERED.lock() else {
             return None;
         };
