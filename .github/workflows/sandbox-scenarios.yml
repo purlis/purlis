@@ -113,6 +113,8 @@ jobs:
     # second build, which the resolver seam's own target folder ended). Exceeding it fails the job.
     # A `stress-x20` run is the same twenty times over, and has a budget of its own: 150.
     timeout-minutes: ${{ needs.plan.outputs.stress == 'true' && 150 || 40 }}
+    env:
+      FLAKY_DRY_RUN: "1"
     permissions:
       contents: read
       # The issues a pull request closes, and the marks' issues and the change's merge base read
