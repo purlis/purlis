@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794981392157,
+  "lastUpdate": 1795005703814,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51240,6 +51240,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9740855,
             "unit": "ms",
             "extra": "median of 5 runs: 99.754, 100.048, 100.974, 101.145, 101.681 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "26874972ce4db5c7d7b21f7b1b7b600bcac5049c",
+          "message": "A dead Bash guard reads the profile's own rules; unreadable inline --settings are refused (#7155) (#7162)\n\n* The Bash guard's start reads the profile's own rules; unreadable inline --settings are refused (#7155)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7PSN17AAEGK22Q6F3FA2B4B\nPurlis-Persona: steward\n\n* Changelog fragment for #7155\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7PSN17AAEGK22Q6F3FA2B4B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T11:52:58Z",
+          "tree_id": "80a0490a6afd9cec948ebbd5310d5c8b27d7fc6e",
+          "url": "https://github.com/purlis/purlis/commit/26874972ce4db5c7d7b21f7b1b7b600bcac5049c"
+        },
+        "date": 1795005697696,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.555388,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.548, 0.552, 0.555, 0.557, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2963655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.127, 16.197, 16.296, 16.355, 16.577 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.488899,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.351, 99.559, 100.489, 101.729, 102.865 ms"
           }
         ]
       }
