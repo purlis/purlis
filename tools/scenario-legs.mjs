@@ -266,7 +266,7 @@ function main([command, ...rest]) {
     const runUrl = process.env.GITHUB_SERVER_URL
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : "";
-    const result = flaky(dir, { cells: flag("--cells") ?? "tests/scenarios/cells", source: flag("--source"), runUrl });
+    const result = flaky(dir, { cells: flag("--cells") ?? fileURLToPath(new URL("../tests/scenarios/cells", import.meta.url)), source: flag("--source"), runUrl });
     console.log(`${result.runs} runs compared: ${result.differences.length} entries differ`);
     for (const issue of result.issues) {
       if (dry) console.log(JSON.stringify({ wouldOpen: issue }));

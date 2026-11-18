@@ -42,6 +42,8 @@ case "${1-}" in
   *) echo "usage: $0 suite|production-timings" >&2; exit 2 ;;
 esac
 
+# The tools are found beside this script; the reports are under the folder it runs in.
+here=$(cd "$(dirname "$0")" && pwd)
 report=target/sandbox-scenarios
 runs=target/sandbox-scenarios-runs
 mkdir -p "$report"
@@ -58,7 +60,7 @@ if [ "${STRESS-}" = true ]; then
   # Only when they pick a test: a batch's tests are found by its name, and a change to cells no
   # test is named for stresses the whole suite rather than nothing.
   if [ -n "${BASE-}" ]; then
-    changed=$(node tools/scenario-legs.mjs changed-batches "$BASE")
+    changed=$(node "$here/scenario-legs.mjs" changed-batches "$BASE")
     if [ -n "$changed" ]; then
       # shellcheck disable=SC2086
       if cargo nextest list ${CARGO_PACKAGES:--p purlis-app -p purlis-scenarios} --locked --profile ci -E "($filter) & $changed" --message-format oneline 2>/dev/null | grep -q .; then
@@ -95,7 +97,7 @@ pass() {
     echo "::group::run $n, batch $batch"
     once "($filter) & test(/^${batch}(::|\$)/)" || status=$?
     echo "::endgroup::"
-  done < <(printf '%s\n' "$names" | node tools/scenario-legs.mjs shuffle "$((SHUFFLE_SEED + n))")
+  done < <(printf '%s\n' "$names" | node "$here/scenario-legs.mjs" shuffle "$((SHUFFLE_SEED + n))")
   return "$status"
 }
 
@@ -128,7 +130,7 @@ runs() {
     [ -e "$f" ] && cat "$f" >> "$report/$(basename "$f")"
   done
   if [ "$repeat" -gt 1 ]; then
-    node tools/scenario-legs.mjs flaky "$runs" --source "$source" || status=$?
+    node "$here/scenario-legs.mjs" flaky "$runs" --source "$source" || status=$?
   fi
   return "$status"
 }

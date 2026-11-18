@@ -63,7 +63,7 @@ export const RELEASE_PROFILE_PATHS = new Set([
 ]);
 
 /** The files the switch and substitution list names (`switches.json`), from the checkout. */
-export function entryFiles(path = "app/src-tauri/src/scenarios/switches.json") {
+export function entryFiles(path = fileURLToPath(new URL("../app/src-tauri/src/scenarios/switches.json", import.meta.url))) {
   return new Set(JSON.parse(readFileSync(path, "utf8")).switches.map((s) => s.file));
 }
 
