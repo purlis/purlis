@@ -24,6 +24,12 @@ const LINKED = [
   "\u001b[2m  ⎿ then https://github.com/purlis/purlis/pull/6148\u001b[22m",
 ].join("\r\n");
 
+/** A turn whose program marked words as a link to another address (OSC 8, #6218). */
+const MARKED = [
+  "\u001b[1m● Set-up is described in the docs.\u001b[0m",
+  "  Read \u001b]8;;https://purlis-setup.example.net/s?id=7\u001b\\docs.purlis.dev/setup\u001b]8;;\u001b\\ first.",
+].join("\r\n");
+
 const PLAIN = ["\u001b[1m● The resolver's tests pass.\u001b[0m", "  ⎿ 12 tests, 0 failed"].join(
   "\r\n",
 );
@@ -52,21 +58,31 @@ const meta = {
   beforeEach: () => {
     mockIPC((cmd, args) => {
       if (cmd === "pane_link_resolve") {
-        const { candidates } = args as { candidates: { text: string }[] };
+        const { candidates } = args as {
+          candidates: { kind: string; text: string; target?: string }[];
+        };
         return candidates.map((one) =>
-          one.text.startsWith("ftp://")
+          one.kind === "osc8"
             ? {
                 kind: "url",
-                target: one.text,
-                shown: one.text,
-                does: { does: "refused", reason: FTP },
+                target: one.target,
+                shown: one.target,
+                does: { does: "asks", reason: "its text says docs.purlis.dev" },
+                its_text: one.text,
               }
-            : {
-                kind: "url",
-                target: one.text,
-                shown: one.text,
-                does: { does: "opens", into: "browser" },
-              },
+            : one.text.startsWith("ftp://")
+              ? {
+                  kind: "url",
+                  target: one.text,
+                  shown: one.text,
+                  does: { does: "refused", reason: FTP },
+                }
+              : {
+                  kind: "url",
+                  target: one.text,
+                  shown: one.text,
+                  does: { does: "opens", into: "browser" },
+                },
         );
       }
       if (cmd === "pane_link_open")
@@ -84,7 +100,7 @@ async function listed(canvasElement: HTMLElement) {
   const region = await page.findByRole("region", { name: "A saved chat's last screen" });
   await waitFor(() =>
     expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toMatch(
-      /setup first|tests pass/,
+      /setup first|tests pass|in the docs/,
     ),
   );
   region.focus();
@@ -147,6 +163,25 @@ export const NoLinks: StoryObj<typeof meta> = {
     // Once the dialog has come in: it fades in (WebKit reads it as hidden until then).
     await waitFor(() => expect(none).toBeVisible());
     await pictureNow();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
+  },
+};
+
+/** **A link a program marked** (#6218): led by where it really goes, with its words under it
+ *  ("Its text: …"), so the list never hides the mismatch. */
+export const AMarkedLink: StoryObj<typeof meta> = {
+  args: { screen: MARKED },
+  play: async ({ canvasElement }) => {
+    const { dialog } = await listed(canvasElement);
+    const [row] = await within(dialog).findAllByRole("option");
+    await expect(row).toHaveAccessibleName("https://purlis-setup.example.net/s?id=7");
+    await expect(row).toHaveTextContent("Its text: docs.purlis.dev/setup");
+    await expect(row).toHaveAccessibleDescription(/asks first · marked by the program/);
+    await pictureNow();
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row, "The down arrow goes into the list");
+    expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
   },
