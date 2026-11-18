@@ -10,7 +10,8 @@
 //!
 //! It needs the fixture: `REMOTE_DOCKER_TEST_ROUTE` (`ssh://pool@127.0.0.1:2222`), the sshd's
 //! container in `REMOTE_DOCKER_TEST_SSHD` and dind's in `REMOTE_DOCKER_TEST_DIND`, reached with
-//! this machine's `docker`. Without them it runs nothing and passes. The tests change the sshd's
+//! this machine's `docker`. Without them it runs nothing and passes, except the step-timing test under CI (`CI` set),
+//! where a missing fixture fails. The tests change the sshd's
 //! host key and connections, so the job runs them one at a time.
 
 #![cfg(unix)]
@@ -747,7 +748,34 @@ fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
 // the table is printed and, on CI, written to the job's summary: it is the baseline of
 // `docs/research/2026-11-remote-start-baseline.md`.
 
-/// Every step line this process wrote, in the order each step ended: its name and milliseconds.
+/// The fixture, or nothing where this machine has none. **Under CI (`CI` set) a missing fixture
+/// fails the test**: a parity job that ran nothing and passed would say nothing was checked.
+fn fixture_or_fail_in_ci(needs: &[&str]) -> Option<Fixture> {
+    let missing: Vec<&str> = needs
+        .iter()
+        .copied()
+        .filter(|name| std::env::var_os(name).is_none())
+        .collect();
+    if !missing.is_empty() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "the remote parity fixture is missing under CI: {} not set",
+            missing.join(", ")
+        );
+        return None;
+    }
+    fixture()
+}
+
+/// One step line: its name, the step it is inside (if any), its outcome and milliseconds.
+struct StepLine {
+    name: String,
+    parent: Option<String>,
+    refused: bool,
+    ms: u64,
+}
+
+/// Every step line this process wrote, in the order each step ended.
 #[derive(Clone, Default)]
 struct StepLines(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
 
@@ -769,14 +797,27 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for StepLines {
 }
 
 impl StepLines {
-    fn steps(&self) -> Vec<(String, u64)> {
+    fn steps(&self) -> Vec<StepLine> {
         let text = String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned();
         text.lines()
             .filter_map(|line| {
                 let rest = line.split("purlis: step ").nth(1)?;
-                let (name, rest) = rest.split_once(" done after ")?;
+                let (name, rest) = rest.split_once(' ')?;
+                let (outcome, rest) = rest.split_once(" after ")?;
                 let ms = rest.split_whitespace().next()?.parse().ok()?;
-                Some((name.to_owned(), ms))
+                let parent = rest.split("parent: ").nth(1).map(|p| {
+                    p.trim_end_matches(')')
+                        .split([',', ')'])
+                        .next()
+                        .unwrap_or("")
+                        .to_owned()
+                });
+                Some(StepLine {
+                    name: name.to_owned(),
+                    parent,
+                    refused: outcome == "refused",
+                    ms,
+                })
             })
             .collect()
     }
@@ -842,21 +883,34 @@ async fn linked_once(
 #[test]
 fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     purlis_core::unsteered!();
-    let Some(fixture) = fixture() else { return };
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(fixture) = fixture_or_fail_in_ci(&[
+        "REMOTE_DOCKER_TEST_ROUTE",
+        "REMOTE_DOCKER_TEST_SSHD",
+        "REMOTE_DOCKER_TEST_DIND",
+        "DOCKER_POOL_TEST_IMAGE",
+    ]) else {
         return;
     };
+    let image = std::env::var("DOCKER_POOL_TEST_IMAGE").expect("checked above");
     use purlis_core::dockerpool::{Image, Runner};
     use purlis_session_protocol::hostlink::{Identity, LinkKey, Pinned};
 
     let lines = StepLines::default();
-    let _ = tracing::subscriber::set_global_default(
+    // Scoped to this test, never the process's global default (the binary is shared with every
+    // other test): this thread takes it, and so does each thread the runtime starts.
+    let dispatch = tracing::Dispatch::new(
         tracing_subscriber::fmt()
             .with_writer(lines.clone())
             .with_ansi(false)
-            .with_max_level(tracing::Level::INFO)
+            // `debug`: each `docker` call is a line at that level, the rows of the table's calls.
+            .with_max_level(tracing::Level::DEBUG)
             .finish(),
     );
+    thread_local! {
+        static HELD: std::cell::RefCell<Option<tracing::dispatcher::DefaultGuard>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    let _scoped = tracing::dispatcher::set_default(&dispatch);
     let rtt = round_trip_ms(&std::env::var("REMOTE_DOCKER_TEST_ROUTE").unwrap());
 
     let pool = "timed";
@@ -893,6 +947,13 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
+        .on_thread_start({
+            let dispatch = dispatch.clone();
+            move || {
+                let guard = tracing::dispatcher::set_default(&dispatch);
+                HELD.with(|held| *held.borrow_mut() = Some(guard));
+            }
+        })
         .enable_all()
         .build()
         .unwrap();
@@ -935,21 +996,37 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     );
     for (label, total, steps) in &table {
         out += &format!(
-            "**{label}**: {total} ms in all\n\n| step | runs | ms (each) |\n|---|---|---|\n"
+            "**{label}**: {total} ms in all (a step with a parent, or a call, is inside another: leave it out of a sum)\n\n| step | inside | runs | ms (each) |\n|---|---|---|---|\n"
         );
-        let mut names: Vec<&str> = Vec::new();
-        for (name, _) in steps {
-            if !names.contains(&name.as_str()) {
-                names.push(name);
+        let mut names: Vec<(&str, Option<&str>)> = Vec::new();
+        for line in steps {
+            let key = (line.name.as_str(), line.parent.as_deref());
+            if !names.contains(&key) {
+                names.push(key);
             }
         }
-        for name in names {
+        for (name, parent) in names {
             let each: Vec<String> = steps
                 .iter()
-                .filter(|(step, _)| step == name)
-                .map(|(_, ms)| ms.to_string())
+                .filter(|line| line.name == name && line.parent.as_deref() == parent)
+                .map(|line| {
+                    format!(
+                        "{}{}",
+                        line.ms,
+                        if line.refused { " (refused)" } else { "" }
+                    )
+                })
                 .collect();
-            out += &format!("| {name} | {} | {} |\n", each.len(), each.join(", "));
+            out += &format!(
+                "| {name} | {} | {} | {} |\n",
+                parent.unwrap_or(if name.starts_with("docker_") {
+                    "(a call)"
+                } else {
+                    ""
+                }),
+                each.len(),
+                each.join(", ")
+            );
         }
         out += "\n";
     }
@@ -961,7 +1038,7 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     }
 
     // Every step of the link path was timed, in the scenario it belongs to.
-    let said = |at: usize, step: &str| table[at].2.iter().any(|(name, _)| name == step);
+    let said = |at: usize, step: &str| table[at].2.iter().any(|line| line.name == step);
     for step in ["ssh_forward_open", "engine_pin_check", "docker_info"] {
         assert!(said(0, step), "the cold start timed no {step}: {out}");
     }
