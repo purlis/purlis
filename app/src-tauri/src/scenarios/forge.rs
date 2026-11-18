@@ -20,14 +20,21 @@
 //! `gh` and `glab` are Go programs. On Linux they verify TLS against `SSL_CERT_FILE`, so the
 //! fake forge speaks HTTPS under the test CA ([`Wire::Https`], names under `.test`). On macOS Go
 //! verifies through the Security framework and ignores it (`TestCa`'s docs), so a cell speaks
-//! plain HTTP ([`Wire::Http`]): `gh` to `github.localhost`, which it reaches as
-//! `http://api.github.localhost/` (it treats that one host as a local GitHub), and `glab` to a
-//! `GITLAB_HOST` that names the `http://` scheme. gitlab.com itself is only reachable on the
-//! plain wire: the test CA signs `.test` names alone.
+//! plain HTTP ([`Wire::Http`]), which only `glab` can do (`GITLAB_HOST=http://…`, and also for
+//! `gitlab.com` itself, which the test CA could not sign). **`gh` has no plain-HTTP route to a
+//! host purlis lets a chat reach**: it speaks http only to `github.localhost`, and purlis refuses
+//! a `.localhost` host as this machine's own. So `gh` is a Linux cell, and on macOS it is the
+//! ticket's stated fallback: reported not run, covered by a fixture.
 //!
 //! The chat's proxy dials none of these names itself: the seam maps each to the fake forge's
 //! listener, and records the lookup, so a cell can say a request reached the forge through the
 //! proxy and not around it.
+//!
+//! **A chat never merges** (purlis's `merge-unreadable` guard holds `gh api -X PUT …/merge` and
+//! `glab api … merge`: the app merges, on the person's press). So the chat's cells here read,
+//! which proves reach and the credential; the merge itself is purlis's own client's
+//! (`tests/scenarios/tests/fake_forge.rs`), and a chat's attempt is shown held before it reaches
+//! the forge.
 
 use std::path::PathBuf;
 
@@ -112,7 +119,7 @@ impl ForgeHere {
             }
             Wire::Http => {
                 let at = fake.http_addr();
-                for name in ["api.github.localhost", "gitlab.com", SELF_HOSTED_GITLAB] {
+                for name in ["gitlab.com", SELF_HOSTED_GITLAB] {
                     scenario.names.origin(name, 80, at);
                 }
             }
@@ -140,25 +147,13 @@ impl ForgeHere {
     pub(crate) fn names(&self) -> Vec<&'static str> {
         match self.wire {
             Wire::Https => vec![GITHUB_SHAPED_HOST, SELF_HOSTED_GITLAB],
-            Wire::Http => vec!["api.github.localhost", "gitlab.com", SELF_HOSTED_GITLAB],
+            Wire::Http => vec!["gitlab.com", SELF_HOSTED_GITLAB],
         }
     }
 
-    /// The API path prefix a GitHub client's requests carry on this wire: `gh` asks a GHES-shaped
-    /// host under `/api/v3`, and `github.localhost` at the root.
-    pub(crate) fn github_prefix(&self) -> &'static str {
-        match self.wire {
-            Wire::Https => "/api/v3",
-            Wire::Http => "",
-        }
-    }
-
-    /// The name `gh` asks, and the port, on this wire.
+    /// The name `gh` asks, and the port: Linux's HTTPS wire alone.
     pub(crate) fn github_name(&self) -> (&'static str, u16) {
-        match self.wire {
-            Wire::Https => (GITHUB_SHAPED_HOST, 443),
-            Wire::Http => ("api.github.localhost", 80),
-        }
+        (GITHUB_SHAPED_HOST, 443)
     }
 
     /// The name `glab` asks for `which`, and the port, on this wire.
@@ -171,16 +166,17 @@ impl ForgeHere {
     }
 
     /// The environment a `gh` is run with, as `VAR=value ` words for a shell command: its host,
-    /// the token the chat is handed, the CA bundle where the wire needs it, and settings that
-    /// keep it from asking, updating or writing outside the project.
+    /// the token the chat is handed (`gh` reads `GH_ENTERPRISE_TOKEN` for a host that is not
+    /// github.com), the CA bundle, and settings that keep it from asking, updating or writing
+    /// outside the project. The HTTPS wire alone.
     pub(crate) fn gh(&self, token: &str) -> String {
-        let host = match self.wire {
-            Wire::Https => GITHUB_SHAPED_HOST,
-            Wire::Http => "github.localhost",
-        };
-        // `gh` reads `GH_ENTERPRISE_TOKEN` for every host but github.com's and `github.localhost`'s.
+        assert_eq!(
+            self.wire,
+            Wire::Https,
+            "gh reaches the fake forge over HTTPS only"
+        );
         format!(
-            "GH_HOST={host} GH_TOKEN={token} GH_ENTERPRISE_TOKEN={token} {} \
+            "GH_HOST={GITHUB_SHAPED_HOST} GH_TOKEN={token} GH_ENTERPRISE_TOKEN={token} {} \
              GH_CONFIG_DIR='{}/gh' GH_NO_UPDATE_NOTIFIER=1 GH_NO_EXTENSION_UPDATE_NOTIFIER=1 \
              GH_PROMPT_DISABLED=1 NO_COLOR=1",
             self.trust(),
@@ -281,78 +277,68 @@ fn reached_through_the_proxy(scenario: &Scenario, chat: u32, name: (&str, u16)) 
 }
 
 /// **`gh` reaches the fake forge from inside a sandboxed chat** (T1.1-50), under the OS wrap,
-/// through the chat's proxy and the resolver seam, and merges a pull request with the token the
-/// chat was handed: the forge saw that token and no other. On Linux over HTTPS under the test
-/// CA, and over plain HTTP; on macOS over plain HTTP, where Go ignores the CA.
+/// through the chat's proxy and the resolver seam: it reads a pull request with the token the
+/// chat was handed, over HTTPS under the test CA, and the forge saw that token and no other.
+/// Linux: on macOS Go ignores the test CA and `gh` has no other way in (module docs), so there
+/// it is reported not run, the ticket's stated fallback.
 #[cfg(unix)]
 #[test]
 fn gh_merge_reaches_the_fake_forge_under_the_wrap() {
     use super::host::{Dialect, Homes, Protection};
+    if cfg!(target_os = "macos") {
+        super::report::write(&[super::a_fixture_record(
+            "gh_merge_reaches_the_fake_forge_under_the_wrap",
+            Some(purlis_scenarios::model::Dialect::Codex),
+            Some(purlis_scenarios::model::Protection::Full),
+            purlis_scenarios::model::ReportVerdict::NotRun,
+            "gh is Go: on macOS it ignores the test CA and speaks http only to github.localhost, \
+             which purlis refuses as this machine (T1.1-50's fallback)",
+        )])
+        .expect("the leg's report");
+        return;
+    }
     if !available("gh") {
         return;
     }
     let Some(homes) = Homes::of_this_scenario() else {
         return;
     };
-    for &wire in Wire::here() {
-        let Some(scenario) =
-            Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
-        else {
-            return;
-        };
-        let forge = ForgeHere::start(&scenario, wire);
-        forge.fake.add_pull_request("o/r", 7, HEAD);
-        let merge = format!(
-            "{} gh api -X PUT repos/o/r/pulls/7/merge -f merge_method=squash -f sha={HEAD} 2>&1; \
-             echo \"gh exit $?\"",
-            forge.gh(GH_TOKEN)
-        );
-        let chat = scenario.starts_holding(&running(&[("merge", merge)]), forge.grants());
-        scenario.until_played(chat, &["merge"]);
-        let said = super::stdout_of(&scenario, chat, "merge");
-        let wire = wire.word();
-        assert!(
-            said.contains("gh exit 0") && said.contains("\"merged\":true"),
-            "{wire}: gh did not merge: {said}\n{}",
-            scenario.said()
-        );
-        reached_through_the_proxy(&scenario, chat, forge.github_name());
-
-        assert_eq!(
-            forge
-                .fake
-                .merged(purlis_scenarios::net::Forge::GitHub, "o/r", 7),
-            Some(purlis_scenarios::net::MERGE_SHA.to_owned()),
-            "{wire}: the fake forge did not merge"
-        );
-        assert_eq!(
-            forge.fake.tokens_seen(),
-            vec![GH_TOKEN.to_owned()],
-            "{wire}: the forge saw a credential other than the chat's own"
-        );
-        let seen = forge.fake.requests();
-        let put = seen
-            .iter()
-            .find(|request| request.method == "PUT")
-            .unwrap_or_else(|| panic!("{wire}: no merge request recorded: {seen:?}"));
-        assert_eq!(
-            put.path,
-            format!("{}/repos/o/r/pulls/7/merge", forge.github_prefix()),
-            "{wire}"
-        );
-        assert!(
-            put.body.contains(HEAD),
-            "{wire}: the merge named no head: {}",
-            put.body
-        );
-        if wire == "https" {
-            assert_eq!(put.sni.as_deref(), Some(GITHUB_SHAPED_HOST), "{wire}");
-        }
-    }
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
+    else {
+        return;
+    };
+    let forge = ForgeHere::start(&scenario, Wire::Https);
+    forge.fake.add_pull_request("o/r", 7, HEAD);
+    let read = format!(
+        "{} gh api repos/o/r/pulls/7 2>&1; echo \"gh exit $?\"",
+        forge.gh(GH_TOKEN)
+    );
+    let chat = scenario.starts_holding(&running(&[("read", read)]), forge.grants());
+    scenario.until_played(chat, &["read"]);
+    let said = super::stdout_of(&scenario, chat, "read");
+    assert!(
+        said.contains("gh exit 0") && said.contains(HEAD),
+        "gh did not read the pull request: {said}\n{:?}\n{}",
+        scenario.result_of(chat, "read"),
+        scenario.said()
+    );
+    reached_through_the_proxy(&scenario, chat, forge.github_name());
+    assert_eq!(
+        forge.fake.tokens_seen(),
+        vec![GH_TOKEN.to_owned()],
+        "the forge saw a credential other than the chat's own"
+    );
+    let seen = forge.fake.requests();
+    let get = seen
+        .iter()
+        .find(|request| request.method == "GET")
+        .unwrap_or_else(|| panic!("no read recorded: {seen:?}"));
+    assert_eq!(get.path, "/api/v3/repos/o/r/pulls/7");
+    assert_eq!(get.sni.as_deref(), Some(GITHUB_SHAPED_HOST));
 }
 
 /// **`glab` reaches the fake forge from inside a sandboxed chat** (T1.1-50), as `gh` does: a
-/// self-hosted GitLab on both wires, and `gitlab.com` itself on the plain one, each merged with
+/// self-hosted GitLab on both wires, and `gitlab.com` itself on the plain one, each read with
 /// the token the chat was handed.
 #[cfg(unix)]
 #[test]
@@ -381,10 +367,10 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
                 .fake
                 .add_merge_request("group/project", 42, *iid, HEAD);
             calls.push((
-                format!("merge-{iid}"),
+                format!("read-{iid}"),
                 format!(
-                    "{} glab api projects/group%2Fproject/merge_requests/{iid}/merge \
-                     --method PUT -f sha={HEAD} 2>&1; echo \"glab exit $?\"",
+                    "{} glab api projects/group%2Fproject/merge_requests/{iid} 2>&1; \
+                     echo \"glab exit $?\"",
                     forge.glab(*gitlab, GLAB_TOKEN)
                 ),
             ));
@@ -398,21 +384,14 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
         scenario.until_played(chat, &steps);
         let wire_word = wire.word();
         for (gitlab, iid) in &which {
-            let said = super::stdout_of(&scenario, chat, &format!("merge-{iid}"));
+            let said = super::stdout_of(&scenario, chat, &format!("read-{iid}"));
             assert!(
-                said.contains("glab exit 0") && said.contains("\"merged\"")
-                    || said.contains("glab exit 0") && said.contains("\"state\":\"merged\""),
-                "{wire_word}: glab did not merge !{iid}: {said}\n{}",
+                said.contains("glab exit 0") && said.contains(HEAD),
+                "{wire_word}: glab did not read !{iid}: {said}\n{:?}\n{}",
+                scenario.result_of(chat, &format!("read-{iid}")),
                 scenario.said()
             );
             reached_through_the_proxy(&scenario, chat, forge.gitlab_name(*gitlab));
-            assert_eq!(
-                forge
-                    .fake
-                    .merged(purlis_scenarios::net::Forge::GitLab, "group/project", *iid),
-                Some(purlis_scenarios::net::MERGE_SHA.to_owned()),
-                "{wire_word}: the fake forge did not merge !{iid}"
-            );
         }
         assert_eq!(
             forge.fake.tokens_seen(),
@@ -435,13 +414,15 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
     }
 }
 
-/// **A refusal the fake forge is asked for reaches the chat in the forge's own words**, and
-/// nothing is merged (T1.1-50): the ruleset's `405` through `gh`, on every wire this OS runs.
+/// **A merge a chat tries is held before it reaches the fake forge** (T1.1-50): the same chat
+/// reads a pull request (the control: the forge is reachable and was reached) and then tries to
+/// merge it, which purlis's guard refuses, so the forge records the read and no merge. Over
+/// `glab` on every wire this OS runs.
 #[cfg(unix)]
 #[test]
-fn a_ruleset_refusal_reaches_a_chats_gh_in_the_forges_own_words() {
+fn a_chats_merge_is_held_before_it_reaches_the_fake_forge() {
     use super::host::{Dialect, Homes, Protection};
-    if !available("gh") {
+    if !available("glab") {
         return;
     }
     let Some(homes) = Homes::of_this_scenario() else {
@@ -454,42 +435,52 @@ fn a_ruleset_refusal_reaches_a_chats_gh_in_the_forges_own_words() {
             return;
         };
         let forge = ForgeHere::start(&scenario, wire);
-        forge.fake.add_pull_request("o/r", 7, HEAD);
-        forge.fake.refuse_merge(
-            purlis_scenarios::net::Forge::GitHub,
-            "o/r",
-            7,
-            purlis_scenarios::net::Refusal::Ruleset,
+        forge.fake.add_merge_request("group/project", 42, 4, HEAD);
+        let env = forge.glab(Gitlab::SelfHosted, GLAB_TOKEN);
+        let read = format!(
+            "{env} glab api projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\""
         );
         let merge = format!(
-            "{} gh api -X PUT repos/o/r/pulls/7/merge -f sha={HEAD} 2>&1; echo \"gh exit $?\"",
-            forge.gh(GH_TOKEN)
+            "{env} glab api projects/group%2Fproject/merge_requests/4/merge --method PUT \
+             -f sha={HEAD} 2>&1; echo \"glab exit $?\""
         );
-        let chat = scenario.starts_holding(&running(&[("merge", merge)]), forge.grants());
-        scenario.until_played(chat, &["merge"]);
-        let said = super::stdout_of(&scenario, chat, "merge");
+        let chat = scenario.starts_holding(
+            &running(&[("read", read), ("merge", merge)]),
+            forge.grants(),
+        );
+        scenario.until_played(chat, &["read", "merge"]);
+        let wire_word = wire.word();
         assert!(
-            !said.contains("gh exit 0") && said.contains("Repository rule violations"),
-            "{}: gh was not refused as a ruleset refuses: {said}\n{}",
-            wire.word(),
+            super::stdout_of(&scenario, chat, "read").contains("glab exit 0"),
+            "{wire_word}: the control read failed: {:?}\n{}",
+            scenario.result_of(chat, "read"),
             scenario.said()
         );
-        assert_eq!(
-            forge
-                .fake
-                .merged(purlis_scenarios::net::Forge::GitHub, "o/r", 7),
-            None,
-            "{}: a refused merge merged",
-            wire.word()
+        let events = format!("{:?}", scenario.events());
+        assert!(
+            events.contains("merge-unreadable"),
+            "{wire_word}: the guard's merge rule never denied the call\n{}",
+            scenario.said()
+        );
+        assert!(
+            !super::stdout_of(&scenario, chat, "merge").contains("glab exit"),
+            "{wire_word}: the merge command ran"
         );
         assert!(
             forge
                 .fake
                 .requests()
                 .iter()
-                .any(|request| request.status == 405),
-            "{}: the fake forge never refused",
-            wire.word()
+                .all(|request| request.method == "GET"),
+            "{wire_word}: a non-read reached the forge: {:?}",
+            forge.fake.requests()
+        );
+        assert_eq!(
+            forge
+                .fake
+                .merged(purlis_scenarios::net::Forge::GitLab, "group/project", 4),
+            None,
+            "{wire_word}: a chat's merge merged"
         );
     }
 }
