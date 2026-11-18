@@ -1788,7 +1788,10 @@ pub(crate) fn judged(
         GrantWhat::Socket => {
             let ground = sandbox::services::SocketGround::of(root, machine, &[]);
             let now = sandbox::services::socket(target, &ground).map_err(|why| why.to_string())?;
-            What::Socket(socket_as_drawn(target, now)?)
+            // TEMPORARY MUTANT (round 4 of #7105), reverted in the next commit: the socket kept
+            // as resolved, not as drawn, so the new test is seen failing first.
+            let _ = socket_as_drawn(target, now.clone());
+            What::Socket(now)
         }
         GrantWhat::Service => {
             let name = sandbox::services::service(target).map_err(|why| why.to_string())?;
@@ -3812,6 +3815,10 @@ thread_local! {
     /// run once and taken.
     pub(crate) static BETWEEN_RESOLUTIONS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         std::cell::RefCell::new(None);
+    /// A test's seam: the machine [`answered_at`] judges against, in place of this one, so a
+    /// test builds the home and `PATH` it needs.
+    pub(crate) static MACHINE: std::cell::RefCell<Option<sandbox::Machine>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]

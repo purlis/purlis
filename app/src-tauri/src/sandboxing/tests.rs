@@ -3748,38 +3748,82 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
         );
     }
 
+    // **A socket is resolved once, and kept only as its ask drew it** (the fourth review of
+    // #7105, [`super::socket_as_drawn`]): under `asks` off a socket is answered and kept by the
+    // name it was drawn by; one whose path leads to another socket by the time it is judged is
+    // not answered, and neither socket is kept.
+    // In a folder of yours no chat writes, as a socket in the project or the temp folder is
+    // refused by design; it fails on CI where it cannot be made.
+    if let Some(mine) = a_folder_of_yours_no_chat_writes() {
+        let real = mine.path().canonicalize().expect("real");
+        let (engine, drawn, other) = (
+            real.join("e.sock"),
+            real.join("d.sock"),
+            real.join("o.sock"),
+        );
+        let _listening = [&engine, &drawn, &other]
+            .map(|one| std::os::unix::net::UnixListener::bind(one).expect("a socket"));
+        let socket = |target: &std::path::Path, mode: Mode| {
+            let target = target.display().to_string();
+            answered_at(&held, &told(&target), (GrantWhat::Socket, &target), None, mode)
+        };
+        assert!(socket(&engine, Mode::Off), "a socket is answered under off");
+        assert!(
+            held.chats()
+                .holds_for(session, &sandbox::grant::What::Socket(engine.clone())),
+            "kept as drawn"
+        );
+        super::BETWEEN_RESOLUTIONS.with(|seam| {
+            let (drawn, other) = (drawn.clone(), other.clone());
+            *seam.borrow_mut() = Some(Box::new(move || {
+                std::fs::remove_file(&drawn).expect("the socket goes");
+                std::os::unix::fs::symlink(&other, &drawn).expect("a link in its place");
+            }));
+        });
+        assert!(
+            !socket(&drawn, Mode::Off),
+            "a socket whose path leads to another when judged is not answered"
+        );
+        for one in [&drawn, &other] {
+            assert!(
+                !held
+                    .chats()
+                    .holds_for(session, &sandbox::grant::What::Socket(one.clone())),
+                "{} kept",
+                one.display()
+            );
+        }
+    }
+
     // **A folder the floor holds is never answered, though a folder above it is listed** (the
     // re-review of #7105): a `PATH` folder under the home (`~/.cargo/bin`, most often), with
     // its parent listed in Settings, still raises the Notice, and so does the listed folder.
-    let machine = sandbox::Machine::this();
-    let on_path = machine
-        .env
-        .get("PATH")
-        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|dir| dir.canonicalize().ok())
-        .find(|dir| {
-            let home = home.canonicalize().unwrap_or_else(|_| home.clone());
-            dir.is_dir() && dir.starts_with(&home) && dir.parent() != Some(home.as_path())
+    // Built here, so the case never depends on this machine's own `PATH`.
+    let built = tempfile::tempdir().expect("a home");
+    let built_home = built.path().canonicalize().expect("real");
+    let bin = built_home.join(".cargo/bin");
+    std::fs::create_dir_all(&bin).expect("a PATH folder under the home");
+    super::MACHINE.with(|seam| {
+        *seam.borrow_mut() = Some(sandbox::Machine {
+            env: purlis_core::secrets::Env::of(&[
+                ("PATH", &format!("{}:/usr/bin:/bin", bin.display())),
+                ("HOME", &built_home.display().to_string()),
+            ]),
+            home: Some(built_home.clone()),
+            os: sandbox::Os::this(),
         });
-    if let Some(bin) = on_path {
-        let above = bin.parent().expect("a folder above").to_path_buf();
-        sandbox::local::list_grantable(&root, &above).expect("listed");
-        for folder in [&bin, &above] {
-            assert!(
-                !answered(&folder.display().to_string(), Mode::Off),
-                "{} still asks",
-                folder.display()
-            );
-        }
-        sandbox::local::unlist_grantable(&root, &above).expect("unlisted");
-    } else {
-        let _ = std::io::Write::write_all(
-            &mut std::io::stderr(),
-            b"skipped the floor-held case: no folder on PATH under the home\n",
+    });
+    let above = bin.parent().expect("a folder above").to_path_buf();
+    sandbox::local::list_grantable(&root, &above).expect("listed");
+    for folder in [&bin, &above] {
+        assert!(
+            !answered(&folder.display().to_string(), Mode::Off),
+            "{} still asks",
+            folder.display()
         );
     }
+    sandbox::local::unlist_grantable(&root, &above).expect("unlisted");
+    super::MACHINE.with(|seam| seam.borrow_mut().take());
 
     // **Under `log`, the line names the folder granted**, not the path the chat was blocked at.
     // Only the app writes the log; this test's process is the app.

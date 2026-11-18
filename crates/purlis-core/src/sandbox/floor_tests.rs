@@ -2808,6 +2808,16 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
         }
         assert!(socket.exists(), "{} still where purlis made it", socket.display());
     }
+    // Nor with the folder it is in moved whole.
+    let moved = at.join("moved-serve");
+    let script = format!(
+        "/bin/mv {} {} 2>/dev/null; {}",
+        at.join("purlis-serve").display(),
+        moved.display(),
+        connect(&moved.join("ab/3000.sock"))
+    );
+    assert_eq!(run(&script), "no", "the server sockets' folder moved");
+    assert!(!moved.exists(), "the server sockets' folder moved");
     crate::secrets::test_really_ran("ports-off-holds-purlis-own-sockets");
 }
 
@@ -2818,18 +2828,55 @@ fn under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_
 /// above can apply the profile only on a Mac that is not already sandboxed.
 #[test]
 fn the_sockets_ports_off_still_holds_are_named_as_purlis_makes_them() {
-    let held = super::seatbelt::every_local_held()
-        .iter()
-        .map(|rule| {
-            let regex = rule
-                .split_once("(path-regex #\"")
-                .and_then(|(_, rest)| rest.split_once("\")"))
-                .map(|(regex, _)| regex)
-                .unwrap_or_else(|| panic!("a path regex in {rule}"));
-            regex::Regex::new(regex).expect("a regex")
-        })
-        .collect::<Vec<_>>();
+    let rules = super::seatbelt::every_local_held();
+    // The rules of one kind, each by its regex: `network` for a connection, else a write or link.
+    let regexes = |network: bool| {
+        let (kind, opening) = if network {
+            ("(deny network-outbound", "(path-regex #\"")
+        } else {
+            ("(deny file-write* file-link", "(regex #\"")
+        };
+        rules
+            .iter()
+            .filter(|rule| rule.starts_with(kind))
+            .map(|rule| {
+                let regex = rule
+                    .split_once(opening)
+                    .and_then(|(_, rest)| rest.split_once("\")"))
+                    .map(|(regex, _)| regex)
+                    .unwrap_or_else(|| panic!("a regex in {rule}"));
+                regex::Regex::new(regex).expect("a regex")
+            })
+            .collect::<Vec<_>>()
+    };
+    let (held, unmoved) = (regexes(true), regexes(false));
+    assert_eq!(
+        held.len() + unmoved.len(),
+        rules.len(),
+        "every rule is one or the other: {rules:?}"
+    );
     let is_held = |path: &str| held.iter().any(|regex| regex.is_match(path));
+    let is_unmoved = |path: &str| unmoved.iter().any(|regex| regex.is_match(path));
+    // A socket held by its name or its folder is never moved or linked away from it, nor is the
+    // folder; a project's state folder is held from being written by the floor's own rules.
+    for path in [
+        "/tmp/dev_purlis_app_si.sock",
+        "/var/folders/x/purlisd.sock",
+        "/var/folders/x/purlis-crash-0123abcd.sock",
+        "/tmp/purlis-501/slots.sock",
+        "/var/folders/x/purlis-serve/ab/3000.sock",
+        "/var/folders/x/purlis-serve",
+        "/var/folders/x/engine-links",
+    ] {
+        assert!(is_unmoved(path), "{path}");
+    }
+    for path in [
+        "/tmp/x.sock",
+        "/var/folders/x/purlis-served/a",
+        "/Users/a/.docker/run/docker.sock",
+    ] {
+        assert!(!is_unmoved(path), "{path}");
+    }
     for id in crate::names::BUNDLE_ID
         .spellings()
         .flat_map(|id| [id.to_owned(), format!("{id}.e2e")])
