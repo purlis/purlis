@@ -551,3 +551,86 @@ mod in_a_pane {
         drop(taken);
     }
 }
+
+/// `runners.json` under `config`: the Docker pool `builds` with its runner, and the cluster pool
+/// `team` with its own runner and one chat's fresh runner. The fresh runner's link name.
+#[cfg(unix)]
+fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
+    use std::os::unix::fs::PermissionsExt as _;
+    const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let cluster_row = |device: &str, key: &str, claim: &str| {
+        serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": claim,
+            "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
+            "pod": claim, "device": device, "key": key.repeat(32), "paired": 1_800_000_000_u64,
+        })
+    };
+    let mut fresh = cluster_row("01JB0RUNNER0000000000000002", "5e", "team-2");
+    fresh["chat"] = "01M7HNDAQDBEJFC36Z3NYPRGR4".into();
+    fresh["plane"] = "p-1".into();
+    fresh["workspace"] = "app".into();
+    let file = serde_json::json!({
+        "version": 1,
+        "pools": [
+            { "name": "builds", "kind": "docker", "image": IMAGE },
+            {
+                "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
+                "context": "team", "pool": "default", "namespace": "ada",
+                "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+                "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+                "holds": ["/opt/homebrew/bin/kubectl"],
+            },
+        ],
+        "runners": [
+            {
+                "name": "builds", "pool": "docker", "container": "a".repeat(64), "image": IMAGE,
+                "user": "10001:10001", "home": "/home/purlis",
+                "device": "01JB0RUNNER0000000000000000", "key": "12".repeat(32), "paired": 1,
+            },
+            cluster_row("01JB0RUNNER0000000000000001", "4d", "team-1"),
+            fresh,
+        ],
+    });
+    let folder = purlis_core::machine::dir(config);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let path = folder.join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::write(&path, file.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let fresh = purlis_core::runners::fresh_runners(config).expect("the runners are read");
+    assert_eq!(fresh.len(), 1, "the fresh runner is kept");
+    fresh[0].link_name()
+}
+
+/// **A runner chat's files are read on every kind of runner purlis pairs** (#6949): a Docker
+/// pool's runner, a cluster pool's own runner, and a chat's fresh runner on a cluster pool, each
+/// through its own runner's host, which holds the path to the chat's workspace there as #6387
+/// does. A name this machine keeps no runner under reaches none, and nor does a cluster pool's
+/// fresh runner that is not kept.
+#[cfg(unix)]
+#[test]
+fn a_runner_chats_files_are_read_on_a_docker_pool_a_cluster_pool_and_a_fresh_runner() {
+    use super::RunnerKind;
+    let config = tempfile::tempdir().unwrap();
+    let fresh = every_kind_of_runner_kept(config.path());
+
+    assert_eq!(
+        super::kind_reached(config.path(), "builds"),
+        Some(RunnerKind::DockerPool)
+    );
+    assert_eq!(
+        super::kind_reached(config.path(), "builds/builds-01234567"),
+        Some(RunnerKind::DockerPool),
+        "a Docker pool's runner draining beside its new one"
+    );
+    assert_eq!(
+        super::kind_reached(config.path(), "team"),
+        Some(RunnerKind::ClusterPool)
+    );
+    assert_eq!(
+        super::kind_reached(config.path(), &fresh),
+        Some(RunnerKind::FreshRunner)
+    );
+    assert_eq!(super::kind_reached(config.path(), "team/fresh-0000"), None);
+    assert_eq!(super::kind_reached(config.path(), "nowhere"), None);
+}

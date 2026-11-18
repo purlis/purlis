@@ -1,9 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A Docker pool's runner, as a pane's file link reads its chat's files** (#6387): the first
-//! adapter of the core's neutral [`purlis_core::panelinks::RunnerFiles`], over the session
-//! protocol's `read_file` (1.93) on the window's link to that runner. The path the chat printed
+//! **A pool's runner, as a pane's file link reads its chat's files** (#6387, #6949): the adapter
+//! of the core's neutral [`purlis_core::panelinks::RunnerFiles`] for each kind of runner purlis
+//! pairs ([`RunnerKind`]: a Docker pool's, a cluster pool's own, and a chat's fresh runner on a
+//! cluster pool), over the session protocol's `read_file` (1.93) on the window's link to that
+//! runner. The path the chat printed
 //! is sent as data; the runner resolves and reads it. Nothing here runs `docker exec` or builds
 //! a command line.
 //!
@@ -28,6 +30,40 @@ pub const LOOK_WITHIN: Duration = Duration::from_millis(1500);
 
 /// The longest one piece of a tab's read is waited for.
 pub const PIECE_WITHIN: Duration = Duration::from_secs(10);
+
+/// **A kind of runner the window reads a chat's files on** (#6387, #6949). Each kind's runner is
+/// asked through its own host with `read_file` ([`OnLink`]), so on every kind the path is held
+/// to the chat's workspace there, a file outside it asks first, and one opened on that answer is
+/// read only while it is the file it was ([`ReadsOnRunner::read`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunnerKind {
+    /// A Docker pool's runner, on this machine's engine or another's.
+    DockerPool,
+    /// A cluster pool's own runner, which the pool's chats share.
+    ClusterPool,
+    /// A chat's own runner on a cluster pool, paired for that chat alone (`<pool>/fresh-…`).
+    FreshRunner,
+}
+
+/// **The kind of runner `named` reaches, as a link to a pool's runner names it**, where the
+/// window reads a chat's files on that kind: `<pool>`, or `<pool>/<runner>` for a Docker pool's
+/// draining runner and a chat's fresh runner. A cluster runner is reached only as the core
+/// reaches one to start a chat on it (`runners::cluster_runner_for`): its pool kept with its
+/// cluster's pin, and the runner kept under that very name. `None` where `config` keeps no
+/// such runner.
+pub(crate) fn kind_reached(config: &std::path::Path, named: &str) -> Option<RunnerKind> {
+    let pool = named.split_once('/').map_or(named, |(pool, _)| pool);
+    if purlis_core::runners::pools(config)
+        .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+    {
+        return Some(RunnerKind::DockerPool);
+    }
+    let (_, kept) = purlis_core::runners::cluster_runner_for(config, named).ok()??;
+    Some(match kept.chat {
+        Some(_) => RunnerKind::FreshRunner,
+        None => RunnerKind::ClusterPool,
+    })
+}
 
 /// **One answer of a runner to `read_file`**, as the window asks it: on a link, for one chat.
 pub(crate) trait AsksRunner: Send + Sync {
