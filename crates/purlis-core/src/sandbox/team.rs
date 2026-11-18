@@ -613,19 +613,63 @@ pub fn allowed_levels_for_a_new_project() -> Bound {
 }
 
 /// [`allowed_levels`] under `locks`, the locks a start already read.
+///
+/// **The default is the project's sandbox level** (the follow-up's item 1,
+/// [`crate::enforcement::sandbox_level`]): its `[sandbox] mode` where it names one, else its
+/// `[policy]` template's (`open` no sandbox, `watch` and `hold` the floor, `team` the full
+/// sandbox, `strict` the floor, as before Q308), never looser than this person accepted. The
+/// team's off is a loosening like any other: it reaches the person on their Accept, which is the
+/// sandbox family's press.
 pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
     if let Some(why) = locks.opt_out_refused() {
         return Bound::full(why);
     }
-    let mut bound = Bound::local(matches!(team_off(root), TeamOff::Accepted(_)));
-    // A project that turned the full sandbox on starts at it a chat whose person chose no level
-    // (#2071): only a level of theirs takes one lower, as far as it is allowed. Not one whose
-    // `mode = "off"` is the team's off, whose default is the floor until the person accepts it.
+    // An answer kept for an off the file no longer says is let go, so an off that comes back is
+    // asked again (#2156).
+    if !Team::of(root).off && super::local::team_off_answer(root).is_some() {
+        let _ = super::local::forget_team_off(root);
+    }
+    let level = crate::enforcement::sandbox_level(root, || level_of(as_the_file_says(root, locks)));
+    Bound {
+        default: choice_of(level),
+        ..Bound::local(false)
+    }
+}
+
+/// The person's level a sandbox level is.
+pub fn choice_of(level: crate::enforcement::SandboxLevel) -> Choice {
+    use crate::enforcement::SandboxLevel;
+    match level {
+        SandboxLevel::Off => Choice::Off,
+        SandboxLevel::Floor => Choice::Floor,
+        SandboxLevel::Full => Choice::On,
+    }
+}
+
+/// The sandbox level a person's level is.
+pub fn level_of(choice: Choice) -> crate::enforcement::SandboxLevel {
+    use crate::enforcement::SandboxLevel;
+    match choice {
+        Choice::Off => SandboxLevel::Off,
+        Choice::Floor => SandboxLevel::Floor,
+        Choice::On => SandboxLevel::Full,
+    }
+}
+
+/// **The project's level as its file alone says it**, as purlis read it before Q308: the full
+/// sandbox where it turned it on, no sandbox where the person accepted the team's off, and the
+/// floor otherwise. What a process that is not the app never runs looser than
+/// ([`crate::enforcement::sandbox_level`]).
+pub fn as_the_file_says(root: &Path, locks: &policy::Locks) -> Choice {
     let plane = super::Plane::read(root);
     if plane.in_force(locks).is_some() && !plane.team().off {
-        bound.default = Choice::On;
+        return Choice::On;
     }
-    bound
+    if matches!(team_off(root), TeamOff::Accepted(_)) {
+        Choice::Off
+    } else {
+        Choice::Floor
+    }
 }
 
 /// **The level a chat started as `persona` (or none) runs at** in the project at `root`: the

@@ -109,7 +109,10 @@ impl Handler {
     ///
     /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
     /// one that is not yet switchable keeps its refusal while the guard lives and, as before
-    /// Q308, does not hold a call when it dies. Its wiring will count it.
+    /// Q308, does not hold a call when it dies. Its wiring will count it. `sandbox` counts like
+    /// any other (ruling Q327): its mode is its level's ([`crate::enforcement::mode_of_level`]),
+    /// enforced wherever a wrap is applied and off where there is none, as under `open`, so a
+    /// dead guard refuses where the sandbox it judges is in force and continues where it is not.
     ///
     /// **A7c counts as an enforced family where the person's rules name a program**
     /// (`rules_name_a_program`; the re-review of #7104, ruling for Q327): it holds in every
@@ -484,13 +487,38 @@ mod tests {
                 ("pretooluse-dispatch", "continue"),
             ]
         );
-        // With those logged, nothing either guard judges is enforced.
+        // With those logged, the read guard judges nothing enforced. The Bash guard still
+        // judges `sandbox`, which `watch` wraps at the floor and so enforces (ruling Q327).
+        let logged =
+            "[policy]\ntemplate = \"watch\"\nsecrets = \"log\"\nguards.credential = \"log\"\n";
         assert_eq!(
-            failing(&under(
-                "[policy]\ntemplate = \"watch\"\nsecrets = \"log\"\nguards.credential = \"log\"\n"
-            )),
+            failing(&under(logged)),
+            [
+                ("pretooluse", "block"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // And with the sandbox off as well, nothing either guard judges is enforced.
+        assert_eq!(
+            failing(&under(&format!(
+                "{logged}[sandbox]\nmode = \"off\"\npolicy = \"local\"\n"
+            ))),
             [
                 ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]
+        );
+        // The sandbox alone enforced: the Bash guard, which judges it, refuses when it dies.
+        assert_eq!(
+            failing(&under(
+                "[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n"
+            )),
+            [
+                ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
                 ("pretooluse-dispatch", "continue"),

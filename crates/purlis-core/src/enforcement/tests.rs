@@ -36,8 +36,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
                 Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
-                // The floor is a wrap.
-                Family::Sandbox => Mode::Enforce,
+                // The floor is a wrap, and `ports` takes no log (Q328).
+                Family::Sandbox | Family::Ports => Mode::Enforce,
                 _ => Mode::Log,
             };
             assert_eq!(settings.mode(family), want, "{}", family.key());
@@ -60,15 +60,18 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold =
-            if secret.contains(&family) || family == Family::GuardsMerge || family == Family::Trust
-            {
-                Mode::Enforce
-            } else {
-                Mode::Log
-            };
+        let hold = if secret.contains(&family)
+            || family == Family::GuardsMerge
+            || family == Family::Ports
+            || family == Family::Trust
+        {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
+            || family == Family::Ports
             || family.added_by_q308b()
             || matches!(
                 family,
@@ -610,7 +613,7 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -648,7 +651,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -714,7 +717,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -805,7 +808,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
         crate::dispatchgrant::Covers::Unread
@@ -880,8 +883,7 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    // Every family enforced, and every dispatch across personas denied.
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -893,7 +895,202 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, Resolved::strict());
+    assert_eq!(found.1, broken_accepted());
+}
+
+// ---- The Q308 follow-up, item 1: the sandbox level ------------------------------------------
+
+#[test]
+fn the_sandbox_level_is_the_sandbox_mode_else_the_templates() {
+    for (text, level) in [
+        ("", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"open\"\n", SandboxLevel::Off),
+        ("[policy]\ntemplate = \"hold\"\n", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"team\"\n", SandboxLevel::Full),
+        // Strict leaves it to `[sandbox]`, as before Q308: the floor where it names no mode.
+        ("[policy]\ntemplate = \"strict\"\n", SandboxLevel::Floor),
+        (
+            "[policy]\ntemplate = \"strict\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"team\"\n[sandbox]\nmode = \"off\"\n",
+            SandboxLevel::Off,
+        ),
+        // `never` refuses the team's off, and a mode purlis cannot read is `on`.
+        (
+            "[sandbox]\nmode = \"off\"\npolicy = \"never\"\n",
+            SandboxLevel::Full,
+        ),
+        ("[sandbox]\nmode = \"maybe\"\n", SandboxLevel::Full),
+        // A bad `[policy]` value is strict, and `[sandbox]` still decides.
+        ("[policy]\ntemplate = \"lenient\"\n", SandboxLevel::Floor),
+    ] {
+        let settings = said(text);
+        assert_eq!(settings.level(), level, "{text:?}");
+        assert_eq!(
+            settings.mode(Family::Sandbox),
+            mode_of_level(level),
+            "{text:?}"
+        );
+        assert_eq!(
+            Resolved::of(&settings, &Locks::none()).level(),
+            level,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn the_local_file_can_raise_the_level_but_never_lower_it() {
+    let raised = plane(
+        "[policy]\ntemplate = \"watch\"\n",
+        Some("[policy]\ntemplate = \"team\"\n"),
+    );
+    assert_eq!(Settings::read(raised.path()).level(), SandboxLevel::Full);
+    let lowered = plane(
+        "[policy]\ntemplate = \"team\"\n",
+        Some("[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"off\"\n"),
+    );
+    assert_eq!(Settings::read(lowered.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_lock_on_the_sandbox_keeps_a_wrap_whatever_the_template() {
+    let open = said("[policy]\ntemplate = \"open\"\n");
+    let locks = Locks::locking_enforcement(Family::Sandbox);
+    let resolved = Resolved::of(&open, &locks);
+    assert_eq!(resolved.level(), SandboxLevel::Floor);
+    assert_eq!(resolved.mode(Family::Sandbox), Mode::Enforce);
+}
+
+#[test]
+fn the_level_reads_back_as_spelled_and_an_acceptance_from_before_it_is_the_floor() {
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    assert!(
+        team.spelled().contains("sandbox=full"),
+        "{}",
+        team.spelled()
+    );
+    assert_eq!(Resolved::parse(&team.spelled()), team);
+    // #6992 kept the sandbox as a mode: `enforce` was a wrap, at least the floor.
+    assert_eq!(
+        Resolved::parse("sandbox=enforce").level(),
+        SandboxLevel::Floor
+    );
+    assert_eq!(Resolved::parse("sandbox=off").level(), SandboxLevel::Off);
+    // A level it cannot read is the strictest.
+    assert_eq!(Resolved::parse("network=off").level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_process_that_is_not_the_app_never_runs_a_level_looser_than_the_file_says() {
+    let _home = OwnConfigHome::new();
+    let named = plane("[policy]\ntemplate = \"open\"\n", None);
+    let open = Resolved::of(&said("[policy]\ntemplate = \"open\"\n"), &Locks::none());
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    crate::secrets::seal::set_for_this_test(None);
+    set_in_the_app_for_this_test(false);
+    answered_by_the_app(Some(open));
+    let under_open = sandbox_level(named.path(), || SandboxLevel::Full);
+    answered_by_the_app(Some(team));
+    let under_team = sandbox_level(named.path(), || SandboxLevel::Floor);
+    answered_by_the_app(None);
+    let unanswered = sandbox_level(named.path(), || SandboxLevel::Off);
+    set_in_the_app_for_this_test(true);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(under_open, SandboxLevel::Full);
+    assert_eq!(under_team, SandboxLevel::Full);
+    // No answer is strict: never below the floor, whatever the file says.
+    assert_eq!(unanswered, SandboxLevel::Floor);
+}
+
+#[test]
+fn a_loosened_level_waits_for_the_press_and_the_window_is_told_it_by_its_words() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"watch\"\n",
+    )
+    .expect("loosened");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    let standing = standing(root.path());
+    assert_eq!(
+        standing.level,
+        Some((SandboxLevel::Full, SandboxLevel::Floor))
+    );
+    assert!(
+        standing
+            .waiting
+            .iter()
+            .all(|(family, _, _)| *family != Family::Sandbox)
+    );
+    press(root.path(), &standing.digest).expect("pressed");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Floor);
+    assert_eq!(level_waiting(root.path()), None);
+}
+
+#[test]
+fn ports_are_never_logged_the_kernel_tells_nothing_it_let_through() {
+    // Ruling Q328: `ports` is off or enforce; `log` is enforced, and said.
+    let settings = said("[policy]\ntemplate = \"open\"\nports = \"log\"\n");
+    assert_eq!(settings.mode(Family::Ports), Mode::Enforce);
+    assert!(!settings.refused.is_empty());
+    // Only `ports` is enforced: the rest of the project's policy stands (the review of #7105).
+    assert_eq!(settings.template, Template::Open);
+    assert_eq!(settings.mode(Family::Network), Mode::Off);
+    assert_eq!(settings.mode(Family::GuardsGit), Mode::Off);
+    // A value purlis cannot read still makes the whole policy strict.
+    let unread = said("[policy]\ntemplate = \"open\"\nports = \"loud\"\n");
+    assert_eq!(unread.template, Template::Strict);
+    for template in Template::ALL {
+        assert_ne!(
+            template.mode(Family::Ports),
+            Mode::Log,
+            "{}",
+            template.word()
+        );
+    }
+    assert_eq!(
+        said("[policy]\nports = \"off\"\n").mode(Family::Ports),
+        Mode::Off
+    );
+}
+
+#[test]
+fn a_team_off_answer_the_project_never_committed_never_lowers_the_accepted_level() {
+    // The review of #7105: the team's-off answer is kept unsealed, so it lowers the sealed level
+    // only for an off the project committed and still says, which this person accepted.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    crate::sandbox::local::answer_team_off(
+        root.path(),
+        crate::sandbox::local::TeamOffAnswer { accepted: true },
+    )
+    .expect("an answer written beside the seal");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_broken_acceptance_runs_the_full_sandbox_never_the_floor() {
+    // The review of #7105: a broken acceptance is never looser than the full sandbox it may have
+    // kept.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert!(broken(root.path()));
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(accepted(root.path()), broken_accepted());
 }
 
 /// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or

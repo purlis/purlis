@@ -470,6 +470,31 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                 deny_write.push(rule);
             }
         }
+        // The names of purlis's sockets and the folders holding them, at any depth, whatever
+        // `ports` says (round 6 of #7105): no wrap covers a Claude Code chat on macOS, so a
+        // `mv` or `ln` of a socket to a name nothing holds would be reached once `ports = "off"`
+        // is pressed, or from a socket path the person allowed. The same set the wraps hold
+        // by regex ([`super::seatbelt::held_socket_names_unwritten`]), each in both cases. A
+        // Claude Code chat's own server never makes a socket here: it dials in through its hook
+        // socket (#3316), so there is nothing to give back.
+        let (socket_names, socket_folders) = super::seatbelt::held_socket_globs();
+        for name in socket_names {
+            for rule in [format!("/**/{name}"), format!("/**/{}", either_case(&name))] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
+        for name in socket_folders {
+            for rule in [
+                format!("/**/{name}"),
+                format!("/**/{}", either_case(&name)),
+                format!("/**/{name}/**"),
+                format!("/**/{}/**", either_case(&name)),
+            ] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
         for path in &compiled.held {
             for name in names_for(path) {
                 let name = name.display().to_string();
@@ -541,6 +566,16 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         compile_cache: compile_cache(compiled),
     }
 }
+
+// **A Claude Code chat's sandbox never opens every local socket or every loopback port**, even
+// where the project's `[policy]` turns `ports` off ([`super::Widened::every_local`], the Q308
+// follow-up, item 5; the review of #7105): `allowAllUnixSockets` and `allowLocalBinding` each
+// open them all at once, and nothing after them can hold one back, so purlis's own (every hook
+// socket, the session host's, another chat's proxy and doors) would be reached with them: a
+// chat could leave through another's proxy, past its own network policy. A Claude Code chat
+// reaches a local socket a person allowed by its path, and a service on this Mac by its one
+// port, through its proxy ([`super::localport`]), as before. Only a wrapped chat's profile,
+// which can hold purlis's own after the lift ([`super::seatbelt::every_local_held`]), lifts.
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
 /// denial class, and the floor's held folders, with every other folder writable), and its

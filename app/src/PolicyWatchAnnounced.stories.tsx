@@ -31,6 +31,7 @@ const meta = {
     holdPolicy(PLANE, {
       waiting: [],
       refused: [],
+      not_in_force: [],
       unsealed: false,
       digest: "d1",
       template: "watch",
