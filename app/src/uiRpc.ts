@@ -6988,6 +6988,11 @@ export type FinishedTask = {
 	 *  finds its row by. None for a task that finished before this app was started.
 	 */
 	chat: number | null,
+	/**
+	 *  **Its chat's ULID**, where its record names one (#7145): what the Chats list's filter
+	 *  matches a closed chat's row to it by, as a number may have been another chat's.
+	 */
+	chat_id: string | null,
 	persona: string | null,
 	/**
 	 *  **How it ended, as a value** ([`How`]): what the window draws its state from. The

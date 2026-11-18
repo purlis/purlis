@@ -4592,6 +4592,7 @@ describe("the focused chat's tasks and its pane's previous chat (#4767, ruled on
             [
               {
                 chat: null,
+                chat_id: null,
                 did_not_start: false,
                 attempts: 0,
                 waits: null,

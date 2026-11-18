@@ -1077,6 +1077,11 @@ pub struct Chats {
     /// The chats being started again in their place right now (#1342): one restart at a time
     /// per chat, whichever asked for it.
     restarting: Mutex<std::collections::HashSet<u32>>,
+    /// The chats being started again on their conversation right now, by their ULIDs (#7145): a
+    /// closed chat's Reopen (#6485) and a just-ended chat's Resume both hold it here, so one of
+    /// either, never both, starts it at a time (#7149's review). Never by number, which two
+    /// closed chats may share (#6740) and which a chat open now may have been dealt again.
+    reopening: Mutex<std::collections::HashSet<String>>,
     /// What each chat was last told of where it is working (#1450), by its number: who its
     /// siblings and its persona's other chats were then, so a later turn is told only what
     /// changed ([`Self::working`]). **Here, beside the app's record of the chat, and in
@@ -1920,6 +1925,7 @@ impl Chats {
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
+            reopening: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
@@ -4320,6 +4326,23 @@ impl Chats {
         lock(&self.restarting).remove(&session);
     }
 
+    /// Marks the chat whose ULID is `id`, numbered `number`, as starting again on its
+    /// conversation, or refuses: Reopen and Resume both hold it so, so the two pressed at once
+    /// start it once (#7149's review).
+    fn claim_conversation(&self, id: &str, number: u32) -> Result<(), String> {
+        if lock(&self.reopening).insert(id.to_owned()) {
+            Ok(())
+        } else {
+            Err(format!(
+                "purlis is already starting chat {number} again, so it was not started twice."
+            ))
+        }
+    }
+
+    fn unclaim_conversation(&self, id: &str) {
+        lock(&self.reopening).remove(id);
+    }
+
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
     /// restarted, the new run is ended (nobody asked for it any more, and it would keep the
     /// chat's grants alive unseen); otherwise the new run takes its place, and what was queued
@@ -4364,7 +4387,25 @@ impl Chats {
         }
         self.claim(session)?;
         let was = lock(&self.let_go).get(&session).cloned();
+        // Held by its ULID too, as Reopen on its card holds it (#7149's review): the two pressed
+        // at once start it once, and the one that comes second is refused.
+        let id = was.as_ref().and_then(|was| was.identity.id.clone());
+        if let Some(id) = &id
+            && let Err(why) = self.claim_conversation(id, session)
+        {
+            self.unclaim(session);
+            return Err(why);
+        }
+        let open_again = id.as_deref().is_some_and(|id| {
+            lock(&self.open)
+                .values()
+                .any(|one| one.chat.identity.id.as_deref() == Some(id))
+        });
         let started = match was {
+            // Reopened from its card already: it runs again, under another number.
+            Some(_) if open_again => Err(format!(
+                "purlis did not resume chat {session}: it is open again under another number."
+            )),
             None => Err(format!(
                 "purlis did not resume chat {session}: there is nothing to resume, as it is not \
                  a chat purlis ended here."
@@ -4383,6 +4424,9 @@ impl Chats {
         if started.is_ok() {
             lock(&self.let_go).remove(&session);
         }
+        if let Some(id) = &id {
+            self.unclaim_conversation(id);
+        }
         self.unclaim(session);
         started
     }
@@ -4391,7 +4435,8 @@ impl Chats {
     /// on its conversation, the same chat under its id in a new run and under a new number, as
     /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
     /// is open again, where nothing was kept, and where its harness named no conversation. Once
-    /// at a time: a second press while it starts is refused.
+    /// at a time, by its ULID: a second press while it starts is refused, and another chat that
+    /// had its number is not held back (#7145).
     ///
     /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
     pub fn reopen_closed(
@@ -4410,7 +4455,8 @@ impl Chats {
         })?;
         // Claimed before it is asked whether it is open, so a second press while the first
         // starts it is refused by the claim, and one after finds it open: never started twice.
-        self.claim(number)?;
+        // By its ULID (#7145): another closed chat, or a chat open now, may have its number.
+        self.claim_conversation(&record.id, record.number)?;
         let started = if lock(&self.open)
             .values()
             .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
@@ -4421,7 +4467,7 @@ impl Chats {
         } else {
             self.start_recorded_told(&again, size, Why::Relaunch, None, None)
         };
-        self.unclaim(number);
+        self.unclaim_conversation(&record.id);
         started
     }
 
