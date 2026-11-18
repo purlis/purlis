@@ -602,35 +602,23 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
     fresh[0].link_name()
 }
 
-/// **A runner chat's files are read on every kind of runner purlis pairs** (#6949): a Docker
-/// pool's runner, a cluster pool's own runner, and a chat's fresh runner on a cluster pool, each
-/// through its own runner's host, which holds the path to the chat's workspace there as #6387
-/// does. A name this machine keeps no runner under reaches none, and nor does a cluster pool's
-/// fresh runner that is not kept.
+/// **The window reads a runner chat's files on every kind of runner purlis pairs** (#6949): a
+/// Docker pool's runner (a draining one too, by its pool, as #6387 had it), a cluster pool's own
+/// runner, and a chat's fresh runner on a cluster pool. A name this machine keeps no runner under
+/// reads none, and nor does a cluster pool's fresh runner that is not kept.
 #[cfg(unix)]
 #[test]
-fn a_runner_chats_files_are_read_on_a_docker_pool_a_cluster_pool_and_a_fresh_runner() {
-    use super::RunnerKind;
+fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_no_other() {
     let config = tempfile::tempdir().unwrap();
     let fresh = every_kind_of_runner_kept(config.path());
 
-    assert_eq!(
-        super::kind_reached(config.path(), "builds"),
-        Some(RunnerKind::DockerPool)
-    );
-    assert_eq!(
-        super::kind_reached(config.path(), "builds/builds-01234567"),
-        Some(RunnerKind::DockerPool),
+    assert!(super::reads_files_on(config.path(), "builds"));
+    assert!(
+        super::reads_files_on(config.path(), "builds/builds-01234567"),
         "a Docker pool's runner draining beside its new one"
     );
-    assert_eq!(
-        super::kind_reached(config.path(), "team"),
-        Some(RunnerKind::ClusterPool)
-    );
-    assert_eq!(
-        super::kind_reached(config.path(), &fresh),
-        Some(RunnerKind::FreshRunner)
-    );
-    assert_eq!(super::kind_reached(config.path(), "team/fresh-0000"), None);
-    assert_eq!(super::kind_reached(config.path(), "nowhere"), None);
+    assert!(super::reads_files_on(config.path(), "team"));
+    assert!(super::reads_files_on(config.path(), &fresh));
+    assert!(!super::reads_files_on(config.path(), "team/fresh-0000"));
+    assert!(!super::reads_files_on(config.path(), "nowhere"));
 }

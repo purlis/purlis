@@ -729,7 +729,7 @@ impl Connection {
 
     /// **The runner this connection's links reach, by the name the window keeps for it**:
     /// `<pool>`, or `<pool>/<runner>` for a draining runner and a chat's fresh runner.
-    pub(crate) fn reaches(&self) -> Option<&str> {
+    pub(crate) fn link_name(&self) -> Option<&str> {
         self.to_a_pool.as_ref().map(|(_, named)| named.as_str())
     }
 
@@ -4798,16 +4798,17 @@ impl HostedSessions {
         })
     }
 
-    /// **The kind of runner this project's chats run on, where the window reads their files
-    /// there** (#6387, #6949): [`crate::runnerfiles::kind_reached`] of the runner this
-    /// connection's links reach.
-    fn runner_kind(&self) -> Option<crate::runnerfiles::RunnerKind> {
-        let (Some(named), Some(config)) =
-            (self.connection.reaches(), self.connection.runners_config())
-        else {
-            return None;
+    /// **Whether the window reads this project's chats' files on the runner they run on**
+    /// (#6387, #6949): [`crate::runnerfiles::reads_files_on`] the runner this connection's links
+    /// reach.
+    fn reads_files_on_its_runner(&self) -> bool {
+        let (Some(named), Some(config)) = (
+            self.connection.link_name(),
+            self.connection.runners_config(),
+        ) else {
+            return false;
         };
-        crate::runnerfiles::kind_reached(&config, named)
+        crate::runnerfiles::reads_files_on(&config, named)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5476,7 +5477,7 @@ impl SessionHost for HostedSessions {
     /// Only of a link already open, to a runner of a kind the window reads files on, of 1.93 or
     /// later (#6387, #6949): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        if !self.kept_on_the_runner || self.runner_kind().is_none() {
+        if !self.kept_on_the_runner || !self.reads_files_on_its_runner() {
             return None;
         }
         let link = self.own_link(Duration::ZERO).ok()?;
