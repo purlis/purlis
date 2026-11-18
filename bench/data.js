@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795005703814,
+  "lastUpdate": 1795020618681,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51282,6 +51282,48 @@ window.BENCHMARK_DATA = {
             "value": 100.488899,
             "unit": "ms",
             "extra": "median of 5 runs: 99.351, 99.559, 100.489, 101.729, 102.865 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "25f1c2069515edaa73242409d4b91ff769859f4b",
+          "message": "Dead Bash guard start read: the chat's own HOME and config dir; inline settings that silence guards (#7165) (#7168)\n\n* The Bash guard's start reads the profile's own rules; unreadable inline --settings are refused (#7155)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7PSN17AAEGK22Q6F3FA2B4B\nPurlis-Persona: steward\n\n* Changelog fragment for #7155\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7PSN17AAEGK22Q6F3FA2B4B\nPurlis-Persona: steward\n\n* The dead Bash guard's start reads the chat's own HOME and config dir; inline --settings that allow all of Bash or silence hooks are refused (#7165)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Q7H1EW3WS87B1Q9WCW0ME1\nPurlis-Persona: steward\n\n* Changelog fragment for #7165\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Q7H1EW3WS87B1Q9WCW0ME1\nPurlis-Persona: steward\n\n* Round 2 of #7168: purlis's own armed settings keep their hooks; refusal wording true for hooks; more guard keys; broad Bash allow read without case or whitespace (#7165)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Q9RYWY5K0DF56ZN9KBHTXT\nPurlis-Persona: steward\n\n* Changelog fragment for #7168 round 2\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Q9RYWY5K0DF56ZN9KBHTXT\nPurlis-Persona: steward\n\n* Name the env prefixes through purlis_core::names (the old-name guard); #7168 round 2\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Q9RYWY5K0DF56ZN9KBHTXT\nPurlis-Persona: steward\n\n* Inline sandbox settings that auto-allow Bash are written false, never removed; --safe-mode is GuardsOff; the notice names every finding (#7165 round 3)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QJENN25PKTVR4VJXSVB5MZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T16:02:05Z",
+          "tree_id": "ffe0af39c1b5fc44aed0d2531787120b495c94f8",
+          "url": "https://github.com/purlis/purlis/commit/25f1c2069515edaa73242409d4b91ff769859f4b"
+        },
+        "date": 1795020611805,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.554874,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.546, 0.555, 0.559, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.252703,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.085, 16.242, 16.253, 16.282, 16.503 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.614691,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.760, 100.606, 101.615, 101.914, 103.711 ms"
           }
         ]
       }
