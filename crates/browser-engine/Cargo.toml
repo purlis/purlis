@@ -21,6 +21,8 @@ thiserror.workspace = true
 # purlis's one rule for a character a reader does not see (#2020): a download's name is made
 # plain by it. A crate of the workspace's own, so the tree gains none.
 purlis-unicode.workspace = true
+# The one step timer (#7182): a start's lines are written by one guard, not two copies of it.
+purlis-session-protocol.workspace = true
 # The archive's digest, checked against the pin before a byte of it is unpacked.
 sha2 = "0.11"
 # An engine manifest that did not ship inside this build is taken only with a Sigstore bundle

@@ -6387,6 +6387,7 @@ dependencies = [
  "png",
  "psl",
  "purlis-same-user",
+ "purlis-session-protocol",
  "purlis-unicode",
  "ring",
  "serde",

@@ -648,9 +648,13 @@ impl Engines {
         fetch: &dyn Fetch,
         now: Timestamp,
     ) -> Result<Ready, Refused> {
-        let _step = crate::steps::begin("browser_engine_prepare");
         if let EngineChoice::Machine(path) = &settings.engine {
+            // The person's own Chrome is only looked for: nothing is prepared, so a found one
+            // writes no line, and one that is not there is a step refused.
             if !path.is_file() {
+                drop(purlis_session_protocol::steps::begin(
+                    "browser_engine_prepare",
+                ));
                 return Err(Refused::MachineChrome(path.clone()));
             }
             return Ok(Ready {
@@ -665,6 +669,8 @@ impl Engines {
                     .to_owned(),
             ));
         }
+        // Every way out below but the last is a refusal, which the guard says by default.
+        let step = purlis_session_protocol::steps::begin("browser_engine_prepare");
         let manifest = self.trusted();
         let age = age(&manifest, settings, now);
         if let Age::Behind { days } = age
@@ -673,7 +679,8 @@ impl Engines {
         {
             return Err(Refused::Outdated { days });
         }
-        let program = self.install(&manifest, fetch)?;
+        let program = self.install(&manifest, fetch, "browser_engine_prepare")?;
+        step.done();
         Ok(Ready {
             program,
             version: Some(manifest.version.clone()),
@@ -701,7 +708,7 @@ impl Engines {
                 version: update.version,
             });
         }
-        let program = self.install(&update, fetch)?;
+        let program = self.install(&update, fetch, "browser_engine_update")?;
         let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
         // Asked again: another update may have been kept while this one downloaded.
         if !self.takes(&update) {
@@ -776,7 +783,12 @@ impl Engines {
     }
 
     /// The pinned engine's executable, downloaded, checked and unpacked when not installed.
-    fn install(&self, manifest: &Manifest, fetch: &dyn Fetch) -> Result<PathBuf, Refused> {
+    fn install(
+        &self,
+        manifest: &Manifest,
+        fetch: &dyn Fetch,
+        inside: &'static str,
+    ) -> Result<PathBuf, Refused> {
         let platform = self.platform;
         let download = manifest.download(platform).ok_or(Refused::NotPinned {
             platform: platform.name(),
@@ -790,7 +802,8 @@ impl Engines {
             return Ok(program);
         }
         // Only a download is timed: an engine already installed answers above.
-        let _step = crate::steps::begin("browser_engine_download");
+        // Inside the step that installs (a prepare's, or an update's), so a sum leaves it out.
+        let step = purlis_session_protocol::steps::begin("browser_engine_download").under(inside);
         private_dir(&self.root).map_err(Refused::Store)?;
         let archive = Scratch(self.root.join(scratch_name("download")));
         let got = save_hashing(fetch, &download.url, &archive.0)?;
@@ -838,6 +851,7 @@ impl Engines {
         let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
         if installed_digest(&home).as_deref() == Some(download.sha256.as_str()) && program.is_file()
         {
+            step.done();
             return Ok(program);
         }
         match fs::remove_dir_all(&home) {
@@ -846,6 +860,7 @@ impl Engines {
             Err(why) => return Err(Refused::Store(why)),
         }
         fs::rename(&unpacked.0, &home).map_err(Refused::Store)?;
+        step.done();
         Ok(program)
     }
 }
