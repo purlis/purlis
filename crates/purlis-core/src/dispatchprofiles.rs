@@ -796,4 +796,36 @@ mod tests {
             vec!["dispatch.profiles.../x is not a persona's name, so it lists nothing".to_owned()]
         );
     }
+
+    #[test]
+    fn a_command_that_can_switch_guards_off_or_cannot_be_read_is_refused_in_all_four_restarts() {
+        // Round 3: `GuardsOff` and `Unreadable` read in each of the four sentences, not only
+        // through `bypass_refusal`.
+        for (words, clause) in [
+            (
+                ["claude", "--safe-mode"],
+                "settings that can switch the permission prompts or purlis's guards off (--safe-mode)",
+            ),
+            (
+                ["claude", "--settings={not json"],
+                "cannot tell whether they switch the permission prompts or its guards off \
+                 (--settings (unreadable))",
+            ),
+        ] {
+            let command: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
+            for how in [
+                Again::Started,
+                Again::Reopened,
+                Again::Asked,
+                Again::ReopenedAsked,
+            ] {
+                let said = refusal_on(how, None, "work", Some(&command), None).expect("refused");
+                assert!(said.contains(clause), "{how:?}: {said}");
+                assert!(
+                    !said.contains("the permission prompts off ("),
+                    "{how:?}: {said}"
+                );
+            }
+        }
+    }
 }

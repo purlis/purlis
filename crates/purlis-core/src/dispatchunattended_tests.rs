@@ -915,14 +915,21 @@ fn inline_settings_that_move_a_guard_or_the_sandbox_gate_lose_only_those_keys() 
             r#"{"model":"x"}"#,
             "allowManagedHooksOnly",
         ),
+        // Round 3: the key is written `false`, never removed (removing it restores Claude Code's
+        // default, which is on), and an enabled sandbox with no key is the same finding.
         (
             r#"{"sandbox":{"autoAllowBashIfSandboxed":true,"enabled":true}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false,"enabled":true}}"#,
+            "sandbox.autoAllowBashIfSandboxed",
+        ),
+        (
             r#"{"sandbox":{"enabled":true}}"#,
+            r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
             "sandbox.autoAllowBashIfSandboxed",
         ),
         (
             r#"{"sandbox":{"autoAllowBashIfSandboxed":"yes"}}"#,
-            r#"{"sandbox":{}}"#,
+            r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
             "sandbox.autoAllowBashIfSandboxed",
         ),
         (
@@ -950,6 +957,10 @@ fn inline_settings_that_move_a_guard_or_the_sandbox_gate_lose_only_those_keys() 
     for value in [
         r#"{"env":{"FOO":"1"}}"#,
         r#"{"sandbox":{"autoAllowBashIfSandboxed":false}}"#,
+        r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":false}}"#,
+        // A sandbox this does not enable is not read as one that allows.
+        r#"{"sandbox":{"enabled":false}}"#,
+        r#"{"sandbox":{}}"#,
     ] {
         let command = words(&["claude", "--settings", value]);
         assert_eq!(bypass_in(&command), None, "{value}");
@@ -958,6 +969,11 @@ fn inline_settings_that_move_a_guard_or_the_sandbox_gate_lose_only_those_keys() 
     // `--safe-mode` is a flag of its own, and goes alone.
     let command = words(&["claude", "--safe-mode", "-v"]);
     assert_eq!(bypass_in(&command).as_deref(), Some("--safe-mode"));
+    // It narrows hooks, so it is a guard, not a prompt.
+    assert_eq!(
+        bypass_found(&command).map(|found| found.what),
+        Some(What::GuardsOff)
+    );
     assert_eq!(without_bypass(&command), words(&["claude", "-v"]));
 }
 

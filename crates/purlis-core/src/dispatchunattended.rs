@@ -356,6 +356,9 @@ pub fn as_the_policy_runs_for(
     .unwrap_or(Answer::Covered)
 }
 
+/// Claude Code's flag that narrows hooks to the managed ones.
+const SAFE_MODE_FLAG: &str = "--safe-mode";
+
 /// The words of a harness's command line that start it with its permission prompts off, as a
 /// profile's command would carry them: Claude Code's and Codex's.
 const BYPASS_FLAGS: [&str; 5] = [
@@ -364,7 +367,7 @@ const BYPASS_FLAGS: [&str; 5] = [
     "--yolo",
     // Claude Code's flag that narrows hooks to the managed ones, as `disableAllHooks` does
     // ([`crate::footerclaim`]): purlis's guards are not managed.
-    "--safe-mode",
+    SAFE_MODE_FLAG,
     // Codex's low-friction mode: it runs what its own sandbox allows without asking first.
     "--full-auto",
 ];
@@ -399,7 +402,7 @@ fn is_inline(value: &str) -> bool {
 /// without regard to case or whitespace (`bash`, `Bash (*)`, a tab inside the parentheses): a
 /// spelling Claude Code reads as the same rule must not slip past, so this reads more as broad,
 /// never less.
-fn is_broad_bash_allow(rule: &str) -> bool {
+pub(crate) fn is_broad_bash_allow(rule: &str) -> bool {
     let rule: String = rule
         .chars()
         .filter(|c| !c.is_whitespace())
@@ -476,12 +479,20 @@ fn settings_without_bypass(value: &str) -> Option<Result<(String, Removed), ()>>
     if let Some(auto) = settings
         .get_mut("sandbox")
         .and_then(serde_json::Value::as_object_mut)
-        && auto
-            .get(AUTO_ALLOW_KEY)
-            .is_some_and(|on| on != &serde_json::Value::Bool(false))
     {
-        auto.remove(AUTO_ALLOW_KEY);
-        removed.push("sandbox.autoAllowBashIfSandboxed");
+        let off = serde_json::Value::Bool(false);
+        // Claude Code's documented default for the key is on
+        // (https://docs.claude.com/en/docs/claude-code/settings, "sandbox settings"; purlis's
+        // own `harness/claude.rs` and `sandbox/claude_wrap.rs` rely on it), so a key that is
+        // absent from an enabled sandbox is as much a finding as one set to true, and removing
+        // the key would restore the default. Fail closed: the key is written `false`.
+        let enabled = auto.get("enabled").is_some_and(|on| on != &off);
+        let allows = auto.get(AUTO_ALLOW_KEY).is_some_and(|on| on != &off)
+            || (enabled && !auto.contains_key(AUTO_ALLOW_KEY));
+        if allows {
+            auto.insert(AUTO_ALLOW_KEY.to_owned(), off);
+            removed.push("sandbox.autoAllowBashIfSandboxed");
+        }
     }
     if let Some(object) = settings.as_object_mut() {
         for key in GUARD_KEYS {
@@ -569,20 +580,40 @@ pub fn bypass_in(command: &[String]) -> Option<String> {
 
 /// [`bypass_in`], with what the words do ([`What`]).
 pub fn bypass_found(command: &[String]) -> Option<Found> {
-    bypass_found_beside(command, &[])
+    bypass_all_beside(command, &[]).into_iter().next()
+}
+
+/// Every finding of [`bypass_found`], in the order of the words: what a notice names whole.
+pub fn bypass_all(command: &[String]) -> Vec<Found> {
+    bypass_all_beside(command, &[])
 }
 
 /// [`bypass_found`] on a line that holds settings purlis wrote itself: `own` are those words,
 /// exactly as armed ([`crate::sandbox::Words::armed`]), and a `--settings` whose value is one
 /// of them is purlis's own hooks and guards, never read as a profile's. **Only an exact word
 /// is exempt**, so a profile's settings that merely look like purlis's are read as any other.
+/// No start uses this: it is for tests that arm settings.
+#[cfg(test)]
 pub fn bypass_found_beside(command: &[String], own: &[String]) -> Option<Found> {
-    (0..command.len()).find_map(|at| {
-        bypass_at(command, at, own).map(|bypass| Found {
-            flag: bypass.shown,
-            what: bypass.what,
-        })
-    })
+    bypass_all_beside(command, own).into_iter().next()
+}
+
+fn bypass_all_beside(command: &[String], own: &[String]) -> Vec<Found> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < command.len() {
+        match bypass_at(command, at, own) {
+            Some(bypass) => {
+                at += bypass.words;
+                found.push(Found {
+                    flag: bypass.shown,
+                    what: bypass.what,
+                });
+            }
+            None => at += 1,
+        }
+    }
+    found
 }
 
 /// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
@@ -591,12 +622,18 @@ pub fn bypass_found_beside(command: &[String], own: &[String]) -> Option<Found> 
 /// goes with it where it is the next word; inline `--settings` keep every key but the
 /// permission mode.
 pub fn without_bypass(command: &[String]) -> Vec<String> {
-    without_bypass_beside(command, &[])
+    without_bypass_with(command, &[])
 }
 
 /// [`without_bypass`] on a line that holds settings purlis wrote itself ([`bypass_found_beside`]):
 /// those words are kept whole, hooks and all.
+/// No start uses this: it is for tests that arm settings.
+#[cfg(test)]
 pub fn without_bypass_beside(command: &[String], own: &[String]) -> Vec<String> {
+    without_bypass_with(command, own)
+}
+
+fn without_bypass_with(command: &[String], own: &[String]) -> Vec<String> {
     let mut kept = Vec::with_capacity(command.len());
     let mut at = 0;
     while at < command.len() {
@@ -636,7 +673,12 @@ fn bypass_at(command: &[String], at: usize, own: &[String]) -> Option<Bypass> {
             shown: word.clone(),
             words: 1,
             kept: Vec::new(),
-            what: What::PromptsOff,
+            // `--safe-mode` narrows hooks, so purlis's guards: not the prompts.
+            what: if word == SAFE_MODE_FLAG {
+                What::GuardsOff
+            } else {
+                What::PromptsOff
+            },
         });
     }
     if !is_flag(word) {

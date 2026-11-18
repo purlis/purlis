@@ -1122,6 +1122,34 @@ fn a_profile_command_that_turns_the_prompts_off_keeps_a_grade_from_running() {
     assert!(why.contains("pick another profile"), "{why}");
 }
 
+/// Round 3 of #7165: the grade's sentence says what the words do, whether they can silence
+/// purlis's guards or purlis cannot read them.
+#[test]
+fn a_profile_command_that_can_switch_guards_off_or_cannot_be_read_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    for (words, must) in [
+        (
+            vec!["--safe-mode"],
+            "settings that can switch the permission prompts or purlis's guards off (--safe-mode)",
+        ),
+        (
+            vec!["--settings", "{not json"],
+            "cannot tell whether they switch the permission prompts or its guards off (--settings (unreadable))",
+        ),
+    ] {
+        let why = adapter()
+            .grade_refused(&line(&words), &env)
+            .expect("refused");
+        assert!(why.contains(must), "{why}");
+        assert!(why.contains("pick another profile"), "{why}");
+    }
+}
+
 /// SK-16, #3352: a `--permission-mode` in the profile's command outranks the mode a grade's chat
 /// pins, so any mode but the two that ask keeps a grade from running, in each spelling the
 /// bypass check reads, with the same sentence as the bypass flags.

@@ -9050,6 +9050,35 @@ fn own_check_kept(harness: Harness, level: &str, armed: &[String], env: &[(Strin
         assert_eq!(settings.len(), 1, "{cell}: one --settings");
     }
     for settings in &settings {
+        // **What purlis's own armed settings may hold** (#7165, round 3): the `--settings`
+        // exemption is whole, so this is what keeps a regression in them from passing.
+        let object = settings.as_object().expect("--settings is an object");
+        assert!(
+            object.get("hooks").is_some_and(|hooks| hooks.is_object()),
+            "{cell}: purlis's own hooks are present: {settings}"
+        );
+        for key in ["disableAllHooks", "allowManagedHooksOnly"] {
+            assert!(!object.contains_key(key), "{cell}: {key} in {settings}");
+        }
+        assert_ne!(
+            settings.pointer("/permissions/defaultMode"),
+            Some(&serde_json::json!("bypassPermissions")),
+            "{cell}: {settings}"
+        );
+        // `allow` holds purlis's own tools and commands; the one broad rule is the bare `Bash`
+        // the wrap allows where it holds the commands, never a spelling of it with a pattern.
+        for rule in settings
+            .pointer("/permissions/allow")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+        {
+            assert!(
+                rule == "Bash" || !crate::dispatchunattended::is_broad_bash_allow(rule),
+                "{cell}: allow {rule:?} in {settings}"
+            );
+        }
         // Claude Code's own checking mode, `"default"`, is the one tightening a level may set.
         let mode = settings.pointer("/permissions/defaultMode");
         assert!(
