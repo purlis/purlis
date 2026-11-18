@@ -155,12 +155,12 @@ fn a_chat_that_started_is_logged_as_having_claimed_its_branch() {
         host: "here".into(),
         log: "here".into(),
     };
-    let then = chrono::Utc::now() - chrono::Duration::days(3);
+    let then = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * 3);
 
     assert!(chatpiece::claim(&f.plane, &cut, &who, then).is_some());
 
     assert_eq!(
-        purlis_core::pieces::said(&f.plane, &f.ws, &f.repo, &cut.piece, chrono::Utc::now()),
+        purlis_core::pieces::said(&f.plane, &f.ws, &f.repo, &cut.piece, jiff::Timestamp::now()),
         "silent 3d",
         "claimed, and nothing declared since"
     );
@@ -330,8 +330,8 @@ fn chats_started_together_in_one_repo_each_get_a_branch() {
 /// Say the tree at `path` was cut `ago` before now, as a crash that long ago would leave it:
 /// both where the cut time is read (the first line of `branch`'s reflog) and where it falls
 /// back to (the tree's `.git` file).
-fn cut_ago(f: &support::Fixture, branch: &str, path: &std::path::Path, ago: chrono::Duration) {
-    let when = std::time::SystemTime::now() - ago.to_std().unwrap();
+fn cut_ago(f: &support::Fixture, branch: &str, path: &std::path::Path, ago: jiff::SignedDuration) {
+    let when = std::time::SystemTime::now() - std::time::Duration::try_from(ago).unwrap();
     written_at(path, when);
     let reflog = f.clone.join(".git/logs/refs/heads").join(branch);
     let text = std::fs::read_to_string(&reflog).unwrap();
@@ -339,7 +339,7 @@ fn cut_ago(f: &support::Fixture, branch: &str, path: &std::path::Path, ago: chro
     let (head, message) = first.split_once('\t').unwrap();
     assert!(message.starts_with("branch: Created from"), "{first}");
     let mut fields: Vec<&str> = head.rsplitn(3, ' ').collect();
-    let seconds = (chrono::Utc::now() - ago).timestamp().to_string();
+    let seconds = (jiff::Timestamp::now() - ago).as_second().to_string();
     fields[1] = &seconds;
     fields.reverse();
     std::fs::write(&reflog, format!("{}\t{message}\n{rest}", fields.join(" "))).unwrap();
@@ -357,7 +357,7 @@ fn written_at(path: &std::path::Path, when: std::time::SystemTime) {
 
 fn unclaimed(f: &support::Fixture) -> std::collections::BTreeMap<String, String> {
     let listed = worktree::list(&f.plane, &f.ws, &f.repo).unwrap();
-    purlis_core::pieces::unclaimed(&f.plane, &f.ws, &f.repo, &listed, chrono::Utc::now())
+    purlis_core::pieces::unclaimed(&f.plane, &f.ws, &f.repo, &listed, jiff::Timestamp::now())
 }
 
 #[test]
@@ -370,7 +370,12 @@ fn a_branch_cut_for_a_chat_that_never_started_is_shown_unclaimed_with_its_age() 
         chatpiece::cut(&f.plane, &f.ws, &f.repo, &Naming::After(None)).unwrap(),
     )
     .keep();
-    cut_ago(&f, &cut.branch, &cut.path, chrono::Duration::days(3));
+    cut_ago(
+        &f,
+        &cut.branch,
+        &cut.path,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
 
     assert_eq!(unclaimed(&f).get("chat-1").map(String::as_str), Some("3d"));
     // Showing it removed nothing.
@@ -383,7 +388,12 @@ fn a_branch_whose_chat_started_is_not_unclaimed() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let cut = chatpiece::cut(&f.plane, &f.ws, &f.repo, &Naming::After(None)).unwrap();
-    cut_ago(&f, &cut.branch, &cut.path, chrono::Duration::days(3));
+    cut_ago(
+        &f,
+        &cut.branch,
+        &cut.path,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
@@ -391,7 +401,7 @@ fn a_branch_whose_chat_started_is_not_unclaimed() {
         host: "here".into(),
         log: "here".into(),
     };
-    assert!(chatpiece::claim(&f.plane, &cut, &who, chrono::Utc::now()).is_some());
+    assert!(chatpiece::claim(&f.plane, &cut, &who, jiff::Timestamp::now()).is_some());
 
     assert!(unclaimed(&f).is_empty());
 }
@@ -401,7 +411,12 @@ fn a_claimed_branch_stays_claimed_after_git_worktree_repair_rewrites_its_tree() 
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let cut = chatpiece::cut(&f.plane, &f.ws, &f.repo, &Naming::After(None)).unwrap();
-    cut_ago(&f, &cut.branch, &cut.path, chrono::Duration::days(3));
+    cut_ago(
+        &f,
+        &cut.branch,
+        &cut.path,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
@@ -409,7 +424,8 @@ fn a_claimed_branch_stays_claimed_after_git_worktree_repair_rewrites_its_tree() 
         host: "here".into(),
         log: "here".into(),
     };
-    let claimed = chrono::Utc::now() - chrono::Duration::days(3) + chrono::Duration::minutes(1);
+    let claimed = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * 3)
+        + jiff::SignedDuration::from_mins(1);
     assert!(chatpiece::claim(&f.plane, &cut, &who, claimed).is_some());
     // The folder was moved back and repaired ten minutes ago, with no heartbeat since.
     support::git(&f.clone, &["worktree", "repair"]);
@@ -426,7 +442,12 @@ fn a_started_chat_whose_claim_could_not_be_logged_is_not_called_unclaimed() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let cut = chatpiece::cut(&f.plane, &f.ws, &f.repo, &Naming::After(None)).unwrap();
-    cut_ago(&f, &cut.branch, &cut.path, chrono::Duration::days(3));
+    cut_ago(
+        &f,
+        &cut.branch,
+        &cut.path,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
     // The piece log cannot be written: a file stands where its folder would be.
     let pieces = f.workspace().join("pieces");
     let _ = std::fs::remove_dir_all(&pieces);
@@ -440,7 +461,7 @@ fn a_started_chat_whose_claim_could_not_be_logged_is_not_called_unclaimed() {
     };
 
     assert!(
-        chatpiece::claim(&f.plane, &cut, &who, chrono::Utc::now()).is_none(),
+        chatpiece::claim(&f.plane, &cut, &who, jiff::Timestamp::now()).is_none(),
         "the log has nothing"
     );
     assert!(unclaimed(&f).is_empty(), "{:?}", unclaimed(&f));
@@ -455,8 +476,13 @@ fn a_claim_mark_from_an_earlier_branch_of_that_name_does_not_speak_for_this_one(
         chatpiece::cut(&f.plane, &f.ws, &f.repo, &Naming::After(None)).unwrap(),
     )
     .keep();
-    cut_ago(&f, &cut.branch, &cut.path, chrono::Duration::days(3));
-    let earlier = chrono::Utc::now() - chrono::Duration::days(5);
+    cut_ago(
+        &f,
+        &cut.branch,
+        &cut.path,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
+    let earlier = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * 5);
     assert!(purlis_core::pieces::mark_claimed(
         &f.plane,
         &f.ws,
@@ -487,7 +513,12 @@ fn a_branch_made_with_plain_git_is_never_called_unclaimed() {
             &by_hand.display().to_string(),
         ],
     );
-    cut_ago(&f, "mine", &by_hand, chrono::Duration::days(3));
+    cut_ago(
+        &f,
+        "mine",
+        &by_hand,
+        jiff::SignedDuration::from_hours(24 * 3),
+    );
 
     assert!(
         worktree::list(&f.plane, &f.ws, &f.repo)

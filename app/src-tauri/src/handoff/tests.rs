@@ -10917,7 +10917,7 @@ fn queued_by(held: &Held, chat: u32, what: purlis_core::dispatchqueue::Queued) -
     }
     let token = held.hooks().token_for(chat);
     // Queued now, as the command queues it: a dispatch started before it is one it can be on.
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     Some(purlis_core::dispatchqueue::queue(&socket, chat, &token, what, now).expect("queued"))
 }
 
@@ -15975,4 +15975,43 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
         enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty(),
         "nothing is written for an unidentified caller"
     );
+}
+
+/// #7073: the socket's [`Ask::PolicyLog`] reaches the checks: a line for the asking chat is kept
+/// in its own log and answered with its policy, and one the checks refuse is answered No and
+/// kept nowhere.
+#[test]
+fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
+    use purlis_core::enforcement;
+    use purlis_core::hookwire::PolicyLogAsk;
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let chat_id = held.chats().id_of(asking).expect("an open chat has an id");
+    let asked = |rule: &str| {
+        answer(
+            &held,
+            &id,
+            &Tickets::default(),
+            1,
+            Ask::PolicyLog(PolicyLogAsk {
+                chat: asking,
+                family: "guards.git".to_owned(),
+                rule: rule.to_owned(),
+                host: None,
+            }),
+            &nobody,
+        )
+    };
+
+    let kept = asked(purlis_core::toolgate::Arm::PlaneRootBranch.id());
+    assert!(matches!(kept, Answer::Policy { .. }), "{kept:?}");
+    let refused = asked("rm -rf /home/someone");
+    assert!(matches!(refused, Answer::No { .. }), "{refused:?}");
+    let logged = enforcement::read_log(&plane.root, &chat_id);
+    assert_eq!(logged.len(), 1, "{logged:?}");
+    assert!(enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty());
 }

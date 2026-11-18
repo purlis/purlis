@@ -273,3 +273,31 @@ async fn the_persons_step_through_history_reaches_the_browser_only_while_they_dr
         .expect("the step reaches the browser");
     assert_eq!(screen.shown().inputs, [back]);
 }
+
+#[tokio::test]
+async fn the_persons_pick_of_a_page_to_watch_reaches_the_browser_only_while_they_drive() {
+    // 1.91 (#6989): watching another page is the person's input, aimed and refused as a key is,
+    // so it is never sent for the agent.
+    let watch = Input::Watch {
+        aim: aim(1),
+        page: "p2".into(),
+    };
+    let hosted = hosted();
+    let (client, _views) = window(&hosted.hosting, hosted.project.path()).await;
+    let (program, screen) = a_browser(&client, &hosted.browsers).await;
+    screen.shown().document = 1;
+
+    let early = client
+        .browser_input(&program, watch.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(early.refusal().unwrap().code, session::NOT_DRIVING);
+    assert!(screen.shown().inputs.is_empty());
+
+    client.take_over(&program).await.unwrap();
+    client
+        .browser_input(&program, watch.clone())
+        .await
+        .expect("the pick reaches the browser");
+    assert_eq!(screen.shown().inputs, [watch]);
+}

@@ -164,7 +164,7 @@ pub struct InitArgs {
     /// When the first workspace's manifest records it was made — `None` is the wall clock.
     /// Only a run that adopts or clones writes one, which is why it is an option rather than
     /// a field every caller has to have an answer for.
-    pub now: Option<chrono::DateTime<chrono::Utc>>,
+    pub now: Option<jiff::Timestamp>,
     /// The front-door persona to scaffold, or `None` for `--no-front-door`.
     pub front_door: Option<String>,
 }
@@ -1889,7 +1889,7 @@ fn already_a_plane(root: &Path) -> bool {
 /// changes about `init` — what it OFFERS, and now what it can be asked to do. Nothing is ever
 /// cloned that was not asked for by name.
 fn first_clone_step(run: &mut Run, root: &Path, args: &InitArgs) -> u8 {
-    let now = args.now.unwrap_or_else(chrono::Utc::now);
+    let now = args.now.unwrap_or_else(jiff::Timestamp::now);
     if let Some(repo) = &args.adopt {
         return match adopted(root, repo) {
             Ok(source) => firstclone::into_first_workspace(run, root, &source, now),
@@ -2045,7 +2045,7 @@ mod tests;
 pub fn adopt_as_workspace(
     root: &Path,
     repo: &Path,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<(String, PathBuf), String> {
     let unread = |p: &Path, why: std::io::Error| {
         format!(

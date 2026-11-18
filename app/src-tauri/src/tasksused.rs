@@ -285,33 +285,27 @@ pub(crate) fn total(own: Option<Figure>, tasks: &[Figure]) -> Option<UsedTotal> 
 }
 
 /// A record's time as it keeps it, read.
-fn at(stamp: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    chrono::DateTime::parse_from_rfc3339(stamp)
-        .ok()
-        .map(|read| read.with_timezone(&chrono::Utc))
+fn at(stamp: &str) -> Option<jiff::Timestamp> {
+    str::parse::<jiff::Timestamp>(stamp).ok()
 }
 
 /// How long `record`'s task worked: to its end, or to `now` while it works.
-pub(crate) fn ran(record: &Record, now: chrono::DateTime<chrono::Utc>) -> Option<i64> {
+pub(crate) fn ran(record: &Record, now: jiff::Timestamp) -> Option<i64> {
     ran_between(&record.started, record.ended.as_deref(), now)
 }
 
 /// How long from `started` to `ended`, or to `now` where it has not ended.
-fn ran_between(
-    started: &str,
-    ended: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Option<i64> {
+fn ran_between(started: &str, ended: Option<&str>, now: jiff::Timestamp) -> Option<i64> {
     let started = at(started)?;
     let ended = match ended {
         Some(ended) => at(ended)?,
         None => now,
     };
-    Some((ended - started).num_seconds().max(0))
+    Some(ended.duration_since(started).as_secs().max(0))
 }
 
 /// A task that has ended: what its record kept, or not known where it could not be read.
-pub(crate) fn of_record(record: Option<&Record>, now: chrono::DateTime<chrono::Utc>) -> Figure {
+pub(crate) fn of_record(record: Option<&Record>, now: jiff::Timestamp) -> Figure {
     let Some(record) = record else {
         return Figure::default();
     };
@@ -384,7 +378,7 @@ pub(crate) fn read<C, R>(
     chats: &[u32],
     finished: &[String],
     known: &Known<'_, C, R>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> TasksUsed
 where
     C: Fn(u32) -> Option<String>,
@@ -517,7 +511,7 @@ fn of_held(
         chats,
         finished,
         &known,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -688,7 +682,7 @@ mod tests {
             &[2, 3],
             &["no-such-record".to_owned()],
             &known,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
 
         let line = |session: u32| {
@@ -733,7 +727,7 @@ mod tests {
             &[2],
             &[],
             &known,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
 
         assert_eq!(used.total, None);

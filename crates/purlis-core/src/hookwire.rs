@@ -280,7 +280,7 @@ impl Report {
                 {
                     crate::harness::claude::ownwork::read(
                         read.as_ref(),
-                        chrono::Local::now().naive_local(),
+                        jiff::Zoned::now().datetime(),
                     )
                 } else {
                     crate::ownwork::Said::default()
@@ -1036,6 +1036,49 @@ impl ChatTokens {
         }
     }
 
+    /// **The chat `senders` run inside, by their ancestry alone** (#6995): the one chat whose
+    /// recorded program every sender is, or runs inside ([`Seen::inside`]), with its token.
+    /// [`ChatOf::InNone`] only where every sender was read, every chat this app holds a token
+    /// for has its program recorded, and none of them is above the senders; anything short of
+    /// that is [`ChatOf::InDoubt`], never taken for no chat's.
+    pub fn chat_of(&self, senders: &[u32]) -> ChatOf {
+        if senders.is_empty() {
+            return ChatOf::InDoubt;
+        }
+        let Some(seen) = Seen::all(senders) else {
+            return ChatOf::InDoubt;
+        };
+        self.chat_by(&|program| seen.iter().all(|one| one.inside(program)))
+    }
+
+    /// [`Self::chat_of`], asking `inside` whether the senders run inside a chat's program.
+    pub(crate) fn chat_by(&self, inside: &dyn Fn(&Program) -> bool) -> ChatOf {
+        let roots: Vec<(u32, Program)> = self
+            .rooted()
+            .iter()
+            .map(|(chat, program)| (*chat, program.clone()))
+            .collect();
+        let held = self.held().clone();
+        let mut chats = roots
+            .iter()
+            .filter(|(_, program)| inside(program))
+            .map(|(chat, _)| *chat);
+        // A chat whose program is not recorded yet may be the one the senders run in.
+        let unrecorded = held
+            .keys()
+            .any(|chat| !roots.iter().any(|(it, _)| it == chat));
+        match (chats.next(), chats.next()) {
+            (Some(chat), None) => held
+                .get(&chat)
+                .cloned()
+                .map_or(ChatOf::InDoubt, |token| ChatOf::Named(chat, token)),
+            // Two chats' programs are above it: nothing names one chat.
+            (Some(_), Some(_)) => ChatOf::InDoubt,
+            (None, _) if unrecorded => ChatOf::InDoubt,
+            (None, _) => ChatOf::InNone,
+        }
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, ChatToken>> {
         self.held
             .lock()
@@ -1051,6 +1094,18 @@ fn worth_another_try(why: &std::io::Error) -> bool {
         why.kind(),
         std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::InvalidData
     )
+}
+
+/// Which chat a process runs in, by its ancestry ([`ChatTokens::chat_of`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatOf {
+    /// This one, with its token.
+    Named(u32, ChatToken),
+    /// None of this app's: every chat's program is recorded, and none is above it.
+    InNone,
+    /// It cannot be told: a sender could not be read, two chats' programs are above it, or a
+    /// chat's program is not recorded yet.
+    InDoubt,
 }
 
 /// A process as the channel sees it (D-1407-10): itself, the leader of its session and its
@@ -2806,6 +2861,10 @@ enum Line {
     Serve(serve::ServeAsk),
     /// After every other kind: it requires `harness_reason`, which none of them carries.
     Reason(HarnessReason),
+    /// After every other kind: it requires `whoami`, which none of them carries. Answered from
+    /// the asker's ancestry before any token is looked for (#6995, [`reach`]).
+    #[cfg(unix)]
+    WhoAmI(reach::WhoAmI),
 }
 
 impl Ask {
@@ -2862,6 +2921,9 @@ impl Line {
             Self::Frames(hello) => hello.chat,
             Self::Serve(ask) => ask.chat,
             Self::Reason(said) => said.chat,
+            // It names no chat: it asks which one.
+            #[cfg(unix)]
+            Self::WhoAmI(_) => 0,
         }
     }
 }
@@ -3393,13 +3455,13 @@ impl Output {
         }
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
         let session = read["session_id"].as_str().unwrap_or_default();
-        let local = chrono::Local::now();
+        let local = jiff::Zoned::now();
         // The conversation's task folder, looked for once for every piece (the hook's 50 ms).
         let tasks = std::cell::OnceCell::new();
         let pieces = crate::harness::claude::ownwork::pieces(
             Some(&read),
-            local.naive_local(),
-            local.timestamp(),
+            local.datetime(),
+            local.timestamp().as_second(),
             &|id| {
                 tasks
                     .get_or_init(|| crate::harness::claude::ownwork::tasks_folder(session, env))
@@ -4027,6 +4089,8 @@ pub mod alive;
 
 pub mod framed;
 
+#[cfg(unix)]
+pub mod reach;
 pub mod relay;
 
 pub mod serve;
@@ -4190,9 +4254,10 @@ impl Listener {
     }
 
     /// The same listener, serving at most `per_peer` connections from one process and
-    /// `at_most` from all at once. For the tests, whose every connection is one process's.
-    #[cfg(test)]
-    fn serving_at_most(mut self, per_peer: usize, at_most: usize) -> Self {
+    /// `at_most` from all at once. For the tests, whose every connection is one process's, and
+    /// for a test that plays an app whose every place is taken.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn serving_at_most(mut self, per_peer: usize, at_most: usize) -> Self {
         self.serves = (per_peer, at_most);
         self
     }
@@ -4731,6 +4796,30 @@ fn serve(
             refuse(&mut writer, UNKNOWN_LINE.to_owned());
             return;
         };
+        // Which chat the asker runs in is the app's to say, from its ancestry (#6995): answered
+        // before any token is looked for, since the asker may have none, and the connection
+        // then carries its ask.
+        if matches!(line, Line::WhoAmI(reach::WhoAmI { whoami: true })) {
+            let said = match tokens.chat_of(&senders_of(peer, &writer)) {
+                ChatOf::Named(chat, token) => serde_json::to_vec(&reach::YouAre {
+                    you_are: chat,
+                    token: token.0,
+                }),
+                ChatOf::InNone => serde_json::to_vec(&Answer::No {
+                    why: reach::IN_NO_CHAT.to_owned(),
+                }),
+                ChatOf::InDoubt => serde_json::to_vec(&Answer::No {
+                    why: reach::IN_DOUBT.to_owned(),
+                }),
+            };
+            if let Ok(mut said) = said {
+                said.push(b'\n');
+                if writer.write_all(&said).is_err() {
+                    return;
+                }
+            }
+            continue;
+        }
         // Every line is checked against the token of the chat it names, and one that does not
         // carry it ends the connection unread, said so and never acted on. The chat's number
         // is said in the app's log (#647); the token is not.
@@ -4849,6 +4938,9 @@ fn serve(
             Line::Doing(doing) => (hearing.doing)(doing),
             Line::Output(output) => (hearing.output)(output),
             Line::Reason(said) => (hearing.reason)(said),
+            // One that asks is answered above, before its token is looked for; one that does
+            // not names chat 0, whose token no line carries.
+            Line::WhoAmI(_) => {}
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -4937,15 +5029,7 @@ fn admission_of(
     peer: Option<u32>,
     connection: &std::os::unix::net::UnixStream,
 ) -> Admission {
-    let now = purlis_same_user::peer_process_of(connection)
-        .ok()
-        .map(|(_, pid)| pid);
-    // A connection handed on mid-line names its new holder on macOS.
-    let senders: Vec<u32> = match (peer, now) {
-        (Some(peer), Some(now)) if peer != now => vec![peer, now],
-        (Some(pid), _) | (None, Some(pid)) => vec![pid],
-        (None, None) => Vec::new(),
-    };
+    let senders = senders_of(peer, connection);
     tokens.admission_by(
         chat,
         token,
@@ -4954,6 +5038,21 @@ fn admission_of(
             Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
         },
     )
+}
+
+/// The processes a line on `connection` is judged by: the one that connected (`peer`) and the
+/// one the socket names now, where they differ. A connection handed on mid-line names its new
+/// holder on macOS.
+#[cfg(unix)]
+fn senders_of(peer: Option<u32>, connection: &std::os::unix::net::UnixStream) -> Vec<u32> {
+    let now = purlis_same_user::peer_process_of(connection)
+        .ok()
+        .map(|(_, pid)| pid);
+    match (peer, now) {
+        (Some(peer), Some(now)) if peer != now => vec![peer, now],
+        (Some(pid), _) | (None, Some(pid)) => vec![pid],
+        (None, None) => Vec::new(),
+    }
 }
 
 /// How long one framed ask may take to arrive, from when it begins to be read: an ask is at
@@ -5122,7 +5221,7 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
                 refused: Some(why.to_owned()),
             })
         }
-        Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
+        Line::Ask(_) | Line::Frames(_) | Line::WhoAmI(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),
         Line::Permission(_) => serde_json::to_vec(&permission::Chosen { chosen: None }),

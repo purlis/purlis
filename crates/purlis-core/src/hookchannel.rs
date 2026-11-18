@@ -413,7 +413,8 @@ impl KeptBoard {
         Box::new(move |id, heard| {
             let told = serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line));
             if !told {
-                kept.board().hear_at(heard, chrono::Utc::now().timestamp());
+                kept.board()
+                    .hear_at(heard, jiff::Timestamp::now().as_second());
             }
             told
         })
@@ -478,7 +479,8 @@ impl KeptBoard {
     /// A line handed on whose window went before it replied (#2006): heard here, as one no
     /// window took is.
     fn unheard(&self, heard: &crate::hookwire::relay::Heard) {
-        self.board().hear_at(heard, chrono::Utc::now().timestamp());
+        self.board()
+            .hear_at(heard, jiff::Timestamp::now().as_second());
     }
 
     /// Chat `number`'s program ended, `exit`, with no window there to say so.

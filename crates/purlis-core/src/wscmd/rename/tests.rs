@@ -83,9 +83,9 @@ fn a_plane() -> Plane {
         let ws = plane.workspace(name).unwrap();
         ws.scaffold_charter().unwrap();
         ws.scaffold_memory().unwrap();
-        ws.add_todo("finish it", chrono::NaiveDateTime::default())
+        ws.add_todo("finish it", jiff::civil::date(1970, 1, 1).at(0, 0, 0, 0))
             .unwrap();
-        ws.scaffold_manifest(chrono::Utc::now(), "t").unwrap();
+        ws.scaffold_manifest(jiff::Timestamp::now(), "t").unwrap();
     }
     std::fs::write(root.join("workspaces/.default"), "alpha\n").unwrap();
     crate::wscmd::set_live(&root, "alpha", true).unwrap();
@@ -1028,7 +1028,7 @@ fn a_plane_with_a_chat_on_a_todo() -> (Plane, crate::work::TrackerKey, &'static 
     let written = crate::workspaces::Plane::open(&root)
         .workspace("alpha")
         .unwrap()
-        .add_todo("finish it", chrono::NaiveDateTime::default())
+        .add_todo("finish it", jiff::civil::date(1970, 1, 1).at(0, 0, 0, 0))
         .unwrap();
     let stem = written.file_stem().unwrap().to_str().unwrap();
     let todo = crate::work::TrackerKey::todo("alpha", stem).unwrap();
@@ -1037,7 +1037,7 @@ fn a_plane_with_a_chat_on_a_todo() -> (Plane, crate::work::TrackerKey, &'static 
         &root,
         crate::work::log::Place::Workspace("alpha"),
         &device,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         todo.clone(),
         CHAT,
     )

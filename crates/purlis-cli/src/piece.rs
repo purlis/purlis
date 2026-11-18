@@ -179,7 +179,7 @@ pub enum WorktreeCommand {
 
 pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
     let root = here.plane.root().to_path_buf();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch
     // folder it holds, and another chat's lets nothing go.
     let who = Who::here(
@@ -336,19 +336,27 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             // In a chat the app started, the app removes it where nothing would be lost
             // (#3879), as it commits and updates for the chat.
             if let Ok(ws) = &ws {
-                let asked = crate::gitask::told(
-                    crate::gitask::forwarded(
-                        ws,
-                        GitWork::WorktreeRemove {
-                            repo: repo.clone(),
-                            piece: piece.clone(),
-                            delete_branch,
-                        },
-                        crate::gitask::A_WORKTREE_TAKES_AT_MOST,
-                    ),
-                    &mut say,
+                let forwarded = crate::gitask::forwarded(
+                    ws,
+                    GitWork::WorktreeRemove {
+                        repo: repo.clone(),
+                        piece: piece.clone(),
+                        delete_branch,
+                    },
+                    crate::gitask::A_WORKTREE_TAKES_AT_MOST,
                 );
-                if let Some(code) = asked {
+                // No app answered for this chat (#6995): refused all the same, and where the
+                // sandbox holds the removal, with the sentence that names the way round.
+                let no_app = matches!(&forwarded, crate::gitask::Forwarded::Refused(why)
+                    if why.starts_with(purlis_core::hookwire::reach::NO_APP_ANSWERED));
+                let target = purlis_core::worktree::path_for(&root, ws, &repo, &piece).ok();
+                if no_app && crate::brokered::removal_held(&root, target.as_deref()) {
+                    say(purlis_core::repocmd::Say::Fail(
+                        crate::brokered::no_piece_removal_in_a_sandbox(&repo, &piece).into(),
+                    ));
+                    return Ok(1);
+                }
+                if let Some(code) = crate::gitask::told(forwarded, &mut say) {
                     return Ok(code);
                 }
             }
@@ -420,7 +428,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             // In a chat the app started, the app prunes, by the route its removal takes (ADR
             // 0110): never forced, each folder held to its claim against the chats it has.
             // Its wait is on a silence: the app says it is alive as it reads each folder.
-            let since = chrono::Utc::now();
+            let since = jiff::Timestamp::now();
             let forwarded = match crate::gitask::forwarded(
                 &ws,
                 GitWork::WorktreePrune {
@@ -720,7 +728,7 @@ fn no_app_to_tell(
     if crate::session::chat_number().is_none() {
         return Ok(());
     }
-    purlis_core::piececlaim::take(root, at, who, None, act, chrono::Utc::now())
+    purlis_core::piececlaim::take(root, at, who, None, act, jiff::Timestamp::now())
 }
 
 /// The piece `at` names, in the project at `root`.

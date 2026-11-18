@@ -55,8 +55,8 @@ fn done_title_of(ws: &Workspace, slug: &str) -> String {
 const WRITING: &str = "writing the todo";
 
 /// Now, as the store stamps a file it writes.
-fn now() -> chrono::NaiveDateTime {
-    chrono::Local::now().naive_local()
+fn now() -> jiff::civil::DateTime {
+    jiff::Zoned::now().datetime()
 }
 
 /// One open todo, for its view tab (#1214): the workspace it is in, its slug, and what its file
@@ -131,7 +131,7 @@ fn add_in(
     root: &Path,
     name: &str,
     text: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<String, String> {
     let ws = workspace(root, name)?;
     ws.record_todo(text.trim(), stamp)
@@ -165,7 +165,7 @@ fn done_in(
     root: &Path,
     name: &str,
     slug: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> Result<String, String> {
     let ws = workspace(root, name)?;
     let title = title_of(&ws, slug);
@@ -264,7 +264,7 @@ fn forget_in(root: &Path, name: &str, slug: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    fn at() -> chrono::NaiveDateTime {
+    fn at() -> jiff::civil::DateTime {
         "2026-05-04T11:32:17".parse().unwrap()
     }
 

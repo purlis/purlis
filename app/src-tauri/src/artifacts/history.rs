@@ -113,8 +113,9 @@ pub struct ArtifactCompared {
 
 /// A time in seconds since 1970, as the window shows it.
 fn said_at(at: i64) -> String {
-    chrono::DateTime::from_timestamp(at, 0)
-        .map(|at| at.format("%Y-%m-%d %H:%M UTC").to_string())
+    jiff::Timestamp::from_second(at)
+        .ok()
+        .map(|at| at.strftime("%Y-%m-%d %H:%M UTC").to_string())
         .unwrap_or_default()
 }
 
@@ -300,7 +301,7 @@ pub(super) fn read_then(
     as_of: &AsOf,
     declared: Option<&artifact::data::Declared>,
     name: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> purlis_core::catalogue::Answer {
     use purlis_core::catalogue::{Answer, ErrorKind};
     match &as_of.data {
@@ -329,7 +330,7 @@ pub(crate) fn keep_after_regenerate(
         folder,
         real,
         declared,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         tracing::warn!("purlis: the data Regenerate wrote for '{folder}' was not kept ({why})");
     }
@@ -358,7 +359,7 @@ mod tests {
             &as_of,
             Some(&declared(&["data.json"])),
             "data.json",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         assert_eq!(answer.to_json()["data"], serde_json::json!({"open": 1}));
     }
@@ -367,7 +368,7 @@ mod tests {
     fn an_as_of_page_with_no_data_kept_reads_null_and_refuses_what_it_did_not_declare() {
         let as_of = AsOf { data: None };
         let declared = declared(&["data.json"]);
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let answer = read_then(&as_of, Some(&declared), "data.json", now);
         assert_eq!(answer.to_json()["data"], serde_json::Value::Null);
         let refused = read_then(&as_of, Some(&declared), "data/other.json", now);

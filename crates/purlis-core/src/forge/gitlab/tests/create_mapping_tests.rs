@@ -45,7 +45,7 @@ fn a_milestone_in_gitlabs_answer_is_mapped_with_its_id_and_due_day() {
         Some(Milestone {
             forge_ref: Some(ForgeRef("501".into())),
             title: "v1".into(),
-            due: chrono::NaiveDate::from_ymd_opt(2026, 10, 31),
+            due: crate::wallclock::day(2026, 10, 31),
         })
     );
 }

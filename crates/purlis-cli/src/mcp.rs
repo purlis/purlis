@@ -286,7 +286,7 @@ impl ServerHandler for Server {
                     &place,
                     &name,
                     &args,
-                    chrono::Local::now().naive_local(),
+                    jiff::Zoned::now().datetime(),
                 )
             })
             .await,
@@ -512,7 +512,7 @@ fn persona_remember(args: &serde_json::Map<String, serde_json::Value>) -> Result
                 &owner,
                 &text,
                 title.as_deref(),
-                chrono::Local::now().naive_local(),
+                jiff::Zoned::now().datetime(),
             )?;
             Ok(said(&crate::voice::rel(root, &path)))
         }

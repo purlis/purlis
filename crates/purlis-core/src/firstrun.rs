@@ -283,7 +283,8 @@ pub fn take_in_as(
     if let Some(template) = template {
         crate::template::check(root, template)?;
     }
-    let (workspace, clone) = crate::scaffold::adopt_as_workspace(root, repo, chrono::Utc::now())?;
+    let (workspace, clone) =
+        crate::scaffold::adopt_as_workspace(root, repo, jiff::Timestamp::now())?;
     if let Some(template) = template {
         crate::template::apply_checked(root, template, Some(&workspace))?;
     }

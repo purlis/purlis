@@ -210,7 +210,7 @@ pub fn keep_current(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<Result<Ready, Refused>> {
     if !engines.in_use() {
         return None;
@@ -224,7 +224,7 @@ fn update(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<Ready, Refused> {
     let (manifest, bundle) = Engines::published(manifests)?;
     engines.update(&manifest, &bundle, settings, archives, now)
@@ -308,7 +308,7 @@ fn check_here() {
         &EngineSettings::default(),
         &manifest_reads(),
         &archive_reads(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     if let Some(checked) = checked {
         report(&checked);
@@ -419,7 +419,7 @@ impl Browsers for EngineBrowsers {
             engines_clock(
                 cfg!(debug_assertions),
                 crate::envvar::var(ENGINES_CLOCK_VAR).as_deref(),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             ),
         )
         .map_err(|refused| download_failed_said(&refused))?;
@@ -528,7 +528,7 @@ fn prepared(
     settings: &EngineSettings,
     manifests: &dyn Fetch,
     archives: &dyn Fetch,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<Ready, Refused> {
     let first = engines.prepare(settings, archives, now);
     let behind = match &first {
@@ -551,22 +551,18 @@ pub const ENGINES_CLOCK_VAR: &str = "PURLIS_TEST_ENGINE_NOW";
 
 /// When the manifest this build ships was issued: the time a test's host names in
 /// [`ENGINES_CLOCK_VAR`], so a refreshed pin needs no test changed.
-pub fn when_the_pin_was_issued() -> chrono::DateTime<chrono::Utc> {
+pub fn when_the_pin_was_issued() -> jiff::Timestamp {
     Manifest::shipped().issued
 }
 
 /// The time an engine's age is judged by: `real`, unless this is a debug build and `asked` is a
 /// time. Handed its facts rather than reading `cfg!` itself, so the rule is testable in both
 /// directions from one build.
-fn engines_clock(
-    debug_build: bool,
-    asked: Option<&str>,
-    real: chrono::DateTime<chrono::Utc>,
-) -> chrono::DateTime<chrono::Utc> {
+fn engines_clock(debug_build: bool, asked: Option<&str>, real: jiff::Timestamp) -> jiff::Timestamp {
     asked
         .filter(|_| debug_build)
-        .and_then(|asked| chrono::DateTime::parse_from_rfc3339(asked).ok())
-        .map_or(real, |asked| asked.to_utc())
+        .and_then(|asked| str::parse::<jiff::Timestamp>(asked).ok())
+        .unwrap_or(real)
 }
 
 /// A fresh id for a browser a window starts (#2207): the window names it, so it knows which
@@ -1052,11 +1048,15 @@ pub fn input_of(input: &wire::Input) -> drive::PersonInput {
                 wire::Step::Stop => drive::Step::Stop,
             },
         },
+        wire::Input::Watch { aim, page } => drive::PersonInput::Watch {
+            aim: aim_at(aim),
+            page: drive::PageId::new(page.clone()),
+        },
     }
 }
 
 /// **What a page is, in the protocol's words** (#6938): its address, title and load, as the
-/// engine told them with a frame.
+/// engine told them with a frame, and the browser's pages (#6989) and downloads (#6990).
 pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
     wire::PageShown {
         address: painted.address.clone(),
@@ -1067,6 +1067,32 @@ pub fn page_of(painted: &drive::Painted) -> wire::PageShown {
             drive::PageLoad::Failed(why) => wire::PageLoad::Failed { why: why.clone() },
             drive::PageLoad::Crashed => wire::PageLoad::Crashed,
         },
+        // The browser's pages, as `browser_pages` lists them (#6989).
+        pages: painted
+            .pages
+            .iter()
+            .map(|page| wire::ListedPage {
+                id: page.id.as_str().to_owned(),
+                title: page.title.clone(),
+                origin: page.origin.clone().unwrap_or_default(),
+                current: page.current,
+            })
+            .collect(),
+        // Its downloads, as `browser_downloads` names them (#6990): never their file or origin.
+        downloads: painted
+            .downloads
+            .iter()
+            .map(|one| {
+                let said = download_said(one.clone());
+                wire::DownloadShown {
+                    id: said.download,
+                    name: said.name,
+                    state: said.state,
+                    received: said.bytes,
+                    total: said.total,
+                }
+            })
+            .collect(),
     }
 }
 

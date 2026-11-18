@@ -4,7 +4,8 @@
 /**
  * **You › This machine › Pools, and Add a pool** (#2679; the person's ruling of 2026-10-30): the
  * group with no pool yet, saying what a pool is, with Add a pool…; the group with a pool; a pool
- * whose runner was removed outside purlis (#4149); one whose older runners are kept unchecked; and the
+ * whose runner was removed outside purlis (#4149); one whose older runners are kept unchecked; one on
+ * another machine that didn't answer its Remove, offering Forget it here; and the
  * Add a pool dialog with its Image box showing the runner image it is offered.
  * Each is drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
@@ -13,8 +14,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AddDockerPoolHost } from "../AddDockerPool";
-import type { PoolLink, PoolProfileRow, PoolRow, PoolsShown, PoolVersion } from "../bindings";
-import { askProfiles, startAddingAPool, stopAddingAPool } from "../pools";
+import type {
+  PoolLink,
+  PoolProfileRow,
+  PoolRemoval,
+  PoolRow,
+  PoolsShown,
+  PoolVersion,
+} from "../bindings";
+import { askProfiles, dismissUnreachable, startAddingAPool, stopAddingAPool } from "../pools";
 import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
 import type { LiveSetting } from "./groups";
@@ -61,15 +69,17 @@ const SIGNED_IN: PoolProfileRow[] = [
 ];
 
 /** The core, faked: this machine keeps `pools`, whose runner answers `link`, says `version` and
- *  keeps `profiles`, and its release names {@link IMAGE}. */
+ *  keeps `profiles`, a Remove comes to `removal`, and its release names {@link IMAGE}. */
 function theCore(
   pools: PoolRow[],
   link: PoolLink = { state: "linked" },
   version: PoolVersion = LEVEL,
   profiles: PoolProfileRow[] = SIGNED_IN,
+  removal: PoolRemoval = { state: "removed", left: null },
 ) {
   mockIPC(
     (cmd) => {
+      if (cmd === "remove_docker_pool") return removal;
       if (cmd === "docker_pools")
         return {
           pools,
@@ -128,6 +138,7 @@ const meta = {
       parameters.link as PoolLink | undefined,
       parameters.version as PoolVersion | undefined,
       parameters.profiles as PoolProfileRow[] | undefined,
+      parameters.removal as PoolRemoval | undefined,
     );
     // The window's pools are held once for every story drawn in this page: a pool of the same
     // name another story's faked core answered for is asked again here, so its profiles' line is
@@ -135,6 +146,7 @@ const meta = {
     await askProfiles("builds");
     return () => {
       stopAddingAPool();
+      dismissUnreachable(ON_LAB.name);
       clearMocks();
     };
   },
@@ -355,6 +367,51 @@ export const RunnerOnAnotherEngine: Story = {
     await within(group).findByText("on another Docker engine");
     await within(group).findByText(/Point Docker back at that engine/);
     await expect(within(group).queryByRole("button", { name: "Make the runner again" })).toBeNull();
+    await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
+      timeout: 5000,
+    });
+  },
+};
+
+/** A pool on another machine, `lab`, over SSH, marked as the person's own. */
+const ON_LAB: PoolRow = {
+  ...BUILDS,
+  name: "remote",
+  machine: "lab",
+  owned: true,
+  over: "ssh",
+  pin: '{"engine":"ABCD","hostKey":"ssh-ed25519 AAAA"}',
+};
+
+const LAB_SILENT =
+  "lab didn't answer on port 22. Check that it's on and on this network, and connect your VPN if you use one.";
+
+/**
+ * **A pool whose machine didn't answer its Remove**: nothing was removed, and its row's Notice
+ * says what stays on that machine if it is forgotten here, with Forget it here and Dismiss, and
+ * Forget it here takes the keyboard's focus in sight.
+ */
+export const MachineDoesNotAnswer: Story = {
+  parameters: {
+    pools: [ON_LAB],
+    link: { state: "down", why: LAB_SILENT },
+    removal: { state: "unreachable", why: LAB_SILENT, host: "lab" },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool remote" }));
+    const asked = await within(document.body).findByRole("alertdialog", {
+      name: "Remove pool remote?",
+    });
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    const forget = await within(group).findByRole("button", { name: "Forget it here" });
+    await within(group).findByText(/lab still lists this machine as the runner.s peer/);
+    forget.focus();
+    await untilFocused(() => forget, "Forget it here takes the focus");
+    expectFocusInSight();
     await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
       timeout: 5000,
     });

@@ -6,15 +6,13 @@
 //! `tests/fixtures/recorded/behaviour.jsonl`). The notes about dispatches are purlis's own
 //! since a persona stopped being a sub-agent (#1451).
 
-use chrono::NaiveDate;
-
 use super::*;
 use crate::personaverbs::tests_plane::{Heard, OPS, OPS_LITE, OPS_MCP, Plane, SOLO, VAULTS};
 
 /// The day the recorded rows' planes are read on: every memory in them is from March 2026,
 /// so none is within 14 days of it.
-fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 9, 24).unwrap()
+fn today() -> Date {
+    crate::wallclock::day(2026, 9, 24).unwrap()
 }
 
 fn run(plane: &Plane, name: Option<&str>, recent_days: i64) -> (u8, Heard) {
@@ -463,7 +461,9 @@ fn every_status_has_its_own_glyph_and_an_unknown_one_a_dot() {
 
 #[test]
 fn an_offset_of_hours_minutes_or_seconds_moves_the_instant_and_not_the_printed_date() {
-    let at = |raw: &str| ts(&serde_json::json!({ "ts": raw })).map(|(utc, _)| utc.to_string());
+    let at = |raw: &str| {
+        ts(&serde_json::json!({ "ts": raw })).map(|(utc, _)| crate::oldspelling::date_and_time(utc))
+    };
     assert_eq!(
         at("2026-03-02T10:00:00+02").as_deref(),
         Some("2026-03-02 08:00:00")
@@ -488,13 +488,15 @@ fn an_offset_of_hours_minutes_or_seconds_moves_the_instant_and_not_the_printed_d
     assert_eq!(at("2026-03-02T10:00:00+020"), None);
     assert_eq!(
         ts(&serde_json::json!({ "ts": "2026-03-01T23:30:00+02:03:04" })).map(|(_, d)| d),
-        NaiveDate::from_ymd_opt(2026, 3, 1)
+        crate::wallclock::day(2026, 3, 1)
     );
 }
 
 #[test]
 fn an_hour_alone_is_two_digits_as_fromisoformat_requires() {
-    let at = |raw: &str| ts(&serde_json::json!({ "ts": raw })).map(|(utc, _)| utc.to_string());
+    let at = |raw: &str| {
+        ts(&serde_json::json!({ "ts": raw })).map(|(utc, _)| crate::oldspelling::date_and_time(utc))
+    };
     assert_eq!(at("2026-03-04T10").as_deref(), Some("2026-03-04 10:00:00"));
     assert_eq!(at("2026-03-04 10").as_deref(), Some("2026-03-04 10:00:00"));
     assert_eq!(at("2026-03-04T1"), None);
@@ -517,7 +519,7 @@ fn a_recorded_dispatch(plane: &Plane, persona: &str, mode: crate::dispatchrecord
             brief: "a brief".to_owned(),
             report_owed: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a record");
 }

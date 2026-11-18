@@ -1170,7 +1170,7 @@ pub(in crate::skills) fn after_edit_follows(
         (from, old),
         (to, new),
         followed,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         cx.warn(why);
     }

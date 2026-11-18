@@ -12,13 +12,15 @@
 //! - **One sign-in, one redirect.** It lives for one sign-in. The first request that carries
 //!   that sign-in's `state` ([`super::pkce::read_redirect`]) is the redirect; the listener
 //!   answers it and is closed, so no second request is ever read. It also closes when the
-//!   person cancels and when the time allowed runs out.
+//!   person cancels and when the time allowed runs out, and when a flow's own `read` says so (the
+//!   App flow's, for a code that isn't its own: [`super::agentidentity`]).
 //! - **A request that is not the redirect changes nothing.** Another path, another method, a
 //!   `Host` that is not the listener's own address, or no `state`: each is refused with a fixed
 //!   answer, and the sign-in goes on waiting. After [`MOST_STRANGERS`] of them the sign-in stops
 //!   with a sentence saying so, so nothing can keep the listener answering for long.
-//! - **It reflects nothing.** Every answer is one of three fixed pages. Nothing from the
-//!   request is put in an answer, in an error or in a log: not the query, not a header.
+//! - **It reflects nothing.** Every answer is a fixed page: one of the listener's three, or one of
+//!   the flow's own (its `read`'s). Nothing from the request is put in an answer, in an error or
+//!   in a log: not the query, not a header.
 //! - **It reads little, briefly.** One request head of at most [`MOST_HEAD`] bytes, within
 //!   [`PER_REQUEST`]; a body is never read.
 //!
@@ -42,9 +44,11 @@ use std::time::{Duration, Instant};
 
 use super::pkce::{Code, Declined, Redirected, State, read_redirect};
 
-/// The most one request's head may be. A redirect's is a few hundred bytes; a browser's
-/// headers bring it to a kilobyte or two.
-pub const MOST_HEAD: usize = 8 * 1024;
+/// The most one request's head may be. A redirect's is a few hundred bytes, and a browser's
+/// headers bring it to a kilobyte or two. But a browser sends this machine every cookie any
+/// local server on any port has set it, since cookies don't keep to a port, so a developer's
+/// browser can send many kilobytes more: this takes what nginx takes by default.
+pub const MOST_HEAD: usize = 32 * 1024;
 
 /// How long one connection has to send its request head.
 pub const PER_REQUEST: Duration = Duration::from_secs(3);
@@ -332,20 +336,27 @@ fn serve<T>(
         // person's browser.
         return Heard::NotOurs;
     }
+    // Each refusal is logged by its fixed status alone, nothing of the request, so a report of a
+    // sign-in that wouldn't finish says which check refused it.
     let Some(head) = head(conn, until, now) else {
+        tracing::info!("purlis: the sign-in listener refused a request whose head didn't end");
         respond(conn, "400 Bad Request", NOTHING_PAGE);
         return Heard::NotOurs;
     };
     let target = match target_of(&head, port) {
         Ok(target) => target,
         Err(status) => {
+            tracing::info!("purlis: the sign-in listener refused a request: {status}");
             respond(conn, status, NOTHING_PAGE);
             return Heard::NotOurs;
         }
     };
     let heard = read(target);
     match &heard {
-        Heard::NotOurs => respond(conn, "404 Not Found", NOTHING_PAGE),
+        Heard::NotOurs => {
+            tracing::info!("purlis: the sign-in listener refused a request: not the redirect");
+            respond(conn, "404 Not Found", NOTHING_PAGE);
+        }
         Heard::Page { policy, page } => respond_under(conn, "200 OK", policy, page),
         Heard::Took { page, .. } | Heard::Stop { page, .. } => respond(conn, "200 OK", page),
     }

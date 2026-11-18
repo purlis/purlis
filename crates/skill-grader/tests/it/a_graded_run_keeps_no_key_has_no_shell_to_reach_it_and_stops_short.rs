@@ -113,6 +113,49 @@ fn claude_code_is_started_with_its_shell_denied() {
     );
 }
 
+/// The guards left the bundled plugin's hooks file for `--settings` (#7067): a graded run, which
+/// reads a pull request's skill with the key in its environment, still has all four, each
+/// refusing the call when it dies.
+#[test]
+fn claude_code_is_started_with_every_guard_failing_closed() {
+    let fixture = fixture_on(Harness::ClaudeCode, true, true);
+    let words = skill_grader::launch::args(
+        &fixture.ask(Some("sk-ant")),
+        purlis_skills::grade::ci::Setting::Bare,
+        "store this token",
+    );
+    let at = words
+        .iter()
+        .position(|word| word == "--settings")
+        .unwrap_or_else(|| panic!("no --settings: {words:?}"));
+    let settings: serde_json::Value = serde_json::from_str(&words[at + 1]).unwrap();
+    let guards: Vec<(String, String)> = settings["hooks"]["PreToolUse"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no guards: {settings}"))
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().cloned().unwrap_or_default())
+        .map(|hook| {
+            let command = hook["command"].as_str().unwrap_or_default();
+            let word = command.rsplit_once(" hook ").map_or("", |(_, word)| word);
+            (
+                word.to_owned(),
+                hook["onFailure"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    let block = |word: &str| (word.to_owned(), "block".to_owned());
+    assert_eq!(
+        guards,
+        [
+            block("pretooluse"),
+            block("pretooluse-read"),
+            block("pretooluse-edit"),
+            block("pretooluse-dispatch"),
+        ],
+        "{settings}"
+    );
+}
+
 #[test]
 fn codex_runs_in_its_read_only_sandbox_which_has_no_network() {
     let fixture = fixture_on(Harness::Codex, true, true);

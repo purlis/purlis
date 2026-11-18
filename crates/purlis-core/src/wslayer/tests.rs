@@ -905,7 +905,7 @@ fn a_workspace_or_stamp_it_cannot_read_is_unknown_not_behind() {
 fn a_sandboxed_scaffold_leaves_the_manifest_to_the_app_which_makes_it_next() {
     let (dir, ws) = plane();
     let opened = crate::workspaces::Plane::open(dir.path());
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
 
     // In a sandboxed chat: the workspace's structure, and no manifest.
     scaffold_as(&opened, "alpha", now, "a chat", true);

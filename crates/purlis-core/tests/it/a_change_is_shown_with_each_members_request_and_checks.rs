@@ -123,7 +123,7 @@ mod shown {
 
     fn look(world: &World) -> Observation {
         let record = store::read(&world.plane, "alpha", "api-2").unwrap();
-        observe(&world.plane, "alpha", &record, chrono::Utc::now())
+        observe(&world.plane, "alpha", &record, jiff::Timestamp::now())
     }
 
     fn pulls(scene: &Scene, repo: &str, out: &str) {
@@ -195,7 +195,7 @@ mod shown {
             &world.plane,
             "alpha",
             "api-2",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             &mut |say| {
                 if let Say::Out(line) = say {
                     lines.push(line)
@@ -365,7 +365,7 @@ mod shown {
             &world.plane,
             "alpha",
             "laptop",
-            &landing::Landing::new("api-2", "svc", 601, HEAD, &merge, chrono::Utc::now()),
+            &landing::Landing::new("api-2", "svc", 601, HEAD, &merge, jiff::Timestamp::now()),
         )
         .unwrap();
         let seen = look(&world);
@@ -440,7 +440,7 @@ mod shown {
             &world.plane,
             "alpha",
             "laptop",
-            &landing::Landing::new("api-2", "svc", 601, HEAD, moved, chrono::Utc::now()),
+            &landing::Landing::new("api-2", "svc", 601, HEAD, moved, jiff::Timestamp::now()),
         )
         .unwrap();
         let seen = look(&world);
@@ -478,7 +478,7 @@ mod shown {
                 HEAD,
                 pending::Via::Queue,
                 pending::Stage::Asked,
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             ),
         )
         .unwrap();

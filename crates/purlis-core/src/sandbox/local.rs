@@ -1291,6 +1291,10 @@ pub fn accept_policy(
     root: &Path,
     accepted: std::collections::BTreeMap<String, String>,
 ) -> io::Result<()> {
+    // The key read again where it was not the app's own (#7073): one another program made, which
+    // the person has deleted since, or a keyring that answers now. Where it is still another
+    // program's, the sentence says how to recover.
+    crate::secrets::seal::ready_to_seal().map_err(io::Error::other)?;
     let clone = anchor_key(root);
     let counter = read(root).policy_counter + 1;
     let text = policy_text(counter, &accepted);

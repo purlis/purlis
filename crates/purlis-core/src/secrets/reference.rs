@@ -346,7 +346,7 @@ pub fn set(ctx: &Ctx, vault: &Vault, key: &str, value: &str) -> Result<(), Vault
         ctx,
         &plain_file::file_path(ctx, vault)?,
         key,
-        chrono::Local::now().date_naive(),
+        jiff::Zoned::now().date(),
     )
 }
 

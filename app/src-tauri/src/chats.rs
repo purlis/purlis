@@ -4294,7 +4294,7 @@ impl Chats {
             own_work: own.work.as_ref(),
             pieces: &own.pieces,
             mid_turn: own.mid_turn,
-            now: chrono::Utc::now().timestamp(),
+            now: jiff::Timestamp::now().as_second(),
             last: &last,
         });
         let first: Vec<&str> = told
@@ -6571,7 +6571,7 @@ impl Chats {
                         &gone.chat,
                         gone.harness,
                         gone.workspace.as_deref(),
-                        chrono::Utc::now(),
+                        jiff::Timestamp::now(),
                     );
                 }
             }
@@ -6590,7 +6590,7 @@ impl Chats {
                     session,
                     &name,
                     job,
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                 ) {
                     tracing::warn!("{why}");
                 }
@@ -6984,7 +6984,7 @@ impl Chats {
             return;
         };
         job.done = true;
-        job.finish(chrono::Utc::now());
+        job.finish(jiff::Timestamp::now());
         drop(open);
         self.write_it_down();
     }
@@ -6995,7 +6995,7 @@ impl Chats {
         let stopped = lock(&self.open)
             .get_mut(&session)
             .and_then(|one| one.chat.studio.as_mut())
-            .is_some_and(|job| job.finish(chrono::Utc::now()));
+            .is_some_and(|job| job.finish(jiff::Timestamp::now()));
         if stopped {
             self.write_it_down();
         }
@@ -7728,7 +7728,7 @@ impl Chats {
         let Some(said) = its_own_word(report, now) else {
             return;
         };
-        let now_at = chrono::Utc::now().timestamp();
+        let now_at = jiff::Timestamp::now().as_second();
         self.own_changed(report.chat, |own| match said {
             Heard::Ended(said) => {
                 own.work = said

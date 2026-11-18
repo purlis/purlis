@@ -117,7 +117,7 @@ impl Project {
             piece,
             None,
             &who,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("the claim");
     }
@@ -176,7 +176,7 @@ impl Project {
                     },
                     &asked,
                     &git::Isolated::default(),
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                 )
             }),
         );
@@ -302,8 +302,13 @@ fn the_holders_own_git_and_the_persons_own_harness_are_never_refused() {
     p.claimed_by("p2", 4, HOLDER);
     let (_app, token, socket) = p.an_app(App::Broker);
     assert_eq!(p.denial("git push", &p.p1, &chat_3(&socket, &token)), None);
-    // A harness the app did not start has no chat number: it is the person's own.
-    assert_eq!(p.denial("git push", &p.p2, &[]), None);
+    // A harness whose environment names no chat, run inside chat 3's program (this test's
+    // process), is chat 3's all the same (#6995): the app names the chat by its ancestry. The
+    // person's own harness, with no app above it, is `hookwire::reach`'s to tell apart.
+    let why = p
+        .denial("git push", &p.p2, &[])
+        .expect("an emptied environment let the push in the held folder through");
+    assert!(why.contains("claimed by chat 4"), "{why}");
     // Read-only git is never asked about.
     assert_eq!(
         p.denial("git status", &p.p2, &chat_3(&socket, &token)),
@@ -322,16 +327,19 @@ fn the_first_chat_to_commit_in_a_free_folder_takes_it() {
     assert_eq!(p.last_claim("p1").as_deref(), Some(ME));
 }
 
-/// The review of #4129: no answer lets the call through, so neither a missing app nor a slow
-/// one stops a chat, and a claim nobody can judge holds nothing.
+/// The review of #4129: the app's silence lets the call through, so a slow app never stops a
+/// chat. No app at all is refused (#6995): a chat cannot have its git judged by no one.
 #[test]
-fn where_no_app_answers_in_time_the_git_runs() {
+fn a_slow_app_lets_the_git_run_and_no_app_at_all_refuses_it() {
     let p = Project::new();
     p.claimed_by("p1", 4, HOLDER);
     // No app at all: the chat has a number and an id, and no socket.
-    assert_eq!(
-        p.denial("git push", &p.p1, &[(CHAT_ENV, "3"), (CHAT_ID_ENV, ME)]),
-        None
+    let why = p
+        .denial("git push", &p.p1, &[(CHAT_ENV, "3"), (CHAT_ID_ENV, ME)])
+        .expect("a chat with no app pushed unjudged");
+    assert!(
+        why.contains(purlis_core::hookwire::reach::NO_APP_ANSWERED),
+        "{why}"
     );
     // An app that takes longer than the guard waits.
     let (_app, token, socket) = p.an_app(App::Slow);

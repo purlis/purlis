@@ -720,17 +720,18 @@ fn at(place: &Place) -> String {
 }
 
 /// `12:40` for a time on `now`'s day, `Oct 6 12:40` for another, in `now`'s zone.
-fn clock(started: i64, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
-    let at = chrono::DateTime::from_timestamp(started, 0)?.with_timezone(now.offset());
-    Some(if at.date_naive() == now.date_naive() {
-        at.format("%H:%M").to_string()
+fn clock(started: i64, now: &jiff::Zoned) -> Option<String> {
+    let zone = jiff::tz::TimeZone::fixed(now.offset());
+    let at = jiff::Timestamp::from_second(started).ok()?.to_zoned(zone);
+    Some(if at.date() == now.date() {
+        at.strftime("%H:%M").to_string()
     } else {
-        at.format("%b %-d %H:%M").to_string()
+        at.strftime("%b %-d %H:%M").to_string()
     })
 }
 
 /// `(running, started 12:40)`.
-fn state_and_start(row: &Row, now: chrono::DateTime<chrono::FixedOffset>) -> String {
+fn state_and_start(row: &Row, now: &jiff::Zoned) -> String {
     match row.started.and_then(|started| clock(started, now)) {
         Some(clock) => format!("({}, started {clock})", row.state.word()),
         None => format!("({})", row.state.word()),
@@ -746,7 +747,7 @@ fn as_persona(row: &Row) -> String {
 }
 
 /// `You are also working in runners on 'verify v2.48' (running, started 12:40)`.
-fn also_working(row: &Row, now: chrono::DateTime<chrono::FixedOffset>) -> String {
+fn also_working(row: &Row, now: &jiff::Zoned) -> String {
     format!(
         "You are also working {} on {} {}",
         at(&row.workspace),
@@ -756,7 +757,7 @@ fn also_working(row: &Row, now: chrono::DateTime<chrono::FixedOffset>) -> String
 }
 
 /// `'lint' as ci in runners (running, started 12:40)`.
-fn sibling(row: &Row, now: chrono::DateTime<chrono::FixedOffset>) -> String {
+fn sibling(row: &Row, now: &jiff::Zoned) -> String {
     format!(
         "{}{} {} {}",
         quoted(&row.name),
@@ -794,7 +795,7 @@ fn how_asked(parent: &Parent) -> String {
 
 /// What a chat's start briefing says of `picture`, or `None` where there is nothing to say:
 /// nobody asked for it and its persona works nowhere else.
-pub fn briefing(picture: &Picture, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
+pub fn briefing(picture: &Picture, now: &jiff::Zoned) -> Option<String> {
     if picture.is_alone() {
         return None;
     }
@@ -829,7 +830,7 @@ pub fn briefing(picture: &Picture, now: chrono::DateTime<chrono::FixedOffset>) -
 /// What a turn is told: one line when the picture changed, one when a task of its own began
 /// waiting on the person, one when such a task is at work again, and the roster of its open
 /// tasks while it has any (#3788); `None` when there is none of these.
-pub fn update(working: &Working, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
+pub fn update(working: &Working, now: &jiff::Zoned) -> Option<String> {
     let lines: Vec<String> = [
         changed_line(working, now),
         waiting_line(working),
@@ -951,7 +952,7 @@ fn waiting_line(working: &Working) -> Option<String> {
 }
 
 /// The one line for what changed in the picture, or `None` when nothing did.
-fn changed_line(working: &Working, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
+fn changed_line(working: &Working, now: &jiff::Zoned) -> Option<String> {
     if working.changes.is_empty() {
         return None;
     }
@@ -996,7 +997,7 @@ fn changed_line(working: &Working, now: chrono::DateTime<chrono::FixedOffset>) -
 }
 
 /// What `purlis persona where` and the `persona_where` tool print for `picture`.
-pub fn listing(picture: &Picture, now: chrono::DateTime<chrono::FixedOffset>) -> String {
+pub fn listing(picture: &Picture, now: &jiff::Zoned) -> String {
     let me = &picture.me;
     let mut lines = vec![format!(
         "This chat is {}, working{} {} {}.",

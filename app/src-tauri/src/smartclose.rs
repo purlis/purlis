@@ -801,7 +801,7 @@ pub fn record(held: &Held, ask: &purlis_core::hookwire::RecordAsk) -> Answer {
         held.root(),
         &asker,
         ask,
-        chrono::Local::now().naive_local(),
+        jiff::Zoned::now().datetime(),
     ) {
         Ok(recorded) => recorded,
         Err(why) => return Answer::No { why },

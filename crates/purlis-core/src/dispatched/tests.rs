@@ -1053,7 +1053,7 @@ fn last_note(ledger: &Ledger, now: SystemTime) -> Option<(Option<String>, Durati
 /// A note as a dispatch record keeps it, sent at `at`.
 fn on_its_record(text: Option<&str>, at: SystemTime) -> crate::dispatchrecord::LastNote {
     crate::dispatchrecord::LastNote {
-        at: at.into(),
+        at: crate::wallclock::instant(at),
         text: text.map(str::to_owned),
     }
 }

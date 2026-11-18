@@ -124,6 +124,33 @@ impl Parents {
         }
     }
 
+    /// The user `pid` runs as, where it is known: its effective uid, which the kernel says for
+    /// any user's process. What tells an ancestor whose program a sandbox hides (this user's)
+    /// from one only the system may read (root's, such as `login` or `sshd`).
+    ///
+    /// - **Linux:** the owner of `/proc/<pid>`, which the kernel sets to the process's
+    ///   effective uid.
+    /// - **macOS:** `pbsi_uid` from `PROC_PIDT_SHORTBSDINFO`, the reading [`Self::of`] takes.
+    /// - **Any other unix:** `None`.
+    pub fn owner(pid: u32) -> Option<u32> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            use std::os::unix::fs::MetadataExt;
+            std::fs::metadata(format!("/proc/{pid}"))
+                .ok()
+                .map(|meta| meta.uid())
+        }
+        #[cfg(target_os = "macos")]
+        {
+            pidinfo::owner(pid)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+        {
+            let _ = pid;
+            None
+        }
+    }
+
     /// `start`'s ancestors, its parent first, up to and without pid 1 (`init`, `launchd`), which
     /// is above everything and so vouches for nothing.
     pub fn chain(start: u32) -> Vec<u32> {
@@ -166,6 +193,25 @@ mod pidinfo {
             u32_at(
                 &bytes,
                 std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_ppid),
+            )
+        })?
+    }
+
+    /// The effective uid of `pid`, from `PROC_PIDT_SHORTBSDINFO`.
+    pub(super) fn owner(pid: u32) -> Option<u32> {
+        let bytes = read(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            size_of::<libc::proc_bsdshortinfo>(),
+        )?;
+        let named = u32_at(
+            &bytes,
+            std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_pid),
+        )?;
+        (named == pid).then(|| {
+            u32_at(
+                &bytes,
+                std::mem::offset_of!(libc::proc_bsdshortinfo, pbsi_uid),
             )
         })?
     }
@@ -568,6 +614,200 @@ pub fn lsof_command(pid: u32) -> Command {
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     lsof
+}
+
+/// **The program each of `pids` runs** (#6995): the file the kernel mapped as its executable,
+/// never what the process says of itself (its `argv[0]` and its name are its own to set). Each
+/// is `None` where this process may not read it, or it has gone: inside a sandbox, a process
+/// outside it.
+///
+/// - **Linux:** the link `/proc/<pid>/exe`, which the kernel keeps, refused where ptrace's read
+///   check refuses (Landlock refuses it for a process outside the sandbox). A binary replaced
+///   since it started reads as its path with ` (deleted)` after it; that is cut off
+///   ([`undeleted`]), so an app updated in place is still the app.
+/// - **macOS:** `lsof`'s first `txt` entry for each process, one run for them all
+///   ([`lsof_executables_command`]): the vnode the kernel exec'd. Inside Seatbelt `lsof` lists
+///   nothing for a process this one did not start.
+/// - **Any other unix:** `None` for each.
+pub fn executables_of(
+    pids: &[u32],
+    run: impl FnOnce(&mut Command) -> io::Result<Output>,
+) -> Vec<Option<PathBuf>> {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let _ = run;
+        pids.iter()
+            .map(|pid| {
+                std::fs::read_link(format!("/proc/{pid}/exe"))
+                    .ok()
+                    .map(undeleted)
+            })
+            .collect()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if pids.is_empty() {
+            return Vec::new();
+        }
+        let listed = run(&mut lsof_executables_command(pids))
+            .map(|out| lsof_by_process(&String::from_utf8_lossy(&out.stdout)))
+            .unwrap_or_default();
+        pids.iter()
+            .map(|pid| {
+                listed
+                    .iter()
+                    .find(|(listed, _)| listed == pid)
+                    .and_then(|(_, names)| names.first())
+                    .map(PathBuf::from)
+            })
+            .collect()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+    {
+        let _ = run;
+        vec![None; pids.len()]
+    }
+}
+
+/// **The unix sockets each of `pids` holds bound at a path** (#6995): listening, or accepted
+/// from one. An error where the listing fails, for any of them: a listing that could not be
+/// read is never taken for one that holds no socket, so the caller reads it as a doubt.
+///
+/// - **Linux:** `/proc/net/unix`'s sockets bound at a path, by inode, met with the links in
+///   `/proc/<pid>/fd`. A descriptor that closes while it is read is skipped; a table or folder
+///   that cannot be read is an error.
+/// - **macOS:** `lsof`'s unix sockets for each, one run for them all. `lsof` exits 1, saying
+///   nothing on its error output, when a process it was asked for holds no unix socket; any
+///   other exit, or one that says something there, is an error.
+pub fn sockets_held_by(
+    pids: &[u32],
+    run: impl FnOnce(&mut Command) -> io::Result<Output>,
+) -> io::Result<Vec<Vec<PathBuf>>> {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let _ = run;
+        let table = std::fs::read_to_string("/proc/net/unix")?;
+        let bound: Vec<(u64, String)> = bound_sockets(&table);
+        pids.iter()
+            .map(|pid| {
+                let mut held: Vec<u64> = Vec::new();
+                for fd in std::fs::read_dir(format!("/proc/{pid}/fd"))? {
+                    if let Ok(link) = std::fs::read_link(fd?.path())
+                        && let Some(inode) = socket_inode(&link)
+                    {
+                        held.push(inode);
+                    }
+                }
+                let mut paths: Vec<PathBuf> = bound
+                    .iter()
+                    .filter(|(inode, _)| held.contains(inode))
+                    .map(|(_, path)| PathBuf::from(path))
+                    .collect();
+                paths.dedup();
+                Ok(paths)
+            })
+            .collect()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if pids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut lsof = Command::new("/usr/sbin/lsof");
+        lsof.args(["-w", "-nP", "-a", "-p", &joined(pids), "-U", "-F", "pn"])
+            .env_clear()
+            .stdin(std::process::Stdio::null());
+        let out = run(&mut lsof)?;
+        if !lsof_listed(&out) {
+            return Err(io::Error::other(format!(
+                "lsof did not list the sockets of {} ({})",
+                joined(pids),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        let listed = lsof_by_process(&String::from_utf8_lossy(&out.stdout));
+        Ok(pids
+            .iter()
+            .map(|pid| {
+                listed
+                    .iter()
+                    .find(|(listed, _)| listed == pid)
+                    .map(|(_, names)| names.iter().map(PathBuf::from).collect())
+                    .unwrap_or_default()
+            })
+            .collect())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+    {
+        let _ = run;
+        Err(io::Error::other(
+            "this system has no way to list a process's sockets",
+        ))
+    }
+}
+
+/// Whether `lsof -w`'s run `out` is a listing: it exited 0, or 1 with nothing on its error
+/// output, which is how it says a process it was asked for has no file it selects.
+pub fn lsof_listed(out: &Output) -> bool {
+    out.status.success() || (out.status.code() == Some(1) && out.stderr.is_empty())
+}
+
+/// `/proc/net/unix`'s sockets bound at a path, listening or not: each inode and its path.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn bound_sockets(table: &str) -> Vec<(u64, String)> {
+    table
+        .lines()
+        .skip(1)
+        .filter_map(entry_of)
+        .filter(|(_, _, path)| path.starts_with('/'))
+        .map(|(_, inode, path)| (inode, path))
+        .collect()
+}
+
+/// `pids`, comma separated, as `lsof -p` takes a list.
+fn joined(pids: &[u32]) -> String {
+    pids.iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// `exe` without the ` (deleted)` Linux writes after a program replaced since it started.
+pub fn undeleted(exe: PathBuf) -> PathBuf {
+    match exe.to_str().and_then(|it| it.strip_suffix(" (deleted)")) {
+        Some(kept) => PathBuf::from(kept),
+        None => exe,
+    }
+}
+
+/// `lsof` asked for the programs processes `pids` run: their `txt` entries alone, each under
+/// its process, by `lsof`'s full path, with no environment.
+pub fn lsof_executables_command(pids: &[u32]) -> Command {
+    let mut lsof = Command::new("/usr/sbin/lsof");
+    lsof.args(["-nP", "-a", "-p", &joined(pids), "-d", "txt", "-F", "pn"])
+        .env_clear()
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    lsof
+}
+
+/// `lsof -F pn`'s output `text` by process: each `p<pid>` line, and the names it printed after
+/// it that are paths, in the order printed. A process's first `txt` name is its program.
+pub fn lsof_by_process(text: &str) -> Vec<(u32, Vec<String>)> {
+    let mut by: Vec<(u32, Vec<String>)> = Vec::new();
+    for line in text.lines() {
+        if let Some(pid) = line.strip_prefix('p') {
+            if let Ok(pid) = pid.parse() {
+                by.push((pid, Vec::new()));
+            }
+        } else if let Some(name) = line.strip_prefix('n')
+            && name.starts_with('/')
+            && let Some((_, names)) = by.last_mut()
+        {
+            names.push(name.to_owned());
+        }
+    }
+    by
 }
 
 /// The names `lsof -F n` printed (`n<name>` lines) that are paths: a socket bound at a path,

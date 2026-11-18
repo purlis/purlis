@@ -13,10 +13,8 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 fn steward() -> ChatRef {
@@ -82,7 +80,7 @@ fn history(root: &Path) -> Vec<Record> {
     let template =
         dispatchrecord::open(&elsewhere, a_task(worker(1)), at("2026-08-01T00:00:00Z")).unwrap();
     std::fs::create_dir_all(dispatchrecord::dir(root)).unwrap();
-    let start = at("2026-08-01T00:00:00Z").timestamp_millis();
+    let start = at("2026-08-01T00:00:00Z").as_millisecond();
     (0..HISTORY)
         .map(|n| {
             let mut record = template.clone();
@@ -376,7 +374,7 @@ fn a_busy_store(root: &Path) -> Vec<Record> {
     let template =
         dispatchrecord::open(&elsewhere, a_task(worker(1)), at("2026-11-01T00:00:00Z")).unwrap();
     std::fs::create_dir_all(dispatchrecord::dir(root)).unwrap();
-    let start = at("2026-11-01T00:00:00Z").timestamp_millis();
+    let start = at("2026-11-01T00:00:00Z").as_millisecond();
     (0..50u32)
         .map(|n| {
             let mut record = template.clone();

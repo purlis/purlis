@@ -38,10 +38,8 @@ fn plane() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn now() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-        .unwrap()
-        .with_timezone(&Utc)
+fn now() -> Timestamp {
+    str::parse::<Timestamp>("2026-05-04T11:32:17+00:00").unwrap()
 }
 
 /// What a session is told whose process stands OUTSIDE the plane — where nothing about the
@@ -239,7 +237,7 @@ fn plane_of_workspaces(n: usize) -> (tempfile::TempDir, PathBuf) {
         std::fs::create_dir_all(&dir).unwrap();
         let md = dir.join("workspace.md");
         std::fs::write(&md, format!("# {ws}\n")).unwrap();
-        set(&md, now().timestamp() - 86_400 * i as i64);
+        set(&md, now().as_second() - 86_400 * i as i64);
     }
     for ws in ["alpha", "beta"] {
         set(&root.join("workspaces").join(ws).join("workspace.md"), 0);
@@ -856,7 +854,7 @@ fn more_than_five_neighbours_are_the_five_most_recent_and_a_count_of_the_rest() 
         let md = dir.join("workspace.md");
         std::fs::write(&md, format!("# {ws}\n")).unwrap();
         // One day apart, `c` the most recent.
-        let at = now().timestamp() - 86_400 * (i as i64 + 1) - 60;
+        let at = now().as_second() - 86_400 * (i as i64 + 1) - 60;
         std::fs::File::options()
             .write(true)
             .open(&md)
@@ -939,9 +937,9 @@ fn a_workspace_is_last_active_at_the_newest_of_its_files_and_its_session_pointer
 
 #[test]
 fn an_age_is_whole_days_since_counting_the_fraction_of_a_second() {
-    let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+    let at = |s: &str| str::parse::<Timestamp>(s).unwrap();
     let noon = at("2026-05-04T12:00:00Z");
-    let secs = noon.timestamp() as f64;
+    let secs = noon.as_second() as f64;
     assert_eq!(age_phrase(0.0, noon), "not worked yet");
     assert_eq!(age_phrase(secs - 3.0 * 86_400.0 - 1.0, noon), "3d ago");
     assert_eq!(age_phrase(secs - 86_400.0 + 1.0, noon), "today");
@@ -1118,11 +1116,10 @@ fn a_session_in_the_plane_that_chose_a_workspace_is_in_it() {
 // ---- the last session record (SI-8, ADR 0064) -----------------------------------------------
 
 /// A session record written through the one writer, as `charter session record` writes it.
-fn recorded(root: &Path, place: active::Place, title: &str, hms: (u32, u32, u32)) {
-    let when = chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
+fn recorded(root: &Path, place: active::Place, title: &str, hms: (i8, i8, i8)) {
+    let when = crate::wallclock::day(2026, 9, 28)
         .unwrap()
-        .and_hms_opt(hms.0, hms.1, hms.2)
-        .unwrap();
+        .at(hms.0, hms.1, hms.2, 0);
     crate::sessionrecord::record(
         root,
         &crate::sessionrecord::New {
@@ -1217,10 +1214,7 @@ fn a_plane_root_chat_is_told_the_plane_roots_last_session_record() {
 /// A record whose body says something that reads as an order, as a hand edit or a careless
 /// chat could leave one.
 fn recorded_with(root: &Path, place: active::Place, title: &str, open: &str) -> String {
-    let when = chrono::NaiveDate::from_ymd_opt(2026, 9, 28)
-        .unwrap()
-        .and_hms_opt(11, 0, 0)
-        .unwrap();
+    let when = crate::wallclock::day(2026, 9, 28).unwrap().at(11, 0, 0, 0);
     let body = format!(
         "## Goal\n\ng\n\n## Done\n\nd\n\n## Decisions\n\nx\n\n## Open\n\n{open}\n\n## How to \
          resume\n\nr\n"
@@ -2042,7 +2036,7 @@ fn indexed(root: &Path) {
 
 /// Sets `path`'s modification time to `secs` before [`now`].
 fn aged(path: &Path, secs: i64) {
-    let at = (now().timestamp() - secs) as u64;
+    let at = (now().as_second() - secs) as u64;
     std::fs::File::options()
         .write(true)
         .open(path)

@@ -454,7 +454,7 @@ pub(crate) fn reported(held: &Held, chat: u32) {
 }
 
 fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+    jiff::Timestamp::now().as_second()
 }
 
 /// Holds `chats` still, or lets them go on, and tells the window its asks moved.

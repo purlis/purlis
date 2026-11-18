@@ -384,7 +384,7 @@ pub(crate) fn land_question_in(
         repo,
         reach.backend_of,
         reach.device,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |l| said.push(l),
     );
     match found {
@@ -420,7 +420,7 @@ pub(crate) fn land_in(
         how,
         reach.backend_of,
         reach.device,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |l| said.push(l),
     );
     crate::workspaces::ran(code, said)

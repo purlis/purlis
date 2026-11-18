@@ -1309,8 +1309,8 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
         inspected
             .pointer(&format!("/0/State/{key}"))
             .and_then(serde_json::Value::as_str)
-            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
-            .and_then(|time| u64::try_from(time.timestamp()).ok())
+            .and_then(|text| str::parse::<jiff::Timestamp>(text).ok())
+            .and_then(|time| u64::try_from(time.as_second()).ok())
             .filter(|secs| *secs > 0)
     };
     Ran {
@@ -2657,6 +2657,7 @@ pub struct Docker {
 pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
 mod asked;
+pub mod kernel;
 pub use asked::Confinement;
 pub mod contract;
 pub mod settings;
@@ -3507,40 +3508,70 @@ impl Docker {
     /// answer within [`PROBE_WITHIN`] is a no, and its container is removed: an image whose
     /// `purlis` does not answer holds up no pool.
     fn holds_from_namespaces(&self, runner: &Runner) -> bool {
+        self.probed(
+            &runner.image,
+            Some(runner.user),
+            None,
+            &HOLDS_FROM_NAMESPACES,
+        )
+        .is_ok()
+    }
+
+    /// **What `image`'s own `purlis`, run with `words`, printed**, in a container made for that
+    /// alone and removed as it ends (D-2050-26, #7084): as `user` where one is named, else the
+    /// image's own; no network, every capability dropped, no new privileges, its root read-only,
+    /// and the seccomp profile at `seccomp` where one is named, else the engine's default.
+    /// Anything but a clean exit within [`PROBE_WITHIN`] is refused, and its container removed.
+    fn probed(
+        &self,
+        image: &Image,
+        user: Option<User>,
+        seccomp: Option<&std::path::Path>,
+        words: &[&str],
+    ) -> Result<String, Refused> {
         // No name of its own, which a runner's could be: the engine's id for it, written to a
         // file of this run's, is what removes it, and nothing else (#3702).
-        let Ok(folder) = tempfile::tempdir() else {
-            return false;
-        };
+        let folder = tempfile::tempdir()
+            .map_err(|why| refused(format!("purlis could not make a folder for a probe: {why}")))?;
         let cidfile = folder.path().join("probe.cid");
-        let mut args: Vec<String> = [
-            "run",
-            "--rm",
-            "--cidfile",
-            &cidfile.display().to_string(),
-            "--user",
-            &runner.user.spelled(),
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--network",
-            "none",
-            "--read-only",
-            "--entrypoint",
-            PURLIS,
-            runner.image.as_str(),
-        ]
-        .iter()
-        .map(|word| (*word).to_owned())
-        .collect();
-        args.extend(HOLDS_FROM_NAMESPACES.iter().map(|word| (*word).to_owned()));
-        let held = self
+        let mut args: Vec<String> = vec![
+            "run".into(),
+            "--rm".into(),
+            "--cidfile".into(),
+            cidfile.display().to_string(),
+        ];
+        if let Some(user) = user {
+            args.extend(["--user".into(), user.spelled()]);
+        }
+        args.extend(
+            ["--cap-drop", "ALL", "--security-opt", "no-new-privileges"]
+                .iter()
+                .map(|word| (*word).to_owned()),
+        );
+        if let Some(seccomp) = seccomp {
+            args.extend([
+                "--security-opt".into(),
+                format!("seccomp={}", seccomp.display()),
+            ]);
+        }
+        args.extend(
+            [
+                "--network",
+                "none",
+                "--read-only",
+                "--entrypoint",
+                PURLIS,
+                image.as_str(),
+            ]
+            .iter()
+            .chain(words)
+            .map(|word| (*word).to_owned()),
+        );
+        let ran = self
             .clone()
             .within(PROBE_WITHIN)
-            .run(&args, None, MOST_INSPECTED)
-            .is_ok();
-        if !held {
+            .run(&args, None, MOST_INSPECTED);
+        if ran.is_err() {
             let id = std::fs::read_to_string(&cidfile).unwrap_or_default();
             if let Ok(id) = ContainerId::new(id.trim()) {
                 let rm = [
@@ -3551,7 +3582,7 @@ impl Docker {
                 let _ = self.run(&rm, None, MOST_SAID);
             }
         }
-        held
+        ran
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -4085,8 +4116,8 @@ impl Docker {
         Ok(inspected
             .pointer("/0/CreatedAt")
             .and_then(serde_json::Value::as_str)
-            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
-            .and_then(|time| u64::try_from(time.timestamp()).ok()))
+            .and_then(|text| str::parse::<jiff::Timestamp>(text).ok())
+            .and_then(|time| u64::try_from(time.as_second()).ok()))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
