@@ -24,7 +24,8 @@ use purlis_session_protocol::session::{FileRead, MOST_FILE_READ};
 
 use super::file::{at_line, at_suffix, on_this_machine};
 use super::{
-    Asks, FileAt, Home, HomeIs, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs, Target,
+    Asking, Asks, FileAt, Home, HomeIs, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs,
+    Target,
 };
 
 /// **How the window asks one runner about its chat's files**: one adapter per kind of runner.
@@ -149,6 +150,7 @@ impl LinkKind for RunnerFile {
             shown: text.to_owned(),
             target,
             token: None,
+            about: Asking::FileOutside,
         }
     }
 

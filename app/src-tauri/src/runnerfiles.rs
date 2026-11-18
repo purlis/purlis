@@ -3,7 +3,7 @@
 
 //! **A Docker pool's runner, as a pane's file link reads its chat's files** (#6387): the first
 //! adapter of the core's neutral [`purlis_core::panelinks::RunnerFiles`], over the session
-//! protocol's `read_file` (1.92) on the window's link to that runner. The path the chat printed
+//! protocol's `read_file` (1.93) on the window's link to that runner. The path the chat printed
 //! is sent as data; the runner resolves and reads it. Nothing here runs `docker exec` or builds
 //! a command line.
 //!

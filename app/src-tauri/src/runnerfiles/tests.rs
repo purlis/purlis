@@ -389,6 +389,7 @@ mod in_a_pane {
         Candidate {
             kind: Kind::File,
             text: text.to_owned(),
+            target: None,
         }
     }
 

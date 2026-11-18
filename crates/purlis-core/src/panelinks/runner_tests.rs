@@ -115,6 +115,7 @@ fn file(text: &str) -> Candidate {
     Candidate {
         kind: Kind::File,
         text: text.to_owned(),
+        target: None,
     }
 }
 

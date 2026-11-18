@@ -150,7 +150,7 @@ pub trait Code: Send + Sync + 'static {
         Err(moves_no_chat())
     }
 
-    /// **A file a chat on this host printed, read for the window** (1.92, #6387): `path` as it
+    /// **A file a chat on this host printed, read for the window** (1.93, #6387): `path` as it
     /// was printed, from `cwd` where it is relative, in the project at `project`, held to the
     /// chat's workspace there unless `reach` says anywhere. A binary that reads no file
     /// refuses it.

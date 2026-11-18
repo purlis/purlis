@@ -5467,7 +5467,7 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a Docker pool's runner of 1.92 or later (#6387): a hover
+    /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
     /// never opens one to the runner.
     fn reads_files_on_runner(&self, id: u32) -> bool {
         self.runner_files_of(id).is_some()

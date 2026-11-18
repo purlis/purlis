@@ -321,7 +321,10 @@ export function LinkAnswer({
   onClose: () => void;
   onConfirm: (token: string) => void;
 }) {
-  if (answer.answer === "ask" && answer.about.about !== "link")
+  if (
+    answer.answer === "ask" &&
+    (answer.about.about === "file-outside" || answer.about.about === "file-on-runner")
+  )
     return (
       <FileOutsideAsk
         target={answer.target}
