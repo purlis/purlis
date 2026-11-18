@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A file path a runner chat prints** (#6387): looked for on the runner, never on this machine,
-//! and opened read-only in the light editor, read from there.
+//! and opened read-only in the light editor, read from there. This is the desktop's half, run
+//! in the window; the runner's half, which reads the file there, is [`super::onrunner`].
 //!
 //! - **One neutral model, one adapter per runner kind.** [`RunnerFile`] is the link kind: it
 //!   reads the chat's text into a path, asks the runner about it, and decides what opening it
@@ -176,5 +177,5 @@ impl LinkKind for RunnerFile {
 }
 
 #[cfg(test)]
-#[path = "runner_tests.rs"]
+#[path = "ondesktop_tests.rs"]
 mod tests;
