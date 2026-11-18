@@ -11,6 +11,8 @@
 //! * a forge API call whose effect on a merge **cannot be read off the command line** is refused
 //!   too. This fails closed: what charter cannot read, it treats as a merge;
 //! * a **push option that sets auto-merge** is refused, however git is handed it;
+//! * a forge API call that **moves the default branch's ref** (`git/refs/heads/main`, or a new
+//!   `refs/heads/main`), or one whose branch cannot be read, is refused (Q330);
 //! * an **alias** is the command it stands for, and making one that stands for a held command,
 //!   or for the start of one, is refused.
 //!
@@ -68,16 +70,23 @@ pub(super) fn opaque(word: &str) -> bool {
     word.contains(['$', '`', '*', '?', '[', '~']) || brace_expansion_re().is_match(word)
 }
 
+/// Whether a word holds a brace the shell expands ([`brace_expansion_re`]).
+pub(super) fn brace_expansion(word: &str) -> bool {
+    brace_expansion_re().is_match(word)
+}
+
 /// `{a,b}` or `{1..3}`: a brace the shell expands. `{owner}` is a CLI placeholder, not one.
 fn brace_expansion_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\{[^{}]*(,|\.\.)[^{}]*\}").expect("compiles"))
 }
 
-/// `{name}`: a placeholder gh fills in from the checkout in a `-F` field, such as `{branch}`.
+/// A placeholder a forge CLI fills in from the checkout, in an endpoint or a `-F` field: gh's
+/// `{name}` (`{branch}`), or glab's `:name` as a path segment or a whole value (`:branch`,
+/// `:id`, #7131).
 fn placeholder_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\{[^{}]*\}").expect("compiles"))
+    RE.get_or_init(|| Regex::new(r"\{[^{}]*\}|(?:^|/):[A-Za-z_]+(?:/|$)").expect("compiles"))
 }
 
 /// A forge CLI's own aliases of a verb the floor holds: `(cli, noun, alias, verb)`.
@@ -112,7 +121,7 @@ const HELD_BEYOND_THE_TABLE: &[(&str, &[&str])] = &[
 
 /// Every held command of one CLI, by its leading words: the `PUBLISH_FORGE` rows and their
 /// aliases, and [`HELD_BEYOND_THE_TABLE`]. An alias may not stand for one, or for its start.
-fn held_commands(name: &str) -> Vec<Vec<&'static str>> {
+pub(super) fn held_commands(name: &str) -> Vec<Vec<&'static str>> {
     let table = super::PUBLISH_FORGE
         .iter()
         .filter(|(cli, _, _)| *cli == name)
@@ -505,6 +514,10 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         if is_merge_path(&segs) {
             return Some(MERGES.to_owned());
         }
+        // Moving the default branch's ref lands code as a merge does (Q330).
+        if let Some(why) = default_branch_ref_reason(&segs, &call) {
+            return Some(why.to_owned());
+        }
         // A release or a tag is no merge: the merge hold leaves it to the floor (#6962).
         if !super::only_merges()
             && let Some(why) = publish_reason(&segs, &call)
@@ -526,6 +539,102 @@ fn api_reason(args: &[String], cmd: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The sentence a refusal of a write to the default branch's ref ends with (Q330).
+const MOVES_THE_DEFAULT_BRANCH: &str = "Updating, making or deleting the default branch's ref \
+     through the API lands code as a merge does. Push a branch of its own instead.";
+
+/// The sentence a refusal ends with where a ref write's branch cannot be read (Q330).
+const REF_BRANCH_UNREADABLE: &str = "purlis can't read which branch this ref write moves, so it \
+     is treated as a move of the default branch. Write the ref out literally.";
+
+/// **A write to the default branch's ref through the API** (Q330): a `PATCH`, `POST` or
+/// `DELETE` on `git/refs/heads/<branch>` of one of [`DEFAULT_BRANCHES`], or a new ref
+/// (`git/refs`) named `refs/heads/<branch>` of one, is the act a merge is, and held as one. A
+/// branch the call does not let purlis read (a `ref` the shell or gh fills in, no `ref`, a body
+/// purlis does not see) could be the default, so it fails closed. Any other branch is left
+/// alone. The floor reads no forge, so the default branch is `main` or `master` here, the
+/// forge's own answer unknown.
+fn default_branch_ref_reason(segs: &[String], call: &ApiCall) -> Option<&'static str> {
+    let rest: Vec<&str> = under_repository(segs)?.iter().map(String::as_str).collect();
+    match rest[..] {
+        // The ref as one path, whichever `/` was written as `%2F`: `heads%2Fmain` is `heads/main`.
+        // A placeholder gh fills in from the checkout (`{branch}`) could be the default (#7131).
+        ["git", "refs", ref path @ ..] if !path.is_empty() => {
+            let path = path.join("/");
+            if placeholder_re().is_match(&path) {
+                return Some(REF_BRANCH_UNREADABLE);
+            }
+            let branch = path.strip_prefix("heads/")?;
+            DEFAULT_BRANCHES
+                .contains(&branch)
+                .then_some(MOVES_THE_DEFAULT_BRANCH)
+        }
+        ["git", "refs"] => named_branch(call, "ref", "refs/heads/", MOVES_THE_DEFAULT_BRANCH),
+        // GitHub's rename of a branch, and GitLab's delete of one (#7131).
+        ["branches", branch, "rename"] => {
+            branch_in_path(branch).map(|_| REPLACES_THE_DEFAULT_BRANCH)
+        }
+        ["repository", "branches", branch, ..] => branch_in_path(branch),
+        // GitLab's new branch, and its commit through the API, name their branch in a field.
+        ["repository", "branches"] => named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH),
+        ["repository", "commits"] => named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH),
+        // GitLab commits to the branch a field names through a file, a cherry-pick and a
+        // revert too (#7131).
+        ["repository", "files", ..] | ["repository", "commits", _, "cherry_pick" | "revert"] => {
+            named_branch(call, "branch", "", MOVES_THE_DEFAULT_BRANCH)
+        }
+        // A ruleset guards what lands on a branch, as a protection does (Q330).
+        ["rulesets", ..] => Some(REPLACES_THE_DEFAULT_BRANCH),
+        // A branch's protection, on either forge, guards what lands on it.
+        ["branches", _, "protection", ..] | ["protected_branches", ..] => {
+            Some(REPLACES_THE_DEFAULT_BRANCH)
+        }
+        // Which branch is the default is a setting of the repository or project.
+        [] if call.fields.iter().any(|f| f.key == "default_branch") => {
+            Some(REPLACES_THE_DEFAULT_BRANCH)
+        }
+        _ => None,
+    }
+}
+
+/// The sentence a refusal ends with where a write renames the default branch, changes which
+/// branch is the default, or changes a branch's protection (#7131).
+const REPLACES_THE_DEFAULT_BRANCH: &str = "Renaming the default branch, changing which branch is \
+     the default, or changing a branch's protection or a ruleset through the API changes what \
+     lands on it, as a merge does. Push a branch of its own instead.";
+
+/// The refusal for a branch named in an endpoint's path: one of [`DEFAULT_BRANCHES`], or one gh
+/// fills in from the checkout (`{branch}`), which could be.
+fn branch_in_path(branch: &str) -> Option<&'static str> {
+    if placeholder_re().is_match(branch) {
+        Some(REF_BRANCH_UNREADABLE)
+    } else if DEFAULT_BRANCHES.contains(&branch) {
+        Some(MOVES_THE_DEFAULT_BRANCH)
+    } else {
+        None
+    }
+}
+
+/// The refusal for a write that names its branch in the field `key`, as `<prefix><branch>`:
+/// `default` where the branch is one of [`DEFAULT_BRANCHES`], and unreadable where the field is
+/// missing, filled in, or in a body purlis does not see.
+fn named_branch(
+    call: &ApiCall,
+    key: &str,
+    prefix: &str,
+    default: &'static str,
+) -> Option<&'static str> {
+    let named: Vec<&Field> = call.fields.iter().filter(|f| f.key == key).collect();
+    if call.opaque_body || named.is_empty() || named.iter().any(|f| f.value_opaque()) {
+        return Some(REF_BRANCH_UNREADABLE);
+    }
+    named
+        .iter()
+        .filter_map(|f| f.value.strip_prefix(prefix))
+        .any(|branch| DEFAULT_BRANCHES.contains(&branch))
+        .then_some(default)
 }
 
 /// The refusal for a write that would make a release or a tag, by the forges' own endpoint
@@ -642,11 +751,105 @@ fn graphql_reason(call: &ApiCall, cmd: &str) -> Option<&'static str> {
     {
         return Some(UNREADABLE);
     }
+    // A string is text the mutation sends, not a name it calls (#7131).
+    let query = without_strings(&query);
     let lower = query.to_lowercase();
     if lower.contains("mutation") && (speaks_of_merging(&lower) || lower.contains("queue")) {
         return Some(MERGES);
     }
+    if lower.contains("mutation") && touches_a_ref(&query) {
+        return Some(MUTATES_A_REF);
+    }
+    // An input object that comes whole in a variable says nothing here of what it sets: the
+    // branch a commit lands on, say (#7131).
+    if lower.contains("mutation") && input_object_variable_re().is_match(&query) {
+        return Some(UNREADABLE);
+    }
     None
+}
+
+/// A variable declared with an input object's type, as `$i: CommitCreateInput!`.
+fn input_object_variable_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"\$[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[?\s*[A-Za-z_][A-Za-z0-9_]*Input\b")
+            .expect("compiles")
+    })
+}
+
+/// A GraphQL document with each string's text taken out, a block string (`\"\"\"…\"\"\"`) and
+/// its escapes included, so only its names are read.
+fn without_strings(query: &str) -> String {
+    let mut out = String::with_capacity(query.len());
+    let mut rest = query;
+    while let Some(at) = rest.find('"') {
+        out.push_str(&rest[..at]);
+        out.push_str("\"\"");
+        let after = &rest[at..];
+        if let Some(block) = after.strip_prefix("\"\"\"") {
+            rest = block.find("\"\"\"").map_or("", |end| &block[end + 3..]);
+            continue;
+        }
+        let mut chars = after[1..].char_indices();
+        let mut end = None;
+        while let Some((k, c)) = chars.next() {
+            match c {
+                '\\' => {
+                    chars.next();
+                }
+                '"' => {
+                    end = Some(k + 2);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        rest = end.map_or("", |end| &after[end..]);
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The sentence a refusal of a GraphQL mutation that touches a ref, a branch or a tag ends with
+/// (#7131).
+const MUTATES_A_REF: &str = "A GraphQL mutation that touches a ref, a branch or a tag can move \
+     the default branch or publish a tag, and purlis does not read which.";
+
+/// True when a GraphQL document names a ref, a branch or a tag in any of its names, read as
+/// camel-case or snake-case words: `updateRef`, `createCommitOnBranch`, `deleteBranchProtectionRule`,
+/// `tagCreate`, `default_branch` (#7131). Fails closed: a string that names one counts too.
+fn touches_a_ref(query: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let names = RE.get_or_init(|| Regex::new(r"[A-Za-z_][A-Za-z0-9_]*").expect("compiles"));
+    names.find_iter(query).any(|name| {
+        camel_words(name.as_str()).iter().any(|w| {
+            matches!(
+                w.as_str(),
+                "ref" | "refs" | "branch" | "branches" | "tag" | "tags" | "ruleset" | "rulesets"
+            )
+        })
+    })
+}
+
+/// A name's words, lower-cased: split at `_` and before each upper-case letter that follows a
+/// lower-case one or a digit.
+fn camel_words(name: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if (c == '_' || (c.is_ascii_uppercase() && prev_lower)) && !word.is_empty() {
+            words.push(std::mem::take(&mut word));
+        }
+        prev_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        if c != '_' {
+            word.push(c.to_ascii_lowercase());
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
 }
 
 /// True when every `$` in a GraphQL document is a variable the document declares, declared in its
