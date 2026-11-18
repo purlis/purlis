@@ -5,7 +5,7 @@
 # family's slice adds. The rule and actions columns are generated from the default and checked
 # by crates/purlis-core/tests/it/every_inventory_row_is_mapped.rs; the kind and note are written.
 rule	actions	kind	note
-guards-merge-hold	merge	merge-hold	The merge ask (Asks #46).
+guards-merge-hold	merge,land	merge-hold	The merge ask (Asks #46).
 guards-release-hold	release	none	Today the release floor refuses an unattended publish and never asks (release #1).
 guards-git-protected-push	push	permission	Today a protected-branch push is a risk class on the harness's permission ask (Asks #19).
 guards-git-force-push	push	permission	As guards-git-protected-push.

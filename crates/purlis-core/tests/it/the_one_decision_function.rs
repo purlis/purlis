@@ -439,6 +439,7 @@ mod for_a_chat {
 
     #[test]
     fn only_what_an_enforcement_point_is_wired_for_is_asked_about() {
+        purlis_core::unsteered!();
         assert!(decide::is_asked_by_an_enforcement_point("merge", "Branch"));
         assert!(decide::is_asked_by_an_enforcement_point("land", "Repo"));
         for (action, kind) in [

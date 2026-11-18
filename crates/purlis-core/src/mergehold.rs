@@ -82,7 +82,7 @@ pub const REASON_UNDECIDED: &str = "merge-undecided";
 
 /// How long the app waits for the forge to say where a held request stands before it answers
 /// the hook: past it, nobody is asked, and the chat is told so. Inside the hook's own wait.
-pub const THE_FORGE_IS_READ_WITHIN: std::time::Duration = std::time::Duration::from_millis(1_200);
+pub const THE_FORGE_IS_READ_WITHIN: std::time::Duration = std::time::Duration::from_millis(900);
 
 /// The most merge asks one chat has waiting at once: one more is not asked.
 pub const AT_MOST_PER_CHAT: usize = 3;

@@ -240,7 +240,7 @@ pub(crate) fn attendance_of_this_chat(
 /// How long the guard waits for the session host to decide a merge: it loads the plane's
 /// committed policy and decides, which is a few git reads. With [`A_MERGE_IS_TAKEN_WITHIN`] after
 /// it, inside the hook's [`BUDGET`] (`a_merge_decided_and_then_taken_fits_the_budget`).
-const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(300);
+const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(700);
 
 /// What the policy left of a merge.
 enum MergeJudged {
@@ -349,7 +349,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
 /// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
 /// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
 /// [`BUDGET`].
-const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_400);
+const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_000);
 
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `held`, run in
 /// `cwd` by a chat the app started, which the project policy's `decision` holds for the person.
