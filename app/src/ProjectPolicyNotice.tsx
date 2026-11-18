@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { commands, type PlaneId, type PolicyState } from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
+import { holdPolicy } from "./projectPolicy";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
@@ -16,6 +17,10 @@ export const mayAcceptPolicy = (): boolean => inTheWindow(commands, "acceptProje
 /** What Accept means, after the families that wait. */
 export const POLICY_ACCEPT_MEANS =
   "Accept, and your chats here run that way from now on. Until you do, they keep what you accepted before.";
+
+/** What the window says where this machine's acceptance does not hold: every family enforced. */
+export const POLICY_UNSEALED_SAID =
+  "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again.";
 
 /** Whether an answer is a policy state to draw: one of any other shape says nothing. */
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
@@ -55,7 +60,11 @@ export function ProjectPolicyNotice({
       .projectPolicyState(plane)
       .then((answer) => {
         // Only a policy state is drawn: an answer of any other shape says nothing.
-        if (live && answer.status === "ok" && drawable(answer.data)) setState(answer.data);
+        if (live && answer.status === "ok" && drawable(answer.data)) {
+          setState(answer.data);
+          // The pane heads say it from here: one read per project (`projectPolicy.ts`).
+          holdPolicy(plane, answer.data);
+        }
       })
       // A state that cannot be read asks nothing: until an Accept, nothing is loosened.
       .catch(() => {});
@@ -78,7 +87,10 @@ export function ProjectPolicyNotice({
           setAgain((n) => n + 1);
           return;
         }
-        if (drawable(done.data)) setState(done.data);
+        if (drawable(done.data)) {
+          setState(done.data);
+          holdPolicy(plane, done.data);
+        }
         sandboxCommandReturned();
       })
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))
@@ -104,8 +116,7 @@ export function ProjectPolicyNotice({
 
   const body = (
     <p>
-      {state.unsealed &&
-        "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again. "}
+      {state.unsealed && `${POLICY_UNSEALED_SAID} `}
       {state.waiting.length > 0 &&
         `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}

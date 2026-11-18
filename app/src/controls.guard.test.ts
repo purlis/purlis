@@ -447,6 +447,8 @@ export const PANE_LINE_CHIPS = [
   "pane-head-where",
   // What the chat uses now (#5524): its skill run and its browsers, which left its tab.
   "pane-using",
+  // The project's policy (Q308a, instruction 45): its template and the families set apart.
+  "pane-policy",
 ];
 
 /** **The chips of the pane foot** (#5202, #5204, spec #5191 stories 43 and 44): harness ·
@@ -788,6 +790,8 @@ export const HEAD_ROW: ChipRow = {
     PaneTasksWord: "pane-state-mark",
     // Its number beside its name (#6212).
     PaneNumber: "pane-number",
+    // The project's policy (Q308a, instruction 45).
+    PolicyMark: "pane-policy",
   },
 };
 

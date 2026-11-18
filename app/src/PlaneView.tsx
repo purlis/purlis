@@ -579,6 +579,7 @@ import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -12110,6 +12111,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
+          machine, in a project that names no policy. */}
+      <PolicyWatchAnnounced plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
           Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
       <PersonaHostsNotice plane={plane} asked={personasAsked} />

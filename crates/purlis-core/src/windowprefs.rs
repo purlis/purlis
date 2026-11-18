@@ -498,7 +498,12 @@ pub const ON_THIS_MACHINE: &str = "on this machine";
 /// other cause given for that key, or found under it, is dropped, so the list is never more
 /// than these few words and the file's bound holds without trimming it. `app/src/dismissals.ts`
 /// holds the same list (`ONCE_ON_THIS_MACHINE`), and `windowprefs.test.ts` holds it to this one.
-pub const ONCE_ON_THIS_MACHINE: &[&str] = &["chip-explained", "theme-folder-offered"];
+pub const ONCE_ON_THIS_MACHINE: &[&str] = &[
+    "chip-explained",
+    "theme-folder-offered",
+    // The upgrade to the `watch` policy, announced once (Q308a).
+    "policy-watch-announced",
+];
 
 /// The lock a read-modify-write of the layout file holds, beside it.
 const LAYOUT_LOCK: &str = "layout.json.lock";
