@@ -27,6 +27,7 @@
 //!   is read again here by its scheme's kind, and words that read as another address or path ask
 //!   first, showing both ([`Asking::Misleading`]).
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 mod asks;
@@ -269,6 +270,32 @@ impl Resolver {
             .map(|one| &**one)
     }
 
+    /// **`candidate` as it is read**: itself, but for a number's words that name a file. The
+    /// words of `owner/repo#N` before the `#` (`docs/guide.md#12`) are then a file candidate,
+    /// when the file kind finds that file on the disk. The window offers both readings of such
+    /// a word; the disk decides, never the words' shape, so `vercel/next.js#123` stays an issue
+    /// where no such file is.
+    fn as_read<'a>(&self, candidate: &'a Candidate, pane: &Pane) -> Cow<'a, Candidate> {
+        let file = (candidate.kind == Kind::Issue)
+            .then(|| candidate.text.split_once('#'))
+            .flatten()
+            .map(|(words, _)| words)
+            .filter(|words| words.contains('/'))
+            .filter(|words| {
+                self.kind_of(Kind::File, pane).is_some_and(|kind| {
+                    matches!(kind.resolve(words, pane), Resolved::Link(Target::File(_)))
+                })
+            });
+        match file {
+            Some(words) => Cow::Owned(Candidate {
+                kind: Kind::File,
+                text: words.to_owned(),
+                target: None,
+            }),
+            None => Cow::Borrowed(candidate),
+        }
+    }
+
     /// `candidate` read by the kind its hint picks, with that kind; what it is otherwise.
     fn read(
         &self,
@@ -304,6 +331,7 @@ impl Resolver {
 
     /// **What `candidate`, found in `pane`, is.**
     pub fn resolve(&self, candidate: &Candidate, pane: &Pane) -> Resolved {
+        let candidate = &*self.as_read(candidate, pane);
         match self.read(candidate, pane) {
             Ok((_, target)) => Resolved::Link(target),
             Err(other) => other,
@@ -313,6 +341,7 @@ impl Resolver {
     /// **What a hover over `candidate` shows**: what it is and what opening it does, resolved
     /// once.
     pub fn hover(&self, candidate: &Candidate, pane: &Pane) -> Hover {
+        let candidate = &*self.as_read(candidate, pane);
         match self.read(candidate, pane) {
             Ok((kind, target)) => Hover::Link {
                 opening: Box::new(Self::opening(kind, target.clone(), candidate, pane)),
@@ -333,6 +362,7 @@ impl Resolver {
         asks: &Asks,
         answer: Option<&str>,
     ) -> Opening {
+        let candidate = &*self.as_read(candidate, pane);
         let (kind, target) = match self.read(candidate, pane) {
             Ok(read) => read,
             Err(Resolved::NotALink(why)) => return Opening::Refused(why),

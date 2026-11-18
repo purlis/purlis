@@ -15,6 +15,10 @@
 //!   target is a `Target::Url`, built here from the forge's host and the repo's path, never from
 //!   text the pane sent beyond the number and the repo's name. GitHub's `/issues/N` page shows a pull request's too; on
 //!   GitLab `#N` is an issue (a merge request is `!N`).
+//! - **Words with a path's look are a file first**: `owner/repo#N`'s words before the `#`
+//!   (`docs/guide.md#12`) are a file link where that file is in the folder, and an issue's
+//!   otherwise (`vercel/next.js#123`), which asks unless the repo is a remote
+//!   ([`super::Resolver`] decides, on the disk).
 //! - **Only folders in the chat's project are read**: a folder the chat moved to outside it
 //!   (#6367) has no remote purlis reads, so its numbers are no link. The remotes are read by
 //!   gitoxide from the repository's own config, isolated from the system's and the person's, and
@@ -173,6 +177,28 @@ pub(super) fn names_an_issue(word: &str) -> Option<(&str, u64)> {
     Some((said.repo?, said.number))
 }
 
+/// Whether `word` has the shape of `owner/repo#N` but for a letter outside ASCII in its repo's
+/// words (each part of letters and digits of any script, `.`, `_` and `-`): such words may only
+/// look like a repo a forge names, so a marked link's words that read so name a target.
+pub(super) fn reads_as_an_issue_beyond_ascii(word: &str) -> bool {
+    let Some((repo, number)) = word.rsplit_once('#') else {
+        return false;
+    };
+    let parts: Vec<&str> = repo.split('/').collect();
+    !repo.is_ascii()
+        && !number.is_empty()
+        && number.len() <= MOST_DIGITS
+        && !number.starts_with('0')
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars().next().is_some_and(char::is_alphanumeric)
+                && part
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        })
+}
+
 /// `url`'s host, with its port where it has one, as a forge's host is kept.
 fn host_of(url: &url::Url) -> Option<String> {
     let host = url.host_str()?;
@@ -244,7 +270,10 @@ fn read_remotes(folder: &Path, project: &Path) -> Vec<(String, String)> {
     let Some(git) = git_dir_of(folder, project) else {
         return Vec::new();
     };
-    let Ok(repo) = gix::open_opts(&git, gix::open::Options::isolated()) else {
+    // The path is a git folder as it stands (`open_path_as_is`): gitoxide looks for no `.git`
+    // inside it, which a link or a `gitdir:` file there could point anywhere.
+    let Ok(repo) = gix::open_opts(&git, gix::open::Options::isolated().open_path_as_is(true))
+    else {
         return Vec::new();
     };
     repo.remote_names()
@@ -262,8 +291,9 @@ fn read_remotes(folder: &Path, project: &Path) -> Vec<(String, String)> {
 /// `.git`, whose git folder, read from a `.git` file's `gitdir:` where it is one, and that git
 /// folder's `commondir`, are both in `project`. Each is resolved as the system resolves it, links
 /// before `..`, and the resolved path is the one returned and read, so what was checked is what
-/// is opened. A `.git` file anything wrote can name any folder, a guarded one too, and nothing
-/// outside the project is opened. `None` otherwise.
+/// is opened, as it stands: it must hold a `HEAD`, and gitoxide looks for no `.git` in it. A
+/// `.git` file anything wrote can name any folder, a guarded one too, and nothing outside the
+/// project is opened. `None` otherwise.
 fn git_dir_of(folder: &Path, project: &Path) -> Option<PathBuf> {
     let work = folder
         .ancestors()
@@ -277,6 +307,10 @@ fn git_dir_of(folder: &Path, project: &Path) -> Option<PathBuf> {
         let named = said.lines().next()?.strip_prefix("gitdir:")?.trim();
         within(&work.join(named), project)?
     };
+    // What is opened is a git folder itself: a folder with no `HEAD` is none.
+    if !std::fs::metadata(git.join("HEAD")).is_ok_and(|meta| meta.is_file()) {
+        return None;
+    }
     if let Ok(said) = std::fs::read_to_string(git.join("commondir")) {
         within(&git.join(said.trim()), project)?;
     }

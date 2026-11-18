@@ -476,3 +476,133 @@ fn a_git_file_through_a_link_that_stays_in_the_project_is_followed() {
         page("https://github.com/purlis/purlis/issues/9")
     );
 }
+
+/// A folder `here` whose `.git` is a file naming `decoy`, a folder of the project that is no git
+/// folder (no `HEAD`), whose own `.git` is `inner`, naming a repository outside the project.
+#[cfg(unix)]
+fn decoy_for(here: &Fixture, inner: impl FnOnce(&Path, &Path)) {
+    let outside_git = here.outside.join("repo/.git");
+    git_folder(&outside_git, "git@github.com:someone/else.git");
+    let decoy = here.project.join("decoy");
+    std::fs::create_dir_all(&decoy).expect("a folder");
+    inner(&decoy.join(".git"), &outside_git);
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}\n", decoy.display()),
+    )
+    .expect("a git file");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_folder_with_no_head_whose_own_dot_git_is_a_link_out_reads_nothing() {
+    let here = fixture();
+    decoy_for(&here, |dot_git, outside_git| {
+        std::os::unix::fs::symlink(outside_git, dot_git).expect("a link");
+    });
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_folder_with_no_head_whose_own_dot_git_is_a_git_file_out_reads_nothing() {
+    let here = fixture();
+    decoy_for(&here, |dot_git, outside_git| {
+        std::fs::write(dot_git, format!("gitdir: {}\n", outside_git.display())).expect("a file");
+    });
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+/// The kinds the window's candidates meet: issue numbers (`origin` is purlis/purlis) and files.
+fn issues_and_files() -> Resolver {
+    Resolver::with(vec![
+        Box::new(IssueRef::with(|_, _| {
+            vec![("origin".to_owned(), ORIGIN.1.to_owned())]
+        })),
+        Box::new(super::super::LocalFile::with(None, Vec::new())),
+    ])
+}
+
+fn touch(path: &Path) {
+    std::fs::create_dir_all(path.parent().expect("a parent")).expect("folders");
+    std::fs::write(path, "x\n").expect("a file");
+}
+
+#[test]
+fn an_owner_repo_and_number_word_that_is_a_file_in_the_folder_is_a_file_link() {
+    let here = fixture();
+    for path in ["docs/guide.md", "lib/x.rs", "src/Makefile"] {
+        touch(&here.app().join(path));
+    }
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    for (word, file) in [
+        ("docs/guide.md#12", "docs/guide.md"),
+        ("lib/x.rs#7", "lib/x.rs"),
+        ("src/Makefile#3", "src/Makefile"),
+    ] {
+        let Resolved::Link(Target::File(at)) = links.resolve(&issue(word), &pane) else {
+            panic!("{word} is a file in the folder, so a file link");
+        };
+        assert!(at.shown().ends_with(file), "{word}: {}", at.shown());
+        assert!(
+            matches!(
+                links.open(&issue(word), &pane, &Asks::default(), None),
+                Opening::Open(Target::File(_))
+            ),
+            "{word} opens as the file, inside the chat's home"
+        );
+    }
+}
+
+#[test]
+fn an_owner_repo_and_number_word_that_is_no_file_stays_an_issue_that_asks_unless_a_remote() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    // `vercel/next.js#123` names a repo whose name ends like a file's: no such file, so an issue.
+    let Opening::Ask { target, about, .. } =
+        links.open(&issue("vercel/next.js#123"), &pane, &Asks::default(), None)
+    else {
+        panic!("a repo that is no remote asks first");
+    };
+    assert_eq!(
+        target,
+        Target::Url(url::Url::parse("https://github.com/vercel/next.js/issues/123").unwrap())
+    );
+    assert_eq!(about, Asking::Link);
+    assert_eq!(
+        links.open(&issue("purlis/purlis#5"), &pane, &Asks::default(), None),
+        Opening::Open(Target::Url(
+            url::Url::parse("https://github.com/purlis/purlis/issues/5").unwrap()
+        ))
+    );
+}
+
+#[test]
+fn a_file_that_shares_a_repo_s_name_wins_only_where_it_exists() {
+    // The file is found on the disk, never guessed from its name: the same words are an issue
+    // where no file is there, and a file where one is.
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    assert!(matches!(
+        links.resolve(&issue("vercel/next.js#123"), &pane),
+        Resolved::Link(Target::Url(_))
+    ));
+    touch(&here.app().join("vercel/next.js"));
+    assert!(matches!(
+        links.resolve(&issue("vercel/next.js#123"), &pane),
+        Resolved::Link(Target::File(_))
+    ));
+}

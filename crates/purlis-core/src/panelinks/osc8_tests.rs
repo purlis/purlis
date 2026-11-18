@@ -1235,3 +1235,24 @@ fn an_issue_s_words_over_its_path_on_another_host_ask() {
         "its text says purlis/purlis#6223"
     );
 }
+
+#[test]
+fn an_issue_ref_with_a_letter_outside_ascii_names_a_target_so_it_asks() {
+    // `р` is Cyrillic, `ü` and `日本` have no ASCII look: any of them in the repo's words may
+    // be a repo that only reads as the one the page is, so the ask shows both.
+    for words in ["рurlis/purlis#6223", "purlis/purlis-ü#6223", "日本/語#6223"] {
+        for target in [
+            "https://example.com/unrelated",
+            "https://github.com/purlis/purlis/issues/6223",
+        ] {
+            assert_eq!(
+                asks_saying(words, target),
+                format!("its text says {words}"),
+                "{words} over {target}"
+            );
+        }
+    }
+    // A bare number, and words with a non-ASCII letter but no repo and number, are plain.
+    assert!(opens("#6223", "https://example.com/unrelated"));
+    assert!(opens("café#6223x", "https://example.com/unrelated"));
+}

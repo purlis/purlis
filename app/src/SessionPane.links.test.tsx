@@ -188,14 +188,26 @@ describe("a pane's link candidates", () => {
   });
 });
 
-describe("a word that reads as a path", () => {
-  it("stays a file's link, never an issue's, when a number follows it", () => {
-    for (const line of ["see docs/guide.md#12", "src/lib.rs#7", "./notes.txt#3"]) {
-      const kinds = candidatesIn(line).map((one) => one.kind);
-      expect(kinds, line).toContain("file");
-      expect(kinds, line).not.toContain("issue");
+describe("a word that reads as owner/repo#N", () => {
+  it("is offered as an issue's words whole, for the core to read as a file where one is there", () => {
+    for (const word of [
+      "docs/guide.md#12",
+      "src/lib.rs#7",
+      "src/Makefile#3",
+      "vercel/next.js#123",
+    ]) {
+      const found = candidatesIn(`see ${word}`);
+      expect(
+        found.map((one) => [one.kind, one.text]),
+        word,
+      ).toEqual([["issue", word]]);
     }
-    expect(candidatesIn("docs/guide.md#12")[0].text).toBe("docs/guide.md");
+  });
+
+  it("stays a file's words alone where it starts with a dot", () => {
+    expect(candidatesIn("./notes.txt#3").map((one) => [one.kind, one.text])).toEqual([
+      ["file", "./notes.txt"],
+    ]);
   });
 });
 

@@ -108,13 +108,6 @@ function readsAsAPath(text: string): boolean {
   return words.includes("/") ? /[\p{L}\p{N}]/u.test(words) : EXTENSION.test(words);
 }
 
-/** Whether `words`, what comes before an issue's `#`, is a file's path: its last part is a name
- *  with an extension (`guide.md`), which a repo's name does not usually have. Bare `#12` and
- *  `owner/repo` are not. */
-function readsAsAFilesPath(words: string): boolean {
-  return EXTENSION.test(words.slice(words.lastIndexOf("/") + 1));
-}
-
 /** A `file:` address, in any case: `FILE:` is the same scheme. */
 const FILE_ADDRESS = /^file:/iu;
 
@@ -137,8 +130,8 @@ export function candidatesIn(line: string): Found[] {
     const start = match.index;
     const end = start + match[0].length;
     if (found.some((one) => start < one.end && end > one.start)) continue;
-    // A word that reads as a path stays a file's (`docs/guide.md#12`), as it was before numbers.
-    if (readsAsAFilesPath(match[0].slice(0, match[0].indexOf("#")))) continue;
+    // `owner/repo#N` may be a file's words too (`docs/guide.md#12`): both readings are offered
+    // and the core decides on the disk, a file where one is there, else an issue.
     found.push({ kind: "issue", text: match[0], start, end });
   }
   const addresses = [...found];
