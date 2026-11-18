@@ -23,11 +23,11 @@ TOKEN="${CHAT_TOKEN:-}"
 [[ -n "$TOKEN" ]] || die "CHAT_TOKEN is not set (the token the purlis mint made for this repo)"
 req "$TOKEN" GET ""
 [[ "$STATUS" == 200 ]] || die "cannot read $REPO as the chat token: $(observed)"
-jq -e --arg m "$MARKER" '.description == $m' <<<"$BODY" >/dev/null \
+jqb marker -e --arg m "$MARKER" '.description == $m' >/dev/null \
   || die "$REPO does not carry the throwaway marker; refusing"
-REPO_NODE=$(jq -r .node_id <<<"$BODY")
+REPO_NODE=$(jqb repo -r .node_id)
 
-main_sha() { req "$TOKEN" GET "/git/ref/heads/main"; jq -r '.object.sha // empty' <<<"$BODY"; }
+main_sha() { req "$TOKEN" GET "/git/ref/heads/main"; jqb main_sha -r '.object.sha // empty'; }
 SHA=$(main_sha)
 [[ -n "$SHA" ]] || die "cannot read main"
 
@@ -79,7 +79,7 @@ phase_b() {
   row_refused "$TOKEN" R2 "refused (release on EXISTING tag v0; design predicts allowed)" POST /releases '{"tag_name":"v0","name":"chat"}'
   row_refused "$TOKEN" R3 "refused (draft release; design predicts allowed)" POST /releases '{"tag_name":"v0","draft":true,"name":"chat-draft"}'
   local rid=""
-  if [[ "$STATUS" == 201 ]]; then rid=$(jq -r .id <<<"$BODY"); fi
+  if [[ "$STATUS" == 201 ]]; then rid=$(jqb R3 -r .id); fi
   if [[ -n "$rid" ]]; then
     row_refused "$TOKEN" R4 "refused (publish the draft; design predicts allowed)" PATCH "/releases/$rid" '{"draft":false}'
   else
@@ -87,7 +87,7 @@ phase_b() {
   fi
   req "$TOKEN" GET /releases/tags/v1
   local v1 asset
-  v1=$(jq -r '.id // empty' <<<"$BODY"); asset=$(jq -r '.assets[0].id // empty' <<<"$BODY")
+  v1=$(jqb R5 -r '.id // empty'); asset=$(jqb R5 -r '.assets[0].id // empty')
   if [[ -n "$v1" ]]; then
     [[ -n "$asset" ]] && row_refused "$TOKEN" R5a "refused (delete an asset of immutable release v1)" DELETE "/releases/assets/$asset"
     row_refused "$TOKEN" R5b "refused (delete immutable release v1)" DELETE "/releases/$v1"
@@ -97,7 +97,7 @@ phase_b() {
   fi
   # The lock itself
   req "$TOKEN" GET /rulesets
-  rs_id=${RULESET_ID:-$(jq -r '[.[]? | select(.name == "purlis: protected branches") | .id][0] // empty' <<<"$BODY")}
+  rs_id=${RULESET_ID:-$(jqb L0 -r '[.[]? | select(.name == "purlis: protected branches") | .id][0] // empty')}
   record L0 "chat can list rulesets (info)" "$(observed)" info
   if [[ -n "$rs_id" ]]; then
     row_refused "$TOKEN" L1 "refused (PUT ruleset: disable the lock)" PUT "/rulesets/$rs_id" '{"enforcement":"disabled"}'
@@ -115,7 +115,7 @@ phase_b() {
   row_allowed "$TOKEN" AL2 "allowed (edit own branch)" "201" PUT /contents/allowed.txt \
     "{\"message\":\"allowed\",\"content\":\"$(b64 ok)\",\"branch\":\"vf-allowed\"}"
   row_allowed "$TOKEN" AL3 "allowed (open a pull request)" "201" POST /pulls '{"title":"allowed","head":"vf-allowed","base":"main"}'
-  n=$(jq -r '.number // empty' <<<"$BODY")
+  n=$(jqb AL3 -r '.number // empty')
   [[ -n "$n" ]] && row_allowed "$TOKEN" AL4 "allowed (comment)" "201" POST "/issues/$n/comments" '{"body":"chat comment"}'
   ci_route "$sha"
 }
@@ -124,7 +124,7 @@ phase_b() {
 ci_route() {
   local sha=$1 fsha
   row_allowed "$TOKEN" W1a "allowed (create branch vf-w1)" "201" POST /git/refs "{\"ref\":\"refs/heads/vf-w1\",\"sha\":\"$sha\"}"
-  req "$TOKEN" GET "/contents/scripts/run.sh?ref=vf-w1"; fsha=$(jq -r '.sha // empty' <<<"$BODY")
+  req "$TOKEN" GET "/contents/scripts/run.sh?ref=vf-w1"; fsha=$(jqb W1b -r '.sha // empty')
   local script
   script=$(printf '#!/usr/bin/env bash\nset -eu\ncurl -fsS -X PUT -H "Authorization: Bearer $GITHUB_TOKEN" -d %s "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ci-wrote.txt"\n' \
     "'{\"message\":\"ci\",\"content\":\"eA==\",\"branch\":\"main\"}'")
@@ -138,23 +138,23 @@ phase_c() {
   local n node i merged="false" by=""
   n=$(pr_num "$TOKEN" vf-auto)
   [[ -n "$n" ]] || die "no pull request from vf-auto"
-  req "$TOKEN" GET "/pulls/$n"; node=$(jq -r .node_id <<<"$BODY")
+  req "$TOKEN" GET "/pulls/$n"; node=$(jqb A1-enable -r .node_id)
   gql "$TOKEN" 'mutation($input: EnablePullRequestAutoMergeInput!){enablePullRequestAutoMerge(input:$input){pullRequest{autoMergeRequest{enabledBy{login}}}}}' \
     "$(jq -n --arg id "$node" '{input:{pullRequestId:$id,mergeMethod:"MERGE"}}')"
-  record A1-enable "info (enable permitted or refused)" "HTTP $STATUS $(msg) $(jq -c '.data // empty' <<<"$BODY" | head -c 120)" info
+  record A1-enable "info (enable permitted or refused)" "HTTP $STATUS $(msg) $(jqb A1-enable -c '.data // empty' | head -c 120)" info
   req "$TOKEN" GET "/contents/vf-auto.txt?ref=vf-auto"
   req "$TOKEN" PUT /contents/vf-auto-2.txt "{\"message\":\"push after auto-merge\",\"content\":\"$(b64 again)\",\"branch\":\"vf-auto\"}"
   record A1-push "allowed (the chat's push to its own branch)" "$(observed)" info
   for i in $(seq 1 18); do
     sleep 10
     req "$TOKEN" GET "/pulls/$n"
-    merged=$(jq -r .merged <<<"$BODY"); by=$(jq -r '.merged_by.login // ""' <<<"$BODY")
+    merged=$(jqb A1-merge -r .merged); by=$(jqb A1-merge -r '.merged_by.login // ""')
     [[ "$merged" == true ]] && break
   done
   if [[ "$merged" == true ]]; then
     record A1-merge "PR not merged (the lock holds)" "merged by '$by' within $((i * 10))s: auto-merge completed past the lock" fail
   else
-    record A1-merge "PR not merged (the lock holds)" "not merged after 180s (mergeable_state $(jq -r .mergeable_state <<<"$BODY"))" pass
+    record A1-merge "PR not merged (the lock holds)" "not merged after 180s (mergeable_state $(jqb A1-merge -r .mergeable_state))" pass
   fi
 }
 
