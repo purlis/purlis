@@ -771,3 +771,64 @@ fn inline_settings_are_read_through_whitespace_escaped_keys_and_repeated_flags()
     assert_eq!(bypass_in(&without), None);
     assert!(without.contains(&kept.to_owned()));
 }
+
+#[test]
+fn inline_settings_that_allow_all_of_bash_or_silence_hooks_are_refused_and_lose_only_those_keys() {
+    // #7165: no `defaultMode`, and still no prompts for Bash, or no guards.
+    for (value, kept, shown) in [
+        (
+            r#"{"permissions":{"allow":["Bash","Read"]},"model":"x"}"#,
+            r#"{"permissions":{"allow":["Read"]},"model":"x"}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"permissions":{"allow":["Bash(*)","Bash(:*)","Bash( ** )"]}}"#,
+            r#"{"permissions":{"allow":[]}}"#,
+            "permissions.allow of Bash",
+        ),
+        (
+            r#"{"hooks":{"PreToolUse":[]},"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "hooks",
+        ),
+        (
+            r#"{"disableAllHooks":true,"model":"x"}"#,
+            r#"{"model":"x"}"#,
+            "disableAllHooks",
+        ),
+        (r#"{"disableAllHooks":"yes"}"#, "{}", "disableAllHooks"),
+    ] {
+        for (command, want) in [
+            (
+                words(&["claude", "--settings", value, "-v"]),
+                words(&["claude", "--settings", kept, "-v"]),
+            ),
+            (
+                words(&["claude", &format!("--settings={value}")]),
+                words(&["claude", &format!("--settings={kept}")]),
+            ),
+        ] {
+            let said = bypass_in(&command).unwrap_or_default();
+            assert!(said.contains(shown), "{value}: {said}");
+            let without = without_bypass(&command);
+            assert_eq!(without, want, "{value}");
+            assert_eq!(bypass_in(&without), None, "{value}");
+        }
+    }
+    // A narrow allow of Bash asks for everything else, so it stays.
+    let narrow = words(&[
+        "claude",
+        "--settings",
+        r#"{"permissions":{"allow":["Bash(git status)","Bash(npm run *)"]}}"#,
+    ]);
+    assert_eq!(bypass_in(&narrow), None);
+    assert_eq!(without_bypass(&narrow), narrow);
+}
+
+#[test]
+fn an_unreadable_inline_settings_value_does_not_say_it_switches_the_prompts_off() {
+    // #7165, item 6: it is refused because nothing can be ruled out, and says so.
+    let command = words(&["claude", "--settings", "{not json"]);
+    let said = bypass_in(&command).expect("refused");
+    assert!(said.contains("cannot tell whether"), "{said}");
+}

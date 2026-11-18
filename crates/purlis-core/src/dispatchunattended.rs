@@ -391,22 +391,67 @@ fn is_inline(value: &str) -> bool {
         .starts_with('{')
 }
 
-/// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
-/// prompts off, or `None` where it carries no such mode. **Inline settings this cannot read
-/// are `Err`** (#7155): Claude Code accepts JSON `serde_json` rejects (comments, trailing
-/// commas, a byte-order mark), so a mode in one cannot be shown absent, and it is taken out
-/// whole.
-fn settings_without_bypass(value: &str) -> Option<Result<String, ()>> {
+/// Whether a `permissions.allow` entry allows every Bash command unasked: `Bash` alone, or
+/// `Bash(*)`, `Bash(:*)` and the like, where the glob inside is nothing but wildcards.
+fn is_broad_bash_allow(rule: &str) -> bool {
+    let rule = rule.trim();
+    match rule.strip_prefix("Bash") {
+        Some("") => true,
+        Some(rest) => rest
+            .strip_prefix('(')
+            .and_then(|rest| rest.strip_suffix(')'))
+            .is_some_and(|glob| glob.chars().all(|c| matches!(c, '*' | ':' | ' '))),
+        None => false,
+    }
+}
+
+/// What inline settings carry that [`settings_without_bypass`] takes out.
+type Removed = Vec<&'static str>;
+
+/// Inline Claude Code settings `value` without what turns the chat's prompts or guards off, and
+/// what was taken out, or `None` where they carry none of it (#7165): a `permissions.defaultMode`
+/// that switches the prompts off, a broad `permissions.allow` of Bash (`"Bash"`), a `hooks` key
+/// (a hook of the profile's own may answer allow ahead of purlis's guard) and `disableAllHooks`
+/// (which would silence purlis's guards), whatever the value of the last two. **Inline settings
+/// this cannot read are `Err`** (#7155): Claude Code accepts JSON `serde_json` rejects (comments,
+/// trailing commas, a byte-order mark), so none of these can be shown absent, and it is taken
+/// out whole.
+fn settings_without_bypass(value: &str) -> Option<Result<(String, Removed), ()>> {
     let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(value) else {
         return is_inline(value).then_some(Err(()));
     };
-    let permissions = settings.get_mut("permissions")?.as_object_mut()?;
-    let mode = permissions.get("defaultMode")?.as_str()?;
-    if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
-        return None;
+    let mut removed = Removed::new();
+    if let Some(permissions) = settings
+        .get_mut("permissions")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        let off = permissions
+            .get("defaultMode")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|mode| ClaudeCodeMode::of(mode) == ClaudeCodeMode::BypassPermissions);
+        if off {
+            permissions.remove("defaultMode");
+            removed.push("permissions.defaultMode");
+        }
+        if let Some(allow) = permissions
+            .get_mut("allow")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            let before = allow.len();
+            allow.retain(|rule| !rule.as_str().is_some_and(is_broad_bash_allow));
+            if allow.len() != before {
+                removed.push("permissions.allow of Bash");
+            }
+        }
     }
-    permissions.remove("defaultMode");
-    Some(Ok(settings.to_string()))
+    if let Some(object) = settings.as_object_mut() {
+        for key in ["hooks", "disableAllHooks"] {
+            if object.remove(key).is_some() {
+                removed.push(key);
+            }
+        }
+    }
+    (!removed.is_empty()).then(|| Ok((settings.to_string(), removed)))
 }
 
 /// **The words of `command` that start a harness with its permission prompts off**, if any
@@ -480,12 +525,13 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
     let words = if attached.is_some() { 1 } else { 2 };
     // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
-    // `permissions.defaultMode`. A settings file's path is not read here.
+    // `permissions.defaultMode`, and what else would silence a guard ([`settings_without_bypass`]).
+    // A settings file's path is not read here.
     if flag == CLAUDE_CODE_SETTINGS_FLAG {
         return Some(match settings_without_bypass(value)? {
-            Ok(rewritten) => Bypass {
+            Ok((rewritten, removed)) => Bypass {
                 // The mode's own word is the attendance fact's alone to spell.
-                shown: format!("{flag} (its permissions.defaultMode)"),
+                shown: format!("{flag} (its {})", removed.join(", its ")),
                 words,
                 kept: match attached {
                     Some(_) => vec![format!("{flag}={rewritten}")],
@@ -494,7 +540,11 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
             },
             // Refused whole: nothing of it is kept, so no mode in it runs.
             Err(()) => Bypass {
-                shown: format!("{flag} (inline settings purlis cannot read)"),
+                // Not a claim that they switch anything off: only that none can be ruled out.
+                shown: format!(
+                    "{flag} (inline settings purlis cannot read, so purlis cannot tell \
+                     whether they switch the prompts or its guards off)"
+                ),
                 words,
                 kept: Vec::new(),
             },
