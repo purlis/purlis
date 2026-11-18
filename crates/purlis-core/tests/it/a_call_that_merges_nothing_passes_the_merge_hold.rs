@@ -94,11 +94,109 @@ fn playing_a_manual_ci_job_passes() {
         "J=101; glab api -X POST projects/p/jobs/$J/play",
         "J=101\nglab api -X POST \"projects/p/jobs/${J}/play\"",
         "glab api --method POST projects/p/jobs/123/retry",
+        "for j in 1 2\ndo\nglab api -X POST projects/p/jobs/$j/play\ndone",
+        "for j in 1 2; do\n  glab api -X POST projects/p/jobs/${j}/play;\ndone",
+        // An MR's metadata edit with a body from a file, the id bound to digits.
+        "M=7; glab api --method PUT projects/p/merge_requests/$M --input body.json",
+        "for m in 7 8; do glab api --method PUT projects/p/merge_requests/$m/ --input body.json; done",
+    ]);
+}
+
+// Round 3: the only lines where a variable may stand in a writing path are the two exact shapes.
+// Each line below was run under real bash and wrote the variable some way the reader missed.
+#[test]
+fn bash_writing_a_variable_some_other_way_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        // B1: bash writes the variable implicitly.
+        "_=1; : 3/merge; gh api -X PUT repos/o/r/pulls/$_",
+        "REPLY=1; read <<< 3/merge; gh api -X PUT repos/o/r/pulls/$REPLY",
+        "BASH_REMATCH=1; [[ 3/merge =~ .* ]]; glab api -X PUT projects/p/merge_requests/$BASH_REMATCH",
+        "OPTARG=1; getopts a: o -a 3/merge; glab api -X PUT projects/p/merge_requests/$OPTARG",
+        "MAPFILE=1; mapfile <<< 3/merge; glab api -X PUT projects/p/merge_requests/$MAPFILE",
+        "REPLY=1; glab api -X PUT projects/p/merge_requests/$REPLY",
+        // B2: the name quoted or escaped.
+        "JOB=1; declare J''OB=3/merge; gh api -X PUT repos/o/r/pulls/$JOB",
+        "JOB=1; read J\\OB <<< 3/merge; gh api -X PUT repos/o/r/pulls/$JOB",
+        "JOB=1; export J\"O\"B=3/merge; gh api -X PUT repos/o/r/pulls/$JOB",
+        "JOB=1; printf -v J''OB 3/merge; gh api -X PUT repos/o/r/pulls/$JOB",
+        "Q=1; declare $'\\x51=3/merge'; gh api -X PUT repos/o/r/pulls/$Q",
+        "'Q'=1; gh api -X PUT repos/o/r/pulls/$Q",
+        // B3: IFS.
+        "Q=0; IFS=0; gh api -X PATCH repos/o/r/git/refs/heads/main$Q -f sha=abc",
+        "Q=10; IFS=0; gh api -X PUT repos/o/r/pulls/$Q",
+        // B4: code the reader cannot see.
+        "Q=1; source f; gh api -X PUT repos/o/r/pulls/$Q",
+        "Q=1; . f; gh api -X PUT repos/o/r/pulls/$Q",
+        "Q=1; trap 'source f' DEBUG; gh api -X PUT repos/o/r/pulls/$Q",
+        "Q=1; eval \"$Z\"; gh api -X PUT repos/o/r/pulls/$Q",
+        // B5: text that looks like a binding and binds nothing.
+        ": ';Q=1;'; gh api -X PUT repos/o/r/pulls/$Q",
+        "echo do Q=1; gh api -X PUT repos/o/r/pulls/$Q",
+        "if false; then :; Q=123; fi; gh api -X PUT repos/o/r/pulls/$Q",
+        "cat <<EOF\nQ=1\nEOF\ngh api -X PUT repos/o/r/pulls/$Q",
+        "{ :; Q=1; } | cat; gh api -X PUT repos/o/r/pulls/$Q",
+        "false &&\nQ=1\ngh api -X PUT repos/o/r/pulls/$Q",
+    ]);
+}
+
+#[test]
+fn a_near_miss_of_the_two_shapes_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        // An extra statement before or after.
+        "echo hi; J=101; glab api -X PUT projects/p/merge_requests/$J",
+        "J=101; glab api -X PUT projects/p/merge_requests/$J; echo done",
+        "J=101; glab api -X PUT projects/p/merge_requests/$J | tail",
+        "J=101; glab api -X PUT projects/p/merge_requests/$J && true",
+        "J=101; J=2; glab api -X PUT projects/p/merge_requests/$J",
+        "for j in 1 2; do echo $j; glab api -X PUT projects/p/merge_requests/$j; done",
+        "for j in 1 2; do glab api -X PUT projects/p/merge_requests/$j; done; echo done",
+        "echo; for j in 1 2; do glab api -X PUT projects/p/merge_requests/$j; done",
+        // IFS anywhere.
+        "J=101; glab api -X PUT projects/p/merge_requests/$J -f x=IFS",
+        "IFS=; for j in 1 2; do glab api -X PUT projects/p/merge_requests/$j; done",
+        // A bash variable, or a keyword, as the name.
+        "PWD=1; glab api -X PUT projects/p/merge_requests/$PWD",
+        "RANDOM=1; glab api -X PUT projects/p/merge_requests/$RANDOM",
+        "PATH=1; glab api -X PUT projects/p/merge_requests/$PATH",
+        "for do in 1; do glab api -X PUT projects/p/merge_requests/$do; done",
+        // A quoted name or value, or a name of mixed case.
+        "\"J\"=101; glab api -X PUT projects/p/merge_requests/$J",
+        "J=\"101\"; glab api -X PUT projects/p/merge_requests/$J",
+        "Jb=101; glab api -X PUT projects/p/merge_requests/$Jb",
+        "_J=101; glab api -X PUT projects/p/merge_requests/$_J",
+        // Two api calls, or another variable, in the call.
+        "for j in 1 2; do glab api -X POST projects/p/jobs/$j/play; glab api -X PUT projects/p/merge_requests/$j; done",
+        "J=101; glab api -X PUT projects/p/merge_requests/$J -f t=$K",
+        "J=101; glab api -X PUT projects/p/merge_requests/$J gh api x",
+        // The reference is not a whole segment.
+        "J=3; gh api -X PUT repos/o/r/pulls/$J/merge",
+        "J=3; gh api -X PUT repos/o/r/pulls/5$J",
+        "J=3; gh api -X PUT repos/o/r/pulls$J",
+        "J=3; gh api -X PUT repos/o/r/pulls/$J?x=1",
+        // A word of the call is the name.
+        "J=3; gh api -X PUT repos/o/J/pulls/$J",
+    ]);
+}
+
+// `$(`, a backtick and `${NAME<op>}` stay refused whatever else the line is.
+#[test]
+fn a_substitution_or_an_operator_in_the_reference_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "J=1; glab api -X PUT projects/p/merge_requests/$(echo 3/merge)",
+        "J=1; glab api -X PUT projects/p/merge_requests/`echo 3/merge`",
+        "J=1; glab api -X PUT projects/p/merge_requests/${J:-3/merge}",
+        "J=1; glab api -X PUT projects/p/merge_requests/${J/1/3\\/merge}",
+        "J=1; glab api -X PUT projects/p/merge_requests/${J%%x}",
+        "for j in 1; do glab api -X PUT projects/p/merge_requests/${j:-3/merge}; done",
+        "for j in 1; do glab api -X PUT projects/p/merge_requests/$(echo $j); done",
     ]);
 }
 
 // Shape 5, as the ruling of Q331 reads it: a variable in a writing path is held unless the line
-// binds it to digits. The loop over `$(...)` is the accepted false hold.
+// is one of the two exact shapes. The loop over `$(...)` is the accepted false hold.
 #[test]
 fn variables_in_writing_paths_hold() {
     purlis_core::unsteered!();
@@ -145,6 +243,7 @@ fn a_held_loop_over_a_substitution_says_to_loop_over_digits() {
     let refusal = mergehold::refusal_for(cmd, &held, &mergehold::AppSaid::Unheard);
     assert!(refusal.contains("projects/p/jobs/$j/play"), "{refusal}");
     assert!(refusal.contains("for j in 101 102"), "{refusal}");
+    assert!(refusal.contains("J=101; glab api"), "{refusal}");
 }
 
 // Shape 6.

@@ -502,79 +502,218 @@ fn is_merge_path(segs: &[String]) -> bool {
 /// The sentence a refusal ends with where a writing call's path holds a variable that is not
 /// bound to digits on the line (#7176; Q331).
 const VARIABLE_WAY_OUT: &str = "purlis cannot know what a value it did not see holds, and a \
-     value may carry a `/`, a `?` or a flag. Run each id written out literally, or loop over the \
-     ids written out: `for j in 101 102; do ...; done`.";
+     value may carry a `/`, a `?` or a flag. Run each id written out literally, or put the call \
+     alone on a line of exactly one of two shapes: `J=101; glab api ...` or \
+     `for j in 101 102; do glab api ...; done`.";
 
-/// Every `$name` and `${name}` in `endpoint` that `cmd` binds only to digits, as `name`.
-/// **A variable in a writing call's path is read only where the same line binds it to digits**
-/// (#7176; Q331: this guard is an early warning, the forge is the lock). The reader cannot know a
-/// value it did not see: a variable from `$(...)`, `read`, `export`, the environment or a file,
-/// or one that holds a `/`, a `?` or a space, can carry a path, a query or a flag, and so re-route
-/// the call. Digits cannot.
+/// Names bash and zsh set or read themselves, compared in lower case. A variable of one of
+/// these is never a plain number the line gave it (#7176; Q331).
+const SHELL_OWN_NAMES: &[&str] = &[
+    "reply",
+    "optarg",
+    "optind",
+    "opterr",
+    "mapfile",
+    "ifs",
+    "pwd",
+    "oldpwd",
+    "path",
+    "home",
+    "random",
+    "srandom",
+    "lineno",
+    "seconds",
+    "pipestatus",
+    "funcname",
+    "groups",
+    "hostname",
+    "hosttype",
+    "machtype",
+    "ostype",
+    "shell",
+    "shlvl",
+    "uid",
+    "euid",
+    "ppid",
+    "term",
+    "user",
+    "lang",
+    "cdpath",
+    "env",
+    "ps0",
+    "ps1",
+    "ps2",
+    "ps3",
+    "ps4",
+    "tmout",
+    "tmpdir",
+    "columns",
+    "lines",
+    "dirstack",
+    "globignore",
+    "shellopts",
+    "posixly_correct",
+    "timeformat",
+    "fcedit",
+    "epochseconds",
+    "epochrealtime",
+    "compreply",
+    "mail",
+    "mailpath",
+    "mailcheck",
+    "status",
+    "argv",
+    "fpath",
+    "manpath",
+    "module_path",
+    "histchars",
+    "prompt",
+    "signals",
+    "options",
+    "commands",
+    "functions",
+    "aliases",
+    "parameters",
+    "words",
+    "line",
+    "cursor",
+    "buffer",
+];
+
+/// Words that open or close a statement, which no variable may be named.
+const SHELL_KEYWORDS: &[&str] = &[
+    "if", "then", "else", "elif", "fi", "for", "in", "do", "done", "while", "until", "case",
+    "esac", "function", "select", "time", "coproc",
+];
+
+fn is_shell_own_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    SHELL_OWN_NAMES.contains(&lower.as_str())
+        || SHELL_KEYWORDS.contains(&lower.as_str())
+        || ["bash", "lc_", "ld_", "dyld_", "comp_", "hist", "xdg_"]
+            .iter()
+            .any(|p| lower.starts_with(p))
+}
+
+/// **A variable in a writing call's path is read only on a line of exactly one of two shapes**
+/// (#7176; Q331 and its round-3 ruling: this guard is an early warning, the forge is the lock):
 ///
-/// A name is bound to digits only when every bare use of it on the line is one of
+/// 1. `NAME=DIGITS; <one gh api or glab api call>`
+/// 2. `for NAME in DIGITS [DIGITS...]; do <one gh api or glab api call>; done`, on one line or
+///    the same three statements across newlines
 ///
-/// * `for NAME in 1 2 3; do`, or
-/// * `NAME=123` (or quoted), a statement of its own: at the start of the line or after `;` or a
-///   newline or `do`, and followed by `;`, a newline or the end of the line. `NAME=1 cmd` sets it
-///   only for `cmd`, after the shell has expanded its words, and `NAME=1 && ...` may not run, so
-///   neither binds,
+/// with nothing else on the line. Every other line holds. The reader cannot know a value it did
+/// not see, and bash writes variables in more ways than a regex can list (`read`, `declare`,
+/// `printf -v`, `getopts`, `[[ =~ ]]`, `_`, `REPLY`, a quoted or escaped name, `source`, `eval`,
+/// a `trap`, text that only looks like an assignment). A line that is nothing but one of the two
+/// shapes has no room for any of them: the only statement that sets `NAME` is the one shown, and
+/// the call after it holds no other variable, no `$(`, no backtick and no `eval`, `source`, `.`,
+/// `trap` or `IFS`. Digits cannot re-route a call by themselves; what could was a value the line
+/// does not show, or a setting that changes how digits split. The shapes close the first, and
+/// no line of these shapes sets `IFS` (a line that says `IFS` anywhere holds), so a name that
+/// holds digits is not split by anything the line did.
 ///
-/// and no `$NAME` comes before the first such binding. A line with a `(` or a backtick is read as
-/// binding nothing: a subshell's binding ends with it. A `${NAME...}` with an operator is no
-/// plain reference.
+/// NAME is `[A-Z][A-Z0-9_]*` or `[a-z][a-z0-9_]*` with no quote or backslash, is none of the
+/// shell's own variables or keywords ([`is_shell_own_name`]), and stands nowhere else in the call
+/// but as `$NAME` or `${NAME}` (the only plain forms; `${NAME:-x}` or `${NAME/a/b}` is held),
+/// each as a whole path segment: after a `/`, and before a `/`, a quote, a space or the end.
+/// A `(` or a backtick anywhere in the call holds, as does a `$` that is not such a reference.
 fn digit_bound(cmd: &str, name: &str) -> bool {
-    if cmd.contains(['(', '`']) {
+    let name_shape = |c: char, first: bool| {
+        if first {
+            c.is_ascii_alphabetic()
+        } else {
+            c.is_ascii_alphanumeric() || c == '_'
+        }
+    };
+    let name_ok = name.chars().next().is_some_and(|c| name_shape(c, true))
+        && name.chars().skip(1).all(|c| name_shape(c, false))
+        && (name.chars().all(|c| !c.is_ascii_lowercase())
+            || name.chars().all(|c| !c.is_ascii_uppercase()))
+        && !is_shell_own_name(name);
+    if !name_ok || cmd.contains("IFS") {
+        return false;
+    }
+    let esc = regex::escape(name);
+    let one = Regex::new(&format!(
+        r"^{esc}=[0-9]+(?:[ \t]*;[ \t]*|[ \t]*\n[ \t]*)([^;\n]+)$"
+    ))
+    .expect("compiles");
+    let looped = Regex::new(&format!(
+        r"^for[ \t]+{esc}[ \t]+in(?:[ \t]+[0-9]+)+[ \t]*(?:;|\n)[ \t\n]*do[ \t\n]+([^;\n]+?)[ \t]*(?:;|\n)[ \t\n]*done$"
+    ))
+    .expect("compiles");
+    let cmd = cmd.trim();
+    one.captures(cmd)
+        .or_else(|| looped.captures(cmd))
+        .and_then(|c| c.get(1))
+        .is_some_and(|call| lone_api_call(call.as_str(), name))
+}
+
+/// True when `call` is one `gh api` or `glab api` call whose only variable is `name`, as plain
+/// whole-segment references (see [`digit_bound`]).
+fn lone_api_call(call: &str, name: &str) -> bool {
+    let call = call.trim();
+    let mut words = call.split_whitespace();
+    if !matches!(
+        (words.next(), words.next()),
+        (Some("gh" | "glab"), Some("api"))
+    ) {
+        return false;
+    }
+    if words.any(|w| {
+        matches!(
+            w.trim_matches(['"', '\'']),
+            "gh" | "glab" | "api" | "eval" | "source" | "." | "trap" | "exec"
+        )
+    }) {
+        return false;
+    }
+    if call
+        .chars()
+        .any(|c| ";&|<>()`\\".contains(c) || (c.is_control() && c != '\t'))
+    {
+        return false;
+    }
+    // Quotes balance, so none reaches past the call.
+    let (mut single, mut double) = (false, false);
+    for c in call.chars() {
+        match c {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            _ => {}
+        }
+    }
+    if single || double {
         return false;
     }
     let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    // Each bare occurrence of the name (not a `$name` or `${name}`), as its byte offset.
-    let mut bare = Vec::new();
-    let mut first_use = usize::MAX;
-    for (at, _) in cmd.match_indices(name) {
-        let before = cmd[..at].chars().next_back();
-        let after = cmd[at + name.len()..].chars().next();
-        if before.is_some_and(is_word) || after.is_some_and(is_word) {
-            continue;
-        }
-        let preceded_by_dollar = before == Some('$');
-        let in_braces = cmd[..at].ends_with("${");
-        if preceded_by_dollar || in_braces {
-            // `${NAME}` is a plain reference, `${NAME:-x}` and `${NAME/a/b}` are not.
-            if in_braces && after != Some('}') {
-                return false;
-            }
-            first_use = first_use.min(at);
+    let braced = format!("{{{name}}}");
+    let mut rest = String::new();
+    let mut at = 0;
+    while let Some(off) = call[at..].find('$') {
+        let dollar = at + off;
+        rest.push_str(&call[at..dollar]);
+        let tail = &call[dollar + 1..];
+        let len = if tail.starts_with(&braced) {
+            braced.len()
+        } else if tail.starts_with(name) && !tail[name.len()..].chars().next().is_some_and(is_word)
+        {
+            name.len()
         } else {
-            bare.push(at);
+            return false;
+        };
+        let before = call[..dollar].chars().next_back();
+        let after = tail[len..].chars().next();
+        if before != Some('/') || !matches!(after, None | Some('/' | '"' | '\'' | ' ' | '\t')) {
+            return false;
         }
+        rest.push(' ');
+        at = dollar + 1 + len;
     }
-    let mut bound_at = Vec::new();
-    let assign = Regex::new(&format!(
-        r#"(?:^|[;\n]|\bdo)[ \t]*({})=(["']?)[0-9]+["']?[ \t]*(?:;|\n|$)"#,
-        regex::escape(name)
-    ))
-    .expect("compiles");
-    for m in assign.captures_iter(cmd) {
-        let whole = m.get(1).expect("group 1");
-        bound_at.push((whole.start(), m.get(0).expect("match").end()));
-    }
-    let looped = Regex::new(&format!(
-        r"\bfor[ \t]+({})[ \t]+in((?:[ \t]+[0-9]+)+)[ \t]*(?:;|\n)[ \t]*do\b",
-        regex::escape(name)
-    ))
-    .expect("compiles");
-    for m in looped.captures_iter(cmd) {
-        bound_at.push((
-            m.get(1).expect("group 1").start(),
-            m.get(0).expect("match").end(),
-        ));
-    }
-    if bound_at.is_empty() || bare.iter().any(|at| !bound_at.iter().any(|(b, _)| b == at)) {
-        return false;
-    }
-    let earliest = bound_at.iter().map(|(_, end)| *end).min().unwrap_or(0);
-    first_use >= earliest
+    rest.push_str(&call[at..]);
+    // The name stands nowhere else in the call.
+    !rest.split(|c: char| !is_word(c)).any(|w| w == name)
 }
 
 /// `endpoint` with each `$name` or `${name}` that [`digit_bound`] says holds only digits written
