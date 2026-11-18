@@ -8327,8 +8327,6 @@ impl Repositories {
     /// The settings a Claude Code chat in the plane starts with, compiled as a start compiles
     /// them, at the full sandbox; and at the floor, from the same denials.
     fn claude_settings(&self) -> Vec<(Level, claude::Settings)> {
-        // No Claude Code settings of this machine's: the write roots are purlis's alone.
-        claude::TEST_PERSONS_FILES.with(|it| *it.borrow_mut() = Some(Vec::new()));
         let machine = machine(Os::MacOs);
         let applied =
             compiled_anyway(Harness::ClaudeCode, self.plane.path(), &machine).expect("compiles");

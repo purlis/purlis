@@ -199,8 +199,8 @@ export function SettingsNearTheLimitNotice({
       label="This chat's settings near their limit"
       onDismiss={onDismiss}
     >
-      This chat&apos;s settings weigh {kb} KB, near the limit of what its harness&apos;s auto mode
-      checks. Past it, auto mode refuses what it would have checked, without asking. Remove the
+      This chat&apos;s permission rules weigh {kb} KB, near the limit of what its harness&apos;s
+      auto mode checks. Past it, auto mode refuses what it would have checked, without asking. Remove the
       branch folders you no longer need, then start the chat again.
     </Notice>
   );

@@ -1834,13 +1834,15 @@ fn the_smaller_rules_deny_every_spelling_the_old_rules_denied() {
     );
 }
 
-/// **A command writes no git folder outside where it may write** (the person's ruling,
-/// 2026-11-16, #6961): a chat's settings pin a repository's git folder only where a command may
-/// write (the chat's folder, its grants and caches, Claude Code's shared temp folder), because
-/// Claude Code refuses every write anywhere else. This is that refusal, measured: a chat opened
-/// in one branch folder, with the git folder pins of every other left out, runs commands that
-/// write another workspace's branch folder's `.git`, move that branch folder and its workspace
-/// aside, and write beside them, and every one is refused; one in its own folder is written.
+/// **A command writes no git folder outside where it may write, and a folder granted to the chat
+/// still finds every pin** (#6961, the review of #7005): a chat opened in one branch folder runs
+/// commands that write another workspace's branch folder's `.git`, move that branch folder and
+/// its workspace aside, and write beside them. With nothing granted every one is refused, and
+/// one in its own folder is written. With that branch folder granted as an added directory, as
+/// `/add-dir`, an "allow all edits in this folder" answer or a change to the person's settings
+/// adds one while the chat runs (read in Claude Code 2.1.325), the file beside is written, and
+/// the `.git` and the folders above it are still refused: Claude Code pins no `.git` in a folder
+/// it adds, so the settings purlis writes hold every pin wherever the chat opens.
 ///
 /// Not held to the pinned version: CI runs it on the version purlis supports, and the nightly
 /// (`claude-code-newest-writes`) on Claude Code's newest release, so a release that writes
@@ -1904,71 +1906,80 @@ fn a_command_writes_no_git_folder_outside_where_it_may_write() {
     };
     let other_git = other.join(".git").display().to_string();
     assert!(
-        compiled.pins.contains(&other_git)
-            && !compiled.sandbox["filesystem"]["denyWrite"]
-                .as_array()
-                .expect("a list")
-                .iter()
-                .any(|it| *it == other_git),
-        "the other branch folder's pin is left out, so this measures Claude Code's own refusal"
+        compiled.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .any(|it| *it == other_git),
+        "the other branch folder's pin is kept"
     );
     compiled.make_empty();
     let settings = compiled.reporting_on(None).through(PROXY_PORTS);
-    let file = at.join("settings.json");
-    fs::write(
-        &file,
-        json!({ "sandbox": settings.sandbox, "permissions": { "deny": settings.deny } })
-            .to_string(),
-    )
-    .expect("the settings");
     let tried = |what: &str| format!("{{ {what}; }} 2>/dev/null && echo WRITTEN || echo REFUSED");
     let q = |path: &Path| format!("'{}'", path.display());
-    let commands = vec![
-        tried(&format!(
-            "printf 'gitdir: /elsewhere\\n' > {}",
-            q(&other.join(".git"))
-        )),
-        tried(&format!(
-            "mv {} {}",
-            q(&other),
-            q(&other.with_file_name("q1-aside"))
-        )),
-        tried(&format!(
-            "mv {} {}",
-            q(&root.join("workspaces/v")),
-            q(&root.join("workspaces/v-aside"))
-        )),
-        tried(&format!("printf x > {}", q(&other.join("beside.txt")))),
-        tried(&format!("printf x > {}", q(&cwd.join("mine.txt")))),
-    ];
-    let said = ran_steps(
-        &program,
-        &home,
-        &tmp,
-        &cwd,
-        &file,
-        &["--setting-sources".to_owned(), "user".to_owned()],
-        "writes outside where a command may write",
-        commands,
-    );
-    let answers: Vec<&str> = said
-        .iter()
-        .map(|it| {
-            if it.contains("WRITTEN") {
-                "WRITTEN"
-            } else {
-                "REFUSED"
-            }
-        })
-        .collect();
-    assert_eq!(
-        answers,
-        ["REFUSED", "REFUSED", "REFUSED", "REFUSED", "WRITTEN"],
-        "{said:?}"
-    );
-    assert_eq!(
-        fs::read_to_string(other.join(".git")).expect("still there"),
-        gitfile,
-        "the other branch folder's .git is as it was"
-    );
+    for (granted, expected) in [
+        (
+            None,
+            ["REFUSED", "REFUSED", "REFUSED", "REFUSED", "WRITTEN"],
+        ),
+        (
+            Some(&other),
+            ["REFUSED", "REFUSED", "REFUSED", "WRITTEN", "WRITTEN"],
+        ),
+    ] {
+        let mut permissions = json!({ "deny": settings.deny });
+        if let Some(granted) = granted {
+            permissions["additionalDirectories"] = json!([granted.display().to_string()]);
+        }
+        let file = at.join("settings.json");
+        fs::write(
+            &file,
+            json!({ "sandbox": settings.sandbox, "permissions": permissions }).to_string(),
+        )
+        .expect("the settings");
+        let commands = vec![
+            tried(&format!(
+                "printf 'gitdir: /elsewhere\\n' > {}",
+                q(&other.join(".git"))
+            )),
+            tried(&format!(
+                "mv {} {}",
+                q(&other),
+                q(&other.with_file_name("q1-aside"))
+            )),
+            tried(&format!(
+                "mv {} {}",
+                q(&root.join("workspaces/v")),
+                q(&root.join("workspaces/v-aside"))
+            )),
+            tried(&format!("printf x > {}", q(&other.join("beside.txt")))),
+            tried(&format!("printf x > {}", q(&cwd.join("mine.txt")))),
+        ];
+        let said = ran_steps(
+            &program,
+            &home,
+            &tmp,
+            &cwd,
+            &file,
+            &["--setting-sources".to_owned(), "user".to_owned()],
+            "writes outside where a command may write",
+            commands,
+        );
+        let answers: Vec<&str> = said
+            .iter()
+            .map(|it| {
+                if it.contains("WRITTEN") {
+                    "WRITTEN"
+                } else {
+                    "REFUSED"
+                }
+            })
+            .collect();
+        assert_eq!(answers, expected, "granted {granted:?}: {said:?}");
+        assert_eq!(
+            fs::read_to_string(other.join(".git")).expect("still there"),
+            gitfile,
+            "granted {granted:?}: the other branch folder's .git is as it was"
+        );
+    }
 }

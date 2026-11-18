@@ -18,6 +18,11 @@
 //! its spellings, under the `strict` template (Q308) at the full sandbox. On macOS each denied
 //! path also has its `/System/Volumes/Data` name, and every path held under each spelling its
 //! either-case copy.
+//!
+//! What is held to the budget is what auto mode sends its check: the permission rules and the
+//! auto mode lists ([`crate::hoststart::auto_mode_weight`]). The sandbox is no part of it, so
+//! every git folder pin is written wherever the chat opens, and the whole file is held to a
+//! sanity cap of its own ([`crate::hoststart::HARNESS_SETTINGS_FILE_BYTES`]).
 
 use std::fs;
 use std::path::Path;
@@ -26,8 +31,12 @@ use std::process::Command;
 use super::super::{Decided, Form, Machine, Os, decide};
 use crate::harness::{Harness, Kit, StateHooks};
 
-/// The most a chat's generated harness settings may weigh: `limits.harness_settings_bytes`.
+/// The most what auto mode counts of a chat's generated harness settings may weigh:
+/// `limits.harness_settings_bytes`.
 const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
+
+/// The most a chat's whole generated harness settings file may weigh.
+const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
 /// Workspaces in the plane.
 const WORKSPACES: usize = 12;
@@ -37,12 +46,6 @@ const BRANCH_FOLDERS: usize = 20;
 
 /// Personas in the plane.
 const PERSONAS: usize = 12;
-
-/// No Claude Code settings of this machine's, the person's or an administrator's: what is
-/// measured here is purlis's alone.
-fn no_settings_of_this_machines() {
-    super::super::claude::TEST_PERSONS_FILES.with(|it| *it.borrow_mut() = Some(Vec::new()));
-}
 
 /// git in `dir`, with nothing of the developer's own configuration.
 fn git(dir: &Path, args: &[&str]) {
@@ -120,7 +123,6 @@ pub(crate) fn a_large_plane(root: &Path) {
 /// The `--settings` word a Claude Code chat opening in `cwd`, in the plane at `root`, is started
 /// with, its hook socket and proxy ports in it.
 pub(crate) fn the_settings_of_a_chat_in(root: &Path, cwd: &Path, home: &Path) -> String {
-    no_settings_of_this_machines();
     let machine = Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.to_path_buf()),
@@ -183,13 +185,15 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
     let settings = the_settings_of_a_chat_in(&root, &cwd, home.path());
 
     let parsed: serde_json::Value = serde_json::from_str(&settings).expect("JSON");
+    let counted = crate::hoststart::auto_mode_weight(&parsed);
     let deny = parsed["permissions"]["deny"].as_array().map_or(0, Vec::len);
     let deny_write = parsed["sandbox"]["filesystem"]["denyWrite"]
         .as_array()
         .map_or(0, Vec::len);
     let said = format!(
-        "a chat on a plane of {WORKSPACES} workspaces and {} branch folders: {} bytes, {deny} \
-         deny rules, {deny_write} paths denied to writes",
+        "a chat on a plane of {WORKSPACES} workspaces and {} branch folders: {counted} bytes that \
+         auto mode counts ({deny} deny rules), {} bytes in all ({deny_write} paths denied to \
+         writes)",
         WORKSPACES * BRANCH_FOLDERS,
         settings.len()
     );
@@ -199,8 +203,13 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
         "the chat is sandboxed, and its tools held: {parsed}"
     );
     assert!(
-        settings.len() <= BUDGET,
-        "{said}: more than the budget of {BUDGET} bytes (`limits.harness_settings_bytes`)"
+        counted <= BUDGET,
+        "{said}: auto mode counts more than the budget of {BUDGET} bytes \
+         (`limits.harness_settings_bytes`)"
+    );
+    assert!(
+        settings.len() <= FILE_CAP,
+        "{said}: the file is past its sanity cap of {FILE_CAP} bytes"
     );
 }
 
@@ -287,15 +296,16 @@ fn writes(filesystem: &serde_json::Value, cwd: &str, path: &str) -> bool {
             .any(|held| held != path && under(held, path))
 }
 
-/// **The pins left out change no write a command may make** (the person's ruling, 2026-11-16,
-/// #6961): on the large plane, every git folder pin, a file below it, each folder above it and a
-/// file beside it, each written as before by a command in the chat's folder, with each pin
-/// [`super::claude::Settings::written_in`] left out put back. So too where the chat is granted a
-/// write root that is a glob cut mid-name (`<plane>/workspaces/workspace-0*`), or one that ends
-/// in `/**`: a pin it covers is kept (the review of #7005).
+/// **A folder granted while the chat runs still finds every git folder pin** (the review of
+/// #7005). Claude Code 2.1.325 adds a write root mid-chat three ways: an "allow all edits in this
+/// folder during this session" answer in its own prompt, `/add-dir`, and a change to the
+/// person's settings, which it reads again and builds its sandbox anew from. Each makes the
+/// folder a write root as it is, with no pin of its own in it. So the settings purlis writes hold
+/// every pin wherever the chat opens: on the large plane, a chat in one workspace's branch folder
+/// granted another workspace's branch folder, or that workspace whole, writes in it but never
+/// moves, replaces or rewrites its `.git`, nor moves a folder above it.
 #[test]
-fn the_pins_left_out_change_no_write_a_command_may_make() {
-    no_settings_of_this_machines();
+fn a_folder_granted_mid_chat_still_finds_every_pin() {
     let plane = tempfile::tempdir().unwrap();
     let root = plane.path().canonicalize().unwrap();
     let home = tempfile::tempdir().unwrap();
@@ -312,344 +322,47 @@ fn the_pins_left_out_change_no_write_a_command_may_make() {
     else {
         panic!("not sandboxed");
     };
-    let Form::ClaudeCode(whole) = applied.with(applied.chain(Some(&cwd))) else {
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
         panic!("not Claude Code's own sandbox");
     };
-    assert!(
-        applied.leaves_pins_out(Some(&cwd)),
-        "a chat in one branch folder leaves the others' pins out"
-    );
-    assert!(
-        !applied.leaves_pins_out(None),
-        "with no folder, none is left out"
-    );
-    // A chat at the plane's root writes above every pin, so keeps each by the root's spelling;
-    // a pin's other names (its firmlink twin, a link's spelling), which no write root of its
-    // reaches, still go.
-    let Form::ClaudeCode(at_root) = applied.form_in(Some(&root)) else {
-        panic!("not Claude Code's own sandbox");
-    };
-    let spelled = root.display().to_string();
-    let kept = at_root.sandbox["filesystem"]["denyWrite"].clone();
-    for pin in whole.pins.iter().filter(|pin| pin.starts_with(&spelled)) {
-        assert!(
-            kept.as_array()
-                .is_some_and(|it| it.iter().any(|one| one == pin)),
-            "{pin} is kept for a chat at the root"
-        );
-    }
-    let workspaces = root.join("workspaces").display().to_string();
-    for granted in [
-        None,
-        Some(format!("{workspaces}/workspace-0*")),
-        Some(format!("{workspaces}/workspace-1?/.worktrees/**")),
-        Some(format!("{workspaces}/workspace-0[3-5]")),
+    let other = root.join("workspaces/workspace-07");
+    let q1 = other.join(".worktrees/app/t03-a-piece-of-work-named-at-length");
+    let cwd = cwd.display().to_string();
+    // Each route by the root it adds: the folder the prompt or `/add-dir` names, and the
+    // workspace whole, as a settings change may name it.
+    for (route, granted) in [
+        ("its own prompt, for the session", q1.clone()),
+        ("/add-dir", q1.clone()),
+        ("a live change to the person's settings", other.clone()),
     ] {
-        let mut whole = whole.clone();
-        if let Some(glob) = &granted {
-            let allow = &mut whole.sandbox["filesystem"]["allowWrite"];
-            if !allow.is_array() {
-                *allow = serde_json::json!([]);
-            }
-            allow.as_array_mut().unwrap().push(serde_json::json!(glob));
+        let mut filesystem = settings.sandbox["filesystem"].clone();
+        let allow = &mut filesystem["allowWrite"];
+        if !allow.is_array() {
+            *allow = serde_json::json!([]);
         }
-        let after = whole.written_in(&cwd);
-        let before = whole.sandbox["filesystem"].clone();
-        let left_out = before["denyWrite"].as_array().map_or(0, Vec::len)
-            - after.sandbox["filesystem"]["denyWrite"]
-                .as_array()
-                .map_or(0, Vec::len);
-        if granted.is_none() {
-            // At least every other workspace's branch folders' pins, by each of their names.
+        allow
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(granted.display().to_string()));
+        let at = |path: &Path| path.display().to_string();
+        assert!(
+            writes(&filesystem, &cwd, &at(&q1.join("src.rs"))),
+            "{route}: the grant writes the folder"
+        );
+        for held in [
+            q1.join(".git"),
+            q1.clone(),
+            q1.parent().unwrap().to_path_buf(),
+            other.join(".worktrees"),
+            other.join("app/.git/config"),
+        ] {
             assert!(
-                left_out >= (WORKSPACES - 1) * BRANCH_FOLDERS,
-                "every other workspace's pins are left out: {left_out}"
+                !writes(&filesystem, &cwd, &at(&held)),
+                "{route}: {} is written",
+                held.display()
             );
         }
-
-        let cwd = cwd.display().to_string();
-        let mut corpus: Vec<String> = Vec::new();
-        for pin in &after.pins {
-            corpus.push(pin.clone());
-            corpus.push(format!("{pin}/config"));
-            corpus.push(format!("{pin}-beside"));
-            let mut above = Path::new(pin).parent();
-            while let Some(folder) = above.filter(|it| it.starts_with(&root)) {
-                corpus.push(folder.display().to_string());
-                above = folder.parent();
-            }
-        }
-        corpus.push(format!("{cwd}/a-file"));
-        corpus.sort();
-        corpus.dedup();
-        let changed: Vec<&String> = corpus
-            .iter()
-            .filter(|path| {
-                writes(&before, &cwd, path) != writes(&after.sandbox["filesystem"], &cwd, path)
-            })
-            .collect();
-        assert!(
-            changed.is_empty(),
-            "granted {granted:?}: {} of {} writes decided otherwise: {changed:?}",
-            changed.len(),
-            corpus.len()
-        );
-        assert!(
-            writes(&after.sandbox["filesystem"], &cwd, &format!("{cwd}/a-file")),
-            "the chat still writes its own folder"
-        );
     }
-}
-
-/// **A pin under a write root of the person's own settings is kept** (the orchestrator's ruling
-/// A', 2026-11-16, #6961): Claude Code lets a command write each folder the person's user or
-/// managed settings name (`sandbox.filesystem.allowWrite`, an Edit allow rule,
-/// `permissions.additionalDirectories`), so a git folder pin there holds what it held before.
-/// What cannot be placed exactly, a relative Edit rule or a file that cannot be read, keeps them
-/// all.
-#[test]
-fn a_pin_under_a_write_root_of_the_persons_own_settings_is_kept() {
-    let plane = tempfile::tempdir().unwrap();
-    let root = plane.path().canonicalize().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let home = home.path().canonicalize().unwrap();
-    a_large_plane(&root);
-    let cwd =
-        root.join("workspaces/workspace-00/.worktrees/app/t00-a-piece-of-work-named-at-length");
-    let pin = |workspace: &str| {
-        root.join("workspaces")
-            .join(workspace)
-            .join(".worktrees/app/t05-a-piece-of-work-named-at-length/.git")
-            .display()
-            .to_string()
-    };
-    let settings_dir = home.join(".claude");
-    fs::create_dir_all(&settings_dir).unwrap();
-    let user = settings_dir.join("settings.json");
-    let pinned_with = |settings: &str| -> Vec<String> {
-        fs::write(&user, settings).unwrap();
-        super::super::claude::TEST_PERSONS_FILES
-            .with(|it| *it.borrow_mut() = Some(vec![user.clone()]));
-        let machine = Machine {
-            env: crate::secrets::Env::of(&[]),
-            home: Some(home.clone()),
-            os: Os::MacOs,
-        };
-        let Some(Decided::Sandboxed(applied)) =
-            decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None).expect("decided")
-        else {
-            panic!("not sandboxed");
-        };
-        let Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
-            panic!("not Claude Code's own sandbox");
-        };
-        settings.sandbox["filesystem"]["denyWrite"]
-            .as_array()
-            .expect("a list")
-            .iter()
-            .filter_map(|it| it.as_str().map(str::to_owned))
-            .collect()
-    };
-    let workspace = |name: &str| root.join("workspaces").join(name).display().to_string();
-
-    let none = pinned_with("{}");
-    assert!(!none.contains(&pin("workspace-03")), "nothing writes there");
-
-    let allowed = pinned_with(&format!(
-        r#"{{"sandbox": {{"filesystem": {{"allowWrite": ["{}"]}}}}}}"#,
-        workspace("workspace-03")
-    ));
-    assert!(allowed.contains(&pin("workspace-03")), "under allowWrite");
-    assert!(!allowed.contains(&pin("workspace-04")), "and no other");
-
-    let edit = pinned_with(&format!(
-        r#"{{"permissions": {{"allow": ["Edit(/{}/**)"]}}}}"#,
-        workspace("workspace-04")
-    ));
-    assert!(
-        edit.contains(&pin("workspace-04")),
-        "under an Edit allow rule"
-    );
-    assert!(!edit.contains(&pin("workspace-03")));
-
-    let added = pinned_with(&format!(
-        r#"{{"permissions": {{"additionalDirectories": ["{}"]}}}}"#,
-        workspace("workspace-05")
-    ));
-    assert!(
-        added.contains(&pin("workspace-05")),
-        "under an additional directory"
-    );
-
-    for anywhere in [
-        r#"{"permissions": {"allow": ["Edit(src/**)"]}}"#,
-        "not JSON",
-    ] {
-        let all = pinned_with(anywhere);
-        assert!(
-            ["workspace-03", "workspace-04", "workspace-11"]
-                .iter()
-                .all(|it| all.contains(&pin(it))),
-            "{anywhere}: every pin kept"
-        );
-    }
-}
-
-/// Settings holding `pins` alone, granted `allow_write`, as [`super::claude::rules`] marks them.
-fn pinned(pins: &[&str], allow_write: &[&str]) -> super::claude::Settings {
-    super::claude::Settings {
-        sandbox: serde_json::json!({
-            "enabled": true,
-            "filesystem": { "denyWrite": pins, "allowWrite": allow_write },
-        }),
-        deny: Vec::new(),
-        made_folders: Vec::new(),
-        pins: pins.iter().map(|it| (*it).to_owned()).collect(),
-        persons_roots: Vec::new(),
-        compile_cache: false,
-    }
-}
-
-/// The `denyWrite` entries of `settings`.
-fn deny_write(settings: &super::claude::Settings) -> Vec<String> {
-    settings.sandbox["filesystem"]["denyWrite"]
-        .as_array()
-        .expect("a list")
-        .iter()
-        .filter_map(|it| it.as_str().map(str::to_owned))
-        .collect()
-}
-
-/// **A glob write root cut mid-name keeps every pin it covers** (the review of #7005): its plain
-/// part, `/a/proj` of `/a/proj*`, is no folder, and `/a/project/.git` is not below it; the last
-/// whole folder before the glob, `/a`, is, so the pin is kept. One the root does not cover still
-/// goes.
-#[test]
-fn a_glob_write_root_cut_mid_name_keeps_every_pin_it_covers() {
-    for root in [
-        "/a/proj*",
-        "/a/pro?ect",
-        "/a/[p]roject",
-        "/a/{project,other}",
-    ] {
-        let kept = deny_write(
-            &pinned(&["/a/project/.git", "/elsewhere/repo/.git"], &[root])
-                .written_in(Path::new("/home/someone/chat")),
-        );
-        assert!(
-            kept.contains(&"/a/project/.git".to_owned()),
-            "{root} covers /a/project/.git: {kept:?}"
-        );
-        assert!(
-            !kept.contains(&"/elsewhere/repo/.git".to_owned()),
-            "{root} covers nothing under /elsewhere: {kept:?}"
-        );
-    }
-}
-
-/// **A glob write root of the person's own settings, cut mid-name, is read as its last whole
-/// folder** (the review of #7005): `/a/proj*` places `/a`, and an Edit allow rule's
-/// `//a/sub*/**` places `/a` too.
-#[test]
-fn a_persons_glob_write_root_is_read_as_its_last_whole_folder() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("settings.json");
-    fs::write(
-        &file,
-        r#"{"sandbox": {"filesystem": {"allowWrite": ["/a/proj*"]}},
-            "permissions": {"allow": ["Edit(//b/sub*/**)"], "additionalDirectories": ["/c/d/"]}}"#,
-    )
-    .unwrap();
-    let roots = super::claude::write_roots_in(&[file], None);
-    assert_eq!(roots, ["/a", "/c/d", "/b"]);
-}
-
-/// **A chat in a linked worktree keeps the pins in its main checkout's git folder** (the review
-/// of #7005): Claude Code adds the git folder a linked worktree shares with its main checkout as
-/// a write root of the chat (read in its bundled CLI, 2.1.325), so that folder's `config` and its
-/// submodules' are written where a command may write, and their pins are kept.
-#[test]
-fn a_chat_in_a_linked_worktree_keeps_the_pins_in_its_main_checkouts_git_folder() {
-    let dir = tempfile::tempdir().unwrap();
-    let dir = dir.path().canonicalize().unwrap();
-    let main = dir.join("main");
-    fs::create_dir_all(&main).unwrap();
-    git(&main, &["init", "-q", "-b", "main"]);
-    git(&main, &["commit", "-q", "--allow-empty", "-m", "start"]);
-    let linked = dir.join("elsewhere/linked");
-    git(
-        &main,
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "-b",
-            "linked",
-            linked.to_str().unwrap(),
-        ],
-    );
-    let config = main.join(".git/config").display().to_string();
-    let module = main.join(".git/modules/m/config").display().to_string();
-    let other = dir.join("other/.git").display().to_string();
-
-    let kept = deny_write(&pinned(&[&config, &module, &other], &[]).written_in(&linked));
-
-    assert!(kept.contains(&config), "{kept:?}");
-    assert!(kept.contains(&module), "{kept:?}");
-    assert!(
-        !kept.contains(&other),
-        "a pin no write root meets still goes: {kept:?}"
-    );
-}
-
-/// **A write root that climbs with `..` is read where it lands** (the review of #7005): Claude
-/// Code resolves a write root's `..` by its words, so `/a/gone/..` writes `/a` whether or not
-/// `/a/gone` is there, and a pin in `/a/project` is kept. One with a glob as well is read as `/`.
-#[test]
-fn a_write_root_that_climbs_with_dot_dot_is_read_where_it_lands() {
-    for root in ["/a/gone/..", "/a/gone/../", "/a/./gone/../b/.."] {
-        let kept = deny_write(
-            &pinned(&["/a/project/.git", "/elsewhere/repo/.git"], &[root])
-                .written_in(Path::new("/home/someone/chat")),
-        );
-        assert!(
-            kept.contains(&"/a/project/.git".to_owned()),
-            "{root} writes /a: {kept:?}"
-        );
-        assert!(
-            !kept.contains(&"/elsewhere/repo/.git".to_owned()),
-            "{root} writes nothing under /elsewhere: {kept:?}"
-        );
-    }
-    let kept = deny_write(
-        &pinned(&["/elsewhere/repo/.git"], &["/a/b*/../.."]).written_in(Path::new("/home/x")),
-    );
-    assert_eq!(
-        kept,
-        ["/elsewhere/repo/.git"],
-        "a glob that climbs is read as /"
-    );
-    let file = tempfile::NamedTempFile::new().unwrap();
-    fs::write(
-        file.path(),
-        r#"{"permissions": {"additionalDirectories": ["/c/gone/../d"]}}"#,
-    )
-    .unwrap();
-    assert_eq!(
-        super::claude::write_roots_in(&[file.path().to_path_buf()], None),
-        ["/c/d"]
-    );
-}
-
-/// **A pin is kept where a write root names it in another case** (the review of #7005): on a
-/// volume that is not case-sensitive, as macOS's is by default, `/A/Project` is `/a/project`, so
-/// a pin is weighed against each root case-blind and kept when they differ by case alone.
-#[test]
-fn a_pin_is_kept_where_a_write_root_names_it_in_another_case() {
-    let kept = deny_write(
-        &pinned(&["/A/Project/.git"], &["/a/project"]).written_in(Path::new("/home/someone/chat")),
-    );
-    assert_eq!(kept, ["/A/Project/.git"]);
 }
 
 /// **A held path that ends in whitespace keeps its `/**` rule, and the rules below it**: Claude
@@ -664,69 +377,4 @@ fn a_held_path_that_ends_in_whitespace_keeps_its_rules_below_it() {
         let rules: Vec<String> = rules.into_iter().map(str::to_owned).collect();
         assert_eq!(super::claude::fewest(rules.clone()), rules);
     }
-}
-
-/// **Where the user is not known, every user's managed preferences are read as a source that
-/// cannot be** (the review of #7005): an MDM profile installs a user's under
-/// `/Library/Managed Preferences/<user>`, and with no `$USER` to name it purlis cannot tell which
-/// is this user's, so the folder that holds them all is listed in its place, which, read as a
-/// settings file, keeps every pin.
-#[test]
-fn with_no_user_named_every_users_managed_preferences_keep_every_pin() {
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    let all = Path::new("/Library/Managed Preferences");
-    let named = super::claude::managed_elsewhere_for(Some(std::ffi::OsStr::new("someone")));
-    assert!(
-        named.contains(&all.join("someone/com.anthropic.claudecode.plist")),
-        "{named:?}"
-    );
-    assert!(!named.contains(&all.to_path_buf()), "{named:?}");
-    for user in [None, Some(std::ffi::OsStr::new(""))] {
-        let unnamed = super::claude::managed_elsewhere_for(user);
-        assert!(
-            unnamed.contains(&all.to_path_buf()),
-            "{user:?}: {unnamed:?}"
-        );
-    }
-    // A folder read in a settings file's place keeps every pin.
-    let dir = tempfile::tempdir().unwrap();
-    assert_eq!(
-        super::claude::write_roots_in(&[dir.path().to_path_buf()], None),
-        ["/"]
-    );
-}
-
-/// **Managed preferences an MDM profile installs are read as Claude Code reads them, and a
-/// managed source that cannot be read keeps every pin** (the review of #7005): a property list's
-/// `allowWrite` places its folder as a JSON file's does; a drop-in folder that cannot be listed,
-/// read in its place, places `/`, which every pin meets.
-#[test]
-fn managed_preferences_are_read_and_a_source_that_cannot_be_keeps_every_pin() {
-    let dir = tempfile::tempdir().unwrap();
-    let preferences = dir.path().join("com.anthropic.claudecode.plist");
-    let mut filesystem = plist::Dictionary::new();
-    filesystem.insert(
-        "allowWrite".to_owned(),
-        plist::Value::Array(vec!["/managed/proj*".into()]),
-    );
-    let mut sandbox = plist::Dictionary::new();
-    sandbox.insert(
-        "filesystem".to_owned(),
-        plist::Value::Dictionary(filesystem),
-    );
-    let mut top = plist::Dictionary::new();
-    top.insert("sandbox".to_owned(), plist::Value::Dictionary(sandbox));
-    plist::Value::Dictionary(top)
-        .to_file_binary(&preferences)
-        .unwrap();
-    assert_eq!(
-        super::claude::write_roots_in(&[preferences], None),
-        ["/managed"]
-    );
-
-    let unlisted = dir.path().join("managed-settings.d");
-    fs::create_dir_all(&unlisted).unwrap();
-    assert_eq!(super::claude::write_roots_in(&[unlisted], None), ["/"]);
 }

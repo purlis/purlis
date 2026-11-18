@@ -4096,17 +4096,6 @@ impl Planes {
                 Some(purlis_core::harness::hooked::Source::of(harness))
             })
         });
-        // A folder for the session is offered only to a chat whose settings keep every git
-        // folder pin (#6961, the review of #7005). Weak for the handoff's reason.
-        held.hooks.asks().granting_folders_by({
-            let weak = Arc::downgrade(&held);
-            Box::new(move |chat| {
-                weak.upgrade().is_some_and(|strong| {
-                    chat.parse()
-                        .is_ok_and(|session| strong.chats().may_be_granted_a_folder(session))
-                })
-            })
-        });
         // A live ask held for its chat (#1709) is in the asks registry before its Notice is
         // raised, and whether or not the block throttle lets the Notice through: the window is
         // told its asks so it reads them again, and the notifier with it. Weak for the

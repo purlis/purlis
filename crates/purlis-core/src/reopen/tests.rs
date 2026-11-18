@@ -2890,50 +2890,6 @@ fn a_record_written_before_the_studio_flag_reads_as_not_known_3466() {
     assert_eq!(back.chats[0].plane_skills, None);
 }
 
-#[test]
-fn whether_a_chats_settings_left_pins_out_is_recorded_and_read_back_7005() {
-    // A chat reattached from the session host runs on the settings its start wrote, so the
-    // record carries whether they left a git folder pin out; a chat recorded without the word
-    // writes no key, and a value that is no flag reads as not known.
-    let plane = tempfile::tempdir().unwrap();
-    let left_out = Chat {
-        pins_left_out: Some(true),
-        ..claude("ide.7", None)
-    };
-    let kept = Chat {
-        pins_left_out: Some(false),
-        ..claude("ide.8", Some(ID))
-    };
-    let unknown = claude("ide.9", None);
-    write(
-        plane.path(),
-        &Record {
-            chats: vec![left_out.clone(), kept.clone(), unknown],
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let text = fs::read_to_string(path(plane.path())).unwrap();
-    assert_eq!(text.matches("\"pins_left_out\"").count(), 2, "{text}");
-    let back = read(plane.path());
-    assert_eq!(back.chats[0], left_out);
-    assert_eq!(back.chats[1], kept);
-    assert_eq!(back.chats[2].pins_left_out, None);
-
-    fs::write(
-        path(plane.path()),
-        text.replacen("\"pins_left_out\": false", "\"pins_left_out\": \"no\"", 1),
-    )
-    .unwrap();
-    let back = read(plane.path());
-    assert_eq!(
-        back.chats.len(),
-        3,
-        "the record still reads whole: {back:?}"
-    );
-    assert_eq!(back.chats[1].pins_left_out, None);
-}
-
 /// A routing kept from a chat's start that asked the router `relevance`, which hid `skill-02`.
 fn kept_routing() -> crate::skills::router::Kept {
     use crate::skills::router::{Kept, Record, RecordHidden, Routed};

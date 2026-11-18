@@ -140,13 +140,6 @@ pub struct Settings {
     /// ([`super::MAY_LIFT`]). Claude Code pins every folder above a held path, so neither a
     /// tool's first run nor a lift could make them in the chat.
     pub made_folders: Vec<PathBuf>,
-    /// The entries of `denyWrite` that are a repository's git folder pin and nothing else
-    /// ([`super::Denied::git_folder_pins`]): what [`Self::written_in`] leaves out where no command
-    /// writes (the person's ruling, 2026-11-16, #6961).
-    pub pins: Vec<String>,
-    /// The folders the person's own and the administrators' Claude Code settings let a command
-    /// write, read as the chat starts ([`persons_write_roots`]): places a pin is kept in too.
-    pub persons_roots: Vec<String>,
     /// Whether a chat's builds go through the project's compile cache
     /// ([`super::compile_cache`]): on macOS, where Claude Code's sandbox grants a socket by path,
     /// for a project whose cache home has an sccache. The chat is then let bind and connect to
@@ -306,7 +299,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // every name a rule on it is written by: a glob gets no folder above it pinned. The Edit
     // tool pins nothing, so for it every branch folder's git in a plane is one rule (#6961): a
     // plane holds hundreds, and each by path weighs the settings past auto mode's check.
-    let pinned_from = deny_write.len();
     for pin in &compiled.denied.git_folder_pins {
         for name in names_for(pin) {
             let path = name.display().to_string();
@@ -320,7 +312,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             deny_write.push(path);
         }
     }
-    let pinned: Vec<String> = deny_write[pinned_from..].to_vec();
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
     let mut allow_write: Vec<String> = Vec::new();
     if let Some(caches) = &compiled.widened.caches {
@@ -504,15 +495,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
             deny_write.push(path.to_owned());
         }
     }
-    // A pin is a pin alone where nothing else wrote the same entry.
-    let pins: Vec<String> = pinned
-        .iter()
-        .filter(|pin| {
-            deny_write.iter().filter(|it| it == pin).count()
-                == pinned.iter().filter(|it| it == pin).count()
-        })
-        .cloned()
-        .collect();
     let mut filesystem = json!({
         "denyRead": deny_read,
         "denyWrite": deny_write,
@@ -524,7 +506,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         filesystem["allowRead"] = json!(allow_read);
     }
     if compiled.level == Level::Floor {
-        return floor(filesystem, read_rules, edit_rules, compiled, pins);
+        return floor(filesystem, read_rules, edit_rules, compiled);
     }
     let deny = WEB_TOOLS
         .iter()
@@ -563,8 +545,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         sandbox,
         deny,
         made_folders: Vec::new(),
-        pins,
-        persons_roots: persons_write_roots(compiled),
         compile_cache: compile_cache(compiled),
     }
     .tidied()
@@ -583,7 +563,6 @@ fn floor(
     read_rules: Vec<String>,
     edit_rules: Vec<String>,
     compiled: &Compiled,
-    pins: Vec<String>,
 ) -> Settings {
     let mut sandbox = json!({
         "enabled": true,
@@ -618,8 +597,6 @@ fn floor(
             Some(home) if compiled.level == Level::Floor => above_what_may_be_lifted(home),
             _ => Vec::new(),
         },
-        pins,
-        persons_roots: persons_write_roots(compiled),
         compile_cache: compile_cache(compiled),
     }
     .tidied()
@@ -643,8 +620,7 @@ thread_local! {
 }
 
 /// **`make`, with each Claude Code chat's settings written on this thread as they were before
-/// #6961**: every rule and path written out, each branch folder's git by its own Edit rules, and
-/// every pin kept wherever the chat opens. What a test runs Claude Code on beside the settings
+/// #6961**: every rule and path written out, and each branch folder's git by its own Edit rules. What a test runs Claude Code on beside the settings
 /// written now, so that each decides the same (the review of #7005). Only for tests.
 #[cfg(any(test, feature = "test-support"))]
 pub fn as_before_6961<T>(make: impl FnOnce() -> T) -> T {
@@ -701,84 +677,6 @@ impl Settings {
             self.sandbox["filesystem"][list] = json!(added_once(&had, &now, once));
         }
         self
-    }
-
-    /// **These settings for a chat that opens in `cwd`, each git folder pin written only where a
-    /// command may write** (the person's ruling, 2026-11-16, #6961). A pin is a plain path in
-    /// `denyWrite`, so that Claude Code pins every folder above it too; a plane holds hundreds,
-    /// one a branch folder, and each by both names weighs the settings past what auto mode's
-    /// check takes. Where no command may write, a pin holds and pins nothing more: Claude Code
-    /// refuses every write outside the places its sandbox writes. So a pin is kept where it
-    /// meets one, below or above it, compared case-blind: `cwd`, each `allowWrite` entry (a
-    /// person's grants, the caches; a glob by the last whole folder before it,
-    /// [`whole_folder_of`]), each write root of the person's own and the administrators'
-    /// settings as the chat started ([`persons_write_roots`]), the git folder a linked worktree
-    /// at `cwd` shares with its main checkout ([`common_git_dir_of`]), and Claude Code's shared
-    /// temp folder ([`SHARED_TEMP`], the only paths its sandbox always writes), each by both its
-    /// names and where its `..` lands by its words; and `/`, at the floor, meets every pin. The
-    /// chat's own temp folder is made new for it as it starts
-    /// ([`super::Confinement::proxy_only`]), so no pin is in or above it. The Edit tool's pins
-    /// are kept whole ([`every_branch_folders_git`]).
-    ///
-    /// **A write root added while the chat runs is not seen here** (the review of #7005). Claude
-    /// Code 2.1.325 takes one at once, not at its next start: `/add-dir`, an "allow all edits in
-    /// this folder" answer in its own prompt, and a change to the person's settings, which it
-    /// reads again as they change and builds its sandbox anew from. A pin left out under such a
-    /// root does not hold there. The window offers no folder for the session to a chat that
-    /// leaves pins out ([`super::Applied::leaves_pins_out`]), which closes only its own ask.
-    pub fn written_in(&self, cwd: &Path) -> Settings {
-        let mut out = self.clone();
-        if as_before() {
-            return out;
-        }
-        let mut places: Vec<String> = Vec::new();
-        let mut place = |path: &Path| {
-            // As written, and where its `..` lands by its words, as Claude Code reads a write
-            // root (the review of #7005).
-            for path in [path.to_path_buf(), super::planted::lexical(path)] {
-                for name in both_names(&path) {
-                    let name = name.display().to_string();
-                    if !places.contains(&name) {
-                        places.push(name);
-                    }
-                }
-            }
-        };
-        place(cwd);
-        // The git folder a linked worktree shares with its main checkout, which Claude Code adds
-        // as a write root of a chat opened in the worktree (the review of #7005).
-        if let Some(common) = common_git_dir_of(cwd) {
-            place(&common);
-        }
-        for root in &self.persons_roots {
-            place(Path::new(root));
-        }
-        for shared in SHARED_TEMP {
-            place(Path::new(shared));
-        }
-        for allowed in strings_of(&self.sandbox["filesystem"]["allowWrite"]).unwrap_or_default() {
-            place(Path::new(whole_folder_of(&allowed)));
-        }
-        // Case-blind: on a volume that folds case, as macOS's does by default, a root and a pin
-        // that differ by case alone are one folder, and keeping a pin is never wrong.
-        let places: Vec<String> = places.iter().map(|it| it.to_lowercase()).collect();
-        let meets = |pin: &str| {
-            let pin = pin.to_lowercase();
-            places.iter().any(|place| {
-                let under = |inner: &str, outer: &str| {
-                    outer == "/" || inner == outer || inner.starts_with(&format!("{outer}/"))
-                };
-                under(&pin, place) || under(place, &pin)
-            })
-        };
-        let away: Vec<&String> = self.pins.iter().filter(|pin| !meets(pin)).collect();
-        if let Some(list) = out.sandbox["filesystem"]["denyWrite"].as_array_mut() {
-            list.retain(|it| {
-                !it.as_str()
-                    .is_some_and(|it| away.iter().any(|pin| *pin == it))
-            });
-        }
-        out
     }
 
     /// Whether these switch Claude Code's own sandbox off: a chat purlis wraps whole
@@ -1222,41 +1120,6 @@ fn strings_of(list: &Value) -> Option<Vec<String>> {
     })
 }
 
-/// **The folder a write root names whole**: `path` itself where it is plain, else the last whole
-/// folder before its first glob character, so that `/a/proj*` gives `/a` and not `/a/proj`,
-/// which is no folder and would leave out a pin in `/a/project` (the review of #7005). `/` where
-/// nothing whole is left. A brace counts too: it is read as a glob by some readers, and cutting
-/// further back only keeps more pins.
-fn whole_folder_of(path: &str) -> &str {
-    // A glob that climbs with `..` may land anywhere its glob matches: everywhere, then.
-    if path.split('/').any(|part| part == "..") && path.contains(['*', '?', '[', '{', '\\']) {
-        return "/";
-    }
-    let whole = match path.find(['*', '?', '[', '{', '\\']) {
-        Some(at) => path[..at].rfind('/').map_or("", |slash| &path[..slash]),
-        None => path,
-    };
-    let whole = whole.trim_end_matches('/');
-    if whole.is_empty() { "/" } else { whole }
-}
-
-/// **The git folder the linked worktree at `cwd` shares with its main checkout**, as Claude
-/// Code finds it to add as a write root (read in its bundled CLI, 2.1.325): `cwd/.git` a file
-/// naming `<common>/worktrees/<name>`, `<common>` named `*.git`. `None` for any other folder.
-fn common_git_dir_of(cwd: &Path) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(cwd.join(".git")).ok()?;
-    let named = text
-        .lines()
-        .find_map(|line| line.strip_prefix("gitdir:"))?
-        .trim();
-    let admin = super::planted::lexical(&cwd.join(named));
-    let worktrees = admin.parent()?;
-    let common = worktrees.parent()?;
-    (worktrees.file_name()? == "worktrees"
-        && common.file_name()?.to_string_lossy().ends_with(".git"))
-    .then(|| common.to_path_buf())
-}
-
 /// Whether `path` is a plain path, with nothing a glob reads as more than itself. One that ends
 /// in whitespace is not: Claude Code reads a rule's path as gitignore reads a line, which drops
 /// whitespace at its end, so `T(<p> )` holds `<p>` and not what is below `<p> `, and neither it
@@ -1323,213 +1186,6 @@ fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
         }
     }
     names
-}
-
-/// **Where the person's own and the administrators' Claude Code settings let a command write**
-/// (#6961, the orchestrator's ruling A'): Claude Code adds to its sandbox's write roots each
-/// `sandbox.filesystem.allowWrite` entry, each `permissions.additionalDirectories` folder and
-/// each Edit allow rule's path from these tiers ("merged with paths from Edit(...) allow
-/// permission rules", read in its bundled CLI). A git folder pin under one is kept. Read from the
-/// managed files ([`crate::footerclaim::managed`]) and the managed preferences and files beside
-/// them ([`managed_elsewhere`]), and every user settings file the chat may run on, with the
-/// settings its server sent beside it (`remote-settings.json`): `~/.claude`'s,
-/// `$CLAUDE_CONFIG_DIR`'s and each profile purlis made's. Managed settings there that cannot be
-/// read, a drop-in folder that cannot be listed among them, keep every pin. Read as the sandbox
-/// is decided, at each chat's start.
-fn persons_write_roots(compiled: &Compiled) -> Vec<String> {
-    #[cfg(test)]
-    if let Some(files) = TEST_PERSONS_FILES.with(|it| it.borrow().clone()) {
-        return write_roots_in(&files, compiled.homes.home.as_deref());
-    }
-    let mut files = crate::footerclaim::managed();
-    // A drop-in folder there that cannot be listed: read as a file, it cannot be read, so every
-    // pin is kept.
-    if let Some(drops) = files
-        .first()
-        .and_then(|base| base.parent())
-        .map(|dir| dir.join("managed-settings.d"))
-        && drops.exists()
-        && std::fs::read_dir(&drops).is_err()
-    {
-        files.push(drops);
-    }
-    files.extend(managed_elsewhere());
-    let mut configs: Vec<PathBuf> = Vec::new();
-    if let Some(home) = &compiled.homes.home {
-        configs.push(home.join(".claude"));
-    }
-    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
-        configs.push(PathBuf::from(dir));
-    }
-    if let Some(profiles) = &compiled.homes.profiles {
-        for profile in std::fs::read_dir(profiles).into_iter().flatten().flatten() {
-            configs.push(profile.path());
-            configs.extend(
-                std::fs::read_dir(profile.path())
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .map(|entry| entry.path()),
-            );
-        }
-    }
-    // Each config folder's user settings, and the administrators' settings its server sent.
-    for dir in configs {
-        files.push(dir.join("settings.json"));
-        files.push(dir.join("remote-settings.json"));
-    }
-    write_roots_in(&files, compiled.homes.home.as_deref())
-}
-
-/// **The managed settings Claude Code reads beside [`crate::footerclaim::managed`]'s files**
-/// (read in its bundled CLI, 2.1.325): on macOS the managed preferences an MDM profile installs,
-/// for this user and for the device; on Linux under WSL, the Windows machine's managed file.
-fn managed_elsewhere() -> Vec<PathBuf> {
-    managed_elsewhere_for(std::env::var_os("USER").as_deref())
-}
-
-/// [`managed_elsewhere`] for `user`, as `$USER` names this user. With no user named, the folder
-/// that holds every user's managed preferences is listed in place of this user's: read as a
-/// settings file it cannot be read, so every pin is kept (the review of #7005), where it is
-/// there.
-pub(crate) fn managed_elsewhere_for(user: Option<&std::ffi::OsStr>) -> Vec<PathBuf> {
-    const DOMAIN: &str = "com.anthropic.claudecode";
-    if cfg!(target_os = "macos") {
-        let every_users = Path::new("/Library/Managed Preferences");
-        let mut out = Vec::new();
-        match user.filter(|it| !it.is_empty()) {
-            Some(user) => out.push(every_users.join(user).join(format!("{DOMAIN}.plist"))),
-            None => out.push(every_users.to_path_buf()),
-        }
-        out.push(every_users.join(format!("{DOMAIN}.plist")));
-        out
-    } else if cfg!(target_os = "linux") {
-        vec![PathBuf::from(
-            "/mnt/c/Program Files/ClaudeCode/managed-settings.json",
-        )]
-    } else {
-        Vec::new()
-    }
-}
-
-/// A settings file's document: JSON, or a property list (`.plist`, as an MDM profile installs
-/// Claude Code's managed preferences) read as the JSON it holds; `None` where it is neither.
-fn settings_document(file: &Path) -> Option<Value> {
-    fn json_of(value: plist::Value) -> Value {
-        match value {
-            plist::Value::Array(items) => Value::Array(items.into_iter().map(json_of).collect()),
-            plist::Value::Dictionary(entries) => Value::Object(
-                entries
-                    .into_iter()
-                    .map(|(key, value)| (key, json_of(value)))
-                    .collect(),
-            ),
-            plist::Value::Boolean(it) => Value::Bool(it),
-            plist::Value::String(it) => Value::String(it),
-            plist::Value::Integer(it) => it
-                .as_signed()
-                .map(Value::from)
-                .or_else(|| it.as_unsigned().map(Value::from))
-                .unwrap_or(Value::Null),
-            plist::Value::Real(it) => Value::from(it),
-            _ => Value::Null,
-        }
-    }
-    if file.extension().is_some_and(|ext| ext == "plist") {
-        return plist::Value::from_file(file).ok().map(json_of);
-    }
-    std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The settings files [`persons_write_roots`] reads on this test's thread, in place of this
-    /// machine's, where a test sets them: what it measures is then not the machine's.
-    pub(crate) static TEST_PERSONS_FILES: std::cell::RefCell<Option<Vec<PathBuf>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// [`persons_write_roots`] in `files`, each a plain folder: `/` for what cannot be placed exactly
-/// (a bare Edit allow, a relative path or pattern, a file there that cannot be read), which keeps
-/// every pin. A file that is not there says nothing.
-pub(crate) fn write_roots_in(files: &[PathBuf], home: Option<&Path>) -> Vec<String> {
-    const EVERYWHERE: &str = "/";
-    let placed = |path: &str| -> String {
-        let path = match path.strip_prefix("//") {
-            Some(rest) => format!("/{rest}"),
-            None => path.to_owned(),
-        };
-        let expanded = match (path.strip_prefix("~/"), home) {
-            (Some(rest), Some(home)) => home.join(rest).display().to_string(),
-            (Some(_), None) => return EVERYWHERE.to_owned(),
-            (None, _) => path,
-        };
-        if !expanded.starts_with('/') {
-            return EVERYWHERE.to_owned();
-        }
-        let whole = whole_folder_of(&expanded);
-        // Where its `..` lands by its words, as Claude Code reads a write root.
-        super::planted::lexical(Path::new(whole))
-            .display()
-            .to_string()
-    };
-    let mut out: Vec<String> = Vec::new();
-    let mut add = |root: String| {
-        if !out.contains(&root) {
-            out.push(root);
-        }
-    };
-    for file in files {
-        let doc: Value = match std::fs::metadata(file) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Ok(meta) if meta.is_file() && meta.len() <= MANAGED_AT_MOST => {
-                match settings_document(file) {
-                    Some(doc) => doc,
-                    None => {
-                        add(EVERYWHERE.to_owned());
-                        continue;
-                    }
-                }
-            }
-            _ => {
-                add(EVERYWHERE.to_owned());
-                continue;
-            }
-        };
-        let strings = |pointer: &str| -> Vec<String> {
-            doc.pointer(pointer)
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|it| it.as_str().map(str::to_owned))
-                .collect()
-        };
-        for path in strings("/sandbox/filesystem/allowWrite")
-            .into_iter()
-            .chain(strings("/permissions/additionalDirectories"))
-        {
-            add(placed(&path));
-        }
-        for rule in strings("/permissions/allow") {
-            let rule = rule.trim();
-            let (tool, content) = match rule.split_once('(') {
-                Some((tool, rest)) => (tool, rest.strip_suffix(')')),
-                None => (rule, None),
-            };
-            if !matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit") {
-                continue;
-            }
-            match content {
-                // A path from the settings file's own folder, or one to match anywhere: not one
-                // folder, so everywhere.
-                Some(path) if path.starts_with("//") || path.starts_with("~/") => add(placed(path)),
-                _ => add(EVERYWHERE.to_owned()),
-            }
-        }
-    }
-    out
 }
 
 /// **Whether an administrator's Claude Code settings turn local binding on** (#1699): with

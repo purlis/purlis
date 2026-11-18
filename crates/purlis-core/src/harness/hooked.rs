@@ -194,22 +194,6 @@ fn switches_the_mode(source: Source, payload: &Value, option: &Choice) -> bool {
     }
 }
 
-/// Whether choosing `option` would grant a folder for the session: a Claude Code suggestion of
-/// type `addDirectories`, which adds a write root while the chat runs (#6961).
-fn adds_a_folder(source: Source, payload: &Value, option: &Choice) -> bool {
-    match source {
-        Source::ClaudeCode => option
-            .id
-            .strip_prefix("suggestion:")
-            .and_then(|n| n.parse::<usize>().ok())
-            .and_then(|n| payload["permission_suggestions"].get(n))
-            .is_some_and(|entry| entry["type"].as_str() == Some("addDirectories")),
-        // Neither offers a folder: Codex's hook answers allow or deny, opencode's once, always
-        // for the patterns it names, or reject.
-        Source::Codex | Source::Opencode => false,
-    }
-}
-
 /// The keys a shell call's input may carry and still run as its line says.
 const PLAIN_SHELL_KEYS: [&str; 3] = ["command", "description", "timeout"];
 
@@ -473,22 +457,6 @@ pub struct HookAsks {
     /// Each ask that timed out, still answerable, and each answer waiting for its chat's same
     /// request (#6007).
     lapsing: Mutex<lapsed::Lapsing>,
-    /// Which chats may be granted a folder for the session, once it is wired
-    /// ([`Self::granting_folders_by`]).
-    folders: Mutex<Option<Folders>>,
-}
-
-/// Whether chat `chat` may be granted a folder for the session from the window: not one whose
-/// settings leave git folder pins out (#6961), nor one the app cannot say of.
-pub type FoldersMay = Box<dyn Fn(&str) -> bool + Send + Sync + 'static>;
-
-/// [`FoldersMay`], held: said only as whether it is wired.
-struct Folders(FoldersMay);
-
-impl std::fmt::Debug for Folders {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Folders(..)")
-    }
 }
 
 /// [`Recorded`], held: said only as whether it is wired.
@@ -515,31 +483,7 @@ impl HookAsks {
             waiting: Mutex::new(HashMap::new()),
             recorded: Mutex::new(None),
             lapsing: Mutex::default(),
-            folders: Mutex::new(None),
         }
-    }
-
-    /// **Offers a folder for the session only to a chat `may` names** (#6961, the review of
-    /// #7005): Claude Code's `addDirectories` suggestion adds a write root while the chat runs,
-    /// and a git folder pin its settings left out, where no command wrote as it started, would
-    /// not hold under it. So, failing closed, a chat whose settings leave pins out is offered
-    /// plain Allow and its other options, and the person grants the folder for its next start,
-    /// whose settings keep each pin under it. Before this is wired, no chat is known to keep
-    /// every pin, so none is offered the folder.
-    pub fn granting_folders_by(&self, may: FoldersMay) {
-        *self
-            .folders
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Folders(may));
-    }
-
-    /// Whether `chat` may be offered a folder for the session ([`Self::granting_folders_by`]).
-    fn folders_may(&self, chat: &str) -> bool {
-        self.folders
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .as_ref()
-            .is_some_and(|Folders(may)| may(chat))
     }
 
     /// Reads each ask from now on by the harness the app recorded for its chat (#1703),
@@ -612,12 +556,7 @@ impl HookAsks {
         }
         let mut waiting = self.waiting();
         let left = HOOK_TIMEOUT.saturating_sub(ran_for);
-        let mut asked = ask_within(source, payload, left);
-        if !self.folders_may(chat) {
-            asked
-                .options
-                .retain(|option| !adds_a_folder(source, payload, option));
-        }
+        let asked = ask_within(source, payload, left);
         if asked.deadline == super::model::Deadline::None {
             return Err(NotRaised::TooLate);
         }

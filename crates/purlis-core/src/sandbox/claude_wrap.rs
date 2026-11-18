@@ -234,9 +234,6 @@ impl Wrap {
             sandbox: serde_json::json!({ "enabled": false }),
             deny: self.rules.deny.clone(),
             made_folders: Vec::new(),
-            // Its own sandbox is off: purlis's wrap holds every path (#4083).
-            pins: Vec::new(),
-            persons_roots: Vec::new(),
             compile_cache: false,
         }
     }

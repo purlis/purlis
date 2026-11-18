@@ -5449,28 +5449,7 @@ impl Applied {
     /// each folder from `cwd` up to the project root denied too ([`manifests_held`], #1336).
     /// The one form a chat is armed with and opened under, so both name the same folders.
     pub fn form_in(&self, cwd: Option<&Path>) -> Form {
-        let mut form = self.with(self.chain(cwd));
-        // Each git folder pin written only where a command in `cwd` may write (#6961).
-        if let (Form::ClaudeCode(settings), Some(cwd)) = (&mut form, cwd) {
-            *settings = settings.written_in(cwd);
-        }
-        form
-    }
-
-    /// **Whether the settings of a chat that opens in `cwd` leave a git folder pin out**
-    /// ([`claude::Settings::written_in`], #6961): such a chat is offered no folder for the
-    /// session from the window ([`crate::harness::hooked::HookAsks::granting_folders_by`]), since
-    /// a pin under it would not hold. False for any form but Claude Code's own sandbox, which
-    /// alone writes pins, and with no `cwd`, where none is left out.
-    pub fn leaves_pins_out(&self, cwd: Option<&Path>) -> bool {
-        let (Form::ClaudeCode(whole), Some(cwd)) = (self.with(self.chain(cwd)), cwd) else {
-            return false;
-        };
-        let written = whole.written_in(cwd);
-        // By its entries: any left out, whatever else the list holds.
-        let listed =
-            |settings: &claude::Settings| settings.sandbox["filesystem"]["denyWrite"].clone();
-        listed(&written) != listed(&whole)
+        self.with(self.chain(cwd))
     }
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
