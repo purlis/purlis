@@ -291,7 +291,11 @@ impl ToARunner {
 
     /// A link kept to the runner for as long as what it answers is held
     /// ([`hostlink::keep_linked`]).
+    ///
+    /// **Try now forgets what the forward remembers of its failure** (#7187): a click dials
+    /// at once, and the 5 to 120 second wait is for purlis's own tries only.
     pub fn keep(&self) -> hostlink::Links {
+        let pool = self.pool.clone();
         hostlink::keep_linked(
             self.connector.clone(),
             Handshake::THIS_BUILD,
@@ -302,6 +306,7 @@ impl ToARunner {
             self.pinned.clone(),
             Liveness::default(),
         )
+        .with_try_now(move || purlis_core::sshroute::pool::try_now(&pool))
     }
 }
 

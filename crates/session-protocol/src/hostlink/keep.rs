@@ -94,6 +94,9 @@ pub struct Links {
     ups: u64,
     /// How many of them the reader has moved to.
     moved: watch::Sender<u64>,
+    /// What else Try now does before it wakes the pause (#7187): a connector's own memory of
+    /// why its last try failed is let go of, so the try is made, not answered from memory.
+    on_try_now: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Links {
@@ -116,7 +119,17 @@ impl Links {
     /// pause between tries has passed. A try under way finishes first; one asked for while a
     /// link is up skips the first pause after it next goes down.
     pub fn try_now(&self) {
+        if let Some(on_try_now) = &self.on_try_now {
+            on_try_now();
+        }
         self.wake.notify_one();
+    }
+
+    /// These links, with `on_try_now` run first each time Try now is pressed (#7187).
+    #[must_use]
+    pub fn with_try_now(mut self, on_try_now: impl Fn() + Send + Sync + 'static) -> Links {
+        self.on_try_now = Some(std::sync::Arc::new(on_try_now));
+        self
     }
 }
 
@@ -208,6 +221,7 @@ pub fn keep_linked<C: Connector>(
         wake,
         ups: 0,
         moved,
+        on_try_now: None,
     }
 }
 

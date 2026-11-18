@@ -436,6 +436,14 @@ pub fn look_again() {
         .clear();
 }
 
+/// **Try now** (#7187, item 1): pool `pool`'s failing forward is forgotten, so its next ask
+/// opens the forward at once rather than answering what was found until [`Failing::next_try`].
+/// The wait of [`retry_after`] is for purlis's own automatic retries; a click is never held to
+/// it. Other pools' failing forwards keep their waits.
+pub fn try_now(pool: &str) {
+    forget_failing(pool);
+}
+
 /// **Pool `name`'s `docker` and the socket of the engine it reaches**: for a pool on this
 /// machine, `docker` itself and `local`, this machine's engine as it was found; for a pool on
 /// another machine, through its forward (held open, engine checked) and the forward's socket.
@@ -637,6 +645,26 @@ mod tests {
             Ask::Answer(silent())
         );
         assert_eq!(failing.ask(now + RETRY_FIRST), Ask::Try);
+    }
+
+    #[test]
+    fn try_now_forgets_the_pools_remembered_failure_and_leaves_other_pools_waiting() {
+        let pin = crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            )
+            .unwrap(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),
+        };
+        let now = Instant::now();
+        note_failing("try-now-a", &pin, Failing::first(silent(), now));
+        note_failing("try-now-b", &pin, Failing::first(silent(), now));
+        let waiting = failing("try-now-a", &pin).unwrap();
+        assert_eq!(waiting.ask(now), Ask::Answer(silent()), "it is waiting");
+        try_now("try-now-a");
+        assert_eq!(failing("try-now-a", &pin), None, "the click dials at once");
+        assert!(failing("try-now-b", &pin).is_some(), "another pool keeps its wait");
+        forget_failing("try-now-b");
     }
 
     #[test]

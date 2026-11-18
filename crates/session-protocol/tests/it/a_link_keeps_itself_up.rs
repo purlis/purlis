@@ -178,3 +178,27 @@ async fn a_renewed_link_answers_what_was_in_flight_until_its_reader_has_moved_to
     }
     assert!(second.list().await.is_ok());
 }
+
+/// Try now (#7187): the connector's own memory of why its last try failed is let go of before
+/// the pause ends, so the try that follows is made and not answered from that memory.
+#[tokio::test(start_paused = true)]
+async fn try_now_lets_go_of_what_the_connector_remembers_before_the_next_try() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    let (b, _told) = serve_b(Board::default(), a_as_pinned(), Liveness::default());
+    let to_b = ToB::new(b);
+    let forgotten = Arc::new(AtomicU32::new(0));
+    let seen = Arc::clone(&forgotten);
+    let mut links = keep(&to_b, Liveness::default()).with_try_now(move || {
+        seen.fetch_add(1, Ordering::SeqCst);
+    });
+    let first = lists(up(&mut links).await).await;
+    to_b.set(Cable::Cut);
+    first.list().await.expect_err("the cut cable carries nothing");
+    down(&mut links).await;
+    assert_eq!(forgotten.load(Ordering::SeqCst), 0, "nothing is forgotten on its own");
+    links.try_now();
+    assert_eq!(forgotten.load(Ordering::SeqCst), 1);
+    lists(up(&mut links).await).await;
+}
