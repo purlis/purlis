@@ -489,7 +489,7 @@ pub fn every_local_held() -> Vec<String> {
         .map(|id| folded(&crate::names::single_instance_stem(id)))
         .collect::<Vec<_>>()
         .join("|");
-    [
+    let regexes = [
         format!("/\\.({state})/"),
         format!(
             "/({}|{}|{}[^/]*|{}[^/]*|({app})[^/]*{})\\.{}$",
@@ -505,10 +505,25 @@ pub fn every_local_held() -> Vec<String> {
             folded(super::door::FOLDER),
             folded(crate::sshroute::DIR)
         ),
-    ]
-    .into_iter()
-    .map(|regex| format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))"))
-    .collect()
+    ];
+    // Held by name, so never moved or hard linked to a name nothing holds (the fourth review of
+    // #7105): the floor leaves `/tmp` and the session host's folder writable, where a chat
+    // would `mv` or `ln` a socket and connect to the new name. Every project's state folder is
+    // held from being written already ([`every_project_rules`]); a chat's own server socket is
+    // given back after these ([`served`]).
+    let [state_folders, names, folders] = regexes;
+    let mut rules: Vec<String> = [&state_folders, &names, &folders]
+        .into_iter()
+        .map(|regex| {
+            format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))")
+        })
+        .collect();
+    // And each of those folders itself, so it is never moved whole with its sockets inside.
+    let folders_and_themselves = format!("{}(/|$)", folders.trim_end_matches('/'));
+    for regex in [&names, &folders_and_themselves] {
+        rules.push(format!("(deny file-write* file-link (regex #\"{regex}\"))"));
+    }
+    rules
 }
 
 /// `word` as a regex that matches it in any case: macOS's volumes fold names, so the kernel may

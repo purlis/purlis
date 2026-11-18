@@ -1788,10 +1788,7 @@ pub(crate) fn judged(
         GrantWhat::Socket => {
             let ground = sandbox::services::SocketGround::of(root, machine, &[]);
             let now = sandbox::services::socket(target, &ground).map_err(|why| why.to_string())?;
-            // TEMPORARY MUTANT (round 4 of #7105), reverted in the next commit: the socket kept
-            // as resolved, not as drawn, so the new test is seen failing first.
-            let _ = socket_as_drawn(target, now.clone());
-            What::Socket(now)
+            What::Socket(socket_as_drawn(target, now)?)
         }
         GrantWhat::Service => {
             let name = sandbox::services::service(target).map_err(|why| why.to_string())?;
@@ -3821,6 +3818,15 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// The machine [`answered_at`] judges against: this one, or a test's ([`MACHINE`]).
+fn this_machine() -> sandbox::Machine {
+    #[cfg(test)]
+    if let Some(machine) = MACHINE.with(|seam| seam.borrow().clone()) {
+        return machine;
+    }
+    sandbox::Machine::this()
+}
+
 #[cfg(test)]
 fn between_resolutions() {
     if let Some(then) = BETWEEN_RESOLUTIONS.with(|seam| seam.borrow_mut().take()) {
@@ -3841,7 +3847,7 @@ pub(crate) fn answered_at(
         return false;
     }
     let root = held.root();
-    let machine = sandbox::Machine::this();
+    let machine = this_machine();
     // **Never a folder a later program loads code from** (the review of #7105, blocker 1): a
     // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
     // Only the project and the folders the person listed are answered; the rest still raise
