@@ -245,11 +245,15 @@ fn every_template_is_what_a_chat_starts_under() {
 
 /// **A chat runs under the template its scenario names** (T1.1-06, Q308a): in the scenario host,
 /// a chat under `strict`, `watch`, `hold`, `team` or `open` is handed that template's resolution
-/// by its start (`PURLIS_POLICY`, what its hooks enforce by), and under `strict` every family is
-/// enforced.
+/// by its start (`PURLIS_POLICY`, which can only tighten what its hooks enforce by), and under
+/// `strict` every family is enforced. What its hooks enforce by is the app's answer to their
+/// `Ask::Policy`, `strict` where none comes, so the policy is also proven at a hook: a line
+/// `guards.save` refuses (A6, a live substitution in purlis's own prose) is refused where the
+/// template enforces it, and runs with one log line where it logs it.
 #[cfg(unix)]
 #[test]
 fn a_chat_runs_under_the_template_its_scenario_names() {
+    use purlis_core::enforcement::{Family, Mode};
     let Some(homes) = Homes::of_this_scenario() else {
         return;
     };
@@ -260,11 +264,15 @@ fn a_chat_runs_under_the_template_its_scenario_names() {
             return;
         };
         let chat = scenario.starts(&serde_json::json!({
-            "turns": [{"prompt": "go", "calls": [{"step": "policy", "tool": "bash",
-                "run": format!("echo policy=${}", purlis_core::enforcement::ENV)}]}]
+            "turns": [{"prompt": "go", "calls": [
+                {"step": "policy", "tool": "bash",
+                 "run": format!("echo policy=${}", purlis_core::enforcement::ENV)},
+                {"step": "saves-a-substitution", "tool": "bash", "run": SAVES_A_SUBSTITUTION}
+            ]}]
         }));
-        scenario.until_played(chat, &["policy"]);
-        let expected = host::resolved_under(template, &scenario.root).spelled();
+        scenario.until_played(chat, &["policy", "saves-a-substitution"]);
+        let resolved = host::resolved_under(template, &scenario.root);
+        let expected = resolved.spelled();
         let said = stdout_of(&scenario, chat, "policy");
         assert_eq!(
             said.trim(),
@@ -279,7 +287,58 @@ fn a_chat_runs_under_the_template_its_scenario_names() {
                 "strict: a family is not enforced: {said}"
             );
         }
+        // At the hook: the guard's own verdict on a line `guards.save` refuses.
+        let saves = scenario
+            .result_of(chat, "saves-a-substitution")
+            .expect("played");
+        let refused = !saves["refused_by"].is_null();
+        let mode = resolved.mode(Family::GuardsSave);
+        assert_eq!(
+            refused,
+            mode == Mode::Enforce,
+            "{}: guards.save is {}, but the hook {} the line: {saves}\n{}",
+            template.word(),
+            mode.word(),
+            if refused { "refused" } else { "let through" },
+            scenario.said()
+        );
+        if mode == Mode::Log {
+            until(
+                &scenario,
+                &format!("{}: the hook's A6 line logged", template.word()),
+                || logged_a6(&scenario.root),
+            );
+        } else {
+            assert!(
+                !logged_a6(&scenario.root),
+                "{}: guards.save is {}, yet the hook logged its line",
+                template.word(),
+                mode.word()
+            );
+        }
     }
+}
+
+/// A line `guards.save` refuses (A6): a purlis command that persists prose carrying a live
+/// substitution. Behind `false &&`, so where it is let through it saves nothing.
+#[cfg(unix)]
+const SAVES_A_SUBSTITUTION: &str =
+    "false && purlis persona remember steward \"a $(echo x) b\"; echo let-through";
+
+/// Whether any chat's enforcement log in the project at `root` has an A6 line of `guards.save`.
+#[cfg(unix)]
+fn logged_a6(root: &Path) -> bool {
+    std::fs::read_dir(purlis_core::enforcement::log_dir(root))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .collect::<Vec<_>>()
+        })
+        .any(|line| line["rule"] == "A6" && line["family"] == "guards.save")
 }
 
 /// **One `Timings` value reaches the board, the throttle and the hold's end, in host mode**
@@ -391,23 +450,28 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
         );
         let wrapped = format!("{} _sandbox", scenario.kit.binary.display());
         let place = stdout_of(&scenario, chat, "where");
-        assert!(
-            place.lines().any(|l| l.trim() == "NoNewPrivs:\t1"
-                || l.split_whitespace().collect::<Vec<_>>() == ["NoNewPrivs:", "1"]),
-            "{protection:?}: the chat's command is not held by no-new-privileges:\n{place}\n{said}"
-        );
-        assert!(
+        // The wrap's own process is outside what the chat can read of itself, so its ancestry
+        // is read from here, as the system has it. Each of the three is said, so a red run
+        // names every one that does not hold.
+        let ancestry = ancestors_of_harness(&scenario.homes.scripts.join("chat-1.json"), &wrapped);
+        let status_says = |key: &str, value: &str| {
             place
                 .lines()
-                .any(|l| l.split_whitespace().collect::<Vec<_>>() == ["Seccomp:", "2"]),
-            "{protection:?}: the chat's command is not held by a seccomp filter:\n{place}\n{said}"
-        );
-        // The wrap's own process is outside what the chat can read of itself, so its ancestry
-        // is read from here, as the system has it.
-        let ancestry = ancestry_of_harness(&scenario.homes.scripts.join("chat-1.json"));
+                .any(|l| l.split_whitespace().collect::<Vec<_>>() == [key, value])
+        };
+        let mut not_held = Vec::new();
+        if !status_says("NoNewPrivs:", "1") {
+            not_held.push("no-new-privileges (`NoNewPrivs: 1`)".to_owned());
+        }
+        if !status_says("Seccomp:", "2") {
+            not_held.push("a seccomp filter (`Seccomp: 2`)".to_owned());
+        }
+        if !ancestry.iter().any(|line| line.starts_with(&wrapped)) {
+            not_held.push(format!("`{wrapped}` above the harness: {ancestry:#?}"));
+        }
         assert!(
-            ancestry.iter().any(|line| line.starts_with(&wrapped)),
-            "{protection:?}: no ancestor of the chat's harness is `{wrapped}`: {ancestry:#?}\n{said}"
+            not_held.is_empty(),
+            "{protection:?}: the chat's command is not held by {not_held:#?}\n{place}\n{said}"
         );
         assert!(
             stdout_of(&scenario, chat, "reads-plain").contains("PLAIN-READS"),
@@ -436,10 +500,13 @@ fn a_linux_claude_chat_in_the_scenario_host_is_sandboxed() {
     }
 }
 
-/// **The command lines of the chat harness playing `script` and its ancestors**, read from
-/// `/proc` as the system has them (Linux): each one's, from the harness up to the first process.
+/// **The command lines of the ancestors of the chat harness playing `script`**, read from
+/// `/proc` as the system has them (Linux), from its parent up to the first process. The harness
+/// is the process running the fake with `script` that is not the wrap (`wrapped`), whose own
+/// command line names both; and only a strict ancestor is answered, so the wrap is never taken
+/// for an ancestor of itself.
 #[cfg(unix)]
-fn ancestry_of_harness(script: &Path) -> Vec<String> {
+fn ancestors_of_harness(script: &Path, wrapped: &str) -> Vec<String> {
     let cmdline = |pid: u32| {
         std::fs::read(format!("/proc/{pid}/cmdline"))
             .map(|raw| {
@@ -467,11 +534,11 @@ fn ancestry_of_harness(script: &Path) -> Vec<String> {
         .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
         .find(|pid| {
             let line = cmdline(*pid);
-            line.contains("fake-harness") && line.contains(&script)
+            line.contains("fake-harness") && line.contains(&script) && !line.starts_with(wrapped)
         });
     let mut out = Vec::new();
-    let mut at = harness;
-    while let Some(pid) = at.filter(|pid| *pid > 1) {
+    let mut at = harness.and_then(parent);
+    while let Some(pid) = at.filter(|pid| *pid > 1 && Some(*pid) != harness) {
         out.push(cmdline(pid));
         at = parent(pid);
     }
@@ -562,6 +629,45 @@ fn a_scenario_leaves_no_process_and_no_temp_dir_behind() {
     scenario.also_started(sleeper);
     assert!(!scenario.pids().is_empty(), "the chat runs");
     drop(scenario);
+    // #7103 is the sleeper outliving the quit on macOS. Said when it stops doing so, so the
+    // expected fail is retired rather than left to hide a leak.
+    if cfg!(target_os = "macos") && homes.background_left().is_empty() {
+        let _ = std::io::Write::write_fmt(
+            &mut std::io::stderr(),
+            format_args!(
+                "unexpected pass #7103: the host's quit ended the chat's background process on \
+                 macOS; retire the expected fail\n"
+            ),
+        );
+    }
+}
+
+/// **A chat that outlives its host's quit fails the leak check on every OS** (T1.1-06, #7103):
+/// on macOS a group the quit left is #7103's expected fail only when every chat process seen in
+/// it has ended, so only what the chat left in the background runs. Probe 2 (run 44169502700)
+/// passed six macOS scenarios with a quit that ended nothing, because any group left was taken
+/// for #7103's.
+#[cfg(unix)]
+#[test]
+fn a_chat_that_outlives_its_hosts_quit_fails_the_leak_check_on_every_os() {
+    let seen = [(100, Some(10)), (200, Some(20)), (201, Some(20)), (300, None)];
+    let dead = |_: u32| false;
+    let chat_200_runs = |pid: u32| pid == 200;
+    assert_eq!(
+        host::of_the_quit(&[10, 20], &seen, dead, true),
+        (vec![10, 20], vec![]),
+        "macOS: chats ended, only a background process left in each group: #7103's"
+    );
+    assert_eq!(
+        host::of_the_quit(&[10, 20], &seen, chat_200_runs, true),
+        (vec![10], vec![20]),
+        "macOS: a chat the quit did not end is a leak, not #7103's"
+    );
+    assert_eq!(
+        host::of_the_quit(&[10, 20], &seen, dead, false),
+        (vec![], vec![10, 20]),
+        "Linux: every group the quit left is a leak"
+    );
 }
 
 /// **A held connection in a scenario raises an ask and blocks at the hold** (T1.1-06): the first

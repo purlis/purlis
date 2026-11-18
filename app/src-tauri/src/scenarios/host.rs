@@ -316,11 +316,12 @@ impl Homes {
             .map(|(name, value)| (*name, value.as_os_str()))
             .collect();
         let said = purlis_core::testrun::rerun_steered(&[&test], &env);
-        let skipped = said.contains("skipped: ");
-        for line in said
-            .lines()
-            .filter(|l| l.starts_with("skipped: ") || l.starts_with("expected fail "))
-        {
+        let skipped = said.lines().any(|l| l.starts_with("skipped: "));
+        for line in said.lines().filter(|l| {
+            l.starts_with("skipped: ")
+                || l.starts_with("expected fail ")
+                || l.starts_with("unexpected pass ")
+        }) {
             let _ = writeln!(std::io::stderr(), "{line}");
         }
         homes.nothing_left(skipped);
@@ -343,12 +344,22 @@ impl Homes {
         kept.pids.extend(more.pids);
         kept.folders.extend(more.folders);
         kept.groups_left.extend(more.groups_left);
+        kept.background.extend(more.background);
         kept.quits.extend(more.quits);
         // Best effort, from a teardown that may run as a test fails: a `left.json` not written
         // fails the parent's check.
         if let Ok(text) = serde_json::to_string(&kept) {
             let _ = std::fs::write(self.left(), text);
         }
+    }
+
+    /// The process groups this child's scenarios left that were #7103's (`Left::background`).
+    pub(crate) fn background_left(&self) -> Vec<u32> {
+        std::fs::read_to_string(self.left())
+            .ok()
+            .and_then(|text| serde_json::from_str::<Left>(&text).ok())
+            .map(|left| left.background)
+            .unwrap_or_default()
     }
 
     /// **This child ran no scenario, on purpose** (a dialect a leg reports `not_run`, or a test
@@ -420,10 +431,14 @@ pub(crate) struct Left {
     /// test said it started.
     pub pids: Vec<u32>,
     pub folders: Vec<PathBuf>,
-    /// The process groups of its chats still running once the host's quit answered (Linux; on
-    /// macOS they are #7103's expected fail).
+    /// The process groups of its chats still running once the host's quit answered, but for
+    /// #7103's (`background`).
     #[serde(default)]
     pub groups_left: Vec<u32>,
+    /// The process groups the quit left on macOS whose every chat had ended, so that only a
+    /// process a chat left in the background ran in them: #7103's expected fail.
+    #[serde(default)]
+    pub background: Vec<u32>,
     /// Each quit of the host that was not answered, and why.
     #[serde(default)]
     pub quits: Vec<String>,
@@ -935,6 +950,25 @@ fn process_group_of(pid: u32) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+/// **Which of the process groups the host's quit left are #7103's** (macOS): a group is that
+/// known leak only when every chat process seen in it has ended, so what still runs in it is a
+/// process the chat left in the background. A group whose chat itself still runs is a leak like
+/// any other, on every OS. Answers the groups that are #7103's and the groups that are leaks.
+pub(crate) fn of_the_quit(
+    still: &[u32],
+    seen: &[(u32, Option<u32>)],
+    alive: impl Fn(u32) -> bool,
+    macos: bool,
+) -> (Vec<u32>, Vec<u32>) {
+    still.iter().copied().partition(|group| {
+        macos
+            && seen
+                .iter()
+                .filter(|(_, of)| *of == Some(*group))
+                .all(|(pid, _)| !alive(*pid))
+    })
+}
+
 /// Whether any process of `group` runs.
 fn group_alive(group: u32) -> bool {
     purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
@@ -1305,7 +1339,9 @@ impl Drop for Scenario {
     /// every chat it runs; the runtime goes; then the project's folder. What it started (every
     /// chat process it saw, an ended chat's too), a quit the host did not answer, and each chat's
     /// process group still running after the quit are written for the parent, which fails on
-    /// any of them. On macOS a group the quit left is #7103: an expected fail, said and ended.
+    /// any of them. On macOS a group the quit left whose every chat has ended, so only a
+    /// background process runs in it, is #7103: an expected fail, said and ended
+    /// ([`of_the_quit`]).
     fn drop(&mut self) {
         self.note_running();
         let seen = self.seen.lock().expect("seen").clone();
@@ -1345,11 +1381,28 @@ impl Drop for Scenario {
         }
         let still: Vec<u32> = groups.into_iter().filter(|g| group_alive(*g)).collect();
         if !still.is_empty() {
-            if cfg!(target_os = "macos") {
+            // A chat the quit is ending is given the time the parent gives any process.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while seen.iter().any(|(pid, group)| {
+                group.is_some_and(|g| still.contains(&g)) && purlis_core::process::alive(*pid)
+            }) && std::time::Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let (background, leaks) = of_the_quit(
+                &still,
+                &seen,
+                purlis_core::process::alive,
+                cfg!(target_os = "macos"),
+            );
+            left.groups_left.extend(leaks.iter().copied());
+            left.background.extend(background.iter().copied());
+            if !background.is_empty() {
                 let _ = writeln!(
                     std::io::stderr(),
-                    "expected fail #7103: the host's quit left chat process groups {still:?} \
-                     running on macOS; the teardown ends them"
+                    "expected fail #7103: the host's quit ended every chat but left process \
+                     groups {background:?} running a chat's background process on macOS; the \
+                     teardown ends them"
                 );
                 let _ = super::report::write(&[purlis_scenarios::model::LegRecord {
                     kind: purlis_scenarios::model::EntryKind::Fixture,
@@ -1366,8 +1419,6 @@ impl Drop for Scenario {
                             .to_owned(),
                     ),
                 }]);
-            } else {
-                left.groups_left.extend(still.iter().copied());
             }
             // Ended either way, so nothing of the scenario outlives the run.
             for group in &still {
