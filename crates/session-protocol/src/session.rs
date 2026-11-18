@@ -597,15 +597,20 @@ use crate::view::{Limits, Views};
 /// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
 /// pick.
 ///
-/// 1.92 has a window name the families its resolution of the project's policy does not enforce
+/// 1.92 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
+/// now while the link to a runner is down; and say `link_down` again while it is down each time
+/// why changes, so the window says what the last try found. A host before 1.92 is sent no
+/// `link_now`.
+///
+/// 1.93 has a window name the families its resolution of the project's policy does not enforce
 /// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
 /// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
 /// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
-/// before 1.92 reads no families, and enforces both, as before; a runner applies its own locks over
+/// before 1.93 reads no families, and enforces both, as before; a runner applies its own locks over
 /// them.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 92,
+    minor: 93,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -613,6 +618,13 @@ pub const VERSION: Version = Version {
 pub const KNOWS_PAGES_LISTED: Version = Version {
     major: 1,
     minor: 91,
+};
+
+/// The version that first links again when the window asks (`link_now`, #7134): none is sent
+/// to a host before.
+pub const KNOWS_LINK_NOW: Version = Version {
+    major: 1,
+    minor: 92,
 };
 
 /// The version that first tells a browser's views what its page is and takes the person's
@@ -1339,6 +1351,12 @@ pub enum Command {
     /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
+    /// The window asks the host that relays its link to link to the other host again now (1.92,
+    /// #7134): its Try now, while that link is down, rather than once the pause between tries
+    /// has passed. Answered [`Answer::Done`] at once, before the try: whether it links is said
+    /// as ever, `link_back` or `link_down` again. A host that relays nothing has nothing to
+    /// link. The window's alone ([`crate::grants::Power::LinkNow`]), never sent on.
+    LinkNow,
     /// The window asks the desktop's host to relay this link to `runner` (1.33, #2679, ADR 0078
     /// §4): the runner this machine keeps under that name, reached through its connector and
     /// linked with the key pinned at its pairing. Sent only as a link's first command but its
@@ -1620,10 +1638,10 @@ pub struct Confine {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
     /// **The families the window's resolution of the project's policy does not enforce for this
-    /// chat** (1.92, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// chat** (1.93, the Q308 follow-up): `"asks"`, where its board answers a host nothing
     /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
     /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
-    /// resolves the policy and knows the chat, logs it. None, as a host before 1.92 reads it:
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.93 reads it:
     /// both enforced.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifted: Vec<String>,
@@ -1792,7 +1810,7 @@ pub enum SandboxTold {
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
     /// It let `target`, a host and port, through only because `family` (one of
-    /// [`Confine::lifted`]) is not enforced for the chat (1.92): the window writes the line of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.93): the window writes the line of
     /// the chat's enforcement log where the family logs. Told only where the window named it.
     Lifted { family: String, target: String },
 }
@@ -3036,7 +3054,9 @@ pub enum Pushed {
     /// what the client has there, its chats and browsers among them, is on that other host,
     /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
     /// send on is refused; nothing is sent later in its place. Pushed once for each time the
-    /// link goes down, to every subscriber of the relaying host.
+    /// link goes down, to every subscriber of the relaying host, and again while it is down
+    /// each time `why` changes (#7134): a try to link again that failed for another reason
+    /// than the one told. A client before that takes the second as the first.
     LinkDown {
         why: String,
         /// The other host answered with another key than the one pinned at its pairing (1.33,
@@ -3262,6 +3282,7 @@ wire_words!(Command {
     FillSecret => "fill_secret",
     TakeBack => "take_back",
     NameWindow => "name_window",
+    LinkNow => "link_now",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
@@ -3340,6 +3361,7 @@ impl Command {
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
+            Command::LinkNow => Power::LinkNow,
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
@@ -3897,6 +3919,7 @@ impl Lane {
             | Command::Quit
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
+            | Command::LinkNow
             | Command::Unpair
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }

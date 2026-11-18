@@ -42,6 +42,18 @@ fn a_chat_kept_as_it_closed_reads_back_by_its_number() {
 }
 
 #[test]
+fn a_chat_is_found_by_its_ulid_where_a_newer_record_answers_to_its_number() {
+    // #7123: 702 was dealt twice (#6740), so its number finds the newer close, its ULID its own.
+    let (_dir, root) = project();
+    let older = chat(702, OTHER, "2026-11-12T09:40:00Z");
+    let newer = chat(702, ID, "2026-11-12T11:00:00Z");
+    keep_all(&root, &[newer.clone(), older.clone()]).unwrap();
+    assert_eq!(of_number(&every(&root), 702), Some(&newer));
+    assert_eq!(of_id(&every(&root), OTHER), Some(&older));
+    assert_eq!(of_id(&every(&root), "01K6CHATS0000000000000000E"), None);
+}
+
+#[test]
 fn a_chat_handed_off_says_the_chat_that_started_it() {
     let (_dir, root) = project();
     let handed = ChatRecord {

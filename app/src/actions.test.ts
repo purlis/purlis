@@ -165,8 +165,8 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`reopenTask:${id}`);
       return { ok: true } as Ran;
     }),
-    reopenClosedChat: vi.fn(async (number: number) => {
-      calls.push(`reopenClosedChat:${number}`);
+    reopenClosedChat: vi.fn(async (chat: string) => {
+      calls.push(`reopenClosedChat:${chat}`);
       return { ok: true } as Ran;
     }),
     paneBack: note("paneBack"),
@@ -2925,8 +2925,9 @@ describe("the palette at fifty chats", () => {
     // this pane…, each of the fifty panes' own row. 1433 since #6306: Keep task screens. 1435
     // since #6031: Skill sources and Recorded skill acts, the project's two groups of an org's
     // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
-    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed.
-    expect(offers).toHaveLength(1486);
+    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed. 1489 since
+    // Q308a (instruction 45): Policy's two rows and the enforcement log's one.
+    expect(offers).toHaveLength(1489);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

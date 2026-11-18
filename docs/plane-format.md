@@ -7766,8 +7766,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   after a launch could not start it (#6487). A workspace's removal ends none: it is refused
   while a chat runs there. Not at a restart, not at a
   quit, never from anything a chat sent. Read by a closed chat's
-  card (`chat_by_number`, a pane's chat links), by the Chats list's filter (`closed_chats`), and
-  by the card's *Reopen* (`reopen_closed_chat`, #6485), which **starts the program its entry
+  card (`chat_by_number`, a pane's chat links, and `chat_by_id`, by its ULID), by the Chats
+  list's filter (`closed_chats`), and by the card's *Reopen* (`reopen_closed_chat`, #6485, by
+  the entry's ULID, never its number, #7123), which **starts the program its entry
   keeps**, on the person's press in the window alone: both commands are the window's, which no
   chat may ask for. So it is opened as [`app/reopen.json`](#appreopenjson) is, from the
   project's root following no link, and asked what it is of the descriptor the read uses. Denied a sandboxed chat's reading and writing
@@ -8010,7 +8011,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `app/src-tauri/src/sessionhost.rs`'s `HookChannels`). When
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
-  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
+  temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`, which a
+  hook's report is sent to. **An ask is not** (#6995, `hookwire::reach`): it finds the socket
+  from the app process the chat runs under, which must be the one listening, and the app names
+  the asking chat by its ancestry (`{"whoami": true}`, answered `{"you_are": <n>, "token":
+  "<the chat's token>"}` or a `no`). Inside a sandbox, where that process cannot be read, the
+  variable and the plane above the working directory say where to knock, and a socket is
+  believed only in a folder the asker may not write; it tries, with a file
+  `.purlis-may-write-<pid>-<16 hex>` beside the socket that is removed at once where it was
+  made. Where no app runs above the asker, the same momentary file is tried in the account's
+  home folder (as the user database names it): refused there, a sandbox holds the asker, which
+  is then a chat's. The app answers a `whoami` it cannot answer either way (the asker cannot be
+  read, two chats' programs are above it, or a chat's program is not recorded yet) with its own
+  `no`, never with the one for a process in none of its chats.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/slots.sock`

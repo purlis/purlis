@@ -27,14 +27,15 @@ const QUIET: PolicyState = {
   not_in_force: [],
   unsealed: false,
   digest: "d1",
+  template: "watch",
+  template_default: true,
+  overrides: [],
+  locked: [],
 };
 
 const LOOSENED: PolicyState = {
+  ...QUIET,
   waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
-  refused: [],
-  not_in_force: [],
-  unsealed: false,
-  digest: "d1",
 };
 
 function core(state: PolicyState, after: PolicyState = QUIET) {

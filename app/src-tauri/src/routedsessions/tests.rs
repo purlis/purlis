@@ -1424,8 +1424,11 @@ fn the_routing_says_every_method_of_a_chats_host() {
     let said = methods(routed_source, "impl SessionHost for RoutedSessions");
     // `fetch_back` and `fetch_back_left` are the routing's own, through its saver
     // (`FetchingBack`), and what a fresh runner's end asks, and a fetch asks of each host, is that
-    // host's own.
+    // host's own. `link_down` and `link_now` (#7134) are each host's own too: the routing answers
+    // for them by pool, as `runners_down` and `link_pool_now`.
     let its_own = [
+        "link_down",
+        "link_now",
         "fetch_back",
         "fetch_back_left",
         "fetch_back_whole",

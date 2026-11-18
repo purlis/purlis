@@ -1883,7 +1883,7 @@ mod hosted {
     /// for each change, outside the hold.
     fn hear(dimming: &Mutex<Dimming>, link: u64, heard: Reconnect) {
         let (dim, now) = match heard {
-            Reconnect::Started | Reconnect::KeyChanged | Reconnect::Gone => {
+            Reconnect::Started(_) | Reconnect::KeyChanged | Reconnect::Gone => {
                 (true, Reconnection::Reconnecting)
             }
             Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
