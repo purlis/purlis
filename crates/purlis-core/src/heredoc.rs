@@ -843,9 +843,11 @@ pub fn line_pipelines(line: &Line) -> Option<Vec<Pipeline>> {
                     .map(|c| c.iter().filter(|tk| tk.as_str() == "<<").count())
                     .collect();
                 // `source /dev/stdin` and `. /dev/stdin` run their stdin as shell (#7131).
+                // So does a program the shell builds (`$SHELL`), read as bash (round 7).
                 let sources_stdin = |it: &shellwrap::Invocation| {
-                    SOURCING.contains(&it.prog.as_str())
-                        && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv)
+                    (SOURCING.contains(&it.prog.as_str())
+                        && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv))
+                        || shellwrap::built_program_takes_its_script_from_stdin(&it.prog, &it.argv)
                 };
                 let executor = cmds.iter().zip(split.iter()).any(|(c, it)| {
                     !c.is_empty()
@@ -1213,11 +1215,15 @@ pub fn heredoc_could_run(line: &Line, start: usize) -> bool {
         return true;
     }
     // `source /dev/stdin <<'EOF'` runs its body in the current shell (#7131).
+    // A program the shell builds (`$SHELL <<'EOF'`) is read as bash (round 7).
     if let Some(words) = words.as_deref()
-        && SOURCING.contains(&prog.as_str())
+        && (SOURCING.contains(&prog.as_str()) || prog.contains(['$', '`']))
     {
         let it = shellwrap::split_env_chdir(words);
-        if shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv) {
+        if (SOURCING.contains(&prog.as_str())
+            && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv))
+            || shellwrap::built_program_takes_its_script_from_stdin(&it.prog, &it.argv)
+        {
             return true;
         }
     }
