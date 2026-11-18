@@ -1066,6 +1066,18 @@ fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_th
     }
     // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
     // still does, whatever the project says of either family (the re-review of #7104).
+    assert_eq!(
+        under(
+            &said("[policy]\nguards.shape = \"off\"\n"),
+            &Locks::parse(
+                r#"{"enforcement": ["guards.git"]}"#,
+                Path::new("/etc/purlis/policy.json")
+            ),
+            Family::GuardsShape
+        ),
+        Mode::Off,
+        "a lock on guards.git leaves guards.shape the project's"
+    );
     let git_locked = Locks::parse(
         r#"{"enforcement": ["guards.git"]}"#,
         Path::new("/etc/purlis/policy.json"),
@@ -1074,10 +1086,18 @@ fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_th
         "[policy]\n",
         "[policy]\ntemplate = \"open\"\n",
         "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+        "[policy]\nguards.shape = \"off\"\n",
     ] {
         assert_eq!(
             under(&said(text), &git_locked, Family::GuardsPlane),
             Mode::Enforce,
+            "{text}"
+        );
+        // Only `guards.plane` moves with it: `guards.shape` stays the project's to switch, so a
+        // refused lock file (which locks everything) cannot pass this test (#7155).
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsShape),
+            under(&said(text), &Locks::none(), Family::GuardsShape),
             "{text}"
         );
     }

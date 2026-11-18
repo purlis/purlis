@@ -383,17 +383,30 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// The flag Claude Code reads settings by: a file's path, or the settings inline as JSON.
 const CLAUDE_CODE_SETTINGS_FLAG: &str = "--settings";
 
+/// Whether `--settings`' `value` is the settings inline, not a file's path: it opens with `{`
+/// once the whitespace Claude Code ignores is passed.
+fn is_inline(value: &str) -> bool {
+    value
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+        .starts_with('{')
+}
+
 /// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
-/// prompts off, or `None` where it is no JSON or carries no such mode.
-fn settings_without_bypass(value: &str) -> Option<String> {
-    let mut settings: serde_json::Value = serde_json::from_str(value).ok()?;
+/// prompts off, or `None` where it carries no such mode. **Inline settings this cannot read
+/// are `Err`** (#7155): Claude Code accepts JSON `serde_json` rejects (comments, trailing
+/// commas, a byte-order mark), so a mode in one cannot be shown absent, and it is taken out
+/// whole.
+fn settings_without_bypass(value: &str) -> Option<Result<String, ()>> {
+    let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(value) else {
+        return is_inline(value).then_some(Err(()));
+    };
     let permissions = settings.get_mut("permissions")?.as_object_mut()?;
     let mode = permissions.get("defaultMode")?.as_str()?;
     if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
         return None;
     }
     permissions.remove("defaultMode");
-    Some(settings.to_string())
+    Some(Ok(settings.to_string()))
 }
 
 /// **The words of `command` that start a harness with its permission prompts off**, if any
@@ -469,14 +482,21 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
     // `permissions.defaultMode`. A settings file's path is not read here.
     if flag == CLAUDE_CODE_SETTINGS_FLAG {
-        let rewritten = settings_without_bypass(value)?;
-        return Some(Bypass {
-            // The mode's own word is the attendance fact's alone to spell.
-            shown: format!("{flag} (its permissions.defaultMode)"),
-            words,
-            kept: match attached {
-                Some(_) => vec![format!("{flag}={rewritten}")],
-                None => vec![flag.to_owned(), rewritten],
+        return Some(match settings_without_bypass(value)? {
+            Ok(rewritten) => Bypass {
+                // The mode's own word is the attendance fact's alone to spell.
+                shown: format!("{flag} (its permissions.defaultMode)"),
+                words,
+                kept: match attached {
+                    Some(_) => vec![format!("{flag}={rewritten}")],
+                    None => vec![flag.to_owned(), rewritten],
+                },
+            },
+            // Refused whole: nothing of it is kept, so no mode in it runs.
+            Err(()) => Bypass {
+                shown: format!("{flag} (inline settings purlis cannot read)"),
+                words,
+                kept: Vec::new(),
             },
         });
     }

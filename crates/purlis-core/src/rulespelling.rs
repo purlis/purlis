@@ -130,6 +130,13 @@ impl Rules {
         Self::in_force_with(plane, anchors, user_settings().as_deref())
     }
 
+    /// **[`Rules::in_force`] for a chat whose own variables are `env`** (#7155): the person's
+    /// settings file is the one the chat's live hook reads, in the `CLAUDE_CONFIG_DIR` its
+    /// profile sets, not the starting process's.
+    pub fn in_force_for_chat(plane: &Path, anchors: &[&Path], env: &[(String, String)]) -> Self {
+        Self::in_force_with(plane, anchors, user_settings_for(env).as_deref())
+    }
+
     /// [`Rules::in_force`], with the person's own settings file at `user` (or none).
     pub(crate) fn in_force_with(plane: &Path, anchors: &[&Path], user: Option<&Path>) -> Self {
         Self {
@@ -521,6 +528,30 @@ pub(crate) fn user_settings() -> Option<PathBuf> {
     )
 }
 
+/// **[`user_settings`] for a chat whose own variables are `env`**: its profile's
+/// `CLAUDE_CONFIG_DIR` wins over the starting process's, as the chat's environment is the
+/// process's with the profile's laid over it.
+pub(crate) fn user_settings_for(env: &[(String, String)]) -> Option<PathBuf> {
+    if cfg!(test) {
+        return user_settings_in_env(env, None);
+    }
+    user_settings_in_env(env, std::env::var_os("CLAUDE_CONFIG_DIR"))
+}
+
+/// [`user_settings_for`], with the starting process's `CLAUDE_CONFIG_DIR` at `process`.
+fn user_settings_in_env(
+    env: &[(String, String)],
+    process: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let profile = env
+        .iter()
+        .rev()
+        .find(|(key, _)| key == "CLAUDE_CONFIG_DIR")
+        .map(|(_, value)| std::ffi::OsString::from(value))
+        .filter(|dir| !dir.is_empty());
+    user_settings_in(profile.or(process), crate::profiles::home())
+}
+
 /// [`user_settings`], from the two values it reads.
 fn user_settings_in(
     config_dir: Option<std::ffi::OsString>,
@@ -819,6 +850,31 @@ mod tests {
             Some(PathBuf::from("/h/.claude/settings.json"))
         );
         assert_eq!(at(None, None), None);
+    }
+
+    /// #7155: the person's settings a chat's hook reads are in its profile's own
+    /// `CLAUDE_CONFIG_DIR`, which wins over the starting process's.
+    #[test]
+    fn a_profiles_own_config_dir_is_where_its_persons_settings_are() {
+        let env = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect()
+        };
+        assert_eq!(
+            user_settings_in_env(&env(&[("CLAUDE_CONFIG_DIR", "/p")]), Some("/proc".into())),
+            Some(PathBuf::from("/p/settings.json"))
+        );
+        assert_eq!(
+            user_settings_in_env(&env(&[]), Some("/proc".into())),
+            Some(PathBuf::from("/proc/settings.json"))
+        );
+        // An empty one is as unset, as in the starting process's.
+        assert_eq!(
+            user_settings_in_env(&env(&[("CLAUDE_CONFIG_DIR", "")]), Some("/proc".into())),
+            Some(PathBuf::from("/proc/settings.json"))
+        );
     }
 
     /// A program word only the shell can name — a variable, a substitution, a glob — may be

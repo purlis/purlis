@@ -857,6 +857,10 @@ impl Locks {
                 // `guards.git` held them before the move, so it holds `guards.plane` too
                 // (the re-review of #7104).
                 Family::GuardsPlane => self.enforcement_floor(Family::GuardsGit).is_some(),
+                // **A lock on `dispatch` does not lock `limits`** (#7155): with
+                // `enforcement = ["dispatch"]` and no `dispatch` ceilings, a project's own
+                // counts are still lifted under `limits = "log"`. A ceiling is what binds them
+                // (`dispatch_locked`, `dispatch`): the ruling keeps the two families apart.
                 Family::Dispatch => {
                     self.no_dispatch
                         || !self.dispatch_locked.is_empty()
