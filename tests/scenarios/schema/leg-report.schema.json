@@ -15,7 +15,12 @@
     "leg": {"enum": ["fake", "claude_sandbox", "real_wrap", "live", "fixture", "e2e"]},
     "timings": {"enum": ["scaled", "production"]},
     "verdict": {"enum": ["pass", "fail", "expected_fail", "not_run"]},
-    "reason": {"type": "string", "minLength": 1}
+    "reason": {"type": "string", "minLength": 1},
+    "events": {
+      "description": "The event kinds the leg's log wrote for the entry, in order (optional). The live pass records them, and tools/live-pass diff compares them with a suite leg's, where both have them (T1.1-37).",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
   },
   "allOf": [
     {

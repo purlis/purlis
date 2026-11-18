@@ -1,0 +1,739 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The live-pass tools** (T1.1-37, #6884): a brief generator and a live-versus-suite diff.
+//!
+//! The live pass runs the checks only a live harness shows (spec, "What only a live harness
+//! shows"), on an installed release-profile build of `phase-1-proven`'s head, with no
+//! `test-support`. It is **record only**: the runner does what the brief says and keeps the
+//! event log; nothing in the run judges anything.
+//!
+//! - [`brief`] builds one harness's brief on one OS from the files the suite already owns:
+//!   the cells `coverage.json` covers `live:` (including an escape's), one control per hook
+//!   kind the harness is armed with, the escapes ticket 43's table marks live, one check per
+//!   switch or substitution of ticket 6's reviewed list that the macOS release-build pass
+//!   covers, ticket 25's timed (g) cell on macOS, and the macOS denial receiver's check
+//!   when its row is carried.
+//! - [`live_report`] judges a live run's log by the cells' own marks and writes the suite's
+//!   report format (`schema/leg-report.schema.json`, leg `live`).
+//! - [`diff`] compares a live report with a suite report, per cell: verdicts, and event
+//!   sequences where both sides recorded them.
+//!
+//! Nothing here names a harness: a dialect is the key to its armed hook words and nothing else.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Write as _};
+use std::fs;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::coverage::{Cover, Coverage, Repo};
+use crate::judge::{Assertion, GlobalFailure, Observed, Run, Verdict, judge};
+use crate::kinds::dialect_words;
+use crate::model::{
+    Batch, Cell, Dialect, EntryKind, Expect, Leg, LegRecord, Os, Protection, ReportLeg,
+    ReportVerdict, Require, TimingsMode,
+};
+use crate::timings::catalogue;
+
+/// The test whose cover, on a carried macOS `M-FILE` row, asks for the receiver's live check
+/// (ticket 52): the receiver reports for a standard, non-admin user.
+pub const RECEIVER_FIXTURE: &str = "the_receiver_reports_for_a_standard_non_admin_user";
+
+/// Ticket 25's timed (g) confirmation cell on macOS: the host-to-window hop.
+pub const HELD_ASK_TIMING: &str = "held-ask-timing-g";
+
+/// The cover of ticket 6's switch list that this pass answers.
+const MACOS_LIVE_CHECK: &str = "macos-live-check";
+
+// ---- the brief ---------------------------------------------------------------------------------
+
+/// Why a check is in the brief.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Why {
+    /// A cell the coverage list covers `live:`.
+    LiveCover,
+    /// One control per hook kind: the hook fires, and purlis records it.
+    HookControl,
+    /// An escape the escape table marks live, at one protection.
+    Escape,
+    /// A test-only switch whose cover is the macOS release-build pass (ticket 6's list).
+    ReleaseSwitch,
+    /// A fixture substitution whose cover is the macOS release-build pass (ticket 6's list).
+    ReleaseSubstitution,
+    /// Ticket 25's timed (g) confirmation cell.
+    HeldAskTiming,
+    /// The macOS denial receiver, for a standard, non-admin user.
+    Receiver,
+}
+
+impl Why {
+    fn heading(self) -> &'static str {
+        match self {
+            Why::LiveCover => "Cells the matrix covers live",
+            Why::HookControl => "Controls: one per hook kind",
+            Why::Escape => "Escapes the table marks live",
+            Why::ReleaseSubstitution => "Release build: fixture substitutions",
+            Why::ReleaseSwitch => "Release build: test-only switches",
+            Why::HeldAskTiming => "Timed held ask (ticket 25, hypothesis (g))",
+            Why::Receiver => "The macOS denial receiver",
+        }
+    }
+}
+
+/// **One check a runner does and records.**
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Check {
+    /// What the runner's record names it by: a cell's id, or `control:…`, `escape:…`,
+    /// `release:…`.
+    pub id: String,
+    pub why: Why,
+    /// What to do.
+    pub what: String,
+    /// What the record should show.
+    pub observable: String,
+}
+
+/// **One harness's brief on one OS.**
+#[derive(Debug, Clone, Serialize)]
+pub struct Brief {
+    pub harness: Dialect,
+    pub os: Os,
+    pub checks: Vec<Check>,
+}
+
+/// **Ticket 6's reviewed list** (`app/src-tauri/src/scenarios/switches.json`): the fixture's
+/// substitutions and the test-only switches on a scenario's paths, each with the covers that
+/// stand for it per OS. Read here only for the entries whose macOS cover is this pass.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Switches {
+    #[serde(default)]
+    pub substitutions: Vec<Entry>,
+    #[serde(default)]
+    pub switches: Vec<Entry>,
+}
+
+/// One entry of the list.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Entry {
+    /// A substitution's name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// A switch's file and the line it sits at.
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub at: Option<String>,
+    #[serde(default)]
+    pub reason: String,
+    /// Per OS, the covers that stand for the entry.
+    #[serde(default)]
+    pub covers: BTreeMap<String, Vec<String>>,
+}
+
+impl Entry {
+    fn covered_by_macos_pass(&self) -> bool {
+        self.covers
+            .get("macos")
+            .is_some_and(|c| c.iter().any(|c| c == MACOS_LIVE_CHECK))
+    }
+}
+
+impl Switches {
+    /// This checkout's list.
+    pub fn repo() -> Result<Self, String> {
+        let path = crate::root().join("../../app/src-tauri/src/scenarios/switches.json");
+        let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
+/// **What a brief is made from.**
+pub struct Sources<'a> {
+    pub coverage: &'a Coverage,
+    pub repo: &'a Repo,
+    pub switches: &'a Switches,
+}
+
+/// **The brief for `harness` on `os`.** An error lists every `live:` cover that names no live
+/// cell for this harness: a brief that quietly dropped one would pass for complete.
+pub fn brief(harness: Dialect, os: Os, src: &Sources<'_>) -> Result<Brief, String> {
+    let mut checks = Vec::new();
+    let mut problems = Vec::new();
+
+    // 1. Every cell the list covers live, for this harness on this OS.
+    let live = |text: &str| match Cover::parse(text) {
+        Ok(Cover::Live { cell }) => Some(cell),
+        _ => None,
+    };
+    let mut wanted: Vec<String> = Vec::new();
+    for r in &src.coverage.rows {
+        if r.dialect == harness
+            && r.os == os
+            && let Some(cell) = live(&r.cover)
+        {
+            wanted.push(cell);
+        }
+    }
+    for e in &src.coverage.escapes {
+        let applies = src
+            .repo
+            .escapes
+            .iter()
+            .find(|row| row.id == e.id)
+            .and_then(|row| row.applies().ok())
+            .is_some_and(|pairs| pairs.contains(&(harness, os)));
+        if !applies {
+            continue;
+        }
+        wanted.extend(
+            e.covers
+                .values()
+                .chain([&e.control])
+                .filter_map(|t| live(t)),
+        );
+    }
+    let mut done = BTreeSet::new();
+    for id in wanted {
+        if !done.insert(id.clone()) {
+            continue;
+        }
+        let found = src
+            .repo
+            .batches
+            .iter()
+            .flat_map(|(_, b)| &b.cells)
+            .find(|c| c.id == id && c.live_only.is_some());
+        match found {
+            Some(cell) if cell.dialects.contains(&harness) => checks.push(Check {
+                id: id.clone(),
+                why: Why::LiveCover,
+                what: what_of(cell),
+                observable: observable_of(cell),
+            }),
+            Some(_) => problems.push(format!(
+                "live cover `{id}` is for {harness:?} on {os:?}, but the cell does not run in that dialect"
+            )),
+            None => problems.push(format!("live cover `{id}` names no live-only cell")),
+        }
+    }
+
+    // 2. One control per hook kind this harness is armed with.
+    for word in dialect_words(harness) {
+        checks.push(Check {
+            id: format!("control:hook.{word}"),
+            why: Why::HookControl,
+            what: format!(
+                "Make the harness fire its `{word}` hook once, with nothing refused: a control, so that a missing event elsewhere is the cell's, not the hook's."
+            ),
+            observable: format!("`hook.{word}` is in the run's event log."),
+        });
+    }
+
+    // 3. The escapes the table marks live, at each protection that owes something.
+    for row in src.repo.escapes.iter().filter(|r| r.live == "yes") {
+        match row.applies() {
+            Ok(pairs) if pairs.contains(&(harness, os)) => {}
+            Ok(_) => continue,
+            Err(e) => {
+                problems.push(e);
+                continue;
+            }
+        }
+        for (word, owed) in [
+            ("full", &row.full),
+            ("basic", &row.basic),
+            ("none", &row.off),
+        ] {
+            if owed.starts_with("n/a") || owed.starts_with("allowed by design") {
+                continue;
+            }
+            checks.push(Check {
+                id: format!("escape:{}:{word}", row.id),
+                why: Why::Escape,
+                what: format!("Try escape {} at {word}; purlis owes: {owed}", row.id),
+                observable: row.live_observable.clone(),
+            });
+        }
+    }
+
+    // 4. The release build's switches and substitutions that this pass covers, on macOS.
+    if os == Os::Macos {
+        for e in src
+            .switches
+            .substitutions
+            .iter()
+            .filter(|e| e.covered_by_macos_pass())
+        {
+            let name = e.name.as_deref().unwrap_or("?");
+            checks.push(Check {
+                id: format!("release:substitution:{name}"),
+                why: Why::ReleaseSubstitution,
+                what: format!(
+                    "On the installed release build, use what the scenario host replaced with a stand-in: {name}. Why it is a stand-in there: {}",
+                    e.reason
+                ),
+                observable: RELEASE_OBSERVABLE.to_owned(),
+            });
+        }
+        for e in src
+            .switches
+            .switches
+            .iter()
+            .filter(|e| e.covered_by_macos_pass())
+        {
+            let (file, at) = (
+                e.file.as_deref().unwrap_or("?"),
+                e.at.as_deref().unwrap_or("?"),
+            );
+            checks.push(Check {
+                id: format!("release:switch:{file}:{at}"),
+                why: Why::ReleaseSwitch,
+                what: format!(
+                    "On the installed release build, do one thing that goes through `{at}` in {file}, where the test build takes its own branch. Why it differs there: {}",
+                    e.reason
+                ),
+                observable: RELEASE_OBSERVABLE.to_owned(),
+            });
+        }
+    }
+
+    // 5. Ticket 25's timed (g) cell, and 6. the receiver's check, on macOS.
+    if os == Os::Macos {
+        checks.push(Check {
+            id: HELD_ASK_TIMING.to_owned(),
+            why: Why::HeldAskTiming,
+            what: "From the chat, connect to a name nothing allows, with a client timeout of 150 s, and leave the ask unanswered until the hold ends. Time the ask and the block against the connection.".to_owned(),
+            observable: "`ask.raised` comes about `group` after the connection (chat 682 saw 35 to 45 s), and `stop.block` comes at `hold`, in the same turn, not at the next prompt. A mismatch reopens ticket 26.".to_owned(),
+        });
+        if receiver_row_is_carried(src.coverage) {
+            checks.push(Check {
+                id: RECEIVER_FIXTURE.to_owned(),
+                why: Why::Receiver,
+                what: "As a standard, non-admin user, make a chat's wrapped process touch a file its sandbox refuses, and read what the macOS denial receiver reports.".to_owned(),
+                observable: "The receiver reports the refusal as a verified, counted block (the same `Refusal` the Linux supervisor tells), for a user without admin rights.".to_owned(),
+            });
+        }
+    }
+
+    if problems.is_empty() {
+        Ok(Brief {
+            harness,
+            os,
+            checks,
+        })
+    } else {
+        Err(problems.join("\n"))
+    }
+}
+
+const RELEASE_OBSERVABLE: &str = "It runs as the scenario host's cell does: the same events in the log, and no error that names a missing kit, host process, plugin or hook.";
+
+/// Whether a macOS `M-FILE` row names the receiver's test as its fixture cover.
+fn receiver_row_is_carried(coverage: &Coverage) -> bool {
+    coverage.fixtures.iter().any(|f| {
+        f.os == Os::Macos
+            && f.row.starts_with("M-FILE")
+            && matches!(Cover::parse(&f.cover), Ok(Cover::Fixture { test, .. }) if test == RECEIVER_FIXTURE)
+    })
+}
+
+/// What a cell asks the runner to do: each step's calls, press and wait.
+fn what_of(cell: &Cell) -> String {
+    let mut out = format!(
+        "Live-only ({}).",
+        cell.live_only.as_ref().map_or("", |l| &l.reason)
+    );
+    for (i, step) in cell.steps.iter().enumerate() {
+        let n = i + 1;
+        for call in &step.calls {
+            let input = call
+                .input
+                .get("command")
+                .and_then(Value::as_str)
+                .map_or_else(|| call.input.to_string(), str::to_owned);
+            let _ = write!(out, " Step {n}: {} `{input}`.", call.tool);
+        }
+        if let Some(wait) = &step.wait {
+            let _ = write!(out, " Step {n}: wait {wait}.");
+        }
+        if step.press.is_some() {
+            let _ = write!(out, " Step {n}: the person answers as the cell says.");
+        }
+    }
+    out
+}
+
+/// What the record should show: the step's `require` and `forbid`, as the suite reads them.
+fn observable_of(cell: &Cell) -> String {
+    let mut parts = Vec::new();
+    for (i, step) in cell.steps.iter().enumerate() {
+        let n = i + 1;
+        for r in &step.require {
+            let events: Vec<String> = r.events().into_iter().map(expect_text).collect();
+            let joined = match r {
+                Require::Either { .. } => events.join(" or "),
+                Require::Order { .. } => events.join(" before "),
+                Require::Event(_) => events.join(""),
+            };
+            parts.push(format!("step {n} requires {joined}"));
+        }
+        for f in &step.forbid {
+            parts.push(format!("step {n} forbids {}", expect_text(f)));
+        }
+        for s in &step.transcript {
+            parts.push(format!(
+                "step {n} transcript {} \"{}\"",
+                if s.forbid { "forbids" } else { "says" },
+                s.says
+            ));
+        }
+    }
+    parts.join("; ")
+}
+
+fn expect_text(e: &Expect) -> String {
+    let mut out = format!("`{}`", e.kind);
+    for (k, v) in &e.fields {
+        let _ = write!(out, " {k}={v}");
+    }
+    if let Some(c) = &e.count {
+        let _ = write!(out, " count={c}");
+    }
+    if let Some(w) = &e.within {
+        let _ = write!(out, " within {w}");
+    }
+    if let Some(b) = &e.before {
+        let _ = write!(out, " before {b}");
+    }
+    out
+}
+
+impl Brief {
+    /// **The brief a runner chat reads.**
+    pub fn markdown(&self) -> String {
+        let os = match self.os {
+            Os::Linux => "Linux",
+            Os::Macos => "macOS",
+        };
+        let mut out = format!("# Live pass: {} on {os}\n\n", self.harness.word());
+        out.push_str(&format!(
+            "You are a runner. This pass is **record only**: do what each check says, keep the event log, and judge nothing. `tools/live-pass report` judges the log afterwards, by the cells' own expectations.\n\n\
+## Set-up\n\n\
+- Use an installed **release** build of `phase-1-proven`'s head, built in the release profile without `test-support` or `fenced`. Never a test build.\n\
+- Run the `{}` harness in its **non-interactive** mode, one check at a time, so nobody answers a prompt unless a check says the person does.\n\
+- Keep each check's event log slice under the check's id below. Write the run's records as the suite's report format, leg `live` (`schema/leg-report.schema.json`).\n\
+- Do not retry a check. If it cannot run, record `not_run` with the reason.\n\n",
+            self.harness.word()
+        ));
+        for why in [
+            Why::LiveCover,
+            Why::HookControl,
+            Why::Escape,
+            Why::ReleaseSubstitution,
+            Why::ReleaseSwitch,
+            Why::HeldAskTiming,
+            Why::Receiver,
+        ] {
+            let group: Vec<&Check> = self.checks.iter().filter(|c| c.why == why).collect();
+            if group.is_empty() {
+                continue;
+            }
+            let _ = write!(out, "## {} ({})\n\n", why.heading(), group.len());
+            for c in group {
+                let _ = write!(
+                    out,
+                    "### `{}`\n\n{}\n\nRecord: {}\n\n",
+                    c.id, c.what, c.observable
+                );
+            }
+        }
+        out
+    }
+}
+
+// ---- the live report ---------------------------------------------------------------------------
+
+/// **A leg's record, with the events the leg recorded for it** (`events` is optional in
+/// `schema/leg-report.schema.json`): what the diff compares as the cell's event sequence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recorded {
+    #[serde(flatten)]
+    pub leg: LegRecord,
+    /// Event kinds, in the order the log wrote them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<String>>,
+}
+
+/// **The live report of `log` for `batch`'s cells that run in `harness`.**
+///
+/// `log` is the live checker's account of a run, per cell: `{"cells": {"<id>": {"failed":
+/// [["require[0]", 2]], "globals": [{"check": "…", "refusal": "step 1"}], "events": ["…"]}}}`.
+/// A failed assertion is `[assertion, observed]` of step 1, or `[step, assertion, observed]`.
+/// Every assertion not listed passed. Each cell is judged by its own `expected_fail` marks, as
+/// the suite judges it; a cell the log does not mention is `not_run`.
+pub fn live_report(
+    batch: &Batch,
+    log: &Value,
+    harness: Dialect,
+    os: Os,
+) -> Result<Vec<Recorded>, String> {
+    let logged = log
+        .get("cells")
+        .and_then(Value::as_object)
+        .ok_or("the log has no `cells` object")?;
+    let catalogue = catalogue();
+    let run = Run {
+        dialect: harness,
+        os,
+        leg: Leg::Live,
+        timings: TimingsMode::Production,
+        seconds: catalogue.production_seconds(),
+    };
+    let mut out = Vec::new();
+    for cell in batch.cells.iter().filter(|c| c.dialects.contains(&harness)) {
+        let (verdict, reason, events) = match logged.get(&cell.id) {
+            None => (
+                ReportVerdict::NotRun,
+                Some("not in the live log".to_owned()),
+                None,
+            ),
+            Some(one) => {
+                let (assertions, globals) = failures(&cell.id, one)?;
+                let events = one.get("events").and_then(Value::as_array).map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                });
+                match judge(cell, &run, &assertions, &globals) {
+                    Verdict::Pass => (ReportVerdict::Pass, None, events),
+                    Verdict::ExpectedFail { issues } => {
+                        let list: Vec<String> = issues.iter().map(|i| format!("#{i}")).collect();
+                        (
+                            ReportVerdict::ExpectedFail,
+                            Some(format!("pinned: {}", list.join(", "))),
+                            events,
+                        )
+                    }
+                    Verdict::Fail { reasons } => {
+                        (ReportVerdict::Fail, Some(reasons.join("; ")), events)
+                    }
+                }
+            }
+        };
+        out.push(Recorded {
+            leg: LegRecord {
+                kind: if cell.escape {
+                    EntryKind::Escape
+                } else {
+                    EntryKind::Cell
+                },
+                row: cell.id.clone(),
+                test: None,
+                dialect: Some(harness),
+                protection: Some(batch.protection),
+                os,
+                leg: ReportLeg::Live,
+                timings: Some(TimingsMode::Production),
+                verdict,
+                reason,
+            },
+            events,
+        });
+    }
+    Ok(out)
+}
+
+/// The assertions and global checks a cell's log entry says failed.
+fn failures(id: &str, one: &Value) -> Result<(Vec<Assertion>, Vec<GlobalFailure>), String> {
+    let bad = |what: &str| format!("{id}: the log's {what} is not as documented");
+    let mut assertions = Vec::new();
+    for f in one
+        .get("failed")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let f = f.as_array().ok_or_else(|| bad("`failed` entry"))?;
+        let (step, name, seen) = match f.as_slice() {
+            [name, seen] => (1, name, seen),
+            [step, name, seen] => (step.as_u64().ok_or_else(|| bad("step"))? as u32, name, seen),
+            _ => return Err(bad("`failed` entry")),
+        };
+        assertions.push(Assertion {
+            step,
+            assertion: name.as_str().ok_or_else(|| bad("assertion"))?.to_owned(),
+            observed: Observed::Fail(seen.clone()),
+        });
+    }
+    let mut globals = Vec::new();
+    for g in one
+        .get("globals")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let text = |key: &str| {
+            g.get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| bad("global check"))
+        };
+        globals.push(GlobalFailure {
+            check: text("check")?,
+            refusal: text("refusal")?,
+        });
+    }
+    Ok((assertions, globals))
+}
+
+// ---- the diff ----------------------------------------------------------------------------------
+
+/// **What names a cell in both reports**: its kind, row, dialect, protection and OS. The leg
+/// and the timings are what is compared across.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Key {
+    pub kind: EntryKind,
+    pub row: String,
+    pub dialect: Option<Dialect>,
+    pub protection: Option<Protection>,
+    pub os: Os,
+}
+
+impl Key {
+    fn of(r: &LegRecord) -> Key {
+        Key {
+            kind: r.kind,
+            row: r.row.clone(),
+            dialect: r.dialect,
+            protection: r.protection,
+            os: r.os,
+        }
+    }
+}
+
+impl fmt::Display for Key {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} {}", self.kind, self.row)?;
+        if let Some(d) = self.dialect {
+            write!(f, " {}", d.word())?;
+        }
+        if let Some(p) = self.protection {
+            write!(f, " {p:?}")?;
+        }
+        write!(f, " {:?}", self.os)
+    }
+}
+
+/// A cell the two reports judge differently.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerdictDiff {
+    pub key: Key,
+    pub live: ReportVerdict,
+    pub suite: ReportVerdict,
+    pub suite_leg: ReportLeg,
+}
+
+/// A cell whose event sequences differ, at the first event that does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventsDiff {
+    pub key: Key,
+    pub at: usize,
+    pub live: Option<String>,
+    pub suite: Option<String>,
+}
+
+/// **How a live report differs from a suite report.**
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Diff {
+    pub verdicts: Vec<VerdictDiff>,
+    pub events: Vec<EventsDiff>,
+    /// Cells the live run reports and the suite does not.
+    pub only_live: Vec<Key>,
+    /// Cells the suite reports and the live run does not.
+    pub only_suite: Vec<Key>,
+}
+
+impl Diff {
+    pub fn is_empty(&self) -> bool {
+        self.verdicts.is_empty()
+            && self.events.is_empty()
+            && self.only_live.is_empty()
+            && self.only_suite.is_empty()
+    }
+
+    /// One line per difference, for a person to read.
+    pub fn render(&self) -> String {
+        let mut out = String::new();
+        for v in &self.verdicts {
+            let _ = writeln!(
+                out,
+                "verdict  {}: live {:?}, suite ({:?}) {:?}",
+                v.key, v.live, v.suite_leg, v.suite
+            );
+        }
+        for e in &self.events {
+            let show = |o: &Option<String>| o.clone().unwrap_or_else(|| "(none)".to_owned());
+            let _ = writeln!(
+                out,
+                "events   {}: at {} live {}, suite {}",
+                e.key,
+                e.at,
+                show(&e.live),
+                show(&e.suite)
+            );
+        }
+        for k in &self.only_live {
+            let _ = writeln!(out, "only live   {k}");
+        }
+        for k in &self.only_suite {
+            let _ = writeln!(out, "only suite  {k}");
+        }
+        out
+    }
+}
+
+/// **`live` against `suite`, per cell.** A pair is compared when its kind, row, dialect,
+/// protection and OS agree: verdicts always, event sequences when both sides recorded them. A
+/// cell on one side alone is listed, never ignored.
+pub fn diff(live: &[Recorded], suite: &[Recorded]) -> Diff {
+    let mut by_key: BTreeMap<Key, Vec<&Recorded>> = BTreeMap::new();
+    for s in suite {
+        by_key.entry(Key::of(&s.leg)).or_default().push(s);
+    }
+    let mut out = Diff::default();
+    let mut seen = BTreeSet::new();
+    for l in live {
+        let key = Key::of(&l.leg);
+        seen.insert(key.clone());
+        let Some(against) = by_key.get(&key) else {
+            out.only_live.push(key);
+            continue;
+        };
+        for s in against {
+            if l.leg.verdict != s.leg.verdict {
+                out.verdicts.push(VerdictDiff {
+                    key: key.clone(),
+                    live: l.leg.verdict,
+                    suite: s.leg.verdict,
+                    suite_leg: s.leg.leg,
+                });
+            }
+            if let (Some(a), Some(b)) = (&l.events, &s.events)
+                && let Some(at) = (0..a.len().max(b.len())).find(|&i| a.get(i) != b.get(i))
+            {
+                out.events.push(EventsDiff {
+                    key: key.clone(),
+                    at,
+                    live: a.get(at).cloned(),
+                    suite: b.get(at).cloned(),
+                });
+            }
+        }
+    }
+    out.only_suite = by_key.into_keys().filter(|k| !seen.contains(k)).collect();
+    out
+}

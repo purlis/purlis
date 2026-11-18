@@ -289,6 +289,19 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #      --certificate-identity https://github.com/purlis/purlis/.github/workflows/engine-manifest.yml@refs/heads/main
 #      --certificate-oidc-issuer https://token.actions.githubusercontent.com accepts it, into
 #      crates/browser-engine/engine-pin.json
+# 1b. the live pass, on the release profile of the commit about to be tagged (M74.1, T1.1-37):
+#    what only a live harness shows (model behaviour, how a harness shows sub-agent and
+#    background output, the window's wording and timing) and what a test build cannot show of
+#    the release build's own switches. For each harness on each OS it covers, generate a brief
+#    and give it to a runner chat on an installed release-profile build (no `test-support`):
+#        tools/live-pass brief --harness claude --os macos      # codex, opencode, linux the same
+#    The runner only records. Judge its log in the suite's report format, then diff it with the
+#    suite's own report for the same cells, and read every line the diff prints:
+#        tools/live-pass report --cells tests/scenarios/cells/B0.json --log <live log> \
+#            --harness claude --os macos > live.jsonl
+#        tools/live-pass diff live.jsonl <the suite's report> --suite-timings production
+#    A cell the two judge differently is a bug in the suite or in the build, to file before
+#    tagging (tests/scenarios/README.md, "The live pass").
 git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are
