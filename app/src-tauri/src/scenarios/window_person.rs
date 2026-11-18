@@ -148,16 +148,21 @@ fn each_global_check_fires_on_its_planted_fault() {
         Clean::new().judged().is_empty(),
         "a scenario that observed nothing wrong fires no check"
     );
-    for check in Check::ALL {
-        let observed = planted(check);
-        assert_eq!(
-            observed.fired(),
-            vec![check],
-            "{}: its planted fault must fire it, and only it: {:?}",
-            check.word(),
-            observed.judged()
-        );
-    }
+    // Every check is tried before any is judged, so a red run names each one that stayed quiet.
+    let quiet: Vec<String> = Check::ALL
+        .into_iter()
+        .filter_map(|check| {
+            let observed = planted(check);
+            (observed.fired() != vec![check]).then(|| {
+                format!(
+                    "{}: its planted fault must fire it, and only it, and fired {:?}",
+                    check.word(),
+                    observed.judged()
+                )
+            })
+        })
+        .collect();
+    assert!(quiet.is_empty(), "{quiet:#?}");
     // And the same observations without the fault: each fault is the only difference.
     let mut healed = planted(Check::NoBlackHole);
     healed.events.push(a_block(1, "c1", "urllib.example.test"));
