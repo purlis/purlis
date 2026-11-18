@@ -366,10 +366,8 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     if flag == CLAUDE_CODE_SETTINGS_FLAG {
         let rewritten = settings_without_bypass(value)?;
         return Some(Bypass {
-            shown: format!(
-                "{flag} with permissions.defaultMode {}",
-                crate::attendance::PROMPTS_OFF
-            ),
+            // The mode's own word is the attendance fact's alone to spell.
+            shown: format!("{flag} (its permissions.defaultMode)"),
             words,
             kept: match attached {
                 Some(_) => vec![format!("{flag}={rewritten}")],
