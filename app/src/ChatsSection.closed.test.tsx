@@ -104,6 +104,8 @@ function draw(
     byId?: (id: string, typed: number | null) => unknown;
     /** Each open chat's finished tasks, by its number. */
     finished?: ReadonlyMap<number, FinishedTask[]>;
+    /** The workspace the list is scoped to; chat 1 works in alpha, chat 2 in beta. */
+    here?: string;
   } = {},
 ) {
   const asked: string[] = [];
@@ -142,10 +144,13 @@ function draw(
         onOpen={() => {}}
         onPress={(offer) => pressed.push(offer)}
         finished={answers.finished}
+        here={answers.here}
       />
     </ChatsHere.Provider>
   );
-  const { rerender } = render(list([OPEN, { ...OPEN, session: 2, name: "steward 2" }]));
+  const { rerender } = render(
+    list([OPEN, { ...OPEN, session: 2, name: "steward 2", workspace: "beta" }]),
+  );
   /** Chat 2 closes: the list is drawn with chat 1 alone. */
   const closeChat2 = () => rerender(list([OPEN]));
   return { asked, sent, pressed, answered, closeChat2 };
@@ -219,6 +224,16 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
 
     expect(queryRow(tree, /^#731 · Tidy the changelog/)).toBeNull();
     expect(queryRow(tree, /^Closed chats/)).toBeNull();
+  });
+
+  it("is drawn where its finished task's row is found under a chat the scope leaves out (#7149's review)", async () => {
+    // Chat 2, which asked for the task, works in beta; the list is scoped to alpha, so the
+    // finished row is never drawn, and the closed chat is the only row the words find.
+    draw({ finished: new Map([[2, [{ ...TIDIED, asker: 2 }]]]), here: "alpha" });
+    await typeInTheFilter("tidy");
+
+    expect(await findRow(await theTree(), /^#731 · Tidy the changelog/)).toBeInTheDocument();
+    expect(screen.queryByText("No chat matches the filter.")).toBeNull();
   });
 
   it("is drawn where its finished task's row is not found, as by a number (#7145)", async () => {

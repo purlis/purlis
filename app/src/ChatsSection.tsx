@@ -478,11 +478,13 @@ export function ChatsSection({
     if (closedRead.length === 0) return [];
     // The finished tasks this filter draws, by their chats' ULIDs (#7145): a chat whose task's
     // row is found is not found again as closed, and one whose row is not found still is. An
-    // open chat's number asks for that chat alone, which draws no finished row at all.
+    // open chat's number asks for that chat alone, which draws no finished row at all. Only a
+    // chat the scope lists draws its finished rows (#7149's review).
     const drawnAsTasks = new Set<string>();
     if (!asking(rows, filter).byNumber)
-      for (const tasks of finishedFound.values())
-        for (const task of tasks) if (task.chat_id !== null) drawnAsTasks.add(task.chat_id);
+      for (const row of rows)
+        for (const task of finishedFound.get(row.session) ?? [])
+          if (task.chat_id !== null) drawnAsTasks.add(task.chat_id);
     return closedFound(closedRead, filter, closedTyped, drawnAsTasks);
   }, [closedRead, rows, filter, closedTyped, finishedFound]);
 
